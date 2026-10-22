@@ -292,7 +292,7 @@ async def test_a_fault_is_reported_to_the_member_the_log_channel_and_the_host(en
 
     job = await stopped_job(env.db_path)
     stop = STOPPED_AT.format(
-        id=job["id"], job="doing the dummy step", request=WHAT, asker=NAMED, fault="RuntimeError",
+        id=job["id"], job="doing the dummy step", request=WHAT, asker=NAMED, fault="the bot hit an internal fault",
     )
     [notice] = [m for m in env.bot.log_channel.posted if m.content.startswith(stop)]
     assert "a league manager or admin may press Retry" in notice.content
@@ -469,8 +469,9 @@ async def test_a_request_repeating_the_last_change_asked_for_before_it_starts_is
 
 
 async def test_a_change_is_queued_again_once_another_has_been_asked_for_after_it(env):
-    """Whatever became of the change asked for in between: here it has already finished, ahead of
-    changes held behind a stopped job, and the held one may still be asked for again."""
+    """Whatever became of the change asked for in between, on the same lane (here the league's):
+    here it has already finished, ahead of changes held behind a stopped job, and the held one may
+    still be asked for again."""
     api = _api()
     held = {"fail": api.StepFailedOnDiscord("Missing Access")}
 
@@ -586,6 +587,38 @@ async def test_an_outcome_after_fourteen_minutes_is_left_to_the_log_channel(env)
     assert interaction.followup.send.await_count == 0
     assert "Admin (`<@4242>`) | /dummy | Success" in "\n".join(await _lines(env))
     assert await _states(env) == ["DONE"]
+
+
+def _keeping_for(env) -> Any:
+    """An `ACT` step keeping its change's reply for a later change of kind "lapse" whose key is
+    the payload's, as an amendment's opening keeps the manager's for its lapse."""
+    api = _api()
+
+    async def _run(ctx):
+        env.bot.change_queue.keep_reply(ctx.change_id, "lapse", ctx.payload["key"])
+        return api.StepResult()
+
+    return api.Step("keep", api.StepKind.ACT, _run)
+
+
+async def test_a_kept_reply_no_later_change_takes_over_is_let_go_once_it_cannot_be_updated(env):
+    """An opening keeps its reply for a lapse that never comes, as an amendment cancelled or
+    approved asks none. Fifteen minutes on, when that reply could no longer be updated, a second
+    opening keeps its own: the first is let go then, so that kept replies do not gather in memory
+    until a restart, and the second, still updatable, stays."""
+    queue = _queue(env, _type("opener", steps=[_keeping_for(env)]))
+
+    await _ask(env, "opener", {"key": "first"})
+    await run_queue(env.bot)
+    [first] = list(queue._held)
+    env.clock.advance(minutes=15)
+    await _ask(env, "opener", {"key": "second"})
+    await run_queue(env.bot)
+
+    [second] = list(queue._held)
+    assert second != first
+    assert queue._held[second].kept
+    assert queue._held[second].keep_for == ("lapse", "second")
 
 
 async def test_an_acknowledgement_that_cannot_be_updated_does_not_fail_the_change(env, caplog):
@@ -970,7 +1003,7 @@ async def test_the_queue_writes_its_lines_through_the_router_it_was_handed(env):
     assert "Admin (`<@4242>`) | /dummy | Success" in sent
     job = await stopped_job(env.db_path)
     assert STOPPED_AT.format(
-        id=job["id"], job=WHAT, request=WHAT, asker=NAMED, fault="RuntimeError",
+        id=job["id"], job=WHAT, request=WHAT, asker=NAMED, fault="the bot hit an internal fault",
     ) in sent
 
 
@@ -1100,7 +1133,7 @@ async def test_a_check_that_raises_stops_the_queue_and_later_changes_run_once_it
     assert ran == []
     stop = [line for line in await _lines(env) if "The queue is stopped at job #" in line]
     assert len(stop) == 1
-    assert "`/checked`" in stop[0] and "(RuntimeError)" in stop[0]
+    assert "`/checked`" in stop[0] and "(the bot hit an internal fault)" in stop[0]
 
     await discard_job(env.bot)
 
@@ -1751,7 +1784,7 @@ async def test_a_bot_change_whose_check_passes_at_a_try_clears_its_stop_and_a_la
     assert again["tries"] == 1
     assert datetime.fromisoformat(again["failing_since"]) == NOW + timedelta(minutes=1)
     assert datetime.fromisoformat(again["next_try_at"]) == NOW + timedelta(minutes=2)
-    [second] = [m for m in env.bot.log_channel.posted if "(RuntimeError)" in m.content]
+    [second] = [m for m in env.bot.log_channel.posted if "(the bot hit an internal fault)" in m.content]
     assert second.id == again["notice_message_id"] and second.id != first.id
     assert {child.custom_id for child in second.view.children} == {"queue:retry", "queue:discard"}
     assert await _states(env) == ["RUNNING"]
@@ -1907,7 +1940,7 @@ async def test_a_record_that_raises_stops_the_queue_and_keeps_the_step_s_result(
     assert job is not None and job["name"] == "post"
     stop = STOPPED_AT.format(
         id=job["id"], job="posting round 3's results", request=WHAT, asker=NAMED,
-        fault="RuntimeError",
+        fault="the bot hit an internal fault",
     )
     assert [m for m in env.bot.log_channel.posted if m.content.startswith(stop)]
     assert job["result"] == {"id": 7, "sent": [7]}
@@ -2431,7 +2464,7 @@ async def test_a_refusal_hook_that_raises_stops_the_queue_at_the_change_and_a_di
     lines = await _lines(env)
     stop = [line for line in lines if "The queue is stopped at job #" in line]
     assert len(stop) == 1
-    assert WHAT in stop[0] and "(RuntimeError)" in stop[0]
+    assert WHAT in stop[0] and "(the bot hit an internal fault)" in stop[0]
     assert not any("refused for" in line for line in lines)
     assert len(await change_rows(env.db_path)) == 2
     assert hooks == [WHAT]
@@ -2698,6 +2731,48 @@ async def test_a_discard_hook_that_raises_is_logged_and_the_discard_goes_ahead_w
     )
 
 
+@pytest.mark.parametrize(
+    "error, words, kind",
+    [
+        pytest.param(sqlite3.OperationalError("database is locked"),
+                     "the bot could not read or write its database", "OperationalError",
+                     id="a database fault"),
+        pytest.param(RuntimeError("boom"), "the bot hit an internal fault", "RuntimeError",
+                     id="an unexpected fault"),
+    ],
+)
+async def test_a_stop_notice_names_its_fault_in_plain_words_never_the_exception(
+    env, error, words, kind,
+):
+    """A job faults, once on the database ("database is locked") and once on something nobody
+    foresaw ("boom"). The stop notice in the log channel names the kind of fault in plain words,
+    "failed (the bot could not read or write its database)" or "failed (the bot hit an internal
+    fault)", and carries neither the exception's type nor its message; so does the line of a
+    Retry that fails again."""
+    api = _api()
+
+    async def _boom(_ctx):
+        raise error
+
+    _queue(env, _type(steps=[api.Step("a", api.StepKind.ACT, _boom)]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job is not None
+    stop = STOPPED_AT.format(id=job["id"], job=WHAT, request=WHAT, asker=NAMED, fault=words)
+    [notice] = [m.content for m in env.bot.log_channel.posted if m.content.startswith(stop)]
+    assert kind not in notice and str(error) not in notice
+
+    await retry_job(env.bot)
+
+    retried = [m.content for m in env.bot.log_channel.posted
+               if m.content.startswith(f"❌ Retry of job #{job['id']} ")]
+    assert retried and f"failed ({words}). The queue stays stopped." in retried[-1]
+    assert kind not in retried[-1] and str(error) not in retried[-1]
+
+
 # ---------------------------------------------------------------------------
 # A failure's notice: what a job's failure leaves, on its stop notice (#439, slice 6)
 # ---------------------------------------------------------------------------
@@ -2705,17 +2780,19 @@ async def test_a_discard_hook_that_raises_is_logged_and_the_discard_goes_ahead_w
 @pytest.mark.parametrize(
     "notice, fault",
     [
-        pytest.param("the old one stands", "Forbidden; the old one stands", id="with a notice"),
-        pytest.param(None, "Forbidden", id="with none"),
+        pytest.param("the old one stands", "Discord refused or failed a request from the bot; the old one stands",
+                     id="with a notice"),
+        pytest.param(None, "Discord refused or failed a request from the bot", id="with none"),
     ],
 )
 async def test_a_failure_s_notice_is_carried_on_the_stop_notice_and_a_failed_retry_s_line(
     env, notice, fault,
 ):
     """A job Discord refuses (Forbidden) raises its failure with a notice saying what it leaves,
-    "the old one stands": the stop notice in the log channel reads "failed (Forbidden; the old one
-    stands)", and so does the line of a Retry that fails again. Raised with no notice, both read
-    "(Forbidden)", as before."""
+    "the old one stands": the stop notice in the log channel reads "failed (Discord refused or
+    failed a request from the bot; the old one stands)", and so does the line of a Retry that
+    fails again. Raised with no notice, both read "(Discord refused or failed a request from the
+    bot)", as before."""
     api = _api()
     refused = http_error(discord.Forbidden, status=403, text="Missing Access")
 
@@ -2764,3 +2841,71 @@ async def test_a_notice_after_a_reason_that_is_a_sentence_follows_it_as_a_senten
     posted = [m.content for m in env.bot.log_channel.posted]
     assert [m for m in posted if m.startswith(stop)], posted
     assert not [m for m in posted if "Retry.; " in m], posted
+
+
+# ---------------------------------------------------------------------------
+# What a failure leaves to be written, in the stop's own save (#439, slice 6b)
+# ---------------------------------------------------------------------------
+
+
+async def _step_marks(env) -> list[tuple[int, str | None]]:
+    """The tries and last failure each job of the queue carries."""
+    async with get_connection(env.db_path) as db:
+        cursor = await db.execute("SELECT tries, last_failure FROM queued_change_steps ORDER BY id")
+        return [(row["tries"], row["last_failure"]) for row in await cursor.fetchall()]
+
+
+async def test_a_failure_s_record_is_written_in_the_save_that_marks_the_job_failed(env):
+    """A job's step raises its failure carrying a record that writes a row. The queue stops at
+    the job: the row is saved with the failure mark, and a second failed try, which runs the
+    record again, leaves the one row (a record is safe to run twice) and marks the second try."""
+    api = _api()
+
+    async def _write(db):
+        await db.execute(
+            "INSERT INTO scratch (v) SELECT 'dropped' "
+            "WHERE NOT EXISTS (SELECT 1 FROM scratch WHERE v = 'dropped')"
+        )
+
+    async def _post(_ctx):
+        raise api.StepFailedOnDiscord("Discord refused", record=_write)
+
+    _queue(env, _type(steps=[api.Step("post", api.StepKind.ACT, _post)]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["name"] == "post"
+    assert await _scratch(env) == ["dropped"]
+    assert (await _step_marks(env))[0][0] == 1
+
+    await _try_at(env, 1)
+
+    assert await _scratch(env) == ["dropped"]
+    assert (await _step_marks(env))[0][0] == 2
+    assert await stopped_job(env.db_path) is not None
+
+
+async def test_a_failure_s_record_that_raises_leaves_neither_its_row_nor_the_failure_mark(env):
+    """As above, but the record writes its row and then raises. The save is rolled back: no row
+    is left, and the job carries no failure mark, so the failure is recorded when the job is
+    tried again. The worker's catch-all, which logs the fault, is the test runner's raise."""
+    api = _api()
+
+    async def _write(db):
+        await db.execute("INSERT INTO scratch (v) VALUES ('dropped')")
+        raise RuntimeError("the record could not be written")
+
+    async def _post(_ctx):
+        raise api.StepFailedOnDiscord("Discord refused", record=_write)
+
+    _queue(env, _type(steps=[api.Step("post", api.StepKind.ACT, _post)]))
+
+    await _ask(env)
+    with pytest.raises(RuntimeError, match="could not be written"):
+        await run_queue(env.bot)
+
+    assert await _scratch(env) == []
+    assert (await _step_marks(env))[0] == (0, None)
+    assert await stopped_job(env.db_path) is None

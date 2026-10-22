@@ -36,8 +36,10 @@ import pytest
 # The results pipeline's session types, not the weather module's — `penalty_service`
 # and `result_submission_service` both import this one, and these are the values
 # `session_results.session_type` actually holds.
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.penalty_service import StagedPenalty
+from tests.support.change_queue import in_a_job
 from leaguebot.results.services.penalty_wizard import (
     PenaltyReviewState,
     _refresh_appeals_prompt,
@@ -224,7 +226,8 @@ async def test_the_prompt_is_edited_when_the_staged_list_changes():
     from a message showing the old list."""
     state = _state(appeals=[_correction()])
 
-    await _refresh_appeals_prompt(state)
+    with in_a_job():
+        await _refresh_appeals_prompt(state)
 
     state._channel._message.edit.assert_awaited_once()
     assert f"<@{DRIVER_A}>" in state._channel._message.edit.await_args.kwargs["content"]
@@ -235,7 +238,8 @@ async def test_the_view_is_rebuilt_so_the_buttons_match_the_list():
     used to be second."""
     state = _state(appeals=[_correction()])
 
-    await _refresh_appeals_prompt(state)
+    with in_a_job():
+        await _refresh_appeals_prompt(state)
 
     assert state._channel._message.edit.await_args.kwargs["view"] is not None
 
@@ -245,7 +249,8 @@ async def test_the_rebuilt_view_is_registered_against_the_message():
     would stop responding after the next restart."""
     state = _state(appeals=[_correction()])
 
-    await _refresh_appeals_prompt(state)
+    with in_a_job():
+        await _refresh_appeals_prompt(state)
 
     state.bot.add_view.assert_called_once()
     assert state.bot.add_view.call_args.kwargs["message_id"] == PROMPT_ID
@@ -255,7 +260,8 @@ async def test_a_review_with_no_prompt_posted_is_not_refreshed():
     """Nothing to edit — the prompt has not gone out yet."""
     state = _state(prompt_id=None)
 
-    await _refresh_appeals_prompt(state)
+    with in_a_job():
+        await _refresh_appeals_prompt(state)
 
     state.bot.get_channel.assert_not_called()
 
@@ -263,18 +269,16 @@ async def test_a_review_with_no_prompt_posted_is_not_refreshed():
 async def test_a_channel_the_bot_cannot_see_is_survived():
     state = _state(channel=None)
 
-    await _refresh_appeals_prompt(state)  # must not raise
+    with in_a_job():
+        await _refresh_appeals_prompt(state)  # must not raise
 
     state.bot.add_view.assert_not_called()
 
 
 @pytest.mark.parametrize(
     "error",
-    [
-        discord.NotFound(MagicMock(), "gone"),
-        discord.HTTPException(MagicMock(), "boom"),
-    ],
-    ids=["not-found", "http-error"],
+    [discord.NotFound(MagicMock(), "gone")],
+    ids=["not-found"],
 )
 async def test_a_prompt_that_cannot_be_edited_does_not_stop_the_review(error, caplog):
     """The message can be deleted by hand mid-review. Failing here would take down the
@@ -283,6 +287,21 @@ async def test_a_prompt_that_cannot_be_edited_does_not_stop_the_review(error, ca
     state._channel.fetch_message = AsyncMock(side_effect=error)
 
     with caplog.at_level("WARNING"):
-        await _refresh_appeals_prompt(state)
+        with in_a_job():
+            await _refresh_appeals_prompt(state)
 
     assert "failed to edit appeals prompt" in caplog.text
+
+
+async def test_a_prompt_discord_refuses_to_edit_raises_for_the_queue():
+    """Round 3's appeals review in Division 1 has one correction staged, and Discord refuses the edit of
+    its prompt (an HTTP error, not "not found"). The redraw is a job of the staging's change, so
+    it raises the queue's Discord failure: the round's lane stops with Retry and Discard and the
+    redraw is tried again, rather than the refusal being logged and the prompt left stale."""
+    state = _state(appeals=[_correction()])
+    refusal = discord.HTTPException(MagicMock(status=403), "Missing Access")
+    state._channel.fetch_message = AsyncMock(side_effect=refusal)
+    state._channel._message.edit = AsyncMock(side_effect=refusal)
+
+    with in_a_job(), pytest.raises(StepFailedOnDiscord):
+        await _refresh_appeals_prompt(state)

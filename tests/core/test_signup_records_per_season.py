@@ -13,6 +13,15 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.signup.models.signup_module import SignupRecord
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 
+
+async def _save_record(svc, db_path, record):
+    """Save *record* in a save of the test's own, as the submission's record does; gives its id."""
+    async with get_connection(db_path) as db:
+        record_id = await svc.save_record_on(db, record)
+        await db.commit()
+    return record_id
+
+
 SERVER_ID = 22050
 USER = "4242"
 
@@ -73,10 +82,14 @@ async def _archive(db_path, season_id: int):
 async def test_a_new_signup_is_kept_under_the_active_season_and_its_window(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
-    await svc.set_window_open(111, ["3"])
+    # The window is opened in a save of the caller's, as the `/signup open` job's record does it
+    # (#439, slice 6b, C68).
+    async with get_connection(db_path) as db:
+        await svc.set_window_open_on(db, 111, ["3"])
+        await db.commit()
     window_id = (await svc.get_windows(1))[0]["id"]
 
-    await svc.save_record(_record())
+    await _save_record(svc, db_path, _record())
 
     stored = await svc.get_record(USER)
     assert stored.season_id == 1
@@ -86,8 +99,8 @@ async def test_a_new_signup_is_kept_under_the_active_season_and_its_window(db_pa
 async def test_signing_up_twice_in_a_season_keeps_both(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
-    await svc.save_record(_record("Steam"))
-    await svc.save_record(_record("PSN"))
+    await _save_record(svc, db_path, _record("Steam"))
+    await _save_record(svc, db_path, _record("PSN"))
 
     records = await svc.get_records(1)
 
@@ -98,11 +111,11 @@ async def test_signing_up_twice_in_a_season_keeps_both(db_path):
 async def test_a_new_season_does_not_overwrite_the_last(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
-    await svc.save_record(_record("Steam"))
+    await _save_record(svc, db_path, _record("Steam"))
     await _archive(db_path, 1)
     await _season(db_path, 2)
 
-    await svc.save_record(_record("Xbox"))
+    await _save_record(svc, db_path, _record("Xbox"))
 
     assert [r.platform for r in await svc.get_records(1)] == ["Steam"]
     assert [r.platform for r in await svc.get_records(2)] == ["Xbox"]
@@ -114,7 +127,7 @@ async def test_a_season_deleted_takes_its_signups_with_it(db_path):
     """What an aborted season asks for: it leaves nothing, its signups included."""
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
-    await svc.save_record(_record())
+    await _save_record(svc, db_path, _record())
 
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM seasons WHERE id = 1")
@@ -131,7 +144,7 @@ async def test_a_driver_leaving_keeps_their_signups_under_the_season(db_path):
 
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
-    await svc.save_record(_record())
+    await _save_record(svc, db_path, _record())
     drivers = DriverService(db_path)
     await drivers.transition(USER, DriverState.PENDING_SIGNUP_COMPLETION)
 

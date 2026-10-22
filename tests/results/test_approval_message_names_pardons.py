@@ -22,6 +22,7 @@ real currency check behind each button.
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -34,6 +35,13 @@ from leaguebot.results.services.penalty_wizard import (
     _ConfirmClearView,
     _show_approval_step,
 )
+from tests.support.change_queue import (
+    attach_queue,
+    in_a_job,
+    league_double,
+    member_interaction,
+    run_queue,
+)
 
 SERVER_ID = 14403
 SEASON_ID = 1
@@ -41,6 +49,7 @@ DIVISION_ID = 11
 ROUND_ID = 21
 CHANNEL_ID = 700
 PROMPT_ID = 880001
+PRESSED_AT = datetime(2026, 2, 1, 20, 0, tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +113,15 @@ def _penalty() -> StagedPenalty:
     )
 
 
+def _bot(db_path: str):
+    """The review's bot, carrying a real change queue on *db_path* and the league's log channel:
+    No Penalties / Confirm and the clear's confirmation ask the queue for the approval message
+    (#439, slice 6b, C55–C56), which the tests run."""
+    bot = league_double(db_path)
+    attach_queue(bot, db_path, now=PRESSED_AT)
+    return bot
+
+
 def _state(db_path: str, *, pardons: list[StagedPardon] | None = None) -> PenaltyReviewState:
     state = PenaltyReviewState(
         round_id=ROUND_ID,
@@ -111,7 +129,7 @@ def _state(db_path: str, *, pardons: list[StagedPardon] | None = None) -> Penalt
         submission_channel_id=CHANNEL_ID,
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
-        bot=MagicMock(),
+        bot=_bot(db_path),
         staged_pardons=pardons or [],
         round_number=3,
         division_name="Pro",
@@ -126,7 +144,7 @@ class _Channel:
     def __init__(self) -> None:
         self.sent: list[str] = []
 
-    async def send(self, content, view=None):
+    async def send(self, content=None, **_kwargs):
         self.sent.append(content)
         message = MagicMock()
         message.id = 990000 + len(self.sent)
@@ -140,16 +158,22 @@ class _Channel:
 
 def _in_channel(state: PenaltyReviewState) -> _Channel:
     channel = _Channel()
-    state.bot.get_channel = MagicMock(return_value=channel)
+    found = state.bot.get_channel.side_effect
+    state.bot.get_channel = MagicMock(
+        side_effect=lambda cid: channel if cid == CHANNEL_ID else found(cid)
+    )
     return channel
 
 
-def _interaction() -> MagicMock:
-    interaction = MagicMock()
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    interaction.client.output_router.post_log = AsyncMock()
+def _interaction(state: PenaltyReviewState) -> MagicMock:
+    """A press by the league manager Alex (77) in the submission channel, on the review's bot."""
+    user = MagicMock()
+    user.id = 77
+    user.display_name = "Alex"
+    user.mention = "<@77>"
+    user.bot = False
+    interaction = member_interaction(state.bot, user=user)
+    interaction.channel_id = CHANNEL_ID
     return interaction
 
 
@@ -177,7 +201,8 @@ async def test_the_approval_message_lists_the_staged_pardons(tmp_path):
     state = _state(await _make_db(tmp_path), pardons=_pardons())
     channel = _in_channel(state)
 
-    await _show_approval_step(MagicMock(), state)
+    with in_a_job():
+        await _show_approval_step(MagicMock(), state)
 
     (message,) = channel.sent
     assert "No penalties staged" in message
@@ -190,7 +215,8 @@ async def test_the_approval_message_withholds_a_pardons_justification(tmp_path):
     state = _state(await _make_db(tmp_path), pardons=_pardons())
     channel = _in_channel(state)
 
-    await _show_approval_step(MagicMock(), state)
+    with in_a_job():
+        await _show_approval_step(MagicMock(), state)
 
     (message,) = channel.sent
     assert "Hospital visit" not in message
@@ -204,7 +230,8 @@ async def test_the_approval_message_with_nothing_staged_names_no_pardon_and_does
     state = _state(await _make_db(tmp_path))
     channel = _in_channel(state)
 
-    await _show_approval_step(MagicMock(), state)
+    with in_a_job():
+        await _show_approval_step(MagicMock(), state)
 
     (message,) = channel.sent
     assert "No penalties staged" in message
@@ -227,7 +254,8 @@ async def test_no_penalties_confirm_with_only_pardons_staged_names_them(tmp_path
     assert next(c for c in view.children if c.custom_id == "pw_approve").disabled
 
     with _a_league_manager():
-        await type(view).no_penalties_btn(view, _interaction(), MagicMock())
+        await type(view).no_penalties_btn(view, _interaction(state), MagicMock())
+        await run_queue(state.bot)
 
     (message,) = channel.sent
     assert _names_both_pardons(message)
@@ -243,7 +271,8 @@ async def test_clearing_the_penalties_keeps_the_pardons_on_the_approval_message(
     with _a_league_manager(), patch(
         "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()
     ):
-        await type(view).confirm_btn(view, _interaction(), MagicMock())
+        await type(view).confirm_btn(view, _interaction(state), MagicMock())
+        await run_queue(state.bot)
 
     assert state.staged == []
     (message,) = channel.sent
@@ -261,7 +290,8 @@ async def test_an_amendments_approval_message_lists_the_pardons_it_reopened(tmp_
     view = PenaltyReviewView(state)
 
     with _a_league_manager():
-        await type(view).no_penalties_btn(view, _interaction(), MagicMock())
+        await type(view).no_penalties_btn(view, _interaction(state), MagicMock())
+        await run_queue(state.bot)
 
     (message,) = channel.sent
     assert _names_both_pardons(message)

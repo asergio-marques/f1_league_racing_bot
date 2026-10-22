@@ -42,6 +42,7 @@ from leaguebot.core.services.calendar_post_service import (
     post_division_calendar,
     replace_calendar_message,
 )
+from tests.support.change_queue import in_a_job
 
 SERVER_ID = 12708
 SEASON_ID = 1
@@ -166,14 +167,15 @@ async def _post(
     ), patch(
         "leaguebot.core.services.retry_service.enqueue", new=AsyncMock()
     ) as enqueue:
-        result = await post_division_calendar(
-            _bot(db_path),
-            guild,
-            division or _division(),
-            rounds if rounds is not None else [_round()],
-            {},
-            commanded=commanded,
-        )
+        with in_a_job():
+            result = await post_division_calendar(
+                _bot(db_path),
+                guild,
+                division or _division(),
+                rounds if rounds is not None else [_round()],
+                {},
+                commanded=commanded,
+            )
     return result, channel, discard, enqueue
 
 
@@ -396,7 +398,8 @@ async def test_the_attachment_is_released_before_the_caller_removes_the_file(tmp
     channel = _channel()
 
     with patch("leaguebot.image.services.image_render_service.discard_attachment") as discard:
-        await replace_calendar_message(channel, content=None, image_path=Path(png))
+        with in_a_job():
+            await replace_calendar_message(channel, content=None, image_path=Path(png))
 
     discard.assert_called_once()
 
@@ -410,6 +413,7 @@ async def test_the_attachment_is_released_even_when_the_post_fails(tmp_path):
 
     with patch("leaguebot.image.services.image_render_service.discard_attachment") as discard:
         with pytest.raises(RuntimeError):
-            await replace_calendar_message(channel, content=None, image_path=Path(png))
+            with in_a_job():
+                await replace_calendar_message(channel, content=None, image_path=Path(png))
 
     discard.assert_called_once()

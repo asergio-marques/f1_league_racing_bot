@@ -23,6 +23,8 @@ async def store_review_prompt(
     posted_at: str = "2026-09-07T12:00:00+00:00",
     review: str = "/season placements-review",
     report_message_ids: Iterable[int] = (),
+    evidence: object = None,
+    verb: str | None = None,
 ) -> None:
     """Insert one standing prompt through *db*, an open connection; the caller commits."""
     cursor = await db.execute("PRAGMA table_info(season_review_prompts)")
@@ -40,6 +42,10 @@ async def store_review_prompt(
         values["review"] = review
     if "report_message_ids" in columns:
         values["report_message_ids"] = json.dumps(list(report_message_ids))
+    if "evidence" in columns and evidence is not None:
+        values["evidence"] = json.dumps(evidence)
+    if "verb" in columns and verb is not None:
+        values["verb"] = verb
     names = ", ".join(values)
     marks = ", ".join("?" for _ in values)
     await db.execute(

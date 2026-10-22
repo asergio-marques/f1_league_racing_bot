@@ -266,15 +266,18 @@ async def _make_db(
     return db_path
 
 
-def _posting_type(*, later_rounds: bool = False, notice: bool = False) -> Any:
-    """A change whose one opening job plans the round's republication through the module."""
+def _posting_type(
+    *, later_rounds: bool = False, notice: bool = False, label: str = LABEL
+) -> Any:
+    """A change whose one opening job plans the round's republication through the module, under
+    *label*."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.change_queue import ChangeType, Step
     from leaguebot.results.services import review_posting
 
     async def plan(db: Any, ctx: Any) -> Any:
         planned = await review_posting.plan_posts(
-            db, ctx.payload["round_id"], label=LABEL, later_rounds=later_rounds, notice=notice,
+            db, ctx.payload["round_id"], label=label, later_rounds=later_rounds, notice=notice,
         )
         return StepResult(then=tuple(planned))
 
@@ -617,13 +620,16 @@ async def _standings_as_two_tables(league: _League) -> None:
 def _each_championship_as_text() -> Any:
     """The picture applies to the standings and draws neither championship, so each is posted
     as a text table of its own."""
-    from leaguebot.results.services.results_post_service import (
-        STANDINGS_CONSTRUCTORS,
-        STANDINGS_DRIVERS,
+    from leaguebot.image.services.image_standings_post import (
+        FELL_BACK,
+        ChampionshipOutcome,
+        StandingsPostOutcome,
     )
 
-    outcome = MagicMock(rejects=False, applicable=True,
-                        fallback_championships=[STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS])
+    outcome = StandingsPostOutcome(
+        drivers=ChampionshipOutcome(action=FELL_BACK),
+        constructors=ChampionshipOutcome(action=FELL_BACK),
+    )
     return patch("leaguebot.image.services.image_standings_post.try_post",
                  new=AsyncMock(return_value=outcome))
 
@@ -635,12 +641,7 @@ async def test_a_standings_post_that_fails_on_its_second_table_removes_the_first
     drivers' table and refuses the constructors', once: the queue stops, and the drivers' table
     the failed try sent, recorded nowhere, is deleted before the retry posts. The retry goes out
     as text, one table carrying both championships, so the channel is left with that table alone,
-    its id recorded, and no drivers' table besides it.
-
-    The legacy `post_standings`, which the sync commands call, fails the same way and takes the
-    stray table down with the failure, leaving the tables already recorded as they stood."""
-    from leaguebot.results.services.results_post_service import post_standings
-
+    its id recorded, and no drivers' table besides it."""
     league = await _league(tmp_path)
     await _standings_as_two_tables(league)
     standings = league.channel(STANDINGS_CHANNEL)
@@ -671,22 +672,6 @@ async def test_a_standings_post_that_fails_on_its_second_table_removes_the_first
         )).fetchone()
     assert json.loads(row["standings_message_ids"]) == posted
     assert row["constructor_standings_message_id"] is None
-
-    legacy_path = tmp_path / "legacy"
-    legacy_path.mkdir()
-    legacy = await _league(legacy_path)
-    await _standings_as_two_tables(legacy)
-    legacy_standings = legacy.channel(STANDINGS_CHANNEL)
-    legacy_standings.fail_send_at = 2
-    with _each_championship_as_text(), pytest.raises(discord.HTTPException):
-        await post_standings(
-            legacy.db_path, DIVISION_ID, ROUND_ID, 3, "Silverstone", legacy_standings, [], [],
-            legacy.guild, True, LABEL, bot=legacy.bot,
-        )
-
-    [legacy_stray] = legacy.sent_to(STANDINGS_CHANNEL)
-    assert legacy_stray not in legacy_standings.messages
-    assert {OLD_STANDINGS, OLD_CONSTRUCTORS_TABLE} <= set(legacy_standings.messages)
 
 
 async def test_a_channel_the_division_was_never_given_plans_no_post(tmp_path):
@@ -722,6 +707,110 @@ async def test_only_the_round_s_active_sessions_are_posted(tmp_path):
     assert len(league.sent_to(RESULTS_CHANNEL)) == 1
     assert league.deleted_in(RESULTS_CHANNEL) == [OLD_RESULTS]
     assert 8803 in league.channel(RESULTS_CHANNEL).messages
+
+
+OLD_CANCELLED_LINE = 8810
+
+
+async def _cancel_round_3_s_qualifying(league: _League, *, posted_as: int | None = None) -> str:
+    """Round 3's Feature Qualifying was submitted as CANCELLED; where *posted_as* is given its
+    line already stands in the results channel as that message, recorded as the session's. Gives
+    the session's label as a league reads it."""
+    from leaguebot.core.models.round import RoundFormat
+    from leaguebot.results.services.result_submission_service import get_sessions_for_format
+    from leaguebot.results.utils import results_formatter
+
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status, "
+            "results_message_id, results_message_ids) "
+            "VALUES (?, ?, 'FEATURE_QUALIFYING', 'CANCELLED', ?, ?)",
+            (ROUND_ID, DIVISION_ID, posted_as,
+             json.dumps([posted_as]) if posted_as else None),
+        )
+        await db.commit()
+    if posted_as is not None:
+        league.channel(RESULTS_CHANNEL).seed(
+            posted_as, "🚫 Round 3 — Qualifying (Pro): This session was cancelled.")
+    qualifying = get_sessions_for_format(RoundFormat.NORMAL)[0]
+    return results_formatter.format_session_label(qualifying, is_sprint=False)
+
+
+async def _qualifying_ids(db_path: str) -> tuple[int | None, list[int] | None]:
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT results_message_id, results_message_ids FROM session_results "
+            "WHERE round_id = ? AND session_type = 'FEATURE_QUALIFYING'", (ROUND_ID,),
+        )).fetchone()
+    ids = json.loads(row["results_message_ids"]) if row["results_message_ids"] else None
+    return row["results_message_id"], ids
+
+
+async def test_a_cancelled_session_s_line_is_posted_in_its_place_among_the_provisional_results_and_recorded(
+    tmp_path,
+):
+    """Round 3's Feature Qualifying was cancelled and its Feature Race submitted. When the
+    round's tables are posted, the results channel gets the qualifying's line, "Round 3 —
+    Qualifying: This session was cancelled.", in the qualifying's place, before the race's table;
+    the line's message is recorded as the qualifying's results message, so a later posting
+    replaces it."""
+    league = await _league(tmp_path)
+    label = await _cancel_round_3_s_qualifying(league)
+
+    await _ask(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    line, table = league.sent_to(RESULTS_CHANNEL)
+    content = league.channel(RESULTS_CHANNEL).messages[line].content
+    assert "This session was cancelled" in content
+    assert "Round 3" in content and label in content
+    assert "This session was cancelled" not in league.channel(RESULTS_CHANNEL).messages[table].content
+    assert await _qualifying_ids(league.db_path) == (line, [line])
+
+
+async def test_a_cancelled_session_s_line_stands_in_its_place_when_the_tables_are_posted_at_the_appeals_stage(
+    tmp_path,
+):
+    """Round 3's cancelled qualifying line already stands (message 8810, recorded as the
+    qualifying's) when the round's tables are posted again, as the appeals approval and a points
+    amendment post them. A new line is posted in the qualifying's place, before the race's table,
+    and recorded; the old line is deleted after it."""
+    league = await _league(tmp_path)
+    await _cancel_round_3_s_qualifying(league, posted_as=OLD_CANCELLED_LINE)
+
+    await _ask(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    line, _table = league.sent_to(RESULTS_CHANNEL)
+    assert "This session was cancelled" in league.channel(RESULTS_CHANNEL).messages[line].content
+    assert await _qualifying_ids(league.db_path) == (line, [line])
+    assert OLD_CANCELLED_LINE in league.deleted_in(RESULTS_CHANNEL)
+    assert league.events.index(("send", RESULTS_CHANNEL, line)) < league.events.index(
+        ("delete", RESULTS_CHANNEL, OLD_CANCELLED_LINE))
+
+
+async def test_a_resubmission_s_cancelled_session_is_posted_with_the_amended_provisional_results(
+    tmp_path,
+):
+    """A resubmission of round 3 entered its Feature Qualifying as cancelled and its Feature Race
+    again, so the qualifying's row is cancelled with no message recorded. When the round's tables
+    are posted as "Provisional Results (amended)", the results channel gets the qualifying's line,
+    "This session was cancelled.", in the qualifying's place, before the race's table, and the
+    line is recorded as the qualifying's results message."""
+    league = await _league(tmp_path)
+    label = await _cancel_round_3_s_qualifying(league)
+
+    await _ask(league, label="Provisional Results (amended)")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    line, table = league.sent_to(RESULTS_CHANNEL)
+    content = league.channel(RESULTS_CHANNEL).messages[line].content
+    assert "This session was cancelled" in content and label in content
+    assert "This session was cancelled" not in league.channel(RESULTS_CHANNEL).messages[table].content
+    assert await _qualifying_ids(league.db_path) == (line, [line])
 
 
 async def test_an_old_message_already_gone_completes_its_delete(tmp_path):
@@ -1357,3 +1446,182 @@ async def test_a_drawn_table_whose_old_message_will_not_delete_stops_the_queue(t
     [new] = league.sent_to(RESULTS_CHANNEL)
     assert set(results.messages) == {OLD_RESULTS, new}
     assert await _session_ids(league.db_path) == (new, [new])
+
+
+# ---------------------------------------------------------------------------
+# A standings picture is saved and replaced by the jobs, as a text table is (#439 6b, fault 1)
+# ---------------------------------------------------------------------------
+
+
+def _standings_drawn(league: _League, tmp_path: Any, *, championships: tuple[str, ...] = (
+    "drivers", "constructors",
+)) -> Any:
+    """Image generation on for the standings, each of *championships* drawing as a picture and
+    any other falling back to text: the real standings picture poster runs, its drawings and
+    renders stubbed. Gives the patches, to enter."""
+    from contextlib import ExitStack
+
+    from leaguebot.image.services import image_standings_post
+
+    wanted = {image_standings_post.TEMPLATE_KEYS[name] for name in championships}
+    renders = itertools.count(1)
+
+    async def _enabled(_bot: Any, key: str) -> bool:
+        return key in wanted
+
+    async def _render(_bot: Any, drawing: Any, _origin: Any) -> Any:
+        png = tmp_path / f"standings_{drawing.template_key}_{next(renders)}.png"
+        png.write_bytes(b"\x89PNG")
+        return MagicMock(posts_image=True, rejects=False, png_paths=[png], notices=[],
+                         problem=None)
+
+    drawings = tuple(
+        MagicMock(template_key=image_standings_post.TEMPLATE_KEYS[name])
+        for name in ("drivers", "constructors")
+    )
+    stack = ExitStack()
+    stack.enter_context(patch.object(image_standings_post, "standings_enabled",
+                                     new=AsyncMock(side_effect=_enabled)))
+    stack.enter_context(patch.object(image_standings_post, "build_drawings",
+                                     new=AsyncMock(return_value=drawings)))
+    stack.enter_context(patch.object(image_standings_post, "render_png",
+                                     new=AsyncMock(side_effect=_render)))
+    return stack
+
+
+async def _standings_ids(db_path: str) -> tuple[int | None, int | None]:
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT standings_message_id, constructor_standings_message_id "
+            "FROM driver_standings_snapshots WHERE round_id = ?", (ROUND_ID,),
+        )).fetchone()
+    return row["standings_message_id"], row["constructor_standings_message_id"]
+
+
+async def test_a_standings_picture_s_old_message_is_deleted_by_a_job_of_its_own(tmp_path):
+    """Round 3's standings stand as text, message 8801; they are posted again, both
+    championships drawn as pictures. Once `post_standings` is done the two pictures stand and
+    8801 still stands beside them; then a `delete_message` job deletes 8801, after the
+    pictures were sent."""
+    league = await _league(tmp_path)
+    standings = league.channel(STANDINGS_CHANNEL)
+    with _standings_drawn(league, tmp_path):
+        await _ask(league)
+        await _run_until_done(league, "post_standings")
+
+        pictures = league.sent_to(STANDINGS_CHANNEL)
+        assert len(pictures) == 2
+        assert OLD_STANDINGS in standings.messages, (
+            "the picture deleted the message it replaces itself"
+        )
+
+        await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert set(standings.messages) == {*pictures, OLD_LATER_STANDINGS}
+    deletes = [row for row in await step_rows(league.db_path) if row["name"] == "delete_message"
+               and json.loads(row["payload"])["message_id"] == OLD_STANDINGS]
+    assert len(deletes) == 1 and deletes[0]["done_at"] is not None
+    assert league.events.index(("send", STANDINGS_CHANNEL, pictures[0])) < league.events.index(
+        ("delete", STANDINGS_CHANNEL, OLD_STANDINGS)
+    )
+
+
+async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keeping_both(
+    tmp_path,
+):
+    """Round 3's standings stand as two pictures, 8807 (drivers) and 8808 (constructors), each
+    recorded. They are drawn again, and Discord refuses to delete the old ones: the queue stops
+    at the first `delete_message` job, the drivers' 8807, the old pictures and the new standing
+    together, and the new pictures' ids saved with their post. A league admin discards it, the
+    queue stops again at the constructors' 8808, and the admin discards that too: the outcome
+    links the old picture left standing."""
+    league = await _league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE driver_standings_snapshots SET standings_message_id = ?, "
+            "standings_message_ids = ?, constructor_standings_message_id = ?, "
+            "constructor_standings_message_ids = ? WHERE round_id = ?",
+            (DRIVERS_GRAPHIC, json.dumps([DRIVERS_GRAPHIC]), CONSTRUCTORS_GRAPHIC,
+             json.dumps([CONSTRUCTORS_GRAPHIC]), ROUND_ID),
+        )
+        await db.commit()
+    standings = league.channel(STANDINGS_CHANNEL)
+    standings.seed(DRIVERS_GRAPHIC, "drivers' standings graphic")
+    standings.seed(CONSTRUCTORS_GRAPHIC, "constructors' standings graphic")
+    old_link = standings.messages[DRIVERS_GRAPHIC].jump_url
+    standings.delete_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    with _standings_drawn(league, tmp_path):
+        interaction = await _ask(league)
+        await run_queue(league.bot)
+
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "delete_message"
+    assert json.loads(job["payload"])["message_id"] == DRIVERS_GRAPHIC
+    drivers, constructors = league.sent_to(STANDINGS_CHANNEL)
+    assert {DRIVERS_GRAPHIC, CONSTRUCTORS_GRAPHIC, drivers, constructors} <= set(
+        standings.messages
+    )
+    assert await _standings_ids(league.db_path) == (drivers, constructors)
+
+    await discard_job(league.bot)
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "delete_message"
+    assert json.loads(job["payload"])["message_id"] == CONSTRUCTORS_GRAPHIC
+
+    await discard_job(league.bot)
+    assert await stopped_job(league.db_path) is None
+    assert old_link in updated_reply(interaction)
+    assert DRIVERS_GRAPHIC in standings.messages
+
+
+async def test_a_standings_picture_s_id_is_saved_with_its_mark(tmp_path):
+    """Round 3's standings are drawn as two pictures. Their ids are saved by `post_standings`'
+    own record, with its done mark: the job's result names both pictures, and the standings'
+    own committing save is never called while the pictures post."""
+    from leaguebot.results.services import results_post_service
+
+    league = await _league(tmp_path)
+    own_save = AsyncMock()
+    with _standings_drawn(league, tmp_path), patch.object(
+        results_post_service, "_set_standings_message_id", new=own_save, create=True,
+    ):
+        await _ask(league)
+        await _run_until_done(league, "post_standings")
+
+    drivers, constructors = league.sent_to(STANDINGS_CHANNEL)
+    assert own_save.await_count == 0, "the picture saved its own id outside the job's record"
+    assert await _standings_ids(league.db_path) == (drivers, constructors)
+    [post] = [row for row in await step_rows(league.db_path) if row["name"] == "post_standings"]
+    assert {drivers, constructors} <= set(post["result"]["new"])
+
+
+async def test_a_picture_sent_before_a_later_failure_is_removed_before_the_next_try(tmp_path):
+    """Round 3's standings are posted again: the drivers' championship draws as a picture and
+    the constructors' falls back to a text table, which Discord refuses. The queue stops at
+    `post_standings` with the drivers' picture standing, recorded nowhere, and 8801 still
+    standing. On Retry the picture is deleted before the retry's text is sent, so the channel
+    is left with the retry's table alone beside round 4's, and 8801 comes down by its job."""
+    league = await _league(tmp_path)
+    standings = league.channel(STANDINGS_CHANNEL)
+    standings.fail_send_at = 2
+    with _standings_drawn(league, tmp_path, championships=("drivers",)):
+        await _ask(league)
+        await run_queue(league.bot)
+        assert (await stopped_job(league.db_path))["name"] == "post_standings"
+        [picture] = league.sent_to(STANDINGS_CHANNEL)
+        assert picture in standings.messages
+        assert OLD_STANDINGS in standings.messages
+        assert await _standings_ids(league.db_path) == (OLD_STANDINGS, None)
+
+        standings.fail_send_at = None
+        await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    retried = [mid for mid in league.sent_to(STANDINGS_CHANNEL) if mid != picture]
+    assert retried
+    assert picture not in standings.messages
+    assert league.events.index(("delete", STANDINGS_CHANNEL, picture)) < league.events.index(
+        ("send", STANDINGS_CHANNEL, retried[0])
+    )
+    assert set(standings.messages) == {*retried, OLD_LATER_STANDINGS}

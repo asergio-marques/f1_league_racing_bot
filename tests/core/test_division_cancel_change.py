@@ -628,7 +628,7 @@ async def test_a_round_with_a_submission_open_is_cancelled_with_its_division_and
     assert await _division(league) == "CANCELLED"
     assert _refusal_lines(league) == []
     assert CANCELLED in reply(interaction)
-    assert (await _closed(league))[R3] == 1
+    assert (await _closed(league)).get(R3) is None
     assert [cid for kind, cid, _ in league.events if kind == "delete_channel"] == [
         SUBMISSION_CHANNEL
     ]
@@ -923,7 +923,7 @@ async def test_each_closed_submission_s_channel_is_deleted_in_round_order_first_
 
     await _done(league)
 
-    assert await _closed(league) == {R3: 1, R4: 1}
+    assert await _closed(league) == {}
     jobs = await _jobs(league)
     names = [job["name"] for job in jobs]
     after_save = names.index("apply") + 1

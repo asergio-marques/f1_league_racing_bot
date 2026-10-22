@@ -59,6 +59,7 @@ from tests.support.change_queue import (
     discard_job,
     http_error,
     member_interaction,
+    retry_job,
     run_queue,
     tier_member,
     updated_reply,
@@ -351,6 +352,9 @@ async def test_approving_the_reports_takes_the_prompt_and_the_approval_down(tmp_
     """**They stayed up through the appeals stage**, where every button on them still worked. They
     refuse now whether or not they come down; down, they are not there to be pressed."""
     league = await review_league(tmp_path)
+    await _set(
+        league.db_path, "UPDATE round_submission_channels SET approval_message_id = ?", APPROVAL
+    )
 
     await _approve_reports(league, approval=APPROVAL)
 
@@ -465,9 +469,11 @@ async def test_without_a_guild_the_round_still_moves_on(tmp_path):
 
 
 async def test_an_appeals_review_that_cannot_be_posted_is_reported(tmp_path):
-    """The reports are approved, but Discord refuses the appeals prompt: it stops the queue like
-    any job. Once a league admin discards it, Alex's reply says the reports are approved and the
-    appeals review is being posted again, and the approval's line says it is incomplete."""
+    """The reports are approved, but Discord refuses the appeals prompt: it stops the round's lane
+    like any job. Once a league admin discards it, Alex's reply, still open to update, says the
+    reports are approved and the appeals review is being posted again, and the log carries the
+    approval's line as incomplete, naming round 3 and the prompt as not posted and being posted
+    again. Once Discord takes it, the round's appeals prompt is posted again."""
     league = await review_league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).fail_when = is_appeals_prompt
 
@@ -480,8 +486,16 @@ async def test_an_appeals_review_that_cannot_be_posted_is_reported(tmp_path):
     assert "approved" in said
     assert "appeals review" in said
     assert "posted again" in said
-    assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
-    assert "PENALTY_REVIEW_APPROVED | Success" not in league.log()
+    incomplete = _after(league.log(), "PENALTY_REVIEW_APPROVED | Incomplete")
+    assert incomplete.startswith("\n  round: 3 (Pro)\n")
+    assert "The appeals review prompt was not posted. It is being posted again." in incomplete
+
+    # It is asked again at once, and Discord, still refusing, stops it again until it takes it.
+    assert await stopped_at(league) == "post_appeals_prompt"
+    league.channel(SUBMISSION_CHANNEL).fail_when = None
+    await retry_job(league.bot)
+    assert await stopped_at(league) is None
+    assert len(appeals_prompts(league)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1778,13 +1792,13 @@ async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
 # ---------------------------------------------------------------------------
 #
 # Nothing is undone because a stage's job failed ("Retry like any job"): it stops the queue, and the
-# stop notice names the kind of fault and never its message.
+# stop notice names the kind of fault in plain words, never the exception's type or message.
 
 
 async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path):
     """The report stage's save meets a database fault: the queue stops at it, the notice naming
-    the fault's type and not its message; discarded, the reply leads Alex back to Approve and
-    names no message either."""
+    the kind of fault in plain words, neither the exception's type nor its message; discarded,
+    the reply leads Alex back to Approve and names no message either."""
     import sqlite3
 
     league = await amend_league(tmp_path)
@@ -1795,7 +1809,8 @@ async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path)
         interaction = await _amend_reports(league)
     assert await stopped_at(league) == "apply"
     notice = league.log()
-    assert "OperationalError" in notice
+    assert "the bot could not read or write its database" in notice
+    assert "OperationalError" not in notice
     assert "database is locked" not in notice
 
     await discard_job(league.bot)
@@ -1808,15 +1823,16 @@ async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path)
 
 async def test_a_failed_amendment_appeals_stage_names_the_kind_of_fault(tmp_path):
     """The appeals stage's points cannot be recalculated: the queue stops at its save, the notice
-    naming the fault's type and not its message, and the amendment is neither undone nor
-    committed."""
+    naming the kind of fault in plain words, neither the exception's type nor its message, and
+    the amendment is neither undone nor committed."""
     league = await amend_league(tmp_path, reports_approved=True)
     with points_fail():
         await _amend_appeals(league, staged=[_correction()])
 
     assert await stopped_at(league) == "apply"
     notice = league.log()
-    assert "RuntimeError" in notice
+    assert "the bot hit an internal fault" in notice
+    assert "RuntimeError" not in notice
     assert "the points could not be calculated" not in notice
     row = await amend_row(league)
     assert row is not None and row["pre_amendment_state"] is not None

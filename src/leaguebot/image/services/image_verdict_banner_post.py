@@ -52,6 +52,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.image.models.image_module import PostingOrigin
 from leaguebot.image.services.image_verdict_banner_service import VerdictBannerDrawing
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -226,6 +227,7 @@ async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     await _report_notices(bot, what, notices)
 
 
+@posts_in_a_job
 async def try_post(
     bot: LeagueBot, channel, drawing: VerdictBannerDrawing, *, as_text: bool = False
 ):

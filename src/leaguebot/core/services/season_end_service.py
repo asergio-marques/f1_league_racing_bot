@@ -18,6 +18,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from leaguebot.core.models.change import StepKind, StepResult
+from leaguebot.core.services import standing_posts
 from leaguebot.core.services.change_queue import Step, StepContext
 from leaguebot.core.services.season_lifecycle_service import (
     SeasonEndHooks,
@@ -262,7 +263,8 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
     - `revoke_roles`: one driver's division, team and driver roles taken back, from the targets
       the save read (`season_role_targets_on`). A member who left or a role gone is passed over.
     - `close_window`: the signup close timer cancelled and the window closed, where it stands open;
-      it plans a `signup_notice` and a `close_signup` for each driver the close returned.
+      it plans the window's own jobs (`delete_button`, `post_closed`, which closes the window) and a
+      `signup_notice` and a `close_signup` for each driver the close returned.
     - `flush_forecasts`: plans weather's `delete_forecast` for each forecast posted under test
       mode, so that each deletion is a job of its own and a refusal stops the queue there.
     - `discard_portraits`: the portraits of the drivers the driver pass deleted removed.
@@ -296,10 +298,12 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
         )
 
     async def close_window(ctx: StepContext) -> StepResult:
-        returned = await close_signup_window(
+        returned, window = await close_signup_window(
             ctx.bot, hooks, str(ctx.step_payload.get("cause", SEASON_END_CAUSE)), kept=ctx.kept
         )
-        return StepResult(result={"returned": list(returned)}, then=window_closed_jobs(returned))
+        return StepResult(
+            result={"returned": list(returned)}, then=(*window, *window_closed_jobs(returned))
+        )
 
     async def describe_window(ctx: StepContext) -> str:
         number = ctx.payload.get("season_number")
@@ -355,5 +359,7 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
         ),
         FORGET_SETUP: Step(FORGET_SETUP, StepKind.ACT, forget_setup, describe=describe_setup),
         DELETE_FORECAST: hooks.forecast_steps[DELETE_FORECAST],
+        # A forecast posted in parts has `delete_forecast` plan a delete for each earlier part.
+        standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
         **close_signup_steps(placement, hooks),
     }

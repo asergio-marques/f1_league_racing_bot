@@ -14,7 +14,8 @@ and 3 nothing. The change's jobs are:
   plans the deletion of the forecast it supersedes (phase 2 supersedes 1, 3 supersedes 2). A
   forecast Discord refuses, or whose forecast channel is unset, stops the queue (XIV.8).
 - `delete_forecast`: the deletion of one recorded forecast, whose record carries the forgetting
-  of the row; a refusal stops the queue and keeps the row.
+  of the row; a refusal stops the queue and keeps the row. It deletes the part the row names, and
+  plans a shared `delete_replaced` job for each earlier part of a forecast posted in more than one.
 - `plan_forecast_deletes`: finds the forecasts a clean-up (whichever of a round's Phase 1 to 3
   forecasts still stands, a day after it) or a flush (every forecast, when test mode is switched off) deletes, and plans a
   `delete_forecast` for each, so that each deletion is a job of its own.
@@ -137,6 +138,17 @@ def _not_due(
     return None
 
 
+def _forecast_mentions(phase: int, role_id: int | None) -> discord.AllowedMentions:
+    """Who a forecast's post may notify: its division's role alone, whether it is posted as text
+    or as a picture and whether it is a first try or a retry, and nobody for the mystery notice
+    (phase 0) or a division with no role set. No member and not everyone, ever."""
+    if phase == 0 or not role_id:
+        return discord.AllowedMentions.none()
+    return discord.AllowedMentions(
+        everyone=False, users=False, roles=[discord.Object(id=int(role_id))]
+    )
+
+
 def _drawers() -> dict[int, Callable[..., Any]]:
     """Each phase's draw, resolved through its module as it is called."""
     return {
@@ -239,7 +251,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             attachment = await image_weather_post.attach_forecast(
                 ctx.bot, round_id, 1 if phase == 0 else phase
             )
-        message = await forecast_cleanup_service.post_phase_message(
+        parts = await forecast_cleanup_service.post_phase_message(
             ctx.bot,
             division_id=row["division_id"],
             channel_id=int(row["forecast_channel_id"]),
@@ -247,9 +259,11 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             text=text,
             attachment=attachment,
             attachment_text="" if phase == 0 else f"<@&{mention}>",
+            mentions=_forecast_mentions(phase, mention),
         )
         result = {
-            "new": message.id, "channel_id": int(row["forecast_channel_id"]), "phase": phase,
+            "new": [each.id for each in parts], "channel_id": int(row["forecast_channel_id"]),
+            "phase": phase,
             "old": earlier, "division_id": row["division_id"],
         }
         then: tuple[PlannedStep, ...] = ()
@@ -261,9 +275,11 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         return StepResult(result=result, then=then)
 
     async def record_post(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        parts = [int(each) for each in result.result["new"]]
         await forecast_cleanup_service.store_forecast_message_on(
             db, int(_value(ctx, "round_id")), int(result.result["division_id"]),
-            int(result.result["phase"]), int(result.result["new"]), now=now(),
+            int(result.result["phase"]), parts[-1], now=now(),
+            channel_id=int(result.result["channel_id"]), message_ids=parts,
         )
 
     async def describe_post(ctx: StepContext) -> str:
@@ -287,7 +303,9 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
                 row = await _round_row(db, round_id)
                 division_id = None if row is None else row["division_id"]
             cursor = await db.execute(
-                "SELECT fm.message_id, d.forecast_channel_id FROM forecast_messages fm "
+                "SELECT fm.message_id, fm.message_ids, d.name AS division_name, "
+                "COALESCE(fm.channel_id, d.forecast_channel_id) "
+                "AS forecast_channel_id FROM forecast_messages fm "
                 "JOIN divisions d ON d.id = fm.division_id "
                 "WHERE fm.round_id = ? AND fm.division_id = ? AND fm.phase_number = ?",
                 (round_id, division_id, phase),
@@ -299,10 +317,15 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         message_id = int(found["message_id"])
         if channel_id is None:
             return StepResult(result={"none": True, "message_id": message_id})
+        # A forecast posted in parts comes down whole: this job deletes the part the row names (the
+        # last), and plans a `delete_replaced` job for each part before it, so that a refusal of
+        # one part stops the queue naming that part and a Discard names it for deletion by hand.
+        # A part already gone counts as deleted.
+        parts = json.loads(found["message_ids"]) if found["message_ids"] else [message_id]
         try:
             await forecast_cleanup_service._discord_delete(ctx.bot, int(channel_id), message_id)
         except discord.NotFound:
-            raise
+            pass
         except discord.HTTPException as exc:
             from leaguebot.core.utils.league_server import league_guild
 
@@ -317,8 +340,19 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
                 f" could not be deleted",
                 result=kept,
             ) from exc
-        return StepResult(result={"phase": phase, "message_id": message_id,
-                                  "channel_id": int(channel_id)})
+        then = tuple(
+            step
+            for part in parts
+            if int(part) != message_id
+            for step in standing_posts.replaced(
+                int(channel_id), int(part), None, what=f"Phase {phase} forecast",
+                division_name=found["division_name"],
+            )
+        )
+        return StepResult(
+            result={"phase": phase, "message_id": message_id, "channel_id": int(channel_id)},
+            then=then,
+        )
 
     async def record_delete(
         db: aiosqlite.Connection, ctx: StepContext, result: StepResult
@@ -342,9 +376,16 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         phase = int(_value(ctx, "phase"))
         async with get_connection(ctx.db_path) as db:
             row = await _round_row(db, int(_value(ctx, "round_id")))
-        where = "the forecast channel" if row is None or not row["forecast_channel_id"] else (
-            f"<#{row['forecast_channel_id']}>"
-        )
+            recorded = None
+            if _value(ctx, "message_id") is not None:
+                cursor = await db.execute(
+                    "SELECT channel_id FROM forecast_messages WHERE message_id = ?",
+                    (int(_value(ctx, "message_id")),),
+                )
+                found = await cursor.fetchone()
+                recorded = None if found is None else found["channel_id"]
+        channel = recorded or (None if row is None else row["forecast_channel_id"])
+        where = "the forecast channel" if not channel else f"<#{channel}>"
         number = _value(ctx, "round_number", None) or (None if row is None
                                                        else row["round_number"])
         later = " a day after it" if _value(ctx, "clean_up", False) else ""
@@ -370,6 +411,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             DELETE_FORECAST, StepKind.DELETE, delete, describe=describe_delete,
             record=record_delete,
         ),
+        standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
         PLAN_FORECAST_DELETES: Step(
             PLAN_FORECAST_DELETES, StepKind.ACT, plan_deletes, describe=describe_plan,
         ),
@@ -654,4 +696,10 @@ def forecast_failure(view: StepView) -> tuple[str, str] | None:
             where = f"message {message} in <#{result.get('channel_id')}>"
         return ("forecast channel", f"the Phase {phase} forecast could not be deleted, and a "
                 f"league admin discarded it; delete it by hand ({where})")
+    if view.name == standing_posts.DELETE_REPLACED and "forecast" in str(
+        view.payload.get("what", "")
+    ):
+        link = (view.result or {}).get("link") or f"in <#{view.payload['channel_id']}>"
+        return ("forecast channel", f"a part of the {view.payload['what']} could not be "
+                f"deleted, and a league admin discarded it; delete it by hand ({link})")
     return None

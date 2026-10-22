@@ -1,132 +1,198 @@
 """A check-in call that does not post must be visible to the league's staff (FR-062).
 
-The hazard this closes predates the image module. ``run_rsvp_notice`` returns on a failed
-``channel.send`` **before** ``bulk_insert_attendance_rows``, so the round holds no attendance
+The hazard this closes predates the image module. A call that fails to post opens no attendance
 rows; the penalty pass iterates those rows and finds none; and the attendance sheet then draws
-every cell of that round empty — which means **zero points**. A round nobody was asked to check
-in for is recorded as flawless attendance for everyone, and nothing anywhere says otherwise.
+every cell of that round empty — which means **zero points**. A round nobody was asked to check in
+for is recorded as flawless attendance for everyone, and nothing anywhere says otherwise.
 
-Reported to the log channel, it becomes a thing staff can act on.
+The call is now a job of a change on the queue (#439, slice 6b): a call that does not post stops
+the queue, and the stop notice in the log channel is what staff act on, saying what is left for the
+round; Retry posts it, and a Discard's line names the command that posts it by hand. The line
+`call_failure_text` forms carries a note of its own for a round whose deadline passed with no
+call standing (#429).
+
+The league is `ongoing_league`'s with attendance on: Pro (role 801), its check-in channel 603,
+round 4 moved to three days off with no call posted for it. The call is asked of the queue as its
+timer asks it, and the queue run.
 """
 from __future__ import annotations
 
-import inspect
-from unittest.mock import AsyncMock, MagicMock
+from datetime import timedelta
+from typing import Any
+from unittest.mock import AsyncMock
 
-import pytest
+import discord
 
-from leaguebot.attendance.services import rsvp_service
-from leaguebot.attendance.services.rsvp_service import _report_call_failure
+from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services.rsvp_service import call_failure_text
+from tests.support.change_queue import (
+    attach_queue,
+    discard_job,
+    http_error,
+    run_queue,
+    stopped_job,
+)
+from tests.support.season_league import DIVISIONS, PRO, SeasonLeague, ongoing_league, round_id
 
+CHECK_IN = DIVISIONS[PRO][3].checkin
+ROUND_4 = round_id(PRO, 4)
 
-def _bot():
-    bot = MagicMock()
-    bot.output_router.post_log = AsyncMock()
-    return bot
-
-
-@pytest.mark.asyncio
-async def test_the_report_names_the_season_the_division_and_the_round():
-    bot = _bot()
-    await _report_call_failure(
-        bot,
-        division_id=7,
-        division_name="Division 1",
-        season_number=4,
-        round_number=11,
-        reason="the call could not be posted: 503 Service Unavailable",
-    )
-
-    bot.output_router.post_log.assert_awaited_once()
-    (content,) = bot.output_router.post_log.await_args.args
-    assert "season: 4" in content
-    assert "Division 1" in content
-    assert "id=7" in content
-    assert "round: 11" in content
-    assert "503 Service Unavailable" in content
+#: What the stop notice says is left where no call stands and no answers are kept.
+NOTHING_LEFT = "no attendance rows are open for this round until this call is posted"
+#: What the stop notice says the round comes to meanwhile (attendance spec :120: "the round will
+#: count nothing against anyone until the call is posted").
+COUNTS_NOTHING = "will count nothing against anyone"
 
 
-@pytest.mark.asyncio
-async def test_the_report_says_the_round_opened_no_attendance_rows():
-    """The consequence is what staff need to know, not merely that a send failed."""
-    bot = _bot()
-    await _report_call_failure(
-        bot,
-        division_id=7,
-        division_name="Division 1",
-        season_number=4,
-        round_number=11,
-        reason="whatever",
-    )
-
-    (content,) = bot.output_router.post_log.await_args.args
-    assert "no attendance rows were opened" in content
+async def _league(tmp_path: Any, *, images: bool = False) -> SeasonLeague:
+    league = await ongoing_league(tmp_path, attendance=True, images=images)
+    league.bot.attendance_service = AttendanceService(league.db_path)
+    attach_queue(league.bot, league.db_path, now=league.clock)
+    when = league.clock.now + timedelta(days=3)
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                       when.replace(tzinfo=None).isoformat(), ROUND_4)
+    return league
 
 
-@pytest.mark.asyncio
-async def test_a_failure_to_report_never_masks_the_original_failure():
-    bot = _bot()
-    bot.output_router.post_log = AsyncMock(side_effect=RuntimeError("log channel gone"))
+def _refuse(league: SeasonLeague, error: BaseException | None = None) -> None:
+    league.channel(CHECK_IN).send_fails = error or http_error(
+        status=503, text="Service Unavailable")
 
-    # Must not raise.
-    await _report_call_failure(
-        bot,
-        division_id=7,
-        division_name="Division 1",
-        season_number=4,
-        round_number=11,
-        reason="whatever",
+
+async def _ask_and_run(league: SeasonLeague) -> None:
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.core.models.change import ChangeOrigin
+
+    await ask_check_in_call(league.bot.change_queue, league.db_path, ROUND_4,
+                            origin=ChangeOrigin.BOT)
+    await run_queue(league.bot)
+
+
+async def _nothing_opened(league: SeasonLeague) -> bool:
+    return (
+        await league.rows("SELECT 1 FROM rsvp_embed_messages WHERE round_id = ?", ROUND_4) == []
+        and await league.rows(
+            "SELECT 1 FROM driver_round_attendance WHERE round_id = ?", ROUND_4) == []
     )
 
 
-# ── Wiring, and its independence from the images module ───────────────────
+async def test_a_refused_call_s_stop_notice_names_the_division_the_round_and_the_refusal(tmp_path):
+    """Discord answers 503: the queue stops at the call, and its notice names Pro, round 4 and
+    what Discord said."""
+    league = await _league(tmp_path)
+    _refuse(league)
+
+    await _ask_and_run(league)
+
+    assert await stopped_job(league.db_path) is not None
+    notice = league.log()
+    assert "Pro" in notice
+    assert "round 4" in notice.lower()
+    assert "Service Unavailable" in notice
 
 
-def test_both_failure_paths_of_the_notice_report_the_call():
-    """A failed send and an unreachable channel are both failures to post."""
-    source = inspect.getsource(rsvp_service.run_rsvp_notice)
-    assert source.count("_report_call_failure(") == 2
+async def test_the_report_says_the_round_opened_no_attendance_rows(tmp_path):
+    """The consequence is what staff need to know, not merely that a send failed: the stop notice
+    says no attendance rows are open for the round until the call is posted."""
+    league = await _league(tmp_path)
+    _refuse(league)
+
+    await _ask_and_run(league)
+
+    assert await stopped_job(league.db_path) is not None
+    assert NOTHING_LEFT in league.log()
+    assert COUNTS_NOTHING in league.log()
+    assert await _nothing_opened(league)
 
 
-def test_the_report_is_reached_before_the_notice_returns_on_a_failed_send():
-    source = inspect.getsource(rsvp_service.run_rsvp_notice)
-    after_send_failure = source.split("failed to post embed for division")[1]
-    report_at = after_send_failure.index("_report_call_failure(")
-    return_at = after_send_failure.index("return")
-    assert report_at < return_at
+async def test_a_failure_to_report_never_masks_the_original_failure(tmp_path):
+    """The log channel refuses the stop notice as well: the call is still stopped at, with
+    nothing recorded, for the queue to try again."""
+    league = await _league(tmp_path)
+    _refuse(league)
+    league.bot.log_channel.fails = http_error(status=503, text="Service Unavailable")
+
+    await _ask_and_run(league)
+
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "post_call"
+    assert await _nothing_opened(league)
 
 
-def test_the_report_consults_no_image_module_and_no_toggle():
-    """FR-062 holds with the ``rsvp`` toggle off, so it must not sit behind an image check.
+async def test_both_failure_paths_of_the_notice_report_the_call(tmp_path):
+    """A refused send stops the queue (the tests above); so does a check-in channel gone from the
+    server, its notice saying what is left."""
+    league = await _league(tmp_path)
+    league.remove_channel(CHECK_IN)
 
-    Read from the compiled body rather than the source text — the docstring discusses the
-    toggle precisely because the report must ignore it, and a text match would catch that.
-    """
-    referenced = set(_report_call_failure.__code__.co_names)
-    for forbidden in ("image", "toggle", "aspect", "template", "png", "svg", "enqueue"):
-        assert not any(forbidden in name.lower() for name in referenced), forbidden
+    await _ask_and_run(league)
 
-
-def test_the_report_is_not_guarded_by_any_conditional_in_its_call_sites():
-    """Both call sites are unconditional within the failure branch they sit in."""
-    source = inspect.getsource(rsvp_service.run_rsvp_notice)
-    for fragment in source.split("_report_call_failure(")[:-1]:
-        tail = fragment.rsplit("\n", 2)[-2:]
-        assert not any(line.strip().startswith("if ") for line in tail), tail
+    assert await stopped_job(league.db_path) is not None
+    assert NOTHING_LEFT in league.log()
+    assert COUNTS_NOTHING in league.log()
+    assert await _nothing_opened(league)
 
 
-def test_the_note_names_the_command_that_posts_the_call_again():
-    """The advice must name a command that exists (#123).
+async def test_the_report_is_reached_before_the_notice_returns_on_a_failed_send(tmp_path):
+    """A failed send stops the call's change there: nothing after the post runs, so no record
+    and no attendance rows are written, and the stop notice is posted."""
+    league = await _league(tmp_path)
+    _refuse(league, http_error(discord.Forbidden, status=403, text="Missing Permissions"))
 
-    The note told staff to "post the call again" for as long as there was no command to do it
-    with — sound advice nobody could follow, which is the whole of issue #123. It now names
-    `/attendance post-check-in` and fills in the division and round, so a manager can copy the
-    line out of the log channel. Renaming that command without fixing this note would put the
-    bot back to advising the impossible, which is what this test is here to stop.
-    """
-    source = inspect.getsource(_report_call_failure)
-    assert "/attendance post-check-in" in source
-    assert "{division_name}" in source and "{round_number}" in source
+    await _ask_and_run(league)
+
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "post_call"
+    assert await _nothing_opened(league)
+    assert "Missing Permissions" in league.log()
+
+
+async def test_the_report_consults_no_image_module_and_no_toggle(tmp_path):
+    """FR-062 holds with images off: a refused call stops the queue with its notice all the
+    same."""
+    league = await _league(tmp_path, images=False)
+    _refuse(league)
+
+    await _ask_and_run(league)
+
+    assert await stopped_job(league.db_path) is not None
+    assert NOTHING_LEFT in league.log()
+    assert COUNTS_NOTHING in league.log()
+
+
+async def test_the_report_is_not_guarded_by_any_conditional_in_its_call_sites(tmp_path, monkeypatch):
+    """Images on and the check-in graphic drawn: a refused call stops the queue with its notice
+    as it does without one."""
+    from leaguebot.image.services import image_rsvp_post
+
+    league = await _league(tmp_path, images=True)
+    picture = tmp_path / "checkin.png"
+
+    async def _attach(*_args: Any, **_kwargs: Any) -> discord.File:
+        picture.write_bytes(b"png")
+        return discord.File(str(picture), filename="checkin.png")
+
+    monkeypatch.setattr(image_rsvp_post, "try_attach", AsyncMock(side_effect=_attach))
+    _refuse(league)
+
+    await _ask_and_run(league)
+
+    assert await stopped_job(league.db_path) is not None
+    assert NOTHING_LEFT in league.log()
+    assert COUNTS_NOTHING in league.log()
+
+
+async def test_the_note_names_the_command_that_posts_the_call_again(tmp_path):
+    """The advice must name a command that exists (#123), filled in for the division and round so
+    a manager can copy it out of the log channel: a league admin discards the refused call, and
+    the line says to post it with `/attendance post-check-in division: Pro round: 4`."""
+    league = await _league(tmp_path)
+    _refuse(league)
+    await _ask_and_run(league)
+
+    await discard_job(league.bot)
+
+    assert "/attendance post-check-in division: Pro round: 4" in league.log()
 
 
 def test_the_command_the_note_names_is_a_real_one():
@@ -137,14 +203,11 @@ def test_the_command_the_note_names_is_a_real_one():
     assert "post-check-in" in {c.name for c in AttendanceCog.attendance.commands}
 
 
-@pytest.mark.asyncio
-async def test_a_report_can_carry_a_note_of_its_own():
-    """A call given up at a restart, its deadline passed (#429), cannot be posted by hand
-    either — the command refuses once the deadline has gone — so its report must not advise it.
-    The reporter takes the note it is given in place of the usual advice."""
-    bot = _bot()
-    await _report_call_failure(
-        bot,
+def test_a_report_can_carry_a_note_of_its_own():
+    """A round whose deadline passed with no call standing (#429) cannot have its call posted by
+    hand either — the command refuses once the deadline has gone — so its line must not advise
+    it. The line takes the note it is given in place of the usual advice."""
+    content = call_failure_text(
         division_id=7,
         division_name="Division 1",
         season_number=4,
@@ -153,6 +216,5 @@ async def test_a_report_can_carry_a_note_of_its_own():
         note="nothing can be done about it",
     )
 
-    (content,) = bot.output_router.post_log.await_args.args
     assert "  note: nothing can be done about it" in content
     assert "/attendance post-check-in" not in content

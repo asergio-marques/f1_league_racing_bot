@@ -12,6 +12,10 @@ and would have been unable to see any of them.
 
 The admin role is skipped where the league has not set one, which is every server configured
 before it existed.
+
+The results submission channel is created by a job of the queued opening of a round's
+submission (#439, slice 6b), whose own tests pin its two roles
+(`test_result_submission_wizard.py`, `test_submission_channel.py`).
 """
 from __future__ import annotations
 
@@ -23,6 +27,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.server_config import ServerConfig
+from tests.support.change_queue import in_a_job
 
 SERVER_ID = 4242
 MANAGER_ROLE = 222
@@ -79,48 +84,6 @@ async def _seed(tmp_path, *, admin_role_id: int | None = ADMIN_ROLE) -> str:
     return db_path
 
 
-# ── The results submission channel ────────────────────────────────────────
-
-
-async def _create_submission_channel(db_path, *, league_admin_role):
-    from leaguebot.results.services import result_submission_service as rss
-
-    guild = _guild()
-    created: dict = {}
-
-    async def _create(name, **kwargs):
-        created.update(kwargs)
-        created["name"] = name
-        channel = MagicMock()
-        channel.id = 901
-        return channel
-
-    guild.create_text_channel = _create
-    await rss.create_submission_channel(
-        guild, "Pro", 1, 1, 1, db_path,
-        interaction_role=_role(MANAGER_ROLE),
-        league_admin_role=league_admin_role,
-    )
-    return created["overwrites"]
-
-
-async def test_the_submission_channel_is_open_to_both_roles(tmp_path):
-    db_path = await _seed(tmp_path)
-
-    overwrites = await _create_submission_channel(db_path, league_admin_role=_role(ADMIN_ROLE))
-
-    assert {MANAGER_ROLE, ADMIN_ROLE} <= _overwrite_role_ids(overwrites)
-
-
-async def test_the_submission_channel_omits_an_admin_role_that_is_not_set(tmp_path):
-    db_path = await _seed(tmp_path, admin_role_id=None)
-
-    overwrites = await _create_submission_channel(db_path, league_admin_role=None)
-
-    assert MANAGER_ROLE in _overwrite_role_ids(overwrites)
-    assert ADMIN_ROLE not in _overwrite_role_ids(overwrites)
-
-
 # ── The driver's signup wizard channel ────────────────────────────────────
 
 
@@ -138,10 +101,10 @@ async def _create_wizard_channel(*, league_admin_role_id):
     member = MagicMock(spec=discord.Member)
     member.name = "driver"
 
-    service = WizardService.__new__(WizardService)
-    await WizardService._create_wizard_channel(
-        service, guild, member, None, MANAGER_ROLE, league_admin_role_id
-    )
+    with in_a_job():
+        await WizardService._create_wizard_channel(
+            guild, member, None, MANAGER_ROLE, league_admin_role_id
+        )
     return created["overwrites"]
 
 

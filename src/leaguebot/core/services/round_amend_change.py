@@ -93,9 +93,18 @@ PLAN_FORECAST_DELETES = "plan_forecast_deletes"
 DRAW_FORECAST = "draw_forecast"
 NOTIFY_INVALIDATION = "notify_invalidation"
 RERUN_PHASE = "rerun_phase"
-RUN_DEADLINE = "run_deadline"
+#: Attendance's own jobs of a check-in deadline, which the amendment plans as the deadline's
+#: timer would, under the names attendance gives them (core names a kind's jobs as strings).
+DISTRIBUTE = "distribute"
+CLOSE_WITHOUT_CALL = "close_without_call"
+LOCK_CALL = "lock_call"
+ANNOUNCE = "announce"
 CLEAN_UP_FORECAST = "clean_up_forecast"
 CLEAN_UP_CHECK_IN = "clean_up_check_in"
+#: Attendance's own jobs of taking a check-in down, under the names attendance gives them.
+PLAN_CLEAN_UP = "plan"
+DELETE_MESSAGE = "delete_message"
+MARK_CLEARED = "mark_cleared"
 
 AMENDED = "✅ Round amended successfully."
 NOTHING_AMENDED = (
@@ -136,22 +145,22 @@ class AmendHooks:
     nothing. *forecast_steps* are weather's jobs (its draw, its post, the deletion of a forecast
     and the planning of deletions), which the amendment runs as jobs of its own: *plan_phase* plans
     the draw of a phase now, the draw planning its post and the post the deletion of the forecast
-    it supersedes, and *forecast_failure* names what a discarded one of them leaves. *repost_call* posts the check-in call again,
-    beside any call still standing, which it takes down only once the new one has landed, and
-    leaves standing where the new one fails. *post_call* posts it where none stands, posting
-    nothing where one does (judged under the round's check-in lock, so that a call posted by its
-    timer or a restart at the same moment is not posted twice). *give_up_call* reports a call
-    whose deadline passed before it could be posted and closes the round's check-in, as the
-    start-up recovery does, clearing in the same save any check-in answers left for the round
-    and the placements made on them, and says whether it did: it leaves a round whose results are
-    in, or whose check-in is over, as it stands. It raises where the close cannot be saved, so
-    that the queue stops rather than report a give-up never made. It is handed the bot and the
-    round's ``round_id``, ``round_number``, ``division_id``, ``division_name`` and
-    ``season_number``.
-    *run_deadline* runs the round's check-in deadline and *clean_up_check_in* takes its check-in
-    down, each as its timer would, for a moment that passed while the amendment stood stopped (its
-    forecast, whichever of Phases 1 to 3 stands, is deleted by a job planned through
-    *forecast_steps*). *round_list* formats
+    it supersedes, and *forecast_failure* names what a discarded one of them leaves. *call_steps*
+    are attendance's own jobs of a check-in call (its post), which the amendment runs as a job of
+    its own, the call posted and recorded in one save by the job that posts it. A call posted
+    again beside one a discarded take-down left standing replaces its record, and leaves it
+    standing where the new one fails. *give_up_text* gives the line reporting a call whose deadline passed before it could be
+    posted, or None where there is nothing to give up (a call standing, results in, the check-in
+    over), and *give_up_on* closes the round's check-in on the connection a save hands it, as the
+    start-up recovery does, clearing in the same save any check-in answers left for the round and
+    the placements made on them, and says whether it did; it raises where the close cannot be
+    saved, so that the queue stops rather than report a give-up never made.
+    *deadline_steps* are attendance's own jobs of a check-in deadline (placing the reserves, taking
+    the buttons off the call, posting the announcement) and *clean_up_steps* its jobs of taking a
+    check-in down (the plan of the deletions, each deletion, the mark that it is over), which the
+    amendment plans as the timers would for a moment that passed while it stood stopped, so that
+    Discord refusing one stops the queue (its forecast, whichever of Phases 1 to 3 stands, is
+    deleted by a job planned through *forecast_steps*). *round_list* formats
     the division's rounds for the reply.
     """
 
@@ -162,12 +171,14 @@ class AmendHooks:
     forecast_failure: Callable[[StepView], tuple[str, str] | None]
     invalidation_text: Callable[[str], str]
     reopen_check_in_on: Callable[[aiosqlite.Connection, int], Awaitable[None]]
-    repost_call: Callable[[int, int, Any], Awaitable[None]]
-    post_call: Callable[[int, Any], Awaitable[None]]
-    give_up_call: Callable[[Any, Mapping[str, Any]], Awaitable[bool]]
-    run_deadline: Callable[[int, Any], Awaitable[None]]
-    clean_up_check_in: Callable[[int, Any], Awaitable[None]]
+    call_steps: Mapping[str, Step]
+    give_up_text: Callable[[str, int], Awaitable[str | None]]
+    give_up_on: Callable[[aiosqlite.Connection, int], Awaitable[bool]]
+    deadline_steps: Mapping[str, Step]
+    clean_up_steps: Mapping[str, Step]
     round_list: Callable[[list[Round]], str]
+    check_in_deletes: Callable[[int, int], Awaitable[bool]]
+    forget_check_in_on: Callable[[aiosqlite.Connection, int, int], Awaitable[None]]
 
 
 def payload_changes(amendments: Iterable[tuple[str, object]]) -> list[list[str]]:
@@ -522,7 +533,7 @@ def round_amend_change(
                 "SELECT d.tier, s.season_number, r.checkin_cleared, EXISTS ("
                 "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id) AS called, EXISTS ("
                 "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id "
-                "AND m.distribution_msg_id IS NULL) AS undistributed, EXISTS ("
+                "AND m.deadline_run_at IS NULL AND m.distribution_msg_id IS NULL) AS undistributed, EXISTS ("
                 "SELECT 1 FROM forecast_messages f WHERE f.round_id = r.id "
                 "AND f.phase_number IN (1, 2, 3)) AS forecast_posted, ("
                 "SELECT group_concat(f.phase_number) FROM forecast_messages f "
@@ -618,7 +629,7 @@ def round_amend_change(
             planned.append(PlannedStep(POST_CALL, {"repost": False}))
         if (attendance is not None and call_left and standing["undistributed"]
                 and deadline_passed(rnd, attendance)):
-            planned.append(PlannedStep(RUN_DEADLINE))
+            planned.append(PlannedStep(DISTRIBUTE))
         posted = after.get("posted", [])
         planned += [PlannedStep(DELETE_FORECAST, {"phase": n}) for n in posted]
         if posted:
@@ -727,32 +738,44 @@ def round_amend_change(
         division = await seasons.get_division(int(ctx.payload["division_id"]))
         if division is None:
             raise LookupError(f"division {ctx.payload['division_id']} is no longer there")
-        taken = await notices.take_down_call(ctx.bot, division, int(ctx.payload["round_id"]))
+        taken = await notices.take_down_call(
+            ctx.bot, division, int(ctx.payload["round_id"]),
+            check_in_deletes=hooks.check_in_deletes,
+        )
         return StepResult(result={"taken_down": taken["taken_down"]})
+
+    async def forget_call(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        """Drop the taken-down call's record, in the save that marks the job done. Its answers
+        stay: they are what the call posted again carries."""
+        if result.result.get("taken_down"):
+            await hooks.forget_check_in_on(
+                db, int(ctx.payload["round_id"]), int(ctx.payload["division_id"])
+            )
 
     async def post_call(ctx: StepContext) -> StepResult:
         """Post the call, carrying every answer already given. Discord refusing it stops the queue
         (owner, 2026-10-10, decision 3), attendance raising with what is left for the round, which
         the stop notice says (owner, 2026-10-11) and a Discard reads in `not_done`.
 
-        A first post goes through `post_call`, which posts nothing where a call already stands,
-        judged under the round's check-in lock, so that a call posted by the timer or a restart
-        since this job was judged due is not posted twice. A call posted again in place of one the
-        amendment took down (`reposting`) goes through `repost_call`, which also drops the answers
-        of drivers no longer of the division, and takes down the old call where a discarded
-        take-down left it standing.
+        The call is posted by attendance's own job (`hooks.call_steps`), which posts nothing it
+        cannot record: the job's record writes the call in the save that marks the job done. A call
+        posted again in place of one the amendment took down (`reposting`) carries the answers of
+        the drivers still of the division, and where a discarded take-down left the old call
+        standing (`replacing`) the new call's record replaces the old one's. The old call's
+        messages are not deleted again: the discarded take-down names those left, for deletion by
+        hand.
 
         Where the round's check-in deadline has passed by the time it runs, as after a stop,
-        nothing is posted: the log channel is told and the round's check-in closed, as the
-        start-up recovery gives up a missed call (`give_up_call`; owner, 2026-10-09). A call is
+        nothing is posted: the round's check-in is closed and the log channel told in the job's
+        record, as the start-up recovery gives up a missed call (owner, 2026-10-09). A call is
         given up only where none stands and the check-in is not over: one standing is the round's
         live call, or the old one a discarded take-down left, and a check-in over is settled, and
-        either is left as it is. Given up, any answers left to a call the
-        amendment took down, and the placements made on them, are cleared in the same save, so
-        that the log channel's line that the round counts nothing against anyone
-        holds true (owner, 2026-10-09: "Clear the answers, keep the line true"). The call is
-        posted under test mode too, unlike the start-up recovery, which leaves a test season's
-        calls to `/test-mode advance` (owner, 2026-10-09: "Post it anyway")."""
+        either is left as it is. Given up, any answers left to a call the amendment took down,
+        and the placements made on them, are cleared in the same save, so that the log channel's
+        line that the round counts nothing against anyone holds true (owner, 2026-10-09: "Clear
+        the answers, keep the line true"). The call is posted under test mode too, unlike the
+        start-up recovery, which leaves a test season's calls to `/test-mode advance` (owner,
+        2026-10-09: "Post it anyway")."""
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
@@ -761,28 +784,27 @@ def round_amend_change(
             standing, cleared = await call_state(ctx.db_path, rnd.id)
             if standing or cleared:
                 return StepResult(result={"left": True})
-            async with get_connection(ctx.db_path) as db:
-                cursor = await db.execute(
-                    "SELECT r.id AS round_id, r.round_number, d.id AS division_id, "
-                    "d.name AS division_name, s.season_number FROM rounds r "
-                    "JOIN divisions d ON d.id = r.division_id "
-                    "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
-                    (rnd.id,),
-                )
-                found = await cursor.fetchone()
-            if found is None:
-                raise LookupError(f"division {rnd.division_id} is no longer there")
-            if not await hooks.give_up_call(ctx.bot, dict(found)):
-                # Its results came in, or its check-in closed, as the give-up read it.
+            text = await hooks.give_up_text(ctx.db_path, rnd.id)
+            if text is None:
+                # Its results came in, or its check-in closed, as the give-up reads it.
                 return StepResult(result={"left": True})
-            return StepResult(result={"given_up": True})
-        if reposting(ctx):
-            await hooks.repost_call(rnd.id, rnd.division_id, ctx.bot)
-        else:
-            await hooks.post_call(rnd.id, ctx.bot)
-        return StepResult(
-            result={"posted": True, "message_id": await call_message(ctx.db_path, rnd.id)}
+            return StepResult(result={"given_up": True}, lines=(text,))
+        carried = dataclasses.replace(
+            ctx, step_payload={**ctx.step_payload, "replacing": replacing(ctx)}
         )
+        return await hooks.call_steps[POST_CALL].run(carried)
+
+    async def record_call(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        """The call's record, or the give-up's close, in the save that marks the job done; a call
+        left as it stood is recorded as nothing."""
+        if (result.result or {}).get("given_up"):
+            await hooks.give_up_on(db, int(ctx.payload["round_id"]))
+            return
+        if not (result.result or {}).get("new"):
+            return  # left as it stood: nothing posted, nothing to record
+        record = hooks.call_steps[POST_CALL].record
+        if record is not None:
+            await record(db, ctx, result)
 
     async def notify_invalidation(ctx: StepContext) -> StepResult:
         """Tell the division's forecast channel that its forecasts no longer stand. A channel never
@@ -818,19 +840,6 @@ def round_amend_change(
         return StepResult(
             result={"phase": phase}, then=hooks.plan_phase(int(ctx.payload["round_id"]), phase)
         )
-
-    def catching_up(
-        hook: Callable[[int, Any], Awaitable[None]], done: str
-    ) -> Callable[[StepContext], Awaitable[StepResult]]:
-        """A job running *hook* for the round, as its timer would have: the deadline or a
-        clean-up whose moment passed while the amendment stood stopped. What Discord refuses goes
-        the way the timer's own run goes; a fault of the bot's own stops the queue."""
-
-        async def run(ctx: StepContext) -> StepResult:
-            await hook(int(ctx.payload["round_id"]), ctx.bot)
-            return StepResult(result={done: True})
-
-        return run
 
     async def close_due(ctx: StepContext) -> bool:
         """The close is due where the amendment was saved, and where a job before the save was
@@ -955,11 +964,24 @@ def round_amend_change(
                     "not drawn, and a league admin discarded it; it is drawn when the bot next "
                     "starts, while the round is still to be run",
                 ))
-            elif each.name == RUN_DEADLINE:
+            elif each.name == DISTRIBUTE:
                 failures.append(notices.NoticeFailure(
                     division, "check-in deadline",
                     "the reserves were not distributed, and a league admin discarded it; it is "
                     "run when the bot next starts, while the call stands",
+                ))
+            elif each.name == LOCK_CALL:
+                failures.append(notices.NoticeFailure(
+                    division, "check-in call",
+                    "the buttons could not be taken off the call at its deadline, and a league "
+                    "admin discarded it; the placements stand, and the call can be taken down "
+                    "by hand",
+                ))
+            elif each.name == ANNOUNCE:
+                failures.append(notices.NoticeFailure(
+                    division, "reserve announcement",
+                    "the reserves' announcement could not be posted, and a league admin "
+                    "discarded it; the placements stand",
                 ))
             elif each.name == CLEAN_UP_FORECAST:
                 standing = each.payload.get("standing", ())
@@ -975,6 +997,16 @@ def round_amend_change(
                     division, "check-in call",
                     "the check-in was not taken down a day after the round, and a league admin "
                     "discarded it; it is taken down when the bot next starts",
+                ))
+            elif each.name == DELETE_MESSAGE:
+                # Named by the link its refused deletion kept, for an admin to open; by its
+                # channel where it kept none.
+                link = result.get("link") or f"in <#{each.payload.get('channel_id')}>"
+                failures.append(notices.NoticeFailure(
+                    division, "check-in call",
+                    f"the {each.payload.get('what', 'message')} could not be deleted a day "
+                    f"after the round, and a league admin discarded it; delete it by hand "
+                    f"({link})",
                 ))
             elif (weather := hooks.forecast_failure(each)) is not None:
                 failures.append(notices.NoticeFailure(division, *weather))
@@ -1031,11 +1063,11 @@ def round_amend_change(
             describe=named("arming the timed work of round {number} in **{division}** again"),
         ),
         TAKE_DOWN_CALL: Step(
-            TAKE_DOWN_CALL, StepKind.ACT, take_down_call, still_due=attendance_on,
+            TAKE_DOWN_CALL, StepKind.ACT, take_down_call, still_due=attendance_on, record=forget_call,
             describe=named("taking down the check-in call of round {number} in **{division}**"),
         ),
         POST_CALL: Step(
-            POST_CALL, StepKind.ACT, post_call, still_due=call_still_due,
+            POST_CALL, StepKind.ACT, post_call, still_due=call_still_due, record=record_call,
             describe=named("posting the check-in call of round {number} in **{division}** again"),
         ),
         # Weather's own jobs, the draw and the deletion named for what the amendment does with them.
@@ -1054,23 +1086,37 @@ def round_amend_change(
             RERUN_PHASE, StepKind.ACT, rerun_phase, still_due=phase_still_due,
             describe=describe_draw,
         ),
-        RUN_DEADLINE: Step(
-            RUN_DEADLINE, StepKind.ACT, catching_up(hooks.run_deadline, "run"),
-            still_due=attendance_on,
-            describe=named("running the check-in deadline of round {number} in **{division}**"),
+        # Attendance's own jobs of a deadline, named for the round the amendment stands for.
+        DISTRIBUTE: dataclasses.replace(
+            hooks.deadline_steps[DISTRIBUTE],
+            describe=named("placing the reserves of round {number} in **{division}**"),
+        ),
+        CLOSE_WITHOUT_CALL: dataclasses.replace(
+            hooks.deadline_steps[CLOSE_WITHOUT_CALL],
+            describe=named(
+                "closing the check-in of round {number} in **{division}**, which has no call"
+            ),
+        ),
+        LOCK_CALL: hooks.deadline_steps[LOCK_CALL],
+        ANNOUNCE: dataclasses.replace(
+            hooks.deadline_steps[ANNOUNCE],
+            describe=named("posting the reserve announcement of round {number} in **{division}**"),
         ),
         CLEAN_UP_FORECAST: dataclasses.replace(
             hooks.forecast_steps[PLAN_FORECAST_DELETES], name=CLEAN_UP_FORECAST,
             still_due=weather_on,
             describe=describe_clean_up,
         ),
-        CLEAN_UP_CHECK_IN: Step(
-            CLEAN_UP_CHECK_IN, StepKind.ACT, catching_up(hooks.clean_up_check_in, "cleaned_up"),
-            still_due=attendance_on,
+        # Attendance's own jobs of a clean-up: its plan under the amendment's name for it, the
+        # deletions and the mark that the check-in is over.
+        CLEAN_UP_CHECK_IN: dataclasses.replace(
+            hooks.clean_up_steps[PLAN_CLEAN_UP], name=CLEAN_UP_CHECK_IN,
             describe=named(
-                "taking down the check-in of round {number} in **{division}** a day after it"
+                "finding what is left of the check-in of round {number} in **{division}**"
             ),
         ),
+        DELETE_MESSAGE: hooks.clean_up_steps[DELETE_MESSAGE],
+        MARK_CLEARED: hooks.clean_up_steps[MARK_CLEARED],
         CLOSE: Step(
             CLOSE, StepKind.ACT, close, still_due=close_due,
             describe=named("listing the rounds of **{division}** for the reply"),

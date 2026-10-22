@@ -1,6 +1,52 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-10-21 — v14.12.3 → v14.13.0: MINOR — Principles XI, XII and XIII say how signups, a round's submission channel and check-in answers run on the change queue's lanes (issue #439)]
+  Version change    : 14.12.3 → 14.13.0
+  Bump rationale    : MINOR: guidance is added within three principles without removing or
+                      redefining any. Every post the bot makes is now a job of a change, and the
+                      change queue runs on lanes — the league's, and one per channel kept for one
+                      conversation — each stopping alone (owner, 2026-10-13, "Everything but log
+                      lines and replies"; lanes, "do everything in the same slice"). The signup
+                      wizard, the submission channel's opening and check-in answers are described
+                      as they now run.
+
+  Modified sections :
+    - Principle XI, "Isolation" — "MUST be fully isolated; one driver's wizard MUST NOT delay,
+      influence, or share state with any other" becomes: wizards share no state and each runs on
+      its own lane; what a wizard hands the league runs on the league lane in order, so one
+      driver may wait on league work; at most three conversations run at once.
+    - Principle XI, new bullet "Turns" — each answer is a turn of the driver's lane, marked at
+      once, judged when its turn comes, counted from when it was typed; a stopped lane holds the
+      wizard; the signup button is refused, naming the cause, without the permission to manage
+      channels or room in the category, and while a close waits on the queue.
+    - Principle XI, "Channel lifecycle" — "deleted immediately (no hold) when the driver leaves"
+      becomes deleted with no hold by a job of the change queue as soon as the queue reaches it;
+      a re-press deletes the old channel as the first job of the new signup, ahead of the new
+      channel's creation; the deletion after the 24-hour hold runs on the driver's own lane.
+    - Principle XII — the submission channel is created at the round's start by a job of the
+      change queue that cannot be discarded; a round whose start falls while the queue is stopped
+      stays not run, and may be cancelled; and "adjacent to the division's results channel" is
+      corrected to "in the category of the interaction channel", as the results specification
+      (:244) and the bot have it (owner, 2026-10-21).
+    - Principle XIII, "RSVP Check-in Embed" — an answer is judged when pressed and saved, with the
+      embed redrawn, by a job of the change queue.
+    - Principle XIII, "Reserve Distribution" — the distribution reads the answers as they stood
+      at the deadline, even where the queue reaches the deadline late.
+
+  Added sections    : none (one bullet, "Turns", within Principle XI).
+  Removed sections  : none.
+  Deferred / TODO   : none.
+
+  Rationale trail   : Branch feature/439-every-post-on-the-queue (slice 6b of #439).
+
+  Templates / docs  : docs/wip-specs/signup_module_specification.md, results_module_specification.md,
+                      attendance_module_specification.md and core_specification.md were brought in
+                      step on the same branch; docs/design/architecture.md, "How a change is
+                      carried out", describes the lanes. Principle XIV rule 8 needs no change: its
+                      two windows already allow for this work. No template in .specify/templates
+                      names the wizard's isolation or the submission channel's placement.
+
 [2026-10-12 — v14.12.2 → v14.12.3: PATCH — Principle XIV rule 8 says how a post that fails is tried again on the change queue (issue #439)]
   Version change    : 14.12.2 → 14.12.3
   Bump rationale    : PATCH: the rule is restated for the change queue's tries without changing
@@ -6003,17 +6049,29 @@ button. It operates as a secondary state machine (wizard state) orthogonal to th
 lifecycle state (Principle VIII). The following rules are non-negotiable:
 
 - **Isolation**: Each driver has exactly one wizard state record. Concurrent wizards for
-  different drivers MUST be fully isolated; one driver's wizard MUST NOT delay, influence, or
-  share state with any other.
+  different drivers MUST NOT share state, and each runs on its own lane of the change queue, so
+  that a fault or a stop in one driver's wizard MUST NOT hold up another's. What a wizard hands
+  the league — its submission for review, every change of the driver's status, the cause of a
+  closing notice — runs on the league lane in the order asked, so one driver's wizard may wait
+  on league work; at most three conversations run at once beside the league.
+- **Turns**: Each answer, typed or pressed, is a turn of the driver's lane. A typed answer is
+  marked as waiting at once, judged when its turn comes, and counts from when it was typed. A
+  stopped lane holds the wizard, its answers waiting their turn, until Retry or Discard. A press
+  of the signup button MUST be refused, naming the cause, where the bot lacks the permission to
+  manage channels or the signup category has no room for another channel, and while a close of
+  signups waits on the queue.
 - **Channel lifecycle**:
   - On wizard start, the bot MUST create a private channel named `<username>-signup`, visible
     only to the driver, league managers, and league admins.
   - The channel MUST be deleted after a 24-hour hold period following any terminal event
     (approval, rejection, withdrawal, or timeout cancellation). During the hold period the
     channel is read-only for the driver.
-  - The channel MUST be deleted immediately (no hold) when the driver leaves the server.
+  - The channel MUST be deleted, with no hold, when the driver leaves the server, by a job of
+    the change queue as soon as the queue reaches it.
   - If a driver with an existing signup channel re-presses the signup button, the old channel
-    MUST be deleted immediately and a new one created.
+    MUST be deleted as the first job of the new signup, ahead of the new channel's creation.
+  - The deletion after the 24-hour hold runs on the driver's own lane, so that a stop on
+    another lane does not hold it.
   - League managers and league admins MAY write freely in any signup channel at any time.
 - **Sequential collection (normal flow)**: In the normal wizard (Pending Signup Completion),
   parameter collection MUST follow the exact order specified in the feature specification.
@@ -6133,8 +6191,10 @@ governs the **Results & Standings optional module** (Principle X).
     - **Endurance**: the Full Qualifying session maps to Feature Qualifying; the Full Race
       session maps to Feature Race for result-type and points-configuration purposes.
     - **Mystery**: no result sessions; result collection MUST NOT be triggered.
-- The bot creates a transient submission channel adjacent to the division's results channel
-  at the scheduled round start time, notifying league managers to enter results. This channel
+- At the scheduled round start time a job of the change queue creates a transient submission
+  channel in the category of the interaction channel, notifying league managers to enter
+  results. That job MUST NOT be discarded: only Retry moves past it. A round whose start falls
+  while the queue is stopped stays not run, and may be cancelled, until the queue reaches it. This channel
   is a module-introduced channel category registered per Principle VII.
 - Each session result row MUST carry: session type, round ID, division ID, driver Discord
   User ID, finishing position (1-indexed positive integer), the team of the division the
@@ -6321,7 +6381,8 @@ division's configured RSVP channel. The embed MUST contain:
   yet responded; ✅ if accepted; ❓ if tentative; ❌ if declined).
 - **Three action buttons** (horizontal): Accept (green ✅), Tentative (grey ❓), Decline
   (red ❌). Pressing any button updates the embed's status indicator for that driver
-  atomically.
+  atomically. An answer is judged when it is pressed, against the locking rules below; it is
+  saved, and the embed redrawn, by a job of the change queue.
 
 RSVP status MUST be persisted in **DriverRoundAttendance** rows and is authoritative for
 all downstream operations.
@@ -6339,7 +6400,8 @@ all downstream operations.
 #### Reserve Distribution
 
 Once the RSVP deadline is reached, reserves who have confirmed `ACCEPTED` are distributed
-to teams in the following priority order:
+to teams in the following priority order. The distribution reads the answers as they stood at
+the deadline, even where the change queue reaches the deadline late:
 
 1. Teams with no full-time drivers seated at all.
 2. Teams where at least one driver declined.
@@ -8912,4 +8974,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.12.3 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-12
+**Version**: 14.13.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-21

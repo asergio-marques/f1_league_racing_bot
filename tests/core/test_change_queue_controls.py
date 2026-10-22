@@ -193,7 +193,7 @@ async def test_a_retry_whose_try_fails_is_recorded_naming_the_presser(env):
 
     after = await stopped_job(env.db_path)
     added = [line for line in await _lines(env) if line not in before]
-    assert any(MANAGER_NAMED in line and f"job #{job['id']}" in line and "RuntimeError" in line
+    assert any(MANAGER_NAMED in line and f"job #{job['id']}" in line and "the bot hit an internal fault" in line
                for line in added)
     assert after["next_try_at"] == job["next_try_at"]
     assert after["failing_since"] == job["failing_since"]
@@ -408,7 +408,7 @@ async def test_a_stop_notice_the_log_channel_refuses_is_posted_again_with_its_bu
 
     job = await stopped_job(env.db_path)
     stop = STOPPED_AT.format(id=job["id"], job="posting the dummy", request=WHAT,
-                             asker="Admin (`<@4242>`)", fault="RuntimeError")
+                             asker="Admin (`<@4242>`)", fault="the bot hit an internal fault")
     [notice] = [m for m in env.bot.log_channel.posted if m.content.startswith(stop)]
     assert job["notice_message_id"] == notice.id
     assert _buttons(notice) == {"queue:retry", "queue:discard"}

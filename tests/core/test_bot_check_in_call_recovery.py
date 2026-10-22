@@ -10,6 +10,10 @@ ahead, and the drivers answer in the time left; the late post is written to the 
 Nothing is posted while test mode is on, `/test-mode advance` posting a test season's calls in
 their turn.
 
+Since #439 (slice 6b) the restart posts nothing itself: it asks the change queue for each call
+owed, before the queue starts, and the call's change posts it, or gives it up where its deadline
+has passed as well. Each test here runs the restart's step, then the queue.
+
 `_recover_missed_check_in_calls` takes *now*, so every test here pins the moment alongside the
 round it seeds.
 """
@@ -18,22 +22,31 @@ from __future__ import annotations
 import inspect
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 import leaguebot.__main__ as bot_module
 from leaguebot.__main__ import _recover_missed_check_in_calls
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_service import AttendanceService
+from tests.support.change_queue import (
+    attach_queue,
+    change_rows,
+    league_double,
+    run_queue,
+    stopped_job,
+    text_channel,
+)
 
 NOW = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 429
 CHANNEL_ID = 770001
-POSTED_MSG_ID = 900901
+KIND = "attendance.check_in.call"
+
 
 
 async def _make_db(
@@ -124,42 +137,38 @@ async def _make_db(
     return db_path
 
 
-def _make_channel() -> MagicMock:
-    channel = MagicMock()
-    posted = MagicMock()
-    posted.id = POSTED_MSG_ID
-    posted.channel.id = CHANNEL_ID
-    channel.send = AsyncMock(return_value=posted)
-    return channel
-
-
-def _make_bot(db_path: str, channel: MagicMock | None = None) -> MagicMock:
-    bot = MagicMock()
-    bot.db_path = db_path
+def _make_bot(db_path: str, *, attendance_enabled: bool = True) -> Any:
+    """The league's bot double with its change queue, images off, Division 1's check-in channel
+    (770001) among its channels."""
+    bot = league_double(db_path)
     bot.attendance_service = AttendanceService(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
-    bot.get_channel = MagicMock(return_value=channel if channel is not None else _make_channel())
-    bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
+    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    bot.check_in_channel = text_channel(CHANNEL_ID)
+    known = {CHANNEL_ID: bot.check_in_channel, bot.log_channel.id: bot.log_channel,
+             bot.interaction_channel.id: bot.interaction_channel}
+    bot.get_channel = MagicMock(side_effect=lambda cid: known.get(int(cid)))
+    attach_queue(bot, db_path, now=NOW)
     return bot
 
 
-async def _recover_with_the_real_call(bot) -> None:
-    """Run the recovery, posting the call as the bot does, without drawing its graphic."""
-    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
-        await _recover_missed_check_in_calls(bot, now=NOW)
+async def _restart(bot: Any, *, now: datetime = NOW) -> None:
+    """The restart's step, then the queue run, as the bot starts it after its start-up steps."""
+    await _recover_missed_check_in_calls(bot, now=now)
+    await run_queue(bot)
 
 
-async def _posted(db_path: str, **kwargs) -> list[int]:
-    """Run the recovery with the call itself stubbed, returning the rounds it was asked for."""
-    asked: list[int] = []
+async def _asked(db_path: str) -> int:
+    """How many check-in calls have been asked of the queue."""
+    return len([row for row in await change_rows(db_path) if row["kind"] == KIND])
 
-    async def _notice(round_id, _bot):
-        asked.append(round_id)
 
-    bot = _make_bot(db_path)
-    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=AsyncMock(side_effect=_notice)):
-        await _recover_missed_check_in_calls(bot, now=NOW, **kwargs)
-    return asked
+async def _late_calls(db_path: str, **kwargs: Any) -> int:
+    """Run the restart's step alone on a fresh bot, returning how many calls it asked for."""
+    bot = _make_bot(db_path, **kwargs)
+    await _recover_missed_check_in_calls(bot, now=NOW)
+    assert bot.check_in_channel.sent == [], "the restart posted the call itself"
+    return await _asked(db_path)
 
 
 async def _call_stands(db_path: str) -> bool:
@@ -170,8 +179,9 @@ async def _call_stands(db_path: str) -> bool:
         return await cursor.fetchone() is not None
 
 
-def _logged(bot) -> list[str]:
-    return [c.args[0] for c in bot.output_router.post_log.await_args_list]
+def _logged(bot: Any) -> str:
+    """Everything the log channel has been sent."""
+    return "\n".join(bot.log_channel.sent)
 
 
 # ---------------------------------------------------------------------------
@@ -180,42 +190,43 @@ def _logged(bot) -> list[str]:
 
 
 async def test_a_call_that_came_due_while_the_bot_was_down_is_posted_late(tmp_path):
-    """Its moment went by while the bot was stopped, and the deadline has not: the division
-    is asked now and answers in the time left."""
+    """Its moment went by while the bot was stopped, and the deadline has not: the restart asks
+    the queue for the call and posts nothing itself; the queue posts it, and the division is
+    asked now and answers in the time left."""
     db_path = await _make_db(tmp_path)
-    channel = _make_channel()
-    bot = _make_bot(db_path, channel)
+    bot = _make_bot(db_path)
 
-    await _recover_with_the_real_call(bot)
+    await _recover_missed_check_in_calls(bot, now=NOW)
+    assert bot.check_in_channel.sent == []
+    assert await _asked(db_path) == 1
 
-    channel.send.assert_awaited_once()
+    await run_queue(bot)
+
+    assert len(bot.check_in_channel.sent) == 1
     assert await _call_stands(db_path)
 
 
 async def test_a_call_posted_late_is_written_to_the_log(tmp_path):
-    """Staff learn the call went out late, and until when it can be answered."""
+    """Staff learn the call went out late, and until when it can be answered: once the queue has
+    posted it, the log channel says it was not posted when it fell due, with its deadline."""
     db_path = await _make_db(tmp_path)
     bot = _make_bot(db_path)
 
-    await _recover_with_the_real_call(bot)
+    await _restart(bot)
 
     deadline = NOW + timedelta(days=2) - timedelta(hours=2)
-    assert _logged(bot) == [
-        "ATTENDANCE | check-in call | POSTED LATE\n"
-        "  season: 3\n"
-        f"  division: Division 1 (id={DIVISION_ID})\n"
-        "  round: 4\n"
-        "  reason: the call was not posted when it fell due\n"
-        f"  deadline: <t:{int(deadline.timestamp())}:F>"
-    ]
+    assert await _asked(db_path) == 1
+    assert "the call was not posted when it fell due" in _logged(bot)
+    assert f"<t:{int(deadline.timestamp())}:F>" in _logged(bot)
 
 
 async def test_a_zero_deadline_lets_a_call_post_late_until_the_round(tmp_path):
     """A deadline of zero closes the check-in at the round's own moment, as
-    `/attendance post-check-in` reads it, so an hour before the round is still in time."""
+    `/attendance post-check-in` reads it, so an hour before the round is still in time: the
+    restart asks for the call."""
     db_path = await _make_db(tmp_path, until_round=timedelta(hours=1), deadline_hours=0)
 
-    assert await _posted(db_path) == [ROUND_ID]
+    assert await _late_calls(db_path) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -224,52 +235,53 @@ async def test_a_zero_deadline_lets_a_call_post_late_until_the_round(tmp_path):
 
 
 async def test_no_late_call_is_posted_before_the_call_is_due(tmp_path):
-    """Its job is still to come, and posting early would override the league's lead time."""
+    """Its job is still to come, and posting early would override the league's lead time: the
+    restart asks for no call."""
     db_path = await _make_db(tmp_path, until_round=timedelta(days=6))
 
-    assert await _posted(db_path) == []
+    assert await _late_calls(db_path) == 0
 
 
 async def test_no_late_call_while_a_call_stands(tmp_path):
     """The call went out; a second beside it would divide the division's answers."""
     db_path = await _make_db(tmp_path, call_standing=True)
 
-    assert await _posted(db_path) == []
+    assert await _late_calls(db_path) == 0
 
 
 async def test_no_late_call_for_a_round_whose_check_in_is_over(tmp_path):
     """A round whose check-in has been taken down has no call owed (#425)."""
     db_path = await _make_db(tmp_path, checkin_cleared=True)
 
-    assert await _posted(db_path) == []
+    assert await _late_calls(db_path) == 0
 
 
 async def test_no_late_call_for_a_cancelled_round(tmp_path):
     db_path = await _make_db(tmp_path, round_status="CANCELLED")
 
-    assert await _posted(db_path) == []
+    assert await _late_calls(db_path) == 0
 
 
 async def test_no_late_call_while_attendance_is_disabled(tmp_path):
     """The module-output rule, by the restart path (#114)."""
     db_path = await _make_db(tmp_path, attendance_enabled=False)
 
-    assert await _posted(db_path) == []
+    assert await _late_calls(db_path, attendance_enabled=False) == 0
 
 
 async def test_no_late_call_outside_an_ongoing_season(tmp_path):
     """A season still in setup has no check-ins owed."""
     db_path = await _make_db(tmp_path, season_status="SETUP")
 
-    assert await _posted(db_path) == []
+    assert await _late_calls(db_path) == 0
 
 
 async def test_no_late_call_while_test_mode_is_on(tmp_path):
-    """Decided 2026-09-24. `/test-mode advance` posts a test season's calls in their turn, and a
-    restored save's rounds have all gone by."""
+    """Decided 2026-09-24, and kept by #439 (slice 6b, decision 15). `/test-mode advance` posts a
+    test season's calls in their turn, and a restored save's rounds have all gone by."""
     db_path = await _make_db(tmp_path, test_mode=True)
 
-    assert await _posted(db_path) == []
+    assert await _late_calls(db_path) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -291,15 +303,9 @@ def test_missed_calls_are_posted_before_the_deadlines_are_caught_up():
 # ---------------------------------------------------------------------------
 
 
-_GIVEN_UP = (
-    "ATTENDANCE | check-in call | NOT POSTED\n"
-    "  season: 3\n"
-    f"  division: Division 1 (id={DIVISION_ID})\n"
-    "  round: 4\n"
-    "  reason: the round's check-in deadline passed before its call could be posted\n"
-    "  note: a call posted now could not be answered, so none was posted. No attendance rows "
-    "were opened, and this round will count nothing against anyone."
-)
+_GIVEN_UP = "the round's check-in deadline passed before its call could be posted"
+#: What the log channel is told the given-up round comes to (attendance spec :121).
+_COUNTS_NOTHING = "the round counts nothing against anyone"
 
 
 async def _checkin_cleared(db_path: str) -> bool:
@@ -310,34 +316,38 @@ async def _checkin_cleared(db_path: str) -> bool:
 
 async def test_a_call_whose_deadline_has_passed_is_not_posted_and_is_reported(tmp_path):
     """Decided 2026-09-24. A call nobody could answer would record every driver as not having
-    answered, so none is posted — and the log channel says the round has no check-in."""
+    answered, so none is posted: the restart asks for the call, and the call's change gives it
+    up, the log channel saying the round has no check-in and counts nothing against anyone."""
     db_path = await _make_db(tmp_path, until_round=timedelta(hours=1))
     bot = _make_bot(db_path)
-    notice = AsyncMock()
 
-    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=notice):
-        await _recover_missed_check_in_calls(bot, now=NOW)
+    await _restart(bot)
 
-    notice.assert_not_awaited()
-    assert _logged(bot) == [_GIVEN_UP]
+    assert await _asked(db_path) == 1
+    assert bot.check_in_channel.sent == []
+    assert _logged(bot).count(_GIVEN_UP) == 1
+    assert _logged(bot).count(_COUNTS_NOTHING) == 1
     assert await _checkin_cleared(db_path), "a call given up is still owed"
 
 
 async def test_a_call_given_up_is_reported_once_across_restarts(tmp_path):
-    """The round's check-in is over once given up, so the next start has nothing to say."""
+    """The round's check-in is over once given up, so the next start asks for nothing and has
+    nothing to say."""
     db_path = await _make_db(tmp_path, until_round=timedelta(hours=1))
     bot = _make_bot(db_path)
 
-    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=AsyncMock()):
-        await _recover_missed_check_in_calls(bot, now=NOW)
-        await _recover_missed_check_in_calls(bot, now=NOW + timedelta(minutes=10))
+    await _restart(bot)
+    await _restart(bot, now=NOW + timedelta(minutes=10))
 
-    assert _logged(bot) == [_GIVEN_UP]
+    assert await _asked(db_path) == 1
+    assert _logged(bot).count(_GIVEN_UP) == 1
+    assert _logged(bot).count(_COUNTS_NOTHING) == 1
 
 
 async def test_a_call_whose_give_up_cannot_be_saved_does_not_stop_the_start(tmp_path):
-    """The database refusing to close the round's check-in is logged on the host and the start
-    goes on, the round's check-in still open, so that the next start gives it up again."""
+    """The database refuses to close the round's check-in. The start goes on, having asked for
+    the call; the queue stops at the give-up, the round's check-in still open, so that a Retry
+    gives it up once the database takes it."""
     db_path = await _make_db(tmp_path, until_round=timedelta(hours=1))
     async with get_connection(db_path) as db:
         await db.execute(
@@ -347,9 +357,11 @@ async def test_a_call_whose_give_up_cannot_be_saved_does_not_stop_the_start(tmp_
         await db.commit()
     bot = _make_bot(db_path)
 
-    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=AsyncMock()):
-        await _recover_missed_check_in_calls(bot, now=NOW)
+    await _restart(bot)
 
+    assert await _asked(db_path) == 1
+    stopped = await stopped_job(db_path)
+    assert stopped is not None and stopped["name"] == "give_up"
     assert not await _checkin_cleared(db_path)
 
 
@@ -369,10 +381,11 @@ async def test_a_call_given_up_clears_the_answers_left_for_its_round(tmp_path):
         await db.commit()
     bot = _make_bot(db_path)
 
-    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=AsyncMock()):
-        await _recover_missed_check_in_calls(bot, now=NOW)
+    await _restart(bot)
 
-    assert _logged(bot) == [_GIVEN_UP]
+    assert await _asked(db_path) == 1
+    assert _logged(bot).count(_GIVEN_UP) == 1
+    assert _logged(bot).count(_COUNTS_NOTHING) == 1
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT * FROM driver_round_attendance WHERE round_id = ?", (ROUND_ID,)
@@ -402,10 +415,9 @@ async def test_a_round_whose_results_are_in_is_not_given_up_and_keeps_its_attend
         await db.commit()
     bot = _make_bot(db_path)
 
-    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=AsyncMock()):
-        await _recover_missed_check_in_calls(bot, now=NOW)
+    await _restart(bot)
 
-    assert _logged(bot) == []
+    assert _GIVEN_UP not in _logged(bot)
     async with get_connection(db_path) as db:
         rows = await (await db.execute(
             "SELECT points_awarded FROM driver_round_attendance WHERE round_id = ?", (ROUND_ID,)
@@ -422,9 +434,13 @@ async def test_a_round_whose_results_are_in_is_not_given_up_and_keeps_its_attend
 async def test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_is_over(
     tmp_path, status, cleared,
 ):
-    """A give-up asked for a round whose results are in, or whose check-in is already over, as
-    an amendment's catch-up or a start-up could ask for one: nothing is written, the answer left
-    for the round stands and the log channel is not told."""
+    """A call asked of the queue for a round whose results are in, or whose check-in is already
+    over, its deadline long past, as an amendment's catch-up or a start-up could ask for one:
+    nothing is posted or written, the answer left for the round stands, the log channel is not
+    told it was given up, and the queue does not stop."""
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.core.models.change import ChangeOrigin
+
     db_path = await _make_db(
         tmp_path, until_round=-timedelta(days=3), round_status=status, checkin_cleared=cleared
     )
@@ -436,12 +452,13 @@ async def test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_i
         )
         await db.commit()
     bot = _make_bot(db_path)
-    row = {"round_id": ROUND_ID, "round_number": 4, "division_id": DIVISION_ID,
-           "division_name": "Division 1", "season_number": 3}
 
-    await bot_module._give_up_missed_check_in_call(bot, row)
+    await ask_check_in_call(bot.change_queue, db_path, ROUND_ID, origin=ChangeOrigin.BOT)
+    await run_queue(bot)
 
-    assert _logged(bot) == []
+    assert bot.check_in_channel.sent == []
+    assert _GIVEN_UP not in _logged(bot)
+    assert await stopped_job(db_path) is None
     async with get_connection(db_path) as db:
         rows = await (await db.execute(
             "SELECT * FROM driver_round_attendance WHERE round_id = ?", (ROUND_ID,)

@@ -6,20 +6,27 @@ can all reach one round together. The row saying a call stands is written only a
 none of them could see another about to post, and two calls went out: the second overwrote the
 first's id, leaving a live call in the channel that drivers could answer and nothing tracked.
 
-`run_rsvp_notice` now checks for a standing call itself, under the round's check-in lock.
-`test_two_calls_posted_at_once_for_one_round_post_one` interleaves two posters for real: the
-first to reach the check-in graphic waits for the second to arrive, so without the lock both post.
+Each now asks the change queue for the call (#439, slice 6b), which carries it out one change at a
+time: two asks of one round's call while the first waits make one change (the queue's repeat rule),
+and a call found standing when its change runs is not posted again.
 """
 from __future__ import annotations
 
-import asyncio
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_service import AttendanceService
+from tests.support.change_queue import (
+    attach_queue,
+    change_rows,
+    league_double,
+    run_queue,
+    stopped_job,
+)
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -89,43 +96,31 @@ def _make_channel() -> MagicMock:
     posted = MagicMock()
     posted.id = POSTED_MSG_ID
     posted.channel.id = CHANNEL_ID
+    channel.id = CHANNEL_ID
     channel.send = AsyncMock(return_value=posted)
     return channel
 
 
 def _make_bot(db_path: str, channel: MagicMock) -> MagicMock:
-    bot = MagicMock()
-    bot.db_path = db_path
+    """The league's bot double with its change queue, attendance on and images off, the check-in
+    channel among its channels."""
+    bot = league_double(db_path)
     bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
-    bot.get_channel = MagicMock(return_value=channel)
-    bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    known = {CHANNEL_ID: channel, bot.log_channel.id: bot.log_channel,
+             bot.interaction_channel.id: bot.interaction_channel}
+    bot.get_channel = MagicMock(side_effect=lambda cid: known.get(int(cid)))
+    attach_queue(bot, db_path, now=datetime.now(timezone.utc))
     return bot
 
 
-def _graphic_waiting_for_a_second_poster():
-    """Stands in for the check-in graphic, the last thing drawn before the post.
+async def _ask(bot: MagicMock) -> None:
+    """Ask the queue for the round's call as its timer and the restart do."""
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.core.models.change import ChangeOrigin
 
-    The first poster to reach it waits — for up to a second — until a second poster reaches it
-    too. Two posters that do not exclude each other therefore both post; two that do, the second
-    waiting on the first, carry on after the timeout.
-    """
-    arrivals = 0
-    second_arrived = asyncio.Event()
-
-    async def _attachment(*_args, **_kwargs):
-        nonlocal arrivals
-        arrivals += 1
-        if arrivals >= 2:
-            second_arrived.set()
-        else:
-            try:
-                await asyncio.wait_for(second_arrived.wait(), timeout=1.0)
-            except asyncio.TimeoutError:
-                pass
-        return None
-
-    return _attachment
+    await ask_check_in_call(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT)
 
 
 async def _calls_recorded(db_path: str) -> int:
@@ -137,28 +132,31 @@ async def _calls_recorded(db_path: str) -> int:
 
 
 async def test_two_calls_posted_at_once_for_one_round_post_one(tmp_path):
-    """The scheduler's late run and the restart's late post, side by side."""
+    """The scheduler's late run and the restart's late post both ask for the round's call before
+    the queue runs: one change is asked, and one call posted and recorded."""
     db_path = await _make_db(tmp_path)
     channel = _make_channel()
     bot = _make_bot(db_path, channel)
 
-    with patch.object(rsvp_service, "_checkin_attachment", _graphic_waiting_for_a_second_poster()):
-        await asyncio.gather(
-            rsvp_service.run_rsvp_notice(ROUND_ID, bot),
-            rsvp_service.run_rsvp_notice(ROUND_ID, bot),
-        )
+    await _ask(bot)
+    await _ask(bot)
+    await run_queue(bot)
 
     assert channel.send.await_count == 1, "two posters put two calls in the channel"
     assert await _calls_recorded(db_path) == 1
+    assert [row["kind"] for row in await change_rows(db_path)] == ["attendance.check_in.call"]
 
 
 async def test_a_call_already_standing_is_not_posted_again(tmp_path):
-    """A second call beside the first would divide the division's answers between them."""
+    """A second call beside the first would divide the division's answers between them: the
+    change finds the call standing when it runs, posts nothing and does not stop the queue."""
     db_path = await _make_db(tmp_path, call_standing=True)
     channel = _make_channel()
     bot = _make_bot(db_path, channel)
 
-    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
-        await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
+    await _ask(bot)
+    await run_queue(bot)
 
     channel.send.assert_not_awaited()
+    assert await _calls_recorded(db_path) == 1
+    assert await stopped_job(db_path) is None

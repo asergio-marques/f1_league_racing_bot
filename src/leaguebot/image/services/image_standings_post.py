@@ -1,8 +1,8 @@
 """Post a round's two championships as graphics, or stand aside (040).
 
 **One decision in one place**, as 039's results posting is. Every occasion that reposts the
-textual standings reaches ``results_post_service.post_standings`` — all seven of them, over
-five call sites — so the branch lives there and nowhere else.
+textual standings reaches ``results_post_service.produce_standings``, the posting jobs of
+`review_posting` among them — so the branch lives there and nowhere else.
 
 Two things make this module unlike the five before it.
 
@@ -40,6 +40,7 @@ from pathlib import Path
 
 import discord
 
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.image.models.image_module import PostingOrigin
@@ -79,6 +80,10 @@ class ChampionshipOutcome:
     message_id: int | None = None
     notices: list = field(default_factory=list)
     png_path: Path | None = None
+    #: The ids of the messages this graphic replaces and leaves standing, the anchor first;
+    #: empty where nothing stood and for a season-boundary sheet. The poster deletes none of
+    #: them: the change queue's job takes them down once the graphic stands.
+    replaces: list[int] = field(default_factory=list)
 
     @property
     def posted(self) -> bool:
@@ -474,6 +479,7 @@ async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
 # ── Post ──────────────────────────────────────────────────────────────────
 
 
+@posts_in_a_job
 async def post_championship(
     bot: LeagueBot,
     channel,
@@ -572,19 +578,20 @@ async def _post_one(
     origin: PostingOrigin,
     occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
 ) -> ChampionshipOutcome:
-    """Draw, post and replace one championship's message.
+    """Draw and post one championship's message, and name the one it replaces.
 
-    :func:`post_championship`, then the previous message deleted and the new id saved.
+    :func:`post_championship`, then the previous message's ids read and handed back on the
+    outcome as *replaces*. The poster saves no id and deletes no message (#439 6b): the change
+    queue's job records the new id with its done mark and takes the old message down in a job
+    of its own, so a refused deletion stops the queue instead of being left standing untold.
 
     **Produce before destroying** (FR-048): the PNG is rendered and the new message sent
-    before the previous one is deleted, so a render that fails leaves the channel holding
-    the standings it had, and the caller's text fallback replaces nothing prematurely.
+    before the previous one is named for deletion, so a render that fails leaves the channel
+    holding the standings it had, and the caller's text fallback replaces nothing prematurely.
     """
     from leaguebot.results.services.results_post_service import (
-        _delete_posting,
-        _get_standings_message_id,
-        _get_standings_message_ids,
-        _set_standings_message_id,
+        get_standings_message_id,
+        get_standings_message_ids,
     )
 
     what = f"{subject} — {championship} standings"
@@ -604,29 +611,21 @@ async def _post_one(
 
     # A standings message id is keyed by round, on the top-ranked driver's snapshot row.
     # A season-boundary sheet has no round and no snapshot row to carry one, replaces
-    # nothing, and will never be reposted — so it neither reads nor writes the slot. See
+    # nothing, and will never be reposted — so it names nothing it replaces. See
     # `leaguebot.core.models.classification_occasion`, which is where that reasoning is kept.
     if occasion.names_a_round:
-        previous_id = await _get_standings_message_id(
+        previous_id = await get_standings_message_id(
             db_path, division_id, round_id, championship
         )
         if previous_id is not None:
             # The whole posting it replaces, which may be a chunked textual one (#345).
-            await _delete_posting(
-                channel,
-                previous_id,
-                await _get_standings_message_ids(db_path, division_id, round_id, championship),
-                label="standings message",
+            previous_ids = await get_standings_message_ids(
+                db_path, division_id, round_id, championship
             )
-
-        # **The chunk list is written with the id** (#345). A graphic is one message, but with
-        # no list recorded, deleting it later fell back to walking forward over the bot's own
-        # messages — which, once a division rebuild posts every replacement before deleting any
-        # original, walks from each old graphic straight into the new ones and deletes them.
-        await _set_standings_message_id(
-            db_path, division_id, round_id, message.id, championship,
-            message_ids=json.dumps([message.id]),
-        )
+            old = [int(each) for each in previous_ids or [previous_id]]
+            if previous_id not in old:
+                old.insert(0, previous_id)
+            outcome.replaces = old
 
     if outcome.notices:
         await report_notices(bot, what, outcome.notices)

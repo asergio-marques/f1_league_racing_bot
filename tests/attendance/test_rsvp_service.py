@@ -20,7 +20,10 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.rsvp_service import run_reserve_distribution
+from leaguebot.attendance.services.rsvp_service import (
+    reserve_distribution_on,
+    write_distribution_on,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -32,10 +35,20 @@ _FUTURE = datetime(2025, 6, 8, 14, 0, 0, tzinfo=timezone.utc)
 
 
 async def _make_db(tmp_path) -> str:
-    """A migrated database for run_reserve_distribution; _seed_base gives it a round."""
+    """A migrated database for the distribution; _seed_base gives it a round."""
     path = str(tmp_path / "rsvp_test.db")
     await run_migrations(path)
     return path
+
+
+async def _distribute(round_id: int, division_id: int, bot: MagicMock) -> bool:
+    """Place the round's reserves in a save of the test's own: the placements worked out, then
+    written (each run is the whole answer), then committed. Returns whether any were placed."""
+    async with get_connection(bot.db_path) as db:
+        assignments, standby = await reserve_distribution_on(db, round_id, division_id)
+        await write_distribution_on(db, round_id, division_id, assignments, standby)
+        await db.commit()
+    return bool(assignments or standby)
 
 
 def _make_bot(db_path: str) -> MagicMock:
@@ -139,7 +152,7 @@ class TestNoAcceptedReserves:
 
         bot = _make_bot(db_path)
         # Should return without writing anything
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             row1 = await _get_dra(db, dra1)
@@ -183,7 +196,7 @@ class TestPriorityOrdering:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
@@ -231,7 +244,7 @@ class TestPriorityPartialAllocation:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
@@ -277,7 +290,7 @@ class TestPriorityNoFtDrivers:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
@@ -338,7 +351,7 @@ class TestTiebreakerStandings:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
@@ -385,7 +398,7 @@ class TestTiebreakerStandings:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
@@ -424,7 +437,7 @@ class TestTiebreakerAlphabetical:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
@@ -485,7 +498,7 @@ class TestAcceptedAtOrdering:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             early_row = await _get_dra(db, early_dra)
@@ -525,7 +538,7 @@ class TestStandbyClassification:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             first_row  = await _get_dra(db, first_dra)
@@ -584,12 +597,12 @@ class TestRedistribution:
         reserve = await _seed_one_seat_one_reserve(db_path, "DECLINED")
         bot = _make_bot(db_path)
 
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
         async with get_connection(db_path) as db:
             assert (await _get_dra(db, reserve))["assigned_team_id"] == 101
 
         await _answer(db_path, 1, "ACCEPTED")
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             row = await _get_dra(db, reserve)
@@ -607,9 +620,9 @@ class TestRedistribution:
         reserve = await _seed_one_seat_one_reserve(db_path, "DECLINED")
         bot = _make_bot(db_path)
 
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
         await _answer(db_path, 2, "DECLINED")
-        placed = await run_reserve_distribution(42, 10, bot)
+        placed = await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             row = await _get_dra(db, reserve)
@@ -647,6 +660,16 @@ async def _make_attendance_db(tmp_path) -> str:
     return path
 
 
+async def _write(svc, db_path: str, writer: str, *args, **kwargs):
+    """Call the attendance service's *writer* in its `_on` form, on a connection of the test's
+    own that it then commits, as a job's save does (#439, slice 6b: the committing forms are
+    gone, every check-in write being made in a job's save)."""
+    async with get_connection(db_path) as db:
+        result = await getattr(svc, f"{writer}_on")(db, *args, **kwargs)
+        await db.commit()
+    return result
+
+
 class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_bulk_insert_and_get(self, tmp_path):
@@ -654,8 +677,9 @@ class TestAttendanceServiceCrud:
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await svc.bulk_insert_attendance_rows(
-            round_id=1, division_id=10, driver_profile_ids=[100, 200, 300]
+        await _write(
+            svc, db_path, "bulk_insert_attendance_rows",
+            round_id=1, division_id=10, driver_profile_ids=[100, 200, 300],
         )
         rows = await svc.get_attendance_rows(round_id=1, division_id=10)
         assert len(rows) == 3
@@ -668,8 +692,8 @@ class TestAttendanceServiceCrud:
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await svc.bulk_insert_attendance_rows(1, 10, [100, 200])
-        await svc.bulk_insert_attendance_rows(1, 10, [100, 200])  # idempotent
+        await _write(svc, db_path, "bulk_insert_attendance_rows", 1, 10, [100, 200])
+        await _write(svc, db_path, "bulk_insert_attendance_rows", 1, 10, [100, 200])  # idempotent
         rows = await svc.get_attendance_rows(round_id=1, division_id=10)
         assert len(rows) == 2
 
@@ -679,8 +703,8 @@ class TestAttendanceServiceCrud:
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await svc.bulk_insert_attendance_rows(1, 10, [100])
-        await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED", now=_NOW)
+        await _write(svc, db_path, "bulk_insert_attendance_rows", 1, 10, [100])
+        await _write(svc, db_path, "upsert_rsvp_status", 1, 10, 100, "ACCEPTED", now=_NOW)
         row = await svc.get_attendance_row_for_driver(1, 10, 100)
         assert row is not None
         assert row.rsvp_status == "ACCEPTED"
@@ -692,9 +716,9 @@ class TestAttendanceServiceCrud:
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await svc.bulk_insert_attendance_rows(1, 10, [100])
-        await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED", now=_NOW)
-        await svc.upsert_rsvp_status(1, 10, 100, "DECLINED", now=_NOW)
+        await _write(svc, db_path, "bulk_insert_attendance_rows", 1, 10, [100])
+        await _write(svc, db_path, "upsert_rsvp_status", 1, 10, 100, "ACCEPTED", now=_NOW)
+        await _write(svc, db_path, "upsert_rsvp_status", 1, 10, 100, "DECLINED", now=_NOW)
         row = await svc.get_attendance_row_for_driver(1, 10, 100)
         assert row is not None
         assert row.rsvp_status == "DECLINED"
@@ -702,15 +726,15 @@ class TestAttendanceServiceCrud:
 
     @pytest.mark.asyncio
     async def test_upsert_creates_the_row_when_none_exists(self, tmp_path):
-        """No `bulk_insert_attendance_rows` first, which is issue #209 exactly: only
-        `run_rsvp_notice` opens those rows, and only for the roster as it stood when the call
+        """No `bulk_insert_attendance_rows_on` first, which is issue #209 exactly: only
+        the call's record opens those rows, and only for the roster as it stood when the call
         was posted. A driver placed into the division afterwards answers a call with no row of
         their own, and this used to be two bare UPDATEs that discarded the answer in silence."""
         db_path = await _make_attendance_db(tmp_path)
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED", now=_NOW)
+        await _write(svc, db_path, "upsert_rsvp_status", 1, 10, 100, "ACCEPTED", now=_NOW)
         row = await svc.get_attendance_row_for_driver(1, 10, 100)
         assert row is not None
         assert row.rsvp_status == "ACCEPTED"
@@ -725,7 +749,7 @@ class TestAttendanceServiceCrud:
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await svc.upsert_rsvp_status(1, 10, 100, "DECLINED", now=_NOW)
+        await _write(svc, db_path, "upsert_rsvp_status", 1, 10, 100, "DECLINED", now=_NOW)
         row = await svc.get_attendance_row_for_driver(1, 10, 100)
         assert row is not None
         assert row.rsvp_status == "DECLINED"
@@ -736,13 +760,14 @@ class TestAttendanceServiceCrud:
         """Both paths report True. The return value exists so the bulk-set form lists as applied
         only what was saved, instead of assuming: the half of issue #209 that let a success
         message stand over a write that changed nothing. A press gets the same from
-        `answer_rsvp`."""
+        `answer_rsvp_on`."""
         db_path = await _make_attendance_db(tmp_path)
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        assert await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED", now=_NOW) is True   # inserted
-        assert await svc.upsert_rsvp_status(1, 10, 100, "DECLINED", now=_NOW) is True   # updated
+        inserted = await _write(svc, db_path, "upsert_rsvp_status", 1, 10, 100, "ACCEPTED", now=_NOW)
+        updated = await _write(svc, db_path, "upsert_rsvp_status", 1, 10, 100, "DECLINED", now=_NOW)
+        assert (inserted, updated) == (True, True)
 
     @pytest.mark.asyncio
     async def test_get_attendance_row_for_driver_returns_none_when_missing(self, tmp_path):
@@ -758,7 +783,7 @@ class TestAttendanceServiceCrud:
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await svc.insert_embed_message(1, 10, "999000111", "555000222")
+        await _write(svc, db_path, "insert_embed_message", 1, 10, "999000111", "555000222")
         em = await svc.get_embed_message(round_id=1, division_id=10)
         assert em is not None
         assert em.message_id == "999000111"
@@ -771,8 +796,8 @@ class TestAttendanceServiceCrud:
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await svc.insert_embed_message(1, 10, "first_msg", "111")
-        await svc.insert_embed_message(1, 10, "second_msg", "111")  # upsert
+        await _write(svc, db_path, "insert_embed_message", 1, 10, "first_msg", "111")
+        await _write(svc, db_path, "insert_embed_message", 1, 10, "second_msg", "111")  # upsert
         em = await svc.get_embed_message(round_id=1, division_id=10)
         assert em is not None
         assert em.message_id == "second_msg"
@@ -791,8 +816,8 @@ class TestAttendanceServiceCrud:
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await svc.insert_embed_message(1, 10, "msg_a", "ch1")
-        await svc.insert_embed_message(2, 10, "msg_b", "ch1")
+        await _write(svc, db_path, "insert_embed_message", 1, 10, "msg_a", "ch1")
+        await _write(svc, db_path, "insert_embed_message", 2, 10, "msg_b", "ch1")
         all_msgs = await svc.get_all_embed_messages()
         assert len(all_msgs) == 2
         mids = {m.message_id for m in all_msgs}

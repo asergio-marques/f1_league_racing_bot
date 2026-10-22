@@ -11,7 +11,7 @@ to them by `tests/core/test_schema_rules.py`.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -27,6 +27,11 @@ class ChangeState(str, Enum):
     REFUSED = "REFUSED"
     DROPPED = "DROPPED"
     DISCARDED = "DISCARDED"
+
+
+#: The lane of the league's changes, the queue as a league knows it. A conversation's lane is
+#: `"channel:<id>"`, keyed by the channel it is held in.
+LEAGUE_LANE = "league"
 
 
 class ChangeOrigin(str, Enum):
@@ -139,15 +144,28 @@ class StepFailedOnDiscord(Exception):
     `notice` is a short clause a job adds to its stop notice, saying what its failure leaves: the
     amendment's check-in call says what is left for the round. The stop notice and the line of a
     Retry that fails again carry it after the kind of fault.
+
+    `record` is what the failure leaves to be written (it is handed an `aiosqlite.Connection`,
+    which a model does not import): the queue runs it on the connection of the
+    save that marks the job failed, and commits nothing itself, so that a record dropped because
+    of the failure goes with the stop and not apart from it (the amendment's check-in call drops
+    the record of an earlier call nobody can see). It runs again with each failed try, so it must
+    be safe to run twice.
     """
 
     def __init__(
-        self, reason: str, *, result: dict[str, Any] | None = None, notice: str | None = None,
+        self,
+        reason: str,
+        *,
+        result: dict[str, Any] | None = None,
+        notice: str | None = None,
+        record: Callable[[Any], Awaitable[None]] | None = None,
     ) -> None:
         super().__init__(reason)
         self.reason = reason
         self.result = result
         self.notice = notice
+        self.record = record
 
 
 class GuildUnavailable(Exception):
@@ -165,6 +183,13 @@ def module_off(module: str) -> str:
 FORECAST = "weather.forecast"
 FORECAST_CLEAN_UP = "weather.forecast.clean_up"
 FORECAST_FLUSH = "weather.forecast.flush"
+
+#: The kinds of attendance's four check-in changes, named here so that core (test mode) asks for
+#: them without importing the module, as the forecast's are.
+CHECK_IN_CALL = "attendance.check_in.call"
+CHECK_IN_LAST_NOTICE = "attendance.check_in.last_notice"
+CHECK_IN_DEADLINE = "attendance.check_in.deadline"
+CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
 
 
 def forecasts_named(phases: Iterable[int]) -> str:

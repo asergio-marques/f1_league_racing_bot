@@ -11,9 +11,10 @@ at once, each a job of its own, and `close`, which reads the round list for the 
 
 Every test drives the real cog and the real queue through `tests/support/season_league.py`'s
 `ongoing_league`, with "now" pinned. Pro's round 3 (id 213) is NOT_RUN 90 days out, its check-in
-call standing; round 4 (id 214) 120 days out. The weather phases and the call's repost are
-recorded rather than run (`phases`, `reposts`), patched before the league is built so that the
-builder's hooks reach the recorders however they bind them. The change type is unbuilt until the
+call standing; round 4 (id 214) 120 days out. The weather phases are recorded rather than run
+(`phases`), patched before the league is built so that the builder's
+hooks reach the recorder however they bind it; the call is posted as attendance posts it, and read
+from what its check-in channel was sent (`reposts`). The change type is unbuilt until the
 build, so each test is marked to fail until then: today Confirm amends on the spot.
 """
 from __future__ import annotations
@@ -21,10 +22,10 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import sqlite3
 import sys
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -81,7 +82,7 @@ CANNOT_DISCARD = (
 NO_LONGER = "⛔ This round can no longer be amended:\n• "
 NOTHING_CHANGED = "\n\n**Nothing has been changed.** Run `/round amend` again to start over."
 NOT_DONE = "⚠️ **Not done**"
-#: The message a check-in call posted by the `reposts` recorder stands as.
+#: The message of a check-in call recorded as posted late at a restart.
 LATE_CALL = 7101
 #: What each stop notice adds where an amendment's call is refused, by what is left of the round.
 EARLIER_STANDS = "the earlier call still stands, and the answers given to it count"
@@ -108,78 +109,54 @@ def phases(monkeypatch):
     return recorded_draws(monkeypatch)
 
 
+class _Reposts:
+    """What the `reposts` fixture saw of the league it wrapped: the check-in calls posted, and
+    the fault their sends are refused with."""
+
+    def __init__(self) -> None:
+        self.league: Any = None
+
+    @property
+    def posted(self) -> list[tuple[int, int]]:
+        """`(round id, division id)` of each check-in call sent since the league was built: a
+        send to a check-in channel whose message stands recorded as a round's call."""
+        if self.league is None:
+            return []
+        checkins = {DIVISIONS[division][3].checkin for division in DIVISIONS}
+        sent = [(cid, mid) for kind, cid, mid in self.league.events
+                if kind == "send" and cid in checkins]
+        with sqlite3.connect(self.league.db_path) as db:
+            calls = {(int(channel), int(message)): (rid, division)
+                     for rid, division, message, channel in db.execute(
+                         "SELECT round_id, division_id, message_id, channel_id "
+                         "FROM rsvp_embed_messages")}
+        return [calls[each] for each in sent if each in calls]
+
+    def refuse_sends(self, fault: BaseException | None) -> None:
+        """Every send to Pro's check-in channel raises *fault* in its place."""
+        self.league.channel(PRO_CH.checkin).send_fails = fault
+
+
 @pytest.fixture
 def reposts(monkeypatch):
-    """Attendance's posts of a check-in call, recording `(round id, division id)` in `posted`,
-    raising `fault` instead where it is set: its repost (`repost_rsvp_call`), which, as the real
-    one does, records the call it posts in place of any standing; and its first post
-    (`run_rsvp_notice`), which, as the real one does, posts nothing where a call stands for the
-    round and records the call it posts as standing."""
-    from leaguebot.attendance.services import rsvp_service
+    """The check-in call posted as attendance posts it, by whichever of the bot's code posts it
+    (#439, slice 6b, C28: today `run_rsvp_notice` and `repost_rsvp_call` whole, then the call's
+    own job), and recorded from what Discord was sent, so that no test leans on either.
 
-    record = SimpleNamespace(posted=[], fault=None)
+    It wraps this module's `ongoing_league`: the league each test builds gets attendance's own
+    service, its writers included (`_attendance_as_it_is`), and the fixture keeps it. `posted`
+    is `(round id, division id)` of each call sent to a check-in channel and recorded as the
+    round's call; `refuse_sends(fault)` refuses every send to Pro's check-in channel with it."""
+    record = _Reposts()
+    built = ongoing_league
 
-    async def _repost(rid: int, division_id: int, bot: Any, *_args: Any, **_kwargs: Any) -> None:
-        if record.fault is not None:
-            raise record.fault
-        async with get_connection(bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, "
-                "channel_id, posted_at) SELECT ?, ?, ?, rsvp_channel_id, ? "
-                "FROM attendance_division_config WHERE division_id = ? "
-                "ON CONFLICT(round_id, division_id) DO UPDATE SET "
-                "message_id = excluded.message_id, channel_id = excluded.channel_id, "
-                "posted_at = excluded.posted_at, last_notice_msg_id = NULL, "
-                "distribution_msg_id = NULL",
-                (rid, division_id, str(LATE_CALL), "2026-01-01T00:00:00", division_id),
-            )
-            await db.commit()
-        record.posted.append((rid, division_id))
+    async def _wrapped(*args: Any, **kwargs: Any) -> Any:
+        league = await built(*args, **kwargs)
+        _attendance_as_it_is(league, monkeypatch)
+        record.league = league
+        return league
 
-    async def _post(rid: int, bot: Any, *_args: Any, **_kwargs: Any) -> None:
-        async with get_connection(bot.db_path) as db:
-            cursor = await db.execute(
-                "SELECT r.division_id, c.rsvp_channel_id FROM rounds r "
-                "JOIN attendance_division_config c ON c.division_id = r.division_id "
-                "WHERE r.id = ?",
-                (rid,),
-            )
-            found = await cursor.fetchone()
-            cursor = await db.execute(
-                "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ?", (rid,)
-            )
-            standing = await cursor.fetchone() is not None
-        if standing:
-            return
-        if record.fault is not None:
-            raise record.fault
-        async with get_connection(bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, "
-                "channel_id, posted_at) VALUES (?, ?, ?, ?, ?)",
-                (rid, found["division_id"], str(LATE_CALL), str(found["rsvp_channel_id"]),
-                 "2026-01-01T00:00:00"),
-            )
-            await db.commit()
-        record.posted.append((rid, found["division_id"]))
-
-    monkeypatch.setattr(rsvp_service, "repost_rsvp_call", _repost)
-    monkeypatch.setattr(rsvp_service, "run_rsvp_notice", _post)
-    return record
-
-
-@pytest.fixture
-def deadlines(monkeypatch):
-    """Attendance's check-in deadline (the reserves' distribution), recording the round ids it
-    was run for in `ran`."""
-    from leaguebot.attendance.services import rsvp_service
-
-    record = SimpleNamespace(ran=[])
-
-    async def _run(rid: int, *_args: Any, **_kwargs: Any) -> None:
-        record.ran.append(rid)
-
-    monkeypatch.setattr(rsvp_service, "run_rsvp_deadline", _run)
+    monkeypatch.setattr(sys.modules[__name__], "ongoing_league", _wrapped)
     return record
 
 
@@ -293,18 +270,32 @@ def _stop_notices(league: Any) -> list[str]:
 
 
 def _real_call(league: Any, monkeypatch: Any) -> None:
-    """Attendance's own call poster, drawing no picture, reading the division's check-in channel
-    as it stands, and recording a call it posts through attendance's own service."""
-    from leaguebot.attendance.services import rsvp_service
+    """Attendance's own call poster, drawing no picture (the image module's check-in graphic
+    gives none) and reading the division's check-in channel as it stands. The call's record —
+    its message and the round's NO_RSVP rows — is written by the call's own job in its save
+    (#439, slice 6b, C28): the attendance service's writers on a handed connection (its `_on`
+    forms) are attendance's own, and its committing writers are left as the league's doubles."""
     from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.image.services import image_rsvp_post
 
-    monkeypatch.setattr(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None))
+    monkeypatch.setattr(image_rsvp_post, "try_attach", AsyncMock(return_value=None))
     attendance = AttendanceService(league.db_path)
     league.bot.attendance_service.get_division_config = attendance.get_division_config
-    league.bot.attendance_service.insert_embed_message = attendance.insert_embed_message
-    league.bot.attendance_service.bulk_insert_attendance_rows = (
-        attendance.bulk_insert_attendance_rows
-    )
+    for name in dir(AttendanceService):
+        if name.endswith("_on") and not name.startswith("_"):
+            setattr(league.bot.attendance_service, name, getattr(attendance, name))
+
+
+def _attendance_as_it_is(league: Any, monkeypatch: Any) -> None:
+    """`_real_call`, the attendance service's committing writers made real as well, so that the
+    call's record is written whichever of them the code that posts it uses."""
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+
+    _real_call(league, monkeypatch)
+    attendance = AttendanceService(league.db_path)
+    for name in dir(AttendanceService):
+        if not name.startswith("_") and callable(getattr(AttendanceService, name)):
+            setattr(league.bot.attendance_service, name, getattr(attendance, name))
 
 
 def _success_lines(league: Any) -> list[str]:
@@ -927,7 +918,7 @@ async def test_a_discarded_call_repost_names_the_command_that_posts_it(tmp_path,
     down and posted again. The repost fails on a fault of the bot's own and a league admin
     discards it: the reply names the call and the command that posts it."""
     league = await ongoing_league(tmp_path, attendance=True)
-    reposts.fault = RuntimeError("embed could not be built")
+    reposts.refuse_sends(RuntimeError("embed could not be built"))
     press = await _amended(league, scheduled_at=_at(league, days=3))
     await run_queue(league.bot)
     assert await _stopped_at(league) == "post_call"
@@ -1238,17 +1229,37 @@ async def test_a_round_whose_moment_passed_while_its_save_stood_stopped_opens_it
 
 
 async def test_a_check_in_deadline_that_passed_while_the_save_stood_stopped_is_run_once_it_is_discarded(
-    tmp_path, reposts, deadlines,
+    tmp_path, reposts,
 ):
     """Attendance on, its deadline two hours before the round. Pro's round 3 is two hours and
-    five minutes out, its call standing and its reserves not yet distributed. It is moved a day
-    later; the save stops, and ten minutes on, past the old deadline, a league admin discards it.
-    The round stands at its old moment, its deadline gone by with its call standing: the deadline
-    is run at once, as a restart runs it, and no call is posted."""
+    five minutes out, its call standing (7001) and its reserves not yet distributed. It is moved
+    a day later; the save stops, and ten minutes on, past the old deadline, a league admin
+    discards it. The round stands at its old moment, its deadline gone by with its call
+    standing: the deadline is run at once, as a restart runs it — the call's buttons taken off
+    and one notice of the placements posted in Pro's check-in channel and recorded — and no
+    call is posted."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _deadline_not_yet_run(league)
+    before = await _place_and_discard_past_the_deadline(league)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _moment(league) == before
+    assert ("edit", PRO_CH.checkin, CALL_MESSAGES[0]) in league.events
+    [announced] = _sent_in_check_in(league)
+    assert await _distribution_recorded(league) == str(announced)
+    assert reposts.posted == []
+
+
+async def _deadline_not_yet_run(league: Any) -> None:
+    """Round 3's reserves not yet distributed: no announcement recorded."""
     await league.write(
         "UPDATE rsvp_embed_messages SET distribution_msg_id = NULL WHERE round_id = ?", R3
     )
+
+
+async def _place_and_discard_past_the_deadline(league: Any) -> datetime:
+    """Pro's round 3 two hours and five minutes out is moved a day later; the save stops, and ten
+    minutes on, past the old deadline, a league admin discards it. The round's moment before."""
     await _place_r3(league, hours=2, minutes=5)
     before = await _moment(league)
     await _amended(league, scheduled_at=_at(league, days=1, hours=2))
@@ -1257,11 +1268,97 @@ async def test_a_check_in_deadline_that_passed_while_the_save_stood_stopped_is_r
         assert await _stopped_at(league) == "apply"
         league.clock.advance(minutes=10)
         await discard_job(league.bot)
+    return before
 
-    assert await stopped_job(league.db_path) is None
-    assert await _moment(league) == before
-    assert deadlines.ran == [R3]
-    assert reposts.posted == []
+
+def _sent_in_check_in(league: Any) -> list[int]:
+    return [mid for kind, cid, mid in league.events if kind == "send" and cid == PRO_CH.checkin]
+
+
+async def _distribution_recorded(league: Any) -> Any:
+    [row] = await league.rows(
+        "SELECT distribution_msg_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
+    return row["distribution_msg_id"]
+
+
+async def test_an_amendment_s_deadline_whose_announcement_is_refused_stops_the_queue(
+    tmp_path, reposts,
+):
+    """As the deadline run once its save is discarded (Pro's round 3, its old deadline passed),
+    Discord refusing every post in Pro's check-in channel: the announcement of the placements is
+    not posted, so the queue stops with nothing recorded, rather than the refusal being logged
+    on the host alone."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _deadline_not_yet_run(league)
+    reposts.refuse_sends(http_error(discord.Forbidden, status=403, text="Missing Permissions"))
+
+    await _place_and_discard_past_the_deadline(league)
+
+    assert await stopped_job(league.db_path) is not None
+    assert await _distribution_recorded(league) is None
+
+
+async def test_an_amendment_s_deadline_whose_lock_is_refused_stops_the_queue(tmp_path, reposts):
+    """As the deadline run once its save is discarded (Pro's round 3, its old deadline passed),
+    Discord refusing the edit that takes the call's buttons off (7001): the queue stops there,
+    nothing yet announced."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _deadline_not_yet_run(league)
+    league.channel(PRO_CH.checkin).messages[CALL_MESSAGES[0]].edit = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions"))
+
+    await _place_and_discard_past_the_deadline(league)
+
+    assert await stopped_job(league.db_path) is not None
+    assert _sent_in_check_in(league) == []
+
+
+async def test_an_amendment_s_clean_up_whose_delete_is_refused_stops_the_queue(tmp_path):
+    """Attendance on. Pro's round 3 is thirty minutes out, its call standing (7001 to 7003). It
+    is moved a day later; the save stops, and a day and forty minutes on, past the check-in's
+    clean-up due a day after the old moment, a league admin discards it. Discord refuses to
+    delete the last notice (7002): the queue stops there, the notice still standing and the
+    round's check-in not marked over, rather than the refusal being logged on the host alone."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _place_r3(league, minutes=30)
+    league.undeletable.add(CALL_MESSAGES[1])
+    await _amended(league, scheduled_at=_at(league, days=1))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(days=1, minutes=40)
+        await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is not None
+    assert CALL_MESSAGES[1] in league.channel(PRO_CH.checkin).messages
+    [row] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", R3)
+    assert row["checkin_cleared"] == 0
+
+
+async def test_an_amendment_s_discarded_clean_up_delete_is_named_by_its_link(tmp_path):
+    """Attendance on. Pro's round 3 was raced twenty-three hours and fifty-five minutes ago, its
+    call standing (7001 to 7003). It is moved to a day from now; the save stops, and ten minutes
+    on, past the check-in's clean-up due a day after the old moment, a league admin discards it.
+    Discord refuses to delete the last notice (7002) and the queue stops there. A league admin
+    discards that too: the reply, still within Discord's fourteen minutes, names the last notice
+    by its link, for the admin to open and delete by hand, not by a bare message id."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _place_r3(league, hours=-23, minutes=-55)
+    league.undeletable.add(CALL_MESSAGES[1])
+    press = await _amended(league, scheduled_at=_at(league, days=1))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(minutes=10)
+        await discard_job(league.bot)
+    assert await _stopped_at(league) == "delete_message"
+
+    await discard_job(league.bot)
+
+    told = _outcome(press)
+    named = ("could not be deleted a day after the round, and a league admin discarded it; "
+             f"delete it by hand (https://discord.test/{PRO_CH.checkin}/{CALL_MESSAGES[1]})")
+    assert named in told, told
 
 
 async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_once_it_is_discarded(
@@ -1557,7 +1654,7 @@ async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_
         await _run_through(league, "take_down_call")
 
     await _recover_missed_check_in_calls(league.bot, now=league.clock.now)
-    assert reposts.posted == [(R3, PRO)]
+    assert reposts.posted == []
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
@@ -1770,17 +1867,19 @@ async def test_a_passed_round_s_results_submission_is_run_at_once_after_it_is_ar
 
 
 async def test_a_check_in_deadline_whose_reserves_were_distributed_is_not_run_again(
-    tmp_path, reposts, deadlines,
+    tmp_path, reposts,
 ):
     """Attendance on, its deadline two hours before the round. Pro's round 3, its call standing,
     has had its reserves distributed (its distribution announced, message 7003). It is moved a
     day later; the save stops, and ten minutes on, past the old deadline, a league admin discards
-    it. The deadline has been run: it is not run again, and no call is posted."""
+    it. The deadline has been run: it is not run again — the call is not edited and nothing is
+    posted in Pro's check-in channel — and no call is posted."""
     league = await ongoing_league(tmp_path, attendance=True)
     await _passed_while_the_save_stood_stopped(league, minutes=10)
 
     assert "run_deadline" not in [job["name"] for job in await _jobs(league)]
-    assert deadlines.ran == []
+    assert ("edit", PRO_CH.checkin, CALL_MESSAGES[0]) not in league.events
+    assert _sent_in_check_in(league) == []
     assert reposts.posted == []
 
 
@@ -2273,3 +2372,46 @@ async def test_a_superseded_forecast_that_will_not_delete_is_named_as_superseded
              "and a league admin discarded it; delete it by hand (")
     [bullet] = [line for line in outcome.splitlines() if named in line]
     assert str(earlier) in bullet
+
+
+async def test_an_amendment_s_call_saves_its_record_in_the_job(tmp_path, monkeypatch):
+    """Attendance on. Pro's round 3, its call standing and answered (Lewis accepted, Max not), is
+    brought forward to three days out, so its call is taken down and posted again. The attendance
+    service's own committing writers are left as the league's doubles, which write nothing: the
+    call posted again is recorded all the same, by the job that posted it, its message the one
+    standing in Pro's check-in channel and the round's attendance rows kept, and the job is done
+    with its record in one save (slice 6's A21, deferred until now)."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    _real_call(league, monkeypatch)
+    await _amended(league, scheduled_at=_at(league, days=3))
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    sent = [mid for kind, cid, mid in league.events if kind == "send" and cid == PRO_CH.checkin]
+    [row] = await league.rows("SELECT message_id, channel_id FROM rsvp_embed_messages "
+                              "WHERE round_id = ?", R3)
+    assert sent and row["message_id"] == str(sent[-1])
+    assert row["message_id"] in {str(mid) for mid in league.channel(PRO_CH.checkin).messages}
+    assert row["channel_id"] == str(PRO_CH.checkin)
+    assert len(await league.rows(
+        "SELECT * FROM driver_round_attendance WHERE round_id = ?", R3
+    )) == 2
+    league.bot.attendance_service.insert_embed_message.assert_not_called()
+    league.bot.attendance_service.bulk_insert_attendance_rows.assert_not_called()
+
+
+async def test_an_amendment_s_call_posted_again_writes_no_post_check_in_line(tmp_path, reposts):
+    """Attendance on. Pro's round 3, its call standing, is brought forward to three days out, so
+    its call is taken down and posted again by the amendment's own jobs. The log channel records
+    the amendment, and no line saying the amending manager ran `/attendance post-check-in`, a
+    command nobody ran (core spec, the record of what changed)."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _amended(league, scheduled_at=_at(league, days=3))
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert reposts.posted == [(R3, PRO)]
+    assert len(_success_lines(league)) == 1
+    assert [line for line in _log_lines(league) if "/attendance post-check-in" in line] == []

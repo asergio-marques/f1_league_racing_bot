@@ -138,7 +138,12 @@ ROLES_KEPT = (
     "roles and the driver role by hand."
 )
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
-WINDOW_OPEN = "The signup window could not be closed. Close it with `/signup close`."
+WINDOW_OPEN = (
+    "The signup window could not be closed. Close it with `/signup close`. "
+    "Where a close time is set, run `/signup close-time cancel` first, and where a season's end "
+    "or wind-down is still on the queue, let it finish first, as `/signup close` is refused "
+    "until then."
+)
 FORECASTS_KEPT = (
     "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
     "forecast channel."
@@ -452,12 +457,16 @@ def _forbidden() -> discord.HTTPException:
 
 
 async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
+    """The signup window is open and the cancellation queued; recording the window closed fails.
+    The queue stops at `post_closed`, whose record writes the window's close, with the season
+    still active, the window open and nothing written to its history; retried, the window closes
+    and the season is cancelled."""
     league = await ongoing_league(tmp_path, signups_open=True)
     league.close_fails = RuntimeError("the window could not be recorded closed")
     await _asked(league)
 
     await run_queue(league.bot)
-    assert await _stopped_at(league) == ("close_window", None)
+    assert await _stopped_at(league) == ("post_closed", None)
     assert await _status(league) == "ACTIVE"
     assert await window_open(league)
     assert await _history(league) == []
@@ -1354,14 +1363,16 @@ async def _role_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
 #: Each job a league admin may discard: the league that makes it fail, where the queue stops,
 #: and what the reply and the line say was not done.
 _DISCARDS = {
-    "close_window": (_window_refused, ("close_window", None), WINDOW_OPEN),
+    "post_closed": (_window_refused, ("post_closed", None), WINDOW_OPEN),
     "flush_forecasts": (_flush_refused, ("flush_forecasts", None), FORECASTS_KEPT),
     "close_signup": (_lock_refused, ("close_signup", SIGNING_UP), SIGNUP_KEPT),
     "take_driver_role": (_role_refused, ("take_driver_role", UNASSIGNED), DRIVER_ROLE_KEPT),
 }
 
 
-@pytest.mark.parametrize("job", sorted(_DISCARDS))
+@pytest.mark.parametrize("job", [
+    job for job in sorted(_DISCARDS)
+])
 async def test_a_discarded_job_is_named_with_what_to_do_by_hand_beneath_the_success_line(
     tmp_path, monkeypatch, job,
 ):
@@ -1406,34 +1417,48 @@ async def test_a_discarded_signup_notice_still_closes_the_channel_and_the_outcom
 
 # ── A signup's end, marked in the save that ends it (amendment K2) ───────────────────
 
-#: How a driver a discarded window close returned is named, in the reply and the line.
+#: How a driver returned and left untold would be named, in the reply and the line: never for a
+#: discarded closed notice, which drops only that post (b15-2).
 RETURNED_NOT_TOLD = (
     f"<@{SIGNING_UP}> was returned to Not Signed Up when signups closed, but was not told and "
     "their channel was not closed: tell them and delete it by hand."
 )
 
 
-async def test_a_discarded_window_close_names_and_forgets_the_drivers_it_returned(tmp_path):
+async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_close_returned(
+    tmp_path,
+):
     """The season ongoing with its signup window open and driver 105 still filling in the
-    wizard. The window's close returns 105, then recording the window closed fails, and a league
-    admin discards `close_window`. 105 is never told: the reply and the closing line name them
-    as returned but not told, their channel to delete by hand; no `signup_notice` is planned for
-    them, and the mark is taken, so no later close finds them."""
+    wizard. The window's close returns 105, then `post_closed`, whose record writes the window
+    closed, fails, and a league admin discards it. Only that post is dropped (b15-2): 105 is
+    still told, then their channel locked, by their own jobs; the reply and the closing line say
+    the window was not closed, to be closed with `/signup close`, and never name 105 as returned
+    but not told; the window is still recorded open, the season cancelled, and 105 is owed
+    nothing more."""
     league = await ongoing_league(tmp_path, signups_open=True)
     await league.write("UPDATE seasons SET stage = 'ONGOING_SIGNUPS' WHERE id = ?", SEASON_ID)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     league.close_fails = RuntimeError("the window could not be recorded closed")
     interaction = await _asked(league)
     await run_queue(league.bot)
-    assert await _stopped_at(league) == ("close_window", None)
+    assert await _stopped_at(league) == ("post_closed", None)
+    assert league.notices == [] and league.locked == []
 
     await discard_job(league.bot)
 
-    assert RETURNED_NOT_TOLD in reply(interaction)
+    assert [uid for uid, _notice in league.notices] == [SIGNING_UP]
+    assert league.locked == [SIGNING_UP]
+    assert [(kind, uid) for kind, uid, _n in league.events
+            if kind in ("notice", "lock") and uid == SIGNING_UP] == [
+        ("notice", SIGNING_UP), ("lock", SIGNING_UP),
+    ]
+    assert CANCELLED in reply(interaction)
+    assert WINDOW_OPEN in _not_done(reply(interaction))
+    assert RETURNED_NOT_TOLD not in reply(interaction)
     [line] = _success_lines(league)
-    assert _logged(RETURNED_NOT_TOLD) in line
-    assert ("signup_notice", SIGNING_UP) not in await _names(league)
-    assert league.notices == []
+    assert f"  not done: {_logged(WINDOW_OPEN)}" in line
+    assert _logged(RETURNED_NOT_TOLD) not in line
+    assert await window_open(league)
     assert await _status(league) == "CANCELLED"
     assert await league.bot.signup_module_service.owed_closing_notices() == []
 
@@ -1462,19 +1487,11 @@ async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
 
 
 def _no_channel_left(league: Any, user_id: int = SIGNING_UP) -> None:
-    """Driver *user_id*'s signup channel is gone: holding it finds nothing to tell
-    (`channel_id` None), as the wizard service answers for a wizard with no channel."""
-    from types import SimpleNamespace
+    """Driver *user_id*'s signup channel is gone from the server, so there is nothing to tell or
+    lock in it."""
+    from tests.support.season_league import SIGNUP_CHANNEL_BASE
 
-    wizard = league.bot.wizard_service
-    holding = wizard.trigger_channel_hold.side_effect
-
-    async def _hold(uid: Any, guild: Any, notice: str, **kwargs: Any) -> Any:
-        if int(uid) == user_id:
-            return SimpleNamespace(channel_id=None, posted=False, locked=False, reason=None)
-        return await holding(uid, guild, notice, **kwargs)
-
-    wizard.trigger_channel_hold = AsyncMock(side_effect=_hold)
+    league.remove_channel(SIGNUP_CHANNEL_BASE + user_id)
 
 
 async def test_a_cancellation_whose_only_line_beneath_is_a_driver_with_no_channel_left_has_no_warning_heading(
@@ -1534,3 +1551,98 @@ async def test_work_in_hand_that_is_not_the_season_s_end_does_not_refuse_it(
     rows = await change_rows(league.db_path)
     assert [row["kind"] for row in rows][-2:] == [kind, SEASON_CANCEL_KIND]
     assert rows[-1]["state"] == "QUEUED"
+
+
+# ── A season's end ends every conversation it closes (#439, slice 6b, C88a) ──────────
+#
+# A round's submission channel and a driver's signup channel each have a lane of their own, their
+# typed answers taken there as turns. The cancellation marks each conversation it closes ended in
+# its own save: the empty submission closed in `apply`, the wizard unengaged by the driver pass in
+# `end` (through the season end's hooks, never by core writing signup's table). Each lane's waiting
+# turns are then found no longer due when they come, and dropped.
+
+SUBMISSION_TURN = "results.submission.turn"
+KIMI_TURN = "test.kimi_turn"
+
+
+async def test_a_season_s_end_ends_every_conversation_it_closes(tmp_path):
+    """Pro's round 3 waits for its results, its submission open in channel 690 with nothing
+    accepted; driver 105 (Kimi) is part-way through signing up, his wizard collecting his notes in
+    his signup channel 6405. The admin runs `/season cancel`; before the queue runs, the manager
+    types CANCELLED into 690 and Kimi types his notes into 6405, each a turn on its channel's own
+    lane, asked after the cancellation. The queue run: the season is cancelled, round 3's
+    submission closed and its channel deleted (the deletion's record taking the submission's row
+    with it) and Kimi's wizard unengaged; both turns are then found no longer due and
+    dropped (the manager's whole, Kimi's job marked done as dropped), nothing saved for round 3's sessions, nothing posted in Kimi's channel by his turn,
+    and neither lane stopped."""
+    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.core.services.change_queue import ChangeType, Step
+    from tests.support.change_queue import member, register
+    from tests.support.season_league import SIGNUP_CHANNEL_BASE
+
+    kimi_channel = SIGNUP_CHANNEL_BASE + SIGNING_UP
+    kimi_lane = f"channel:{kimi_channel}"
+    league = await ongoing_league(tmp_path)
+    await _empty_submission(league)
+    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'COLLECTING_NOTES' "
+        "WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    posted: list[str] = []
+
+    async def post(_ctx: Any) -> StepResult:
+        posted.append("Kimi's next question")
+        return StepResult()
+
+    async def check(_ctx: Any) -> Any:
+        return Verdict.go()
+
+    async def kimi_signing_up(db: Any, _payload: dict[str, Any]) -> bool:
+        cursor = await db.execute(
+            "SELECT 1 FROM signup_wizard_records WHERE discord_user_id = ? "
+            "AND wizard_state != 'UNENGAGED'",
+            (str(SIGNING_UP),),
+        )
+        return await cursor.fetchone() is not None
+
+    register(league.bot, ChangeType(
+        kind=KIMI_TURN,
+        opening=(PlannedStep("post"),),
+        steps={"post": Step("post", StepKind.ACT, post)},
+        check=check,
+        key=lambda _payload: KIMI_TURN,
+        doing=lambda _payload: "Taking Kimi's answer",
+        outcome=lambda _ctx: "Taken.",
+        lane=lambda _payload: kimi_lane,
+        conversation_open=kimi_signing_up,
+    ))
+    await _asked(league)
+    paste = await league.bot.change_queue.ask(
+        SUBMISSION_TURN,
+        {"channel_id": SUBMISSION_CHANNEL, "message_id": 6901, "author_id": 77,
+         "content": "CANCELLED", "attachments": [],
+         "typed_at": league.clock.now.isoformat()},
+        actor=member(77), what="a typed answer",
+    )
+    answer = await league.bot.change_queue.ask(
+        KIMI_TURN, {}, actor=member(SIGNING_UP), what="Kimi's answer",
+    )
+    assert paste is not None and answer is not None
+
+    await run_queue(league.bot)
+
+    assert await _status(league) == "CANCELLED"
+    assert await _closed(league) == {}
+    assert await wizard_state(league, SIGNING_UP) == "UNENGAGED"
+    states = {row["id"]: row["state"] for row in await change_rows(league.db_path)}
+    # The manager's turn, whose check refuses a closed submission, is dropped whole; Kimi's, whose
+    # check here passes, begins and has its one job found no longer due and marked done as dropped.
+    assert (states[paste], states[answer]) == ("DROPPED", "DONE")
+    [kimi_job] = await step_rows(league.db_path, answer)
+    assert kimi_job["done_at"] is not None and kimi_job["result"] == {"dropped": True}
+    assert await league.rows("SELECT * FROM session_results WHERE round_id = ?", R3) == []
+    assert posted == []
+    assert await stopped_job(league.db_path, f"channel:{SUBMISSION_CHANNEL}") is None
+    assert await stopped_job(league.db_path, kimi_lane) is None

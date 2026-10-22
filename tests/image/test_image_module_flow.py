@@ -22,6 +22,7 @@ from leaguebot.image.models.image_constants import (
 from leaguebot.image.services.image_config_service import ImageConfigService
 from leaguebot.core.services.module_service import ModuleService
 from tests.support import KIND_TEMPLATES
+from tests.support.change_queue import in_a_job
 
 SERVER_ID = 4242
 
@@ -2420,24 +2421,25 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     # The context queries have no season in this fixture; the graphic draws what it can and
     # the optional fields it cannot determine are emptied, which is the point.
     channel = _RecordingChannel()
-    await vas._send_verdict(
-        bot,
-        channel,
-        db_path=db_path,
-        round_id=1,
-        kind=VerdictKind.PENALTY,
-        season_number=1,
-        division_name="Pro Division",
-        round_number=7,
-        session_label="Feature Race",
-        driver_discord_id=123456789012345678,
-        driver_display_name="Ada Lovelace",
-        driver_name="Ada Lovelace",
-        penalty_description="5 seconds added",
-        description_text="Contact at turn four.",
-        justification_text="Video evidence reviewed by the panel.",
-        team_name="Red Bull",
-    )
+    with in_a_job():
+        await vas._send_verdict(
+            bot,
+            channel,
+            db_path=db_path,
+            round_id=1,
+            kind=VerdictKind.PENALTY,
+            season_number=1,
+            division_name="Pro Division",
+            round_number=7,
+            session_label="Feature Race",
+            driver_discord_id=123456789012345678,
+            driver_display_name="Ada Lovelace",
+            driver_name="Ada Lovelace",
+            penalty_description="5 seconds added",
+            description_text="Contact at turn four.",
+            justification_text="Video evidence reviewed by the panel.",
+            team_name="Red Bull",
+        )
 
     assert len(channel.sent) == 1
     content, attached = channel.sent[0]
@@ -2470,23 +2472,24 @@ async def test_the_verdict_toggle_off_posts_the_textual_announcement(
     )()
 
     channel = _RecordingChannel()
-    await vas._send_verdict(
-        bot,
-        channel,
-        db_path=db_path,
-        round_id=1,
-        kind=VerdictKind.PENALTY,
-        season_number=1,
-        division_name="Pro Division",
-        round_number=7,
-        session_label="Feature Race",
-        driver_discord_id=123,
-        driver_display_name="Ada Lovelace",
-        driver_name="Ada Lovelace",
-        penalty_description="5 seconds added",
-        description_text="Contact at turn four.",
-        justification_text="Reviewed.",
-    )
+    with in_a_job():
+        await vas._send_verdict(
+            bot,
+            channel,
+            db_path=db_path,
+            round_id=1,
+            kind=VerdictKind.PENALTY,
+            season_number=1,
+            division_name="Pro Division",
+            round_number=7,
+            session_label="Feature Race",
+            driver_discord_id=123,
+            driver_display_name="Ada Lovelace",
+            driver_name="Ada Lovelace",
+            penalty_description="5 seconds added",
+            description_text="Contact at turn four.",
+            justification_text="Reviewed.",
+        )
 
     content, attached = channel.sent[0]
     assert attached is None

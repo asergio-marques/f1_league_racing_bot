@@ -25,6 +25,8 @@ from leaguebot.attendance.services.attendance_service import (
     derive_checkin_deadline,
     post_attendance_sheet,
 )
+from tests.support.change_queue import in_a_job
+
 
 # ── The deadline derivation (T010/T011) ───────────────────────────────────
 
@@ -211,7 +213,8 @@ async def test_exactly_one_send_site_is_exercised_and_nothing_is_deleted(sheet_d
     channel = _FakeChannel(journal)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with in_a_job():
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert len([e for e in journal if e.startswith("send:")]) == 1
     assert not [e for e in journal if e.startswith("delete:")], journal
@@ -228,7 +231,8 @@ async def test_a_failed_post_leaves_the_previous_sheet_standing(sheet_db):
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
     with pytest.raises(StepFailedOnDiscord):
-        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+        with in_a_job():
+            await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert not any(e.startswith("delete:") for e in journal), journal
     assert await _stored_message_id(sheet_db) == "4242"
@@ -243,7 +247,8 @@ async def test_the_replacements_id_is_returned(sheet_db):
     channel = _FakeChannel(journal)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    posted = await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with in_a_job():
+        posted = await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert int(posted.message_id) == 5001
     assert int(posted.channel_id) == 900
@@ -258,7 +263,8 @@ async def test_a_first_posting_deletes_nothing(sheet_db):
     channel = _FakeChannel(journal)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    posted = await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with in_a_job():
+        posted = await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert not any(e.startswith("delete:") for e in journal)
     assert posted.previous is None
@@ -275,7 +281,8 @@ async def test_the_composed_sheet_text_is_unchanged_by_the_reorder(sheet_db):
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with in_a_job():
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert channel.sent_content == (
         "**Attendance Standings**\n"
@@ -293,10 +300,11 @@ async def test_the_sanction_annotation_is_unchanged_by_the_reorder(sheet_db):
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(
-        None, guild, sheet_db, round_id=3, division_id=7,
-        sanctioned_profile_ids={1},
-    )
+    with in_a_job():
+        await post_attendance_sheet(
+            None, guild, sheet_db, round_id=3, division_id=7,
+            sanctioned_profile_ids={1},
+        )
 
     assert "*(reached point limit)*" in channel.sent_content
 
@@ -316,7 +324,8 @@ async def test_with_a_graphic_the_message_carries_the_heading_alone(sheet_db, mo
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with in_a_job():
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert channel.sent_content == "**Attendance Standings**"
     assert channel.sent_file is not None
@@ -331,7 +340,8 @@ async def test_without_a_graphic_the_message_carries_the_whole_textual_sheet(she
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with in_a_job():
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert channel.sent_file is None
     assert "<@111>" in channel.sent_content
@@ -350,7 +360,8 @@ async def test_a_cancelled_round_posts_nothing_and_generates_nothing(sheet_db):
     channel = _FakeChannel(journal)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=9, division_id=7)
+    with in_a_job():
+        await post_attendance_sheet(None, guild, sheet_db, round_id=9, division_id=7)
 
     assert journal == []
     assert await _stored_message_id(sheet_db) == "4242"
@@ -358,7 +369,9 @@ async def test_a_cancelled_round_posts_nothing_and_generates_nothing(sheet_db):
 
 @pytest.mark.asyncio
 async def test_no_channel_configured_posts_nothing_and_deletes_nothing(sheet_db):
-    """FR-046: where the textual flow posts nothing, nothing happens at all."""
+    """FR-046: where the division has no attendance channel set, nothing is posted or deleted,
+    and the sheet's job is stopped naming the command that sets the channel, rather than
+    completing having posted nothing (#439, slice 6b, fault 5)."""
     async with get_connection(sheet_db) as db:
         await db.execute("DELETE FROM attendance_division_config")
         await db.execute(
@@ -371,8 +384,32 @@ async def test_no_channel_configured_posts_nothing_and_deletes_nothing(sheet_db)
     channel = _FakeChannel(journal)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with in_a_job(), pytest.raises(StepFailedOnDiscord, match="/attendance channel attendance"):
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
+    assert journal == []
+
+
+@pytest.mark.asyncio
+async def test_a_missing_channel_is_reported_by_the_divisions_name(sheet_db):
+    """Where the division has no attendance channel set, the stop names the division as the
+    league knows it, and the command that sets the channel, and carries no database number
+    (#439, slice 6b, fault 5)."""
+    async with get_connection(sheet_db) as db:
+        await db.execute("UPDATE divisions SET name = 'Pro' WHERE id = 7")
+        await db.execute("DELETE FROM attendance_division_config")
+        await db.commit()
+
+    journal: list[str] = []
+    guild = _FakeGuild(_FakeChannel(journal), {111: "Ayrton"})
+
+    with in_a_job(), pytest.raises(StepFailedOnDiscord) as stopped:
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    message = str(stopped.value)
+    assert message.startswith("**Pro** has no attendance channel set: ")
+    assert "`/attendance channel attendance`" in message
+    assert "7" not in message
     assert journal == []
 
 
@@ -418,7 +455,8 @@ async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db):
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Zebra", 222: "Mike", 333: "Alpha"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with in_a_job():
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     listed = [
         line.split(" ")[0]
@@ -458,7 +496,8 @@ async def test_the_footer_names_only_the_thresholds_in_force(
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with in_a_job():
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     lines = channel.sent_content.splitlines()
     assert [line for line in lines if line.startswith("Drivers who reach")] == footer
@@ -496,7 +535,8 @@ async def test_the_sheet_graphic_is_gone_once_it_has_posted(
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with in_a_job():
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert channel.sent_file is not None, "the sheet still posts as a graphic"
     assert not png.exists()
@@ -516,7 +556,8 @@ async def test_the_sheet_graphic_is_gone_when_the_send_fails(
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
     with pytest.raises(StepFailedOnDiscord):
-        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+        with in_a_job():
+            await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert not png.exists(), "a failed upload must not strand the sheet"
 
@@ -543,10 +584,11 @@ async def test_the_opening_sheet_takes_the_live_slot(sheet_db):
     channel = _FakeChannel(journal)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    posted = await post_attendance_sheet(
-        None, guild, sheet_db, round_id=3, division_id=7,
-        occasion=_occasion("SEASON_OPENING"),
-    )
+    with in_a_job():
+        posted = await post_attendance_sheet(
+            None, guild, sheet_db, round_id=3, division_id=7,
+            occasion=_occasion("SEASON_OPENING"),
+        )
 
     assert posted.takes_slot is True
     assert posted.previous == "4242"
@@ -562,10 +604,11 @@ async def test_the_final_sheet_stands_beside_the_last_rounds(sheet_db):
     channel = _FakeChannel(journal)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(
-        None, guild, sheet_db, round_id=3, division_id=7,
-        occasion=_occasion("SEASON_FINAL"),
-    )
+    with in_a_job():
+        await post_attendance_sheet(
+            None, guild, sheet_db, round_id=3, division_id=7,
+            occasion=_occasion("SEASON_FINAL"),
+        )
 
     assert await _stored_message_id(sheet_db) == "4242", "the slot must be left as it was"
     assert not [entry for entry in journal if entry.startswith("delete:")]
@@ -580,7 +623,8 @@ async def test_an_ordinary_sheet_still_takes_the_slot(sheet_db):
     channel = _FakeChannel(journal)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    posted = await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with in_a_job():
+        posted = await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert posted.takes_slot is True
     assert posted.previous == "4242"
@@ -601,10 +645,11 @@ async def test_a_boundary_graphic_carries_no_message_text(sheet_db, occasion_nam
         attendance_service, "_sheet_attachment", _fake_attachment(object())
     )
 
-    await post_attendance_sheet(
-        None, guild, sheet_db, round_id=3, division_id=7,
-        occasion=_occasion(occasion_name),
-    )
+    with in_a_job():
+        await post_attendance_sheet(
+            None, guild, sheet_db, round_id=3, division_id=7,
+            occasion=_occasion(occasion_name),
+        )
 
     assert channel.sent_content is None
     assert channel.sent_file is not None
@@ -621,7 +666,8 @@ async def test_an_ordinary_graphic_still_carries_its_heading(sheet_db, monkeypat
         attendance_service, "_sheet_attachment", _fake_attachment(object())
     )
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with in_a_job():
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert channel.sent_content == "**Attendance Standings**"
 
@@ -637,10 +683,11 @@ async def test_the_textual_fallback_is_headed_by_the_phrase(sheet_db, occasion_n
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(
-        None, guild, sheet_db, round_id=3, division_id=7,
-        occasion=_occasion(occasion_name),
-    )
+    with in_a_job():
+        await post_attendance_sheet(
+            None, guild, sheet_db, round_id=3, division_id=7,
+            occasion=_occasion(occasion_name),
+        )
 
     assert channel.sent_file is None, "no bot in scope, so this is the textual sheet"
     assert channel.sent_content.startswith(f"**Attendance — {phrase}**")
@@ -656,13 +703,15 @@ async def test_a_cancelled_round_does_not_stop_a_boundary_sheet(sheet_db):
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=9, division_id=7)
+    with in_a_job():
+        await post_attendance_sheet(None, guild, sheet_db, round_id=9, division_id=7)
     assert channel.sent_content is None, "an ordinary sheet skips a cancelled round"
 
-    await post_attendance_sheet(
-        None, guild, sheet_db, round_id=9, division_id=7,
-        occasion=_occasion("SEASON_FINAL"),
-    )
+    with in_a_job():
+        await post_attendance_sheet(
+            None, guild, sheet_db, round_id=9, division_id=7,
+            occasion=_occasion("SEASON_FINAL"),
+        )
     assert channel.sent_content is not None
 
 
@@ -677,10 +726,11 @@ async def test_the_opening_sheet_reads_the_seats_rather_than_the_attendance_reco
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(
-        None, guild, sheet_db, round_id=3, division_id=7,
-        occasion=_occasion("SEASON_OPENING"),
-    )
+    with in_a_job():
+        await post_attendance_sheet(
+            None, guild, sheet_db, round_id=3, division_id=7,
+            occasion=_occasion("SEASON_OPENING"),
+        )
 
     assert "0 attendance points" in channel.sent_content
     assert "4 attendance points" not in channel.sent_content

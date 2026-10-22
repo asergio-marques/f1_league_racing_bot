@@ -12,6 +12,7 @@ import pytest
 
 from leaguebot.results.services import verdict_announcement_service as vas
 from leaguebot.image.services.image_verdict_service import VerdictKind
+from tests.support.change_queue import in_a_job
 
 
 # ── Stubs ─────────────────────────────────────────────────────────────────
@@ -134,7 +135,8 @@ async def _send(channel, *, kind=VerdictKind.PENALTY, **overrides):
         team_name="Red Bull",
     )
     values.update(overrides)
-    await vas._send_verdict(_Bot(), channel, **values)
+    with in_a_job():
+        await vas._send_verdict(_Bot(), channel, **values)
 
 
 # ── T028: the message is the mention and nothing besides ──────────────────
@@ -406,21 +408,27 @@ async def test_a_notice_names_the_season_division_round_session_and_driver(
 def test_an_attendance_pardon_reaches_no_verdict_announcement_and_so_no_graphic():
     """A pardon is no verdict: it is a logging-channel record, whatever the toggle says.
 
-    Asserted structurally because it is a fact about *where* the announcement is called from:
-    the enforcement loop, which serves both sanctions, and nowhere else. A pardon changes the points a round conferred
-    and announces nothing.
+    Asserted structurally because it is a fact about *where* an announcement is asked from: a
+    pardon changes the points a round conferred and announces nothing. Since #439 (slice 6b) the
+    sanctions' announcement is a change on the queue, asked by `/attendance sync`; the code that
+    writes a round's pardons neither asks it nor posts a verdict.
     """
     import inspect
 
-    from leaguebot.attendance.services import attendance_service
+    from leaguebot.attendance.services import attendance_after_review, attendance_service
 
-    source = inspect.getsource(attendance_service)
-    calls = source.count("post_autosanction_announcement(")
-    assert calls == 1, "only the enforcement loop, for both sanctions, may announce"
-
-    for block in source.split("post_autosanction_announcement(")[1:]:
-        preceding = source.split(block)[0][-600:] if block else ""
-        assert "pardon" not in preceding.lower().split("async def")[-1]
+    writers = [attendance_service._rewrite_round_pardons_on]
+    writers += [
+        member for _, cls in inspect.getmembers(attendance_after_review, inspect.isclass)
+        if cls.__module__ == attendance_after_review.__name__
+        for name, member in inspect.getmembers(cls, inspect.isfunction)
+        if "pardon" in name
+    ]
+    assert len(writers) >= 2, "the pardon writers this rule reads have moved"
+    for writer in writers:
+        source = inspect.getsource(writer).lower()
+        assert "announce" not in source
+        assert "verdict" not in source
 
 
 # ── The verdict graphic does not outlive its announcement ─────────────────

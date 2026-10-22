@@ -1,4 +1,4 @@
-"""A temporary message saying graphics are being drawn, removed once they are.
+"""The send and delete of a temporary message saying graphics are being drawn.
 
 Rendering is slow — Inkscape on the Raspberry Pi the bot runs on takes seconds per
 graphic, and several of the bot's jobs draw eight or more in a row. That is a long
@@ -15,74 +15,48 @@ press inside it.
 The notice is **deleted**, never edited into a summary. Nothing it says survives, so
 nothing worth keeping may go in it: faults belong in the posts themselves and in the log,
 which is where they already go.
+
+The notice is posted and taken down by two jobs of the change that draws the graphics; the two
+functions here are what those jobs call, each raising whatever Discord raises so the queue stops
+at it.
+
+**`send_notice` is also the season review's posting point** (`season_review_changes`): its
+pictures, report sections and question are sent through it with their other parts (*extra*), so
+that core keeps one send of its own the direct-post check lists, rather than a second beside it
+for the review alone.
 """
 
 from __future__ import annotations
 
-import logging
-from contextlib import asynccontextmanager
-
 import discord
 
-log = logging.getLogger(__name__)
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 
 
-async def send_notice(channel, text: str):
+@posts_in_a_job
+async def send_notice(
+    channel, text: str, *, allowed_mentions: discord.AllowedMentions | None = None, **extra
+):
     """Send the notice *text* to *channel* and give the message, raising whatever Discord raises.
 
-    The send half of :func:`batch_notice`, for a caller that treats a notice that cannot be
+    The send of a notice, for a caller that treats a notice that cannot be
     posted as a failure of its own (a job of the change queue, which stops the queue at it).
+    *allowed_mentions*, where given, says whom the notice may notify; a caller that gives none
+    leaves it to the bot's default. *extra* are the message's other parts (a ``file``, a ``view``)
+    for a post that is more than a line: the season review's pictures and question.
     """
-    return await channel.send(text)
+    if allowed_mentions is not None:
+        extra["allowed_mentions"] = allowed_mentions
+    return await channel.send(text, **extra)
 
 
+@posts_in_a_job
 async def delete_notice(message) -> None:
     """Delete the notice *message*, raising whatever Discord raises, a message already gone
     (``discord.NotFound``) included.
 
-    The delete half of :func:`batch_notice`, for a caller that decides for itself what a notice
+    The delete of a notice, for a caller that decides for itself what a notice
     already gone, or one that cannot be deleted, means; also the delete of a standing post's
     replaced message (`standing_posts`), which decides for itself what a refusal means.
     """
     await message.delete()
-
-
-@asynccontextmanager
-async def batch_notice(channel, text: str):
-    """Post *text* to *channel*, run the body, then delete the message.
-
-    *channel* need only have ``send`` — a ``TextChannel`` today, and whatever a later
-    module hands it. Passing ``None`` is allowed and does nothing, so a caller with no
-    channel to hand does not need a branch of its own.
-
-    **Every Discord failure here is swallowed.** A notice is a courtesy: it must never
-    be the reason a batch of graphics fails to post, nor the reason an exception the
-    caller wanted to see is replaced by one from the courtesy message. The delete is
-    attempted in a ``finally``, so a body that raises still tidies up — which matters
-    because every posting path this wraps swallows its own render faults (XIV.7), and
-    would otherwise strand the notice with no exception ever reaching a handler.
-    """
-    message = None
-    if channel is not None:
-        try:
-            message = await send_notice(channel, text)
-        except (discord.HTTPException, discord.Forbidden) as exc:
-            log.warning("batch_notice: could not post the notice: %s", exc)
-        except Exception:  # noqa: BLE001 — a courtesy never breaks its caller
-            log.exception("batch_notice: could not post the notice")
-
-    try:
-        yield
-    finally:
-        if message is not None:
-            try:
-                await delete_notice(message)
-            except discord.NotFound:
-                # The message, or the channel holding it, went first. `finalize_appeals_
-                # review` deletes the whole submission channel moments after its batch, so
-                # this is an ordinary outcome rather than a fault.
-                pass
-            except (discord.HTTPException, discord.Forbidden) as exc:
-                log.warning("batch_notice: could not delete the notice: %s", exc)
-            except Exception:  # noqa: BLE001
-                log.exception("batch_notice: could not delete the notice")

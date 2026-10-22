@@ -356,6 +356,22 @@ class SubmissionHooks:
     delete_step: Step
 
 
+@dataclasses.dataclass(frozen=True)
+class CancellationHooks:
+    """What a cancellation needs of attendance's check-in call, handed it by the builder so that
+    this module imports nothing of attendance.
+
+    *check_in_deletes* is attendance's own delete of a round's call, its last notice and its
+    reserve announcement, each from the channel it was posted in: called with the round and the
+    division, it gives True where a call stood, and raises `StepFailedOnDiscord` naming what it
+    could not delete. *forget_check_in_on* drops the call's record on the save's connection,
+    committing nothing, and is run by the take-down's record once the messages are down.
+    """
+
+    check_in_deletes: Callable[[int, int], Awaitable[bool]]
+    forget_check_in_on: Callable[[aiosqlite.Connection, int, int], Awaitable[None]]
+
+
 #: The job names, as the stop notice, the tests and `StepView` know them.
 UNARM = "unarm"
 APPLY = "apply"
@@ -540,7 +556,7 @@ def _named(
 
 
 def _follow_steps(
-    *, modules: "ModuleService", seasons: SeasonService, scope: str
+    *, modules: "ModuleService", seasons: SeasonService, scope: str, cancellation: CancellationHooks
 ) -> dict[str, Step]:
     """The jobs both cancellations carry out after the save: each module's notice, a check-in
     call's take-down and the calendar's repost. *scope* is the notices' (`SCOPE_ROUND` or
@@ -595,8 +611,17 @@ def _follow_steps(
         if division is None:
             raise LookupError(f"division {ctx.step_payload['division_id']} is no longer there")
         return StepResult(
-            result=await notices.take_down_call(ctx.bot, division, _round_id(ctx))
+            result=await notices.take_down_call(
+                ctx.bot, division, _round_id(ctx), check_in_deletes=cancellation.check_in_deletes
+            )
         )
+
+    async def forget_call(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        """Drop the call's record once its messages are down, in the save that marks the job done."""
+        if result.result.get("taken_down"):
+            await cancellation.forget_check_in_on(
+                db, _round_id(ctx), int(ctx.step_payload["division_id"])
+            )
 
     return {
         NOTIFY_CHECKIN: Step(
@@ -604,7 +629,7 @@ def _follow_steps(
             describe=_named("posting the check-in notice for **{name}**"),
         ),
         TAKE_DOWN_CALL: Step(
-            TAKE_DOWN_CALL, StepKind.ACT, take_down, still_due=attendance_on,
+            TAKE_DOWN_CALL, StepKind.ACT, take_down, still_due=attendance_on, record=forget_call,
             describe=_named("taking down the check-in call of round {number} in **{name}**"),
         ),
         NOTIFY_FORECAST: Step(
@@ -625,6 +650,7 @@ def round_cancel_change(
     seasons: SeasonService,
     scheduler: "SchedulerService",
     submissions: SubmissionHooks,
+    cancellation: CancellationHooks,
     amendment_in_hand: Callable[[int], Awaitable[int | None]],
     now: Callable[[], datetime],
 ) -> ChangeType:
@@ -634,7 +660,7 @@ def round_cancel_change(
     "season_number"}``. It names no season: a payload that does is read as holding every division
     of that season (`review_changes.division_job_in_hand`); the season a job needs travels on the
     jobs' own payloads. The builder hands in the *modules* (each notice's `still_due`), the
-    *seasons* service, the *scheduler*, results' *submissions* (`SubmissionHooks`), *amendment_in_hand* (the job a
+    *seasons* service, the *scheduler*, results' *submissions* (`SubmissionHooks`), attendance's *cancellation* hooks (`CancellationHooks`), *amendment_in_hand* (the job a
     `/round amend` of a round of a division waits on, or None) and the queue's clock *now*.
     """
 
@@ -854,7 +880,10 @@ def round_cancel_change(
         )
 
     steps: dict[str, Step] = {
-        **_follow_steps(modules=modules, seasons=seasons, scope=notices.SCOPE_ROUND),
+        **_follow_steps(
+            modules=modules, seasons=seasons, scope=notices.SCOPE_ROUND,
+            cancellation=cancellation,
+        ),
         DELETE_CHANNEL: submissions.delete_step,
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
@@ -894,6 +923,7 @@ def division_cancel_change(
     seasons: SeasonService,
     scheduler: "SchedulerService",
     submissions: SubmissionHooks,
+    cancellation: CancellationHooks,
     amendment_in_hand: Callable[[int], Awaitable[int | None]],
     now: Callable[[], datetime],
 ) -> ChangeType:
@@ -1105,7 +1135,10 @@ def division_cancel_change(
         return f"✅ Division **{name}** cancelled." + notices.failure_lines(not_notified(ctx))
 
     steps: dict[str, Step] = {
-        **_follow_steps(modules=modules, seasons=seasons, scope=notices.SCOPE_DIVISION),
+        **_follow_steps(
+            modules=modules, seasons=seasons, scope=notices.SCOPE_DIVISION,
+            cancellation=cancellation,
+        ),
         DELETE_CHANNEL: submissions.delete_step,
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
@@ -1172,6 +1205,7 @@ def season_cancel_change(
     scheduler: "SchedulerService",
     placement: "PlacementService",
     submissions: SubmissionHooks,
+    cancellation: CancellationHooks,
     hooks: SeasonEndHooks,
     now: Callable[[], datetime],
 ) -> ChangeType:
@@ -1471,7 +1505,10 @@ def season_cancel_change(
         return describe
 
     steps: dict[str, Step] = {
-        **_follow_steps(modules=modules, seasons=seasons, scope=notices.SCOPE_SEASON),
+        **_follow_steps(
+            modules=modules, seasons=seasons, scope=notices.SCOPE_SEASON,
+            cancellation=cancellation,
+        ),
         **season_end_steps(placement, hooks),
         DELETE_CHANNEL: submissions.delete_step,
         UNARM: Step(

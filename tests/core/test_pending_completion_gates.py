@@ -197,9 +197,16 @@ async def _reserves_toggle(bot, interaction):
 
 
 async def _standings_sync(bot, interaction):
+    """The sync is asked of the change queue once its gates pass (#439 6b), so the queue's `ask`
+    is recorded rather than run; its read of the standings channel and rounds, and the repost
+    it made at once before, each give "ok", created where missing."""
+    bot.change_queue.ask = AsyncMock(return_value=1)
+    service = "leaguebot.results.services.results_post_service"
     with patch(
-        "leaguebot.results.services.results_post_service.repost_standings_for_division",
-        new=AsyncMock(return_value="ok"),
+        f"{service}.standings_repost_status", new=AsyncMock(return_value="ok"), create=True,
+    ), patch(
+        f"{service}.repost_standings_for_division", new=AsyncMock(return_value="ok"),
+        create=True,
     ):
         await undecorate(ResultsCog.standings_sync)(_cog(ResultsCog, bot), interaction, "Pro")
 

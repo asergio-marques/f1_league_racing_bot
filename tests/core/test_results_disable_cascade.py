@@ -375,7 +375,7 @@ async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
     assert "winding the season down" in stop
     assert "`/module disable results`" in stop
     assert f"Admin (`<@{ACTOR_ID}>`)" in stop
-    assert "failed (RuntimeError)." in stop
+    assert "failed (the bot hit an internal fault)." in stop
 
 
 # ---------------------------------------------------------------------------

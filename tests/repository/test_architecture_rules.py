@@ -56,7 +56,8 @@ HANDLERS = "#441"
 #: post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
 CLEANUPS = f"{PASS['weather']} and {PASS['attendance']}"
 #: The slices of #439, each moving a set of flows onto the change queue.
-SLICE = {n: f"#439 slice {n}" for n in range(2, 8)}
+SLICE: dict[int | str, str] = {n: f"#439 slice {n}" for n in range(2, 8)}
+SLICE["6b"] = "#439 slice 6b"
 
 
 # ── Reading the source ──────────────────────────────────────────────────────────────────────
@@ -171,36 +172,28 @@ def _database_code_outside_services() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_abandon_interrupted_resubmission"): (2, PASS["results"]),
-    ("__main__.py", "_give_up_missed_check_in_call"): (2, PASS["attendance"]),
-    ("__main__.py", "_recover_expired_review_prompts"): (4, PASS["core"]),
+    ("__main__.py", "_recover_expired_review_prompts"): (2, PASS["core"]),
     ("__main__.py", "_recover_missed_check_in_calls"): (2, PASS["attendance"]),
     ("__main__.py", "_recover_missed_cleanups"): (3, CLEANUPS),
     ("__main__.py", "_recover_missed_phases"): (2, PASS["weather"]),
-    ("__main__.py", "_recover_orphaned_amend_channels"): (8, PASS["results"]),
-    ("__main__.py", "_recover_orphaned_submission_channels"): (7, PASS["results"]),
+    ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["results"]),
+    ("__main__.py", "_recover_orphaned_submission_channels"): (2, PASS["results"]),
     ("__main__.py", "_recover_portrait_refresh_job"): (2, PASS["image"]),
     ("__main__.py", "_recover_rsvp_views_and_deadlines"): (2, PASS["attendance"]),
     ("__main__.py", "main.on_ready._recover_signup_close_timers"): (1, PASS["signup"]),
-    ("attendance/cogs/attendance_cog.py", "AttendanceCog.post_check_in"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (1, PASS["attendance"]),
-    ("attendance/cogs/attendance_cog.py", "_RsvpBulkSetModal.on_submit"): (1, PASS["attendance"]),
-    ("attendance/cogs/attendance_cog.py", "_call_stands"): (2, PASS["attendance"]),
-    ("attendance/cogs/attendance_cog.py", "handle_rsvp_button"): (4, PASS["attendance"]),
     ("core/cogs/bot_cog.py", "BotCog.handle_pack"): (1, PASS["core"]),
     ("core/cogs/bot_cog.py", "_audit"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_images"): (2, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._disable_signup"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_weather"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (3, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_images"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (3, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_signup"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (3, PASS["core"]),
-    ("core/cogs/module_cog.py", "execute_forced_close"): (4, PASS["core"]),
-    ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (10, PASS["results"]),
+    ("core/cogs/module_cog.py", "execute_forced_close"): (2, PASS["core"]),
     ("results/cogs/results_cog.py", "ResultsCog.reserves_toggle"): (4, PASS["results"]),
     ("core/cogs/season_cog.py", "SeasonCog._attendance_capacity_warning"): (4, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._calendar_capacity_warning"): (2, PASS["core"]),
@@ -213,16 +206,12 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog.round_add"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.round_amend"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
-    ("core/cogs/season_cog.py", "_ApproveView._forget"): (2, PASS["core"]),
-    ("core/cogs/season_cog.py", "_ApproveView.bind"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "_get_setup_season_id"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "apply_round_import"): (1, PASS["core"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (4, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_close"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (3, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_image"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (2, PASS["signup"]),
@@ -434,11 +423,7 @@ def _dropped_tasks() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DROPPED_TASKS: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_recover_orphaned_submission_channels"): (1, BACKGROUND_FAILURES),
-    ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (1, BACKGROUND_FAILURES),
-    ("results/services/result_submission_service.py", "enter_resubmit_flow"): (1, BACKGROUND_FAILURES),
     ("core/services/retry_service.py", "_safe_post_log"): (1, BACKGROUND_FAILURES),
-    ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, BACKGROUND_FAILURES),
 }
 
 
@@ -462,16 +447,12 @@ def _scheduler_reached_around() -> Counter[tuple[str, str]]:
 
 
 KNOWN_SCHEDULER_REACHED_AROUND: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "main.on_ready._recover_signup_close_timers"): (1, PASS["signup"]),
     ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "_BackupBeforeApprovalView.save"): (3, PASS["core"]),
     ("core/cogs/test_mode_cog.py", "TestModeCog.backup_save"): (3, PASS["core"]),
     ("signup/services/wizard_service.py", "WizardService.__init__"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._arm_channel_delete_job"): (2, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._arm_inactivity_job"): (2, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._cancel_channel_delete_job"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._cancel_inactivity_job"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.move_held_channel"): (2, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService.move_held_channel"): (1, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
 }
 
 
@@ -513,8 +494,6 @@ KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/scheduler_service.py", "SchedulerService.schedule_result_submission_jobs"): (1, PASS["core"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (3, PASS["core"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_signup_close_timer"): (1, PASS["core"]),
-    ("signup/services/wizard_service.py", "WizardService._arm_channel_delete_job"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._arm_inactivity_job"): (1, PASS["signup"]),
 }
 
 
@@ -548,10 +527,95 @@ def _is_private(name: str) -> bool:
     return name.startswith("_") and not name.startswith("__")
 
 
-def _private_names_across_modules() -> Counter[tuple[str, str]]:
-    files = _files_by_module_name()
+#: The file declaring the bot's attributes, read for the class each one holds.
+LEAGUE_BOT = "core/utils/league_bot.py"
+
+
+def _imported_names(tree: ast.Module, files: dict[str, str]) -> dict[str, str]:
+    """Each name *tree* imports from a file of the package, to that file's dotted module: a
+    class, a function or a constant named in a ``from … import …``, under the name it is bound
+    to. Imports made only for the type check count, as an annotation names them."""
+    names: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module in files:
+            for alias in node.names:
+                names[alias.asname or alias.name] = node.module
+    return names
+
+
+def _annotated_class(annotation: ast.expr | None, imported: dict[str, str]) -> tuple[str, str] | None:
+    """The ``(module, class)`` an annotation names, where it names one class the file imports
+    from the package: ``Thing``, ``"Thing"``, ``Thing | None`` or ``"Thing | None"``. Anything
+    else is left unresolved."""
+    if annotation is None:
+        return None
+    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+        try:
+            annotation = ast.parse(annotation.value, mode="eval").body
+        except SyntaxError:
+            return None
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        sides = [side for side in (annotation.left, annotation.right)
+                 if not (isinstance(side, ast.Constant) and side.value is None)]
+        if len(sides) != 1:
+            return None
+        annotation = sides[0]
+    if isinstance(annotation, ast.Name) and annotation.id in imported:
+        return imported[annotation.id], annotation.id
+    return None
+
+
+def _bot_attributes(sources, files: dict[str, str]) -> dict[str, tuple[str, str]]:
+    """Each attribute `LeagueBot` declares, to the ``(module, class)`` it holds."""
+    for path, tree in sources:
+        if path != LEAGUE_BOT:
+            continue
+        imported = _imported_names(tree, files)
+        return {
+            node.target.id: found
+            for cls in ast.walk(tree)
+            if isinstance(cls, ast.ClassDef) and cls.name == "LeagueBot"
+            for node in cls.body
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+            for found in (_annotated_class(node.annotation, imported),)
+            if found is not None
+        }
+    return {}
+
+
+def _is_the_bot(node: ast.expr) -> bool:
+    """Whether *node* is the bot as the code reaches it: ``bot``, ``….bot`` (``self.bot``,
+    ``ctx.bot``) or ``bot_of(…)``."""
+    return (
+        (isinstance(node, ast.Name) and node.id == "bot")
+        or (isinstance(node, ast.Attribute) and node.attr == "bot")
+        or (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "bot_of")
+    )
+
+
+def _service_on_the_bot(node: ast.expr, bot: dict[str, tuple[str, str]]) -> tuple[str, str] | None:
+    """The ``(module, class)`` of the bot's attribute *node* reads: ``bot.X``, ``self.bot.X``,
+    ``ctx.bot.X``, ``bot_of(…).X`` or ``getattr(bot, "X"[, default])``."""
+    if isinstance(node, ast.Attribute) and _is_the_bot(node.value):
+        return bot.get(node.attr)
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr"
+            and len(node.args) >= 2 and _is_the_bot(node.args[0])
+            and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str)):
+        return bot.get(node.args[1].value)
+    return None
+
+
+def _private_names_among(sources, files: dict[str, str]) -> Counter[tuple[str, str]]:
+    """The private names each file of *sources* uses from another module, counted by file and
+    name. A name is reached through a module the file imports (``module._name``, or ``from
+    module import _name``), or through an object whose class the code states (#439 slice 6b):
+    the bot's attribute, read as `_service_on_the_bot` reads it, and a parameter or local
+    annotated with a class the file imports, or bound from either, each keyed as
+    ``module.Class._name``. A receiver whose class the code does not state is left alone."""
+    bot = _bot_attributes(sources, files)
     found: Counter[tuple[str, str]] = Counter()
-    for path, tree in _sources():
+    for path, tree in sources:
         here = classify(f"src/leaguebot/{path}")
         aliases: dict[str, str] = {}
         uses: list[tuple[str, str]] = []
@@ -571,24 +635,71 @@ def _private_names_across_modules() -> Counter[tuple[str, str]]:
             if (isinstance(node, ast.Attribute) and _is_private(node.attr)
                     and isinstance(node.value, ast.Name) and node.value.id in aliases):
                 uses.append((aliases[node.value.id], node.attr))
+        imported = _imported_names(tree, files)
+
+        def visit(scope: ast.AST, known: dict[str, tuple[str, str]]) -> None:
+            """Count the private names read through a stated class in *scope*, which sees the
+            names its enclosing functions bound as well as its own."""
+            known = dict(known)
+            if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                arguments = scope.args
+                for arg in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]:
+                    stated = _annotated_class(arg.annotation, imported)
+                    if stated is not None:
+                        known[arg.arg] = stated
+            body: list[ast.AST] = []
+            nested: list[ast.AST] = []
+            pending = list(ast.iter_child_nodes(scope))
+            while pending:
+                node = pending.pop()
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    nested.append(node)
+                    continue
+                body.append(node)
+                pending.extend(ast.iter_child_nodes(node))
+            for node in body:
+                if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                    stated = _annotated_class(node.annotation, imported)
+                    if stated is not None:
+                        known[node.target.id] = stated
+                elif isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                        and isinstance(node.targets[0], ast.Name):
+                    stated = _service_on_the_bot(node.value, bot)
+                    if stated is None and isinstance(node.value, ast.Name):
+                        stated = known.get(node.value.id)
+                    if stated is not None:
+                        known[node.targets[0].id] = stated
+            for node in body:
+                if not (isinstance(node, ast.Attribute) and _is_private(node.attr)):
+                    continue
+                receiver = node.value
+                stated = _service_on_the_bot(receiver, bot)
+                if stated is None and isinstance(receiver, ast.Name):
+                    stated = known.get(receiver.id)
+                if stated is not None:
+                    module, cls = stated
+                    uses.append((module, f"{cls}.{node.attr}"))
+            for node in nested:
+                visit(node, known)
+
+        visit(tree, {})
         for module, name in uses:
             if classify(f"src/leaguebot/{files[module]}") != here:
                 found[(path, f"{module}.{name}")] += 1
     return found
 
 
+def _private_names_across_modules() -> Counter[tuple[str, str]]:
+    return _private_names_among(_sources(), _files_by_module_name())
+
+
 KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "leaguebot.attendance.services.rsvp_service._report_call_failure"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.results.services.results_post_service._bot_member"): (1, PASS["results"]),
     ("attendance/services/attendance_service.py", "leaguebot.results.services.results_post_service._channel_fault"): (1, PASS["results"]),
-    ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._delete_posting"): (1, PASS["results"]),
-    ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._get_standings_message_id"): (1, PASS["results"]),
-    ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._get_standings_message_ids"): (1, PASS["results"]),
     ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._load_driver_rows"): (1, PASS["results"]),
-    ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._set_standings_message_id"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "leaguebot.image.services.image_results_post._driver_names"): (2, PASS["image"]),
     ("core/services/season_classification_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("core/services/season_classification_service.py", "leaguebot.results.services.results_post_service._get_show_reserves"): (2, PASS["results"]),
@@ -607,6 +718,80 @@ def test_no_private_name_crosses_a_module():
         _private_names_across_modules(),
         KNOWN_PRIVATE_NAMES_ACROSS_MODULES,
     )
+
+
+def _private_names_in(sample: str, path: str) -> Counter[tuple[str, str]]:
+    """The private names *sample*, read as the package file *path*, uses from another module,
+    with the package's files and the bot's declared attributes as they stand."""
+    sources = [(p, tree) for p, tree in _sources() if p == LEAGUE_BOT] + [(path, ast.parse(sample))]
+    found = _private_names_among(sources, _files_by_module_name())
+    return Counter({key: count for key, count in found.items() if key[0] == path})
+
+
+def test_the_private_names_check_sees_a_private_method_through_the_bot_s_service():
+    """A service reached through the bot is an object of the class `LeagueBot` declares for it,
+    so its private names are counted like a module's (#439, fold-in 7): here signup reaching
+    core's scheduler service, through each way the code reaches the bot."""
+    sample = (
+        "async def handler(self, ctx, bot, interaction):\n"
+        "    bot.scheduler_service._scheduler.get_job('x')\n"
+        "    self.bot.scheduler_service._scheduler.get_job('x')\n"
+        "    ctx.bot.scheduler_service._scheduler.get_job('x')\n"
+        "    bot_of(interaction).scheduler_service._scheduler.get_job('x')\n"
+        "    scheduler = getattr(bot, 'scheduler_service', None)\n"
+        "    scheduler._scheduler.get_job('x')\n"
+    )
+
+    assert _private_names_in(sample, "signup/services/sample_service.py") == Counter({
+        ("signup/services/sample_service.py",
+         "leaguebot.core.services.scheduler_service.SchedulerService._scheduler"): 5,
+    })
+
+
+def test_the_private_names_check_sees_a_private_method_on_an_annotated_parameter():
+    """A parameter or a local annotated with a class the file imports is an object of that class:
+    results calling core's placement service's private method through one is counted, and so is
+    a local bound from it."""
+    sample = (
+        "from leaguebot.core.services.placement_service import PlacementService\n"
+        "async def handler(placement: PlacementService):\n"
+        "    await placement._refresh_lineup_post()\n"
+        "    other: 'PlacementService | None' = None\n"
+        "    other._refresh_lineup_post()\n"
+        "    same = placement\n"
+        "    same._refresh_lineup_post()\n"
+    )
+
+    assert _private_names_in(sample, "results/services/sample_service.py") == Counter({
+        ("results/services/sample_service.py",
+         "leaguebot.core.services.placement_service.PlacementService._refresh_lineup_post"): 3,
+    })
+
+
+def test_the_private_names_check_leaves_an_unresolvable_receiver_alone():
+    """Where the code does not state a receiver's class, the check does not guess it."""
+    sample = (
+        "async def handler(thing, other: object):\n"
+        "    thing._x()\n"
+        "    other._y()\n"
+        "    self_made = make()\n"
+        "    self_made._z()\n"
+    )
+
+    assert _private_names_in(sample, "results/services/sample_service.py") == Counter()
+
+
+def test_the_private_names_check_leaves_a_module_s_own_private_name_alone():
+    """A private name used inside its own module is the module's business: core reaching core's
+    scheduler service's private attribute, through the bot or an annotation, is not counted."""
+    sample = (
+        "from leaguebot.core.services.scheduler_service import SchedulerService\n"
+        "async def handler(bot, scheduler: SchedulerService):\n"
+        "    bot.scheduler_service._scheduler.get_job('x')\n"
+        "    scheduler._scheduler.get_job('x')\n"
+    )
+
+    assert _private_names_in(sample, "core/services/sample_service.py") == Counter()
 
 
 # ── 9. Only the router writes the log channel ───────────────────────────────────────────────
@@ -700,23 +885,7 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_abandon_interrupted_resubmission"): (2, PASS["results"]),
-    ("__main__.py", "_recover_expired_review_prompts"): (2, HANDLERS),
-    ("__main__.py", "_recover_orphaned_submission_channels"): (1, PASS["results"]),
     ("core/cogs/bot_cog.py", "_open_progress"): (1, HANDLERS),
-    ("core/cogs/module_cog.py", "execute_forced_close"): (2, PASS["signup"]),
-    ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (6, PASS["results"]),
-    ("core/cogs/season_cog.py", "SeasonCog._post_approval_prompt"): (1, HANDLERS),
-    ("core/cogs/season_cog.py", "SeasonCog._post_review_calendar_image"): (2, HANDLERS),
-    ("core/cogs/season_cog.py", "SeasonCog._post_review_lineup_image"): (2, HANDLERS),
-    ("core/cogs/season_cog.py", "SeasonCog._review_mid_season_placements"): (7, HANDLERS),
-    ("core/cogs/season_cog.py", "SeasonCog._send_channel_faults"): (1, HANDLERS),
-    ("core/cogs/season_cog.py", "SeasonCog.on_message"): (2, HANDLERS),
-    ("core/cogs/season_cog.py", "SeasonCog.season_config_review"): (3, HANDLERS),
-    ("core/cogs/season_cog.py", "SeasonCog.season_review"): (18, HANDLERS),
-    ("core/cogs/season_cog.py", "_ApproveView.on_timeout"): (3, HANDLERS),
-    ("core/cogs/season_cog.py", "_confirm_privately"): (1, HANDLERS),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (2, PASS["signup"]),
     ("attendance/services/attendance_service.py", "post_attendance_sheet"): (2, PASS["attendance"]),
     ("core/services/calendar_post_service.py", "replace_calendar_message"): (2, HANDLERS),
     ("core/services/cancellation_notice_service.py", "_send"): (1, HANDLERS),
@@ -729,61 +898,30 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/penalty_wizard.py", "_show_approval_step"): (1, PASS["results"]),
     ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, HANDLERS),
     ("results/services/result_submission_service.py", "send_appeals_prompt"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_resubmit_collection_task"): (15, PASS["results"]),
     ("results/services/result_submission_service.py", "send_cancelled_line"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "send_review_prompt"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "enter_resubmit_flow"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "run_amendment_review_stages"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "ask_review_open"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "run_result_submission_job"): (14, PASS["results"]),
     ("results/services/results_post_service.py", "_send_chunked"): (2, PASS["results"]),
     ("core/services/retry_service.py", "attempt_delivery"): (1, HANDLERS),
-    ("attendance/services/rsvp_service.py", "_post_distribution_announcement"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "_post_no_reserve_notice"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "run_rsvp_last_notice"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "run_rsvp_notice"): (2, PASS["attendance"]),
+    ("attendance/services/check_in_changes.py", "edit_check_in_message"): (1, PASS["attendance"]),
+    ("attendance/services/check_in_changes.py", "post_check_in_message"): (1, PASS["attendance"]),
     ("results/services/verdict_announcement_service.py", "_send_verdict"): (2, PASS["results"]),
-    ("signup/services/wizard_service.py", "WizardService._advance_wizard_in_channel"): (2, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._answer_stands"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._commit_correction"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._correction_timeout_callback"): (2, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._handle_availability"): (3, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._handle_driver_type"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._handle_lap_time"): (2, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._handle_nationality"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._handle_notes"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._handle_platform"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._handle_platform_id"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._handle_preferred_teams"): (2, PASS["signup"]),
+    ("signup/services/signup_posting.py", "delete_channel"): (1, PASS["signup"]),
+    ("signup/services/signup_posting.py", "post"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.trigger_channel_hold"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.commit_wizard"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.handle_preferred_teams_button"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.request_changes"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.select_correction_parameter"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.start_wizard"): (2, PASS["signup"]),
     ("core/utils/batch_notice.py", "delete_notice"): (1, HANDLERS),
     ("core/utils/batch_notice.py", "send_notice"): (1, HANDLERS),
-    ("__main__.py", "_recover_orphaned_amend_channels"): (1, PASS["results"]),
-    ("attendance/cogs/attendance_cog.py", "_RsvpBulkSetModal.on_submit"): (1, PASS["attendance"]),
-    ("attendance/cogs/attendance_cog.py", "handle_rsvp_button"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "run_rsvp_deadline"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "withdraw_rsvp_call"): (1, PASS["attendance"]),
     ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset.report"): (1, HANDLERS),
-    ("core/cogs/bot_cog.py", "_stand_down_old_hub"): (1, HANDLERS),
-    ("core/cogs/clean_cog.py", "CleanCog.clean_bot"): (1, HANDLERS),
-    ("core/cogs/season_cog.py", "_ApproveView._clear_report"): (1, HANDLERS),
     ("core/services/factory_reset_service.py", "_delete_own_messages"): (3, HANDLERS),
     ("core/services/factory_reset_service.py", "clean_discord"): (1, HANDLERS),
     ("results/services/penalty_wizard.py", "_delete_review_message"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_refresh_appeals_prompt"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_refresh_prompt"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "take_down_cancel_message"): (1, PASS["results"]),
+    ("results/services/submission_steps.py", "_send"): (1, HANDLERS),
     ("results/services/results_post_service.py", "_delete_posting"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "delete_round_channel"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "produce_standings"): (1, PASS["results"]),
-    ("signup/cogs/admin_review_cog.py", "AdminReviewCog.on_message"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._execute_channel_delete"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.handle_member_remove"): (1, PASS["signup"]),
     ("weather/services/forecast_cleanup_service.py", "_discord_delete"): (1, PASS["weather"]),
 }
 
@@ -818,6 +956,637 @@ def test_the_posting_check_counts_deletes_and_edits_but_not_permission_edits():
     assert _direct_posts_among(nodes) == Counter({("core/cogs/sample_cog.py", "handler"): 5})
 
 
+def test_the_posting_check_does_not_count_a_review_poster_reply():
+    """The season review's poster answers the reviewer through the interaction's follow-up, which
+    is no post (#439, fold-in 13). The check reads the verb, not the receiver's class: a method
+    named `send` is counted as a post whatever it does, so the poster's method is named `reply`,
+    which the check passes, while a `poster.send(...)` would still be counted."""
+    sample = ast.parse(
+        "async def handler(poster):\n"
+        "    await poster.reply('the report', ephemeral=False)\n"
+        "    await poster.send('the report', ephemeral=False)\n"
+    )
+    owners = _owners(sample)
+    nodes = [("core/cogs/sample_cog.py", owners.get(node, "<module>"), node)
+             for node in ast.walk(sample)]
+
+    assert _direct_posts_among(nodes) == Counter({("core/cogs/sample_cog.py", "handler"): 1})
+
+
+# ── 10a. Every post is made in a job ────────────────────────────────────────────────────────
+
+#: The decorator that marks a function as posting, and refuses to run it outside a job
+#: (`core/utils/in_a_job.py`).
+POSTS_IN_A_JOB = "posts_in_a_job"
+
+#: A post made off the change queue, and why (#439 slice 6b). Every other function that posts
+#: carries `posts_in_a_job`.
+POSTS_OFF_THE_QUEUE: dict[tuple[str, str], str] = {
+    ("core/services/factory_reset_service.py", "clean_discord"): (
+        "the factory reset's clean-up: the database the queue lives in is emptied, and no log "
+        "channel or roles remain for Retry and Discard"
+    ),
+    ("core/services/factory_reset_service.py", "_delete_own_messages"): (
+        "the factory reset's clean-up, which passes over a channel it cannot clean"
+    ),
+    ("core/cogs/bot_cog.py", "_open_progress"): (
+        "the factory reset's progress, the reply to the owner's own command"
+    ),
+    ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset.report"): (
+        "the factory reset's progress, the reply to the owner's own command"
+    ),
+    ("core/services/output_router.py", "OutputRouter.turn_away"): (
+        "the turn-away's note and deletion, made at once while an earlier turn waits; a "
+        "refusal of either is lost, not retried"
+    ),
+    ("core/services/retry_service.py", "attempt_delivery"): (
+        "the retry of a log line the log channel refused: it carries log lines alone, which stay "
+        "off the queue (decision 1)"
+    ),
+}
+
+#: The calls that make a channel, which the job check counts beside the posts.
+_CHANNEL_MAKING_CALLS = frozenset({"create_text_channel", "create_category"})
+
+
+def _is_made_in_a_job(call: ast.Call) -> bool:
+    """Whether *call* reaches a channel as a post must be made in a job: a post, a delete or an
+    edit (`_is_a_post`), a channel made, or a message sent to be deleted later."""
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return False
+    return (
+        _is_a_post(call)
+        or func.attr in _CHANNEL_MAKING_CALLS
+        or (func.attr == "send" and any(k.arg == "delete_after" for k in call.keywords))
+    )
+
+
+def _names_the_guard(decorator: ast.expr) -> bool:
+    target = decorator.func if isinstance(decorator, ast.Call) else decorator
+    return (isinstance(target, ast.Name) and target.id == POSTS_IN_A_JOB) or (
+        isinstance(target, ast.Attribute) and target.attr == POSTS_IN_A_JOB
+    )
+
+
+def _functions_among(nodes) -> dict[tuple[str, str], ast.AST]:
+    """Every function among *nodes*, by ``(file, dotted name)``."""
+    return {
+        (path, node.name if owner == "<module>" else f"{owner}.{node.name}"): node
+        for path, owner, node in nodes
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+
+def _posts_outside_a_job_among(nodes) -> Counter[tuple[str, str]]:
+    """The posts among *nodes* made by a function that does not carry `posts_in_a_job` and is
+    not a post off the queue, counted by file and function."""
+    nodes = list(nodes)
+    guarded = {
+        key for key, node in _functions_among(nodes).items()
+        if any(_names_the_guard(d) for d in node.decorator_list)
+    }
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in nodes:
+        key = (path, function)
+        if path in POSTING_ALLOWED or key in NOT_A_POST or key in POSTS_OFF_THE_QUEUE:
+            continue
+        if key in guarded:
+            continue
+        if isinstance(node, ast.Call) and _is_made_in_a_job(node):
+            found[key] += 1
+    return found
+
+
+def test_no_post_is_made_outside_a_job_but_those_named_off_the_queue():
+    """The job check, absolute (slice 6b, C102): every message the bot posts, edits or deletes,
+    and every channel it makes or deletes, is a job of a change on the change queue, but a log
+    line, a reply to a member's command or press, the stop notice, and the posts named in
+    `POSTS_OFF_THE_QUEUE` (architecture.md, "How a change is carried out" and "Posting to
+    Discord"). A function that posts carries `posts_in_a_job`, which raises where it runs outside
+    a job, or is named in `POSTS_OFF_THE_QUEUE` with its reason; no function anywhere posts
+    outside a job, with no list of exceptions left to grow. The router is excepted as the posting
+    check excepts it (`POSTING_ALLOWED`): its log lines and stop notice stay off the queue, and
+    its forecast post carries the decorator."""
+    found = _posts_outside_a_job_among(_nodes())
+
+    assert not found, sorted(found)
+
+
+def _sample(source: str, path: str = "core/services/sample_service.py") -> list:
+    tree = ast.parse(source)
+    owners = _owners(tree)
+    return [(path, owners.get(node, "<module>"), node) for node in ast.walk(tree)]
+
+
+def test_the_job_check_counts_channel_creation_and_delayed_deletion():
+    """A channel made, with `create_text_channel` or `create_category`, and a message sent to be
+    deleted eight seconds on are each counted, though the posting check counts a channel made not
+    at all: each reaches Discord as a post does, and so is made in a job."""
+    nodes = _sample(
+        "async def handler(guild, channel):\n"
+        "    await guild.create_text_channel('signup-driver')\n"
+        "    await guild.create_category('Signups')\n"
+        "    await channel.send('locked', delete_after=8)\n"
+    )
+
+    assert _posts_outside_a_job_among(nodes) == Counter(
+        {("core/services/sample_service.py", "handler"): 3}
+    )
+    assert _direct_posts_among(nodes) == Counter(
+        {("core/services/sample_service.py", "handler"): 1}
+    )
+
+
+def test_the_job_check_passes_a_decorated_post_and_a_post_off_the_queue_with_its_reason():
+    """Of three functions that post, the one carrying `posts_in_a_job` (by name or through its
+    module) passes, the factory reset's clean-up, named with its reason, passes, and the third,
+    which carries neither, is counted."""
+    path = "core/services/factory_reset_service.py"
+    nodes = _sample(
+        "@posts_in_a_job\n"
+        "async def post_the_sheet(channel):\n"
+        "    await channel.send('sheet')\n"
+        "@in_a_job.posts_in_a_job\n"
+        "async def post_the_lineup(channel):\n"
+        "    await channel.send('lineup')\n"
+        "async def clean_discord(channel):\n"
+        "    await channel.delete()\n"
+        "async def post_the_calendar(channel):\n"
+        "    await channel.send('calendar')\n",
+        path,
+    )
+
+    assert (path, "clean_discord") in POSTS_OFF_THE_QUEUE
+    assert _posts_outside_a_job_among(nodes) == Counter({(path, "post_the_calendar"): 1})
+
+
+def test_a_not_a_post_entry_is_not_counted_by_the_job_check():
+    """The queue's edit of a member's own acknowledgement, named in `NOT_A_POST`, answers the
+    member and posts in no channel: undecorated, it is not counted, while the same edit in another
+    function of the file is."""
+    path = "core/services/change_queue.py"
+    nodes = _sample(
+        "class ChangeQueue:\n"
+        "    async def _update_reply(self, reply):\n"
+        "        await reply.edit(content='done')\n"
+        "    async def _elsewhere(self, reply):\n"
+        "        await reply.edit(content='done')\n",
+        path,
+    )
+
+    assert (path, "ChangeQueue._update_reply") in NOT_A_POST
+    assert _posts_outside_a_job_among(nodes) == Counter({(path, "ChangeQueue._elsewhere"): 1})
+
+
+def test_every_post_off_the_queue_names_its_reason():
+    """Each post off the queue says why it is one, and names a function the source holds, so an
+    entry outliving its function, or added without a reason, fails."""
+    functions = _functions_among(_nodes())
+
+    assert all(reason.strip() for reason in POSTS_OFF_THE_QUEUE.values())
+    assert sorted(key for key in POSTS_OFF_THE_QUEUE if key not in functions) == []
+
+
+# ── 10b. No service reaches the change queue through the bot ────────────────────────────────
+
+#: The bot's attribute that holds the change queue (`core/utils/league_bot.py`).
+CHANGE_QUEUE = "change_queue"
+#: The results services files whose views' and forms' callbacks reach the change queue through
+#: the bot until results' pass moves them (#439 slice 6b, decision 20): the penalty review's
+#: buttons and forms, and the configuration picker.
+RESULTS_VIEW_FILES = frozenset({
+    "results/services/penalty_wizard.py",
+    "results/services/result_submission_service.py",
+})
+
+
+def _is_a_service_or_helper(path: str) -> bool:
+    """Whether *path* is a service or a helper: a file in a module's ``services`` or ``utils``."""
+    return _kind(path) in ("services", "utils")
+
+
+def _reaches_the_bot(node: ast.expr) -> bool:
+    """Whether *node* is the bot as a service may reach it: as `_is_the_bot` reads it, or as
+    ``self._bot`` or ``interaction.client``."""
+    return _is_the_bot(node) or (
+        isinstance(node, ast.Attribute) and node.attr in ("_bot", "client")
+    )
+
+
+def _attribute_read_on_the_bot(node: ast.AST) -> str | None:
+    """The name of the bot's attribute *node* reads, ``bot.X`` or ``getattr(bot, "X"[, d])``,
+    the bot reached as `_reaches_the_bot` reads it; else None."""
+    if (isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load)
+            and _reaches_the_bot(node.value)):
+        return node.attr
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr"
+            and len(node.args) >= 2 and _reaches_the_bot(node.args[0])
+            and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str)):
+        return node.args[1].value
+    return None
+
+
+def _queue_reached_through_the_bot_among(nodes) -> Counter[tuple[str, str]]:
+    """The reads of the bot's change queue among *nodes* made in a service or a helper, counted
+    by file and function."""
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in nodes:
+        if _is_a_service_or_helper(path) and _attribute_read_on_the_bot(node) == CHANGE_QUEUE:
+            found[(path, function)] += 1
+    return found
+
+
+#: Each callback of a view or form listed under results' pass reads the queue once and hands it
+#: on, binding it to a local where it asks twice (the penalty clear's staging and its approval
+#: message). Every read the slice adds is listed now, beside the commit that adds it, since the
+#: build may only delete or lower a line: the approve buttons (C9), the configuration picker
+#: (C48), Resubmit (C51), the two forms (C54), the Remove, clear-confirm and Make Changes buttons
+#: (C55) and No Penalties (C56).
+KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
+    ("results/services/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "AddPenaltyModal.on_submit"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "AppealsReviewView._make_remove_cb.cb"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "AppealsReviewView.approve_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "AppealsReviewView.no_changes_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "ApprovalView.approve_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "ApprovalView.make_changes_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "PenaltyReviewView._make_pardon_remove_cb.cb"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "PenaltyReviewView._make_remove_cb.cb"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "PenaltyReviewView.approve_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "PenaltyReviewView.no_penalties_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "PenaltyReviewView.resubmit_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "_AppealsConfirmClearView.confirm_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "_ConfirmClearView.confirm_btn"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "_ConfigSelectView.__init__._cb"): (1, PASS["results"]),
+}
+
+
+def test_no_service_reaches_the_change_queue_through_the_bot():
+    """A service or a helper is handed the change queue by whoever builds or calls it, and never
+    looks it up on the bot (architecture.md, "How modules and core fit together": "Services stay
+    attached to the bot, and are built in one place"; #439 slice 6b, fold-in 6). A cog may read it
+    there, as every command and press asks the queue on the bot. Today's reads are listed under
+    the slice that hands the queue, and the callbacks of the views and forms in results' services
+    files under results' pass, which moves them (decision 20)."""
+    _check(
+        "no service reaches the change queue through the bot",
+        _queue_reached_through_the_bot_among(_nodes()),
+        KNOWN_QUEUE_REACHED_THROUGH_THE_BOT,
+    )
+
+
+def test_the_queue_check_sees_bot_of_an_interaction():
+    """The bot reached from an interaction, ``bot_of(interaction).change_queue``, is counted in a
+    service, and so is the queue read from ``getattr`` or ``self._bot``; the same read in a cog is
+    not counted."""
+    source = (
+        "async def handler(self, interaction, bot):\n"
+        "    await bot_of(interaction).change_queue.ask('kind', {})\n"
+        "    queue = getattr(bot, 'change_queue', None)\n"
+        "    await self._bot.change_queue.ask('kind', {})\n"
+    )
+    service = "results/services/sample_service.py"
+    cog = "results/cogs/sample_cog.py"
+
+    assert _queue_reached_through_the_bot_among(_sample(source, service)) == Counter(
+        {(service, "handler"): 3}
+    )
+    assert _queue_reached_through_the_bot_among(_sample(source, cog)) == Counter()
+
+
+def _view_and_form_classes(path: str) -> set[str]:
+    """The classes the package file *path* defines that are views or forms: a base whose name
+    ends ``View`` or ``Modal``."""
+    tree = dict(_sources())[path]
+    return {
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and any(
+            (base.id if isinstance(base, ast.Name) else base.attr if isinstance(base, ast.Attribute)
+             else "").endswith(("View", "Modal"))
+            for base in node.bases
+        )
+    }
+
+
+def test_the_queue_check_lists_the_view_callbacks_in_results_services_under_its_pass():
+    """The penalty review's buttons and forms, and the configuration picker, sit in results'
+    services files and reach the queue through the bot until results' pass moves them (#439
+    slice 6b, decision 20). Some line is listed under that pass, and each names a callback of a
+    view or form class in one of those files, never a helper the slice hands the queue to."""
+    listed = sorted(
+        key for key, (_count, issue) in KNOWN_QUEUE_REACHED_THROUGH_THE_BOT.items()
+        if issue == PASS["results"]
+    )
+
+    assert listed
+    for path, function in listed:
+        assert path in RESULTS_VIEW_FILES, (path, function)
+        assert "." in function and function.split(".")[0] in _view_and_form_classes(path), (
+            path, function,
+        )
+
+
+# ── 10c. No service looks another service up on the bot ─────────────────────────────────────
+
+#: How the name of a service the bot holds ends (`core/utils/league_bot.py`).
+_SERVICE_SUFFIX = "_service"
+
+
+def _visible(bound: dict[tuple[str, str], set[str]], path: str, function: str) -> set[str]:
+    """The names bound to the bot that *function* in *path* sees: its own, and those of every
+    function it is nested in, as a closure does."""
+    return {
+        name
+        for (file, scope), names in bound.items()
+        if file == path and (function == scope or function.startswith(f"{scope}."))
+        for name in names
+    }
+
+
+def _locals_bound_to_the_bot(nodes) -> dict[tuple[str, str], set[str]]:
+    """The local names each function among *nodes* binds to the bot, keyed by file and function.
+
+    A name is bound to the bot by a plain assignment of it, ``_bot = bot_of(…)`` or
+    ``b: LeagueBot = self.bot``, the bot reached as `_reaches_the_bot` reads it or through a name
+    already bound to it; and by unpacking a call to a function of the same file that returns the
+    bot, ``ok, _bot, _user_id = await self._guard(…)``, at the place in the tuple it returns the
+    bot. A function returns the bot where one of its ``return`` statements gives it back whole or
+    at that place in a tuple. Bindings are followed to a fixed point, so a helper returning what
+    another helper returned is seen too. A function nested in another sees its enclosing
+    function's names (`_visible`)."""
+    nodes = list(nodes)
+    bound: dict[tuple[str, str], set[str]] = {}
+    #: Each function returning the bot, by file and name, to the places it returns it at: an index
+    #: into the tuple it returns, or None where it returns the bot whole.
+    returns: dict[tuple[str, str], set[int | None]] = {}
+
+    def is_the_bot(path: str, function: str, node: ast.expr) -> bool:
+        return _reaches_the_bot(node) or (
+            isinstance(node, ast.Name) and node.id in _visible(bound, path, function)
+        )
+
+    changed = True
+    while changed:
+        changed = False
+
+        def add(table: dict, key: tuple[str, str], item) -> None:
+            nonlocal changed
+            if item not in table.setdefault(key, set()):
+                table[key].add(item)
+                changed = True
+
+        for path, function, node in nodes:
+            if isinstance(node, ast.Return) and node.value is not None:
+                key = (path, function.rsplit(".", 1)[-1])
+                if isinstance(node.value, ast.Tuple):
+                    for index, element in enumerate(node.value.elts):
+                        if is_the_bot(path, function, element):
+                            add(returns, key, index)
+                elif is_the_bot(path, function, node.value):
+                    add(returns, key, None)
+                continue
+            if isinstance(node, ast.Assign) and len(node.targets) == 1:
+                target, value = node.targets[0], node.value
+            elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                target, value = node.target, node.value
+            else:
+                continue
+            if isinstance(value, ast.Await):
+                value = value.value
+            places = (
+                returns.get((path, _call_name(value)), set()) if isinstance(value, ast.Call)
+                else set()
+            )
+            if isinstance(target, ast.Name):
+                if is_the_bot(path, function, value) or None in places:
+                    add(bound, (path, function), target.id)
+            elif isinstance(target, ast.Tuple):
+                for index, element in enumerate(target.elts):
+                    if index in places and isinstance(element, ast.Name):
+                        add(bound, (path, function), element.id)
+    return bound
+
+
+def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
+    """The services among *nodes* that a service or a helper looks up on the bot, ``bot.X_service``
+    or ``getattr(bot, "X_service")``, the bot reached as `_reaches_the_bot` reads it or through a
+    local name bound to it (`_locals_bound_to_the_bot`), counted by file and function. The change
+    queue is the queue check's, and not counted here."""
+    nodes = list(nodes)
+    bound = _locals_bound_to_the_bot(nodes)
+
+    def bot_local(path: str, function: str, node: ast.expr) -> bool:
+        return isinstance(node, ast.Name) and node.id in _visible(bound, path, function)
+
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in nodes:
+        if not _is_a_service_or_helper(path):
+            continue
+        name = _attribute_read_on_the_bot(node)
+        if name is None and isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) \
+                and bot_local(path, function, node.value):
+            name = node.attr
+        elif (name is None and isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "getattr" and len(node.args) >= 2
+                and bot_local(path, function, node.args[0])
+                and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str)):
+            name = node.args[1].value
+        if name is not None and name.endswith(_SERVICE_SUFFIX):
+            found[(path, function)] += 1
+    return found
+
+
+KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
+    ("attendance/services/attendance_service.py", "enforce_attendance_sanctions"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "_checkin_attachment"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (1, PASS["attendance"]),
+    ("attendance/services/sheet_posting.py", "sheet_step.still_due"): (1, PASS["attendance"]),
+    ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
+    ("core/services/backup_service.py", "jobstore_path_of"): (1, PASS["core"]),
+    ("core/services/calendar_post_service.py", "image_calendar_wanted"): (2, PASS["core"]),
+    ("core/services/calendar_post_service.py", "render_calendar_image"): (2, PASS["core"]),
+    ("core/services/hub_service.py", "_hub_channel"): (1, PASS["core"]),
+    ("core/services/hub_service.py", "apply_hub_permissions"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._guard_reserve_capacity"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._guard_sheet_capacity"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._guard_standings_capacity"): (1, PASS["core"]),
+    ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
+    ("core/utils/autocomplete.py", "team_autocomplete"): (1, PASS["core"]),
+    ("core/utils/channel_guard.py", "_tier_guard.decorate.wrapper"): (1, PASS["core"]),
+    ("core/utils/channel_guard.py", "bot_setup_only.wrapper"): (1, PASS["core"]),
+    ("core/utils/channel_guard.py", "server_owner_only.wrapper"): (1, PASS["core"]),
+    ("core/utils/league_server.py", "is_foreign_guild"): (1, PASS["core"]),
+    ("core/utils/league_server.py", "league_guild"): (1, PASS["core"]),
+    ("image/services/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),
+    ("image/services/driver_portrait_service.py", "refresh_before_render"): (1, PASS["image"]),
+    ("image/services/driver_portrait_service.py", "run_daily_refresh"): (1, PASS["image"]),
+    ("image/services/image_attendance_post.py", "attendance_enabled"): (3, PASS["image"]),
+    ("image/services/image_attendance_post.py", "render_sheet"): (2, PASS["image"]),
+    ("image/services/image_lineup_post.py", "lineup_enabled"): (3, PASS["image"]),
+    ("image/services/image_lineup_post.py", "render_png"): (2, PASS["image"]),
+    ("image/services/image_preview_service.py", "build_calendar_preview"): (1, PASS["image"]),
+    ("image/services/image_preview_service.py", "build_results_preview"): (1, PASS["image"]),
+    ("image/services/image_preview_service.py", "build_rsvp_preview"): (2, PASS["image"]),
+    ("image/services/image_preview_service.py", "resolve_asset_directories"): (1, PASS["image"]),
+    ("image/services/image_preview_service.py", "resolve_context"): (3, PASS["image"]),
+    ("image/services/image_results_post.py", "build_drawing"): (1, PASS["image"]),
+    ("image/services/image_results_post.py", "render_png"): (2, PASS["image"]),
+    ("image/services/image_results_post.py", "results_enabled"): (3, PASS["image"]),
+    ("image/services/image_rsvp_post.py", "rsvp_enabled"): (3, PASS["image"]),
+    ("image/services/image_rsvp_post.py", "try_attach"): (2, PASS["image"]),
+    ("image/services/image_standings_post.py", "render_png"): (2, PASS["image"]),
+    ("image/services/image_standings_post.py", "standings_enabled"): (3, PASS["image"]),
+    ("image/services/image_validity_service.py", "aspect_attaches_files"): (2, PASS["image"]),
+    ("image/services/image_verdict_banner_post.py", "banner_enabled"): (3, PASS["image"]),
+    ("image/services/image_verdict_banner_post.py", "render_banner"): (2, PASS["image"]),
+    ("image/services/image_verdict_post.py", "render_verdict"): (2, PASS["image"]),
+    ("image/services/image_verdict_post.py", "verdicts_enabled"): (3, PASS["image"]),
+    ("image/services/image_weather_post.py", "render_forecast"): (2, PASS["image"]),
+    ("image/services/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
+    ("results/services/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "_build_division_validation_data"): (2, PASS["results"]),
+    ("results/services/result_submission_service.py", "run_amendment_review_stages"): (1, PASS["results"]),
+    ("signup/services/signup_views.py", "AdminReviewView._guard"): (1, PASS["signup"]),
+    ("signup/services/signup_views.py", "AdminReviewView._resolve"): (1, PASS["signup"]),
+    ("signup/services/signup_views.py", "CorrectionParameterView.__init__.make_callback.callback"): (1, PASS["signup"]),
+    ("signup/services/signup_views.py", "PreferredTeamsButtonView._make_team_callback.callback"): (1, PASS["signup"]),
+    ("signup/services/signup_views.py", "_may_review_signup"): (1, PASS["signup"]),
+    ("signup/services/signup_views.py", "_resolve_view_context"): (1, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService._signup_svc"): (1, PASS["signup"]),
+}
+
+
+def test_no_service_looks_another_service_up_on_the_bot():
+    """A service or a helper is handed the services it needs by whoever builds it, and never looks
+    one up on the bot (architecture.md, "How modules and core fit together": "Services stay
+    attached to the bot, and are built in one place"; #439 slice 6b, folded in at Gate 1). A cog
+    may look a service up there. Today's lookups are listed under the pass of the module whose
+    file makes them; a lookup a slice of #439 removes deletes its line in that commit."""
+    _check(
+        "no service looks another service up on the bot",
+        _service_lookups_among(_nodes()),
+        KNOWN_SERVICE_LOOKUPS,
+    )
+
+
+#: A sample making a lookup through each way the code reaches the bot.
+_LOOKUP_SAMPLE = (
+    "async def handler(self, ctx, bot, interaction):\n"
+    "    bot.season_service.get()\n"
+    "    self.bot.driver_service.get()\n"
+    "    self._bot.module_service.get()\n"
+    "    ctx.bot.season_service.get()\n"
+    "    bot_of(interaction).placement_service.get()\n"
+    "    getattr(bot, 'scheduler_service', None)\n"
+    "    bot.change_queue.ask('kind', {})\n"
+    "    bot.db_path\n"
+)
+
+
+def test_the_lookup_check_finds_a_lookup_in_a_services_file():
+    """In a services file, each of the six ways of looking a service up on the bot is counted;
+    the change queue, held by the queue check, and an attribute that is not a service are not."""
+    path = "signup/services/sample_service.py"
+
+    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter({(path, "handler"): 6})
+
+
+def test_the_lookup_check_does_not_count_a_cog_s_lookup():
+    """A cog looks the services up on the bot, as commands do: nothing is counted."""
+    path = "signup/cogs/sample_cog.py"
+
+    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter()
+
+
+def test_the_lookup_check_finds_a_lookup_in_a_utils_file():
+    """A helper is held to the rule as a service is."""
+    path = "core/utils/sample_helper.py"
+
+    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter({(path, "handler"): 6})
+
+
+def test_the_lookup_check_follows_a_local_bound_to_the_bot():
+    """A service read through a local name bound to the bot, ``_bot = bot_of(interaction)`` and
+    then ``_bot.X_service``, is counted as the read on the bot itself is, in the function that
+    binds it and in a closure inside it; a local bound to anything else is not."""
+    path = "signup/services/sample_views.py"
+    source = (
+        "async def handler(interaction, other):\n"
+        "    _bot = bot_of(interaction)\n"
+        "    _bot.signup_module_service.get()\n"
+        "    getattr(_bot, 'season_service', None)\n"
+        "    held: LeagueBot = interaction.client\n"
+        "    held.driver_service.get()\n"
+        "    unrelated = other.thing\n"
+        "    unrelated.season_service.get()\n"
+        "    _bot.change_queue.ask('kind', {})\n"
+        "    async def callback():\n"
+        "        _bot.placement_service.get()\n"
+    )
+
+    assert _service_lookups_among(_sample(source, path)) == Counter(
+        {(path, "handler"): 3, (path, "handler.callback"): 1}
+    )
+
+
+def test_the_lookup_check_follows_the_bot_unpacked_from_a_helper_that_returns_it():
+    """A name unpacked from a call to a function of the same file that returns the bot, at the
+    place in the tuple it returns it, is bound to the bot, and through a helper calling another:
+    ``_resolve`` returns ``(_bot, _user_id)``, ``_guard`` unpacks it and returns ``(True, _bot,
+    _user_id)``, and each reads a service through ``_bot``, as does a press unpacking ``_guard``'s.
+    A name at another place in the tuple, and one unpacked from a helper that never returns the
+    bot, are not."""
+    path = "signup/services/sample_views.py"
+    source = (
+        "class Review:\n"
+        "    async def _resolve(self, interaction):\n"
+        "        _bot = bot_of(interaction)\n"
+        "        _bot.signup_module_service.get()\n"
+        "        return _bot, 7\n"
+        "    async def _guard(self, interaction):\n"
+        "        _bot, _user_id = await self._resolve(interaction)\n"
+        "        _user_id.season_service.get()\n"
+        "        _bot.driver_service.get()\n"
+        "        return True, _bot, _user_id\n"
+        "    async def press(self, interaction):\n"
+        "        ok, _bot, _user_id = await self._guard(interaction)\n"
+        "        ok.season_service.get()\n"
+        "        _bot.wizard_service.get()\n"
+        "async def _other(interaction):\n"
+        "    return interaction.user, 7\n"
+        "async def elsewhere(interaction):\n"
+        "    who, _n = await _other(interaction)\n"
+        "    who.season_service.get()\n"
+    )
+
+    assert _service_lookups_among(_sample(source, path)) == Counter({
+        (path, "Review._resolve"): 1, (path, "Review._guard"): 1, (path, "Review.press"): 1,
+    })
+
+
+def test_a_listed_lookup_that_is_gone_fails_the_lookup_check():
+    """A lookup listed but no longer made fails the rule, so its line is deleted with it."""
+    path = "core/services/sample_service.py"
+    nodes = _sample("async def handler(season_service):\n    season_service.get()\n", path)
+
+    with pytest.raises(AssertionError, match="Breaches fixed but still listed"):
+        _check(
+            "no service looks another service up on the bot",
+            _service_lookups_among(nodes),
+            {(path, "handler"): (1, PASS["core"])},
+        )
+
+
+def test_the_lookup_rule_cites_the_architecture_s_rule():
+    """The rule names the architecture's rule it holds, so a reader finds why."""
+    assert "Services stay attached to the bot, and are built in one place" in " ".join(
+        (test_no_service_looks_another_service_up_on_the_bot.__doc__ or "").split()
+    )
+
+
 # ── 11. Each table is written by the module that owns it ────────────────────────────────────
 
 #: The schema, whose tables the rule is about.
@@ -839,7 +1608,8 @@ TABLE_OWNER: dict[str, str] = {
     "session_results": "results", "qualifying_session_results": "results",
     "race_session_results": "results", "driver_standings_snapshots": "results",
     "team_standings_snapshots": "results", "round_submission_channels": "results",
-    "round_amend_channels": "results", "penalty_records": "results", "appeal_records": "results",
+    "round_amend_channels": "results", "resubmission_drafts": "results",
+    "amend_drafts": "results", "review_lock_warnings": "results", "penalty_records": "results", "appeal_records": "results",
     "verdict_banner_messages": "results", "division_results_config": "results",
     "results_module_config": "results", "points_config_store": "results",
     "points_config_entries": "results", "points_config_fl": "results",
@@ -1006,7 +1776,7 @@ TABLES_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
         (1, "the penalty and appeal records, results' own"),
     ("results/services/result_submission_service.py", "_repoint_verdicts"):
         (1, "the penalty and appeal records, results' own"),
-    ("results/services/result_submission_service.py", "revert_abandoned_amendment"):
+    ("results/services/result_submission_service.py", "_restore_from_snapshot_on"):
         (3, "results' own session result tables, and the penalty and appeal records"),
     ("results/services/verdict_records.py", "delete_verdicts"):
         (1, "`VERDICT_TABLES`, the penalty and appeal records, results' own"),
@@ -1066,11 +1836,6 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 
 
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_abandon_interrupted_resubmission"): (1, PASS["results"]),
-    ("__main__.py", "_give_up_missed_check_in_call"): (1, PASS["attendance"]),
-    ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
-    ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["results"]),
-    ("__main__.py", "_recover_orphaned_submission_channels"): (2, PASS["results"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, PASS["core"]),
@@ -1107,12 +1872,10 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/services/season_service.py", "_sync_division_rounds"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_ensure_single_config"): (4, PASS["core"]),
     ("results/services/result_submission_service.py", "recompute_former_drivers_for_round"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "revert_abandoned_amendment"): (2, PASS["results"]),
-    ("results/services/result_submission_service.py", "run_result_submission_job"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "_restore_from_snapshot_on"): (2, PASS["results"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_image"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (1, PASS["signup"]),
@@ -1271,11 +2034,7 @@ def _saves_outside_a_change() -> Counter[tuple[str, str]]:
 
 KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # The penalty and appeals approvals
-    ("__main__.py", "_recover_orphaned_submission_channels"): (1, PASS["results"]),
     ("results/services/standings_service.py", "persist_snapshots"): (1, PASS["results"]),
-    ("results/services/results_post_service.py", "_set_standings_message_id"): (1, PASS["results"]),
-    ("results/services/verdict_announcement_service.py", "_record_banner"): (1, PASS["attendance"]),
-    ("results/services/verdict_announcement_service.py", "_mark_banner_over_sanction"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # The standing posts
@@ -1305,11 +2064,9 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_config_service.py", "ImageConfigService.set_tier_colour"): (1, SLICE[7]),
     ("image/services/image_config_service.py", "ImageConfigService.set_tier_colours"): (1, SLICE[7]),
     # Core's pass
-    ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
     ("core/cogs/bot_cog.py", "_audit"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_images"): (1, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._disable_signup"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_weather"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_images"): (1, PASS["core"]),
@@ -1319,8 +2076,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog.division_amend"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_calendar_channel"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_lineup_channel"): (1, PASS["core"]),
-    ("core/cogs/season_cog.py", "_ApproveView._forget"): (1, PASS["core"]),
-    ("core/cogs/season_cog.py", "_ApproveView.bind"): (1, PASS["core"]),
     ("core/services/audit_service.py", "record_change"): (1, PASS["core"]),
     ("core/services/config_service.py", "ConfigService.release_claim"): (1, PASS["core"]),
     ("core/services/config_service.py", "ConfigService.save_server_config"): (2, PASS["core"]),
@@ -1378,66 +2133,30 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/test_roster_service.py", "clear_all_test_drivers"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "remove_test_driver"): (1, PASS["core"]),
     # Results' pass
-    ("__main__.py", "_abandon_interrupted_resubmission"): (1, PASS["results"]),
-    ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["results"]),
-    ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (3, PASS["results"]),
-    ("results/services/result_submission_service.py", "_apply_points_from_config"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_claim_amendment"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_close_amend_channel_record"): (2, PASS["results"]),
-    ("results/services/result_submission_service.py", "_rearm_amendment"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "amend_round_results"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "close_submission_channel"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "create_submission_channel"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "enter_resubmit_flow"): (2, PASS["results"]),
-    ("results/services/result_submission_service.py", "replace_round_results"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "revert_abandoned_amendment"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "run_result_submission_job"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "save_session_result"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "snapshot_before_amendment"): (1, PASS["results"]),
     # Attendance's pass
-    ("__main__.py", "_give_up_missed_check_in_call"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "AttendanceService.answer_rsvp"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "AttendanceService.bulk_insert_attendance_rows"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.delete_division_configs"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.get_or_create_config"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "AttendanceService.insert_embed_message"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.set_attendance_channel"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.set_rsvp_channel"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.set_setting"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "AttendanceService.update_embed_distribution_msg"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "AttendanceService.update_embed_last_notice_msg"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "AttendanceService.upsert_rsvp_status"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "_write_distribution"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "repost_rsvp_call"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "run_rsvp_cleanup"): (1, PASS["attendance"]),
-    ("attendance/services/rsvp_service.py", "withdraw_rsvp_call"): (1, PASS["attendance"]),
     # Signup's pass
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_image"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.add_slot"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.delete_config"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.delete_wizard"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.mark_approved"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.rekey_wizard"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.remove_slot_by_rank"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.save_closed_message_id"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_config"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.save_record"): (2, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_selected_tracks"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_settings"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.save_wizard"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.set_close_at"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.set_window_closed"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.set_window_open"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.snapshot_season_config"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.withdraw_approval"): (1, PASS["signup"]),
-    ("core/cogs/module_cog.py", "execute_forced_close"): (1, PASS["signup"]),
     # Weather's pass
     # Image's pass
     ("image/services/driver_portrait_service.py", "_disown"): (1, PASS["image"]),

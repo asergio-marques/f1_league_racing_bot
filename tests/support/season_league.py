@@ -60,9 +60,11 @@ posted, its message standing in the division's forecast channel.
 For a season's end on the queue (slice 5), `ongoing_league` also takes *test_mode*,
 *signups_open* and *held* (`season_end_extras`): the members holding their division, team and
 driver roles, each role taken back recorded in `league.revoked` and refused for a member in
-`league.revoke_fails`; a wizard double recording each signup channel's closing notice in
-`league.notices` and each channel locked in `league.locked`, refusing as `league.hold_fails` and
-`league.lock_fails` say; and the window's close raising `league.close_fails`.
+`league.revoke_fails`; each signing-up driver's signup channel standing on the server
+(`signup_channel`), recording each closing notice it is sent in `league.notices` and each lock
+of it in `league.locked`, refusing as `league.hold_fails` and `league.lock_fails` say, whether
+the wizard service's double or signup's own closing jobs post there; and the window's close
+raising `league.close_fails`.
 `approved_unplaced` adds a driver approved and never placed (`UNASSIGNED`), holding the driver
 role. `pending_completion_league` builds the season with every round final and both divisions finished,
 results accepted for three rounds; `setup_league` the season before its placements are confirmed,
@@ -71,7 +73,7 @@ admin 77 and give the interaction; `season_end_changes` lists the season's ends 
 `seed_season_end` puts one in hand on the queue, as another request would find it, and
 `SEASON_END_IN_HAND` holds the refusal of a request about the season while it is.
 `wizard_state` reads a driver's signup wizard, and `wizards_recovered` recovers the wizards as
-the bot does when it starts, recording what it would arm or expire.
+the bot does when it starts, recording what it armed or asked to expire.
 """
 from __future__ import annotations
 
@@ -205,7 +207,7 @@ class SeasonLeague:
         self.lock_fails: dict[int, BaseException] = {}
         #: Each closing notice posted in a driver's signup channel: (user id, the notice).
         self.notices: list[tuple[int, str]] = []
-        #: Each driver whose signup channel was locked and its deletion armed, in order.
+        #: Each driver whose signup channel was locked (their typing taken away), in order.
         self.locked: list[int] = []
         #: What the signup window's close raises as it records the window closed, if anything.
         self.close_fails: BaseException | None = None
@@ -300,6 +302,7 @@ class SeasonLeague:
         person = MagicMock(spec=discord.Member)
         person.id = user_id
         person.display_name = NAMES.get(user_id, str(user_id))
+        person.name = person.display_name.lower()
         person.mention = f"<@{user_id}>"
         person.bot = user_id == BOT_USER_ID
         person.roles = [role for role in map(self._role, sorted(self.roles_held.get(user_id, ())))
@@ -620,16 +623,25 @@ class Review:
 
 
 async def post_review(league: SeasonLeague) -> Review:
-    """Post a review's report and its ✅ Approve prompt, the season's fingerprint taken as the
-    report describes it, and the prompt recorded as the review command records it."""
+    """Post a review's report and its ✅ Approve prompt, and record the prompt as the review's
+    post job records it: its row, with the report's ids and the evidence the season's fingerprint
+    gives, posted now."""
     from leaguebot.core.cogs.season_cog import _ApproveView
+    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    from tests.support.review_prompts import store_review_prompt
 
     view = _ApproveView(league.cog, ADMIN_ID)
     report = [await league.review_channel.send("📋 Season 3 placements review")]
-    view.carries(report)
-    await view.record_fingerprint(SEASON_ID)
     prompt = await league.review_channel.send("Approve these placements?", view=view)
-    await view.bind(prompt)
+    evidence = (await take_fingerprint(league.bot, SEASON_ID)).areas
+    async with get_connection(league.db_path) as db:
+        await store_review_prompt(
+            db, season_id=SEASON_ID, channel_id=REVIEW_CHANNEL, message_id=prompt.id,
+            reviewer_id=ADMIN_ID, posted_at=datetime.now(timezone.utc).isoformat(),
+            report_message_ids=[message.id for message in report], evidence=evidence,
+            verb="approved",
+        )
+        await db.commit()
     return Review(view=view, prompt=prompt, report=report)
 
 
@@ -891,13 +903,25 @@ async def accept_session(league: SeasonLeague, round_: int, *, session: str = "F
 async def posted_forecast(league: SeasonLeague, round_: int, phase: int, message_id: int) -> None:
     """Phase *phase*'s forecast for round *round_* was posted as *message_id* in its division's
     forecast channel, and the phase is marked performed; Discord refuses to delete the message
-    while its id is in `league.undeletable`."""
+    while its id is in `league.undeletable`.
+
+    The record names the channel it was posted in, as every forecast's does once
+    `forecast_messages` carries its channel (#439, slice 6b); until then it is written without."""
     division = round_ // 10
-    await league.write(
-        "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "
-        "posted_at) VALUES (?, ?, ?, ?, ?)",
-        round_, division, phase, message_id, league.clock.now.isoformat(),
-    )
+    channel = DIVISIONS[division][3].forecast
+    columns = {row["name"] for row in await league.rows("PRAGMA table_info(forecast_messages)")}
+    if "channel_id" in columns:
+        await league.write(
+            "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "
+            "channel_id, posted_at) VALUES (?, ?, ?, ?, ?, ?)",
+            round_, division, phase, message_id, channel, league.clock.now.isoformat(),
+        )
+    else:
+        await league.write(
+            "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "
+            "posted_at) VALUES (?, ?, ?, ?, ?)",
+            round_, division, phase, message_id, league.clock.now.isoformat(),
+        )
     await league.write(_PHASE_DONE[phase], round_)
     forecast = league.channel(DIVISIONS[division][3].forecast)
     forecast.seed(message_id, f"Phase {phase} forecast")
@@ -935,11 +959,11 @@ async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: b
     """What a season's end reads beyond the season itself.
 
     Always: the real signup module and driver services, the window's recording of its close
-    raising `league.close_fails` where set; a wizard service double (`bot.wizard_service`) whose `trigger_channel_hold` records
-    each closing notice in `league.notices` (refusing those in `league.hold_fails`) and, unless
-    handed ``lock=False``, the channel in `league.locked`; whose `lock_signup_channel` records the
-    channel in `league.locked` (refusing those in `league.lock_fails`); and the scheduler's job
-    store under *tmp_path*, for the backup to be found beside it.
+    raising `league.close_fails` where set; a wizard service double (`bot.wizard_service`) whose
+    `trigger_channel_hold` and `lock_signup_channel` post and lock through the driver's signup
+    channel (`signup_channel`), which records each closing notice in `league.notices` and each
+    lock in `league.locked`, refusing as `league.hold_fails` and `league.lock_fails` say; and the
+    scheduler's job store under *tmp_path*, for the backup to be found beside it.
 
     *test_mode*: test mode on, the test driver (104) seated at McLaren, and a saved test-mode
     backup of the league and of the job store present (`backup_saved`).
@@ -976,24 +1000,29 @@ def backup_saved(league: SeasonLeague) -> bool:
 
 
 def _wizard_double(league: SeasonLeague) -> None:
+    """A wizard service double whose `trigger_channel_hold` and `lock_signup_channel` act through
+    the driver's signup channel double (`signup_channel`), as the real ones do: the notice is that
+    channel's send and the lock its permission edit, so `league.notices` and `league.locked`
+    record what the channel was sent and how it was locked, by whichever code posts there. A
+    driver with no signup channel on the server is found with nothing to tell (`channel_id`
+    None)."""
+
     async def _hold(user_id: Any, _guild: Any, notice: str, **kwargs: Any) -> Any:
         uid = int(user_id)
-        league.events.append(("notice", uid, 0))
-        if uid in league.hold_fails:
-            raise league.hold_fails[uid]
-        league.notices.append((uid, notice))
-        if kwargs.get("lock", True):
-            league.events.append(("lock", uid, 0))
-            league.locked.append(uid)
-        return SimpleNamespace(channel_id=SIGNUP_CHANNEL_BASE + uid, posted=True,
-                               locked=kwargs.get("lock", True), reason=None)
+        held = league.channels.get(SIGNUP_CHANNEL_BASE + uid)
+        if held is None:
+            return SimpleNamespace(channel_id=None, posted=False, locked=False, reason=None)
+        await held.send(notice)
+        lock = kwargs.get("lock", True)
+        if lock:
+            await held.set_permissions(league._member(uid), send_messages=False)
+        return SimpleNamespace(channel_id=held.id, posted=True, locked=lock, reason=None)
 
     async def _lock(user_id: Any, _guild: Any) -> None:
         uid = int(user_id)
-        if uid in league.lock_fails:
-            raise league.lock_fails[uid]
-        league.events.append(("lock", uid, 0))
-        league.locked.append(uid)
+        held = league.channels.get(SIGNUP_CHANNEL_BASE + uid)
+        if held is not None:
+            await held.set_permissions(league._member(uid), send_messages=False)
 
     wizard = MagicMock()
     wizard.trigger_channel_hold = AsyncMock(side_effect=_hold)
@@ -1001,21 +1030,77 @@ def _wizard_double(league: SeasonLeague) -> None:
     league.bot.wizard_service = wizard
 
 
-def _signup_services(league: SeasonLeague) -> None:
-    """The real signup module service and driver service, the window's recording of its close
-    raising `league.close_fails` where set."""
-    from leaguebot.core.services.driver_service import DriverService
-    from leaguebot.signup.services.signup_module_service import SignupModuleService
+def _locks(kwargs: dict[str, Any]) -> bool:
+    """Whether a permission edit made with *kwargs* takes the member's typing away."""
+    if kwargs.get("send_messages") is False:
+        return True
+    overwrite = kwargs.get("overwrite")
+    return overwrite is not None and getattr(overwrite, "send_messages", None) is False
 
-    service = SignupModuleService(league.db_path)
-    closing = service.set_window_closed
 
-    async def _set_window_closed(*args: Any, **kwargs: Any) -> Any:
+def signup_channel(league: SeasonLeague, user_id: int) -> Any:
+    """Driver *user_id*'s signup channel (`SIGNUP_CHANNEL_BASE` + their user id), standing on the
+    server and recording what it is sent and its permission edits.
+
+    Each send is recorded as a ``("notice", user_id, 0)`` event and, refused as
+    `league.hold_fails` says for the driver, raises; a send that lands is kept in
+    `league.notices`. A permission edit taking the driver's typing away is recorded as a
+    ``("lock", user_id, 0)`` event and in `league.locked`, refused as `league.lock_fails` says."""
+    cid = SIGNUP_CHANNEL_BASE + user_id
+    held = league._recording(channel(cid, league.events))
+    held.guild = league.guild
+    sending = held.send.side_effect
+
+    async def _send(content: str = "", **kwargs: Any) -> Any:
+        league.events.append(("notice", user_id, 0))
+        if user_id in league.hold_fails:
+            raise league.hold_fails[user_id]
+        message = await sending(content, **kwargs)
+        league.notices.append((user_id, content or ""))
+        return message
+
+    async def _set_permissions(_target: Any, **kwargs: Any) -> None:
+        if not _locks(kwargs):
+            return
+        if user_id in league.lock_fails:
+            raise league.lock_fails[user_id]
+        league.events.append(("lock", user_id, 0))
+        league.locked.append(user_id)
+
+    held.send = AsyncMock(side_effect=_send)
+    held.set_permissions = AsyncMock(side_effect=_set_permissions)
+    league.channels[cid] = held
+    return held
+
+
+def _refused_while(league: SeasonLeague, closing: Any) -> Any:
+    """*closing*, raising `league.close_fails` instead where it is set."""
+
+    async def _closing(*args: Any, **kwargs: Any) -> Any:
         if league.close_fails is not None:
             raise league.close_fails
         return await closing(*args, **kwargs)
 
-    service.set_window_closed = _set_window_closed
+    return _closing
+
+
+def _signup_services(league: SeasonLeague) -> None:
+    """The real signup module service and driver service, the window's recording of its close
+    raising `league.close_fails` where set.
+
+    The close is recorded through whichever of the service's two forms it carries: the
+    committing `set_window_closed`, which the close's own job calls until #439 slice 6b's C72
+    deletes it, and `set_window_closed_on`, the form on a handed connection that `post_closed`'s
+    record calls from C66 on. Each is wrapped only where it exists, so a league builds on either
+    side of those commits, and a close refused this way stops the job that records it."""
+    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+    service = SignupModuleService(league.db_path)
+    for name in ("set_window_closed", "set_window_closed_on"):
+        closing = getattr(service, name, None)
+        if closing is not None:
+            setattr(service, name, _refused_while(league, closing))
     league.bot.signup_module_service = service
     league.bot.driver_service = DriverService(league.db_path)
 
@@ -1042,7 +1127,8 @@ async def window_open(league: SeasonLeague) -> bool:
 async def signing_up(league: SeasonLeague, user_id: int = SIGNING_UP, *,
                      state: str = "PENDING_ADMIN_APPROVAL") -> None:
     """Driver *user_id* stands part-way through signing up, at *state*, their wizard holding a
-    signup channel (`SIGNUP_CHANNEL_BASE` + their user id); they hold no placement."""
+    signup channel (`SIGNUP_CHANNEL_BASE` + their user id) that stands on the server
+    (`signup_channel`, where the test has not put one there already); they hold no placement."""
     await league.write(
         "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver) "
         "VALUES (?, ?, ?, 0)",
@@ -1053,6 +1139,8 @@ async def signing_up(league: SeasonLeague, user_id: int = SIGNING_UP, *,
         "VALUES (?, ?, ?)",
         str(user_id), state, SIGNUP_CHANNEL_BASE + user_id,
     )
+    if SIGNUP_CHANNEL_BASE + user_id not in league.channels:
+        signup_channel(league, user_id)
 
 
 async def approved_unplaced(league: SeasonLeague, user_id: int = UNASSIGNED) -> None:
@@ -1080,33 +1168,51 @@ async def wizard_state(league: SeasonLeague, user_id: int) -> str | None:
 
 
 async def wizards_recovered(league: SeasonLeague) -> dict[str, list[str]]:
-    """The signup wizards recovered as the bot does when it starts (`recover_wizards`), over the
-    league's real signup module and driver services; gives the accounts whose inactivity job was
-    armed again (``armed``) and those expired at once (``expired``), neither run. The pending
-    corrections are not released: no test of a season's end leaves one. `recover_wizards` reads
-    the host's clock, as a wizard's last activity written by `signing_up` does."""
+    """The signup wizards recovered as the bot does when it starts (`recover_wizards`), the
+    wizard service built as the builder builds it, over the league's real signup module and
+    driver services; gives the accounts whose 24-hour timer was armed again (``armed``) and those
+    whose expiry was asked at once (``expired``), neither run.
+
+    The wizard service is handed the change queue where it takes one (#439, slice 6b, C77): an
+    expiry is then the `signup.end` it asks of the queue, and an arming the scheduler service's
+    `signup_inactivity` timer. Where it does not yet take one, its own arming and expiry are
+    recorded in their stead. `recover_wizards` reads the host's clock, as a wizard's last
+    activity written by `signing_up` does."""
     import asyncio
+    import inspect
 
     from leaguebot.signup.services.wizard_service import WizardService
 
+    bot = league.bot
     armed: list[str] = []
     expired: list[str] = []
-    wizards = WizardService.__new__(WizardService)
-    wizards._db_path = league.db_path
-    wizards._correction_tasks = {}
-    wizards._scheduler = league.bot.scheduler_service
-    wizards._output_router = league.bot.output_router
-    wizards._bot = league.bot
-    wizards.recover_correction_timeouts = AsyncMock()  # type: ignore[method-assign]
-    wizards._arm_inactivity_job = AsyncMock(  # type: ignore[method-assign]
-        side_effect=lambda user_id, _at: armed.append(str(user_id))
-    )
-    wizards.handle_inactivity_timeout = AsyncMock(  # type: ignore[method-assign]
-        side_effect=lambda user_id: expired.append(str(user_id))
-    )
+    takes_the_queue = "change_queue" in inspect.signature(WizardService).parameters
+    if takes_the_queue:
+        wizards = WizardService(league.db_path, bot.scheduler_service, bot.output_router,
+                                change_queue=bot.change_queue)
+    else:
+        wizards = WizardService(league.db_path, bot.scheduler_service, bot.output_router)
+        wizards._arm_inactivity_job = AsyncMock(  # type: ignore[method-assign]
+            side_effect=lambda user_id, _at: armed.append(str(user_id))
+        )
+        wizards.handle_inactivity_timeout = AsyncMock(  # type: ignore[method-assign]
+            side_effect=lambda user_id: expired.append(str(user_id))
+        )
+    wizards.set_bot(bot)
+    asked_before = {row["id"] for row in await change_rows(league.db_path)}
+    arms_before = len(bot.scheduler_service.arm_once.call_args_list)
     before = asyncio.all_tasks()
     await wizards.recover_wizards()
     await asyncio.gather(*(asyncio.all_tasks() - before - {asyncio.current_task()}))
+    for row in await change_rows(league.db_path):
+        if row["id"] in asked_before or row["kind"] != "signup.end":
+            continue
+        payload = row["payload"]
+        data = json.loads(payload) if isinstance(payload, str) else (payload or {})
+        expired.append(str(data.get("user_id")))
+    armed += [str(call.args[1])
+              for call in bot.scheduler_service.arm_once.call_args_list[arms_before:]
+              if len(call.args) > 1 and call.args[0] == "signup_inactivity"]
     return {"armed": armed, "expired": expired}
 
 

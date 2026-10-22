@@ -23,9 +23,9 @@ rule covers the delay, the bring-forward and the change that moves no date at al
 **A round is never moved into the past**, whatever the modules enabled (decided 2026-09-14).
 A round's result submission is armed against its own moment, and a job more than the scheduler's
 misfire grace behind is discarded rather than run — so a round moved backwards silently loses the
-one clock-driven transition it has, and `run_result_submission_job` being the only route to a
-submission channel, no command in production opens one afterwards. The check-in deadline rule
-below already refused such a move where attendance was on; the refusal is stated in its own right
+one clock-driven transition it has, and the round's start (`results.submission.open`) being
+the only route to a submission channel, no command in production opens one afterwards. The
+check-in deadline rule below already refused such a move where attendance was on; the refusal is stated in its own right
 so that the answer does not depend on which modules a league runs. Moving a round *forward* is
 untouched, and remains the remedy for a circuit or a format that must be corrected late.
 
@@ -221,8 +221,8 @@ def judge_amendment(
     # submission is armed against its moment, and a job that far behind is thrown away by the
     # scheduler's misfire grace rather than run — so a round moved backwards loses the one
     # clock-driven transition it has, from awaiting its moment to awaiting its results, and
-    # `run_result_submission_job` is the only route to a submission channel. Nothing in
-    # production puts that back.
+    # the round's start (`results.submission.open`) is the only route to a submission channel.
+    # Nothing in production puts that back.
     #
     # Judged before the windows below and refused regardless of enablement, so that the answer
     # does not turn on which modules a league happens to run. The check-in deadline rule

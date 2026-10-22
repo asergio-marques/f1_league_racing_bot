@@ -2,7 +2,7 @@
 
 `/bot pack` and `/bot factory-reset` (issue #247) change the database underneath a running
 process, and a store in memory that outlived them would act on a league the database no
-longer holds — a season setup resumed after a factory reset, a signup correction timing out
+longer holds — a season setup resumed after a factory reset, a signup's timer firing
 into a wizard that has gone. So both commands call `clear_in_memory_state`, and it names
 every such store.
 
@@ -17,6 +17,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
+from leaguebot.core.services.change_queue import ChangeQueue
+from leaguebot.core.services.season_review_changes import forget_presses
 from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
@@ -25,29 +27,32 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def clear_in_memory_state(bot: LeagueBot) -> None:
-    """Drop every in-memory store of league state the running bot holds."""
+def clear_in_memory_state(bot: LeagueBot, *, queue: ChangeQueue) -> None:
+    """Drop every in-memory store of league state the running bot holds.
+
+    *queue* is the change queue, handed by the command that clears (a service does not look it
+    up on the bot), whose held replies are forgotten with the rest."""
     season_cog = cast("SeasonCog | None", bot.get_cog("SeasonCog"))
     if season_cog is not None:
         season_cog.clear_pending()
 
+    # The penalty reviews handed to staging changes, which results drops: the builder hands the
+    # bot the callable (`bot.clear_held_reviews`), core importing nothing of a module.
+    clear_held = getattr(bot, "clear_held_reviews", None)
+    if clear_held is not None:
+        clear_held()
+
     # A reason being awaited from an admin, keyed by the channel it is awaited in, and the
     # five-minute lapse that would otherwise fire into a league that has changed.
-    from leaguebot.signup.cogs.admin_review_cog import clear_pending_reasons
+    from leaguebot.signup.services.signup_views import clear_pending_reasons
 
     clear_pending_reasons()
 
-    # A correction-parameter timeout, which would otherwise fire into a wizard that has gone.
-    wizard_service = getattr(bot, "wizard_service", None)
-    if wizard_service is not None:
-        for task in wizard_service._correction_tasks.values():
-            task.cancel()
-        wizard_service._correction_tasks.clear()
+    # What became of each standing review's button: the reviews go with the database.
+    forget_presses()
 
     # The interactions held to update a change's reply: the changes they belong to are deleted
     # with the pack or reset, so nothing is left to update.
-    change_queue = getattr(bot, "change_queue", None)
-    if change_queue is not None:
-        change_queue.forget_held()
+    queue.forget_held()
 
     log.info("Cleared the league state held in memory")

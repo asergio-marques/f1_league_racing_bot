@@ -24,28 +24,65 @@ typed into a channel the driver can read.
 
 **An empty reason becomes a stated one.** `"No specific reason given."` is deliberate — the
 driver is told something rather than being shown an empty **Reason:** that reads as a bug.
+
+**On the change queue (#439, slice 6b, C78, C84, C85).** The panel is handed the change queue when
+it is built (A23). Approve asks `signup.approve` of it; the reason typed after Reject asks
+`signup.end`, and after Request Changes `signup.request_changes`, each through the press's stored
+interaction; the driver's status, the notice in their channel and the reason's deletion are done
+when the queue reaches them. These tests drive the panel through a real queue: the league is
+`tests/signup/test_review_changes.py`'s, Kimi (105) awaiting approval in his signup channel
+(6405), manager 77 holding the interaction role.
 """
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+import json
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-import leaguebot.signup.cogs.admin_review_cog as arc
-from leaguebot.signup.cogs.admin_review_cog import (
-    AdminReviewCog,
+import leaguebot.signup.services.signup_views as arc
+from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+from leaguebot.signup.services.signup_views import (
     AdminReviewView,
     _PENDING_REASONS,
 )
-from leaguebot.core.models.driver_profile import DriverState
+from tests.signup.test_review_changes import (
+    APPROVE_KIND,
+    CLOSING_KIND,
+    KIMI_CHANNEL,
+    KIMI_LANE,
+    REQUEST_KIND,
+    REVIEWER,
+    _answered,
+    _changes_of,
+    _driver_state,
+    _league,
+    _manager,
+    _texts,
+)
+from tests.signup.test_wizard_changes import END_KIND
+from tests.support.change_queue import (
+    MANAGER_ROLE_ID,
+    http_error,
+    member_interaction,
+    run_queue,
+    stopped_job,
+    typed_message,
+    updated_reply,
+)
+from tests.support.season_league import SIGNING_UP, SeasonLeague
 
-SERVER_ID = 10308
-DRIVER_ID = "4242"
-CHANNEL_ID = 770701
-MANAGER_ID = 77
+#: A second league manager, beside 77.
+SECOND_MANAGER = REVIEWER + 1
+#: A channel holding no signup wizard.
+NO_WIZARD_CHANNEL = 6499
+#: An account with no driver profile at all.
+NO_PROFILE = "9999"
+#: The reason manager 77 types after Reject or Request Changes.
+REASON = "Lap time could not be verified."
 
 
 # ---------------------------------------------------------------------------
@@ -67,60 +104,6 @@ async def _clear_pending():
     _PENDING_REASONS.clear()
 
 
-def _bot(*, state=DriverState.PENDING_ADMIN_APPROVAL, wizard_user: str | None = DRIVER_ID):
-    bot = MagicMock()
-    bot.driver_service = MagicMock()
-    bot.driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(current_state=state) if state else None
-    )
-    bot.wizard_service = MagicMock()
-    bot.wizard_service.approve_signup = AsyncMock(return_value=None)
-    bot.wizard_service.reject_signup = AsyncMock(return_value=None)
-    bot.wizard_service.request_changes = AsyncMock(return_value=None)
-    bot.wizard_service.get_wizard_by_channel = AsyncMock(
-        return_value=SimpleNamespace(discord_user_id=wizard_user) if wizard_user else None
-    )
-    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    bot.output_router.post_log = AsyncMock()
-    return bot
-
-
-def _interaction(bot, user_id: int = MANAGER_ID):
-    interaction = MagicMock()
-    interaction.client = bot
-    interaction.guild_id = SERVER_ID
-    interaction.channel_id = CHANNEL_ID
-    interaction.guild = MagicMock()
-    interaction.user = MagicMock()
-    interaction.user.id = user_id
-    interaction.user.display_name = "Manager"
-    interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    # Answered once the interaction has been replied to or deferred, as Discord's is.
-    interaction.response.is_done = lambda: bool(
-        interaction.response.send_message.await_count + interaction.response.defer.await_count
-    )
-    interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
-
-
-def _replied(interaction) -> str:
-    return "\n".join(
-        str(call.args[0])
-        for call in interaction.response.send_message.await_args_list
-        + interaction.followup.send.await_args_list
-        if call.args
-    )
-
-
-def _permitted(monkeypatch, allowed: bool):
-    monkeypatch.setattr(
-        arc, "_may_review_signup", AsyncMock(return_value=allowed)
-    )
-
-
 BUTTONS = ["approve_button", "request_changes_button", "reject_button"]
 
 #: Each button's label, as a refusal's line names it.
@@ -131,16 +114,71 @@ LABELS = {
 }
 
 
-def _assert_refusal_recorded(interaction, button: str, reason: str) -> None:
+def _pressed_by(league: SeasonLeague, user_id: int, *, channel_id: int = KIMI_CHANNEL) -> Any:
+    """A press by *user_id* in *channel_id*, now."""
+    who = _manager(league) if user_id == REVIEWER else league._member(user_id)
+    who.bot = False
+    press = member_interaction(league.bot, user=who, created_at=league.clock.now)
+    press.guild = league.guild
+    press.channel_id = channel_id
+    press.channel = league.channels.get(channel_id) or MagicMock()
+    return press
+
+
+async def _press(
+    league: SeasonLeague,
+    button: str,
+    *,
+    by: int = REVIEWER,
+    driver: str | None = str(SIGNING_UP),
+    channel_id: int = KIMI_CHANNEL,
+) -> Any:
+    """*by* presses *button* on a review panel built for *driver* (none: a panel rebuilt at a
+    restart), handed the change queue when it is built (A23)."""
+    view = AdminReviewView(driver, change_queue=league.bot.change_queue)
+    press = _pressed_by(league, by, channel_id=channel_id)
+    await getattr(view, button).callback(press)
+    return press
+
+
+#: The rule the log channel's router appends beneath every line it posts.
+LOG_SEPARATOR = "\n" + "\u2015" * 36
+
+
+def _lines(league: SeasonLeague) -> list[str]:
+    """The log channel's lines as they were written, without the rule the router appends."""
+    return [str(line).removesuffix(LOG_SEPARATOR) for line in league.bot.log_channel.sent]
+
+
+def _refusals(league: SeasonLeague) -> list[str]:
+    return [line for line in _lines(league) if line.startswith("⛔")]
+
+
+def _sent(press: Any) -> list[str]:
+    """What the press's follow-ups said, in order."""
+    return [str(call.args[0]) for call in press.followup.send.await_args_list if call.args]
+
+
+def _assert_refusal_recorded(league: SeasonLeague, button: str, by: int, reason: str) -> None:
     """One line in the log channel, naming the button, the signup review it sits on, the member
     who pressed it, and why (core specification, "The record of what changed")."""
-    lines = [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
-    assert len(lines) == 1, lines
+    lines = _refusals(league)
+    assert len(lines) == 1, _lines(league)
     line = lines[0]
     assert line.startswith(f"⛔ the “{LABELS[button]}” button"), line
     assert "signup review" in line
-    assert f"refused for Manager (<@{MANAGER_ID}>)" in line
+    assert f"<@{by}>" in line and "refused for" in line, line
     assert line.endswith(f"— {reason}"), line
+
+
+async def _nothing_asked(league: SeasonLeague) -> None:
+    for kind in (APPROVE_KIND, END_KIND, REQUEST_KIND):
+        assert await _changes_of(league, kind) == [], kind
+
+
+def _payload(change: dict[str, Any]) -> dict[str, Any]:
+    payload = change["payload"]
+    return json.loads(payload) if isinstance(payload, str) else dict(payload)
 
 
 # ---------------------------------------------------------------------------
@@ -149,80 +187,85 @@ def _assert_refusal_recorded(interaction, button: str, reason: str) -> None:
 
 
 @pytest.mark.parametrize("button", BUTTONS, ids=["approve", "request-changes", "reject"])
-async def test_a_driver_cannot_action_their_own_signup(monkeypatch, button):
+async def test_a_driver_cannot_action_their_own_signup(tmp_path, button):
     """The panel sits in the driver's own channel, which they can read. This check is the
-    only thing between them and approving themselves."""
-    _permitted(monkeypatch, False)
-    bot = _bot()
-    view = AdminReviewView(DRIVER_ID, bot)
-    interaction = _interaction(bot)
+    only thing between them and approving themselves. Kimi presses *button* on his own panel:
+    he is told he has insufficient permissions, one refusal line records it, nothing is asked
+    of the queue, no reason is waited for, and his signup still awaits approval."""
+    league = await _league(tmp_path)
 
-    await getattr(type(view), button)(view, interaction, MagicMock())
+    press = await _press(league, button, by=SIGNING_UP)
+    await run_queue(league.bot)
 
-    assert "Insufficient permissions" in _replied(interaction)
-    _assert_refusal_recorded(interaction, button, "Insufficient permissions.")
-    bot.wizard_service.approve_signup.assert_not_awaited()
-    bot.wizard_service.reject_signup.assert_not_awaited()
+    assert "Insufficient permissions" in _answered(press)
+    _assert_refusal_recorded(league, button, SIGNING_UP, "Insufficient permissions.")
+    await _nothing_asked(league)
     assert _PENDING_REASONS == {}
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
 @pytest.mark.parametrize("button", BUTTONS, ids=["approve", "request-changes", "reject"])
-async def test_a_signup_already_actioned_is_refused(monkeypatch, button):
+async def test_a_signup_already_actioned_is_refused(tmp_path, button):
     """Three managers can be looking at one panel and the buttons never disappear. Without
     this, Approve and Reject a second apart would both succeed and the outcome would turn
-    on which callback finished first."""
-    _permitted(monkeypatch, True)
-    bot = _bot(state=DriverState.UNASSIGNED)
-    view = AdminReviewView(DRIVER_ID, bot)
-    interaction = _interaction(bot)
+    on which callback finished first. Kimi is already Unassigned; manager 77 presses *button*:
+    he is told the signup has already been actioned, one refusal line records it, nothing is
+    asked of the queue, and Kimi stays Unassigned."""
+    league = await _league(tmp_path, state="UNASSIGNED")
 
-    await getattr(type(view), button)(view, interaction, MagicMock())
+    press = await _press(league, button)
+    await run_queue(league.bot)
 
-    assert "already been actioned" in _replied(interaction)
-    _assert_refusal_recorded(interaction, button, "This signup has already been actioned.")
-    bot.wizard_service.approve_signup.assert_not_awaited()
+    assert "already been actioned" in _answered(press)
+    _assert_refusal_recorded(league, button, REVIEWER, "This signup has already been actioned.")
+    await _nothing_asked(league)
+    assert _PENDING_REASONS == {}
+    assert await _driver_state(league) == "UNASSIGNED"
 
 
 @pytest.mark.parametrize("button", BUTTONS, ids=["approve", "request-changes", "reject"])
-async def test_a_driver_whose_profile_has_gone_is_refused(monkeypatch, button):
-    """They withdrew, or left the server, between the panel being posted and pressed."""
-    _permitted(monkeypatch, True)
-    bot = _bot(state=None)
-    view = AdminReviewView(DRIVER_ID, bot)
-    interaction = _interaction(bot)
+async def test_a_driver_whose_profile_has_gone_is_refused(tmp_path, button):
+    """They withdrew, or left the server, between the panel being posted and pressed: a panel
+    built for an account with no driver profile is pressed by manager 77, who is told the signup
+    has already been actioned; the refusal is recorded and nothing is asked of the queue."""
+    league = await _league(tmp_path)
 
-    await getattr(type(view), button)(view, interaction, MagicMock())
+    press = await _press(league, button, driver=NO_PROFILE)
+    await run_queue(league.bot)
 
-    assert "already been actioned" in _replied(interaction)
-    _assert_refusal_recorded(interaction, button, "This signup has already been actioned.")
+    assert "already been actioned" in _answered(press)
+    _assert_refusal_recorded(league, button, REVIEWER, "This signup has already been actioned.")
+    await _nothing_asked(league)
 
 
-async def test_a_panel_whose_channel_has_no_wizard_cannot_identify_the_driver(monkeypatch):
+async def test_a_panel_whose_channel_has_no_wizard_cannot_identify_the_driver(tmp_path):
     """A panel rebuilt after a restart carries no stored driver and finds one by channel.
-    Finding none must refuse rather than act on `None`."""
-    _permitted(monkeypatch, True)
-    bot = _bot(wizard_user=None)
-    view = AdminReviewView()
-    interaction = _interaction(bot)
+    Finding none must refuse rather than act on `None`: Approve pressed on a rebuilt panel in a
+    channel holding no signup wizard tells manager 77 the driver could not be identified, records
+    the refusal, and asks nothing of the queue."""
+    league = await _league(tmp_path)
 
-    await type(view).approve_button(view, interaction, MagicMock())
+    press = await _press(league, "approve_button", driver=None, channel_id=NO_WIZARD_CHANNEL)
+    await run_queue(league.bot)
 
-    assert "Could not identify driver" in _replied(interaction)
+    assert "Could not identify driver" in _answered(press)
     _assert_refusal_recorded(
-        interaction, "approve_button", "Could not identify driver for this signup."
+        league, "approve_button", REVIEWER, "Could not identify driver for this signup."
     )
+    await _nothing_asked(league)
 
 
-async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(monkeypatch):
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    view = AdminReviewView()
-    interaction = _interaction(bot)
+async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(tmp_path):
+    """A panel rebuilt with no driver, pressed in Kimi's channel, finds Kimi by the channel's
+    wizard: the approval asked of the queue names him, and once it runs he is Unassigned."""
+    league = await _league(tmp_path)
 
-    await type(view).approve_button(view, interaction, MagicMock())
+    await _press(league, "approve_button", driver=None)
+    await run_queue(league.bot)
 
-    bot.wizard_service.get_wizard_by_channel.assert_awaited_once()
-    bot.wizard_service.approve_signup.assert_awaited_once()
+    [approve] = await _changes_of(league, APPROVE_KIND)
+    assert str(SIGNING_UP) in json.dumps(_payload(approve))
+    assert await _driver_state(league) == "UNASSIGNED"
 
 
 # ---------------------------------------------------------------------------
@@ -230,47 +273,44 @@ async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-async def test_approving_approves_the_signup(monkeypatch):
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    view = AdminReviewView(DRIVER_ID, bot)
-    interaction = _interaction(bot)
+async def test_approving_approves_the_signup(tmp_path):
+    """Manager 77 presses Approve on Kimi's panel; once the queue runs Kimi is Unassigned and
+    the manager's reply, as updated, says the signup was approved."""
+    league = await _league(tmp_path)
 
-    await type(view).approve_button(view, interaction, MagicMock())
+    press = await _press(league, "approve_button")
+    await run_queue(league.bot)
 
-    bot.wizard_service.approve_signup.assert_awaited_once()
-    args = bot.wizard_service.approve_signup.await_args.args
-    assert args[0] == DRIVER_ID
-    assert "approved" in _replied(interaction)
+    assert await _driver_state(league) == "UNASSIGNED"
+    assert "approved" in _answered(press).lower()
 
 
-async def test_approve_tells_the_manager_of_a_driver_role_not_granted(monkeypatch):
-    """`approve_signup` returns a sentence where the driver role could not be granted; the
-    manager who pressed Approve reads it in the reply, beside the approval, which stands."""
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    note = "The driver role could not be granted: Discord refused it."
-    bot.wizard_service.approve_signup = AsyncMock(return_value=note)
-    view = AdminReviewView(DRIVER_ID, bot)
-    interaction = _interaction(bot)
+async def test_approve_tells_the_manager_of_a_driver_role_not_granted(tmp_path):
+    """Discord refuses Kimi the driver role. Manager 77 presses Approve and the queue runs: the
+    approval stands, and the manager's updated reply says both that the signup was approved and
+    that the driver role could not be granted."""
+    league = await _league(tmp_path)
+    league.grant_fails[SIGNING_UP] = http_error(discord.Forbidden, status=403)
 
-    await type(view).approve_button(view, interaction, MagicMock())
+    press = await _press(league, "approve_button")
+    await run_queue(league.bot)
 
-    reply = _replied(interaction)
+    reply = updated_reply(press).lower()
     assert "approved" in reply
-    assert note in reply
+    assert "driver role could not be granted" in reply
+    assert await _driver_state(league) == "UNASSIGNED"
 
 
-async def test_approving_needs_no_reason(monkeypatch):
+async def test_approving_needs_no_reason(tmp_path):
     """Only the two negative outcomes collect one — a driver told why they were approved
-    would be an odd thing to read."""
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    view = AdminReviewView(DRIVER_ID, bot)
+    would be an odd thing to read. Approve waits for no reason: the approval is asked of the
+    queue at once."""
+    league = await _league(tmp_path)
 
-    await type(view).approve_button(view, _interaction(bot), MagicMock())
+    await _press(league, "approve_button")
 
     assert _PENDING_REASONS == {}
+    assert len(await _changes_of(league, APPROVE_KIND)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -283,33 +323,31 @@ async def test_approving_needs_no_reason(monkeypatch):
     [("request_changes_button", "request_changes"), ("reject_button", "reject")],
     ids=["request-changes", "reject"],
 )
-async def test_the_negative_buttons_ask_for_a_reason_first(monkeypatch, button, action):
+async def test_the_negative_buttons_ask_for_a_reason_first(tmp_path, button, action):
     """The panel is persistent and may outlive a restart, so it cannot open a modal — it
-    parks an entry and the listener picks up the manager's next message."""
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    view = AdminReviewView(DRIVER_ID, bot)
-    interaction = _interaction(bot)
+    parks an entry and the listener picks up the manager's next message. Manager 77 presses
+    *button*: he is asked to type the reason, an entry is parked for him, and nothing is asked
+    of the queue yet."""
+    league = await _league(tmp_path)
 
-    await getattr(type(view), button)(view, interaction, MagicMock())
+    press = await _press(league, button)
 
-    assert _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)]["action"] == action
-    assert "type the reason" in _replied(interaction)
-    bot.wizard_service.reject_signup.assert_not_awaited()
-    bot.wizard_service.request_changes.assert_not_awaited()
+    assert _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)]["action"] == action
+    assert "type the reason" in _answered(press)
+    await _nothing_asked(league)
 
 
-async def test_the_parked_entry_is_keyed_to_the_manager_who_pressed(monkeypatch):
-    """Two managers in one channel must not answer each other's prompt."""
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    view = AdminReviewView(DRIVER_ID, bot)
+async def test_the_parked_entry_is_keyed_to_the_manager_who_pressed(tmp_path):
+    """Two managers in one channel must not answer each other's prompt: managers 77 and 78
+    each press Reject on Kimi's panel, and an entry is parked for each."""
+    league = await _league(tmp_path)
+    league.roles_held[SECOND_MANAGER] = {MANAGER_ROLE_ID}
 
-    await type(view).reject_button(view, _interaction(bot, user_id=MANAGER_ID), MagicMock())
-    await type(view).reject_button(view, _interaction(bot, user_id=MANAGER_ID + 1), MagicMock())
+    await _press(league, "reject_button")
+    await _press(league, "reject_button", by=SECOND_MANAGER)
 
-    assert (CHANNEL_ID, MANAGER_ID) in _PENDING_REASONS
-    assert (CHANNEL_ID, MANAGER_ID + 1) in _PENDING_REASONS
+    assert (KIMI_CHANNEL, REVIEWER) in _PENDING_REASONS
+    assert (KIMI_CHANNEL, SECOND_MANAGER) in _PENDING_REASONS
 
 
 # ---------------------------------------------------------------------------
@@ -317,138 +355,168 @@ async def test_the_parked_entry_is_keyed_to_the_manager_who_pressed(monkeypatch)
 # ---------------------------------------------------------------------------
 
 
-def _message(content: str, *, author_id: int = MANAGER_ID, is_bot: bool = False):
-    message = MagicMock()
-    message.content = content
-    message.author = MagicMock()
-    message.author.id = author_id
-    message.author.bot = is_bot
-    message.guild = MagicMock()
-    message.guild.id = SERVER_ID
-    message.channel = MagicMock()
-    message.channel.id = CHANNEL_ID
-    message.delete = AsyncMock(return_value=None)
+async def _park(league: SeasonLeague, action: str) -> Any:
+    """Manager 77 has pressed *action*'s button on Kimi's panel: the press deferred and its entry
+    parked as the button parks it, with the press's own interaction, and the lapse task a reason
+    that arrives cancels (#482). Today's rejection off the queue is a stand-in that does nothing,
+    as `_league`'s other handlers are, so that only what the reason asks of the queue shows.
+    Gives the press."""
+    league.bot.wizard_service.reject_signup = AsyncMock(return_value=None)
+    press = _pressed_by(league, REVIEWER)
+    await press.response.defer(ephemeral=True)
+    # The acknowledgement of a deferred press is its first follow-up, and editing that message is
+    # editing the press's original response, as Discord has it.
+    press.followup.send.return_value = MagicMock(edit=press.edit_original_response)
+    _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)] = {
+        "action": action,
+        "discord_user_id": str(SIGNING_UP),
+        "actor": press.user,
+        "guild": league.guild,
+        "interaction": press,
+        "followup": press.followup,
+        "lapse": asyncio.get_running_loop().create_future(),
+    }
+    return press
+
+
+async def _hear(league: SeasonLeague, content: str, *, by: int = REVIEWER,
+                is_bot: bool = False) -> Any:
+    """*by* types *content* in Kimi's channel, which the review cog hears. Gives the message."""
+    author = _manager(league) if by == REVIEWER else league._member(by)
+    author.bot = is_bot
+    message = typed_message(league.channel(KIMI_CHANNEL), author, content,
+                            created_at=league.clock.now)
+    message.guild = league.guild
+    await AdminReviewCog(league.bot).on_message(message)
     return message
 
 
-def _cog_with_pending(action: str):
-    """A reason parked as the press parks it: the press's own interaction, whose followup
-    answers the manager, and the lapse task a reason that arrives cancels (#482)."""
-    bot = _bot()
-    interaction = _interaction(bot)
-    interaction.response.is_done = lambda: True  # the press deferred before parking
-    followup = interaction.followup
-    _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)] = {
-        "action": action,
-        "discord_user_id": DRIVER_ID,
-        "actor": interaction.user,
-        "guild": interaction.guild,
-        "interaction": interaction,
-        "followup": followup,
-        "lapse": asyncio.get_running_loop().create_future(),
-    }
-    cog = AdminReviewCog(bot)
-    return cog, followup
+def _rejected(league: SeasonLeague) -> list[str]:
+    return [text for text in _texts(league) if "rejected" in text.lower()]
 
 
-async def test_a_rejection_reason_reaches_the_driver():
-    cog, followup = _cog_with_pending("reject")
+async def test_a_rejection_reason_reaches_the_driver(tmp_path):
+    """Manager 77 types the reason after Reject. A rejection is asked of the queue; once it
+    runs Kimi's channel is told his signup was rejected, giving the reason, and the manager is
+    told through his press."""
+    league = await _league(tmp_path)
+    press = await _park(league, "reject")
 
-    await cog.on_message(_message("Lap time could not be verified."))
+    await _hear(league, REASON)
+    assert len(await _changes_of(league, END_KIND)) == 1
+    await run_queue(league.bot)
 
-    cog.bot.wizard_service.reject_signup.assert_awaited_once()
-    assert (
-        cog.bot.wizard_service.reject_signup.await_args.kwargs["reason"]
-        == "Lap time could not be verified."
-    )
-    followup.send.assert_awaited_once()
-
-
-async def test_a_correction_reason_reaches_the_driver():
-    cog, followup = _cog_with_pending("request_changes")
-
-    await cog.on_message(_message("Your platform ID looks wrong."))
-
-    assert (
-        cog.bot.wizard_service.request_changes.await_args.kwargs["reason"]
-        == "Your platform ID looks wrong."
-    )
+    told = _rejected(league)
+    assert len(told) == 1 and REASON in told[0], _texts(league)
+    assert "rejected" in " ".join(_sent(press) + [updated_reply(press)]).lower()
 
 
-async def test_an_empty_reason_becomes_a_stated_one():
+async def test_a_correction_reason_reaches_the_driver(tmp_path):
+    """Manager 77 types the reason after Request Changes: the request asked of the queue
+    carries it, to reach Kimi with the correction."""
+    league = await _league(tmp_path)
+    await _park(league, "request_changes")
+
+    await _hear(league, "Your platform ID looks wrong.")
+
+    [request] = await _changes_of(league, REQUEST_KIND)
+    assert "Your platform ID looks wrong." in json.dumps(_payload(request))
+
+
+async def test_an_empty_reason_becomes_a_stated_one(tmp_path):
     """The driver is told something rather than shown an empty **Reason:** that reads as
-    a bug."""
-    cog, _ = _cog_with_pending("reject")
+    a bug. Manager 77 types only spaces after Reject; once the queue runs Kimi's channel is
+    told the signup was rejected for "No specific reason given."."""
+    league = await _league(tmp_path)
+    await _park(league, "reject")
 
-    await cog.on_message(_message("   "))
+    await _hear(league, "   ")
+    await run_queue(league.bot)
 
-    assert (
-        cog.bot.wizard_service.reject_signup.await_args.kwargs["reason"]
-        == "No specific reason given."
-    )
-
-
-async def test_the_reason_message_is_deleted():
-    """It is a private judgement about a driver, typed into a channel the driver reads."""
-    cog, _ = _cog_with_pending("reject")
-    message = _message("Not fast enough.")
-
-    await cog.on_message(message)
-
-    message.delete.assert_awaited_once()
+    told = _rejected(league)
+    assert len(told) == 1 and "No specific reason given." in told[0], _texts(league)
 
 
-async def test_a_reason_that_cannot_be_deleted_still_counts():
-    """The action matters more than the tidying; refusing to act because the message could
-    not be deleted would leave the signup pending forever."""
-    cog, _ = _cog_with_pending("reject")
-    message = _message("Not fast enough.")
-    message.delete = AsyncMock(side_effect=discord.HTTPException(MagicMock(), "no perms"))
+async def test_the_reason_message_is_deleted(tmp_path):
+    """It is a private judgement about a driver, typed into a channel the driver reads. The
+    reason stands until the queue reaches it, and is deleted by a job of the rejection."""
+    league = await _league(tmp_path)
+    await _park(league, "reject")
 
-    await cog.on_message(message)
+    message = await _hear(league, "Not fast enough.")
+    assert not message.gone
+    await run_queue(league.bot)
 
-    cog.bot.wizard_service.reject_signup.assert_awaited_once()
+    assert message.gone
 
 
-async def test_the_parked_entry_is_consumed():
+async def test_a_reason_that_cannot_be_deleted_still_counts(tmp_path):
+    """The action matters more than the tidying: Discord refuses to delete the manager's
+    reason. Once the queue runs Kimi is Not Signed Up all the same; only the turns in Kimi's
+    channel stop, at the reason's deletion, and the league lane runs on."""
+    league = await _league(tmp_path)
+    await _park(league, "reject")
+    author = _manager(league)
+    message = typed_message(league.channel(KIMI_CHANNEL), author, "Not fast enough.",
+                            created_at=league.clock.now)
+    message.guild = league.guild
+    message.fails_delete = http_error(discord.Forbidden, status=403)
+
+    await AdminReviewCog(league.bot).on_message(message)
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    stopped = await stopped_job(league.db_path, KIMI_LANE)
+    assert stopped is not None and stopped["name"] == "delete_reason", stopped
+    assert await stopped_job(league.db_path, "league") is None
+    assert len(await _changes_of(league, CLOSING_KIND)) == 1
+
+
+async def test_the_parked_entry_is_consumed(tmp_path):
     """Popped, not read. Left behind, the manager's next message in that channel would
     reject the driver a second time."""
-    cog, _ = _cog_with_pending("reject")
+    league = await _league(tmp_path)
+    await _park(league, "reject")
 
-    await cog.on_message(_message("Reason."))
+    await _hear(league, "Reason.")
 
     assert _PENDING_REASONS == {}
 
 
-async def test_a_message_with_nothing_parked_is_ignored():
-    """Ordinary conversation in a signup channel must not be swallowed."""
-    bot = _bot()
-    cog = AdminReviewCog(bot)
+async def test_a_message_with_nothing_parked_is_ignored(tmp_path):
+    """Ordinary conversation in a signup channel must not be swallowed: manager 77 types in
+    Kimi's channel with no reason waited for, and nothing is asked of the queue."""
+    league = await _league(tmp_path)
 
-    await cog.on_message(_message("just chatting"))
+    message = await _hear(league, "just chatting")
+    await run_queue(league.bot)
 
-    bot.wizard_service.reject_signup.assert_not_awaited()
+    await _nothing_asked(league)
+    assert not message.gone
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
-async def test_the_bot_s_own_messages_are_ignored():
+async def test_the_bot_s_own_messages_are_ignored(tmp_path):
     """The bot posts into this channel constantly, and one of its own messages answering
     a prompt would reject a driver with the bot's text as the reason."""
-    cog, _ = _cog_with_pending("reject")
+    league = await _league(tmp_path)
+    await _park(league, "reject")
 
-    await cog.on_message(_message("Welcome to the signup wizard!", is_bot=True))
+    await _hear(league, "Welcome to the signup wizard!", by=REVIEWER, is_bot=True)
 
-    cog.bot.wizard_service.reject_signup.assert_not_awaited()
+    await _nothing_asked(league)
     assert _PENDING_REASONS != {}
 
 
-async def test_another_member_s_message_does_not_answer_the_prompt():
-    """The entry is keyed to the manager, so the driver typing in their own channel while
-    a manager is composing a reason must not supply it."""
-    cog, _ = _cog_with_pending("reject")
+async def test_another_member_s_message_does_not_answer_the_prompt(tmp_path):
+    """The entry is keyed to the manager, so Kimi typing in his own channel while a manager
+    is composing a reason must not supply it."""
+    league = await _league(tmp_path)
+    await _park(league, "reject")
 
-    await cog.on_message(_message("wait, why?", author_id=MANAGER_ID + 1))
+    await _hear(league, "wait, why?", by=SIGNING_UP)
 
-    cog.bot.wizard_service.reject_signup.assert_not_awaited()
+    await _nothing_asked(league)
     assert _PENDING_REASONS != {}
 
 
@@ -466,154 +534,141 @@ REJECT_LAPSED = (
 )
 
 
-def _lines(bot) -> list[str]:
-    return [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
-
-
-def _sent(interaction) -> list[str]:
-    return [str(call.args[0]) for call in interaction.followup.send.await_args_list if call.args]
-
-
-async def _press(bot, button: str, user_id: int = MANAGER_ID):
-    view = AdminReviewView(DRIVER_ID, bot)
-    interaction = _interaction(bot, user_id=user_id)
-    await getattr(type(view), button)(view, interaction, MagicMock())
-    return interaction
-
-
 @pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
 async def test_the_negative_buttons_write_their_press_line_and_park_the_press(
-    monkeypatch, button, label
+    tmp_path, button, label
 ):
     """The press is logged (owner, 2026-09-30, "Five minutes, logged"), and the entry keeps the
     press's own interaction, through which the reason step later answers and records."""
-    _permitted(monkeypatch, True)
-    bot = _bot()
+    league = await _league(tmp_path)
 
-    interaction = await _press(bot, button)
+    press = await _press(league, button)
 
-    lines = _lines(bot)
-    assert len(lines) == 1, lines
-    assert lines[0].startswith(f"Manager (<@{MANAGER_ID}>) | the “{label}” button of"), lines[0]
+    lines = [line for line in _lines(league) if "Asked for a reason" in line]
+    assert len(lines) == 1, _lines(league)
+    assert f"<@{REVIEWER}>" in lines[0], lines[0]
+    assert f"| the “{label}” button of" in lines[0], lines[0]
     assert "signup review" in lines[0]
     assert lines[0].endswith("| Asked for a reason"), lines[0]
-    assert _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)]["interaction"] is interaction
+    assert _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)]["interaction"] is press
 
 
 @pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
 async def test_a_reason_not_given_in_five_minutes_lapses_and_the_driver_is_untouched(
-    monkeypatch, button, label
+    tmp_path, monkeypatch, button, label
 ):
     """Five minutes after the press with no reason typed, the manager is told nothing was
-    done, one lapse line names them, and the driver still awaits review."""
+    done, one lapse line names them, nothing is asked of the queue, and Kimi still awaits
+    review."""
     assert arc._REASON_LAPSE_SECONDS == 5 * 60
     monkeypatch.setattr(arc, "_REASON_LAPSE_SECONDS", 0)
-    _permitted(monkeypatch, True)
-    bot = _bot()
+    league = await _league(tmp_path)
 
-    interaction = await _press(bot, button)
-    await _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)]["lapse"]
+    press = await _press(league, button)
+    await _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)]["lapse"]
 
     assert _PENDING_REASONS == {}
-    told = _sent(interaction)[-1]
+    told = _sent(press)[-1]
     assert told.startswith("⌛ No reason arrived within five minutes."), told
     assert told.endswith("the signup still awaits review."), told
     if label == "Reject":
         assert told == REJECT_LAPSED
-    lines = _lines(bot)
-    assert len(lines) == 2, lines
-    head, *detail = lines[1].split("\n")
+    lapsed = [line for line in _lines(league) if line.startswith("⌛")]
+    assert len(lapsed) == 1, _lines(league)
+    head, *detail = lapsed[0].split("\n")
     assert head.startswith(f"⌛ the “{label}” button of"), head
-    assert head.endswith(f"lapsed unconfirmed (started by Manager (<@{MANAGER_ID}>))"), head
+    assert "lapsed unconfirmed (started by" in head and f"<@{REVIEWER}>" in head, head
     nothing_done = "Nothing was rejected" if label == "Reject" else "No changes were requested"
     assert [text.strip() for text in detail] == [
         f"{nothing_done}; the signup still awaits review. Press {label} again to give a reason."
     ], detail
-    bot.wizard_service.reject_signup.assert_not_awaited()
-    bot.wizard_service.request_changes.assert_not_awaited()
+    await _nothing_asked(league)
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
-async def test_a_reason_given_in_time_cancels_the_lapse(monkeypatch):
-    """The reason takes the entry and cancels its lapse, so no lapse follows the rejection."""
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    interaction = await _press(bot, "reject_button")
-    lapse = _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)]["lapse"]
+async def test_a_reason_given_in_time_cancels_the_lapse(tmp_path):
+    """The reason takes the entry and cancels its lapse, so no lapse follows the rejection:
+    the rejection is asked of the queue, and once it runs no lapse line or lapse reply is
+    written."""
+    league = await _league(tmp_path)
+    press = await _press(league, "reject_button")
+    lapse = _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)]["lapse"]
 
-    await AdminReviewCog(bot).on_message(_message("Lap time could not be verified."))
+    await _hear(league, REASON)
     await asyncio.gather(lapse, return_exceptions=True)
+    await run_queue(league.bot)
 
     assert lapse.cancelled()
-    bot.wizard_service.reject_signup.assert_awaited_once()
-    assert not any("lapsed" in line for line in _lines(bot)), _lines(bot)
-    assert not any(text.startswith("⌛") for text in _sent(interaction))
+    assert len(await _changes_of(league, END_KIND)) == 1
+    assert not any("lapsed" in line for line in _lines(league)), _lines(league)
+    assert not any(text.startswith("⌛") for text in _sent(press))
 
 
-async def test_a_lapse_whose_entry_was_replaced_does_nothing(monkeypatch):
+async def test_a_lapse_whose_entry_was_replaced_does_nothing(tmp_path, monkeypatch):
     """A lapse acts only while its own entry is the one pending: a later press has put
     another in its place, and that one is left for its own five minutes."""
     monkeypatch.setattr(arc, "_REASON_LAPSE_SECONDS", 0)
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    interaction = await _press(bot, "reject_button")
-    first = _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)]
+    league = await _league(tmp_path)
+    press = await _press(league, "reject_button")
+    first = _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)]
     later = dict(first, lapse=None)
-    _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)] = later
+    _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)] = later
 
     await asyncio.gather(first["lapse"], return_exceptions=True)
 
-    assert _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)] is later
-    assert not any("lapsed" in line for line in _lines(bot)), _lines(bot)
-    assert not any(text.startswith("⌛") for text in _sent(interaction))
+    assert _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)] is later
+    assert not any("lapsed" in line for line in _lines(league)), _lines(league)
+    assert not any(text.startswith("⌛") for text in _sent(press))
 
 
-async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(monkeypatch):
+async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(tmp_path):
     """`/bot pack` and `/bot factory-reset` clear the league's state in memory: every pending
-    reason goes, and its lapse with it, so no lapse fires into a league that has changed."""
+    reason goes, and its lapse with it, so no lapse fires into a league that has changed.
+    Managers 77 and 78 press Reject and Request Changes on Kimi's panel; the league's memory is
+    cleared, handed the change queue: both lapses are cancelled, no reason is left waiting, and
+    no lapse is recorded or told. The lapses keep their five minutes: a lapse of no length would
+    fire while the second press reads the database, and leave one pending."""
     from leaguebot.core.services.in_memory_state import clear_in_memory_state
 
-    monkeypatch.setattr(arc, "_REASON_LAPSE_SECONDS", 0)
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    rejecting = await _press(bot, "reject_button")
-    requesting = await _press(bot, "request_changes_button", user_id=MANAGER_ID + 1)
+    league = await _league(tmp_path)
+    league.roles_held[SECOND_MANAGER] = {MANAGER_ROLE_ID}
+    rejecting = await _press(league, "reject_button")
+    requesting = await _press(league, "request_changes_button", by=SECOND_MANAGER)
     lapses = [entry["lapse"] for entry in _PENDING_REASONS.values()]
 
-    clear_in_memory_state(bot)
+    clear_in_memory_state(league.bot, queue=league.bot.change_queue)
     await asyncio.gather(*lapses, return_exceptions=True)
 
     assert len(lapses) == 2 and all(lapse.cancelled() for lapse in lapses)
     assert _PENDING_REASONS == {}
-    assert not any("lapsed" in line for line in _lines(bot)), _lines(bot)
+    assert not any("lapsed" in line for line in _lines(league)), _lines(league)
     assert not any(text.startswith("⌛") for text in _sent(rejecting) + _sent(requesting))
 
 
 @pytest.mark.parametrize(
-    "button,label,service",
+    "action,label",
     [
-        ("request_changes_button", "Request Changes", "request_changes"),
-        ("reject_button", "Reject", "reject_signup"),
+        pytest.param("request_changes", "Request Changes"),
+        pytest.param("reject", "Reject"),
     ],
     ids=NEGATIVE_IDS,
 )
-async def test_a_fault_in_the_reason_step_is_reported_through_the_press(
-    monkeypatch, button, label, service
-):
-    """The reason completes the change the press asked for, so a fault in it is the button's
-    own: the manager is told once, one failure line names the button, and nothing escapes to
+async def test_a_fault_in_the_reason_step_is_reported_through_the_press(tmp_path, action, label):
+    """The reason completes the change the press asked for, so a fault in asking it is the
+    button's own: the queue cannot take the request (the database is locked), and the manager is
+    told once through his press, one failure line names the button, and nothing escapes to
     discord.py's event handler (core specification, "When a command fails")."""
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    interaction = await _press(bot, button)
-    setattr(bot.wizard_service, service, AsyncMock(side_effect=RuntimeError("database is locked")))
+    league = await _league(tmp_path)
+    press = await _park(league, action)
+    league.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("database is locked"))
 
-    await AdminReviewCog(bot).on_message(_message("Lap time could not be verified."))
+    await _hear(league, REASON)
 
-    failures = [text for text in _sent(interaction) if text.startswith("❌")]
-    assert len(failures) == 1, _sent(interaction)
+    failures = [text for text in _sent(press) if text.startswith("❌")]
+    assert len(failures) == 1, _sent(press)
     assert f"“{label}” button" in failures[0]
-    assert not any(text.startswith("✅") for text in _sent(interaction))
-    failed = [line for line in _lines(bot) if line.startswith("❌")]
-    assert len(failed) == 1, _lines(bot)
+    assert not any(text.startswith("✅") for text in _sent(press))
+    failed = [line for line in _lines(league) if line.startswith("❌")]
+    assert len(failed) == 1, _lines(league)
     assert failed[0].startswith(f"❌ the “{label}” button of"), failed[0]
-    assert f"failed for Manager (<@{MANAGER_ID}>)" in failed[0]
+    assert f"<@{REVIEWER}>" in failed[0] and "failed for" in failed[0]

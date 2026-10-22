@@ -6,11 +6,8 @@
 """
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import sqlite3
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -33,13 +30,12 @@ from leaguebot.results.services.season_points_service import (
 from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import channel_refusal
 from leaguebot.core.utils.channel_guard import (
-    is_league_manager,
     league_admin_only,
     league_manager_only,
     changes_nothing,
 )
 from leaguebot.core.utils.input_validator import NAME
-from leaguebot.core.utils.interaction_errors import describe, describe_fault, report_failure
+from leaguebot.core.utils.interaction_errors import describe, report_failure
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import (
     CallbackButton,
@@ -47,6 +43,7 @@ from leaguebot.core.utils.league_server import (
     LeagueModal,
     LeagueView,
     guild_of,
+    is_foreign_guild,
 )
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
@@ -723,42 +720,6 @@ class _ConfirmRemoveConfigView(LeagueView):
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class _OpenedAmendment:
-    """What one `/results rounds amend` has opened, for the command to let go of on a fault (#345).
-
-    Filled in as the command goes: the round and channel once its record is in, the Cancel view
-    once it is posted, and *stage_one_started* the moment stage one begins to write — after
-    which the command's own handling puts the round back, and this has nothing to do.
-    """
-
-    round_id: int | None = None
-    channel: Any = None
-    round_number: int | None = None
-    cancel_view: Any = None
-    stage_one_started: bool = False
-
-
-def _amendment_open_refusal(division_name: str, open_row) -> str:
-    """Why `/results rounds amend` was refused: another amendment is open in the division."""
-    channel_id = open_row["channel_id"] if open_row else None
-    if channel_id is None:
-        return (
-            f"\u274c {division_name} already has an amendment open. Finish or cancel it first."
-        )
-    try:
-        sessions = ", ".join(
-            str(st).replace("_", " ").title() for st in json.loads(open_row["session_types"])
-        )
-    except (TypeError, ValueError):
-        sessions = "its sessions"
-    return (
-        f"\u274c {division_name} already has an amendment open — round "
-        f"{open_row['round_number']}, {sessions} — in <#{channel_id}>. Finish or cancel it "
-        "there first: one amendment is open in a division at a time."
-    )
-
-
 class _AmendSessionsView(LeagueView):
     """Choose which of a round's sessions an amendment re-enters (#345, decided 2026-09-21).
 
@@ -833,6 +794,39 @@ class _AmendSessionsView(LeagueView):
 class ResultsCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
+
+    # ------------------------------------------------------------------
+    # Guard: block messages while a round is in penalty review (T014)
+    # ------------------------------------------------------------------
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message) -> None:
+        if message.author.bot or not message.guild:
+            return
+        if await is_foreign_guild(self.bot, message.guild.id):
+            return
+        from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
+
+        if await is_channel_in_penalty_review(self.bot.db_path, message.channel.id):
+            # Deleted and warned by jobs on the round's lane, not at once (#439).
+            from leaguebot.results.services.review_lock_change import ask_lock
+
+            await ask_lock(self.bot.change_queue, message)
+            return
+        # The opener's message in an open amendment's channel is a paste too: a turn on the
+        # amendment's lane (#439).
+        from leaguebot.results.services.amend_turn_change import take_amended_paste
+
+        if await take_amended_paste(self.bot, message, queue=self.bot.change_queue):
+            return
+        # A league manager's message in a round's open submission is a paste: marked at once and
+        # taken as a turn on the round's lane, or turned away while an earlier one waits (#439).
+        from leaguebot.results.services.submission_turn_change import take_paste
+
+        await take_paste(
+            self.bot, message, queue=self.bot.change_queue,
+            config=await self.bot.config_service.get_server_config(),
+        )
 
     # ------------------------------------------------------------------
     # Gate helpers
@@ -2151,19 +2145,18 @@ class ResultsCog(commands.Cog):
         if not await self._sync_gate(interaction, div, what=describe(interaction)):
             return
 
-        from leaguebot.results.services.results_post_service import repost_standings_for_division
-        status = await repost_standings_for_division(
-            self.bot.db_path, div.id, guild_of(interaction), bot=self.bot
-        )
+        from leaguebot.results.services.results_post_service import standings_repost_status
+        from leaguebot.results.services.standings_sync_change import STANDINGS_SYNC
+
+        # The channel and the rounds are read here to answer at once, as the command always has;
+        # the repost itself is a change on the queue, which checks them again when it runs.
+        status = await standings_repost_status(self.bot.db_path, div.id, guild_of(interaction))
 
         if status == "ok":
-            await interaction.followup.send(
-                f"\u2705 Standings for **{division}** synced to the standings channel.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results standings sync | Success\n"
-                f"  division: {division}",
+            await self.bot.change_queue.ask(
+                STANDINGS_SYNC, {"division_id": div.id, "division_name": div.name},
+                interaction=interaction, what="`/results standings sync`",
+                refusal_what=describe(interaction),
             )
         elif status == "no_rounds":
             await self._answer_nothing_changed(
@@ -2285,81 +2278,16 @@ class ResultsCog(commands.Cog):
         the record standing and the division held until a restart. Nothing has been written by
         then, so the record and the channel simply go.
         """
-        opened = _OpenedAmendment()
-        try:
-            await self._amend_round_results(
-                interaction, division_name, round_number, session, opened
-            )
-        except Exception as exc:
-            if opened.round_id is None or opened.stage_one_started:
-                raise
-            log.exception("amend: round %s failed before anything was written", opened.round_id)
-            await self._let_go_of_unwritten_amendment(interaction, opened, exc)
-
-    async def _let_go_of_unwritten_amendment(
-        self, interaction: discord.Interaction, opened: _OpenedAmendment, error: BaseException
-    ) -> None:
-        """Forget an amendment that failed before stage one, and delete its channel.
-
-        As every amendment's channel goes: see `_close_amend_channel_record`. The admin is told
-        the plain kind of *error* and that nothing was written, and the log channel gets one
-        `AMEND_FAILED` line naming its type alone; the traceback is the host's log's.
-        """
-        from leaguebot.results.services.result_submission_service import (
-            AMENDMENT_RE_RUN,
-            _close_amend_channel_record,
-            amendment_fault_reply,
+        from leaguebot.core.models.change import VerdictKind
+        from leaguebot.core.utils.season_gate import LIVE_STAGES, season_for_command
+        from leaguebot.results.models.points_config import SessionType
+        from leaguebot.results.services.amend_changes import (
+            COMMAND,
+            KIND,
+            amendable_sessions,
+            label_of,
         )
 
-        # Its one caller lets an amendment go only once its record is in.
-        assert opened.round_id is not None
-        if opened.cancel_view is not None:
-            opened.cancel_view.stop()
-        try:
-            await _close_amend_channel_record(
-                self.bot.db_path, opened.round_id, opened.channel.id, opened.channel,
-                reason="Amendment failed before anything was written",
-            )
-        except Exception:  # noqa: BLE001 — restart recovery clears what is left
-            log.exception("amend: could not close the record of round %s", opened.round_id)
-        try:
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_FAILED | "
-                f"round {opened.round_number}\n"
-                f"  fault: {type(error).__name__}. The details are in the host's log.\n"
-                "  Failed before the corrected results were recorded; nothing was written."
-            )
-        except Exception:  # noqa: BLE001
-            log.exception("amend: could not log the failure of round %s", opened.round_id)
-        try:
-            await interaction.followup.send(
-                amendment_fault_reply(
-                    describe_fault(error),
-                    f"Nothing was written. {AMENDMENT_RE_RUN}",
-                ),
-                ephemeral=True,
-            )
-        except discord.HTTPException:
-            pass
-
-    async def _amend_round_results(
-        self,
-        interaction: discord.Interaction,
-        division_name: str,
-        round_number: int,
-        session: app_commands.Choice[str] | None,
-        opened: _OpenedAmendment,
-    ) -> None:
-        """The body of `/results rounds amend`, filling in *opened* as it goes.
-
-        **A fault while stage one writes is reported here and not raised again.** The write is
-        undone first — a real clean-up, putting the round back as it stood — and the amendment
-        then reports its own failure: the admin is told the plain kind of fault and what became
-        of the round, and the log channel gets one `AMEND_FAILED` line naming the fault's type,
-        the traceback going to the host's log. Raised again, the command tree would report it a
-        second time, and in words that cannot say the round was put back.
-        """
-        guild = guild_of(interaction)
         if not await self.bot.module_service.is_results_enabled():
             await refuse(
                 interaction,
@@ -2367,128 +2295,58 @@ class ResultsCog(commands.Cog):
                 what=describe(interaction),
             )
             return
-        await interaction.response.defer(ephemeral=True)
 
-        from leaguebot.results.models.points_config import SessionType
-        from leaguebot.core.db.database import get_connection
-
-        # --- Resolve division and round ---
-        # The live season, not the most recent one (issue #224). This read
-        # `get_season_for_server` — the highest season id whatever its status — so it
-        # amended a **completed or cancelled** season's results, which the core
-        # specification's archive rule says shall never change, and which this command
-        # destroys rather than supersedes.
-        #
-        # Pending completion is named deliberately. Amending a final round's results is one
-        # of the three things still open there (decided 2026-09-20) — a season's last chance
-        # to correct its record before `/season complete` draws the final classification off
-        # it — so the whole of a live season is the right set, not the default.
-        from leaguebot.core.utils.season_gate import LIVE_STAGES, season_for_command
-
+        # The live season, not the most recent one (issue #224): amending a completed or
+        # cancelled season's results is what the archive rule forbids. Pending completion is
+        # named deliberately: amending a final round's results is one of the three things still
+        # open there (decided 2026-09-20).
         season = await season_for_command(
-            interaction, self.bot.season_service, "results rounds amend", stages=LIVE_STAGES
+            interaction, self.bot.season_service, COMMAND, stages=LIVE_STAGES
         )
         if season is None:
             return
-
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
             await refuse(
-                interaction,
-                f"\u274c Division `{division_name}` not found.",
+                interaction, f"\u274c Division `{division_name}` not found.",
                 what=describe(interaction),
             )
             return
-
         rounds = await self.bot.season_service.get_division_rounds(div.id)
         rnd = next((r for r in rounds if r.round_number == round_number), None)
         if rnd is None:
             await refuse(
-                interaction,
-                f"\u274c Round {round_number} not found.",
-                what=describe(interaction),
+                interaction, f"\u274c Round {round_number} not found.", what=describe(interaction)
             )
             return
 
-        # T009: amend is only permitted on FINAL rounds
-        if rnd.status != "FINAL":
-            await refuse(
-                interaction,
-                "\u274c This round cannot be amended yet. Round results must reach **FINAL** status "
-                "(approved through the full penalty review and appeals process) before they can be amended.",
-                what=describe(interaction),
-            )
-            return
-
-        # A division with a job of a round's review on the queue is not amended (#439): a review
-        # queued before the amendment began would publish its unapproved standings.
-        from leaguebot.results.services.review_changes import division_job_in_hand
-
-        waiting_on = await division_job_in_hand(self.bot.db_path, div.id)
-        if waiting_on is not None:
-            # 0 is a change with only its close left: it still holds the division, but has no
-            # job a manager could Retry or Discard to name.
-            naming = f" (job #{waiting_on})" if waiting_on else ""
-            await refuse(
-                interaction,
-                f"\u23f8\ufe0f A round of {div.name} has a job on the change queue{naming}, so "
-                "it cannot be amended until that is done. Let it finish, or "
-                "press **Retry** or **Discard** on its notice if it has stopped, then amend "
-                "again.",
-                what=describe(interaction),
-            )
-            return
-
-        # Load ACTIVE session_results
-        async with get_connection(self.bot.db_path) as db:
-            cursor = await db.execute(
-                "SELECT session_type, id, config_name FROM session_results WHERE round_id = ? AND status = 'ACTIVE'",
-                (rnd.id,),
-            )
-            sr_rows = await cursor.fetchall()
-
-        if not sr_rows:
-            await refuse(
-                interaction,
-                "\u274c No results found for this round.",
-                what=describe(interaction),
-            )
-            return
-
-        # --- Which sessions ---
-        #: The amendment as its log lines name it.
+        # Everything else the command refuses is the change's check, judged here and again when
+        # the change runs, so an amendment waiting behind a stopped queue is refused as it would
+        # be now. A request asked with no sessions is refused for any reason but the choice.
+        queue = self.bot.change_queue
+        what = f"/results rounds amend {div.name} {rnd.round_number}"
         what_amended = f"`/results rounds amend` of round {rnd.round_number} ({div.name})"
-        _stype_order = list(SessionType)
-        session_types_present = sorted(
-            [SessionType(r["session_type"]) for r in sr_rows], key=_stype_order.index
-        )
-        _SESSION_LABEL = {
-            SessionType.SPRINT_QUALIFYING: "Sprint Qualifying",
-            SessionType.SPRINT_RACE: "Sprint Race",
-            SessionType.FEATURE_QUALIFYING: "Feature Qualifying",
-            SessionType.FEATURE_RACE: "Feature Race",
-        }
-
-        def _label(st: SessionType) -> str:
-            return _SESSION_LABEL.get(st, st.value)
-
+        asked = {"round_id": rnd.id, "division_id": div.id}
         if session is not None:
-            chosen: list[SessionType] = [SessionType(session.value)]
-            if chosen[0] not in session_types_present:
-                await refuse(
-                    interaction,
-                    f"❌ No {chosen[0].value} session found for this round.",
-                    what=describe(interaction),
+            chosen = [session.value]
+        else:
+            probe = {**asked, "session_types": []}
+            if (await queue.check(KIND, probe)).kind is not VerdictKind.GO:
+                await queue.ask(
+                    KIND, probe, interaction=interaction, what=what,
+                    refusal_what=describe(interaction),
                 )
                 return
-        else:
+            await interaction.response.defer(ephemeral=True)
+            order = list(SessionType)
+            present = await amendable_sessions(self.bot.db_path, rnd.id)
             # **Several sessions in one amendment** (#345, decided 2026-09-21). A round's
             # reports and appeals are reviewed together, so the sessions being corrected are
             # re-entered one after another and their decisions reviewed in one pass, with the
             # division rebuilt once at the end.
             sv = _AmendSessionsView(
-                [(st.value, _label(st)) for st in session_types_present], what=what_amended
+                [(each.value, label_of(each)) for each in present], what=what_amended
             )
             await interaction.followup.send(
                 "\U0001f4cb Select the sessions to amend. Each is re-entered in turn, and their "
@@ -2496,13 +2354,9 @@ class ResultsCog(commands.Cog):
                 view=sv,
                 ephemeral=True,
             )
-            timed_out = await sv.wait()
-            if timed_out:
+            if await sv.wait():
                 await record_abandoned(
-                    self.bot,
-                    interaction.user,
-                    what=what_amended,
-                    lapsed=True,
+                    self.bot, interaction.user, what=what_amended, lapsed=True,
                     detail=_PICKER_ENDED,
                 )
                 await interaction.followup.send(
@@ -2513,697 +2367,19 @@ class ResultsCog(commands.Cog):
                 return
             if sv.cancelled or not sv.selected:
                 await record_abandoned(
-                    self.bot,
-                    sv.cancelled_by or interaction.user,
-                    what=what_amended,
-                    lapsed=False,
-                    detail=_PICKER_ENDED,
+                    self.bot, sv.cancelled_by or interaction.user, what=what_amended,
+                    lapsed=False, detail=_PICKER_ENDED,
                 )
                 await interaction.followup.send("ℹ️ Amendment cancelled.", ephemeral=True)
                 return
-            chosen = sorted((SessionType(v) for v in sv.selected), key=_stype_order.index)
-
-        existing_config_of = {SessionType(r["session_type"]): r["config_name"] for r in sr_rows}
-        sessions_text = ", ".join(st.value for st in chosen)
-
-        # **One amendment open in a division at a time** (#345, decided 2026-09-21). The last
-        # stage of an amendment reposts the whole division from the database, so a second
-        # amendment open alongside it would have its unapproved classification published by the
-        # first — and left published if it were then cancelled or lapsed, its revert posting
-        # nothing. Two amendments of one round would also rewrite the round's pardons over each
-        # other, and the second would take the first one's snapshot with it.
-        from leaguebot.results.services.result_submission_service import open_amendment_in_division
-
-        _open = await open_amendment_in_division(self.bot.db_path, div.id)
-        async with get_connection(self.bot.db_path) as _odb:
-            _cur = await _odb.execute(
-                "SELECT channel_id FROM round_amend_channels "
-                "WHERE round_id = ? AND closed_at IS NOT NULL",
-                (rnd.id,),
-            )
-            _closed = await _cur.fetchone()
-        if _open is None and _closed is not None:
-            # A finished amendment whose channel could not be deleted keeps its row so restart
-            # recovery can still find the channel — but it is not one in progress, and it must
-            # not hold the unique constraint against this attempt (#345). The channel it names
-            # goes first, the row being the only record of it: where it still cannot be deleted
-            # the row stays, and the manager is asked to remove the channel by hand.
-            _stale = guild.get_channel(_closed["channel_id"])
-            if _stale is not None:
-                try:
-                    await _stale.delete(reason="Finished amendment channel left behind")
-                except discord.NotFound:
-                    pass
-                except discord.HTTPException:
-                    log.exception("amend: could not delete stale channel %s", _closed["channel_id"])
-                    await refuse(
-                        interaction,
-                        f"❌ An earlier amendment of this round left its channel "
-                        f"<#{_closed['channel_id']}> behind, and it could not be removed. "
-                        "Delete it, then run this command again.",
-                        what=describe(interaction),
-                    )
-                    return
-            async with get_connection(self.bot.db_path) as _odb:
-                await _odb.execute(
-                    "DELETE FROM round_amend_channels "
-                    "WHERE round_id = ? AND closed_at IS NOT NULL",
-                    (rnd.id,),
-                )
-                await _odb.commit()
-        if _open is not None:
-            await refuse(
-                interaction,
-                _amendment_open_refusal(div.name, _open),
-                what=describe(interaction),
-            )
-            return
-
-        # --- Create a dedicated amend channel ---
-        import re as _re
-        from datetime import datetime, timezone
-
-        server_cfg = await self.bot.config_service.get_server_config()
-        bot_cmd_channel_id: int | None = server_cfg.interaction_channel_id if server_cfg else None
-        interaction_role: discord.Role | None = None
-        if server_cfg and server_cfg.interaction_role_id:
-            interaction_role = guild.get_role(server_cfg.interaction_role_id)
-        # The league admin role is opened to the amendment channel on the same terms. A
-        # league admin holds the league manager tier within their own, so a channel opened to
-        # one role and not the other would leave them able to cancel an amendment they cannot
-        # see (issue #116).
-        league_admin_role: discord.Role | None = None
-        if server_cfg and server_cfg.league_admin_role_id:
-            league_admin_role = guild.get_role(server_cfg.league_admin_role_id)
-
-        # Derive category from bot command channel (same pattern as submission channel)
-        category: discord.CategoryChannel | None = None
-        if bot_cmd_channel_id is not None:
-            cmd_channel = guild.get_channel(bot_cmd_channel_id)
-            if cmd_channel is not None:
-                category = getattr(cmd_channel, "category", None)
-
-        slug = _re.sub(r"[^a-z0-9-]", "", division_name.lower().replace(" ", "-"))[:20]
-        amend_ch_name = f"amend-S{season.season_number}-{slug}-R{round_number}"
-        overwrites: dict[discord.Role | discord.Member | discord.Object, discord.PermissionOverwrite] = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-        }
-        if guild.me is not None:
-            overwrites[guild.me] = discord.PermissionOverwrite(
-                read_messages=True, send_messages=True, manage_messages=True
-            )
-        for role in (interaction_role, league_admin_role):
-            if role is not None:
-                overwrites[role] = discord.PermissionOverwrite(
-                    read_messages=True, send_messages=True
-                )
-        amend_channel = await guild.create_text_channel(
-            name=amend_ch_name,
-            category=category,
-            overwrites=overwrites,
-            reason="Results amend channel",
+            chosen = [
+                each.value
+                for each in sorted((SessionType(v) for v in sv.selected), key=order.index)
+            ]
+        await queue.ask(
+            KIND, {**asked, "session_types": chosen}, interaction=interaction, what=what,
+            refusal_what=describe(interaction),
         )
-
-        # Record the channel so restart recovery can detect and clean it up.
-        #
-        # The insert is what actually settles which amendment is the open one: the check above
-        # is a read, and two commands racing would both pass it. The table is unique on the
-        # round, and across rounds the one recorded first keeps the division — the loser is
-        # refused here and its channel deleted, or it would be an orphan nothing could find (#345).
-        _amend_created_at = datetime.now(timezone.utc).isoformat()
-        _earlier: sqlite3.Row | dict[str, None] | None = None
-        try:
-            async with get_connection(self.bot.db_path) as _adb:
-                _ins = await _adb.execute(
-                    """
-                    INSERT INTO round_amend_channels
-                        (round_id, channel_id, session_types, created_at, started_by)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (rnd.id, amend_channel.id,
-                     json.dumps([st.value for st in chosen]), _amend_created_at,
-                     interaction.user.id),
-                )
-                await _adb.commit()
-                _cur = await _adb.execute(
-                    "SELECT rac.channel_id, r.round_number, rac.session_types "
-                    "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id "
-                    "WHERE r.division_id = ? AND rac.closed_at IS NULL AND rac.id < ? "
-                    "ORDER BY rac.id LIMIT 1",
-                    (div.id, _ins.lastrowid),
-                )
-                _earlier = await _cur.fetchone()
-                if _earlier is not None:
-                    await _adb.execute(
-                        "DELETE FROM round_amend_channels WHERE id = ?", (_ins.lastrowid,)
-                    )
-                    await _adb.commit()
-        except sqlite3.IntegrityError:
-            _earlier = {"channel_id": None}
-        if _earlier is not None:
-            try:
-                await amend_channel.delete(reason="An amendment is already open in this division")
-            except discord.HTTPException:
-                log.exception("amend: could not delete the duplicate channel for round %s", rnd.id)
-            await refuse(
-                interaction,
-                _amendment_open_refusal(div.name, _earlier),
-                what=describe(interaction),
-            )
-            return
-
-        opened.round_id = rnd.id
-        opened.channel = amend_channel
-        opened.round_number = rnd.round_number
-
-        # Cancel button posted in the amend channel
-        cancelled_flag: list[bool] = [False]
-        # **What the collection loop races the paste against** (#345). It used to race
-        # `cancel_view.wait()`, and cancelled that task on every turn of the loop — which
-        # cancels the view's own future, and discord.py drops every press on a view whose
-        # future is done. The button was therefore dead from the moment the paste arrived,
-        # which is exactly when it becomes the only way to undo the amendment. An event of
-        # its own leaves the view listening for as long as its channel exists.
-        cancelled_event = asyncio.Event()
-        # Set once stage one has written. From then on the button no longer stops a paste being
-        # waited for — there is none — but undoes what stage one wrote (#345).
-        stage_one_done: list[bool] = [False]
-        # Set while stage one is writing. A cancel in that window can neither stop the write nor
-        # safely revert it half-done, so it is answered and refused rather than swallowed — which
-        # is what it was: the button replied "cancelled", stopped itself, and cancelled nothing.
-        stage_one_writing: list[bool] = [False]
-        # The round, for the view below: a check made out here does not reach inside it.
-        amended_round_id = rnd.id
-        # Who pressed Cancel, which may be a league manager other than the opener: the cancel
-        # line names whoever pressed it.
-        cancelled_by: list[discord.abc.User | None] = [None]
-        from leaguebot.results.services.result_submission_service import (
-            AMENDMENT_RE_RUN,
-            AMENDMENT_RE_RUN_ONCE_PUT_BACK,
-            ROUND_NOT_PUT_BACK_YET,
-            ROUND_PUT_BACK,
-            amendment_fault_reply,
-        )
-
-        async def _log_amend_failed(
-            error: BaseException,
-            where: str,
-            *,
-            member: discord.abc.User | None = None,
-            not_put_back: str | None = None,
-        ) -> None:
-            """The one `AMEND_FAILED` line a failure makes: the fault's type, never its words.
-
-            It names *member*, whoever pressed what failed: a Cancel Amendment press may be a
-            league manager's other than the opener's. Left out, it is the member who ran the
-            command.
-
-            *not_put_back* is what the reply says became of a round that could not be put back
-            yet, given where that is so: the line ends on it, in plain text, so that whoever
-            reads the log rather than the reply also waits for the round to be put back before
-            running the command again, a re-run until then being refused.
-            """
-            who = member if member is not None else interaction.user
-            became = f"\n  {not_put_back.replace('`', '')}" if not_put_back else ""
-            try:
-                await self.bot.output_router.post_log(
-                    f"{who.display_name} (<@{who.id}>) | AMEND_FAILED | "
-                    f"round {rnd.round_number} session {sessions_text}\n"
-                    f"  {where}; fault: {type(error).__name__}. The details are in the host's log."
-                    + became
-                )
-            except Exception:  # noqa: BLE001 — the failure is still in the host's log
-                log.warning("amend: could not log the failure of round %s", rnd.id, exc_info=True)
-
-        async def _tell_of_failure(reply: str) -> None:
-            """Tell the admin of a failure already logged, without raising.
-
-            The interaction's token lapses fifteen minutes after the command, which several
-            pastes can outlast. Raised, a refused send would reach the command tree, which
-            would log the one failure a second time and name the wrong fault.
-            """
-            try:
-                await interaction.followup.send(reply, ephemeral=True)
-            except discord.HTTPException:
-                log.warning(
-                    "amend: could not tell the admin of round %s of a failure", rnd.id,
-                    exc_info=True,
-                )
-
-        #: The Cancel Amendment button as a refusal's line names it.
-        cancel_what = f"the \u201cCancel Amendment\u201d button of {what_amended}"
-
-        class _CancelView(LeagueView):
-            def __init__(self_v) -> None:
-                super().__init__(timeout=None)
-
-            @discord.ui.button(label="❌ Cancel Amendment", style=discord.ButtonStyle.danger)
-            async def cancel_btn(self_v, bi: discord.Interaction, btn: discord.ui.Button) -> None:
-                # The member who opened the amendment, or anyone holding the league manager
-                # tier. Reading `interaction_role` by hand tested that role alone, so a league
-                # admin without it was refused a button they are entitled to press.
-                if bi.user.id != interaction.user.id and not (
-                    server_cfg is not None
-                    and isinstance(bi.user, discord.Member)
-                    and is_league_manager(server_cfg, bi.user)
-                ):
-                    await refuse(
-                        bi, "⛔ Only league managers can cancel.", what=cancel_what
-                    )
-                    return
-                if stage_one_writing[0]:
-                    await refuse(
-                        bi,
-                        "⏳ The corrected results are being recorded — press **Cancel "
-                        "Amendment** again in a moment to undo them.",
-                        what=cancel_what,
-                    )
-                    return
-                if stage_one_done[0]:
-                    from leaguebot.results.services.result_submission_service import (
-                        stage_in_hand,
-                    )
-
-                    # **A stage's approval on the change queue holds the amendment** (#439):
-                    # queued, running or stopped on a failure, it cannot be cancelled, and the
-                    # presser is told so before anything is said of putting the round back.
-                    if await stage_in_hand(self.bot.db_path, amended_round_id):
-                        await refuse(
-                            bi,
-                            "⏳ A stage of this amendment is being approved, so it cannot be "
-                            "cancelled now. If its approval is stopped, press Retry or Discard "
-                            "on its notice in the log channel.",
-                            what=cancel_what,
-                        )
-                        return
-                    # **After stage one, cancelling is a revert** (#345). The corrected
-                    # classification is already written, so stopping here would leave the
-                    # round scored from it and posted from the old one until the sweep came.
-                    await bi.response.send_message(
-                        "Cancelling — putting the round back as it was.", ephemeral=True
-                    )
-                    from leaguebot.results.services.result_submission_service import cancel_amendment
-
-                    try:
-                        undone = await cancel_amendment(
-                            self.bot, amended_round_id, cancelled_by=bi.user.id
-                        )
-                    except Exception as exc:  # noqa: BLE001 — reported to the presser, and logged
-                        log.exception("amend: cancelling round %s failed", amended_round_id)
-                        await _log_amend_failed(
-                            exc,
-                            "cancelled, but the round could not be put back",
-                            member=bi.user,
-                            not_put_back=ROUND_NOT_PUT_BACK_YET,
-                        )
-                        await bi.followup.send(
-                            amendment_fault_reply(describe_fault(exc), ROUND_NOT_PUT_BACK_YET),
-                            ephemeral=True,
-                        )
-                        return
-                    if undone:
-                        self_v.stop()
-                        await record_abandoned(
-                            self.bot, bi.user, what=what_amended, lapsed=False,
-                            detail=ROUND_PUT_BACK,
-                        )
-                    else:
-                        await refuse(
-                            bi,
-                            "ℹ️ Too late to cancel — the amendment is already being "
-                            "committed, or is no longer open.",
-                            what=cancel_what,
-                        )
-                    return
-                cancelled_by[0] = bi.user
-                cancelled_flag[0] = True
-                cancelled_event.set()
-                await bi.response.send_message("Amendment cancelled.", ephemeral=True)
-
-        cancel_view = _CancelView()
-        opened.cancel_view = cancel_view
-        await amend_channel.send(
-            f"📋 **Amend Results — Round {round_number} ({division_name})**\n"
-            f"Sessions: {', '.join(_label(st) for st in chosen)}.\n"
-            "**Stage 1 of 3.** Paste each session's corrected results when asked, in the same "
-            "format as a first submission — the two sanction columns amendments used to take "
-            "have been withdrawn. The reports and appeals of these sessions are reviewed "
-            "together in the two stages that follow.\n"
-            "Click **❌ Cancel Amendment** to abort and delete this channel.",
-            view=cancel_view,
-        )
-
-        await interaction.followup.send(
-            f"✅ Amendment channel created: {amend_channel.mention}", ephemeral=True
-        )
-
-        # --- Collect new results ---
-        from leaguebot.results.services.result_submission_service import split_validation, validate_submission_block
-        from leaguebot.results.services.result_submission_service import _build_division_validation_data
-        from leaguebot.results.services.result_submission_service import other_active_team_assignments
-        from leaguebot.results.services.result_submission_service import current_accounts, extract_current_fl_override
-        from leaguebot.results.services.result_submission_service import AmendedSession
-        from leaguebot.results.services.season_points_service import get_season_config_names
-
-        (
-            driver_ids, team_of_role, reserve_role_id, driver_team_map, reserve_driver_ids,
-            team_names, team_of_shorthand,
-        ) = await _build_division_validation_data(div.id, bot_of(interaction))
-        config_names = await get_season_config_names(self.bot.db_path, season.id)
-
-        async def _cleanup_channel() -> None:
-            # The button goes with the channel: nothing is left listening for a press that
-            # could only answer for an amendment that has ended.
-            cancel_view.stop()
-            from leaguebot.results.services.result_submission_service import _close_amend_channel_record
-
-            await _close_amend_channel_record(
-                self.bot.db_path, rnd.id, amend_channel.id, amend_channel,
-                reason="Results amend complete",
-            )
-
-        async def _refused(reply: str, *, reason: str) -> None:
-            """Refuse the amendment before anything was written, recording why, and tidy up.
-
-            **Best effort** (#345): `refuse` never raises. The interaction's token lapses after
-            fifteen minutes, which several pastes can outlast; raised here, the refusal would be
-            taken for a fault and logged a second time as `AMEND_FAILED`.
-            """
-            await refuse(interaction, reply, what=what_amended, reason=reason)
-            await _cleanup_channel()
-
-        async def _abandoned(*, lapsed: bool, reply: str) -> None:
-            """Record an amendment cancelled, or lapsed, before anything was written, and tidy up.
-
-            A lapse names who started it; a cancel, who pressed Cancel.
-            """
-            await record_abandoned(
-                self.bot,
-                interaction.user if lapsed else (cancelled_by[0] or interaction.user),
-                what=what_amended,
-                lapsed=lapsed,
-                detail=f"Nothing was written. {AMENDMENT_RE_RUN}",
-            )
-            await _cleanup_channel()
-            try:
-                await interaction.followup.send(reply, ephemeral=True)
-            except discord.HTTPException:
-                log.warning("amend: could not reply to the admin of round %s", rnd.id)
-
-        import asyncio as _asyncio
-        _AMEND_TIMEOUT_S = 300  # 5 minutes, for each paste and each choice of configuration
-
-        def _expired(what_never_came: str) -> str:
-            # **Said to the admin, not only logged** (#135). The channel they were working in
-            # goes, and the log channel is not where they are looking. It does not claim the
-            # channel is gone: one Discord refuses to delete stands until the next run clears it.
-            return (
-                f"⏱️ Amendment expired — {what_never_came} within {_AMEND_TIMEOUT_S // 60} "
-                "minutes, so it has been closed and nothing was written. Run "
-                "`/results rounds amend` again to start over."
-            )
-
-        collected: list[AmendedSession] = []
-        for st in chosen:
-            if len(chosen) > 1:
-                await amend_channel.send(
-                    f"**{_label(st)}** — paste the corrected results for this session."
-                )
-            # Wait for either a message in the amend channel or the cancel button
-            done_task = self.bot.loop.create_task(
-                interaction.client.wait_for(
-                    "message",
-                    check=lambda m: (
-                        m.channel.id == amend_channel.id
-                        and m.author.id == interaction.user.id
-                    ),
-                )
-            )
-            cancel_task = self.bot.loop.create_task(cancelled_event.wait())
-            done, pending = await _asyncio.wait(
-                {done_task, cancel_task},
-                return_when=_asyncio.FIRST_COMPLETED,
-                timeout=_AMEND_TIMEOUT_S,
-            )
-            for t in pending:
-                t.cancel()
-
-            if not done:
-                await _abandoned(lapsed=True, reply=_expired("no results were pasted"))
-                return
-            if cancel_task in done:
-                # The button was pressed: it sets the flag before the event, so both hold.
-                cancelled_flag[0] = True
-            if cancelled_flag[0]:
-                await _abandoned(lapsed=False, reply="ℹ️ Amendment cancelled.")
-                return
-
-            msg = done_task.result()
-            lines_raw = [ln.strip() for ln in msg.content.strip().splitlines() if ln.strip()]
-            current_of = await current_accounts(self.bot.db_path)
-            fl_amend_override, lines_raw = extract_current_fl_override(lines_raw, st, current_of)
-            # A driver's team must agree across the round's sessions. The sessions being
-            # replaced are read from their new pastes, never their old rows — the correction
-            # would otherwise be held against the very classification it corrects.
-            other_assignments = await other_active_team_assignments(
-                self.bot.db_path, rnd.id, st,
-                also_exclude=[other for other in chosen if other is not st],
-            )
-            for earlier in collected:
-                for row in earlier.driver_rows:
-                    other_assignments.setdefault(
-                        row.driver_user_id, (row.team_instance_id, earlier.session_type.value)
-                    )
-            validation_errors, parsed = split_validation(validate_submission_block(
-                lines_raw,
-                st,
-                driver_ids,
-                team_of_role,
-                reserve_role_id,
-                driver_team_map,
-                reserve_driver_ids,
-                other_active_assignments=other_assignments,
-                current_of=current_of,
-                team_names=team_names,
-                team_of_shorthand=team_of_shorthand,
-            ))
-            try:
-                await msg.delete()
-            except Exception:  # noqa: BLE001 — a paste left standing never stops the amendment
-                log.warning(
-                    "results rounds amend: could not delete the pasted classification",
-                    exc_info=True,
-                )
-
-            if validation_errors:
-                # **The whole amendment ends, earlier pastes and all** (decided 2026-09-21).
-                # The session is not asked for again: a league amending a round prepares every
-                # classification before it starts, and nothing has been written to undo.
-                await _refused(
-                    "❌ Amendment rejected — validation errors were found. "
-                    "Check the log channel for details, then re-run `/results rounds amend`.",
-                    reason=(
-                        f"session {st.value} failed validation: "
-                        f"{'; '.join(validation_errors[:10])}"
-                    ),
-                )
-                return
-
-            # Validate FL override references a driver in the submitted results
-            if fl_amend_override is not None:
-                submitted_driver_ids = {r.driver_user_id for r in parsed}
-                if fl_amend_override not in submitted_driver_ids:
-                    fl_member = amend_channel.guild.get_member(int(fl_amend_override)) if amend_channel.guild else None
-                    fl_name = fl_member.display_name if fl_member else str(fl_amend_override)
-                    await _refused(
-                        f"❌ Amendment rejected — FL override **{fl_name}** is not in the "
-                        "submitted results. Re-run `/results rounds amend` to try again.",
-                        reason=(
-                            f"session {st.value}: FL override {fl_name} not in submitted results"
-                        ),
-                    )
-                    return
-
-            # Valid — determine config name
-            existing_config_name = existing_config_of.get(st)
-            if len(config_names) == 1:
-                config_name = config_names[0]
-            elif existing_config_name and existing_config_name in config_names:
-                config_name = existing_config_name
-            else:
-                from leaguebot.results.services.result_submission_service import _ConfigSelectView
-                cfg_view = _ConfigSelectView(
-                    config_names,
-                    server_cfg,
-                    session=f"the {_label(st)} of round {round_number} ({division_name})",
-                )
-                await amend_channel.send(
-                    f"Select the points configuration for {_label(st)}:", view=cfg_view
-                )
-                # **Raced against Cancel** (#345). Waited on alone, a Cancel pressed here was
-                # answered "cancelled" while the command sat on the picker for ever — the view
-                # has no timeout — holding the channel and its row, and refusing every later
-                # amendment of the division until somebody chose a configuration anyway.
-                _cfg_task = self.bot.loop.create_task(cfg_view.wait())
-                _cancel_task = self.bot.loop.create_task(cancelled_event.wait())
-                _done, _pending = await _asyncio.wait(
-                    {_cfg_task, _cancel_task},
-                    return_when=_asyncio.FIRST_COMPLETED,
-                    timeout=_AMEND_TIMEOUT_S,
-                )
-                for _t in _pending:
-                    _t.cancel()
-                if not _done:
-                    await _abandoned(
-                        lapsed=True, reply=_expired("no points configuration was chosen")
-                    )
-                    return
-                if cancelled_flag[0]:
-                    await _abandoned(lapsed=False, reply="ℹ️ Amendment cancelled.")
-                    return
-                config_name = cfg_view.selected or config_names[0]
-
-            collected.append(
-                AmendedSession(
-                    session_type=st,
-                    driver_rows=parsed,
-                    config_name=config_name,
-                    fl_driver_override=fl_amend_override,
-                )
-            )
-
-        from leaguebot.results.services.result_submission_service import (
-            ROUND_PUT_BACK,
-            AmendmentWouldOrphanVerdictError,
-            amend_round_results,
-            amendment_fault_reply,
-        )
-        # **Cancelled at the last moment** (#345). Read again here, the last point at which
-        # stopping costs nothing: from the next line the write is under way.
-        if cancelled_flag[0]:
-            await _abandoned(lapsed=False, reply="ℹ️ Amendment cancelled.")
-            return
-
-        stage_one_writing[0] = True
-        opened.stage_one_started = True
-        try:
-            await amend_round_results(
-                self.bot.db_path,
-                rnd.id,
-                div.id,
-                collected,
-                interaction.user.id,
-                bot_of(interaction),
-            )
-            # Set before the writing flag is lowered, so that no press falls between the two
-            # and finds neither the write in progress nor the amendment open (#345).
-            stage_one_done[0] = True
-        except AmendmentWouldOrphanVerdictError as exc:
-            # A refusal, not a fault. The admin gets the reason where they are looking rather
-            # than a traceback in a channel they may not have open, because this one is theirs
-            # to act on: include the driver, or withdraw the verdict (#345).
-            stage_one_writing[0] = False
-            await _refused(f"❌ {exc}", reason=str(exc))
-            return
-        except Exception as exc:  # noqa: BLE001 — undone, then reported: see the docstring
-            log.exception("amend: stage one of round %s failed", rnd.id)
-            # **Put back whatever stage one committed before the channel goes** (#345). The
-            # classifications are written in one transaction, but the points and the standings
-            # after it are not; a failure there left the round half-amended, and deleting the
-            # channel's record took the snapshot that could undo it.
-            from leaguebot.results.services.result_submission_service import revert_abandoned_amendment
-
-            # The line is written once the revert has been tried, so that it can say where the
-            # round could not be put back yet. It never raises, so the reply goes ahead whatever
-            # becomes of the post.
-            try:
-                await revert_abandoned_amendment(self.bot.db_path, rnd.id, self.bot)
-            except Exception:
-                log.exception("amend: could not revert round %s after a failure", rnd.id)
-                unrestored = (
-                    "The round could not be put back yet. Restarting the bot retries "
-                    f"that. {AMENDMENT_RE_RUN_ONCE_PUT_BACK}"
-                )
-                await _log_amend_failed(
-                    exc, "the corrected results could not be recorded", not_put_back=unrestored
-                )
-                stage_one_writing[0] = False
-                await _tell_of_failure(amendment_fault_reply(describe_fault(exc), unrestored))
-                return
-            # The writing flag stays raised until the line is written, so that a Cancel pressed
-            # meanwhile is refused as "being recorded", and logged, rather than told the
-            # amendment was cancelled with nothing to record it.
-            await _log_amend_failed(exc, "the corrected results could not be recorded")
-            stage_one_writing[0] = False
-            await _cleanup_channel()
-            await _tell_of_failure(amendment_fault_reply(describe_fault(exc), ROUND_PUT_BACK))
-            return
-
-        stage_one_writing[0] = False
-
-        # **Stages two and three follow in this channel** (#345). The corrected classifications
-        # are recorded, and nothing posted; what the round *decided* about those sessions is
-        # reviewed next — their reports, the round's attendance pardons, then their appeals —
-        # and approving the last of those commits and rebuilds the division's channels.
-        #
-        # The channel therefore stays open, and is not deleted here. It is torn down when the
-        # appeals stage is approved, by the same `close_submission_channel` a first pass
-        # reaches, or by the cancel button, the sweep, or restart recovery.
-        from leaguebot.results.services.result_submission_service import (
-            cancel_amendment,
-            run_amendment_review_stages,
-        )
-
-        try:
-            await run_amendment_review_stages(
-                self.bot.db_path,
-                rnd.id,
-                div.id,
-                amend_channel,
-                self.bot,
-                round_number=rnd.round_number,
-                division_name=div.name,
-                session_types=chosen,
-            )
-        except Exception as exc:  # noqa: BLE001 — undone, then reported: see the docstring
-            # With no report stage on screen there is no way to finish the amendment, so it is
-            # undone now rather than left half-applied until the sweep (#345). One failure
-            # makes one line: `cancel_amendment` writes none of its own.
-            log.exception("amend: could not open the report stage of round %s", rnd.id)
-            not_put_back: str | None = None
-            try:
-                undone = await cancel_amendment(self.bot, rnd.id, cancelled_by=interaction.user.id)
-            except Exception:  # noqa: BLE001 — left to the sweep, with the snapshot intact
-                log.exception("amend: could not revert round %s", rnd.id)
-                became = not_put_back = ROUND_NOT_PUT_BACK_YET
-            else:
-                became = (
-                    "The report stage could not be opened, so the amendment has been undone "
-                    f"and the round put back as it was. {AMENDMENT_RE_RUN}"
-                    if undone
-                    else f"The amendment had already ended, so nothing more was undone. {AMENDMENT_RE_RUN}"
-                )
-            await _log_amend_failed(
-                exc, "the report stage could not be opened", not_put_back=not_put_back
-            )
-            await _tell_of_failure(amendment_fault_reply(describe_fault(exc), became))
-            return
-        # The pastes can outlast the command's fifteen minutes, and Discord then refuses the
-        # reply. The corrections are recorded and stage two stands open in its channel, so a
-        # spent token is a warning in the host's log: raised, it would reach the command tree
-        # and be recorded as a failure of an amendment that succeeded (#482, D2).
-        try:
-            await interaction.followup.send(
-                f"✅ Corrected results recorded. Review the reports and appeals of "
-                f"{', '.join(_label(st) for st in chosen)} in {amend_channel.mention} to finish "
-                "the amendment — nothing is published until you do.",
-                ephemeral=True,
-            )
-        except discord.HTTPException:
-            log.warning(
-                "amend: could not tell the admin that round %s was recorded", rnd.id,
-                exc_info=True,
-            )
 
     # ------------------------------------------------------------------
     # /results channel group

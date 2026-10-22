@@ -5,7 +5,8 @@ import json
 import logging
 import os
 from datetime import datetime
-from collections.abc import Mapping, Sequence
+from pathlib import Path
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 import aiosqlite
@@ -19,7 +20,9 @@ from leaguebot.core.utils.league_server import league_guild, LeagueCommandTree, 
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.cancellation_changes import SubmissionHooks
+    from leaguebot.core.services.calendar_post_service import CalendarCommandOutcome
+    from leaguebot.image.services.image_lineup_post import LineupPostOutcome
+    from leaguebot.core.services.cancellation_changes import CancellationHooks, SubmissionHooks
     from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.round_amend_change import AmendHooks
     from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
@@ -163,6 +166,24 @@ def _forget_setup(bot: LeagueBot) -> None:
         cog.clear_pending()
 
 
+def _cancel_wizard_timers(bot: LeagueBot) -> "Callable[[str], None]":
+    """Removes one driver's signup inactivity and channel-deletion timers, for the close that
+    returns them to Not Signed Up (`signup.close`, and a season's end's through
+    `execute_forced_close`) and for the signup module's switch-off."""
+    from leaguebot.signup.services.closing_steps import DELETE_TIMER, INACTIVITY_TIMER
+    from leaguebot.signup.services.review_changes import CORRECTION_TIMER
+    from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
+
+    def cancel(user_id: str) -> None:
+        bot.scheduler_service.cancel_job(inactivity_job_id(user_id))
+        bot.scheduler_service.cancel_job(channel_delete_job_id(user_id))
+        bot.scheduler_service.disarm(INACTIVITY_TIMER, user_id)
+        bot.scheduler_service.disarm(DELETE_TIMER, user_id)
+        bot.scheduler_service.disarm(CORRECTION_TIMER, user_id)
+
+    return cancel
+
+
 def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     """What a season's end needs of signup, results, weather, image and the cog, handed it here so
     that core imports none of them. Each is looked up as it is called, so that nothing is bound
@@ -170,18 +191,20 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     from leaguebot.core.cogs.module_cog import close_signups_unattended
     from leaguebot.core.models.change import PlannedStep
     from leaguebot.core.services import backup_service
-    from leaguebot.core.services.season_lifecycle_service import (
-        WINDOW_CLOSED_NOTICE,
-        SeasonEndHooks,
-    )
+    from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
     from leaguebot.image.services import driver_portrait_service
     from leaguebot.results.services import result_submission_service
-    from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
+    from leaguebot.signup.services.wizard_service import inactivity_job_id
+    from leaguebot.signup.services.closing_steps import (
+        INACTIVITY_TIMER, window_close_jobs, window_close_steps,
+    )
     from leaguebot.weather.services import forecast_cleanup_service
     from leaguebot.weather.services.forecast_changes import forecast_steps
 
     async def close_signups(bot_: LeagueBot, cause: str):
-        return await close_signups_unattended(bot_, cause=cause, hold_channels=False)
+        return await close_signups_unattended(
+            bot_, cause=cause, cancel_timers=_cancel_wizard_timers(bot_)
+        )
 
     async def window_open() -> bool:
         if not await bot.module_service.is_signup_enabled():
@@ -199,6 +222,7 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
 
     def cancel_signup_timeout(user_id: str) -> None:
         bot.scheduler_service.cancel_job(inactivity_job_id(user_id))
+        bot.scheduler_service.disarm(INACTIVITY_TIMER, user_id)
 
     async def discard_portraits(accounts):
         return await driver_portrait_service.discard_portraits(bot, accounts)
@@ -227,22 +251,20 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
         for account in accounts:
             await bot.signup_module_service.end_wizard_on(db, str(account))
 
-    async def off_queue_closing_notices() -> list[str]:
-        return await bot.signup_module_service.off_queue_closing_notices()
-
-    async def take_off_queue_closing_notices_on(db: aiosqlite.Connection) -> list[str]:
-        return await bot.signup_module_service.take_off_queue_closing_notices_on(db)
-
-    async def closing_held(user_id: str, guild: discord.Guild) -> bool:
-        # A channel-delete job standing is the record of a hold; where the scheduler dropped it
-        # after a long stop, the wizard service judges the channel and arms the deletion again.
-        if bot.scheduler_service.has_job(channel_delete_job_id(user_id)):
-            return True
-        return await bot.wizard_service.rearm_deletion_if_held(
-            user_id, guild, WINDOW_CLOSED_NOTICE
+    async def window_jobs(cause: str, returned: int) -> "tuple[PlannedStep, ...]":
+        config = await bot.signup_module_service.get_config()
+        return window_close_jobs(
+            cause, returned,
+            channel_id=None if config is None else config.signup_channel_id,
+            button_message_id=None if config is None else config.signup_button_message_id,
         )
 
     return SeasonEndHooks(
+        window_jobs=window_jobs,
+        window_steps=window_close_steps(
+            signup_module_service=lambda: bot.signup_module_service,
+            now=lambda: bot.change_queue.now(),
+        ),
         close_signups=close_signups,
         window_open=window_open,
         cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
@@ -259,10 +281,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
         clear_closing_notices_on=clear_closing_notices_on,
         take_closing_notices_on=take_closing_notices_on,
         end_wizards_on=end_wizards_on,
-        off_queue_closing_notices=off_queue_closing_notices,
-        take_off_queue_closing_notices_on=take_off_queue_closing_notices_on,
-        cut_off_window_open=lambda: bot.signup_module_service.cut_off_window_open(),
-        closing_held=closing_held,
     )
 
 
@@ -271,14 +289,99 @@ def _submission_hooks() -> "SubmissionHooks":
     module."""
     from leaguebot.core.services.cancellation_changes import SubmissionHooks
     from leaguebot.results.services import result_submission_service
-    from leaguebot.results.services.review_posting import DELETE_CHANNEL, posting_steps
+    from leaguebot.results.services.review_posting import cancellation_delete_step
 
     return SubmissionHooks(
         open_submissions=result_submission_service.open_submissions,
         open_submissions_on=result_submission_service.open_submissions_on,
         close_submissions_on=result_submission_service.close_submissions_on,
-        delete_step=posting_steps()[DELETE_CHANNEL],
+        delete_step=cancellation_delete_step(),
     )
+
+
+def _cancellation_hooks(bot: LeagueBot) -> "CancellationHooks":
+    """What a cancellation needs of attendance's check-in call, handed it here so that core
+    imports nothing of attendance."""
+    from leaguebot.attendance.services.check_in_changes import (
+        check_in_deletes,
+        forget_check_in_call_on,
+    )
+    from leaguebot.core.services.cancellation_changes import CancellationHooks
+
+    return CancellationHooks(
+        check_in_deletes=check_in_deletes(bot, bot.attendance_service),
+        forget_check_in_on=forget_check_in_call_on,
+    )
+
+
+async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "Path":
+    """Draw one picture of a season review to a file, and give where it is.
+
+    A lineup is the image module's, drawn obtaining each seated driver's missing portrait first
+    (#407), so a review is not judged on a placeholder the league will not see, and, mid-season,
+    with its uncommitted drivers in it (#374). A calendar is core's, of the division's rounds as
+    they stand when it is drawn. A picture the renderer will not draw raises, with the renderer's
+    message.
+    """
+    kind, division_id = str(picture["kind"]), int(picture["division_id"])
+    if kind == "lineup":
+        from leaguebot.image.services import image_lineup_post
+
+        outcome: "LineupPostOutcome | CalendarCommandOutcome"
+        outcome = await image_lineup_post.render_for_command(
+            bot, await league_guild(bot), division_id,
+            include_uncommitted=bool(picture.get("include_uncommitted")),
+            obtain_missing_portraits=True,
+        )
+    else:
+        from leaguebot.core.services import calendar_post_service
+
+        division = await bot.season_service.get_division(division_id)
+        outcome = await calendar_post_service.render_for_command(
+            bot, division, await bot.season_service.get_division_rounds(division_id),
+            await calendar_post_service.tracks_by_name(bot.db_path),
+            season_number=picture.get("season_number"),
+        )
+    if outcome.png_path is None:
+        raise RuntimeError(outcome.message or f"the {kind} could not be drawn")
+    return outcome.png_path
+
+
+def _review_drawing(bot: LeagueBot) -> "Callable[[Mapping[str, Any]], Path]":
+    """The drawing `season.review.post` is handed: it draws a picture in the worker thread the
+    change runs it in, its coroutine awaited on the bot's event loop (`await_from_worker`)."""
+    from leaguebot.core.services.season_review_changes import await_from_worker
+
+    def drawing(picture: Mapping[str, Any]) -> "Path":
+        return await_from_worker(_draw_review_picture(bot, picture))
+
+    return drawing
+
+
+def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.View]":
+    """The factory of a review question's view, handed to `season.review.post`: the season cog's
+    view of the review the payload names (its ``view``: ``approve``, ``mid_season`` or
+    ``configuration``), holding the evidence the report was computed from."""
+    from leaguebot.core.cogs.season_cog import (
+        SeasonCog,
+        _ApproveView,
+        _ConfirmConfigurationView,
+        _ConfirmMidSeasonPlacementsView,
+    )
+    families = {
+        "approve": _ApproveView,
+        "mid_season": _ConfirmMidSeasonPlacementsView,
+        "configuration": _ConfirmConfigurationView,
+    }
+
+    def make(payload: dict[str, Any]) -> discord.ui.View:
+        # The season cog is loaded by the time a review is posted. A restart routes the buttons of
+        # the reviews left standing before it is, and those are served by a cog of the same bot.
+        loaded = bot.get_cog("SeasonCog")
+        cog = loaded if isinstance(loaded, SeasonCog) else SeasonCog(bot)
+        return families[str(payload.get("view", "approve"))](cog, int(payload["reviewer_id"]))
+
+    return make
 
 
 def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
@@ -286,6 +389,15 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     imports neither. Each is looked up as it is called, so that nothing is bound before it is
     needed."""
     from leaguebot.attendance.services import rsvp_service
+    from leaguebot.attendance.services.check_in_changes import (
+        check_in_clean_up_steps,
+        check_in_deadline_steps,
+        check_in_deletes,
+        check_in_steps,
+        close_check_in_on,
+        forget_check_in_call_on,
+        give_up_text_for,
+    )
     from leaguebot.core.models.change import PlannedStep
     from leaguebot.core.services.round_amend_change import AmendHooks
     from leaguebot.weather.services import phase_withdrawal
@@ -302,23 +414,6 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     def plan_phase(round_id: int, phase: int) -> "tuple[PlannedStep, ...]":
         return (PlannedStep(DRAW_FORECAST, {"round_id": round_id, "phase": phase}),)
 
-    async def repost_call(round_id: int, division_id: int, bot_: Any) -> None:
-        await rsvp_service.repost_rsvp_call(
-            round_id, division_id, bot_, raise_on_failure=True
-        )
-
-    async def post_call(round_id: int, bot_: Any) -> None:
-        await rsvp_service.run_rsvp_notice(round_id, bot_, raise_on_failure=True)
-
-    async def give_up_call(bot_: Any, row: Mapping[str, Any]) -> bool:
-        return await _give_up_missed_check_in_call(bot_, row)
-
-    async def run_deadline(round_id: int, bot_: Any) -> None:
-        await rsvp_service.run_rsvp_deadline(round_id, bot_)
-
-    async def clean_up_check_in(round_id: int, bot_: Any) -> None:
-        await rsvp_service.run_rsvp_cleanup(round_id, bot_)
-
     return AmendHooks(
         windows=windows,
         withdraw_phases_on=phase_withdrawal.withdraw_phases_on,
@@ -327,12 +422,16 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
         forecast_failure=forecast_failure,
         invalidation_text=invalidation_message,
         reopen_check_in_on=rsvp_service.reopen_check_in_on,
-        repost_call=repost_call,
-        post_call=post_call,
-        give_up_call=give_up_call,
-        run_deadline=run_deadline,
-        clean_up_check_in=clean_up_check_in,
+        call_steps=check_in_steps(bot.attendance_service, now=lambda: bot.change_queue.now()),
+        give_up_text=give_up_text_for,
+        give_up_on=close_check_in_on,
+        deadline_steps=check_in_deadline_steps(
+            bot.attendance_service, now=lambda: bot.change_queue.now()
+        ),
+        clean_up_steps=check_in_clean_up_steps(),
         round_list=format_round_list,
+        check_in_deletes=check_in_deletes(bot, bot.attendance_service),
+        forget_check_in_on=forget_check_in_call_on,
     )
 
 
@@ -343,6 +442,16 @@ def register_change_types(bot: LeagueBot) -> None:
     so that core's queue and cogs import none of them. The tests' support module calls this to get
     the real set.
     """
+    from leaguebot.attendance.services.check_in_answer_changes import check_in_answer_change
+    from leaguebot.attendance.services.check_in_changes import (
+        check_in_call_change,
+        check_in_clean_up_change,
+        check_in_deadline_change,
+        check_in_last_notice_change,
+    )
+    from leaguebot.attendance.services.sanctions_announce_change import (
+        sanctions_announce_change,
+    )
     from leaguebot.attendance.services.sheet_posting import sheet_post_change
     from leaguebot.core.services.calendar_post_service import calendar_sync_change
     from leaguebot.core.services.cancellation_changes import (
@@ -350,6 +459,8 @@ def register_change_types(bot: LeagueBot) -> None:
         round_cancel_change,
         season_cancel_change,
     )
+    from leaguebot.core.services.channel_tell_change import channel_tell_change
+    from leaguebot.core.services.clean_change import clean_change
     from leaguebot.core.services.hub_service import hub_refresh_change
     from leaguebot.core.services.lineup_posting import lineup_post_change
     from leaguebot.core.services.round_amend_change import amendment_in_hand, round_amend_change
@@ -357,12 +468,17 @@ def register_change_types(bot: LeagueBot) -> None:
         season_approval_change,
         season_approval_tell_change,
     )
+    from leaguebot.core.services import season_review_changes
+    from leaguebot.core.services.season_review_changes import season_review_take_down_change
     from leaguebot.core.services.season_end_changes import season_abort_change, season_complete_change
     from leaguebot.core.services.season_lifecycle_service import (
-        close_finish_change,
         wind_down_change,
     )
-    from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
+    from leaguebot.image.services.image_render_service import (
+        CONVERTER_NAME,
+        converter_available,
+        discard_render,
+    )
     from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
     from leaguebot.weather.services.forecast_changes import (
         forecast_change,
@@ -374,17 +490,272 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.results.services.points_amendment_change import points_amendment_change
     from leaguebot.results.services.results_off_change import results_off_change
     from leaguebot.results.services.report_approval_change import report_approval_change
+    from leaguebot.results.services.amend_changes import amend_open_change
+    from leaguebot.results.services.amend_changes import TIMER as AMEND_TIMER
+    from leaguebot.results.services.amend_end_changes import (
+        amend_cancel_change,
+        amend_lapse_change,
+        amend_lapse_timer,
+    )
+    from leaguebot.results.services.amend_turn_change import (
+        amend_close_change,
+        amend_config_change,
+        amend_stage_one_change,
+        amend_turn_change,
+    )
     from leaguebot.results.services.rounds_sync_change import rounds_sync_change
+    from leaguebot.signup.services.closing_steps import closing_change, reason_delete_change
+    from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
+    from leaguebot.signup.services.signup_off_change import signup_off_change
+    from leaguebot.signup.services.window_changes import window_close_change, window_open_change
+    from leaguebot.signup.services.review_changes import (
+        CORRECTION_TIMER,
+        approve_change,
+        ask_lapse,
+        choices_change,
+        choose_change,
+        lapse_change,
+        recollect_change,
+        request_changes_change,
+    )
+    from leaguebot.signup.services.wizard_answers import answer_change, panel_change, submit_change
+    from leaguebot.signup.services.wizard_changes import (
+        channel_delete_change,
+        end_change,
+        member_left_change,
+        start_change,
+    )
+    from leaguebot.signup.services.closing_steps import (
+        DELETE_TIMER,
+        INACTIVITY_TIMER,
+        ask_channel_delete,
+        ask_expiry,
+    )
+    from leaguebot.signup.services.signup_off_change import KIND as OFF_KIND
+    from leaguebot.signup.services.window_changes import CLOSE as CLOSE_KIND
+    from leaguebot.results.services.standings_sync_change import standings_sync_change
+    from leaguebot.results.services.resubmission_changes import (
+        resubmission_start_change,
+        resubmission_swap_change,
+    )
+    from leaguebot.results.services.submission_changes import (
+        submission_all_cancelled_change,
+        submission_close_change,
+        submission_open_change,
+        submission_restart_change,
+    )
+    from leaguebot.results.services.submission_turn_change import (
+        submission_config_change,
+        submission_turn_change,
+    )
     from leaguebot.results.services.review_open_change import (
         appeals_open_change,
         close_stale_change,
         review_open_change,
+        review_prompt_change,
     )
+    from leaguebot.results.services.review_confirm_change import review_confirm_change
+    from leaguebot.results.services.review_lock_change import (
+        TIMER,
+        lock_change,
+        lock_clear_change,
+        lock_clear_timer,
+    )
+    from leaguebot.results.services.review_stage_change import review_stage_change
 
     bot.change_queue.register(
         results_off_change(attendance_off_on=bot.attendance_service.switch_off_on)
     )
+    bot.change_queue.register(submission_open_change(now=lambda: bot.change_queue.now()))
+    bot.change_queue.register(submission_restart_change())
+    bot.change_queue.register(submission_all_cancelled_change())
+    bot.change_queue.register(submission_close_change())
+    bot.change_queue.register(resubmission_start_change(queue=bot.change_queue))
+    bot.change_queue.register(resubmission_swap_change())
+    bot.change_queue.register(
+        submission_turn_change(
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            resubmission=True,
+        )
+    )
+    bot.change_queue.register(
+        submission_config_change(
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            resubmission=True,
+        )
+    )
+    bot.change_queue.register(
+        submission_turn_change(
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config
+        )
+    )
+    bot.change_queue.register(
+        submission_config_change(
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config
+        )
+    )
+    bot.change_queue.register(
+        amend_open_change(
+            modules=bot.module_service, server_config=bot.config_service.get_server_config,
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+            queue_of=lambda: bot.change_queue,
+        )
+    )
+    bot.change_queue.register(amend_cancel_change(now=lambda: bot.change_queue.now()))
+    bot.change_queue.register(amend_lapse_change(now=lambda: bot.change_queue.now()))
+
+    bot.scheduler_service.register_timer(
+        AMEND_TIMER, amend_lapse_timer(bot.db_path, lambda: bot.change_queue)
+    )
+    bot.change_queue.register(
+        amend_turn_change(
+            server_config=bot.config_service.get_server_config,
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    bot.change_queue.register(
+        amend_config_change(
+            server_config=bot.config_service.get_server_config,
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    bot.change_queue.register(
+        amend_stage_one_change(
+            server_config=bot.config_service.get_server_config,
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    bot.change_queue.register(amend_close_change())
+    bot.change_queue.register(reason_delete_change())
+    bot.change_queue.register(
+        closing_change(now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once)
+    )
+    bot.change_queue.register(
+        window_open_change(
+            modules=bot.module_service, signup=bot.signup_module_service,
+            config=bot.config_service,
+            schedule_close=lambda iso: bot.scheduler_service.schedule_signup_close_timer(iso),
+            queue=lambda: bot.change_queue,
+        )
+    )
+    bot.change_queue.register(
+        window_close_change(
+            signup_module_service=lambda: bot.signup_module_service, returned_by_close=RETURNED_BY_CLOSE,
+            cancel_timers=_cancel_wizard_timers(bot),
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    bot.change_queue.register(
+        signup_off_change(
+            modules=bot.module_service, signup_module_service=lambda: bot.signup_module_service,
+            returned_by_close=RETURNED_BY_CLOSE, cancel_timers=_cancel_wizard_timers(bot),
+            cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
+            server_config=lambda: bot.config_service.get_server_config(),
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    bot.change_queue.register(
+        start_change(
+            modules=bot.module_service, config=bot.config_service,
+            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
+            teams=lambda: bot.team_service,
+            queue_of=lambda: bot.change_queue, closing_kinds=(CLOSE_KIND, OFF_KIND),
+            cancel_timers=_cancel_wizard_timers(bot),
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    bot.change_queue.register(
+        end_change(
+            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
+            cancel_timers=_cancel_wizard_timers(bot),
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    bot.change_queue.register(
+        answer_change(
+            signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    bot.change_queue.register(
+        submit_change(
+            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
+            cancel_timers=_cancel_wizard_timers(bot),
+        )
+    )
+    bot.change_queue.register(
+        panel_change(signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue)
+    )
+    bot.change_queue.register(
+        approve_change(
+            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
+            config=bot.config_service, cancel_timers=_cancel_wizard_timers(bot),
+        )
+    )
+    bot.change_queue.register(
+        request_changes_change(
+            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
+        )
+    )
+    bot.change_queue.register(
+        choices_change(
+            signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    bot.change_queue.register(
+        choose_change(
+            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+            disarm=bot.scheduler_service.disarm,
+        )
+    )
+    bot.change_queue.register(
+        recollect_change(
+            signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
+        )
+    )
+    bot.change_queue.register(
+        lapse_change(
+            modules=bot.module_service, signup=lambda: bot.signup_module_service,
+            drivers=lambda: bot.driver_service, queue_of=lambda: bot.change_queue,
+        )
+    )
+    # A correction nobody chose within five minutes is lapsed by the change its timer asks of the
+    # queue, as the bot.
+    bot.scheduler_service.register_timer(
+        CORRECTION_TIMER, lambda key: ask_lapse(bot.change_queue, str(key))
+    )
+    # A signup left unanswered for a day is ended by the expiry its timer asks of the queue, as
+    # the bot.
+    bot.scheduler_service.register_timer(
+        INACTIVITY_TIMER, lambda key: ask_expiry(bot.change_queue, bot.db_path, str(key))
+    )
+    # A held signup channel's 24 hours ending asks its deletion, on the driver's own lane.
+    bot.change_queue.register(channel_delete_change(signup=lambda: bot.signup_module_service))
+    bot.change_queue.register(
+        member_left_change(
+            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
+            cancel_timers=_cancel_wizard_timers(bot),
+        )
+    )
+    bot.scheduler_service.register_timer(
+        DELETE_TIMER,
+        lambda key: ask_channel_delete(bot.change_queue, bot.db_path, str(key), own_lane=True),
+    )
     bot.change_queue.register(review_open_change())
+    bot.change_queue.register(review_prompt_change())
+    bot.change_queue.register(review_stage_change())
+    bot.change_queue.register(review_confirm_change())
+    bot.change_queue.register(
+        lock_change(
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once
+        )
+    )
+    bot.change_queue.register(lock_clear_change())
+    bot.scheduler_service.register_timer(
+        TIMER, lock_clear_timer(bot.db_path, lambda: bot.change_queue)
+    )
     bot.change_queue.register(appeals_open_change())
     bot.change_queue.register(close_stale_change())
     # The review's change types stamp what they write with the queue's own clock, read when they
@@ -408,17 +779,33 @@ def register_change_types(bot: LeagueBot) -> None:
             attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
         )
     )
-    bot.change_queue.register(hub_refresh_change())
+    bot.change_queue.register(hub_refresh_change(bot.change_queue))
     bot.change_queue.register(calendar_sync_change(bot.season_service))
     bot.change_queue.register(lineup_post_change(bot.placement_service))
     bot.change_queue.register(sheet_post_change())
     bot.change_queue.register(rounds_sync_change(bot.season_service, bot.module_service))
+    bot.change_queue.register(standings_sync_change(bot.season_service, bot.module_service))
     bot.change_queue.register(forecast_change(now=lambda: bot.change_queue.now()))
+    bot.change_queue.register(
+        check_in_call_change(bot.attendance_service, now=lambda: bot.change_queue.now())
+    )
+    bot.change_queue.register(
+        check_in_last_notice_change(bot.attendance_service, now=lambda: bot.change_queue.now())
+    )
+    bot.change_queue.register(
+        check_in_deadline_change(bot.attendance_service, now=lambda: bot.change_queue.now())
+    )
+    bot.change_queue.register(check_in_clean_up_change())
+    bot.change_queue.register(check_in_answer_change(bot.attendance_service))
+    bot.change_queue.register(
+        sanctions_announce_change(
+            attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
+        )
+    )
     bot.change_queue.register(forecast_clean_up_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(forecast_flush_change(now=lambda: bot.change_queue.now()))
     hooks = _season_end_hooks(bot)
     bot.change_queue.register(wind_down_change(placement=bot.placement_service, hooks=hooks))
-    bot.change_queue.register(close_finish_change(placement=bot.placement_service, hooks=hooks))
     bot.change_queue.register(
         season_complete_change(
             modules=bot.module_service,
@@ -435,6 +822,7 @@ def register_change_types(bot: LeagueBot) -> None:
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
             submissions=_submission_hooks(),
+            cancellation=_cancellation_hooks(bot),
             hooks=hooks,
             now=lambda: bot.change_queue.now(),
         )
@@ -464,6 +852,19 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(season_approval_tell_change())
+    bot.change_queue.register(season_review_take_down_change())
+    bot.scheduler_service.register_timer(
+        season_review_changes.TIMER,
+        season_review_changes.review_expiry_timer(bot.db_path, lambda: bot.change_queue),
+    )
+    bot.change_queue.register(
+        season_review_changes.season_review_post_change(
+            drawing=_review_drawing(bot), approve_view=_approve_view_for(bot),
+            scheduler=bot.scheduler_service, discard=discard_render,
+        )
+    )
+    bot.change_queue.register(channel_tell_change())
+    bot.change_queue.register(clean_change())
     bot.change_queue.register(
         round_amend_change(
             modules=bot.module_service,
@@ -479,6 +880,7 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             submissions=_submission_hooks(),
+            cancellation=_cancellation_hooks(bot),
             amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),
         )
@@ -489,6 +891,7 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             submissions=_submission_hooks(),
+            cancellation=_cancellation_hooks(bot),
             amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),
         )
@@ -569,6 +972,7 @@ async def main() -> None:
         DB_PATH,
         bot.scheduler_service,
         bot.output_router,
+        change_queue=bot.change_queue,
     )
     # Bound as soon as it exists rather than in `on_ready`. The persistent views are routed
     # from the moment the gateway opens, and a signup press arriving while `on_ready` was
@@ -583,6 +987,10 @@ async def main() -> None:
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
     bot.approval_windows = lambda: read_approval_windows(bot)
     bot.amendment_windows = lambda: read_amendment_windows(bot)
+
+    from leaguebot.results.services.penalty_wizard import clear_held_reviews
+
+    bot.clear_held_reviews = clear_held_reviews
 
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService
@@ -625,32 +1033,41 @@ async def main() -> None:
         bot.scheduler_service.register_forecast_cleanup_callback(callbacks.clean_up)
 
         # Register result submission callback
-        from leaguebot.results.services.result_submission_service import run_result_submission_job
+        from leaguebot.results.services.submission_changes import ask_submission_open
 
         async def _result_submission_cb(round_id: int) -> None:
-            await run_result_submission_job(round_id, bot)
+            await ask_submission_open(bot.change_queue, bot.db_path, round_id)
 
         bot.scheduler_service.register_result_submission_callback(_result_submission_cb)
 
         # Register RSVP attendance callbacks
-        from leaguebot.attendance.services.rsvp_service import (
-            run_rsvp_cleanup,
-            run_rsvp_deadline,
-            run_rsvp_last_notice,
-            run_rsvp_notice,
+        from leaguebot.attendance.services.check_in_changes import (
+            ask_check_in_call,
+            ask_check_in_clean_up,
+            ask_check_in_deadline,
+            ask_check_in_last_notice,
         )
+        from leaguebot.core.models.change import ChangeOrigin
 
         async def _rsvp_notice_cb(round_id: int) -> None:
-            await run_rsvp_notice(round_id, bot)
+            await ask_check_in_call(
+                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+            )
 
         async def _rsvp_last_notice_cb(round_id: int) -> None:
-            await run_rsvp_last_notice(round_id, bot)
+            await ask_check_in_last_notice(
+                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+            )
 
         async def _rsvp_deadline_cb(round_id: int) -> None:
-            await run_rsvp_deadline(round_id, bot)
+            await ask_check_in_deadline(
+                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+            )
 
         async def _rsvp_cleanup_cb(round_id: int) -> None:
-            await run_rsvp_cleanup(round_id, bot)
+            await ask_check_in_clean_up(
+                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+            )
 
         bot.scheduler_service.register_rsvp_notice_callback(_rsvp_notice_cb)
         bot.scheduler_service.register_rsvp_last_notice_callback(_rsvp_last_notice_cb)
@@ -673,7 +1090,7 @@ async def main() -> None:
         # sweep is what makes that recoverable without anybody noticing it happened.
         async def _amendment_sweep_cb() -> None:
             from leaguebot.results.services.result_submission_service import sweep_expired_amendments
-            await sweep_expired_amendments(bot)
+            await sweep_expired_amendments(bot, queue=bot.change_queue)
 
         bot.scheduler_service.register_amendment_sweep_callback(_amendment_sweep_cb)
         bot.scheduler_service.schedule_amendment_sweep()
@@ -717,14 +1134,11 @@ async def main() -> None:
                 await close_signups_unattended(bot, cause="restart")
             else:
                 from leaguebot.core.services.scheduler_service import SIGNUP_CLOSE_JOB_ID
-                if bot.scheduler_service._scheduler.get_job(SIGNUP_CLOSE_JOB_ID) is None:
+                if not bot.scheduler_service.has_job(SIGNUP_CLOSE_JOB_ID):
                     log.info("on_ready: re-arming the signup close timer at %s", _close_at_iso)
                     bot.scheduler_service.schedule_signup_close_timer(_close_at_iso)
 
         await _recover_signup_close_timers()
-
-        # A season a window's close left in the window's stage, the move cut off or failed.
-        await _recover_season_left_by_a_closed_window(bot)
 
         # Close any results-amend channels left open by a previous run.
         #
@@ -762,9 +1176,7 @@ async def main() -> None:
         try:
             from leaguebot.core.services.hub_service import recover_hub
 
-            hub_fault = await recover_hub(bot)
-            if hub_fault is not None:
-                await bot.output_router.post_log(f"Hub panel not recovered: {hub_fault}")
+            await recover_hub(bot, queue=bot.change_queue)
         except Exception:
             log.warning("Hub recovery failed", exc_info=True)
 
@@ -774,12 +1186,6 @@ async def main() -> None:
             await bot.wizard_service.recover_wizards()
         except NotImplementedError:
             pass  # stub until T030 is implemented
-
-        # Finish any close of the signup window off the queue that the stop cut off, its drivers
-        # returned and not yet told. After the close timers', whose restart close may leave marks
-        # of its own, and the wizards', which pass these over; before the queue starts, so that
-        # the change is saved and run behind any change the queue resumes.
-        await _recover_off_queue_closing_notices(bot)
 
         # Restore in-memory pending setups from DB SETUP seasons
         await _recover_pending_setups(bot)
@@ -837,7 +1243,7 @@ async def main() -> None:
     # Register ALL persistent views so button interactions survive bot restarts.
     # Views with optional __init__ params resolve driver context from channel at
     # interaction time, so a single registration handles all active wizard sessions.
-    from leaguebot.signup.cogs.signup_cog import (
+    from leaguebot.signup.services.signup_views import (
         SignupButtonView,
         WithdrawButtonView,
         NoNotesButtonView,
@@ -846,20 +1252,20 @@ async def main() -> None:
         PreferredTeamsButtonView,
         NoPreferenceTeammateView,
     )
-    from leaguebot.signup.cogs.admin_review_cog import AdminReviewView, CorrectionParameterView
+    from leaguebot.signup.services.signup_views import AdminReviewView, CorrectionParameterView
     from leaguebot.results.services.penalty_wizard import PenaltyReviewView, ApprovalView, AppealsReviewView
     from leaguebot.attendance.services.rsvp_service import RsvpView
 
     for _view in (
-        SignupButtonView(),
-        WithdrawButtonView(),
-        NoNotesButtonView(),
-        PlatformButtonView(),
-        DriverTypeButtonView(),
-        PreferredTeamsButtonView(),   # registers pteam_0..pteam_19 stubs + nopref + cancel
-        NoPreferenceTeammateView(),
-        AdminReviewView(),
-        CorrectionParameterView(),
+        SignupButtonView(bot.change_queue),
+        WithdrawButtonView(None, bot.change_queue),
+        NoNotesButtonView(None, bot.change_queue),
+        PlatformButtonView(None, bot.change_queue),
+        DriverTypeButtonView(None, bot.change_queue),
+        PreferredTeamsButtonView(None, bot.change_queue),   # registers pteam_0..pteam_19 stubs + nopref + cancel
+        NoPreferenceTeammateView(None, bot.change_queue),
+        AdminReviewView(change_queue=bot.change_queue),
+        CorrectionParameterView(change_queue=bot.change_queue),
         PenaltyReviewView(),
         ApprovalView(),
         AppealsReviewView(),
@@ -992,16 +1398,13 @@ async def _recover_missed_check_in_calls(
     passed. **Nothing is posted while test mode is on** (decided 2026-09-24): `/test-mode
     advance` posts a test season's calls in their turn.
 
-    Where the deadline has passed as well, no call is posted and the log channel is told —
-    see `_give_up_missed_check_in_call`, which also closes the round's check-in so that the
-    next start does not report it again.
-
-    The call is posted by `run_rsvp_notice`, which checks for a standing call under the round's
-    check-in lock — so the scheduler's own job, run late inside its misfire grace at this same
-    start, and this cannot both post one. A call posted late is written to the log channel; one
-    that fails to post is reported by `run_rsvp_notice` itself. Its last notice and its deadline
-    need no arming: the confirmation of placements armed them with the call, the job store
-    outlives a restart, and both are still ahead of a call posted in time to be answered.
+    The restart asks the change queue for each call owed, before the queue starts, and posts
+    nothing itself (#439, slice 6b): the call's change posts it, telling the log channel that it
+    went out late, or, where the deadline has passed as well, gives it up (`give_up`), closing the
+    round's check-in so that the next start does not ask again. A call already in hand on the queue
+    is not asked for twice. Its last notice and its deadline need no arming: the confirmation of
+    placements armed them with the call, the job store outlives a restart, and both are still
+    ahead of a call posted in time to be answered.
 
     Runs before `_recover_rsvp_views_and_deadlines` in `on_ready`, the call coming before its
     deadline. *now* is the wall clock unless a test pins it.
@@ -1011,7 +1414,8 @@ async def _recover_missed_check_in_calls(
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.round import ROUND_CANCELLABLE
     from leaguebot.core.models.season import ONGOING_STAGES
-    from leaguebot.attendance.services.rsvp_service import run_rsvp_notice
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.core.models.change import ChangeOrigin
 
     moment = now or datetime.now(timezone.utc)
     ongoing = [stage.value for stage in ONGOING_STAGES]
@@ -1058,111 +1462,19 @@ async def _recover_missed_check_in_calls(
         if moment < due_at:
             continue
 
-        round_id: int = row["round_id"]
-        division_id: int = row["division_id"]
-        if moment >= deadline_at:
-            try:
-                await _give_up_missed_check_in_call(bot, row)
-            except Exception:
-                log.exception(
-                    "_recover_missed_check_in_calls: could not give up round %d's call", round_id
-                )
-            continue
-
-        log.info("_recover_missed_check_in_calls: posting round %d's call late", round_id)
+        # The change judges the deadline when it runs: it posts the call while the deadline is
+        # ahead, and gives it up, closing the round's check-in, once it has passed.
+        log.info("_recover_missed_check_in_calls: asking for round %d's call", row["round_id"])
         try:
-            await run_rsvp_notice(round_id, bot)
-            if await bot.attendance_service.get_embed_message(round_id, division_id) is None:
-                continue  # Not posted; run_rsvp_notice has said why in the log channel.
-            await bot.output_router.post_log(
-                f"ATTENDANCE | check-in call | POSTED LATE\n"
-                f"  season: {row['season_number']}\n"
-                f"  division: {row['division_name']} (id={division_id})\n"
-                f"  round: {row['round_number']}\n"
-                f"  reason: the call was not posted when it fell due\n"
-                f"  deadline: <t:{int(deadline_at.timestamp())}:F>",
+            await ask_check_in_call(
+                bot.change_queue, bot.db_path, row["round_id"], origin=ChangeOrigin.BOT,
+                late=moment < deadline_at,
             )
         except Exception:
             log.exception(
-                "_recover_missed_check_in_calls: late call failed for round %d", round_id
+                "_recover_missed_check_in_calls: could not ask for round %d's call",
+                row["round_id"],
             )
-
-
-async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> bool:
-    """Report a round whose call and deadline both went by unposted, and close its check-in;
-    say whether it did, False where the round was left as it stood.
-
-    Decided 2026-09-24 (#429): no call is posted once the deadline has passed. A call nobody
-    could answer would open the round's attendance rows only to record every driver as not
-    having answered. The log channel is told instead, with a note in place of the usual advice,
-    since `/attendance post-check-in` refuses a round past its deadline too.
-
-    The round is marked ``checkin_cleared``: no call is owed it any more, which is what the
-    mark says, and it is what keeps the next start from reporting it again. An amendment that
-    reopens the round's check-in clears the mark, as it does after a cleanup.
-
-    Any check-in answers left for the round, and the placements made on them, are deleted in the
-    same save (`clear_check_in_answers_on`), whoever gives the call up, so that the line below
-    is always true (owner, 2026-10-09: "Yes, clear them"). No call stands for a round given up,
-    but answers can: an amendment that took its call down and stopped, or the bot restarted,
-    before posting it again leaves the answers to the old call.
-
-    **It gives up, and clears, only a round whose results are not in** (its status in
-    `ROUND_CANCELLABLE`) **and whose check-in is not over** (``checkin_cleared = 0``), judged in
-    the save itself, whichever caller asks. A round further on has had its attendance charged
-    and its pardons granted, and a check-in over is settled; clearing either would erase a
-    record a league has acted on. Nothing is written and nothing told for such a round
-    (`test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_is_over`).
-
-    **It raises** where the mark cannot be saved, and the mark is saved before the log channel
-    is told, so that a give-up tried again tells it once. The start-up recovery catches the
-    fault, logs it on the host and goes on to the next round; an amendment's catch-up on the
-    change queue (`_amend_hooks`) lets it stop the queue, a fault of the bot's own, so that
-    Retry gives the call up in earnest rather than reporting a give-up never saved
-    (`test_a_call_given_up_whose_save_fails_stops_the_queue_and_is_given_up_once_retried`).
-    """
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.attendance.services.rsvp_service import (
-        _report_call_failure,
-        clear_check_in_answers_on,
-    )
-
-    from leaguebot.core.models.round import ROUND_CANCELLABLE
-
-    round_id: int = row["round_id"]
-    to_run = sorted(ROUND_CANCELLABLE)
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "UPDATE rounds SET checkin_cleared = 1 WHERE id = ? AND checkin_cleared = 0 "
-            f"AND status IN ({', '.join('?' for _ in to_run)})",
-            (round_id, *to_run),
-        )
-        if cursor.rowcount != 1:
-            log.info(
-                "_give_up_missed_check_in_call: round %d's results are in or its check-in is "
-                "over — nothing given up",
-                round_id,
-            )
-            return False
-        await clear_check_in_answers_on(db, round_id)
-        await db.commit()
-    log.info(
-        "_give_up_missed_check_in_call: round %d's deadline has passed — call not posted",
-        round_id,
-    )
-    await _report_call_failure(
-        bot,
-        division_id=row["division_id"],
-        division_name=row["division_name"],
-        season_number=row["season_number"],
-        round_number=row["round_number"],
-        reason="the round's check-in deadline passed before its call could be posted",
-        note=(
-            "a call posted now could not be answered, so none was posted. No attendance "
-            "rows were opened, and this round will count nothing against anyone."
-        ),
-    )
-    return True
 
 
 async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
@@ -1172,18 +1484,16 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
     button interactions survive bot restarts (FR-007).
 
     T019: For any call whose rsvp_deadline fire time has already passed and which carries no
-    distribution message, run run_rsvp_deadline immediately (FR-027).
+    mark of its deadline having run, ask the change queue for the deadline (FR-027).
 
-    **The call's own record decides, never the drivers' placements** (#429). A deadline posts
-    its distribution announcement, or its no-reserve notice, and records it on the call; that
-    is how `/test-mode advance` and `AttendanceService.get_current_embed_message` tell a
-    deadline that has run as well, and the three must agree. The placements cannot: a deadline
-    with no reserve to place writes none, so it was run again at every start and its notice
-    posted again, and a call posted again after an amendment carries over the placements of the
-    call it replaced, so its own deadline was never caught up. A deadline whose message never
-    posted is run again at the next start, until the round's cleanup takes the call down — the
-    distribution is recomputed and the announcement retried.
-    `test_a_call_whose_deadline_recorded_no_message_is_run_whatever_the_placements_say` pins it.
+    **The call's own mark decides, never the drivers' placements** (#429). A deadline writes its
+    distribution and marks the call (`deadline_run_at`) in one save, before it posts its
+    announcement or its no-reserve notice; that is how `AttendanceService.get_current_embed_message`
+    tells a deadline that has run as well, and the two must agree. The placements cannot: a
+    deadline with no reserve to place writes none, so it was run again at every start and its
+    notice posted again, and a call posted again after an amendment carries over the placements
+    of the call it replaced, so its own deadline was never caught up. The announcement's id cannot
+    either: a discarded announcement leaves none, and the deadline has run all the same.
 
     T023: For any round whose rsvp_last_notice fire time has already passed,
     silently skip — do NOT fire retroactively (FR-029 edge case).
@@ -1193,8 +1503,14 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
     would revive check-in for a league that had turned it off, and the missed-deadline
     catch-up would distribute its reserves into seats hours after the fact.
     """
-    from leaguebot.attendance.services.rsvp_service import RsvpView, run_rsvp_deadline
+    from leaguebot.attendance.services.check_in_changes import (
+        CHECK_IN_DEADLINE,
+        ask_check_in_deadline,
+    )
+    from leaguebot.attendance.services.rsvp_service import RsvpView
     from leaguebot.core.db.database import get_connection as _gc
+    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.core.services.change_queue import unfinished
     from datetime import datetime as _dt, timezone as _tz
 
     # Re-arm all embed views by message_id so persistent buttons survive restarts
@@ -1253,12 +1569,18 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
                  WHERE r.status != 'CANCELLED'
                    AND s.status = 'ACTIVE'
                    AND ac.module_enabled = 1
-                   AND rem.distribution_msg_id IS NULL
+                   AND rem.deadline_run_at IS NULL
                 """
             )
             round_rows = await cur.fetchall()
     except Exception:
         log.exception("_recover_rsvp_views_and_deadlines: failed to fetch rounds for deadline check")
+        return
+
+    try:
+        in_hand = {int(each["round_id"]) for each in await unfinished(bot.db_path, [CHECK_IN_DEADLINE])}
+    except Exception:
+        log.exception("_recover_rsvp_views_and_deadlines: failed to read the deadlines in hand")
         return
 
     for rrow in round_rows:
@@ -1281,77 +1603,21 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
             # Deadline has passed and the call records no message from it, so it has not run.
             round_id = rrow["round_id"]
             division_id = rrow["division_id"]
+            if round_id in in_hand:
+                continue  # already on the queue: its jobs are in hand
             log.info(
-                "_recover_rsvp_views_and_deadlines: running missed deadline for round %d / division %d",
+                "_recover_rsvp_views_and_deadlines: asking for missed deadline of round %d / division %d",
                 round_id, division_id,
             )
             try:
-                await run_rsvp_deadline(round_id, bot)
+                await ask_check_in_deadline(
+                    bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+                )
             except Exception:
                 log.exception(
                     "_recover_rsvp_views_and_deadlines: deadline run failed for round %d",
                     round_id,
                 )
-
-
-async def _abandon_interrupted_resubmission(
-    bot: LeagueBot,
-    round_id: int,
-    channel: discord.abc.Messageable | None,
-    announcement_id: int | None,
-    *,
-    started_by: int | None,
-    round_label: str,
-) -> None:
-    """Close out a resubmission a restart cut short, leaving the round's results as they were.
-
-    The collection ran in memory and is gone. The flag is cleared first, so the review
-    channel's message guard is back in force before the prompt returns, and the Cancel button
-    on the announcement is taken down because nothing is listening for it any more.
-
-    The lapse is recorded in the log channel as the Resubmit button's, naming who started it
-    (*started_by*, kept on the round's submission channel row when the press was made) and the
-    round (*round_label*); both come from the recovery's own read of that row, so this reads
-    nothing more. A row from before the column existed names nobody's id, and the line names
-    no member.
-
-    *channel* is ``None`` where the submission channel has since been deleted: there is then
-    nowhere to take the Cancel button down or post the notice, and both are skipped, but the
-    flag still comes down and the lapse is still recorded, so the round is not left stuck as
-    resubmitting.
-    """
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.core.utils.log_lines import record_abandoned
-
-    async with get_connection(bot.db_path) as db:
-        await db.execute(
-            "UPDATE round_submission_channels SET resubmitting = 0 WHERE round_id = ?",
-            (round_id,),
-        )
-        await db.commit()
-
-    if channel is not None:
-        if announcement_id is not None:
-            try:
-                announcement = await channel.fetch_message(announcement_id)
-                await announcement.edit(view=None)
-            except (discord.NotFound, discord.HTTPException):
-                pass  # Already gone; the notice below says what happened either way
-
-        await channel.send(
-            "⚠️ **The bot restarted during a results resubmission**, and the sessions entered so "
-            "far were lost. The earlier results still stand. Press **🔄 Resubmit Initial Results** "
-            "again to re-enter them."
-        )
-    await record_abandoned(
-        bot, started_by,
-        what=f"the “Resubmit Initial Results” button of {round_label}",
-        lapsed=True,
-        detail=(
-            "The sessions entered were lost. The earlier results stand. "
-            "Press Resubmit again to re-enter them."
-        ),
-    )
 
 
 async def _recover_missed_cleanups(bot: LeagueBot) -> None:
@@ -1367,7 +1633,7 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     A cancelled round or division is left alone. Its cancellation removed both jobs, and the
     weather module keeps the forecasts of a round called off. The season's status is not asked,
     since the live jobs fire after a season completes as well. Each module's own gate applies:
-    weather's here, and attendance's inside `run_rsvp_cleanup`.
+    weather's here, and attendance's inside its clean-up change's check.
 
     Running a cleanup a second time finds nothing left to take down, so a job the scheduler
     still runs inside its grace alongside this does no harm.
@@ -1377,7 +1643,8 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import forecasts_named
     from leaguebot.weather.services.forecast_changes import ask_forecast_clean_up
-    from leaguebot.attendance.services.rsvp_service import run_rsvp_cleanup
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_clean_up
+    from leaguebot.core.models.change import ChangeOrigin
     from leaguebot.core.services.scheduler_service import POST_RACE_CLEANUP_DELAY
 
     now = datetime.now(timezone.utc)
@@ -1444,7 +1711,9 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     for round_id in check_ins:
         log.info("_recover_missed_cleanups: taking down round %d's check-in", round_id)
         try:
-            await run_rsvp_cleanup(round_id, bot)
+            await ask_check_in_clean_up(
+                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+            )
         except Exception:
             log.exception(
                 "_recover_missed_cleanups: check-in cleanup failed for round %d", round_id
@@ -1452,23 +1721,21 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
 
 
 async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
-    """Close any submission channels left open by a previous bot process.
+    """Clear any submission channels left open by a previous bot process, through the queue.
 
-    When the bot restarts, any in-progress wait_for submission loops are
-    killed mid-flight.  The DB row remains closed=0 and the Discord channel
-    still exists, but nothing is listening.  We clean them up here.
+    When the bot restarts, the paste a submission was waiting for is lost: the row remains
+    closed=0 and the Discord channel still stands, but nothing is listening.
 
-    Mid-submission orphans (in_penalty_review=0):
-      - Delete the session_results rows for the round (so the round is not
-        mistakenly treated as complete by get_next_pending_phase).
-      - Delete the orphaned round_submission_channels row and Discord channel.
-      - Re-trigger run_result_submission_job so the wizard opens immediately
-        (production path — test mode uses /test-mode advance instead).
+    A mid-submission orphan (in_penalty_review=0) is asked of the queue as
+    `results.submission.restart`: it clears the round's sessions (so the round is not mistaken
+    for complete by get_next_pending_phase) and the submission row, deletes the channel, tells the
+    log channel to re-submit and opens the submission afresh. A paste whose turn is in hand on the
+    queue is left to it. This runs before the queue starts.
 
     Reviews are not decided here: `review_recovery.recover_review` leaves a round whose review a
     change on the queue is carrying out to it, and otherwise asks the queue to put the review back
-    (#439). A resubmission a restart cut short is cleared first (`_abandon_interrupted_resubmission`),
-    its collection being lost though the round's results are not (issue #210).
+    (#439). A resubmission a restart cut short is ended by the review's opening, its collection being lost
+    though the round's results are not (issue #210).
     """
     from leaguebot.core.db.database import get_connection
 
@@ -1492,174 +1759,101 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
 
     for row in orphans:
         round_id: int = row["round_id"]
-        channel_id: int = row["channel_id"]
 
         guild = await league_guild(bot)
 
         # A round that is a review is put back, or left to the change carrying it out, by the
         # results service (#439). What is left is a first paste cut short, which is no review.
-        if await recover_review(bot, row, guild, _abandon_interrupted_resubmission):
+        if await recover_review(
+            bot, row, guild, queue=bot.change_queue,
+        ):
             continue
 
-        # ------------------------------------------------------------------
-        # Mid-submission orphan
-        # ------------------------------------------------------------------
-        # 1. Delete session_results so the round is not mistaken for complete
-        #    by get_next_pending_phase (new result tables cascade).
-        # 2. Delete the channel row and the Discord channel.
-        # 3. Re-trigger the submission wizard immediately (production path).
-        async with get_connection(bot.db_path) as db:
-            await db.execute(
-                "DELETE FROM session_results WHERE round_id = ?",
-                (round_id,),
-            )
-            await db.execute(
-                "DELETE FROM round_submission_channels WHERE round_id = ?",
-                (round_id,),
-            )
-            await db.commit()
+        # A first paste cut short is cleared, its channel deleted and its submission opened
+        # afresh by the change queue's `results.submission.restart`, before the queue starts. A
+        # round with a change of its submission in hand is left to it above.
+        from leaguebot.results.services.submission_changes import ask_submission_restart
 
-        log.info(
-            "Recovery: cleared orphaned session_results and submission row for round %s",
-            round_id,
-        )
-
-        if guild is None:
-            log.warning(
-                "Recovery: the league's server is not in the cache for round %s — "
-                "submission row cleared but wizard not re-triggered",
-                round_id,
-            )
-            continue
-
-        channel = as_text_channel(guild.get_channel(channel_id))
-        if channel is not None:
-            try:
-                await channel.delete(reason="Orphaned submission channel cleanup on restart")
-            except (discord.NotFound, discord.HTTPException):
-                pass
-
-        # Re-trigger the wizard so the round is not silently abandoned in
-        # production (where /test-mode advance is not used).
-        from leaguebot.results.services.result_submission_service import run_result_submission_job
-
-        log.info(
-            "Recovery: re-triggering result submission wizard for round %s", round_id
-        )
-        asyncio.create_task(run_result_submission_job(round_id, bot))
-
-        # Notify the log channel so the LM knows to re-submit any sessions
-        # that were in progress when the bot was terminated.
+        log.info("Recovery: asking the queue to clear and reopen round %s's submission", round_id)
         try:
-            async with get_connection(bot.db_path) as _rdb:
-                _rcur = await _rdb.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
-                _rrow = await _rcur.fetchone()
-            _round_label = f"R{_rrow['round_number']}" if _rrow else f"id={round_id}"
-            await bot.output_router.post_log(
-                f"System | Bot restarted mid-result-submission | Notice\n"
-                f"  round: {_round_label}\n"
-                "  Sessions submitted before restart have been cleared. "
-                "Submission wizard re-opened — please re-submit all sessions.",
+            await ask_submission_restart(
+                bot.change_queue, bot.db_path, round_id, int(row["channel_id"]),
             )
         except Exception:
-            log.exception(
-                "Recovery: failed to post log for mid-submission orphan round %s", round_id
-            )
+            log.exception("Recovery: could not ask for round %s's submission restart", round_id)
 
 
 async def _recover_expired_review_prompts(bot: LeagueBot) -> None:
-    """Clear any season-review approve button left standing by a previous run.
+    """Ask the change queue to take down every season review left standing by a previous run.
 
-    The button expires five minutes after `/season placements-review` posts it, and the timer that
-    does so is a `discord.ui.View` timeout — held in memory, and lost with the process. A
-    bot restarted inside that window would otherwise leave a public message offering a
-    button nothing is listening to, for ever.
+    The button expires five minutes after the review posts its question, by a timer held in
+    memory and lost with the process. A bot restarted inside that window would otherwise leave a
+    public message offering a button nothing is counting, for ever.
 
-    Every row that survives to startup is expired by definition: the bot was down, so the
-    five minutes cannot have been served, and no view exists to serve them now. Each is
-    therefore deleted, its report with it, and replaced with the same notice a timeout would
-    have posted, the reviewer pinged so they learn of it without watching the channel. Its lapse
-    is recorded in the log channel as a timeout's is, naming the reviewer and the review.
+    Every row that survives to start-up is expired by definition: the bot was down, so the five
+    minutes cannot have been served. Each is asked for as a ``season.review.take_down`` ending
+    ``restart``, as the bot, **before the queue starts** (core specification, "What survives a
+    restart"): its jobs delete the question and the report above it, post the notice pinging the
+    reviewer, record the lapse in the log channel and drop the row. Nothing is deleted, posted or
+    written here, so a deletion Discord refuses stops the queue with the row standing, rather than
+    being lost.
+
+    A row whose take-down is already queued, running or stopped is left to it and asked for no
+    second time: what a review's press has marked is held in memory and empty after a restart, so
+    the queue is what says. Each question's button is routed again by the id of its message, so a
+    press made before the take-down has run reaches a view that refuses it and records the refusal
+    (a press reads the row, which says its five minutes ran).
     """
     from leaguebot.core.db.database import get_connection
-    from leaguebot.core.utils.log_lines import record_abandoned
+    from leaguebot.core.services.change_queue import unfinished
+    from leaguebot.core.services.season_review_changes import RESTART, TAKE_DOWN, take_review_down
 
     try:
         async with get_connection(bot.db_path) as db:
             cursor = await db.execute(
-                "SELECT channel_id, message_id, reviewer_id, review, report_message_ids, "
-                "posted_at FROM season_review_prompts"
+                "SELECT message_id, reviewer_id, review, verb FROM season_review_prompts"
             )
             prompts = await cursor.fetchall()
+        in_hand = {
+            int(payload["question_id"])
+            for payload in await unfinished(bot.db_path, [TAKE_DOWN])
+        }
     except Exception:
         log.exception("could not read the standing season review prompts")
         return
 
+    view_for = _approve_view_for(bot)
     for row in prompts:
-        # Fetched rather than only read from the cache. A cache miss and a deleted channel
-        # are indistinguishable to `get_channel`, and the row is cleared either way — so a
-        # miss would drop the only record of a message still standing, which is precisely
-        # what this sweep exists to prevent.
-        channel = as_text_channel(bot.get_channel(int(row["channel_id"])))
-        if channel is None:
-            try:
-                channel = as_text_channel(await bot.fetch_channel(int(row["channel_id"])))
-            except (discord.NotFound, discord.Forbidden):
-                channel = None
-            except discord.HTTPException as exc:
-                log.warning("could not fetch the channel of a standing review: %s", exc)
-                channel = None
-        review = str(row["review"])
-        if channel is not None:
-            # The question, then the report above it: the report goes with it, as it does
-            # when the review expires while the bot runs.
-            try:
-                report = [int(mid) for mid in json.loads(row["report_message_ids"] or "[]")]
-            except (ValueError, TypeError):
-                # Unreadable, which `bind` never writes: the question is still swept.
-                log.warning("an expired review's report could not be read; its question is swept")
-                report = []
-            standing = [int(row["message_id"]), *report]
-            for message_id in standing:
-                try:
-                    message = await channel.fetch_message(message_id)
-                    await message.delete()
-                except discord.NotFound:
-                    # Already gone — deleted by hand, or the channel with it. The row is
-                    # cleared below regardless, which is the point of the sweep.
-                    pass
-                except (discord.HTTPException, discord.Forbidden) as exc:
-                    log.warning("could not delete an expired review's message: %s", exc)
-            try:
-                await channel.send(
-                    f"⏱️ <@{int(row['reviewer_id'])}> your review expired while the bot was "
-                    f"restarting and can no longer be answered. Run `{review}` again."
-                )
-            except (discord.HTTPException, discord.Forbidden) as exc:
-                log.warning("could not post the review expiry notice: %s", exc)
-
-        await record_abandoned(
-            bot,
-            int(row["reviewer_id"]),
-            what=f"`{review}`",
-            lapsed=True,
-            detail=(
-                "The bot restarted while it stood, so it can no longer be answered, and "
-                f"nothing has been confirmed. Run `{review}` again."
-            ),
-        )
-
+        question_id = int(row["message_id"])
         try:
-            async with get_connection(bot.db_path) as db:
-                await db.execute(
-                    "DELETE FROM season_review_prompts WHERE message_id = ?",
-                    (int(row["message_id"]),),
-                )
-                await db.commit()
+            bot.add_view(
+                view_for({"view": _review_view_of(row), "reviewer_id": row["reviewer_id"]}),
+                message_id=question_id,
+            )
         except Exception:
-            log.exception("could not clear the season review prompt")
-        else:
-            log.info("cleared a season review prompt posted at %s", row["posted_at"])
+            log.exception("could not route the button of the review at %s again", question_id)
+        if question_id in in_hand:
+            log.info("the take-down of the review at %s is in hand, so it is left to it", question_id)
+            continue
+        try:
+            await take_review_down(bot.change_queue, bot.db_path, question_id, RESTART)
+        except Exception:
+            log.exception("could not ask for the take-down of the review at %s", question_id)
+
+
+def _review_view_of(row: aiosqlite.Row) -> str:
+    """The family of the button a standing review's row belongs to, as the builder's factory of
+    review views names it. The configuration review is told by its command. The other command,
+    `/season placements-review`, posts two kinds of question whose buttons carry different custom
+    ids: the placements approval (``approve``, row verb ``approved``) and the mid-season
+    confirmation (``mid_season``, row verb ``confirmed``), which `record_question` writes from the
+    view it was posted with. Routed under the wrong id, a press finds no item and is dropped
+    without a refusal, so the row's verb is what is read."""
+    from leaguebot.core.services.season_review_changes import VERBS
+
+    if str(row["review"]) == "/season config-review":
+        return "configuration"
+    return "approve" if str(row["verb"]) == VERBS["approve"] else "mid_season"
 
 
 async def _recover_portrait_refresh_job(bot: LeagueBot) -> None:
@@ -1682,14 +1876,18 @@ async def _recover_portrait_refresh_job(bot: LeagueBot) -> None:
 
 
 async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
-    """Delete any results-amend channels left open by a previous bot process.
+    """Ask the change queue to end every amendment left open by a previous bot process.
 
-    The /results rounds amend wait_for loop dies with the process on restart.
-    We detect stale rows in round_amend_channels, record in the log channel what became of
-    the amendment so the league manager knows to re-run the command, then delete the Discord
-    channel and remove the DB row.
+    An amendment's pastes were once waited for in the command, which died with the process. They
+    are turns on the queue now, so an amendment open at a restart has, at most, its waiting turns
+    and its timer; but it was abandoned all the same, and a league manager whose amendment vanished
+    needs to know to run the command again. Each amendment row is asked for as a
+    ``results.amend.lapse`` of the restart's kind, as the bot, **before the queue starts**
+    (core specification, "What survives a restart"): its jobs put the round back where stage one
+    had written, delete the channel and close the row, and write the line, each amendment's own.
+    Nothing is put back, deleted or written here.
 
-    What is recorded depends on what the restart found, and the row cannot always say:
+    What the line says depends on what the restart found, and the row cannot always say:
 
     - Where the round was **put back**, the amendment lapsed unconfirmed, and the record is the
       lapse of `/results rounds amend`, naming who started it, with the sessions being amended
@@ -1699,182 +1897,23 @@ async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
       which. That is not a lapse, so the line is a neutral one — who started it, that a restart
       ended it — with the explanation of both cases and what to run in each beneath it.
 
-    The starter (`started_by`) and the round and its division come from the rows already read
-    here; no further call is made for them.
+    An amendment whose stage is in hand on the queue, stopped included, is finished by the queue
+    ("Leave it while stuck"), and one whose lapse is already in hand from an earlier restart is
+    asked for once: the lapse's check and the queue's repeat rule leave both alone. A failure to
+    ask for one amendment is logged and does not stop the rest.
     """
     from leaguebot.core.db.database import get_connection
-    from leaguebot.core.utils.log_lines import name_of_member, record_abandoned
+    from leaguebot.results.services.amend_end_changes import RESTART, ask_lapse
 
     async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "SELECT id, round_id, channel_id, session_types, closed_at, started_by "
-            "FROM round_amend_channels"
-        )
-        orphans = await cursor.fetchall()
+        cursor = await db.execute("SELECT id FROM round_amend_channels ORDER BY id")
+        orphans = [int(row["id"]) for row in await cursor.fetchall()]
 
-    # The league's server is the one configured; the rows no longer say.
-
-    from leaguebot.results.services.result_submission_service import stage_in_hand
-
-    for row in orphans:
-        row_id: int = row["id"]
-        round_id: int = row["round_id"]
-        channel_id: int = row["channel_id"]
-        # An amendment whose stage is in hand on the queue, stopped included, is finished by the
-        # queue, not ended here ("Leave it while stuck").
-        if await stage_in_hand(bot.db_path, round_id):
-            continue
+    for amend_id in orphans:
         try:
-            _sessions = ", ".join(
-                str(st).replace("_", " ").title() for st in json.loads(row["session_types"])
-            )
-        except (TypeError, ValueError):
-            _sessions = str(row["session_types"])
-        # A row kept only because its channel could not be deleted when the amendment finished
-        # (#345). There is nothing to revert and nothing to tell the league; the channel is the
-        # whole of what is outstanding.
-        already_closed: bool = bool(row["closed_at"])
-
-        # **The round goes back as it was, where stage one had already written** (#345). The
-        # amendment's first stage commits the corrected classification, so abandoning one
-        # without undoing it leaves the round scored from the new results and posted from the
-        # old. Where nothing was written yet — or the amendment had already been approved and
-        # released its snapshot — the revert finds nothing to do, which is correct.
-        from datetime import datetime as _dt, timezone as _tz
-
-        from leaguebot.results.services.result_submission_service import revert_abandoned_amendment
-
-        try:
-            reverted = (
-                False if already_closed
-                else await revert_abandoned_amendment(bot.db_path, round_id, bot)
-            )
+            await ask_lapse(bot.change_queue, bot.db_path, amend_id, cause=RESTART)
         except Exception:
-            # The row keeps the snapshot, and a deadline of now hands it to the sweep, which
-            # retries within minutes and deletes the channel once it has put the round back.
-            log.exception(
-                "Recovery: could not put round %s back after an abandoned amendment", round_id
-            )
-            async with get_connection(bot.db_path) as db:
-                await db.execute(
-                    "UPDATE round_amend_channels SET expires_at = ? WHERE id = ?",
-                    (_dt.now(_tz.utc).isoformat(), row_id),
-                )
-                await db.commit()
-            continue
-
-        # Remove the DB row first so a further crash doesn't re-process it.
-        async with get_connection(bot.db_path) as db:
-            await db.execute(
-                "DELETE FROM round_amend_channels WHERE id = ?", (row_id,)
-            )
-            await db.commit()
-
-        # Delete the Discord channel.
-        guild = await league_guild(bot)
-        if guild is not None:
-            channel = guild.get_channel(channel_id)
-            if channel is not None:
-                try:
-                    await channel.delete(reason="Orphaned amendment channel cleanup on restart")
-                except (discord.NotFound, discord.HTTPException):
-                    pass
-
-        log.info(
-            "Recovery: deleted orphaned amend channel %s for round %s sessions %s",
-            channel_id, round_id, _sessions,
-        )
-
-        # Notify the log channel so the LM knows to re-run the command.
-        if already_closed:
-            continue
-        try:
-            async with get_connection(bot.db_path) as _rdb:
-                _rcur = await _rdb.execute(
-                    "SELECT r.round_number, d.name AS division_name FROM rounds r "
-                    "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-                    (round_id,),
-                )
-                _rrow = await _rcur.fetchone()
-            _round_label = (
-                f"round {_rrow['round_number']} ({_rrow['division_name']})"
-                if _rrow else f"round id={round_id}"
-            )
-            _amended = f"`/results rounds amend` of {_round_label}"
-            if reverted:
-                await record_abandoned(
-                    bot, row["started_by"], what=_amended, lapsed=True,
-                    detail=(
-                        f"Sessions: {_sessions}\n"
-                        "Amendment channel deleted, and the round put back as it was. Please "
-                        "re-run /results rounds amend."
-                    ),
-                )
-            else:
-                # Nothing to put back means one of two things, and the row cannot say which:
-                # the corrected results were never entered, or the amendment had been approved
-                # and its channels were being rebuilt when the bot stopped (#345).
-                _starter = await name_of_member(bot, row["started_by"])
-                await bot.output_router.post_log(
-                    f"ℹ️ {_amended}, started by {_starter}, was ended by a restart\n"
-                    f"  Sessions: {_sessions}\n"
-                    "  Amendment channel deleted; nothing needed putting back. If the "
-                    "amendment had not been approved, re-run /results rounds amend. If it had, "
-                    "its channels may be part-rebuilt: run /results rounds sync and "
-                    "/results standings sync.",
-                )
-        except Exception:
-            log.exception(
-                "Recovery: failed to post log for orphaned amend channel round %s sessions %s",
-                round_id, _sessions,
-            )
-
-
-async def _recover_season_left_by_a_closed_window(bot: LeagueBot) -> None:
-    """Move on a season a signup window's close left in the window's stage, no window being open
-    (`season_lifecycle_service.move_on_a_season_left_by_a_closed_window`). Signup's window is read
-    here, where the modules meet, so that core reads no table of signup's. A failure is logged,
-    and the start goes on: the next start tries again."""
-    from leaguebot.core.services.season_lifecycle_service import (
-        move_on_a_season_left_by_a_closed_window,
-    )
-
-    try:
-        config = await bot.signup_module_service.get_config()
-        window_open = (
-            await bot.module_service.is_signup_enabled()
-            and config is not None
-            and bool(config.signups_open)
-        )
-        moved = await move_on_a_season_left_by_a_closed_window(
-            bot.db_path, window_open=window_open
-        )
-        if moved is not None:
-            log.info("on_ready: moved the season on to %s, its signup window closed", moved.value)
-    except Exception:
-        log.exception("Could not move on a season its signup window's close left behind")
-
-
-async def _recover_off_queue_closing_notices(bot: LeagueBot) -> None:
-    """Ask the change queue, as the bot, to finish a close of the signup window off the queue
-    that a stop cut off (`signup.close.finish`), where any driver it returned is still owed their
-    notice. Nothing is asked where none is: the queue's own close keeps marks of its own, which
-    the queue finds for itself. A failure to ask is logged, and the start goes on: the marks stand
-    for the next start to find."""
-    from leaguebot.core.models.change import ChangeOrigin
-    from leaguebot.core.services.season_lifecycle_service import CLOSE_FINISH
-
-    try:
-        if not await bot.signup_module_service.off_queue_closing_notices():
-            return
-        await bot.change_queue.ask(
-            CLOSE_FINISH,
-            {},
-            origin=ChangeOrigin.BOT,
-            what="finishing the signup window's close a stop cut off",
-        )
-    except Exception:
-        log.exception("Could not ask to finish the signup window's close a stop cut off")
+            log.exception("Recovery: could not ask the lapse of amendment %s", amend_id)
 
 
 async def _recover_pending_setups(bot: LeagueBot) -> None:

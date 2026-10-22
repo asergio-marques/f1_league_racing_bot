@@ -423,3 +423,28 @@ async def test_a_stop_between_the_lineup_post_and_its_delete_deletes_the_old_one
     assert len([kind for kind, _ in _lineup_events(league) if kind == "send"]) == 1
     assert [job["name"] for job in await _lineup_jobs(league) if job["done_at"]].count(
         "delete_replaced") == 1
+
+
+async def test_a_lineup_step_with_no_channel_raises(tmp_path):
+    """Pro's lineup channel was never set. The lineup job a review or an approval runs for Pro
+    (`lineup_step`, through the real placement service) raises, naming the command that sets the
+    channel, for the queue to stop on; nothing is posted."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.core.services.lineup_posting import lineup_step
+    from tests.support.change_queue import in_a_job
+
+    league = await ongoing_league(tmp_path)
+    await league.write("UPDATE divisions SET lineup_channel_id = NULL WHERE id = ?", PRO)
+    before = len(league.texts(LINEUP[PRO]))
+    step = lineup_step(league.bot.placement_service)
+    ctx = SimpleNamespace(
+        bot=league.bot, kept=[], step_payload={"division_id": PRO, "division_name": "Pro"},
+        payload={}, tries=0,
+    )
+
+    with in_a_job(), pytest.raises(StepFailedOnDiscord, match="/division lineup-channel"):
+        await step.run(ctx)
+
+    assert len(league.texts(LINEUP[PRO])) == before

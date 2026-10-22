@@ -24,12 +24,16 @@ and the channel is flagged `resubmitting`, which lets the pastes past the review
 message guard. The review prompt is taken down, and any approval message with it (#402), so
 nobody can approve the results being replaced or start a second resubmission over the first.
 
-The collection loop itself is started as a background task and is stubbed here. It is driven
-with a fake `wait_for` in `test_resubmission_collection.py`.
+**The press is a change on the queue** (#439, slice 6b, C51). Pressing Resubmit asks
+`results.resubmission.start` with its interaction, acknowledged privately as under way; its jobs
+flag the channel, take the prompt and the approval message down, and post the announcement with
+its Cancel button. These cases press the button on round 3 of Pro, its review prompt posted
+through the queue on `test_review_open_change.py`'s league (its Feature Race won by Lewis ahead
+of Max, its review open in submission channel 702), run the queue, and read what it did; the
+resubmission's pastes are `test_resubmission_changes.py`'s and `test_resubmission_collection.py`'s.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 from datetime import datetime, timezone
@@ -47,8 +51,27 @@ from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.penalty_service import StagedPenalty
 from leaguebot.results.services.result_submission_service import (
     ResubmissionCancelView,
-    enter_resubmit_flow,
 )
+from tests.results.test_resubmission_changes import (
+    _announcement,
+    _reviewing,
+    _row,
+    _sessions,
+)
+from tests.results.test_review_open_change import (
+    SUBMISSION_CHANNEL,
+    _channel_row,
+    _prompt_view,
+    _prompts,
+)
+from tests.support.change_queue import (
+    MEMBER_ID,
+    acknowledgement,
+    http_error,
+    stopped_job,
+    updated_reply,
+)
+from tests.support.review_league import APPROVAL
 
 SERVER_ID = 9908
 SEASON_ID = 1
@@ -138,60 +161,6 @@ def _state(
     )
 
 
-def _interaction():
-    interaction = MagicMock()
-    interaction.user = MagicMock()
-    interaction.user.id = ACTOR_ID
-    interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
-
-
-def _channel(*, prompt_gone: bool = False):
-    channel = MagicMock()
-    announcement = MagicMock()
-    announcement.id = ANNOUNCEMENT_ID
-    channel.send = AsyncMock(return_value=announcement)
-    prompt = MagicMock()
-    prompt.delete = AsyncMock()
-    channel.fetch_message = AsyncMock(
-        side_effect=discord.NotFound(MagicMock(status=404), "gone") if prompt_gone else None,
-        return_value=prompt,
-    )
-    channel._prompt = prompt
-    return channel
-
-
-def _logged(state) -> str:
-    return "\n".join(
-        str(call.args[0]) for call in state.bot.output_router.post_log.await_args_list
-    )
-
-
-async def _run(state, interaction):
-    """Call the flow with the background collection task stubbed out.
-
-    What is under test here is everything the button does before the loop starts. The loop
-    itself is driven with a fake `wait_for` in `test_resubmission_collection.py`. Stubbing it
-    here is half of why issue #210 — a loop that raised on its first line — went unnoticed.
-    """
-    with patch(
-        "leaguebot.results.services.result_submission_service._resubmit_collection_task",
-        new=AsyncMock(return_value=None),
-    ):
-        await enter_resubmit_flow(interaction, state)
-        # Let the created task run and finish, so the event loop is clean on exit.
-        await asyncio.sleep(0)
-
-
-async def _session_result_count(db_path: str) -> int:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT COUNT(*) AS n FROM session_results WHERE round_id = ?", (ROUND_ID,)
-        )
-        return (await cursor.fetchone())["n"]
-
-
 async def _flags(db_path: str) -> tuple[int, int, int]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -221,86 +190,132 @@ def _pardon(pardon_type: str = "ABSENT", justification: str = "Ill"):
     )
 
 
+async def _press(tmp_path, monkeypatch, *, staged=(), pardons=(), approval: bool = False,
+                 prompt_gone: bool = False, run: bool = True):
+    """Round 3's review prompt standing, with *staged* penalties and *pardons* in its review and,
+    where *approval*, its approval message (8901) standing too; where *prompt_gone*, the prompt
+    was deleted by hand. Alex, a league manager, presses Resubmit and, where *run*, the queue is
+    run. Gives the league, the review's state and the press's interaction."""
+    league = await _reviewing(tmp_path, monkeypatch)
+    state = _prompt_view(league).state
+    state.staged[:] = list(staged)
+    state.staged_pardons[:] = list(pardons)
+    if approval:
+        state.approval_message_id = APPROVAL
+    view = _prompt_view(league)
+    if prompt_gone:
+        [prompt] = _prompts(league)
+        league.channel(SUBMISSION_CHANNEL).messages.pop(prompt)
+    interaction = await _click(league, view, run=run)
+    return league, state, interaction
+
+
+async def _click(league, view, *, run: bool = True):
+    """Alex, a league manager, presses Resubmit on *view* in channel 702; then, where *run*, the
+    queue is run. Gives the press's interaction."""
+    from tests.support.change_queue import member_interaction, run_queue, tier_member
+
+    interaction = member_interaction(
+        league.bot, user=tier_member("manager", display_name="Alex", name="Alex#0001")
+    )
+    interaction.channel_id = SUBMISSION_CHANNEL
+    button = next(item for item in view.children
+                  if getattr(item, "custom_id", None) == "pw_resubmit")
+    await button.callback(interaction)
+    if run:
+        await run_queue(league.bot)
+    return interaction
+
+
+def _plain(line: str) -> str:
+    """A log channel's line as written: the mentions the router wraps in backticks unwrapped,
+    and the rule it closes each entry with dropped."""
+    kept = [part for part in line.splitlines() if part.strip("―")]
+    return "\n".join(kept).replace("`<@", "<@").replace(">`", ">")
+
+
+async def _flags_of(league) -> tuple[int, int, int]:
+    row = await _channel_row(league.db_path)
+    return row["in_penalty_review"], row["results_posted"], row["resubmitting"]
+
+
+def _lines(league) -> list[str]:
+    return [_plain(line) for line in league.bot.log_channel.sent
+            if "RESULTS_RESUBMISSION" in line]
+
+
 # ---------------------------------------------------------------------------
 # What is kept, and what is thrown away
 # ---------------------------------------------------------------------------
 
 
-async def test_pressing_resubmit_keeps_the_round_s_results(tmp_path):
+async def test_pressing_resubmit_keeps_the_round_s_results(tmp_path, monkeypatch):
     """Issue #210. They stand until every session has been entered again. Deleting them here
-    left the round with no results at all, and nothing to put them back."""
-    db_path = await _make_db(tmp_path, results=2)
-    state = _state(db_path, channel=_channel())
+    left the round with no results at all, and nothing to put them back. Once the queue has run
+    the press, round 3 still holds its Feature Race."""
+    league, _state, _interaction = await _press(tmp_path, monkeypatch)
 
-    await _run(state, _interaction())
-
-    assert await _session_result_count(db_path) == 2
+    assert await _sessions(league) == [("FEATURE_RACE", "ACTIVE")]
 
 
-async def test_resubmitting_flags_the_channel(tmp_path):
+async def test_resubmitting_flags_the_channel(tmp_path, monkeypatch):
     """The round is still in review with its results posted; `resubmitting` is what lets the
-    pastes through the review channel's guard."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, channel=_channel())
+    pastes through the review channel's guard. Nothing is flagged until the queue runs the
+    press; then it is."""
+    league, _state, _interaction = await _press(tmp_path, monkeypatch, run=False)
 
-    await _run(state, _interaction())
+    assert await _flags_of(league) == (1, 1, 0)
 
-    assert await _flags(db_path) == (1, 1, 1)
+    from tests.support.change_queue import run_queue
+
+    await run_queue(league.bot)
+
+    assert await _flags_of(league) == (1, 1, 1)
 
 
-async def test_the_penalty_prompt_is_taken_down_when_resubmission_starts(tmp_path):
+async def test_the_penalty_prompt_is_taken_down_when_resubmission_starts(tmp_path, monkeypatch):
     """Left up, its Approve would finalise the results being replaced, and its Resubmit would
-    start a second collector reading the same channel."""
-    db_path = await _make_db(tmp_path)
-    channel = _channel()
-    state = _state(db_path, channel=channel, prompt_message_id=4242)
+    start a second collector reading the same channel. Once the queue has run the press, no
+    review prompt stands in channel 702."""
+    league, _state, _interaction = await _press(tmp_path, monkeypatch)
 
-    await _run(state, _interaction())
-
-    channel.fetch_message.assert_awaited_once_with(4242)
-    channel._prompt.delete.assert_awaited_once()
+    assert _prompts(league) == []
 
 
-async def test_the_approval_message_is_taken_down_when_resubmission_starts(tmp_path):
+async def test_the_approval_message_is_taken_down_when_resubmission_starts(tmp_path, monkeypatch):
     """**#402, as reported.** The prompt went and the approval message stayed, and its Approve
-    finalised the round on the results the manager had just said were wrong."""
-    db_path = await _make_db(tmp_path)
-    channel = _channel()
-    state = _state(db_path, channel=channel, prompt_message_id=4242, approval_message_id=4243)
+    finalised the round on the results the manager had just said were wrong. With the approval
+    message (8901) standing, the queue deletes it with the prompt and the review forgets it."""
+    league, state, _interaction = await _press(tmp_path, monkeypatch, approval=True)
 
-    await _run(state, _interaction())
-
-    assert [c.args for c in channel.fetch_message.await_args_list] == [(4242,), (4243,)]
-    assert channel._prompt.delete.await_count == 2
+    assert ("delete", SUBMISSION_CHANNEL, APPROVAL) in league.events
+    assert APPROVAL not in league.channel(SUBMISSION_CHANNEL).messages
     assert state.approval_message_id is None
 
 
-async def test_a_prompt_already_gone_does_not_stop_the_resubmission(tmp_path):
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, channel=_channel(prompt_gone=True), prompt_message_id=4242)
+async def test_a_prompt_already_gone_does_not_stop_the_resubmission(tmp_path, monkeypatch):
+    """The review prompt was deleted by hand before the press. Its deletion completes, the
+    queue does not stop, and the channel is flagged resubmitting."""
+    league, _state, _interaction = await _press(tmp_path, monkeypatch, prompt_gone=True)
 
-    await _run(state, _interaction())
+    assert await stopped_job(league.db_path) is None
+    assert await _flags_of(league) == (1, 1, 1)
 
-    assert await _flags(db_path) == (1, 1, 1)
 
-
-async def test_the_staged_penalties_are_discarded(tmp_path):
-    """They were staged against results that no longer exist."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, staged=[_penalty(), _penalty(10)], channel=_channel())
-
-    await _run(state, _interaction())
+async def test_the_staged_penalties_are_discarded(tmp_path, monkeypatch):
+    """They were staged against results that no longer exist. Two penalties staged, Resubmit
+    pressed and the queue run: the review holds none."""
+    league, state, _interaction = await _press(
+        tmp_path, monkeypatch, staged=[_penalty(), _penalty(10)]
+    )
 
     assert state.staged == []
 
 
-async def test_the_staged_pardons_are_discarded(tmp_path):
+async def test_the_staged_pardons_are_discarded(tmp_path, monkeypatch):
     """The log says they are, and the state outlives the prompt: an approval message still
     standing holds it, and must not grant what the resubmission threw away (#356)."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, pardons=[_pardon()], channel=_channel())
-
-    await _run(state, _interaction())
+    league, state, _interaction = await _press(tmp_path, monkeypatch, pardons=[_pardon()])
 
     assert state.staged_pardons == []
 
@@ -310,51 +325,44 @@ async def test_the_staged_pardons_are_discarded(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_the_discarded_penalties_are_logged_in_full(tmp_path):
+async def test_the_discarded_penalties_are_logged_in_full(tmp_path, monkeypatch):
     """Once they are gone there is no other record they were ever staged, so a manager who
-    pressed the button by mistake could not reconstruct what they had been reviewing. The
-    log is written while `state.staged` is still populated."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, staged=[_penalty(5), _penalty(None, "DSQ")], channel=_channel())
+    pressed the button by mistake could not reconstruct what they had been reviewing. With a
+    5-second penalty and a disqualification staged, the log channel's line counts and names
+    both."""
+    league, _state, _interaction = await _press(
+        tmp_path, monkeypatch, staged=[_penalty(5), _penalty(None, "DSQ")]
+    )
 
-    await _run(state, _interaction())
-
-    logged = _logged(state)
+    logged = "\n".join(_lines(league))
     assert "RESULTS_RESUBMISSION | Started" in logged
     assert "discarded_count: 2" in logged
     assert str(DRIVER_A) in logged
     assert "DSQ" in logged
 
 
-async def test_the_discard_log_is_machine_readable(tmp_path):
+async def test_the_discard_log_is_machine_readable(tmp_path, monkeypatch):
     """It is JSON so the detail survives being read back, rather than being a sentence
     somebody has to parse by eye."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, staged=[_penalty(5)], channel=_channel())
-
-    await _run(state, _interaction())
+    league, _state, _interaction = await _press(tmp_path, monkeypatch, staged=[_penalty(5)])
 
     line = next(
-        l for l in _logged(state).splitlines() if l.strip().startswith("discarded:")
+        l for l in "\n".join(_lines(league)).splitlines() if l.strip().startswith("discarded:")
     )
     payload = json.loads(line.split("discarded:", 1)[1].strip())
     assert payload[0]["driver_user_id"] == DRIVER_A
     assert payload[0]["penalty_seconds"] == 5
 
 
-async def test_the_discarded_pardons_are_logged_in_full(tmp_path):
+async def test_the_discarded_pardons_are_logged_in_full(tmp_path, monkeypatch):
     """The entry listed the penalties it threw away and not the pardons, which went with them
     unrecorded (#356). They are written as the penalties are, count and detail."""
-    db_path = await _make_db(tmp_path)
-    state = _state(
-        db_path, staged=[_penalty(5)],
+    league, _state, _interaction = await _press(
+        tmp_path, monkeypatch, staged=[_penalty(5)],
         pardons=[_pardon("ABSENT", "Ill"), _pardon("NO_RSVP", "Power cut")],
-        channel=_channel(),
     )
 
-    await _run(state, _interaction())
-
-    logged = _logged(state)
+    logged = "\n".join(_lines(league))
     assert "discarded_count: 1" in logged
     assert "discarded_pardons_count: 2" in logged
     line = next(
@@ -367,46 +375,35 @@ async def test_the_discarded_pardons_are_logged_in_full(tmp_path):
     ]
 
 
-async def test_the_resubmission_itself_is_logged(tmp_path):
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, channel=_channel())
+async def test_the_resubmission_itself_is_logged(tmp_path, monkeypatch):
+    league, _state, _interaction = await _press(tmp_path, monkeypatch)
 
-    await _run(state, _interaction())
-
-    assert "RESULTS_RESUBMISSION | Started" in _logged(state)
+    assert "RESULTS_RESUBMISSION | Started" in "\n".join(_lines(league))
 
 
-async def test_the_resubmission_counts_the_pardons_it_discarded(tmp_path):
+async def test_the_resubmission_counts_the_pardons_it_discarded(tmp_path, monkeypatch):
     """Resubmit pressed with one pardon staged and no penalty: the resubmission's one line
     counts no penalty and one pardon discarded."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, pardons=[_pardon()], channel=_channel())
+    league, _state, _interaction = await _press(tmp_path, monkeypatch, pardons=[_pardon()])
 
-    await _run(state, _interaction())
-
-    started = next(
-        call.args[0] for call in state.bot.output_router.post_log.await_args_list
-        if "RESULTS_RESUBMISSION | Started" in call.args[0]
-    )
+    started = next(line for line in _lines(league) if "RESULTS_RESUBMISSION | Started" in line)
     assert "discarded_count: 0" in started
     assert "discarded_pardons_count: 1" in started
 
 
-async def test_resubmit_writes_one_line_naming_what_it_discarded(tmp_path):
-    """Alex presses Resubmit on round 3 (Division 1) with a 5-second penalty and an ABSENT pardon
-    justified "Ill" staged: the log channel gets one line, "Alex (<@77>) | RESULTS_RESUBMISSION |
-    Started", which names the discarded penalty and the discarded pardon with its justification."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, staged=[_penalty(5)], pardons=[_pardon()], channel=_channel())
-    interaction = _interaction()
-    interaction.user.display_name = "Alex"
+async def test_resubmit_writes_one_line_naming_what_it_discarded(tmp_path, monkeypatch):
+    """Alex presses Resubmit on round 3 (Pro) with a 5-second penalty and an ABSENT pardon
+    justified "Ill" staged: once the queue has run, the log channel holds one resubmission line,
+    "Alex (<@…>) | RESULTS_RESUBMISSION | Started", which names the discarded penalty and the
+    discarded pardon with its justification."""
+    league, _state, _interaction = await _press(
+        tmp_path, monkeypatch, staged=[_penalty(5)], pardons=[_pardon()]
+    )
 
-    await _run(state, interaction)
-
-    lines = [str(call.args[0]) for call in state.bot.output_router.post_log.await_args_list]
+    lines = _lines(league)
     assert len(lines) == 1, lines
     [line] = lines
-    assert line.startswith(f"Alex (<@{ACTOR_ID}>) | RESULTS_RESUBMISSION | Started")
+    assert line.startswith(f"Alex (<@{MEMBER_ID}>) | RESULTS_RESUBMISSION | Started")
     discarded = json.loads(
         next(l for l in line.splitlines() if l.strip().startswith("discarded:"))
         .split("discarded:", 1)[1]
@@ -419,29 +416,31 @@ async def test_resubmit_writes_one_line_naming_what_it_discarded(tmp_path):
     assert pardons == [{"driver_user_id": DRIVER_A, "pardon_type": "ABSENT", "justification": "Ill"}]
 
 
-async def test_a_resubmission_with_nothing_staged_still_logs(tmp_path):
+async def test_a_resubmission_with_nothing_staged_still_logs(tmp_path, monkeypatch):
     """A manager may resubmit because the results were wrong rather than because a penalty
     was — the round still changed and the log still has to say so."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, staged=[], channel=_channel())
+    league, _state, _interaction = await _press(tmp_path, monkeypatch)
 
-    await _run(state, _interaction())
-
-    assert "discarded_count: 0" in _logged(state)
+    assert "discarded_count: 0" in "\n".join(_lines(league))
 
 
-async def test_a_failing_log_does_not_block_the_resubmission(tmp_path):
+async def test_a_failing_log_does_not_block_the_resubmission(tmp_path, monkeypatch):
     """The log channel may be missing or unreachable, and a manager who has decided the
     results are wrong must still be able to replace them — refusing would leave the round
-    stuck with results the league knows to be wrong."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, staged=[_penalty()], channel=_channel())
-    state.bot.output_router.post_log = AsyncMock(side_effect=RuntimeError("no channel"))
+    stuck with results the league knows to be wrong. The log channel refuses every post: once
+    the queue has run the press, the results stand and the channel is flagged resubmitting."""
+    from unittest.mock import AsyncMock as _AsyncMock
 
-    await _run(state, _interaction())
+    league = await _reviewing(tmp_path, monkeypatch)
+    _prompt_view(league).state.staged[:] = [_penalty()]
+    league.bot.log_channel.send = _AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Access")
+    )
 
-    assert await _session_result_count(db_path) == 2
-    assert await _flags(db_path) == (1, 1, 1)
+    await _click(league, _prompt_view(league))
+
+    assert await _sessions(league) == [("FEATURE_RACE", "ACTIVE")]
+    assert await _flags_of(league) == (1, 1, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -449,93 +448,67 @@ async def test_a_failing_log_does_not_block_the_resubmission(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_the_division_is_told_in_the_submission_channel(tmp_path):
+async def test_the_division_is_told_in_the_submission_channel(tmp_path, monkeypatch):
     """The division is about to be asked for results again; without this the request
-    arrives with no explanation."""
-    db_path = await _make_db(tmp_path)
-    channel = _channel()
-    state = _state(db_path, channel=channel)
+    arrives with no explanation. Once the queue has run the press, the announcement stands in
+    channel 702."""
+    league, _state, _interaction = await _press(tmp_path, monkeypatch)
 
-    await _run(state, _interaction())
-
-    channel.send.assert_awaited_once()
-    announcement = channel.send.await_args.args[0]
+    announcement = str(_announcement(league).content)
     assert "resubmission started" in announcement.lower()
     assert "stand until every session has been entered again" in announcement
 
 
-async def test_the_announcement_carries_the_cancel_button(tmp_path):
-    db_path = await _make_db(tmp_path)
-    channel = _channel()
-    state = _state(db_path, channel=channel)
+async def test_the_announcement_carries_the_cancel_button(tmp_path, monkeypatch):
+    league, _state, _interaction = await _press(tmp_path, monkeypatch)
 
-    await _run(state, _interaction())
-
-    view = channel.send.await_args.kwargs["view"]
-    assert isinstance(view, ResubmissionCancelView)
-    assert view.message is channel.send.return_value
+    assert isinstance(_announcement(league).view, ResubmissionCancelView)
 
 
-async def test_the_announcement_is_recorded_for_the_restart_sweep(tmp_path):
+async def test_the_announcement_is_recorded_for_the_restart_sweep(tmp_path, monkeypatch):
     """A restart ends the resubmission, and the sweep needs the message to take the button
     down — nothing is listening for it any more."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, channel=_channel())
+    league, _state, _interaction = await _press(tmp_path, monkeypatch)
 
-    await _run(state, _interaction())
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT resubmit_prompt_message_id FROM round_submission_channels WHERE round_id = ?",
-            (ROUND_ID,),
-        )
-        assert (await cursor.fetchone())[0] == ANNOUNCEMENT_ID
+    assert (await _row(league))["resubmit_prompt_message_id"] == _announcement(league).id
 
 
-async def test_who_started_the_resubmission_is_recorded_for_the_restart_sweep(tmp_path):
-    """Alex (id 77) presses 🔄 Resubmit on round 3 (Division 1). A restart ends the
-    resubmission, and its lapse line names who started it, so the round's submission channel
-    row keeps Alex's id from the moment the resubmission starts."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, channel=_channel())
+async def test_who_started_the_resubmission_is_recorded_for_the_restart_sweep(
+    tmp_path, monkeypatch,
+):
+    """Alex presses 🔄 Resubmit on round 3 (Pro). A restart ends the resubmission, and its lapse
+    line names who started it, so the round's submission channel row keeps Alex's id once the
+    queue has run the press."""
+    league, _state, _interaction = await _press(tmp_path, monkeypatch)
 
-    await _run(state, _interaction())
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT resubmit_started_by FROM round_submission_channels WHERE round_id = ?",
-            (ROUND_ID,),
-        )
-        assert (await cursor.fetchone())[0] == ACTOR_ID
+    assert int((await _row(league))["resubmit_started_by"]) == MEMBER_ID
 
 
-async def test_the_manager_is_told_privately_what_to_do_next(tmp_path):
-    db_path = await _make_db(tmp_path)
-    interaction = _interaction()
-    state = _state(db_path, channel=_channel())
+async def test_the_manager_is_told_privately_what_to_do_next(tmp_path, monkeypatch):
+    """Alex is answered privately that the resubmission is under way, and once the queue has run
+    the press the answer is updated to say it started."""
+    league, _state, interaction = await _press(tmp_path, monkeypatch)
 
-    await _run(state, interaction)
-
-    interaction.followup.send.assert_awaited_once()
-    assert "Resubmission started" in interaction.followup.send.await_args.args[0]
+    assert acknowledgement(interaction).startswith("⏳")
+    assert "Resubmission started" in updated_reply(interaction)
 
 
-async def test_a_missing_submission_channel_refuses_and_changes_nothing(tmp_path):
+async def test_a_missing_submission_channel_refuses_and_changes_nothing(tmp_path, monkeypatch):
     """The channel may have been deleted by hand. With nowhere to collect in, the review is all
-    the round has — so its staged penalties are kept and the manager is told why."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, staged=[_penalty()], channel=None)
-    interaction = _interaction()
+    the round has — so its staged penalty is kept, the channel is not flagged, and the manager
+    is told why."""
+    league = await _reviewing(tmp_path, monkeypatch)
+    state = _prompt_view(league).state
+    state.staged[:] = [_penalty()]
+    view = _prompt_view(league)
+    league.channels.pop(SUBMISSION_CHANNEL)
 
-    with patch(
-        "leaguebot.results.services.result_submission_service._resubmit_collection_task", new=AsyncMock()
-    ) as task:
-        await enter_resubmit_flow(interaction, state)
+    interaction = await _click(league, view)
 
     assert len(state.staged) == 1
-    assert await _flags(db_path) == (1, 1, 0)
-    assert "submission channel could not be found" in interaction.followup.send.await_args.args[0]
-    task.assert_not_called()
+    assert await _flags_of(league) == (1, 1, 0)
+    said = acknowledgement(interaction) + "\n" + updated_reply(interaction)
+    assert "submission channel could not be found" in said
 
 
 # ---------------------------------------------------------------------------
@@ -589,48 +562,55 @@ def _pressing_interaction(*, deferred: bool):
         ),
     ],
 )
-async def test_every_refused_press_of_the_resubmission_is_recorded(tmp_path, press, reply):
+async def test_every_refused_press_of_the_resubmission_is_recorded(
+    tmp_path, monkeypatch, press, reply,
+):
     """Round 3 of Division 1 is in penalty review, one penalty staged. Alex presses 🔄 Resubmit
     Initial Results after the submission channel was deleted by hand, or presses the Cancel
     button of a resubmission under way without holding the league manager tier. The reply is
     today's, nothing changes — the penalty stays staged, the channel is not flagged and the
     resubmission is not cancelled — and exactly one line records the refusal, naming Alex and
-    the reason."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, staged=[_penalty()], channel=None)
-
+    the reason. The Resubmit press is made on the review of `test_review_open_change.py`'s
+    league, its queue run after it (#439, slice 6b)."""
     if press == "resubmit":
-        interaction = _pressing_interaction(deferred=True)
-        with patch(
-            "leaguebot.results.services.result_submission_service._resubmit_collection_task",
-            new=AsyncMock(),
-        ) as task:
-            await enter_resubmit_flow(interaction, state)
-        task.assert_not_called()
+        league = await _reviewing(tmp_path, monkeypatch)
+        state = _prompt_view(league).state
+        state.staged[:] = [_penalty()]
+        view = _prompt_view(league)
+        league.channels.pop(SUBMISSION_CHANNEL)
+        interaction = await _click(league, view)
+        flags = await _flags_of(league)
+        lines = [_plain(line) for line in league.bot.log_channel.sent if line.startswith("⛔ ")]
+        actor = MEMBER_ID
     else:
+        db_path = await _make_db(tmp_path)
+        state = _state(db_path, staged=[_penalty()], channel=None)
         state.db_path = db_path
         view = ResubmissionCancelView(state)
         interaction = _pressing_interaction(deferred=False)
         await view.cancel_btn.callback(interaction)
         assert not view.cancelled
         assert not view.pressed.is_set()
+        flags = await _flags(db_path)
+        lines = [
+            str(call.args[0])
+            for router in (state.bot.output_router, interaction.client.output_router)
+            for call in router.post_log.await_args_list
+        ]
+        actor = ACTOR_ID
 
     assert len(state.staged) == 1
-    assert await _flags(db_path) == (1, 1, 0)
+    assert flags == (1, 1, 0)
     (replied,) = [
         str(call.args[0])
         for call in interaction.response.send_message.await_args_list
         + interaction.followup.send.await_args_list
+        if call.args
     ]
     assert replied == reply
     reason = reply.split(" ", 1)[1]
-    lines = [
-        str(call.args[0])
-        for router in (state.bot.output_router, interaction.client.output_router)
-        for call in router.post_log.await_args_list
-    ]
     (line,) = lines
     assert line.startswith("⛔ "), line
     if press == "cancel":
         assert line.startswith("⛔ the “Cancel” button"), line
-    assert line.endswith(f" refused for Alex (<@{ACTOR_ID}>) — {reason}"), line
+    assert line.endswith(f" refused for Alex (<@{actor}>) — {reason}"), line

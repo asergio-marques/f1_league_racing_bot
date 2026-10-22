@@ -34,15 +34,10 @@ forbidden_modules =
     leaguebot.*.cogs
 allow_indirect_imports = True
 ignore_imports =
-    # #283: the in-memory state reaches for the seasons being set up and for pending reasons
-    # (the reasons are signup's to publish, #286).
-    leaguebot.core.services.in_memory_state -> leaguebot.signup.cogs.admin_review_cog
+    # #283: the in-memory state reaches for the seasons being set up.
     leaguebot.core.services.in_memory_state -> leaguebot.core.cogs.season_cog
     # #285: the check-in rules live in the cog.
     leaguebot.attendance.services.rsvp_service -> leaguebot.attendance.cogs.attendance_cog
-    # #286: signup's forced close lives in the module cog, and its views in its cogs.
-    leaguebot.signup.services.wizard_service -> leaguebot.signup.cogs.admin_review_cog
-    leaguebot.signup.services.wizard_service -> leaguebot.signup.cogs.signup_cog
 
 [importlinter:contract:models-use-no-discord-and-no-database]
 name = Models use no Discord and no database
@@ -101,8 +96,6 @@ ignore_imports =
     leaguebot.core.utils.league_bot -> leaguebot.*.services.*
     # #283: core reaches a module directly where it is to offer a hook the module signs up to
     # (architecture.md, "How modules and core fit together"). Attendance:
-    leaguebot.core.cogs.test_mode_cog -> leaguebot.attendance.services.rsvp_service
-    leaguebot.core.services.cancellation_notice_service -> leaguebot.attendance.services.rsvp_service
     leaguebot.core.services.season_classification_service -> leaguebot.attendance.services.attendance_service
     # #283: image, which core is to ask for its graphics through a hook:
     leaguebot.core.cogs.driver_cog -> leaguebot.image.services.driver_portrait_service
@@ -136,7 +129,6 @@ ignore_imports =
     leaguebot.core.utils.date_formatting -> leaguebot.image.models.image_constants
     leaguebot.core.utils.input_validator -> leaguebot.image.utils.nationality_data
     # #283: results:
-    leaguebot.core.cogs.season_cog -> leaguebot.results.services.result_submission_service
     leaguebot.core.cogs.season_cog -> leaguebot.results.services.season_points_service
     leaguebot.core.cogs.test_mode_cog -> leaguebot.results.services.result_submission_service
     leaguebot.core.services.season_classification_service -> leaguebot.results.services.results_post_service
@@ -144,9 +136,8 @@ ignore_imports =
     leaguebot.core.services.season_service -> leaguebot.results.services.result_submission_service
     leaguebot.core.services.test_roster_service -> leaguebot.results.models.points_config
     # #283: signup:
-    leaguebot.core.services.in_memory_state -> leaguebot.signup.cogs.admin_review_cog
+    leaguebot.core.services.in_memory_state -> leaguebot.signup.services.signup_views
     leaguebot.core.cogs.module_cog -> leaguebot.signup.models.signup_module
-    leaguebot.core.cogs.module_cog -> leaguebot.signup.services.wizard_service
     leaguebot.core.services.placement_service -> leaguebot.signup.models.signup_module
     # #283: weather, and core's own formatting helpers, which still sit in weather's
     # message builder:

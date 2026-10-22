@@ -26,12 +26,19 @@ would write a correction onto results that were already replaced.
 
 **The module has to be on.** Amending results with the results module off would write rows
 nothing reads and post nothing, and a league with the module off can still see the command.
+
+**Since #439's slice 6b the command asks the change queue for `results.amend.open`**, whose check
+judges the gates when it is asked and again when it runs. So every test here drives the command
+on a league double with a real queue, its real change types and the real season service: a
+refusal is what the manager is told and one line in the log channel, and a command that is not
+held back goes on to ask the queue (or, before the slice, to create the channel itself).
 """
 from __future__ import annotations
 
 import contextlib
 import json
 import os
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -41,11 +48,22 @@ import pytest
 from leaguebot.core.models.season import SeasonStage
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.season_service import SeasonService
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.results.models.points_config import SessionType
+from tests.support.change_queue import (
+    SERVER_ID,
+    attach_queue,
+    change_rows,
+    league_double,
+    member,
+    member_interaction,
+    seed_server,
+)
 from tests.support.undecorate import undecorate
 
-SERVER_ID = 11408
+NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
+OPEN = "results.amend.open"
 SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
@@ -64,12 +82,8 @@ async def _make_db(
 ) -> str:
     db_path = os.path.join(str(tmp_path), f"{name}.db")
     await run_migrations(db_path)
+    await seed_server(db_path)
     async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-            (SERVER_ID,),
-        )
         await db.execute(
             "INSERT INTO seasons (id, season_number, start_date, status) "
             "VALUES (?, 7, '2026-01-01', 'ACTIVE')",
@@ -101,7 +115,7 @@ def _round(status: str = "FINAL", number: int = 3):
     )
 
 
-def _make_cog(
+async def _make_cog(
     db_path: str,
     *,
     results_enabled: bool = True,
@@ -111,40 +125,35 @@ def _make_cog(
     divisions=None,
     rounds=None,
 ) -> ResultsCog:
-    bot = MagicMock()
-    bot.db_path = db_path
+    """The cog over a league double with a real change queue and its real change types, and the
+    real season service, as the builder hands them (#439 slice 6b: `/results rounds amend` asks
+    `results.amend.open`, whose check judges the gates). The league is set in the database to
+    what the arguments say: with *season* None, season 7 has completed; each of *rounds* takes
+    the status it names. *divisions* names the divisions the season holds, each already in the
+    database."""
+    bot = league_double(db_path)
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
-    bot.season_service = MagicMock()
-    bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
-    bot.season_service.get_divisions = AsyncMock(
-        return_value=divisions
-        if divisions is not None
-        else [SimpleNamespace(id=DIVISION_ID, name="Pro", tier=1)]
-    )
-    bot.season_service.get_division_rounds = AsyncMock(
-        return_value=rounds if rounds is not None else [_round()]
-    )
-    bot.config_service = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    bot.config_service.get_server_config = AsyncMock(return_value=None)
+    bot.season_service = SeasonService(db_path)
+    async with get_connection(db_path) as db:
+        if season is None:
+            await db.execute("UPDATE seasons SET status = 'COMPLETED' WHERE id = ?", (SEASON_ID,))
+        for round_ in rounds or ():
+            await db.execute(
+                "UPDATE rounds SET status = ?, round_number = ? WHERE id = ?",
+                (round_.status, round_.round_number, round_.id),
+            )
+        await db.commit()
+    attach_queue(bot, db_path, now=NOW)
 
     cog = ResultsCog.__new__(ResultsCog)
     cog.bot = bot
     return cog
 
 
-def _interaction():
-    interaction = MagicMock()
-    interaction.guild_id = SERVER_ID
-    interaction.user = MagicMock()
-    interaction.user.id = 77
-    interaction.user.display_name = "Manager"
-    interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
+def _interaction(cog):
+    """The manager Manager's interaction (member 77) on the cog's bot, its replies recorded."""
+    interaction = member_interaction(cog.bot, user=member(77, "Manager", "Manager#0001"))
     interaction.guild = MagicMock()
     interaction.guild.create_text_channel = AsyncMock(
         side_effect=AssertionError("a channel was created before the session was chosen")
@@ -153,12 +162,14 @@ def _interaction():
 
 
 def _replied(interaction) -> str:
-    return "\n".join(
-        str(call.args[0])
-        for call in interaction.response.send_message.await_args_list
+    """Everything the manager was told: the response, its edits and the follow-ups, in order."""
+    calls = (
+        interaction.response.send_message.await_args_list
+        + interaction.edit_original_response.await_args_list
         + interaction.followup.send.await_args_list
-        if call.args
     )
+    told = [str(call.args[0]) if call.args else call.kwargs.get("content") for call in calls]
+    return "\n".join(str(part) for part in told if part)
 
 
 def _sent_view(interaction):
@@ -196,23 +207,21 @@ async def test_the_results_module_must_be_on(tmp_path):
     """Amending with the module off would write rows nothing reads and post nothing, and
     the command is reached from `/round`, which a league with the module off still sees."""
     db_path = await _make_db(tmp_path, name="amend_module_off")
-    cog = _make_cog(db_path, results_enabled=False)
-    interaction = _interaction()
+    cog = await _make_cog(db_path, results_enabled=False)
+    interaction = _interaction(cog)
 
     await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
 
     # Word for word: the results cog's own gate says "… not enabled on this server.", and
     # the command keeps its own words wherever it is declared (#462: only the names change).
     assert _replied(interaction) == "❌ The Results & Standings module is not enabled."
-    interaction.response.defer.assert_not_awaited()
-    # The module is checked before the season is read.
-    cog.bot.season_service.get_setup_or_active_season.assert_not_awaited()
+    assert [row for row in await change_rows(db_path) if row["kind"] == OPEN] == []
 
 
 async def test_a_server_with_no_season_is_refused(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_noseason")
-    cog = _make_cog(db_path, season=None)
-    interaction = _interaction()
+    cog = await _make_cog(db_path, season=None)
+    interaction = _interaction(cog)
 
     await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
 
@@ -228,8 +237,8 @@ async def test_the_no_season_refusal_names_results_rounds_amend(tmp_path):
     command that no longer exists sends a league admin looking for it. The repository's
     check of command names cannot see this one: the name is interpolated."""
     db_path = await _make_db(tmp_path, name="amend_noseason_name")
-    cog = _make_cog(db_path, season=None)
-    interaction = _interaction()
+    cog = await _make_cog(db_path, season=None)
+    interaction = _interaction(cog)
 
     await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
 
@@ -241,8 +250,8 @@ async def test_the_no_season_refusal_names_results_rounds_amend(tmp_path):
 
 async def test_an_unknown_division_is_refused_by_name(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_nodiv")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    cog = await _make_cog(db_path)
+    interaction = _interaction(cog)
 
     await _amend(cog, interaction, division="Rookie", session=SessionType.FEATURE_RACE)
 
@@ -254,8 +263,8 @@ async def test_the_division_is_matched_regardless_of_case(tmp_path):
     """Every other division lookup in the bot is case-insensitive, and this one destroys
     results — a manager should not meet a different rule here of all places."""
     db_path = await _make_db(tmp_path, name="amend_case")
-    cog = _make_cog(db_path, rounds=[_round(status="AWAITING_RESULTS")])
-    interaction = _interaction()
+    cog = await _make_cog(db_path, rounds=[_round(status="AWAITING_RESULTS")])
+    interaction = _interaction(cog)
 
     await _amend(cog, interaction, division="pRo", session=SessionType.FEATURE_RACE)
 
@@ -264,8 +273,8 @@ async def test_the_division_is_matched_regardless_of_case(tmp_path):
 
 async def test_an_unknown_round_is_refused_by_number(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_noround")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    cog = await _make_cog(db_path)
+    interaction = _interaction(cog)
 
     await _amend(cog, interaction, round_number=9, session=SessionType.FEATURE_RACE)
 
@@ -281,8 +290,8 @@ async def test_a_round_that_has_not_reached_final_is_refused(tmp_path, status):
     results anyway, and amending underneath it would have the steward's work land on rows
     that no longer exist."""
     db_path = await _make_db(tmp_path, name=f"amend_{status}")
-    cog = _make_cog(db_path, rounds=[_round(status=status)])
-    interaction = _interaction()
+    cog = await _make_cog(db_path, rounds=[_round(status=status)])
+    interaction = _interaction(cog)
 
     await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
 
@@ -292,8 +301,8 @@ async def test_a_round_that_has_not_reached_final_is_refused(tmp_path, status):
 async def test_the_refusal_names_the_status_that_is_required(tmp_path):
     """A manager meeting it needs to know whether to wait or to act."""
     db_path = await _make_db(tmp_path, name="amend_says_final")
-    cog = _make_cog(db_path, rounds=[_round(status="AWAITING_RESULTS")])
-    interaction = _interaction()
+    cog = await _make_cog(db_path, rounds=[_round(status="AWAITING_RESULTS")])
+    interaction = _interaction(cog)
 
     await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
 
@@ -307,8 +316,8 @@ async def test_a_round_with_no_results_is_refused(tmp_path):
     submission was superseded away, and the command would otherwise open a channel and
     collect a paste with nowhere to put it."""
     db_path = await _make_db(tmp_path, name="amend_noresults", sessions=())
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    cog = await _make_cog(db_path)
+    interaction = _interaction(cog)
 
     await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
 
@@ -320,8 +329,8 @@ async def test_a_superseded_session_does_not_count_as_results(tmp_path):
     db_path = await _make_db(
         tmp_path, name="amend_superseded", sessions=(("FEATURE_RACE", "SUPERSEDED"),)
     )
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    cog = await _make_cog(db_path)
+    interaction = _interaction(cog)
 
     await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
 
@@ -332,8 +341,8 @@ async def test_a_session_the_round_does_not_have_is_refused(tmp_path):
     """Chosen from the command's own list of four, which is the same list for every round —
     a normal round has no sprint to amend."""
     db_path = await _make_db(tmp_path, name="amend_wrongsession")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    cog = await _make_cog(db_path)
+    interaction = _interaction(cog)
 
     await _amend(cog, interaction, session=SessionType.SPRINT_RACE)
 
@@ -371,8 +380,8 @@ async def test_a_manager_who_does_not_name_a_session_is_asked(tmp_path):
     """A round has up to four sessions and any of them may be amended; guessing would amend
     the wrong race."""
     db_path = await _make_db(tmp_path, name="amend_ask")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    cog = await _make_cog(db_path)
+    interaction = _interaction(cog)
 
     await _choose(cog, interaction, answer=None, cancel=True)
 
@@ -387,8 +396,8 @@ async def test_only_the_sessions_the_round_has_are_offered(tmp_path):
         name="amend_offer",
         sessions=(("FEATURE_RACE", "ACTIVE"), ("FEATURE_QUALIFYING", "ACTIVE")),
     )
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    cog = await _make_cog(db_path)
+    interaction = _interaction(cog)
 
     await _choose(cog, interaction, answer=None, cancel=True)
 
@@ -402,8 +411,8 @@ async def test_a_superseded_session_is_not_offered(tmp_path):
         name="amend_offer_superseded",
         sessions=(("FEATURE_RACE", "ACTIVE"), ("FEATURE_QUALIFYING", "SUPERSEDED")),
     )
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    cog = await _make_cog(db_path)
+    interaction = _interaction(cog)
 
     await _choose(cog, interaction, answer=None, cancel=True)
 
@@ -423,8 +432,8 @@ async def test_the_sessions_are_offered_in_racing_order(tmp_path):
             ("SPRINT_RACE", "ACTIVE"),
         ),
     )
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    cog = await _make_cog(db_path)
+    interaction = _interaction(cog)
 
     await _choose(cog, interaction, answer=None, cancel=True)
 
@@ -440,8 +449,8 @@ async def test_cancelling_the_choice_amends_nothing(tmp_path):
     """And creates no channel: the channel is the expensive, visible part, so nothing is
     made until the choice is made."""
     db_path = await _make_db(tmp_path, name="amend_cancel")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    cog = await _make_cog(db_path)
+    interaction = _interaction(cog)
 
     await _choose(cog, interaction, answer=None, cancel=True)
 
@@ -453,8 +462,8 @@ async def test_a_choice_that_times_out_amends_nothing(tmp_path):
     """A manager who closes the ephemeral message or lets it lapse chooses nothing, and an
     empty choice must not be read as a session."""
     db_path = await _make_db(tmp_path, name="amend_timeout")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    cog = await _make_cog(db_path)
+    interaction = _interaction(cog)
 
     await _choose(cog, interaction, answer=None, cancel=False)
 
@@ -471,8 +480,8 @@ async def test_several_sessions_can_be_chosen_at_once(tmp_path):
         name="amend_offer_many",
         sessions=(("FEATURE_RACE", "ACTIVE"), ("FEATURE_QUALIFYING", "ACTIVE")),
     )
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    cog = await _make_cog(db_path)
+    interaction = _interaction(cog)
 
     await _choose(cog, interaction, answer=None, cancel=True)
 
@@ -557,17 +566,25 @@ async def _seed_queued_change(
 
 
 def _logged(interaction) -> list[str]:
-    """The lines the refusal recorded in the log channel, through the bot's output router."""
-    return [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
+    """The lines recorded in the league's log channel."""
+    return [str(line) for line in interaction.client.log_channel.sent]
 
 
-def _gate_interaction():
-    """An admin's interaction whose log lines are caught, and whose command, if it goes on to
-    create the amendment's channel, stops there with `_AmendmentWentOn`."""
-    interaction = _interaction()
-    interaction.client.output_router.post_log = AsyncMock(return_value=None)
+def _gate_interaction(cog):
+    """The manager's interaction, whose command, if it goes on to create the amendment's channel
+    itself, stops there with `_AmendmentWentOn`."""
+    interaction = _interaction(cog)
     interaction.guild.create_text_channel = AsyncMock(side_effect=_AmendmentWentOn())
     return interaction
+
+
+async def _went_on(cog, interaction, **amend) -> bool:
+    """Run the command: whether it went on past every gate, to create the amendment's channel
+    (before #439 slice 6b) or to ask the queue for `results.amend.open` (since)."""
+    with contextlib.suppress(_AmendmentWentOn):
+        await _amend(cog, interaction, session=SessionType.FEATURE_RACE, **amend)
+    asked = [row for row in await change_rows(cog.bot.db_path) if row["kind"] == OPEN]
+    return interaction.guild.create_text_channel.await_count > 0 or bool(asked)
 
 
 @pytest.mark.parametrize(
@@ -585,8 +602,8 @@ async def test_a_round_is_not_amended_while_its_division_has_a_job_on_the_queue(
     and recorded in the log as a refusal. Nothing is amended: no channel is created."""
     db_path = await _make_db(tmp_path, name=f"amend_queued_{state}_{stopped}")
     job = await _seed_queued_change(db_path, state=state, stopped=stopped)
-    cog = _make_cog(db_path)
-    interaction = _gate_interaction()
+    cog = await _make_cog(db_path)
+    interaction = _gate_interaction(cog)
 
     await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
 
@@ -613,8 +630,8 @@ async def test_a_change_with_only_its_close_left_holds_the_amendment_without_a_j
             (job,),
         )
         await db.commit()
-    cog = _make_cog(db_path)
-    interaction = _gate_interaction()
+    cog = await _make_cog(db_path)
+    interaction = _gate_interaction(cog)
 
     await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
 
@@ -632,8 +649,8 @@ async def test_a_job_naming_the_division_alone_still_blocks_the_amendment(tmp_pa
     job = await _seed_queued_change(
         db_path, kind="results.reports.approve", payload={"division_id": DIVISION_ID},
     )
-    cog = _make_cog(db_path)
-    interaction = _gate_interaction()
+    cog = await _make_cog(db_path)
+    interaction = _gate_interaction(cog)
 
     await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
 
@@ -660,13 +677,12 @@ async def test_a_job_that_is_not_the_division_s_in_hand_does_not_hold_the_amendm
     goes on to create the amendment's channel, and nothing is refused."""
     db_path = await _make_db(tmp_path, name=f"amend_not_held_{len(str(seed))}")
     await _seed_queued_change(db_path, **seed)
-    cog = _make_cog(db_path)
-    interaction = _gate_interaction()
+    cog = await _make_cog(db_path)
+    interaction = _gate_interaction(cog)
 
-    with pytest.raises(_AmendmentWentOn):
-        await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+    assert await _went_on(cog, interaction)
 
-    assert "job #" not in _replied(interaction)
+    assert "cannot be amended" not in _replied(interaction)
     assert _logged(interaction) == []
 
 
@@ -685,11 +701,11 @@ _PRO = SimpleNamespace(id=DIVISION_ID, name="Pro", tier=1)
 _AM = SimpleNamespace(id=OTHER_DIVISION_ID, name="Am", tier=2)
 
 
-def _division_cog(db_path: str, division: str):
+async def _division_cog(db_path: str, division: str):
     """The cog, its season holding Pro and Am, with round 3 of *division* FINAL."""
     division_id = DIVISION_ID if division == "Pro" else OTHER_DIVISION_ID
     round_id = ROUND_ID if division == "Pro" else OTHER_ROUND_ID
-    return _make_cog(
+    return await _make_cog(
         db_path,
         divisions=[_PRO, _AM],
         rounds=[SimpleNamespace(id=round_id, division_id=division_id, round_number=3,
@@ -714,8 +730,8 @@ async def test_a_round_is_not_amended_while_a_points_approval_of_its_season_is_i
     job = await _seed_queued_change(
         db_path, kind=POINTS_KIND, payload=POINTS_PAYLOAD, state=state, stopped=stopped,
     )
-    cog = _division_cog(db_path, division)
-    interaction = _gate_interaction()
+    cog = await _division_cog(db_path, division)
+    interaction = _gate_interaction(cog)
 
     with contextlib.suppress(_AmendmentWentOn):
         await _amend(cog, interaction, division=division, session=SessionType.FEATURE_RACE)
@@ -742,13 +758,12 @@ async def test_a_finished_or_discarded_points_approval_does_not_hold_the_amendme
     refused and nothing logged."""
     db_path = await _make_db(tmp_path, name=f"amend_points_over_{state}")
     await _seed_queued_change(db_path, kind=POINTS_KIND, payload=POINTS_PAYLOAD, state=state)
-    cog = _division_cog(db_path, "Pro")
-    interaction = _gate_interaction()
+    cog = await _division_cog(db_path, "Pro")
+    interaction = _gate_interaction(cog)
 
-    with pytest.raises(_AmendmentWentOn):
-        await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+    assert await _went_on(cog, interaction)
 
-    assert "job #" not in _replied(interaction)
+    assert "cannot be amended" not in _replied(interaction)
     assert _logged(interaction) == []
 
 
@@ -774,8 +789,8 @@ async def test_a_review_job_and_a_points_approval_name_the_one_nearer_its_turn(
         seeds.reverse()
     first = await _seed_queued_change(db_path, **seeds[0])
     second = await _seed_queued_change(db_path, **seeds[1])
-    cog = _division_cog(db_path, "Pro")
-    interaction = _gate_interaction()
+    cog = await _division_cog(db_path, "Pro")
+    interaction = _gate_interaction(cog)
 
     with contextlib.suppress(_AmendmentWentOn):
         await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
@@ -823,8 +838,8 @@ async def test_a_round_is_not_amended_while_a_cancellation_in_its_division_is_in
     job = await _seed_queued_change(
         db_path, kind=kind, payload=payload, state=state, stopped=stopped,
     )
-    cog = _make_cog(db_path)
-    interaction = _gate_interaction()
+    cog = await _make_cog(db_path)
+    interaction = _gate_interaction(cog)
 
     with contextlib.suppress(_AmendmentWentOn):
         await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
@@ -852,13 +867,12 @@ async def test_a_finished_or_discarded_cancellation_does_not_hold_the_amendment(
     amendment's channel, nothing refused and nothing logged."""
     db_path = await _make_db(tmp_path, name=f"amend_cancel_over_{kind}_{state}")
     await _seed_queued_change(db_path, kind=kind, payload=payload, state=state)
-    cog = _make_cog(db_path)
-    interaction = _gate_interaction()
+    cog = await _make_cog(db_path)
+    interaction = _gate_interaction(cog)
 
-    with pytest.raises(_AmendmentWentOn):
-        await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+    assert await _went_on(cog, interaction)
 
-    assert "job #" not in _replied(interaction)
+    assert "cannot be amended" not in _replied(interaction)
     assert _logged(interaction) == []
 
 
@@ -892,8 +906,8 @@ async def test_a_round_is_not_amended_while_a_round_amend_of_its_division_is_in_
     job = await _seed_queued_change(
         db_path, kind=ROUND_AMEND_KIND, payload=ROUND_AMEND_PAYLOAD, state=state, stopped=stopped,
     )
-    cog = _make_cog(db_path)
-    interaction = _gate_interaction()
+    cog = await _make_cog(db_path)
+    interaction = _gate_interaction(cog)
 
     with contextlib.suppress(_AmendmentWentOn):
         await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
@@ -919,13 +933,12 @@ async def test_a_finished_or_discarded_round_amend_does_not_hold_the_amendment(t
     db_path = await _make_db(tmp_path, name=f"amend_round_amend_over_{state}")
     await _seed_queued_change(db_path, kind=ROUND_AMEND_KIND, payload=ROUND_AMEND_PAYLOAD,
                               state=state)
-    cog = _make_cog(db_path)
-    interaction = _gate_interaction()
+    cog = await _make_cog(db_path)
+    interaction = _gate_interaction(cog)
 
-    with pytest.raises(_AmendmentWentOn):
-        await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+    assert await _went_on(cog, interaction)
 
-    assert "job #" not in _replied(interaction)
+    assert "cannot be amended" not in _replied(interaction)
     assert _logged(interaction) == []
 
 
@@ -960,8 +973,8 @@ async def _refused_naming(tmp_path, name, *, kind, payload, state, stopped, divi
     job = await _seed_queued_change(
         db_path, kind=kind, payload=payload, state=state, stopped=stopped,
     )
-    cog = _division_cog(db_path, division)
-    interaction = _gate_interaction()
+    cog = await _division_cog(db_path, division)
+    interaction = _gate_interaction(cog)
 
     with contextlib.suppress(_AmendmentWentOn):
         await _amend(cog, interaction, division=division, session=SessionType.FEATURE_RACE)
@@ -984,13 +997,12 @@ async def _goes_on(tmp_path, name, *, kind, payload, state):
     the amendment's channel, nothing refused and nothing logged."""
     db_path = await _make_db(tmp_path, name=name)
     await _seed_queued_change(db_path, kind=kind, payload=payload, state=state)
-    cog = _division_cog(db_path, "Pro")
-    interaction = _gate_interaction()
+    cog = await _division_cog(db_path, "Pro")
+    interaction = _gate_interaction(cog)
 
-    with pytest.raises(_AmendmentWentOn):
-        await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+    assert await _went_on(cog, interaction)
 
-    assert "job #" not in _replied(interaction)
+    assert "cannot be amended" not in _replied(interaction)
     assert _logged(interaction) == []
 
 

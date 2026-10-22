@@ -39,7 +39,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.services.penalty_wizard import StagedPardon
-from tests.support.change_queue import http_error
+from tests.support.change_queue import http_error, in_a_job
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 51
@@ -335,7 +335,8 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
 
     with patch("leaguebot.core.services.retry_service.enqueue", new=AsyncMock()) as enqueue:
         with pytest.raises(StepFailedOnDiscord):
-            await hook.post_sheet(LATEST_ROUND, DIVISION_ID, sanctioned=set(), as_text=False)
+            with in_a_job():
+                await hook.post_sheet(LATEST_ROUND, DIVISION_ID, sanctioned=set(), as_text=False)
 
     channel.send.assert_awaited_once()
     enqueue.assert_not_awaited()
@@ -521,9 +522,10 @@ async def test_a_sanction_announcement_shares_the_round_s_verdict_heading(tmp_pa
         )
         await db.commit()
 
-    await _hook(league.bot, _placement()).announce_sanction(
-        ROUND_ID, PRO, candidate(MAX_PROFILE, MAX_ID), as_text=False
-    )
+    with in_a_job():
+        await _hook(league.bot, _placement()).announce_sanction(
+            ROUND_ID, PRO, candidate(MAX_PROFILE, MAX_ID), as_text=False
+        )
 
     assert len(league.sent_to(VERDICTS_CHANNEL)) == 1
     assert verdict_headings(league) == []

@@ -20,6 +20,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.services.placement_service import PlacementService
+from tests.support.change_queue import in_a_job
 
 USER_ID = 101
 DIVISION_ROLE = 801
@@ -138,9 +139,10 @@ async def test_a_lineup_refreshed_as_text_draws_nothing(tmp_path, monkeypatch):
     guild = MagicMock()
     guild.get_channel = MagicMock(return_value=channel)
 
-    await PlacementService(db_path, bot=MagicMock()).refresh_lineup(
-        guild, DIVISION_ID, as_text=True
-    )
+    with in_a_job():
+        await PlacementService(db_path, bot=MagicMock()).refresh_lineup(
+            guild, DIVISION_ID, as_text=True
+        )
 
     try_post.assert_not_awaited()
     channel.send.assert_awaited_once()

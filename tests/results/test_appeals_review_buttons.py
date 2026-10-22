@@ -36,6 +36,7 @@ removing the wrong correction — which would be invisible, because both are rem
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -49,6 +50,14 @@ from leaguebot.results.services.penalty_wizard import (
     StagedPenalty,
     _AppealsConfirmClearView,
 )
+from tests.support.change_queue import (
+    acknowledgement,
+    attach_queue,
+    league_double,
+    member_interaction,
+    run_queue,
+    updated_reply,
+)
 
 SERVER_ID = 11608
 SEASON_ID = 1
@@ -57,6 +66,7 @@ ROUND_ID = 21
 #: The approval message every interaction here is pressed on, and every state records as its
 #: own. Its buttons act on no other (#402).
 APPROVAL_MESSAGE_ID = 880401
+PRESSED_AT = datetime(2026, 2, 1, 20, 0, tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +208,35 @@ def _replied(interaction) -> str:
         for call in interaction.response.send_message.await_args_list
         + interaction.followup.send.await_args_list
         if call.args
+    )
+
+
+def _staging_press(state: PenaltyReviewState):
+    """A press by the league manager Alex (77) on the approval message, its bot the review's and
+    carrying a real change queue on the review's database: Make Changes and a Remove button ask
+    the queue to stage their change (#439, slice 6b, C55), which the tests run."""
+    bot = league_double(state.db_path)
+    attach_queue(bot, state.db_path, now=PRESSED_AT)
+    state.bot = bot
+    # The approval message's withdrawal is the shared delete step (#439, C54), which finds the
+    # channel through the league's server, so the server answers as the bot double does.
+    bot.get_guild = MagicMock(return_value=MagicMock(get_channel=bot.get_channel))
+    user = MagicMock()
+    user.id = 77
+    user.display_name = "Alex"
+    user.mention = "<@77>"
+    user.bot = False
+    interaction = member_interaction(bot, user=user)
+    interaction.guild_id = SERVER_ID
+    interaction.channel_id = 700
+    interaction.message.id = APPROVAL_MESSAGE_ID
+    return interaction
+
+
+def _answered(interaction) -> str:
+    """Everything Alex was answered: the acknowledgement, its updates and any follow-ups."""
+    return "\n".join(
+        part for part in (acknowledgement(interaction), updated_reply(interaction)) if part
     )
 
 
@@ -347,16 +386,17 @@ async def test_make_changes_returns_to_staging_with_the_list_intact(tmp_path):
     state = _state(db_path)
     state.staged.append(_penalty())
     view = ApprovalView(state=state)
-    interaction = _interaction()
+    interaction = _staging_press(state)
 
     with _manager(), patch(
         "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()
     ) as refresh:
         await _press(view, "make_changes_btn", interaction)
+        await run_queue(state.bot)
 
     refresh.assert_awaited_once()
     assert len(state.staged) == 1
-    assert "staged list is intact" in _replied(interaction)
+    assert "staged list is intact" in _answered(interaction)
 
 
 async def test_approving_finalises_the_review(tmp_path):
@@ -447,12 +487,13 @@ async def test_removing_a_correction_takes_it_off_the_list(tmp_path):
     db_path = await _make_db(tmp_path, name="appeals_remove")
     state = _state(db_path, appeals=[_penalty(101), _penalty(102)])
     view = AppealsReviewView(state=state)
-    interaction = _interaction()
+    interaction = _staging_press(state)
 
     with _manager(), patch(
         "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
     ) as refresh:
         await view._make_remove_cb(0)(interaction)
+        await run_queue(state.bot)
 
     assert [p.driver_user_id for p in state.staged_appeals] == [102]
     refresh.assert_awaited_once()
@@ -464,14 +505,15 @@ async def test_removing_a_correction_says_which_one_went(tmp_path):
     db_path = await _make_db(tmp_path, name="appeals_remove_says")
     state = _state(db_path, appeals=[_penalty(101)])
     view = AppealsReviewView(state=state)
-    interaction = _interaction()
+    interaction = _staging_press(state)
 
     with _manager(), patch(
         "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
     ):
         await view._make_remove_cb(0)(interaction)
+        await run_queue(state.bot)
 
-    assert "101" in _replied(interaction)
+    assert "101" in _answered(interaction)
 
 
 async def test_a_remove_button_past_the_end_is_answered(tmp_path):
@@ -480,14 +522,15 @@ async def test_a_remove_button_past_the_end_is_answered(tmp_path):
     db_path = await _make_db(tmp_path, name="appeals_remove_stale")
     state = _state(db_path, appeals=[_penalty(101)])
     view = AppealsReviewView(state=state)
-    interaction = _interaction()
+    interaction = _staging_press(state)
 
     with _manager(), patch(
         "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
     ):
         await view._make_remove_cb(3)(interaction)
+        await run_queue(state.bot)
 
-    assert "no longer exists" in _replied(interaction)
+    assert "no longer exists" in _answered(interaction)
     assert len(state.staged_appeals) == 1
 
 
@@ -823,18 +866,30 @@ async def test_every_press_of_the_appeals_review_writes_one_line(tmp_path, kind,
         else AppealsReviewView(state=state)
     )
     button = next(item for item in view.children if getattr(item, "label", None) == label)
-    interaction = _interaction()
+    # A removal is staged by a change on the round's lane (#439, C55), which the test runs and
+    # whose line reaches the log channel; the clear asks the approval, stubbed.
+    queued = kind == "review"
+    interaction = _staging_press(state) if queued else _interaction()
     p1, p2, p3, p4 = _finalisers()
 
     with _manager(True), p1, p2, p3, p4:
         await button.callback(interaction)
+        if queued:
+            await run_queue(state.bot)
 
     removed = ["<@101>", "<@102>"] if kind == "clear" else ["<@101>"]
     assert [p.driver_user_id for p in state.staged_appeals] == ([] if kind == "clear" else [102])
-    assert [kind for kind, _payload in _asked(interaction, state)] == (
-        ["results.appeals.approve"] if kind == "clear" else []
-    )
-    (line,) = _all_lines(interaction, state)
+    if queued:
+        (line,) = [
+            "\n".join(part for part in str(sent).splitlines() if part.strip("\u2015"))
+            .replace("`<@", "<@").replace(">`", ">")
+            for sent in state.bot.log_channel.sent
+        ]
+    else:
+        assert [kind for kind, _payload in _asked(interaction, state)] == [
+            "results.appeals.approve"
+        ]
+        (line,) = _all_lines(interaction, state)
     assert not line.startswith(("⛔", "↩️", "⌛")), line
     for fragment in ("Alex (<@77>)", label, "appeals review of round 3 (Pro)", "+5s", *removed):
         assert fragment in line, (fragment, line)

@@ -66,7 +66,7 @@ ROUND_CANCELLABLE = frozenset({RoundStatus.NOT_RUN.value, RoundStatus.AWAITING_R
 #: module therefore has to close these rounds itself.
 #:
 #: NOT_RUN is deliberately not among them: that round is waiting on the clock, not on results,
-#: and ``run_result_submission_job`` already closes it as FINAL when its moment arrives with the
+#: and the round's start already closes it as FINAL when its moment arrives with the
 #: module off.
 ROUND_AWAITING_RESULTS_MODULE = frozenset({
     RoundStatus.AWAITING_RESULTS.value,

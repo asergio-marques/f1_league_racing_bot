@@ -18,24 +18,28 @@ saves and resumes:
    still open. It plans every job after it.
 3. **`post_batch_notice`**, the posting jobs under "Post-Race Penalty Results" for this round and
    the standings of every later round, and **`delete_batch_notice`** (`review_posting`).
-4. **`delete_message`** for the review's prompt and its approval message, once the new posts stand.
-5. **The verdicts** (`review_verdicts`): the heading, then one `announce_verdict` for each penalty.
-6. **`post_appeals_prompt`**, opening the appeals stage, its `record` saving the prompt's id.
-7. **The attendance sheet and the sanctions** (`review_verdicts`), read **at the latest round the
+4. **The verdicts** (`review_verdicts`): the heading, then one `announce_verdict` for each penalty.
+5. **The attendance sheet and the sanctions** (`review_verdicts`), read **at the latest round the
    cascade reached**, not the round approved: each round's stored total is the driver's total as
    at that round, so approving round 3 while round 4 is already final leaves the division's
    current standing on round 4, and it is the current standing a sheet must show and a threshold
    must be read from (decided with #238).
-8. **`close`**, **an opening job**, so that it runs last whatever was discarded before it. It
+6. **`close`**, **an opening job**, so that it runs last whatever was discarded before it. It
    writes `PENALTY_REVIEW_APPROVED | Success`, or `| Incomplete` naming every job a league admin
    discarded. Where `names` or `apply` was discarded nothing was changed, and it asks for
    `results.review.open` as the bot, so that a fresh prompt replaces the dead one and the manager
-   may press Approve again at once.
+   may press Approve again at once. Where the approval was made, it asks the round's lane for
+   `results.review.prompt` (stage `appeals`): the submission channel is the conversation's, so the
+   lane takes the review's prompt and approval message down and posts the appeals prompt, saving
+   its id, and a prompt Discord refuses stops that lane alone (C44b).
 
 **The check** is the one every control of the review asks (`review_stage_refusal`: the round awaits
 its report verdicts, no resubmission is collecting, the prompt is the current one), that no
 amendment holds the division, and that no other approval of the round is in hand (`unfinished`,
-a stopped one included), which is refused with the wording the review's controls use.
+a stopped one included), which is refused with the wording the review's controls use. An Approve
+also waits for the review's lane: it is refused while a staging or a confirmation is still in
+hand on it, and where the approval message it was pressed on is no longer the one the submission
+row names (`approval_wait_refusal`, C56a).
 
 The payload is ``round_id``, ``division_id``, ``staged`` and ``pardons`` (each as plain data,
 `to_payload`), ``prompt_message_id`` and ``approval_message_id``. What is staged travels in it, so a
@@ -76,13 +80,13 @@ from leaguebot.results.services.penalty_wizard import (
     StagedPardon,
     review_stage_refusal,
 )
+from leaguebot.results.services.review_confirm_change import approval_wait_refusal
 from leaguebot.results.services.result_submission_service import (
     _recompute_session_points_on,
     _snapshot_staged_drivers_on,
     held_by_amendment,
 )
 from leaguebot.results.services.review_posting import (
-    DELETE_MESSAGE,
     NAMES,
     display_names,
     plan_posts,
@@ -95,6 +99,7 @@ __all__ = ["KIND", "report_approval_change"]
 KIND = "results.reports.approve"
 REVIEW_OPEN = "results.review.open"
 APPEALS_OPEN = "results.appeals.open"
+REVIEW_PROMPT = "results.review.prompt"
 
 _APPLY = "apply"
 _CLOSE = "close"
@@ -142,6 +147,10 @@ def report_approval_change(
             refusal = await held_by_amendment(
                 ctx.db_path, round_id, int(payload["division_id"]),
                 then="Approve the reports again then.",
+            )
+        if refusal is None:
+            refusal = await approval_wait_refusal(
+                ctx.db_path, round_id, payload.get("approval_message_id")
             )
         if refusal is not None:
             return Verdict.refuse(refusal)
@@ -212,30 +221,15 @@ def report_approval_change(
             + f"  old={old_val}\n  new={new_val}"
         )
 
-        channel_id = int(row["channel_id"])
         then: list[PlannedStep] = []
         then.extend(
             await plan_posts(
                 db, round_id, label="Post-Race Penalty Results", later_rounds=True, notice=True
             )
         )
-        if payload.get("prompt_message_id") is not None:
-            then.append(PlannedStep(DELETE_MESSAGE, {
-                "channel_id": channel_id, "message_id": int(payload["prompt_message_id"]),
-                "what": "penalty review prompt",
-            }))
-        if payload.get("approval_message_id") is not None:
-            then.append(PlannedStep(DELETE_MESSAGE, {
-                "channel_id": channel_id, "message_id": int(payload["approval_message_id"]),
-                "what": "penalty approval message",
-            }))
         then.extend(
             review_verdicts.plan_verdicts(round_id, round_number, "penalty_records", records)
         )
-        then.append(PlannedStep(
-            review_verdicts.POST_APPEALS_PROMPT,
-            {"round_id": round_id, "division_id": division_id},
-        ))
         then.extend(review_verdicts.plan_attendance(
             latest, division_id, division_name, heading_round_id=round_id
         ))
@@ -282,23 +276,49 @@ def report_approval_change(
             + str((applied.result or {}).get("body", ""))
             + "".join(f"\n  {text}" for text in left)
         )
-        # "Discard reopens the review": the stage is open with no prompt where its post was
-        # discarded, so the prompt is asked for again, as the bot.
-        prompt = next((v for v in ctx.steps if v.name == review_verdicts.POST_APPEALS_PROMPT), None)
-        follow_ons: tuple[FollowOn, ...] = ()
-        if prompt is not None and _discarded(prompt.result):
-            follow_ons = (FollowOn(
-                APPEALS_OPEN,
-                {
-                    "round_id": int(ctx.payload["round_id"]),
-                    "division_id": int(ctx.payload["division_id"]),
-                    "old_prompt_id": None,
-                    "round_number": ctx.payload.get("round_number"),
-                    "division_name": ctx.payload.get("division_name"),
-                },
-                what="the appeals review prompt, posted again after its post was discarded",
-            ),)
-        return StepResult(result={"closed": True}, lines=(line,), follow_ons=follow_ons)
+        return StepResult(
+            result={"closed": True}, lines=(line,),
+            follow_ons=(await _appeals_prompt_request(db, ctx, applied.result or {}),),
+        )
+
+    async def _appeals_prompt_request(
+        db: aiosqlite.Connection, ctx: StepContext, applied: dict[str, Any]
+    ) -> FollowOn:
+        """The round's lane is asked, in the last save, to take the review's two screens down and
+        put the appeals stage's prompt up: the submission channel is the conversation's, so its
+        lane posts there (C44b), and a prompt Discord refuses stops that lane alone. The round's
+        number and division are those the approval read in its save (*applied*), so that the
+        prompt's lines name the round whatever the press carried."""
+        payload = ctx.payload
+        row = await (
+            await db.execute(
+                "SELECT channel_id FROM round_submission_channels WHERE round_id = ?",
+                (int(payload["round_id"]),),
+            )
+        ).fetchone()
+        if row is None or row["channel_id"] is None:
+            raise LookupError(f"round {payload['round_id']} has no submission channel")
+        takedowns = [
+            {"message_id": int(payload[key]), "what": what}
+            for key, what in (
+                ("prompt_message_id", "penalty review prompt"),
+                ("approval_message_id", "penalty approval message"),
+            )
+            if payload.get(key) is not None
+        ]
+        return FollowOn(
+            REVIEW_PROMPT,
+            {
+                "stage": "appeals",
+                "round_id": int(payload["round_id"]),
+                "division_id": int(payload["division_id"]),
+                "channel_id": int(row["channel_id"]),
+                "takedowns": takedowns,
+                "round_number": applied.get("round_number", payload.get("round_number")),
+                "division_name": applied.get("division_name", payload.get("division_name")),
+            },
+            what="the appeals review prompt, with the penalty review taken down",
+        )
 
     async def describe_apply(_ctx: StepContext) -> str:
         return "approving the round's reports"
@@ -326,9 +346,7 @@ def report_approval_change(
             f"✅ Round {result.get('round_number', '?')}'s reports are approved "
             f"({result.get('division_name', '?')}): {what}."
         )
-        prompt = views.get(review_verdicts.POST_APPEALS_PROMPT)
-        if prompt is None or not _discarded(prompt.result):
-            reply += " Its appeals review is posted below."
+        reply += " Its appeals review is posted below."
         left = [*review_posting.not_done(ctx), *review_verdicts.not_done(ctx)]
         return "\n".join([reply, *left])
 

@@ -32,13 +32,16 @@ either side.
 """
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
 import leaguebot.results.services.penalty_wizard as pw
+from leaguebot.core.db.database import run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.penalty_service import StagedPenalty
 from leaguebot.results.services.penalty_wizard import (
@@ -47,8 +50,19 @@ from leaguebot.results.services.penalty_wizard import (
     PenaltyReviewView,
     _ConfirmClearView,
 )
+from tests.support.change_queue import (
+    acknowledgement,
+    attach_queue,
+    league_double,
+    member_interaction,
+    run_queue,
+    seed_server,
+    updated_reply,
+)
 
 SERVER_ID = 12208
+#: When Alex presses, where a press asks the change queue (#439, slice 6b).
+PRESSED_AT = datetime(2026, 2, 1, 20, 0, tzinfo=timezone.utc)
 ROUND_ID = 5
 DIVISION_ID = 11
 DRIVER = 4001
@@ -139,6 +153,68 @@ def _replied(interaction) -> str:
         + interaction.followup.send.await_args_list
         if call.args
     )
+
+
+async def _on_the_queue(state: PenaltyReviewState, tmp_path) -> MagicMock:
+    """A press by the league manager Alex (77) in the review's submission channel, the review's
+    bot carrying a real change queue on a database of its own and the league's log channel.
+    Clearing, removing, Make Changes and No Penalties / Confirm ask the queue to stage their
+    change or post the approval message (#439, slice 6b, C55–C56), which the tests run."""
+    db_path = os.path.join(str(tmp_path), "review.db")
+    await run_migrations(db_path)
+    await seed_server(db_path)
+    bot = league_double(db_path)
+    attach_queue(bot, db_path, now=PRESSED_AT)
+    state.bot = bot
+    state.db_path = db_path
+    user = MagicMock(spec=discord.Member)
+    user.id = 77
+    user.display_name = "Alex"
+    user.mention = "<@77>"
+    user.bot = False
+    interaction = member_interaction(bot, user=user)
+    interaction.channel_id = state.submission_channel_id
+    # The submission channel can be reached, as the approval question's change checks (a test
+    # that is about it not being reached says so with `_in_channel`).
+    _in_channel(state, MagicMock())
+    return interaction
+
+
+def _in_channel(state: PenaltyReviewState, channel) -> None:
+    """The review's submission channel answers with *channel* (None: it cannot be reached); every
+    other channel is the league's as the bot double has it."""
+    found, fetched = state.bot.get_channel.side_effect, state.bot.fetch_channel.side_effect
+    own = state.submission_channel_id
+
+    async def _fetch(cid):
+        if cid != own:
+            return await fetched(cid) if callable(fetched) else fetched
+        if channel is None:
+            raise discord.NotFound(MagicMock(status=404), "Unknown Channel")
+        return channel
+
+    state.bot.get_channel = MagicMock(side_effect=lambda cid: channel if cid == own else found(cid))
+    state.bot.fetch_channel = AsyncMock(side_effect=_fetch)
+    # The approval message's withdrawal is the shared delete step (#439, C54), which finds the
+    # channel through the league's server, so the server answers as the bot double does.
+    state.bot.get_guild = MagicMock(return_value=MagicMock(get_channel=state.bot.get_channel))
+
+
+def _answered(interaction) -> str:
+    """Everything Alex was answered: the acknowledgement, its updates and any follow-ups."""
+    return "\n".join(
+        part for part in (acknowledgement(interaction), updated_reply(interaction)) if part
+    )
+
+
+def _lines(interaction) -> list[str]:
+    """The lines written to the log channel, as the router writes them: the mentions it wraps in
+    backticks unwrapped and the rule closing each entry dropped."""
+    lines = []
+    for sent in interaction.client.log_channel.sent:
+        kept = [part for part in str(sent).splitlines() if part.strip("―")]
+        lines.append("\n".join(kept).replace("`<@", "<@").replace(">`", ">"))
+    return [line for line in lines if line]
 
 
 @pytest.fixture(autouse=True)
@@ -235,14 +311,16 @@ async def test_add_penalty_offers_a_session_to_choose():
 # ---------------------------------------------------------------------------
 
 
-async def test_an_empty_list_goes_straight_to_approval():
+async def test_an_empty_list_goes_straight_to_approval(tmp_path):
     """Nothing to discard, so nothing to confirm — asking would be a confirmation with no
     consequence, which is how confirmations stop being read."""
-    view = PenaltyReviewView(_state(staged=[]))
-    interaction = _interaction()
+    state = _state(staged=[])
+    view = PenaltyReviewView(state)
+    interaction = await _on_the_queue(state, tmp_path)
 
     with _approval_step() as approval:
         await _press(view, "no_penalties_btn", interaction)
+        await run_queue(state.bot)
 
     approval.assert_awaited_once()
 
@@ -285,27 +363,29 @@ async def test_the_confirmation_says_what_will_happen_to_the_round():
 # ---------------------------------------------------------------------------
 
 
-async def test_confirming_the_clear_discards_the_staged_list():
+async def test_confirming_the_clear_discards_the_staged_list(tmp_path):
     state = _state(staged=[_penalty(), _penalty(10)])
     view = _ConfirmClearView(state)
-    interaction = _interaction()
+    interaction = await _on_the_queue(state, tmp_path)
 
     with _approval_step() as approval, patch(
         "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await type(view).confirm_btn(view, interaction, MagicMock())
+        await run_queue(state.bot)
 
     assert state.staged == []
     approval.assert_awaited_once()
 
 
-async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged():
+async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged(tmp_path):
     """**D5.** Round 3's penalty review (Division 1) has two penalties staged. Alex presses No
     Penalties / Confirm and then "Yes, clear and proceed with no penalties". The list is cleared
     and the prompt is redrawn from it, listing nothing staged, before the approval question is
     posted — redrawn after, it would withdraw the question it had just posted."""
     state = _state(staged=[_penalty(), _penalty(10)])
     view = _ConfirmClearView(state)
+    interaction = await _on_the_queue(state, tmp_path)
     order: list[str] = []
 
     async def _redrawn(drawn_state):
@@ -323,7 +403,8 @@ async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged():
     ), patch(
         "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
     ):
-        await type(view).confirm_btn(view, _interaction(), MagicMock())
+        await type(view).confirm_btn(view, interaction, MagicMock())
+        await run_queue(state.bot)
 
     assert state.staged == []
     assert order == ["prompt redrawn with 0 staged", "approval question posted"]
@@ -424,17 +505,28 @@ async def test_the_empty_approval_refusal_names_the_other_button():
 # ---------------------------------------------------------------------------
 
 
-async def test_resubmit_enters_the_resubmission_flow():
-    view = PenaltyReviewView(_state(staged=[_penalty()]))
+async def test_resubmit_asks_the_queue_to_start_the_resubmission():
+    """Alex presses 🔄 Resubmit Initial Results on round 3's review with a penalty staged. The
+    press asks the change queue for `results.resubmission.start` of round 3.
+
+    The off-queue flow is stubbed while it stands (`create=True` once it is gone), so that the
+    press fails on what it asks rather than on a flow run against a stub bot."""
+    state = _state(staged=[_penalty()])
     interaction = _interaction()
+    state.bot.change_queue = interaction.client.change_queue
+    view = PenaltyReviewView(state)
 
     with patch(
         "leaguebot.results.services.result_submission_service.enter_resubmit_flow",
-        new=AsyncMock(return_value=None),
-    ) as resubmit:
+        new=AsyncMock(return_value=None), create=True,
+    ):
         await _press(view, "resubmit_btn", interaction)
 
-    resubmit.assert_awaited_once()
+    ask = interaction.client.change_queue.ask
+    ask.assert_awaited_once()
+    kind, payload = ask.await_args.args[:2]
+    assert kind == "results.resubmission.start"
+    assert payload["round_id"] == ROUND_ID
 
 
 async def test_the_pardon_button_opens_the_pardon_modal():
@@ -526,21 +618,22 @@ async def test_five_penalties_and_two_pardons_all_get_a_remove_button():
 
 
 @pytest.mark.parametrize("amendment", [False, True])
-async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment):
+async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment, tmp_path):
     state = _state(staged=[_penalty()])
     state.staged_pardons = [_pardon(0), _pardon(1)]
     state.is_amendment = amendment
     view = PenaltyReviewView(state)
     button = next(c for c in view.children if c.custom_id == "pw_pardon_remove_0")
-    interaction = _interaction()
+    interaction = await _on_the_queue(state, tmp_path)
 
     with patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()), patch(
         "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
     ), patch("leaguebot.results.services.penalty_wizard._review_moved_on", new=AsyncMock(return_value=None)):
         await button.callback(interaction)
+        await run_queue(state.bot)
 
     assert [p.attendance_id for p in state.staged_pardons] == [42]
-    assert "Removed pardon" in _replied(interaction)
+    assert "Removed pardon" in _answered(interaction)
 
 
 async def test_a_pardon_cannot_be_removed_once_the_reports_are_approved():
@@ -609,7 +702,8 @@ async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, c
     with _approval_step() as approval, patch(
         "leaguebot.results.services.penalty_wizard._refresh_prompt", new=refresh
     ), patch(
-        "leaguebot.results.services.result_submission_service.enter_resubmit_flow", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.enter_resubmit_flow", new=AsyncMock(),
+        create=True,
     ) as resubmit:
         if control.startswith("pw_"):
             await next(c for c in view.children if c.custom_id == control).callback(interaction)
@@ -802,7 +896,7 @@ async def test_every_refused_press_of_the_penalty_review_is_recorded(
 
     with _approval_step() as approval, patch(
         "leaguebot.results.services.result_submission_service.enter_resubmit_flow",
-        new=AsyncMock(return_value=None),
+        new=AsyncMock(return_value=None), create=True,
     ) as resubmit:
         await button.callback(interaction)
 
@@ -850,18 +944,18 @@ _PRESSES = [
 ]
 
 
-def _pressed_by_alex(state, channel):
+async def _pressed_by_alex(state, channel, tmp_path):
     """Alex's press on the review's approval message, the review's channel answering with
-    *channel*, and the review's bot writing where the press's does."""
-    interaction = _interaction()
+    *channel*, through the review's bot and its change queue: every line the press or its change
+    writes lands in the league's log channel."""
+    interaction = await _on_the_queue(state, tmp_path)
     interaction.message.id = _APPROVAL_MESSAGE
-    state.bot.get_channel = MagicMock(return_value=channel)
-    state.bot.output_router = interaction.client.output_router
+    _in_channel(state, channel)
     return interaction
 
 
 @pytest.mark.parametrize("kind, label, staged, named", _PRESSES)
-async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, staged, named):
+async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, staged, named, tmp_path):
     """Round 3's penalty review (Division 1) has the penalties given staged and one ABSENT
     pardon. Alex, a league manager, presses Remove #1 or Remove Pardon #1, No Penalties /
     Confirm with nothing staged (posting the approval question), "Yes, clear and proceed with no
@@ -873,9 +967,11 @@ async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, st
     state.approval_message_id = _APPROVAL_MESSAGE if kind == "approval" else None
     channel = MagicMock()
     channel.send = AsyncMock(return_value=MagicMock(id=_APPROVAL_MESSAGE))
+    # The approval question Make Changes withdraws is a message the channel can fetch and delete.
+    channel.fetch_message = AsyncMock(return_value=MagicMock(delete=AsyncMock()))
     view = _view(kind, state)
     button = next(item for item in view.children if getattr(item, "label", None) == label)
-    interaction = _pressed_by_alex(state, channel)
+    interaction = await _pressed_by_alex(state, channel, tmp_path)
 
     with patch(
         "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()
@@ -883,6 +979,7 @@ async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, st
         "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await button.callback(interaction)
+        await run_queue(state.bot)
 
     if label == "Remove #1":
         assert state.staged == []
@@ -891,13 +988,13 @@ async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, st
     if kind == "clear" or label == "No Penalties / Confirm":
         assert state.staged == []
         channel.send.assert_awaited_once()
-    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    (line,) = _lines(interaction)
     assert not line.startswith(("⛔", "↩️", "⌛")), line
     for fragment in ("Alex (<@77>)", label, "penalty review of round 3 (Division 1)", *named):
         assert fragment in line, (fragment, line)
 
 
-async def test_no_penalties_with_the_channel_unreachable_is_answered_and_recorded():
+async def test_no_penalties_with_the_channel_unreachable_is_answered_and_recorded(tmp_path):
     """Round 3's penalty review (Division 1) has nothing staged, and its submission channel
     (4455) can no longer be reached. Alex presses No Penalties / Confirm. No approval question
     is posted; Alex is told it could not be posted, and exactly one ⛔ line records the refusal,
@@ -905,16 +1002,17 @@ async def test_no_penalties_with_the_channel_unreachable_is_answered_and_recorde
     state = _state(staged=[])
     state.submission_channel_id = 4455
     view = PenaltyReviewView(state)
-    interaction = _pressed_by_alex(state, None)
+    interaction = await _pressed_by_alex(state, None, tmp_path)
 
     with patch(
         "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await _press(view, "no_penalties_btn", interaction)
+        await run_queue(state.bot)
 
     assert state.approval_message_id is None
-    assert "could not be posted" in _replied(interaction)
-    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    assert "could not be posted" in _answered(interaction)
+    (line,) = _lines(interaction)
     assert line.startswith(
         f"⛔ the “No Penalties / Confirm” button {_OF_THE_REVIEW} refused for Alex (<@77>) — "
     ), line

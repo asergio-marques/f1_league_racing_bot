@@ -51,6 +51,7 @@ from tests.support.change_queue import (
     retry_job,
     run_queue,
     step_rows,
+    stopped_job,
     tier_member,
     updated_reply,
 )
@@ -243,7 +244,10 @@ def _clock(league: ReviewLeague) -> Any:
 async def _sweep(league: ReviewLeague, *, after: timedelta) -> int:
     from leaguebot.results.services.result_submission_service import sweep_expired_amendments
 
-    return await sweep_expired_amendments(league.bot, now=NOW + after)
+    asked = await sweep_expired_amendments(league.bot, queue=league.bot.change_queue, now=NOW + after)
+    # The sweep asks the queue for each lapse (#439 6b), which the queue then carries out.
+    await run_queue(league.bot)
+    return asked
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +330,8 @@ async def test_a_discarded_report_stage_apply_leaves_its_prompt_to_approve_again
 
 
 async def test_a_discarded_amendment_appeals_prompt_says_so_in_the_reply(tmp_path):
+    """The amendment's appeals prompt is the amendment's lane's, yet Alex's reply to the approval,
+    still open to update, hears of its discard; the log channel carries the warning too."""
     league = await _amend_league(tmp_path)
     league.channel(AMEND_CHANNEL).fail_when = is_appeals_prompt
     interaction = await _approve_reports(league)
@@ -338,8 +344,41 @@ async def test_a_discarded_amendment_appeals_prompt_says_so_in_the_reply(tmp_pat
     assert "⚠️" in reply
     assert "appeals" in reply.lower()
     assert "/results rounds amend" in reply
+    log = league.log()
+    assert "AMEND_STAGE_2 | Incomplete" in log
+    line = log[log.index("AMEND_STAGE_2 | Incomplete"):]
+    assert "⚠️" in line
+    assert "appeals" in line.lower()
+    assert "/results rounds amend" in line
     assert _amend_appeals_prompts(league) == []
 
+
+async def test_a_stage_prompt_is_posted_on_the_amendment_s_lane(tmp_path):
+    """Round 3 is under an amendment in channel 705, its report stage awaiting approval, and
+    Discord refuses the amendment's appeals prompt. Alex approves the report stage: the approval
+    finishes on the league lane, its stage recorded; the amendment's lane, not the league's, stops
+    at the appeals prompt's post. Retry on the amendment's lane posts it."""
+    lane = f"channel:{AMEND_CHANNEL}"
+    league = await _amend_league(tmp_path)
+    league.channel(AMEND_CHANNEL).fail_when = is_appeals_prompt
+
+    await _approve_reports(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path, "league") is None
+    stopped = await stopped_job(league.db_path, lane)
+    assert stopped is not None
+    [approval] = await changes_of(league.db_path, REPORTS)
+    assert approval["state"] == "DONE"
+    assert stopped["change_id"] != approval["id"]
+    assert (await _amend_row(league))["reports_approved_at"] is not None
+    assert _amend_appeals_prompts(league) == []
+
+    league.channel(AMEND_CHANNEL).fail_when = None
+    await retry_job(league.bot, lane=lane)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(_amend_appeals_prompts(league)) == 1
 
 async def test_the_amendment_checks_read_the_handed_clock(tmp_path):
     league = await _amend_league(tmp_path, deadline="2099-01-01T00:00:00+00:00")
@@ -486,21 +525,6 @@ async def test_recovery_leaves_alone_an_amendment_whose_stage_is_in_hand(tmp_pat
 
     row = await _amend_row(league)
     assert row is not None and row["pre_amendment_state"] is not None
-    assert not _amend_channel_deleted(league)
-
-
-async def test_cancel_is_refused_while_a_stage_is_in_hand(tmp_path):
-    from leaguebot.results.services.result_submission_service import cancel_amendment
-
-    league = await _amend_league(tmp_path)
-    await block_queue(league)
-    await _approve_reports(league)
-
-    assert await cancel_amendment(league.bot, ROUND_ID, cancelled_by=77) is False
-
-    row = await _amend_row(league)
-    assert row["pre_amendment_state"] is not None
-    assert row["expires_at"] == DEADLINE
     assert not _amend_channel_deleted(league)
 
 
@@ -1145,3 +1169,31 @@ async def test_the_sheet_and_the_sanctions_follow_the_running_totals_to_the_last
     assert sheet.await_count == 1
     assert sheet.await_args.args[:2] == (LATER_ROUND_ID, DIVISION_ID)
     assert owed.await_args.args[:2] == (LATER_ROUND_ID, DIVISION_ID)
+
+
+async def test_a_stage_approval_is_refused_while_a_staging_is_in_hand(tmp_path):
+    """Round 3 is under an amendment whose report stage is open in the amendment channel, and
+    that channel's lane is stopped, so the report for Max Alex has just added there is still
+    waiting to be shown. Alex presses Approve on the report stage: it is refused at the press,
+    telling him a change to the review is still being shown, and the stage is not approved."""
+    from leaguebot.results.models.points_config import SessionType
+    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
+    from tests.results.test_review_stage_change import _add_penalty, _alex
+
+    league = await _amend_league(tmp_path)
+    await block_queue(league, lane=f"channel:{AMEND_CHANNEL}")
+    state = PenaltyReviewState(
+        round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=AMEND_CHANNEL,
+        session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
+        bot=league.bot, prompt_message_id=AMEND_PROMPT, approval_message_id=AMEND_APPROVAL,
+        round_number=3, division_name="Pro", is_amendment=True,
+    )
+    await _add_penalty(state, _alex(league), driver=MAX)
+
+    interaction = await _approve_reports(league)
+    await run_queue(league.bot)
+
+    # Refused at the press, so no change of the approval's is saved at all.
+    assert await changes_of(league.db_path, REPORTS) == []
+    assert "still being shown" in acknowledgement(interaction) + updated_reply(interaction)
+    assert (await _amend_row(league))["reports_approved_at"] is None

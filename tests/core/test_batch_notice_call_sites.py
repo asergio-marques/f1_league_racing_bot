@@ -1,7 +1,6 @@
 """The render batches that carry a notice, and the one ordering rule between them.
 
-`batch_notice` is tested on its own in `test_batch_notice.py`. What is left is whether
-each slow batch is actually inside one, and whether the appeals batch closes its notice
+What is pinned here is whether each slow batch is actually inside one, and whether the appeals batch closes its notice
 before it deletes the channel the notice lives in — an ordering that is invisible to the
 helper and would fail only in production, silently, as an ignored `NotFound`.
 
@@ -65,23 +64,30 @@ def _calls_within(node: ast.AST) -> set[str]:
 # ── `/season placements-review` ──────────────────────────────────────────────────────
 
 
-def test_the_review_pre_render_is_wrapped():
-    """The pre-render is the whole batch — the posting loop after it runs at message
-    speed, and wrapping that instead would show the notice for the wrong stretch."""
-    node = _function("core/cogs/season_cog.py", "season_review")
-    blocks = _notices(node)
+# Since #439 the season review is a change on the queue (`season.review.post`): its drawing notice is
+# a job of its own, `post_drawing_notice`, and the pictures are drawn and posted by `draw_and_post`
+# jobs after it, the notice deleted after the last. That order is driven through the queue in
+# `test_season_review_changes.py` (the drawing notice before the drawing, deleted after); what is read
+# here is that the commands no longer draw under a notice of their own.
 
-    assert len(blocks) == 1, "expected exactly one notice in /season placements-review"
-    assert "_prerender_review_images" in _calls_within(blocks[0])
+_REVIEW_CHANGES = "core/services/season_review_changes.py"
 
 
-def test_the_review_posting_loop_is_not_wrapped():
-    node = _function("core/cogs/season_cog.py", "season_review")
-    inside = _calls_within(_notices(node)[0])
-
-    assert "_discard_prepared_review_images" not in inside, (
-        "the notice covers the posting loop, so it stays up while the blocks are sent"
-    )
+def test_the_review_command_draws_nothing_under_a_notice_of_its_own():
+    """`/season placements-review`, in both its forms, wraps nothing in a batch notice and draws
+    no picture itself: the drawing and its notice are jobs of the review's change, the notice
+    posted before the first picture is drawn."""
+    for name in ("season_review", "_review_mid_season_placements", "_prerender_mid_season_lineups"):
+        try:
+            node = _function("core/cogs/season_cog.py", name)
+        except AssertionError:
+            continue
+        assert not _notices(node), f"{name} still wraps work in a batch notice"
+        assert not {"_prerender_review_images", "_prerender_mid_season_lineups"} & _calls_within(
+            node
+        ), f"{name} still draws the review's pictures in the command"
+    source = (SRC / _REVIEW_CHANGES).read_text(encoding="utf-8")
+    assert source.index("post_drawing_notice") < source.index("draw_and_post")
 
 
 # ── the confirmation of placements (the button) ────────────────────────────────────────
@@ -251,17 +257,18 @@ def _assert_plain_text(text: object) -> None:
         assert forbidden not in text
 
 
-@pytest.mark.parametrize(
-    "relative,function",
-    [
-        ("core/cogs/season_cog.py", "season_review"),
-    ],
-)
-def test_every_notice_carries_plain_text_for_a_league(relative, function):
-    """The season review's notice; the confirmation's is read below, and the results
-    review's as they are sent, above."""
-    call = _notices(_function(relative, function))[0].items[0].context_expr
-    _assert_plain_text(call.args[1].value)
+def test_every_notice_carries_plain_text_for_a_league():
+    """The season review's drawing notice, now its job's text: today's words, a league's to read.
+    The confirmation's is read below, and the results review's as they are sent, above."""
+    texts = [
+        sub.value
+        for sub in ast.walk(_tree(_REVIEW_CHANGES))
+        if isinstance(sub, ast.Constant) and isinstance(sub.value, str)
+        and "one moment" in sub.value
+    ]
+    notice = "\U0001f3a8 Drawing the graphics for this review — one moment."
+    assert notice in texts, texts
+    _assert_plain_text(notice)
 
 
 def test_the_confirmation_s_notice_carries_plain_text_for_a_league():

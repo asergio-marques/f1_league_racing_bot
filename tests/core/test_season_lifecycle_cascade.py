@@ -28,7 +28,6 @@ import itertools
 from datetime import datetime, timezone
 
 import pytest
-from unittest.mock import MagicMock
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.season_service import SeasonService, refresh_division_status_on
@@ -690,25 +689,37 @@ async def test_a_driver_moved_between_divisions_keeps_an_entry_for_each(tmp_path
 
 
 async def _run_the_round_job(db_path, round_id, *, results_enabled):
-    """Fire the round's scheduled job with the results module on or off.
+    """The round's moment arrives with the results module on or off: its timer asks the change
+    queue to open the round's submission, as the bot, and the queue is run (#439, slice 6b).
+    Gives the bot.
 
-    The job goes on to build a submission channel against a real guild, which these tests do not
-    have, so anything after the transition is allowed to fail: the state is committed before that
-    point and is what is being asserted. Written this way rather than by patching the world,
-    because patching would have to know the job's shape and would stop testing it the moment that
-    changed.
+    The opening goes on to create a submission channel on a server these tests do not have, so
+    anything after the round's move is allowed to fail: the move is saved by a job of its own
+    before that point and is what is being asserted. Written this way rather than by patching
+    the world, because patching would have to know the change's shape and would stop testing it
+    the moment that changed.
     """
     import contextlib
-    from unittest.mock import AsyncMock, MagicMock
 
-    from leaguebot.results.services.result_submission_service import run_result_submission_job
+    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.module_service import ModuleService
+    from tests.support.change_queue import attach_queue, league_double, run_queue
 
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
+    bot = league_double(db_path)
+    bot.config_service = ConfigService(db_path)
+    bot.module_service = ModuleService(db_path)
+    bot.season_service = SeasonService(db_path)
+    await bot.module_service.set_results_enabled(results_enabled)
+    attach_queue(bot, db_path, now=NOW)
 
+    await bot.change_queue.ask(
+        "results.submission.open", {"round_id": round_id}, what="opening a results submission",
+        origin=ChangeOrigin.BOT,
+    )
     with contextlib.suppress(Exception):
-        await run_result_submission_job(round_id, bot)
+        await run_queue(bot)
+    return bot
 
 
 async def test_the_round_begins_awaiting_results_when_its_moment_arrives(tmp_path) -> None:
@@ -743,7 +754,9 @@ async def test_without_the_results_module_the_round_ends_when_its_moment_arrives
 
 
 async def test_the_moment_arriving_does_not_disturb_a_round_already_under_way(tmp_path) -> None:
-    """The job can fire again — on a restart replaying missed work — and must not rewind."""
+    """The opening can be asked again — on a restart replaying missed work — and must not
+    rewind: a round awaiting its appeal verdicts stays so, and a cancelled round stays
+    cancelled."""
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path, rounds_per_division=1)
     _, (round_id,) = built["Div A"]
@@ -762,10 +775,10 @@ async def test_without_the_results_module_the_round_and_its_division_are_saved_t
 ) -> None:
     """The round's move off Not run and its division's refresh are one save (#439, slice 5).
 
-    Today the round's move commits first and the refresh commits on its own, so a refresh that
-    fails leaves the round final over a division never told. Both forms of the refresh are made
-    to raise, today's method and the on-connection form the job saves through, so the test reads
-    the same before and after the change.
+    The round's opening is asked of the change queue with results off, and its division's
+    refresh raises: the save fails whole, so the round stays NOT_RUN over a division still
+    ACTIVE rather than final over a division never told. Every form of the refresh is made to
+    raise, so the test reads the same whichever the save goes through.
     """
     from leaguebot.core.services import season_service
     from leaguebot.results.services import result_submission_service
@@ -793,12 +806,11 @@ async def test_without_the_results_module_the_round_and_its_division_are_saved_t
 
 async def test_without_the_results_module_the_wind_down_is_asked_of_the_queue(tmp_path) -> None:
     """The season's wind-down is asked of the change queue as the bot's, not run in-process
-    (#439, slice 5). Today the job calls `wind_down_ongoing` itself and logs its failure."""
-    import contextlib
-    from unittest.mock import AsyncMock
-
-    from leaguebot.core.models.change import ChangeOrigin
-    from leaguebot.results.services.result_submission_service import run_result_submission_job
+    (#439, slice 5). The season's only round's moment arrives with results off while the season
+    is at its ongoing placements: the queue makes the round FINAL and the season's wind-down is
+    asked of it, as the bot."""
+    from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
+    from tests.support.change_queue import change_rows
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, rounds_per_division=1)
@@ -809,16 +821,8 @@ async def test_without_the_results_module_the_wind_down_is_asked_of_the_queue(tm
         )
         await db.commit()
 
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_results_enabled = AsyncMock(return_value=False)
-    bot.change_queue.ask = AsyncMock(return_value=1)
-    with contextlib.suppress(Exception):
-        await run_result_submission_job(round_id, bot)
+    await _run_the_round_job(db_path, round_id, results_enabled=False)
 
     assert await _round_status(db_path, round_id) == "FINAL"
-    bot.change_queue.ask.assert_awaited_once()
-    call = bot.change_queue.ask.await_args
-    kind = call.args[0] if call.args else call.kwargs["kind"]
-    assert kind == "season.wind_down"
-    assert call.kwargs["origin"] is ChangeOrigin.BOT
+    [wind_down] = [row for row in await change_rows(db_path) if row["kind"] == WIND_DOWN]
+    assert wind_down["origin"] == "BOT"

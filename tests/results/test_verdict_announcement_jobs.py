@@ -20,6 +20,7 @@ builder, so this file collects while they are unbuilt.
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -44,6 +45,7 @@ from tests.support.change_queue import (
     updated_reply,
 )
 from tests.support.review_league import (
+    AMEND_CHANNEL,
     DIVISION_ID,
     HEADING,
     LATER_ROUND_ID,
@@ -56,6 +58,7 @@ from tests.support.review_league import (
     SUBMISSION_CHANNEL,
     VERDICTS_CHANNEL,
     ReviewLeague,
+    channel,
     one,
     penalty,
     review_league,
@@ -64,6 +67,7 @@ from tests.support.review_league import (
 )
 
 APPEALS_PROMPT = 8902
+
 
 
 def _nfa(driver: int) -> StagedPenalty:
@@ -296,6 +300,56 @@ async def test_a_test_driver_is_drawn_under_its_test_name(tmp_path, drawn):
     assert [item["driver_name"] for item in drawn] == ["Test Lewis"]
 
 
+#: The change `/attendance sync` asks for the cards of the sanctions it applied (C37).
+SANCTIONS_ANNOUNCE = "attendance.sanctions.announce"
+
+
+async def _announce_lewis_s_autoreserve(league: ReviewLeague) -> None:
+    """Hand the change types attendance's real hook, then ask the queue, as the bot and as the
+    sync asks it, to announce Lewis's move to reserve in round 3 of Pro, and run it."""
+    from leaguebot.core.models.change import ChangeOrigin
+    from tests.support.review_league import candidate
+
+    _real_attendance_hook(league)
+    await league.bot.change_queue.ask(
+        SANCTIONS_ANNOUNCE,
+        {
+            "round_id": ROUND_ID, "division_id": DIVISION_ID, "division": "Pro",
+            "sanctions": [candidate(LEWIS_PROFILE, LEWIS)],
+        },
+        what="announcing round 3's attendance sanctions",
+        origin=ChangeOrigin.BOT,
+    )
+    await run_queue(league.bot)
+
+
+async def test_a_sync_s_sanction_card_is_drawn_under_the_driver_s_server_name(tmp_path, drawn):
+    """Attendance is on with its real hook, and the verdict graphic is on. A sync has moved
+    Lewis (101), known to the server as "Lewis", to reserve, and asks the queue to announce it:
+    the queue runs whole, and the sanction's card is drawn under "Lewis", never his user id
+    (#141; image spec: a graphic names a person by their display name on the server)."""
+    league = await review_league(tmp_path, attendance=True)
+
+    await _announce_lewis_s_autoreserve(league)
+
+    assert await stopped_at(league) is None
+    assert [item["driver_name"] for item in drawn] == ["Lewis"]
+    assert str(LEWIS) not in drawn[0]["driver_name"]
+
+
+async def test_a_sync_s_sanction_card_as_text_mentions_the_driver(tmp_path):
+    """As above, but with image generation off: the card is posted as text in Pro's verdicts
+    channel (704), mentioning Lewis as <@101> and saying he was moved to reserve."""
+    league = await review_league(tmp_path, attendance=True)
+
+    await _announce_lewis_s_autoreserve(league)
+
+    assert await stopped_at(league) is None
+    [card] = _verdicts(league)
+    assert f"<@{LEWIS}>" in card
+    assert "Moved to Reserve" in card
+
+
 async def test_no_further_action_is_drawn_as_no_penalty(tmp_path, drawn):
     league = await review_league(tmp_path)
     await _approve_reports(league, [_nfa(LEWIS)])
@@ -499,7 +553,8 @@ async def _no_attendance_channel(league: ReviewLeague) -> None:
 async def _no_reserve_team(league: ReviewLeague) -> None:
     """Division 11 sets an autoreserve threshold of one point and has no Reserve team. Lewis, in
     the seat of team 3001, raced round 4, the last final round and so where the division's totals
-    stand, without an RSVP, which puts him on the threshold."""
+    stand, without an RSVP, which puts him on the threshold. The division has an attendance
+    channel the server holds, for the sheet before the sanction to post to."""
     async with get_connection(league.db_path) as db:
         await db.execute("UPDATE attendance_config SET autoreserve_threshold = 1")
         seat = await db.execute(
@@ -517,7 +572,13 @@ async def _no_reserve_team(league: ReviewLeague) -> None:
             "rsvp_status, attended) VALUES (?, ?, ?, 'NO_RSVP', 1)",
             (LATER_ROUND_ID, DIVISION_ID, LEWIS_PROFILE),
         )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (DIVISION_ID, str(ATTENDANCE_CHANNEL)),
+        )
         await db.commit()
+    league.channels[ATTENDANCE_CHANNEL] = channel(ATTENDANCE_CHANNEL, league.events)
 
 
 @pytest.mark.parametrize(
@@ -553,3 +614,148 @@ async def test_a_sheet_or_sanction_stop_names_what_to_repair(tmp_path, seed, job
               if "The queue is stopped at job #" in line]
     assert reason in stop
     assert fault not in stop and "StepFailedOnDiscord" not in stop
+
+
+# ---------------------------------------------------------------------------
+# A sheet with no attendance channel set stops the queue (#439, slice 6b, fault 5)
+# ---------------------------------------------------------------------------
+
+#: The amendment's appeals prompt, in the amendment channel.
+AMEND_APPEALS_PROMPT = 8952
+
+
+def _real_attendance_hook(league: ReviewLeague) -> None:
+    """Hand the change types attendance's real hook, `AttendanceAfterReview`, with a placement
+    service that does nothing, so that the sheet is posted by `post_attendance_sheet` itself."""
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+
+    placement = MagicMock()
+    for name in ("sack_driver", "move_driver", "refresh_lineup"):
+        setattr(placement, name, AsyncMock(return_value=None))
+    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
+    attach_queue(league.bot, league.db_path, now=NOW)
+
+
+def _sheet_stop(league: ReviewLeague) -> str:
+    [stop] = [line for line in league.bot.log_channel.sent
+              if "The queue is stopped at job #" in line]
+    return stop
+
+
+async def test_a_review_s_attendance_sheet_with_no_channel_stops_the_queue_naming_the_command(
+    tmp_path,
+):
+    """Attendance is on, and division 11 (Pro) was never given an attendance channel. Alex
+    approves round 3's reports: the queue stops at the sheet, its stop line naming the command
+    that sets the channel, rather than the sheet completing having posted nothing."""
+    league = await review_league(tmp_path, attendance=True)
+    _real_attendance_hook(league)
+
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) == "attendance_sheet"
+    assert "/attendance channel attendance" in _sheet_stop(league)
+
+
+async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(tmp_path):
+    """Round 3 of Pro, final, is under an amendment of its Feature Race whose report stage is
+    approved, its appeals prompt standing in the amendment channel. Attendance is on and Pro was
+    never given an attendance channel. Alex approves the amendment's appeals stage with nothing
+    staged: the rebuild stops the queue at the sheet, naming the command that sets the channel."""
+    league = await review_league(tmp_path, attendance=True, round_status="FINAL")
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels SET closed = 1, in_penalty_review = 0"
+        )
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+            "pre_amendment_state, expires_at, started_by, reports_approved_at) "
+            "VALUES (?, ?, '[\"FEATURE_RACE\"]', ?, ?, ?, 77, ?)",
+            (ROUND_ID, AMEND_CHANNEL, NOW.isoformat(),
+             json.dumps({"sessions": [], "profiles_before": []}),
+             (NOW + timedelta(minutes=30)).isoformat(), NOW.isoformat()),
+        )
+        await db.commit()
+    league.channel(AMEND_CHANNEL).seed(AMEND_APPEALS_PROMPT, "the amendment's appeals")
+    _real_attendance_hook(league)
+
+    await league.bot.change_queue.ask(
+        "results.amendment.appeals.approve",
+        {
+            "round_id": ROUND_ID, "division_id": DIVISION_ID,
+            "session_types": ["FEATURE_RACE"], "staged": [], "pardons": [],
+            "appeals_prompt_message_id": AMEND_APPEALS_PROMPT,
+        },
+        interaction=member_interaction(league.bot, user=tier_member("manager")),
+        what="✅ Approve on round 3's amendment appeals",
+    )
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) == "attendance_sheet"
+    assert "/attendance channel attendance" in _sheet_stop(league)
+
+
+#: Pro's attendance channel, where the lineup test has one, so that its sheet is posted.
+ATTENDANCE_CHANNEL = 707
+
+
+async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_command(tmp_path):
+    """Attendance is on, with its real hook and the real placement service (roles granted and
+    revoked by doubles), and division 11 (Pro) has an attendance channel but was never given a
+    lineup channel. Pro sets an
+    autoreserve threshold of one point and has a Reserve team with a free seat; Lewis, raced
+    round 4 without an RSVP, is on the threshold. Alex approves round 3's reports: Lewis is moved
+    to the Reserve team, and the queue stops at the lineup the sanction owes, its stop line
+    naming the command that sets the channel, rather than the lineup completing having posted
+    nothing."""
+    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+
+    league = await review_league(tmp_path, attendance=True)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE attendance_config SET autoreserve_threshold = 1")
+        seat = await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (3001, 1, ?)",
+            (LEWIS_PROFILE,),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+            "team_seat_id) VALUES (?, 1, ?, ?)",
+            (LEWIS_PROFILE, DIVISION_ID, seat.lastrowid),
+        )
+        reserve = await db.execute(
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, 'Reserve', 'Reserve', 2, 1)",
+            (DIVISION_ID,),
+        )
+        await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 1)",
+            (reserve.lastrowid,),
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+            "rsvp_status, attended) VALUES (?, ?, ?, 'NO_RSVP', 1)",
+            (LATER_ROUND_ID, DIVISION_ID, LEWIS_PROFILE),
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (DIVISION_ID, str(ATTENDANCE_CHANNEL)),
+        )
+        await db.commit()
+    league.channels[ATTENDANCE_CHANNEL] = channel(ATTENDANCE_CHANNEL, league.events)
+    league.bot.user = MagicMock(id=9000)
+    league.bot.user.__str__.return_value = "LeagueBot"
+    placement = PlacementService(league.db_path, league.bot)
+    placement._grant_roles = AsyncMock()
+    placement._revoke_roles = AsyncMock()
+    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
+    attach_queue(league.bot, league.db_path, now=NOW)
+
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) == "refresh_lineup"
+    assert "/division lineup-channel" in _sheet_stop(league)

@@ -180,7 +180,6 @@ async def test_the_modal_carries_the_round_and_embed_it_will_edit(tmp_path):
     modal = interaction.response.send_modal.await_args.args[0]
     assert modal._round_id == ROUND_ID
     assert modal._division_id == DIVISION_ID
-    assert modal._embed_channel_id == EMBED_CHANNEL
     assert modal._embed_message_id == EMBED_MESSAGE
 
 

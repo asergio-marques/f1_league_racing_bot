@@ -31,26 +31,26 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.cogs.module_cog import (
-    RETURNED_BY_CLOSE,
-    armed_close_refusal,
-    execute_forced_close,
-    failed_steps_lines,
-    failed_steps_reply,
-)
+from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
-from leaguebot.signup.services.wizard_service import SignupNotOpenError
+from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
+from leaguebot.signup.services.wizard_answers import take_typed_answer
+from leaguebot.signup.services.wizard_changes import ask_member_left, departed_placed_driver
+from leaguebot.signup.services.window_changes import (
+    AUDIT_CLOSE,
+    AUDIT_FORCE_CLOSE,
+    armed_close_refusal,
+    season_end_close_refusal,
+)
 from leaguebot.core.services import track_service
 from leaguebot.core.utils.input_validator import parse_datetime
-from leaguebot.core.utils.league_bot import LeagueBot, bot_of
+from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.time_parsing import parse_time_of_day
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults, changes_nothing
-from leaguebot.core.utils.league_server import CallbackButton, LeagueView, channel_id_of, guild_of, is_foreign_guild
+from leaguebot.core.utils.league_server import LeagueView, is_foreign_guild
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
-from leaguebot.core.utils.messages import chunk_message
 from leaguebot.weather.utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
@@ -136,221 +136,6 @@ def _format_slots(slots: list) -> str:
     return "\n".join(lines)
 
 
-_MAX_TEAM_BUTTONS = 20  # upper bound for pteam_N stub handlers in registration mode
-
-
-async def _resolve_view_context(
-    interaction: discord.Interaction,
-    stored_user_id: str | None,
-) -> tuple:
-    """Return (bot, discord_user_id) for a persistent-view callback.
-
-    When the stored value is None (view registered for restart recovery via
-    ``bot.add_view``), looks up the wizard by channel ID to identify the
-    owning driver.
-    """
-    bot = bot_of(interaction)
-    if stored_user_id is not None:
-        return bot, stored_user_id
-    wizard = await bot.wizard_service.get_wizard_by_channel(
-        channel_id_of(interaction)
-    )
-    return bot, (wizard.discord_user_id if wizard else None)
-
-
-def _wizard_owner(interaction: discord.Interaction, owner_id: str | None) -> str:
-    """Whose signup wizard a button sits on, as the log channel names it: "Alex's", by the display
-    name the league's server gives them, or their mention where the name is not to be had. Nobody
-    (a channel whose wizard is gone) is "a"."""
-    if owner_id is None:
-        return "a"
-    name = None
-    if str(interaction.user.id) == owner_id:
-        name = getattr(interaction.user, "display_name", None)
-    else:
-        guild = interaction.guild
-        member = guild.get_member(int(owner_id)) if guild is not None else None
-        name = getattr(member, "display_name", None)
-    return f"{name if isinstance(name, str) else f'<@{owner_id}>'}'s"
-
-
-def _pressed_label(interaction: discord.Interaction, fallback: str) -> str:
-    """The label of the button that was pressed, read from its own message by its `custom_id`;
-    *fallback* where the message does not carry it."""
-    data = interaction.data
-    custom_id = data.get("custom_id") if isinstance(data, dict) else None
-    for row in getattr(interaction.message, "components", None) or []:
-        for child in getattr(row, "children", None) or []:
-            label = getattr(child, "label", None)
-            if custom_id is not None and getattr(child, "custom_id", None) == custom_id and isinstance(label, str):
-                return label
-    return fallback
-
-
-async def _refuse_wizard_button(
-    interaction: discord.Interaction,
-    owner_id: str | None,
-    label: str,
-    reply: str,
-) -> None:
-    """Turn a press on a signup wizard's button away with *reply*, and record it.
-
-    The line names the button and whose wizard it sits on, "the “Steam” button of Alex's signup
-    wizard", and the member who pressed it (`refuse`). *owner_id* is the wizard's driver, None
-    where the channel holds no wizard.
-    """
-    await refuse(
-        interaction,
-        reply,
-        what=f"the “{label}” button of {_wizard_owner(interaction, owner_id)} signup wizard",
-    )
-
-
-async def _not_for_you(
-    interaction: discord.Interaction, owner_id: str | None, label: str
-) -> None:
-    """Refuse a press by somebody who does not own the wizard the button is on."""
-    await _refuse_wizard_button(interaction, owner_id, label, "⛔ This button is not for you.")
-
-
-async def _withdraw(
-    interaction: discord.Interaction, bot: LeagueBot, owner_id: str
-) -> None:
-    """Withdraw the driver whose Cancel Signup button *interaction* pressed, and answer it.
-
-    `WizardService.withdraw` returns why it did nothing where the signup had already ended, and
-    the press is refused with that and recorded, never answered as a withdrawal. Any other error
-    reaches the view's failure handler.
-    """
-    await interaction.response.defer(ephemeral=True)
-    reason = await bot.wizard_service.withdraw(owner_id, guild_of(interaction))
-    if reason is not None:
-        await _refuse_wizard_button(interaction, owner_id, "Cancel Signup", f"⛔ {reason}")
-        return
-    await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
-
-
-#: The states a driver may stand in when they press Sign Up having already got a profile,
-#: split by the refusal each earns. Between them they cover every state that is not
-#: ``NOT_SIGNED_UP``, which is what lets the callback below use a bare ``else`` for the
-#: approved arm: a state belonging to neither set gets a refusal rather than falling
-#: through into the wizard and signing somebody up by accident. Add a state — a ban, when
-#: the stewarding module brings one — and you must put it in one of these.
-#:
-#: ``APPROVED_STATES`` is deliberately not branched on: the ``else`` is what reads it, and
-#: naming the set here is how that ``else`` says which states it believes it is catching.
-#: It is **not** dead code — deleting it as unused takes the cover check in
-#: ``tests/core/test_signup_button_driver_states.py`` with it, which is the only thing
-#: standing between a new driver state and a silent, wrongly granted signup. That test pins
-#: both the cover and the disjointness.
-IN_PROGRESS_STATES = {
-    DriverState.PENDING_SIGNUP_COMPLETION,
-    DriverState.PENDING_ADMIN_APPROVAL,
-    DriverState.AWAITING_CORRECTION_PARAMETER,
-    DriverState.PENDING_DRIVER_CORRECTION,
-}
-APPROVED_STATES = {
-    DriverState.UNASSIGNED,
-    DriverState.ASSIGNED,
-}
-
-
-#: How the log channel names the Sign Up button in a refusal it records.
-_SIGN_UP_BUTTON = "the “Sign Up” button"
-
-
-class SignupButtonView(LeagueView):
-    """Persistent signup button view (T016).
-
-    Posted in the signup channel when signups are opened.  The button
-    callback is fully implemented in T028 (wizard integration).
-    """
-
-    def __init__(self) -> None:
-        super().__init__(timeout=None)
-
-    @discord.ui.button(
-        label="Sign Up",
-        style=discord.ButtonStyle.primary,
-        custom_id="signup_button",
-    )
-    async def signup_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        """T028: Check driver state then launch the signup wizard."""
-        if not interaction.guild:
-            return
-        bot = bot_of(interaction)
-        discord_user_id = str(interaction.user.id)
-
-        # A real driver never joins a server that is under test: test mode and a real
-        # league may not share one, and leaving test mode deletes every fake driver.
-        server_cfg = await bot.config_service.get_server_config()
-        if server_cfg is not None and server_cfg.test_mode_active:
-            await refuse(
-                interaction,
-                "⛔ Signups are closed while this server is in test mode. "
-                "Ask an admin to turn it off.",
-                what=_SIGN_UP_BUTTON,
-            )
-            return
-
-        # A past account of a driver signs nobody up (issue #243). The signup would be kept
-        # under an account the driver no longer uses, and the account belongs to that driver
-        # already, so it may not start a profile of its own either.
-        current = await bot.driver_service.current_account(discord_user_id)
-        if current != discord_user_id:
-            await refuse(
-                interaction,
-                f"⛔ This account is a past account of a driver in this league. Sign up from "
-                f"<@{current}>, or ask a league manager to make this account the current one.",
-                what=_SIGN_UP_BUTTON,
-            )
-            return
-
-        profile = await bot.driver_service.get_profile(discord_user_id)
-        if profile is not None and profile.current_state != DriverState.NOT_SIGNED_UP:
-            if profile.current_state in IN_PROGRESS_STATES:
-                await refuse(
-                    interaction,
-                    "⛔ You already have a signup in progress — "
-                    "check your private wizard channel.",
-                    what=_SIGN_UP_BUTTON,
-                )
-            else:
-                # Every remaining state is an approved one: the two sets above cover all
-                # six states that are not NOT_SIGNED_UP. An `elif` here would drop a state
-                # belonging to neither straight through into the wizard, signing somebody
-                # up who should have been refused — so the approved arm takes what is left
-                # and a new state gets a wrong message rather than a wrong signup.
-                await refuse(
-                    interaction,
-                    "⛔ Your signup has already been approved. "
-                    "You cannot sign up again.",
-                    what=_SIGN_UP_BUTTON,
-                )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        try:
-            channel = await bot.wizard_service.start_wizard(interaction)
-        except SignupNotOpenError:
-            # A button the close could not delete, pressed after the window shut (F1, #482).
-            await refuse(interaction, "⛔ Signups are closed.", what=_SIGN_UP_BUTTON)
-            return
-        if channel is None:
-            await refuse(
-                interaction,
-                "❌ Signup module is not configured. Contact an admin.",
-                what=_SIGN_UP_BUTTON,
-            )
-            return
-        await interaction.followup.send(
-            f"✅ Your signup channel has been created: {channel.mention}",
-            ephemeral=True,
-        )
-
-
 #: How many drivers each group in the close confirmation names before it gives a count of the
 #: rest. Thirty mid-signup would otherwise overflow the message Discord will accept.
 _CLOSE_LIST_LIMIT = 10
@@ -430,29 +215,21 @@ class ConfirmCloseView(LeagueView):
     ) -> None:
         self.confirmed = True
         self.stop()
-        await interaction.response.defer(ephemeral=True)
         # The count is the close's own, not the confirmation's: a driver may have finished
-        # signing up, or started, in the five minutes the buttons stand (issue #128).
-        outcome = await execute_forced_close(
-            self._bot, audit_action="SIGNUP_FORCE_CLOSE", window=self._window
-        )
-        if outcome.refused is not None:
-            await refuse(
-                interaction,
-                f"⛔ {outcome.refused}",
-                what=f"the “Confirm Close” button of {self._WHAT}",
-                reason=outcome.refused,
-            )
-            return
-        returned = outcome.returned
-        for part in chunk_message(
-            f"✅ Signups closed. {returned} driver(s) still signing up were returned to "
-            "Not Signed Up." + failed_steps_reply(outcome)
-        ):
-            await interaction.followup.send(part, ephemeral=True)
-        await self._bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close (force) | Success\n"
-            f"  drivers_returned_to_not_signed_up: {returned}" + failed_steps_lines(outcome),
+        # signing up, or started, in the five minutes the buttons stand (issue #128). The close
+        # is judged again as it comes up to run, and refused where the window is no longer this
+        # one (#491).
+        await self._bot.change_queue.ask(
+            "signup.close",
+            {
+                "cause": "command",
+                "window": self._window,
+                "confirmed": True,
+                "audit_action": AUDIT_FORCE_CLOSE,
+            },
+            interaction=interaction,
+            what="Closing signups",
+            refusal_what=f"the “Confirm Close” button of {self._WHAT}",
         )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
@@ -489,340 +266,6 @@ class ConfirmCloseView(LeagueView):
             await self._asked.edit_original_response(view=None)
         except Exception:  # noqa: BLE001 — the lapse is recorded whether or not the reply goes
             log.warning("could not take the close confirmation's buttons down", exc_info=True)
-
-
-class WithdrawButtonView(LeagueView):
-    """Withdrawal button view — visible throughout all in-wizard driver states (T027).
-
-    Posted in the private wizard channel immediately after the channel is
-    created.  The driver can press Withdraw at any point while in any
-    in-wizard state.
-    """
-
-    def __init__(
-        self,
-        discord_user_id: str | None = None,
-        bot: LeagueBot | None = None,
-    ) -> None:
-        super().__init__(timeout=None)
-        self._discord_user_id = discord_user_id
-        self._bot = bot
-
-    @discord.ui.button(
-        label="Cancel Signup",
-        style=discord.ButtonStyle.danger,
-        custom_id="withdraw_button",
-    )
-    async def withdraw_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        """T041: Full implementation — verify user, call wizard_service.withdraw()."""
-        _bot, _user_id = await _resolve_view_context(
-            interaction, self._discord_user_id
-        )
-        if _user_id is None or str(interaction.user.id) != _user_id:
-            await _not_for_you(interaction, _user_id, "Cancel Signup")
-            return
-        await _withdraw(interaction, _bot, _user_id)
-
-
-class NoNotesButtonView(LeagueView):
-    """Step 9 view — 'No Notes' shortcut alongside Cancel Signup."""
-
-    def __init__(
-        self,
-        discord_user_id: str | None = None,
-        bot: LeagueBot | None = None,
-    ) -> None:
-        super().__init__(timeout=None)
-        self._discord_user_id = discord_user_id
-        self._bot = bot
-
-    @discord.ui.button(
-        label="No Notes",
-        style=discord.ButtonStyle.secondary,
-        custom_id="no_notes_button",
-    )
-    async def no_notes_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        _bot, _user_id = await _resolve_view_context(
-            interaction, self._discord_user_id
-        )
-        if _user_id is None or str(interaction.user.id) != _user_id:
-            await _not_for_you(interaction, _user_id, "No Notes")
-            return
-        await interaction.response.defer(ephemeral=True)
-        reason = await _bot.wizard_service.handle_no_notes(_user_id, interaction.guild)
-        if reason is not None:
-            await _refuse_wizard_button(interaction, _user_id, "No Notes", f"⛔ {reason}")
-
-    @discord.ui.button(
-        label="Cancel Signup",
-        style=discord.ButtonStyle.danger,
-        custom_id="no_notes_cancel_button",
-    )
-    async def cancel_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        _bot, _user_id = await _resolve_view_context(
-            interaction, self._discord_user_id
-        )
-        if _user_id is None or str(interaction.user.id) != _user_id:
-            await _not_for_you(interaction, _user_id, "Cancel Signup")
-            return
-        await _withdraw(interaction, _bot, _user_id)
-
-
-class PlatformButtonView(LeagueView):
-    """Step 2 — one button per platform, plus Cancel Signup."""
-
-    def __init__(
-        self,
-        discord_user_id: str | None = None,
-        bot: LeagueBot | None = None,
-    ) -> None:
-        super().__init__(timeout=None)
-        self._discord_user_id = discord_user_id
-        self._bot = bot
-
-    async def _pick(self, interaction: discord.Interaction, platform: str) -> None:
-        _bot, _user_id = await _resolve_view_context(
-            interaction, self._discord_user_id
-        )
-        if _user_id is None or str(interaction.user.id) != _user_id:
-            await _not_for_you(interaction, _user_id, platform)
-            return
-        await interaction.response.defer(ephemeral=True)
-        reason = await _bot.wizard_service.handle_platform_button(
-            _user_id, platform, interaction.guild
-        )
-        if reason is not None:
-            await _refuse_wizard_button(interaction, _user_id, platform, f"⛔ {reason}")
-
-    @discord.ui.button(label="Steam", style=discord.ButtonStyle.secondary, custom_id="plat_steam")
-    async def steam(self, i: discord.Interaction, b: discord.ui.Button) -> None:
-        await self._pick(i, "Steam")
-
-    @discord.ui.button(label="EA", style=discord.ButtonStyle.secondary, custom_id="plat_ea")
-    async def ea(self, i: discord.Interaction, b: discord.ui.Button) -> None:
-        await self._pick(i, "EA")
-
-    @discord.ui.button(label="Xbox", style=discord.ButtonStyle.secondary, custom_id="plat_xbox")
-    async def xbox(self, i: discord.Interaction, b: discord.ui.Button) -> None:
-        await self._pick(i, "Xbox")
-
-    @discord.ui.button(label="PlayStation", style=discord.ButtonStyle.secondary, custom_id="plat_ps")
-    async def playstation(self, i: discord.Interaction, b: discord.ui.Button) -> None:
-        await self._pick(i, "PlayStation")
-
-    @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="plat_cancel")
-    async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
-        _bot, _user_id = await _resolve_view_context(
-            interaction, self._discord_user_id
-        )
-        if _user_id is None or str(interaction.user.id) != _user_id:
-            await _not_for_you(interaction, _user_id, "Cancel Signup")
-            return
-        await _withdraw(interaction, _bot, _user_id)
-
-
-class DriverTypeButtonView(LeagueView):
-    """Step 5 — Full-Time / Reserve buttons, plus Cancel Signup."""
-
-    def __init__(
-        self,
-        discord_user_id: str | None = None,
-        bot: LeagueBot | None = None,
-    ) -> None:
-        super().__init__(timeout=None)
-        self._discord_user_id = discord_user_id
-        self._bot = bot
-
-    async def _pick(self, interaction: discord.Interaction, driver_type: str) -> None:
-        _bot, _user_id = await _resolve_view_context(
-            interaction, self._discord_user_id
-        )
-        if _user_id is None or str(interaction.user.id) != _user_id:
-            await _not_for_you(interaction, _user_id, driver_type)
-            return
-        await interaction.response.defer(ephemeral=True)
-        reason = await _bot.wizard_service.handle_driver_type_button(
-            _user_id, driver_type, interaction.guild
-        )
-        if reason is not None:
-            await _refuse_wizard_button(interaction, _user_id, driver_type, f"⛔ {reason}")
-
-    @discord.ui.button(label="Full-Time Driver", style=discord.ButtonStyle.primary, custom_id="dtype_fulltime")
-    async def full_time(self, i: discord.Interaction, b: discord.ui.Button) -> None:
-        await self._pick(i, "Full-Time Driver")
-
-    @discord.ui.button(label="Reserve Driver", style=discord.ButtonStyle.secondary, custom_id="dtype_reserve")
-    async def reserve(self, i: discord.Interaction, b: discord.ui.Button) -> None:
-        await self._pick(i, "Reserve Driver")
-
-    @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="dtype_cancel")
-    async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
-        _bot, _user_id = await _resolve_view_context(
-            interaction, self._discord_user_id
-        )
-        if _user_id is None or str(interaction.user.id) != _user_id:
-            await _not_for_you(interaction, _user_id, "Cancel Signup")
-            return
-        await _withdraw(interaction, _bot, _user_id)
-
-
-class PreferredTeamsButtonView(LeagueView):
-    """Step 6 — one button per available team, No Preference, and Cancel Signup."""
-
-    def __init__(
-        self,
-        discord_user_id: str | None = None,
-        bot: LeagueBot | None = None,
-        team_names: list[str] | None = None,
-        excluded: list[str] | None = None,
-    ) -> None:
-        super().__init__(timeout=None)
-        self._discord_user_id = discord_user_id
-        self._bot = bot
-
-        if team_names is not None:
-            available = [n for n in team_names if n not in (excluded or [])]
-            for i, name in enumerate(available):
-                btn = CallbackButton(
-                    label=name,
-                    style=discord.ButtonStyle.secondary,
-                    custom_id=f"pteam_{i}",
-                    on_press=self._make_team_callback(i),
-                )
-                self.add_item(btn)
-        else:
-            # Registration-mode: create stub handlers for all possible team slots
-            for i in range(_MAX_TEAM_BUTTONS):
-                btn = CallbackButton(
-                    label=str(i + 1),
-                    style=discord.ButtonStyle.secondary,
-                    custom_id=f"pteam_{i}",
-                    on_press=self._make_team_callback(i),
-                )
-                self.add_item(btn)
-
-        no_pref = CallbackButton(
-            label="No Preference",
-            style=discord.ButtonStyle.secondary,
-            custom_id="pteam_nopref",
-            on_press=self._no_preference_callback,
-        )
-        self.add_item(no_pref)
-
-        cancel_btn = CallbackButton(
-            label="Cancel Signup",
-            style=discord.ButtonStyle.danger,
-            custom_id="pteam_cancel",
-            on_press=self._cancel_callback,
-        )
-        self.add_item(cancel_btn)
-
-    def _make_team_callback(self, i: int):
-        """Create callback for team button at index i.
-
-        **A team button records the team its own label names** (#482, D3). The pressed button
-        is found on the message it sits on by its `custom_id`, and its label is the team, so a
-        press on an earlier sub-step's message, where the buttons sit at other positions than
-        they would among the teams left, records the team pressed, not another. A view
-        re-registered after a restart knows nothing but the `custom_id`, so the message is the
-        only place the name is. A button the message does not carry is refused.
-        """
-        async def callback(interaction: discord.Interaction) -> None:
-            _bot, _user_id = await _resolve_view_context(
-                interaction, self._discord_user_id
-            )
-            named = _pressed_label(interaction, "")
-            label = named or f"Team {i + 1}"
-            if _user_id is None or str(interaction.user.id) != _user_id:
-                await _not_for_you(interaction, _user_id, label)
-                return
-            wizard = await _bot.wizard_service.get_wizard_by_channel(
-                interaction.channel_id
-            )
-            if wizard is None or wizard.config_snapshot is None:
-                await _refuse_wizard_button(
-                    interaction, _user_id, label, "⛔ Wizard session not found."
-                )
-                return
-            if not named:
-                await _refuse_wizard_button(
-                    interaction, _user_id, label, "⛔ That option is no longer available."
-                )
-                return
-            await interaction.response.defer(ephemeral=True)
-            reason = await _bot.wizard_service.handle_preferred_teams_button(
-                _user_id, named, interaction.guild
-            )
-            if reason is not None:
-                await _refuse_wizard_button(interaction, _user_id, label, f"⛔ {reason}")
-        return callback
-
-    async def _no_preference_callback(self, interaction: discord.Interaction) -> None:
-        _bot, _user_id = await _resolve_view_context(
-            interaction, self._discord_user_id
-        )
-        if _user_id is None or str(interaction.user.id) != _user_id:
-            await _not_for_you(interaction, _user_id, "No Preference")
-            return
-        await interaction.response.defer(ephemeral=True)
-        reason = await _bot.wizard_service.handle_preferred_teams_button(
-            _user_id, None, interaction.guild
-        )
-        if reason is not None:
-            await _refuse_wizard_button(interaction, _user_id, "No Preference", f"⛔ {reason}")
-
-    async def _cancel_callback(self, interaction: discord.Interaction) -> None:
-        _bot, _user_id = await _resolve_view_context(
-            interaction, self._discord_user_id
-        )
-        if _user_id is None or str(interaction.user.id) != _user_id:
-            await _not_for_you(interaction, _user_id, "Cancel Signup")
-            return
-        await _withdraw(interaction, _bot, _user_id)
-
-
-class NoPreferenceTeammateView(LeagueView):
-    """Step 7 — No Preference shortcut plus Cancel Signup."""
-
-    def __init__(
-        self,
-        discord_user_id: str | None = None,
-        bot: LeagueBot | None = None,
-    ) -> None:
-        super().__init__(timeout=None)
-        self._discord_user_id = discord_user_id
-        self._bot = bot
-
-    @discord.ui.button(label="No Preference", style=discord.ButtonStyle.secondary, custom_id="tmmate_nopref")
-    async def no_preference(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
-        _bot, _user_id = await _resolve_view_context(
-            interaction, self._discord_user_id
-        )
-        if _user_id is None or str(interaction.user.id) != _user_id:
-            await _not_for_you(interaction, _user_id, "No Preference")
-            return
-        await interaction.response.defer(ephemeral=True)
-        reason = await _bot.wizard_service.handle_no_preference_teammate(
-            _user_id, interaction.guild
-        )
-        if reason is not None:
-            await _refuse_wizard_button(interaction, _user_id, "No Preference", f"⛔ {reason}")
-
-    @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="tmmate_cancel")
-    async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
-        _bot, _user_id = await _resolve_view_context(
-            interaction, self._discord_user_id
-        )
-        if _user_id is None or str(interaction.user.id) != _user_id:
-            await _not_for_you(interaction, _user_id, "Cancel Signup")
-            return
-        await _withdraw(interaction, _bot, _user_id)
 
 
 class SignupCog(commands.Cog):
@@ -865,11 +308,16 @@ class SignupCog(commands.Cog):
         )
         if wizard is None or wizard.discord_user_id != str(message.author.id):
             return
-        await self.bot.wizard_service.handle_message(wizard, message)
+        await take_typed_answer(self.bot, message, wizard, queue=self.bot.change_queue)
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member) -> None:
         """T048: Clean up wizard state when a member leaves the server (FR-027).
+
+        The clean-up is the change queue's: the listener asks it, as the bot, for
+        `signup.member_left` for every member who leaves, and the change's own check decides what
+        there is to clean up. A member who leaves while the queue is stopped keeps their channel
+        and state until it clears.
 
         Also posts a log notification for UNASSIGNED and ASSIGNED drivers who
         leave without going through the wizard path.
@@ -879,45 +327,16 @@ class SignupCog(commands.Cog):
         """
         if await is_foreign_guild(self.bot, member.guild.id):
             return
-        await self.bot.wizard_service.handle_member_remove(
-            str(member.id), member.guild
-        )
+        await ask_member_left(self.bot.change_queue, self.bot.db_path, str(member.id))
 
-        # Handle UNASSIGNED / ASSIGNED drivers (not covered by wizard_service)
+        # Handle UNASSIGNED / ASSIGNED drivers (not covered by `signup.member_left`)
         try:
-            async with get_connection(self.bot.db_path) as db:
-                cursor = await db.execute(
-                    "SELECT current_state FROM driver_profiles "
-                    "WHERE discord_user_id = ?",
-                    (str(member.id),),
-                )
-                row = await cursor.fetchone()
-            if row is None:
+            departed = await departed_placed_driver(
+                self.bot.db_path, str(member.id), member.display_name or str(member.id)
+            )
+            if departed is None:
                 return
-            state = row["current_state"]
-            if state not in ("UNASSIGNED", "ASSIGNED"):
-                return
-            # Fetch display name from signup_records
-            try:
-                async with get_connection(self.bot.db_path) as db:
-                    cursor = await db.execute(
-                        "SELECT server_display_name, discord_username "
-                        "FROM signup_records WHERE discord_user_id = ? "
-                        "ORDER BY id DESC LIMIT 1",
-                        (str(member.id),),
-                    )
-                    rec = await cursor.fetchone()
-                display_name = (
-                    (rec["server_display_name"] or rec["discord_username"] or str(member.id))
-                    if rec is not None
-                    else (member.display_name or str(member.id))
-                )
-            except Exception:  # noqa: BLE001 — the line is posted under the server's name instead
-                log.warning(
-                    "on_member_remove: could not read the signup record of %s", member.id,
-                    exc_info=True,
-                )
-                display_name = member.display_name or str(member.id)
+            state, display_name = departed
             await self.bot.output_router.post_log(
                 f"Driver left server: **{display_name}** (<@{member.id}>) | state: {state}",
             )
@@ -1675,67 +1094,13 @@ class SignupCog(commands.Cog):
         cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
             await refuse(
-                interaction,
-                "❌ Signup module is not configured.",
-                what=describe(interaction),
+                interaction, "❌ Signup module is not configured.", what=describe(interaction)
             )
             return
 
-        if cfg.signups_open:
-            await refuse(interaction, "❌ Signups are already open.", what=describe(interaction))
-            return
-
-        # A window opens only while the season waits for one, or while it is being raced
-        # with no window already run and unplaced (issue #220).
-        from leaguebot.core.services.season_lifecycle_service import WINDOW_OPENS_FROM, live_season_stage
-
-        live = await live_season_stage(self.bot.db_path)
-        if live is None or live[1] not in WINDOW_OPENS_FROM:
-            await refuse(
-                interaction,
-                "❌ Signups can only be opened while the season is waiting for its signup "
-                "window, once its configuration is confirmed, or while it is ongoing with "
-                "no placements left to confirm.",
-                what=describe(interaction),
-            )
-            return
-
-        # Guard: the channel and the league's two roles must all be set (issue #276), and both
-        # roles still on the server, the driver role one the bot can grant (#374). A base role
-        # gone pings nobody and opens a channel nobody can see; a driver role gone or refused
-        # lets every approval of the window grant nothing, with only the host's log told.
-        base_role_id = server_cfg.base_role_id if server_cfg is not None else None
-        driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
-        missing = []
-        if cfg.signup_channel_id is None:
-            missing.append("`signup channel` (use `/signup channel`)")
-        if base_role_id is None:
-            missing.append("`base role` (use `/bot base-role`)")
-        if driver_role_id is None:
-            missing.append("`driver role` (use `/bot driver-role`)")
-        missing += league_role_faults(interaction.guild, base_role_id, driver_role_id)
-        if missing:
-            await refuse(
-                interaction,
-                "❌ Signups cannot be opened until the signup module's configuration is "
-                "put right:\n"
-                + "\n".join(f"  • {m}" for m in missing),
-                what=describe(interaction),
-                reason="the signup module's configuration is not put right: " + "; ".join(missing),
-            )
-            return
-
-        # Guard: at least one slot configured
-        slots = await self.bot.signup_module_service.get_slots()
-        if not slots:
-            await refuse(
-                interaction,
-                "❌ At least one availability time slot must be configured before opening signups.",
-                what=describe(interaction),
-            )
-            return
-
-        # Parse close_time — the same rule `/signup close-time add` holds to
+        # The command's own input is judged here, ahead of the change's check; the rest of the
+        # league's state (the window, the season's stage, the configuration, the channel and the
+        # bot's permissions on it) is the change's, judged as it is asked and as it runs.
         close_at_iso: str | None = None
         if close_time and close_time.strip():
             close_at_iso, close_error = _parse_close_time(close_time)
@@ -1743,9 +1108,7 @@ class SignupCog(commands.Cog):
                 await refuse(interaction, close_error, what=describe(interaction))
                 return
 
-        # Parse track_ids
         track_list: list[str] = []
-        track_name_map: dict[str, str] = {}
         if track_ids and track_ids.strip():
             parts = [t.strip() for t in re.split(r"[,\s]+", track_ids.strip()) if t.strip()]
             async with get_connection(self.bot.db_path) as db:
@@ -1761,121 +1124,17 @@ class SignupCog(commands.Cog):
                 return
             track_list = parts
 
-        await interaction.response.defer(ephemeral=True)
-
-        # Build and post signup button + info message
-        settings = await self.bot.signup_module_service.get_settings()
-        guild = interaction.guild
-        assert guild is not None
-        signup_channel = guild.get_channel(cfg.signup_channel_id) if cfg.signup_channel_id else None
-        base_role = guild.get_role(base_role_id) if base_role_id else None
-        if signup_channel is None or not isinstance(signup_channel, discord.TextChannel):
-            await refuse(
-                interaction,
-                "❌ Configured signup channel not found.",
-                what=describe(interaction),
-            )
-            return
-
-        if track_list:
-            track_names = [track_name_map[t] for t in track_list]
-            tracks_display = "\n".join(f"• {n}" for n in track_names)
-        else:
-            tracks_display = "No tracks specified"
-
-        tt_label = "Time Trial" if settings.time_type == "TIME_TRIAL" else "Short Qualification"
-        img_label = "Required" if settings.time_image_required else "Not required"
-        nat_label = "Required" if settings.nationality_required else "Not required"
-
-        role_mention = base_role.mention if base_role else ""
-        role_line = f"\n\n{role_mention} — click below to sign up!" if role_mention else ""
-
-        close_line = ""
-        if close_at_iso:
-            parsed_utc = datetime.fromisoformat(close_at_iso)
-            close_line = f"\n**Auto-closes:** {discord_ts(parsed_utc)} ({discord_ts(parsed_utc, 'R')})"
-
-        info_embed = discord.Embed(
-            title="🏁 Driver Signups Are Open!",
-            description=(
-                f"**Available time slots:**\n"
-                + "\n".join(f"• {s.display_label}" for s in slots)
-                + f"\n\n**Tracks:**\n{tracks_display}"
-                + f"\n\n**Time type:** {tt_label}"
-                + f"\n**Time image proof:** {img_label}"
-                + f"\n**Nationality:** {nat_label}"
-                + close_line
-                + role_line
-            ),
-            color=discord.Color.green(),
-        )
-
-        view = SignupButtonView()
-        allowed_mentions = discord.AllowedMentions(roles=[base_role]) if base_role else discord.AllowedMentions.none()
-        # Discord refusing the post is a refusal the manager can act on. Any other error is a
-        # fault in the bot, and goes to the command's failure path. Either way nothing has been
-        # changed: the window stays closed, and the "signups closed" notice still stands.
-        try:
-            posted_msg = await signup_channel.send(embed=info_embed, view=view, allowed_mentions=allowed_mentions)
-        except discord.Forbidden:
-            await refuse(
-                interaction,
-                f"❌ The bot needs **View Channel**, **Send Messages** and **Embed Links** on "
-                f"{signup_channel.mention} to post the Sign Up button. Signups were not opened.",
-                what=describe(interaction),
-            )
-            return
-
-        # The "signups closed" notice comes down only once the open message is up, so the
-        # channel always shows one or the other. Signups are open whether or not it goes.
-        if cfg.signup_closed_message_id:
-            try:
-                old_msg = await signup_channel.fetch_message(cfg.signup_closed_message_id)
-                await old_msg.delete()
-            except discord.NotFound:
-                pass
-            except Exception:
-                log.warning("signup_open: could not delete closed status message", exc_info=True)
-
-        await self.bot.signup_module_service.set_window_open(
-            posted_msg.id, track_list
-        )
-        from leaguebot.core.services.season_lifecycle_service import advance_on_window_open
-
-        await advance_on_window_open(self.bot.db_path)
-
-        if close_at_iso:
-            await self.bot.signup_module_service.set_close_at(close_at_iso)
-            self.bot.scheduler_service.schedule_signup_close_timer(close_at_iso)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_OPEN', '', ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps(
-                     {"track_ids": track_list, "close_at": close_at_iso}
-                     if close_at_iso
-                     else {"track_ids": track_list}
-                 ), now),
-            )
-            await db.commit()
-
-        close_notice = (
-            f" Auto-close scheduled for {discord_ts(datetime.fromisoformat(close_at_iso))} ({discord_ts(datetime.fromisoformat(close_at_iso), 'R')})."
-            if close_at_iso
-            else ""
-        )
-        await interaction.followup.send(
-            f"✅ Signups opened. Button posted in {signup_channel.mention}.{close_notice}",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup open | Success"
-            + (f"\n  track_ids: {', '.join(track_list)}" if track_list else "")
-            + (f"\n  close_time: {close_at_iso}" if close_at_iso else ""),
+        await self.bot.change_queue.ask(
+            "signup.open",
+            {
+                "track_ids": track_list,
+                "close_at": close_at_iso,
+                "channel_id": cfg.signup_channel_id,
+                "closed_message_id": cfg.signup_closed_message_id,
+            },
+            interaction=interaction,
+            what="Opening signups",
+            refusal_what=describe(interaction),
         )
 
     # ── /signup close (T019) ──────────────────────────────────────────
@@ -1891,6 +1150,13 @@ class SignupCog(commands.Cog):
             await refuse(
                 interaction, "❌ Signups are not currently open.", what=describe(interaction)
             )
+            return
+
+        # The season's end closes signups itself: refused at once, before any confirmation, as
+        # every request about a season whose end is in hand is (core, "Ending a season").
+        ending = await season_end_close_refusal(self.bot.db_path)
+        if ending is not None:
+            await refuse(interaction, ending, what=describe(interaction))
             return
 
         # Guard: auto-close timer is armed — manual close is blocked (T019).
@@ -1914,26 +1180,21 @@ class SignupCog(commands.Cog):
         # Each driver is named with their signup channel, so a manager can follow the link
         # and nudge someone to finish before closing. A driver with no wizard record, or one
         # whose channel was never made, is named alone.
-        async with get_connection(self.bot.db_path) as db:
-            placeholders = ",".join("?" for _ in IN_PROGRESS_STATES)
-            cursor = await db.execute(
-                f"SELECT p.discord_user_id, p.current_state, w.signup_channel_id "
-                f"FROM driver_profiles p "
-                f"LEFT JOIN signup_wizard_records w ON w.discord_user_id = p.discord_user_id "
-                f"WHERE p.current_state IN ({placeholders}) ORDER BY p.id",
-                tuple(state.value for state in IN_PROGRESS_STATES),
-            )
-            rows = await cursor.fetchall()
+        rows = await self.bot.signup_module_service.drivers_mid_signup(IN_PROGRESS_STATES)
 
         if not rows:
-            # No in-progress drivers — immediate close
-            await interaction.response.defer(ephemeral=True)
-            outcome = await execute_forced_close(self.bot, audit_action="SIGNUP_CLOSE")
-            for part in chunk_message("✅ Signups closed." + failed_steps_reply(outcome)):
-                await interaction.followup.send(part, ephemeral=True)
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close | Success"
-                + failed_steps_lines(outcome),
+            # No in-progress drivers — nothing to confirm, so the close is asked at once.
+            await self.bot.change_queue.ask(
+                "signup.close",
+                {
+                    "cause": "command",
+                    "window": cfg.signup_button_message_id,
+                    "confirmed": False,
+                    "audit_action": AUDIT_CLOSE,
+                },
+                interaction=interaction,
+                what="Closing signups",
+                refusal_what=describe(interaction),
             )
             return
 
@@ -1946,11 +1207,11 @@ class SignupCog(commands.Cog):
 
         returned: list[str] = []
         kept: list[str] = []
-        for row in rows:
-            group = returned if DriverState(row["current_state"]) in RETURNED_BY_CLOSE else kept
-            line = _name_for_uid(row["discord_user_id"])
-            if row["signup_channel_id"] is not None:
-                line += f" — <#{row['signup_channel_id']}>"
+        for user_id, state, channel_id in rows:
+            group = returned if state in RETURNED_BY_CLOSE else kept
+            line = _name_for_uid(user_id)
+            if channel_id is not None:
+                line += f" — <#{channel_id}>"
             group.append(line)
 
         view = ConfirmCloseView(self.bot, interaction, cfg.signup_button_message_id)

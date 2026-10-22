@@ -66,7 +66,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
-from leaguebot.core.services import approval_checks, season_classification_service
+from leaguebot.core.services import approval_checks, season_classification_service, standing_posts
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -91,17 +91,22 @@ from leaguebot.core.services.season_end_service import (
 )
 from leaguebot.core.services.season_lifecycle_service import (
     CLOSE_SIGNUP,
+    DELETE_BUTTON,
     NO_CHANNEL_LEFT,
+    POST_CLOSED,
     SIGNUP_NOTICE,
     TAKE_DRIVER_ROLE,
     TURN_DOWN_STEP,
+    WIND_DOWN,
     WIND_DOWN_STEP,
+    WINDOW_NOT_CLOSED,
     SeasonEndHooks,
     advance_to_pending_completion_on,
     driver_jobs,
     require_guild,
     end_signup_wizards_on,
     run_driver_pass_on,
+    wind_down_not_due_on,
     wind_down_steps,
 )
 from leaguebot.core.services.season_approval_change import NOT_FORGOTTEN
@@ -123,12 +128,16 @@ __all__ = [
     "SEASON_ABORT",
     "SEASON_CANCEL",
     "SEASON_COMPLETE",
+    "SEASON_ENDS",
     "anything_discarded",
     "discarded",
     "not_done_reply",
     "season_abort_change",
     "season_complete_change",
     "season_end_in_hand",
+    "season_ending",
+    "season_ending_jobs",
+    "season_ending_on",
     "season_end_refusal",
     "shared_not_done",
     "test_mode_on",
@@ -196,7 +205,9 @@ BACKUP_KEPT = (
     "The saved test-mode state could not be deleted. It is deleted with the next `/test-mode "
     "toggle` that switches test mode off."
 )
-WINDOW_KEPT = "The signup window could not be closed. Close it with `/signup close`."
+WINDOW_KEPT = WINDOW_NOT_CLOSED
+#: What a discarded deletion of the Sign Up button leaves for a league admin to do.
+BUTTON_KEPT = "The Sign Up button could not be removed from the signup channel."
 FORECASTS_KEPT = (
     "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
     "forecast channel."
@@ -303,6 +314,55 @@ async def season_end_in_hand(
     return nearest
 
 
+#: The changes that end a season: its completion, cancellation and abort. Each closes the signup
+#: window itself, where one stands open, and moves the season its own way.
+SEASON_ENDS = (SEASON_COMPLETE, SEASON_CANCEL, SEASON_ABORT)
+
+
+async def _any_in_hand_on(db: aiosqlite.Connection, kinds: tuple[str, ...]) -> bool:
+    """Whether a change of *kinds* is queued, running or stopped on a failure, read on *db*."""
+    marks = ", ".join("?" for _ in kinds)
+    cursor = await db.execute(
+        f"SELECT 1 FROM queued_changes WHERE kind IN ({marks}) "  # noqa: S608 — marks only
+        "AND state IN ('QUEUED', 'RUNNING') LIMIT 1",
+        kinds,
+    )
+    return await cursor.fetchone() is not None
+
+
+async def season_ending_on(db: aiosqlite.Connection) -> bool:
+    """Whether a season's end (its completion, cancellation or abort) or its wind-down to Pending
+    completion is in hand on the queue, queued, running or stopped on a failure, as read on *db*.
+
+    A close of the signup window leaves such a season to it, neither moving the season on nor, for
+    the bot's own close, returning its drivers (the signup specification's close of the window):
+    the end and the wind-down close the window themselves. A wind-down counts only where it would
+    run now, the season meeting its check (`wind_down_not_due_on`): the bot asks one wherever a
+    division may have been the season's last, and one its check will drop closes nothing, so it
+    holds no close back. One season is live at a time, so an end in hand is the live season's.
+    Read on the caller's connection, so that a record may ask it inside its save.
+    """
+    if await _any_in_hand_on(db, SEASON_ENDS):
+        return True
+    return await _any_in_hand_on(db, (WIND_DOWN,)) and await wind_down_not_due_on(db) is None
+
+
+async def season_ending(db_path: str) -> bool:
+    """`season_ending_on`, read on a connection of its own, for a check or a job's `still_due`."""
+    async with get_connection(db_path) as db:
+        return await season_ending_on(db)
+
+
+async def season_ending_jobs(db_path: str) -> list[int | None]:
+    """The job each change `season_ending` counts waits on, oldest first: `None` for one whose
+    jobs are all done and only its own close is left. Empty where none is in hand."""
+    kinds: list[str] = list(SEASON_ENDS)
+    async with get_connection(db_path) as db:
+        if await wind_down_not_due_on(db) is None:
+            kinds.append(WIND_DOWN)
+    return [job for _payload, job in await in_hand(db_path, kinds)]
+
+
 def amended(held: Any) -> str:
     """The refusal for a round being amended: its corrections would reach the final
     classification before they are approved (#345)."""
@@ -393,12 +453,20 @@ def shared_not_done(ctx: OutcomeContext, untold: Sequence[str] | None = None) ->
                 roles_at = len(lines)
                 lines.append("")
             roles.append(f"<@{each['user_id']}>")
-        elif view.name == CLOSE_WINDOW:
+        elif view.name in (CLOSE_WINDOW, POST_CLOSED):
             lines.append(WINDOW_KEPT)
+        elif view.name == DELETE_BUTTON:
+            lines.append(BUTTON_KEPT)
         elif view.name == FLUSH_FORECASTS:
             lines.append(FORECASTS_KEPT)
         elif view.name == DELETE_FORECAST:
             lines.append(_forecast_kept(view))
+        elif view.name == standing_posts.DELETE_REPLACED:
+            # A calendar's earlier post is named by the cancellation's own outcome; here only a
+            # part of a forecast posted in parts.
+            part = standing_posts.not_deleted(view)
+            if part is not None and "forecast" in str(each.get("what", "")):
+                lines.append(part)
         elif view.name == SIGNUP_NOTICE:
             if str(each["user_id"]) in closed:
                 lines.append(

@@ -9,6 +9,11 @@ A round's, a division's and a season's cancellation are on the change queue (#43
 module's notice is a job of its own (`post_module_notice`), as is each round's call taken down
 (`take_down_call`). The job is planned only while its module is on, so the notice itself does
 not look.
+
+The take-down deletes the call's messages through attendance's own delete steps, handed it by the
+builder as the `check_in_deletes` hook (`CancellationHooks.check_in_deletes`, #439 slice 6b), so
+core imports nothing of attendance; it stays one job, reading the check-in audit before it asks
+the hook. The tests hand it a hook of their own.
 """
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services import cancellation_notice_service as cns
+from tests.support.change_queue import in_a_job
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -206,27 +212,31 @@ async def _with_call(db_path, *, round_id=ROUND_ID) -> None:
         await db.commit()
 
 
-def _call_channel(bot, *, refuse=False):
-    """The check-in channel as `withdraw_rsvp_call` reaches it, recording what it deletes."""
-    import discord
+def _check_in_deletes(*, refuse=None, wipe_db=None):
+    """The `check_in_deletes` hook as attendance's delete steps answer it: called with the round
+    and the division, it gives True where a call stood. With *refuse*, a Discord refusal, it
+    raises `StepFailedOnDiscord` naming the three messages as undeleted, raised from *refuse*.
+    With *wipe_db*, it clears that database's answers first, as a hook that took them would.
+    Its `calls` list each `(round_id, division_id)` it was asked."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
 
-    deleted: list[int] = []
+    calls: list[tuple[int, int]] = []
 
-    async def _fetch(message_id):
-        message = MagicMock()
+    async def deletes(round_id, division_id):
+        calls.append((round_id, division_id))
+        if wipe_db is not None:
+            async with get_connection(wipe_db) as db:
+                await db.execute("DELETE FROM driver_round_attendance")
+                await db.commit()
+        if refuse is not None:
+            raise StepFailedOnDiscord(
+                "Discord refused to delete the check-in call",
+                result={"undeleted": [str(CALL_MSG), str(LAST_MSG), str(DIST_MSG)]},
+            ) from refuse
+        return True
 
-        async def _delete():
-            if refuse:
-                raise discord.Forbidden(MagicMock(status=403), "nope")
-            deleted.append(message_id)
-
-        message.delete = _delete
-        return message
-
-    channel = MagicMock()
-    channel.fetch_message = _fetch
-    bot.get_channel = MagicMock(return_value=channel)
-    return deleted
+    deletes.calls = calls
+    return deletes
 
 
 def _with_attendance(bot):
@@ -273,9 +283,9 @@ async def _audit(tmp_path, *, distribute=False, round_ids=(ROUND_ID,)):
     if distribute:
         await _distribute(db_path)
     bot = _with_attendance(_bot(db_path))
-    _call_channel(bot)
+    deletes = _check_in_deletes()
     audits = [
-        (await cns.take_down_call(bot, _division(), round_id))["audit"]
+        (await cns.take_down_call(bot, _division(), round_id, check_in_deletes=deletes))["audit"]
         for round_id in round_ids
     ]
     return NS(audit="".join(audits))
@@ -325,10 +335,11 @@ AUDIT_OF_ROUND_3 = (
 
 
 async def _post_notice(bot, guild, module, scope=cns.SCOPE_ROUND):
-    return await cns.post_module_notice(
-        bot, guild, _division(), module, scope=scope, round_number=3,
-        track_name="Monza",
-    )
+    with in_a_job():
+        return await cns.post_module_notice(
+            bot, guild, _division(), module, scope=scope, round_number=3,
+            track_name="Monza",
+        )
 
 
 async def test_a_raising_notice_raises_where_its_channel_is_gone(tmp_path):
@@ -386,52 +397,42 @@ async def test_a_raising_notice_names_a_channel_never_set(tmp_path):
     channels[FORECAST].send.assert_awaited_once()
 
 
-async def test_the_take_down_reads_the_check_in_before_the_call_comes_down(
-    tmp_path, monkeypatch
-):
+async def test_the_take_down_reads_the_check_in_before_the_call_comes_down(tmp_path):
     """Round 3 (Monza) has its call standing, Lewis (101) accepted and Max (102) declined. The
-    take-down reads that check-in first, then withdraws the call in its raising form: the
-    withdrawal here wipes the answers, and the audit it gives still names both drivers."""
-    from leaguebot.attendance.services import rsvp_service
-
+    take-down reads that check-in first, then asks attendance's delete steps (the
+    `check_in_deletes` hook) once for round 3 of the division: the hook here wipes the answers,
+    and the audit it gives still names both drivers."""
     db_path = await _make_db(tmp_path)
     await _with_call(db_path)
     bot = _with_attendance(_bot(db_path))
-    calls: list[dict] = []
+    deletes = _check_in_deletes(wipe_db=db_path)
 
-    async def _withdraw(round_id, division_id, bot_, **kwargs):
-        calls.append({"round_id": round_id, "division_id": division_id, **kwargs})
-        async with get_connection(db_path) as db:
-            await db.execute("DELETE FROM driver_round_attendance")
-            await db.commit()
-        return True
-
-    monkeypatch.setattr(rsvp_service, "withdraw_rsvp_call", _withdraw)
-    result = await cns.take_down_call(bot, _division(), ROUND_ID)
+    result = await cns.take_down_call(bot, _division(), ROUND_ID, check_in_deletes=deletes)
 
     assert result["audit"] == AUDIT_OF_ROUND_3
     assert result["taken_down"]
-    assert [(c["round_id"], c["division_id"], c.get("raise_on_failure")) for c in calls] == [
-        (ROUND_ID, DIVISION_ID, True)
-    ]
+    assert deletes.calls == [(ROUND_ID, DIVISION_ID)]
 
 
 async def test_a_take_down_discord_refuses_raises_keeping_the_audit_and_the_ids(tmp_path):
-    """Round 3's call, its last notice and its distribution (9001-9003) stand, and Discord
-    refuses to delete any of them. The take-down raises StepFailedOnDiscord carrying the check-in
-    audit and the three ids, and the call's record stays for the next try."""
+    """Round 3's call, its last notice and its distribution (9001-9003) stand, and attendance's
+    delete steps report Discord refusing all three. The take-down raises StepFailedOnDiscord
+    carrying the check-in audit and the three ids, raised from Discord's refusal."""
+    import discord
+
     from leaguebot.core.models.change import StepFailedOnDiscord
 
     db_path = await _make_db(tmp_path)
     await _with_call(db_path)
     bot = _with_attendance(_bot(db_path))
-    _call_channel(bot, refuse=True)
+    refusal = discord.Forbidden(MagicMock(status=403), "nope")
+    deletes = _check_in_deletes(refuse=refusal)
 
     with pytest.raises(StepFailedOnDiscord) as caught:
-        await cns.take_down_call(bot, _division(), ROUND_ID)
+        await cns.take_down_call(bot, _division(), ROUND_ID, check_in_deletes=deletes)
 
     assert caught.value.result["audit"] == AUDIT_OF_ROUND_3
     assert sorted(caught.value.result["undeleted"]) == [
         str(CALL_MSG), str(LAST_MSG), str(DIST_MSG)
     ]
-    assert len(await _rows(db_path, "rsvp_embed_messages")) == 1
+    assert caught.value.__cause__ is refusal

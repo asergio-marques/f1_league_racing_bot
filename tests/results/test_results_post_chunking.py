@@ -38,6 +38,7 @@ from leaguebot.results.services.results_post_service import (
     _send_chunked,
     _split_content,
 )
+from tests.support.change_queue import in_a_job
 
 BOT_ID = 1
 SOMEBODY_ELSE = 2
@@ -139,7 +140,8 @@ def _channel():
 async def test_a_short_post_is_one_message():
     channel = _channel()
 
-    await _send_chunked(channel, "short")
+    with in_a_job():
+        await _send_chunked(channel, "short")
 
     assert len(channel._sent) == 1
 
@@ -148,7 +150,8 @@ async def test_a_long_post_becomes_several_messages_in_order():
     channel = _channel()
     text = "\n".join(f"line {n}" for n in range(500))
 
-    await _send_chunked(channel, text)
+    with in_a_job():
+        await _send_chunked(channel, text)
 
     assert len(channel._sent) > 1
     assert "line 0" in channel._sent[0].content
@@ -167,7 +170,8 @@ async def test_every_message_is_returned_with_the_anchor_first():
     channel = _channel()
     text = "\n".join(f"line {n}" for n in range(500))
 
-    sent = await _send_chunked(channel, text)
+    with in_a_job():
+        sent = await _send_chunked(channel, text)
 
     assert len(sent) > 1
     assert sent == channel._sent
@@ -182,7 +186,8 @@ async def test_a_short_post_returns_the_one_message_it_sent():
     """
     channel = _channel()
 
-    sent = await _send_chunked(channel, "short")
+    with in_a_job():
+        sent = await _send_chunked(channel, "short")
 
     assert sent == channel._sent
     assert len(sent) == 1
@@ -222,7 +227,8 @@ async def test_a_single_message_post_is_deleted():
     anchor = _message(ANCHOR_ID)
     channel = _delete_channel(anchor, [])
 
-    await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "standings")
+    with in_a_job():
+        await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "standings")
 
     anchor.delete.assert_awaited_once()
 
@@ -233,9 +239,10 @@ async def test_the_recorded_continuations_go_with_the_anchor():
     messages = [_message(ANCHOR_ID), _message(ANCHOR_ID + 1), _message(ANCHOR_ID + 2)]
     channel = _deletable_channel(messages)
 
-    await _delete_posting(
-        channel, ANCHOR_ID, [ANCHOR_ID, ANCHOR_ID + 1, ANCHOR_ID + 2], "standings"
-    )
+    with in_a_job():
+        await _delete_posting(
+            channel, ANCHOR_ID, [ANCHOR_ID, ANCHOR_ID + 1, ANCHOR_ID + 2], "standings"
+        )
 
     assert channel._deleted == [ANCHOR_ID, ANCHOR_ID + 1, ANCHOR_ID + 2]
 
@@ -252,7 +259,8 @@ async def test_nothing_that_merely_follows_the_posting_is_deleted():
     the_replacement = _message(ANCHOR_ID + 2)
     channel = _delete_channel(anchor, [someone_elses, the_replacement])
 
-    await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "standings")
+    with in_a_job():
+        await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "standings")
 
     someone_elses.delete.assert_not_awaited()
     the_replacement.delete.assert_not_awaited()
@@ -275,7 +283,8 @@ async def test_an_anchor_that_cannot_be_fetched_is_survived(error, caplog):
     channel.fetch_message = AsyncMock(side_effect=error)
 
     with caplog.at_level("WARNING"):
-        await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "standings")
+        with in_a_job():
+            await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "standings")
 
     assert "could not fetch" in caplog.text
 
@@ -287,7 +296,8 @@ async def test_a_chunk_that_will_not_delete_does_not_stop_the_rest(caplog):
     stubborn.delete = AsyncMock(side_effect=discord.Forbidden(MagicMock(), "no perms"))
 
     with caplog.at_level("WARNING"):
-        await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID + 1, ANCHOR_ID], "standings")
+        with in_a_job():
+            await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID + 1, ANCHOR_ID], "standings")
 
     assert channel._deleted == [ANCHOR_ID]
 
@@ -299,7 +309,8 @@ async def test_an_anchor_that_will_not_delete_is_logged_not_raised(caplog):
     channel = _delete_channel(anchor, [])
 
     with caplog.at_level("WARNING"):
-        await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "standings")
+        with in_a_job():
+            await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "standings")
 
     assert "could not delete" in caplog.text
 
@@ -313,7 +324,8 @@ async def test_the_label_names_what_failed_in_the_log(caplog):
     )
 
     with caplog.at_level("WARNING"):
-        await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "results")
+        with in_a_job():
+            await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "results")
 
     assert "results" in caplog.text
 
@@ -330,7 +342,8 @@ async def test_it_returns_what_it_could_not_remove():
     channel = _deletable_channel([anchor, stubborn])
     stubborn.delete = AsyncMock(side_effect=discord.Forbidden(MagicMock(), "no perms"))
 
-    left = await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID, ANCHOR_ID + 1], "verdict")
+    with in_a_job():
+        left = await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID, ANCHOR_ID + 1], "verdict")
 
     assert left == [ANCHOR_ID + 1]
 
@@ -341,7 +354,8 @@ async def test_a_message_already_gone_is_not_returned():
     channel = MagicMock(spec=discord.TextChannel)
     channel.fetch_message = AsyncMock(side_effect=discord.NotFound(MagicMock(), "gone"))
 
-    assert await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "verdict") == []
+    with in_a_job():
+        assert await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "verdict") == []
 
 
 async def test_a_message_it_cannot_fetch_is_returned():
@@ -349,40 +363,8 @@ async def test_a_message_it_cannot_fetch_is_returned():
     channel = MagicMock(spec=discord.TextChannel)
     channel.fetch_message = AsyncMock(side_effect=discord.Forbidden(MagicMock(), "no perms"))
 
-    assert await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "verdict") == [ANCHOR_ID]
-
-
-async def test_clearing_standings_counts_what_went_and_returns_what_stayed(monkeypatch):
-    """Both championships are cleared; the one that went is counted, the one refused is
-    returned, and both ids are forgotten either way as before."""
-    import leaguebot.results.services.results_post_service as rps
-
-    postings = {
-        rps.STANDINGS_DRIVERS: ANCHOR_ID,
-        rps.STANDINGS_CONSTRUCTORS: ANCHOR_ID + 10,
-    }
-    forgotten: list[str] = []
-
-    async def _get_id(db_path, division_id, round_id, championship):
-        return postings[championship]
-
-    async def _get_ids(db_path, division_id, round_id, championship):
-        return [postings[championship]]
-
-    async def _set_id(db_path, division_id, round_id, message_id, championship):
-        forgotten.append(championship)
-
-    monkeypatch.setattr(rps, "_get_standings_message_id", _get_id)
-    monkeypatch.setattr(rps, "_get_standings_message_ids", _get_ids)
-    monkeypatch.setattr(rps, "_set_standings_message_id", _set_id)
-    drivers, constructors = _message(ANCHOR_ID), _message(ANCHOR_ID + 10)
-    channel = _deletable_channel([drivers, constructors])
-    constructors.delete = AsyncMock(side_effect=discord.Forbidden(MagicMock(), "no perms"))
-
-    removed, left = await rps._clear_standings_messages("db", 1, 2, channel)
-
-    assert (removed, left) == (1, [ANCHOR_ID + 10])
-    assert forgotten == [rps.STANDINGS_DRIVERS, rps.STANDINGS_CONSTRUCTORS]
+    with in_a_job():
+        assert await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "verdict") == [ANCHOR_ID]
 
 
 # ---------------------------------------------------------------------------
@@ -440,7 +422,8 @@ async def test_the_recorded_messages_are_the_ones_deleted():
     messages = [_message(11), _message(12), _message(13)]
     channel = _deletable_channel(messages)
 
-    await _delete_posting(channel, 11, [11, 12, 13], label="results message")
+    with in_a_job():
+        await _delete_posting(channel, 11, [11, 12, 13], label="results message")
 
     assert channel._deleted == [11, 12, 13]
 
@@ -457,7 +440,8 @@ async def test_a_posting_below_the_recorded_one_is_untouched():
     new_posting = [_message(13), _message(14)]
     channel = _deletable_channel(old_posting + new_posting)
 
-    await _delete_posting(channel, 11, [11, 12], label="results message")
+    with in_a_job():
+        await _delete_posting(channel, 11, [11, 12], label="results message")
 
     assert channel._deleted == [11, 12]
     assert 13 not in channel._deleted and 14 not in channel._deleted
@@ -468,7 +452,8 @@ async def test_a_message_already_gone_does_not_stop_the_rest():
     messages = [_message(11), _message(13)]
     channel = _deletable_channel(messages)
 
-    await _delete_posting(channel, 11, [11, 12, 13], label="results message")
+    with in_a_job():
+        await _delete_posting(channel, 11, [11, 12, 13], label="results message")
 
     assert channel._deleted == [11, 13]
 
@@ -485,7 +470,8 @@ async def test_a_posting_with_nothing_recorded_loses_its_anchor_and_nothing_else
     channel = _deletable_channel([anchor, below])
     channel.history = MagicMock()
 
-    await _delete_posting(channel, ANCHOR_ID, None, label="results message")
+    with in_a_job():
+        await _delete_posting(channel, ANCHOR_ID, None, label="results message")
 
     assert channel._deleted == [ANCHOR_ID]
     channel.history.assert_not_called()
@@ -502,7 +488,8 @@ async def test_the_anchor_is_deleted_even_if_the_stored_list_omits_it():
     messages = [_message(11), _message(12)]
     channel = _deletable_channel(messages)
 
-    await _delete_posting(channel, 11, [12], label="results message")
+    with in_a_job():
+        await _delete_posting(channel, 11, [12], label="results message")
 
     assert sorted(channel._deleted) == [11, 12]
 
@@ -512,7 +499,8 @@ async def test_the_anchor_is_not_deleted_twice_when_the_list_names_it():
     messages = [_message(11), _message(12)]
     channel = _deletable_channel(messages)
 
-    await _delete_posting(channel, 11, [11, 12], label="results message")
+    with in_a_job():
+        await _delete_posting(channel, 11, [11, 12], label="results message")
 
     assert channel._deleted == [11, 12]
 
@@ -529,6 +517,7 @@ async def test_a_posting_that_fails_part_way_takes_its_first_chunks_down():
     text = "\n".join(f"line {i:04d} " + "x" * 60 for i in range(60))
 
     with pytest.raises(discord.HTTPException):
-        await _send_chunked(channel, text)
+        with in_a_job():
+            await _send_chunked(channel, text)
 
     first.delete.assert_awaited_once()

@@ -15,9 +15,12 @@ from typing import Any
 
 import discord
 
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.services.change_queue import ChangeQueue
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import accounts_of_in_division, current_account_map_for_division
 from leaguebot.results.services.penalty_service import StagedPenalty, validate_penalty_input
@@ -605,9 +608,115 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
 
 
 # ---------------------------------------------------------------------------
+# The review a staging is applied to
+# ---------------------------------------------------------------------------
+
+#: The review each round's stage is held in, by (round, appeals): what the form or press that
+#: stages hands over, for the staging change to apply its item to when its turn comes. Held for
+#: the change only; the review's views and forms hold it for the manager.
+_HELD_REVIEWS: dict[tuple[int, bool], "PenaltyReviewState"] = {}
+
+
+def hold_review(state: "PenaltyReviewState", *, appeals: bool) -> None:
+    """Hand the review a staging is asked for to the change that will apply it (#439, C54)."""
+    _HELD_REVIEWS[(state.round_id, appeals)] = state
+
+
+def held_review(round_id: int, *, appeals: bool) -> "PenaltyReviewState | None":
+    """The review last handed to `hold_review` for the round's stage, or None, as after a
+    restart."""
+    return _HELD_REVIEWS.get((round_id, appeals))
+
+
+def clear_held_reviews() -> None:
+    """Drop every review handed to a staging change, as `/bot pack` and `/bot factory-reset` do
+    with the rest of what the bot holds in memory (`clear_in_memory_state`)."""
+    _HELD_REVIEWS.clear()
+
+
+async def _ask_stage(
+    queue: ChangeQueue,
+    interaction: discord.Interaction,
+    state: "PenaltyReviewState",
+    item: dict[str, Any],
+    *,
+    appeals: bool,
+    doing: str,
+    reply: str,
+    what: str,
+    log_what: str,
+    log_detail: list[str],
+) -> None:
+    """Ask the round's lane, through *queue* (which the callback that stages reads, once), to stage
+    *item* in the review (#439, C54, C55), the member told it is under way and then *reply* once it
+    is staged. *log_what* and *log_detail* are the line the staging
+    leaves in the log channel, written when it has happened."""
+    from leaguebot.results.services.review_stage_change import KIND
+
+    hold_review(state, appeals=appeals)
+    await queue.ask(
+        KIND,
+        {
+            "round_id": state.round_id,
+            "division_id": state.division_id,
+            "channel_id": state.submission_channel_id,
+            "amendment": state.is_amendment,
+            "appeals": appeals,
+            "prompt_message_id": (
+                state.appeals_prompt_message_id if appeals else state.prompt_message_id
+            ),
+            "item": item,
+            "doing": doing,
+            "reply": reply,
+            "log": {"what": log_what, "detail": log_detail},
+        },
+        interaction=interaction,
+        what=what,
+    )
+
+
+async def _ask_confirm(
+    queue: ChangeQueue,
+    interaction: discord.Interaction | None,
+    state: "PenaltyReviewState",
+    *,
+    actor: Any = None,
+    what: str,
+    log_what: str | None = None,
+    log_detail: list[str] | None = None,
+) -> None:
+    """Ask the round's lane, through *queue*, to post the approval question (#439, C56), the member
+    told it is under way. *actor* stands for the member where the press was answered by a staging
+    asked just before (clearing), whose line is the press's. *log_what* and *log_detail* are the
+    line the post leaves in the log channel, none where there are none."""
+    from leaguebot.results.services.review_confirm_change import KIND
+
+    hold_review(state, appeals=False)
+    await queue.ask(
+        KIND,
+        {
+            "round_id": state.round_id,
+            "division_id": state.division_id,
+            "channel_id": state.submission_channel_id,
+            "amendment": state.is_amendment,
+            "doing": "Posting the approval question in the penalty review",
+            "reply": f"\u2705 The approval question is posted in <#{state.submission_channel_id}>.",
+            "log": (
+                None if log_what is None
+                else {"what": log_what, "detail": log_detail or []}
+            ),
+        },
+        interaction=interaction,
+        actor=actor,
+        what=what,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Prompt refresh helper
 # ---------------------------------------------------------------------------
 
+@posts_in_a_job
 async def _delete_review_message(state: PenaltyReviewState, message_id: int | None) -> None:
     """Delete one of the review's own messages from its channel, where it is still there."""
     if message_id is None:
@@ -636,29 +745,17 @@ async def _take_down_approval(state: PenaltyReviewState) -> None:
     await _delete_review_message(state, message_id)
 
 
-async def _take_down_report_stage(state: PenaltyReviewState) -> None:
-    """Take a review's report-stage controls down once its reports are approved (#402).
-
-    Left up, they were what a manager pressed to approve the reports a second time, or to be
-    told a penalty was removed that had been applied. The controls refuse regardless; this takes
-    them out of reach. The prompt goes with the approval message, an amendment's as a first
-    pass's: its pardons close with its reports, so nothing on it is left to do.
-
-    **Never raises.** It runs as the next stage is opened, and a failure to tidy the channel must
-    not cost the manager that stage.
-    """
-    try:
-        await _take_down_approval(state)
-        await _delete_review_message(state, state.prompt_message_id)
-    except Exception:  # noqa: BLE001 — the controls refuse whether or not they came down
-        log.exception("could not take down the report stage of round %s", state.round_id)
-
-
+@posts_in_a_job
 async def _refresh_prompt(state: PenaltyReviewState) -> None:
     """Edit the existing prompt message to reflect the current staged list.
 
     Every change to the review comes through here, and **Make Changes** does too, so this is
-    where an approval message confirming the review as it stood is withdrawn (#402).
+    where an approval message confirming the review as it stood is withdrawn (#402). A staging
+    on the queue has withdrawn it as a job of its own already, and finds none here.
+
+    The edit is a job of the staging's change (#439): a message gone is logged and passed over,
+    and an edit Discord refuses raises `StepFailedOnDiscord`, for the queue to stop the round's
+    lane on and try again.
     """
     await _take_down_approval(state)
     if state.prompt_message_id is None:
@@ -672,8 +769,10 @@ async def _refresh_prompt(state: PenaltyReviewState) -> None:
         new_view = PenaltyReviewView(state)
         await msg.edit(content=content, view=new_view)
         state.bot.add_view(new_view, message_id=state.prompt_message_id)
-    except (discord.NotFound, discord.HTTPException) as exc:
+    except discord.NotFound as exc:
         log.warning("_refresh_prompt: failed to edit prompt: %s", exc)
+    except discord.HTTPException as exc:
+        raise StepFailedOnDiscord("the prompt could not be edited") from exc
 
 
 async def _render_appeals_prompt_content(state: PenaltyReviewState) -> str:
@@ -710,8 +809,10 @@ async def _render_appeals_prompt_content(state: PenaltyReviewState) -> str:
     return "\n".join(lines)
 
 
+@posts_in_a_job
 async def _refresh_appeals_prompt(state: PenaltyReviewState) -> None:
-    """Edit the existing appeals prompt message to reflect current staged_appeals."""
+    """Edit the existing appeals prompt message to reflect current staged_appeals. As
+    `_refresh_prompt`, a message gone is passed over and a refused edit raises."""
     if state.appeals_prompt_message_id is None:
         return
     ch = as_text_channel(state.bot.get_channel(state.submission_channel_id))
@@ -723,8 +824,10 @@ async def _refresh_appeals_prompt(state: PenaltyReviewState) -> None:
         new_view = AppealsReviewView(state)
         await msg.edit(content=content, view=new_view)
         state.bot.add_view(new_view, message_id=state.appeals_prompt_message_id)
-    except (discord.NotFound, discord.HTTPException) as exc:
+    except discord.NotFound as exc:
         log.warning("_refresh_appeals_prompt: failed to edit appeals prompt: %s", exc)
+    except discord.HTTPException as exc:
+        raise StepFailedOnDiscord("the appeals prompt could not be edited") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -827,7 +930,8 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
         self.use_appeals_staging = use_appeals_staging
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
+        # Not deferred for the queue to answer the form, as it says it is under way (#439, C54);
+        # a refusal below defers first, so that it is answered as it always was.
 
         # The review may have moved on while the form was open (#402), whichever it stages on:
         # the penalty review, or the appeals review the round moved on to (#482).
@@ -837,6 +941,7 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
             else await _review_moved_on(self.state)
         )
         if refusal is not None:
+            await interaction.response.defer(ephemeral=True)
             await refuse(interaction, refusal, what=describe_form(self))
             return
 
@@ -963,26 +1068,26 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
         # Stage the penalty (with description and justification) and refresh.
         result.description = self.description_input.value.strip()
         result.justification = self.justification_input.value.strip()
-        staging_list.append(result)
-        if self.use_appeals_staging:
-            await _refresh_appeals_prompt(self.state)
-        else:
-            await _refresh_prompt(self.state)
 
         pl = _pen_label(result)
         sl = self.session_type.value.replace("_", " ").title()
         action = "Correction" if self.use_appeals_staging else "Penalty"
         review = "appeals" if self.use_appeals_staging else "penalty"
-        await _record_press(
+        await _ask_stage(
+            bot_of(interaction).change_queue,
             interaction,
-            describe_form(self),
-            f"review: {review} review of round {self.state.round_number} "
-            f"({self.state.division_name})",
-            f"staged: {action} {pl} for <@{shown_user_id}> in {sl}",
-        )
-        await interaction.followup.send(
-            f"\u2705 Staged {action}: <@{shown_user_id}> | {sl} | **{pl}**",
-            ephemeral=True,
+            self.state,
+            {"op": "penalty", "penalty": result.to_payload()},
+            appeals=self.use_appeals_staging,
+            doing=f"Staging a {action.lower()} in the {review} review",
+            reply=f"\u2705 Staged {action}: <@{shown_user_id}> | {sl} | **{pl}**",
+            what=describe_form(self),
+            log_what=describe_form(self),
+            log_detail=[
+                f"review: {review} review of round {self.state.round_number} "
+                f"({self.state.division_name})",
+                f"staged: {action} {pl} for <@{shown_user_id}> in {sl}",
+            ],
         )
 
 
@@ -1021,11 +1126,13 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
         self.state = state
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
+        # Not deferred for the queue to answer the form, as it says it is under way (#439, C54);
+        # a refusal below defers first, so that it is answered as it always was.
 
         # --- The review may have moved on while the form was open (FR-011, #402) ---
         refusal = await _review_moved_on(self.state)
         if refusal is not None:
+            await interaction.response.defer(ephemeral=True)
             await refuse(
                 interaction, refusal, what=describe_form(self)
             )
@@ -1174,21 +1281,23 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
             justification=justification,
             grantor_id=interaction.user.id,
         )
-        self.state.staged_pardons.append(pardon)
-
-        # --- Log justification to calc-log channel only (FR-010) ---
-        await self.state.bot.output_router.post_log(
-            f"{interaction_member(interaction)} | ATTENDANCE_PARDON_STAGED | Success\n"
-            f"  pardon: {pardon_type}\n"
-            f"  driver: <@{driver_user_id}> | round: {self.state.round_number} "
-            f"({self.state.division_name})\n"
-            f"  justification: {justification}",
-        )
-
-        await _refresh_prompt(self.state)
-        await interaction.followup.send(
-            f"✅ Pardon staged: <@{driver_user_id}> — **{pardon_type}**",
-            ephemeral=True,
+        # --- Ask the round's lane to stage it (FR-010: the justification goes to the log) ---
+        await _ask_stage(
+            bot_of(interaction).change_queue,
+            interaction,
+            self.state,
+            {"op": "pardon", "pardon": pardon.to_payload()},
+            appeals=False,
+            doing="Staging an attendance pardon in the penalty review",
+            reply=f"\u2705 Pardon staged: <@{driver_user_id}> \u2014 **{pardon_type}**",
+            what=describe_form(self),
+            log_what="ATTENDANCE_PARDON_STAGED",
+            log_detail=[
+                f"pardon: {pardon_type}",
+                f"driver: <@{driver_user_id}> | round: {self.state.round_number} "
+                f"({self.state.division_name})",
+                f"justification: {justification}",
+            ],
         )
 
 
@@ -1242,19 +1351,29 @@ class _ConfirmClearView(LeagueView):
         # Stopped before the work, not after it: the approval that follows can run past the
         # minute, and a view still listening then would record a lapse for a list that has gone.
         self.stop()
+        what = _button(button.label, self.state)
+        if approval_unreachable(self.state) is not None:
+            # Refused before anything is cleared: the list stands.
+            await _approval_not_posted(interaction, self.state, what=what)
+            return
         cleared = await _staged_named(self.state, self.state.staged)
-        self.state.staged.clear()
-        await interaction.response.defer(ephemeral=True)
-        await _record_press(
-            interaction, _button(button.label, self.state), f"cleared: {cleared}"
+        queue = bot_of(interaction).change_queue
+        # Staged before the question is posted, not after: the staging withdraws any approval
+        # question standing, and would withdraw the one about to be posted. Both are on the
+        # round's lane, in this order; the press is answered by the first.
+        await _ask_stage(
+            queue,
+            interaction,
+            self.state,
+            {"op": "clear"},
+            appeals=False,
+            doing="Clearing the staged penalties of the penalty review",
+            reply="🗑️ Cleared the staged penalties; the approval question follows.",
+            what=what,
+            log_what=what,
+            log_detail=[f"cleared: {cleared}"],
         )
-        # Redrawn before the question is posted, not after: the redraw withdraws any approval
-        # question standing, and would withdraw the one about to be posted.
-        await _refresh_prompt(self.state)
-        if not await _show_approval_step(interaction, self.state):
-            await _approval_not_posted(
-                interaction, self.state, what=_button(button.label, self.state)
-            )
+        await _ask_confirm(queue, None, self.state, actor=interaction.user, what=what)
 
     @discord.ui.button(label="Cancel — keep penalties", style=discord.ButtonStyle.secondary)
     async def cancel_btn(
@@ -1281,15 +1400,18 @@ class _ConfirmClearView(LeagueView):
 # Approval step helper (T019, T020)
 # ---------------------------------------------------------------------------
 
+@posts_in_a_job
 async def _show_approval_step(
-    interaction: discord.Interaction,
-    state: PenaltyReviewState,
-) -> bool:
-    """Post an :class:`ApprovalView` message to the submission channel.
+    interaction: discord.Interaction | None, state: PenaltyReviewState
+) -> int | None:
+    """Post an :class:`ApprovalView` message to the submission channel: the job of
+    `results.review.confirm` (#439, C56).
 
-    Returns whether it was posted. Where the submission channel cannot be reached nothing is
-    posted and nothing is said here: the caller tells the member and records the outcome
-    (`_approval_not_posted`), and writes its success line only on True.
+    Returns the message's id, or None where it was not posted. *interaction* is the press that
+    asked, none for the change's job. Where the submission channel cannot
+    be reached nothing is posted and nothing is said here: the change's check refuses the press
+    beforehand and tells the member (`_approval_not_posted`). A message Discord refuses raises,
+    for the queue to stop the round's lane at the job.
 
     One at a time (#402): pressing **No Penalties / Confirm** again replaces the message rather
     than leaving two approvals standing, and the one posted is recorded so that its buttons can
@@ -1337,8 +1459,19 @@ async def _show_approval_step(
         msg = await ch.send(content, view=view)
         state.approval_message_id = msg.id
         state.bot.add_view(view, message_id=msg.id)
-        return True
-    return False
+        return msg.id
+    return None
+
+
+def approval_unreachable(state: PenaltyReviewState) -> str | None:
+    """What the member is told where the review's submission channel cannot be reached for the
+    approval question, or None where it can."""
+    if as_text_channel(state.bot.get_channel(state.submission_channel_id)) is not None:
+        return None
+    return (
+        f"\u26a0\ufe0f The approval question could not be posted: "
+        f"<#{state.submission_channel_id}> could not be reached."
+    )
 
 
 async def _approval_not_posted(
@@ -1349,12 +1482,7 @@ async def _approval_not_posted(
     Not a fault in the bot: the submission channel is gone or out of reach, as the amend
     review's is when it cannot be posted to. The review stands as it was.
     """
-    await refuse(
-        interaction,
-        f"\u26a0\ufe0f The approval question could not be posted: "
-        f"<#{state.submission_channel_id}> could not be reached.",
-        what=what,
-    )
+    await refuse(interaction, approval_unreachable(state) or "", what=what)
 
 
 # ---------------------------------------------------------------------------
@@ -1396,7 +1524,11 @@ def _add_remove_buttons(view: discord.ui.View, buttons: list[tuple]) -> None:
 
 
 async def _ask_reports_approved(
-    interaction: discord.Interaction, state: PenaltyReviewState, *, what: str
+    interaction: discord.Interaction,
+    state: PenaltyReviewState,
+    *,
+    queue: ChangeQueue,
+    what: str,
 ) -> None:
     """Ask the change queue to approve the review's reports as it stands (#439).
 
@@ -1411,7 +1543,7 @@ async def _ask_reports_approved(
     if state.is_amendment:
         from leaguebot.results.services.amendment_stage_changes import REPORTS_KIND
 
-        await bot_of(interaction).change_queue.ask(
+        await queue.ask(
             REPORTS_KIND,
             {
                 "round_id": state.round_id,
@@ -1430,7 +1562,7 @@ async def _ask_reports_approved(
         return
     from leaguebot.results.services.report_approval_change import KIND
 
-    await bot_of(interaction).change_queue.ask(
+    await queue.ask(
         KIND,
         {
             "round_id": state.round_id,
@@ -1448,7 +1580,11 @@ async def _ask_reports_approved(
 
 
 async def _ask_appeals_approved(
-    interaction: discord.Interaction, state: PenaltyReviewState, *, what: str
+    interaction: discord.Interaction,
+    state: PenaltyReviewState,
+    *,
+    queue: ChangeQueue,
+    what: str,
 ) -> None:
     """Ask the change queue to approve the review's appeals as it stands (#439).
 
@@ -1463,7 +1599,7 @@ async def _ask_appeals_approved(
     if state.is_amendment:
         from leaguebot.results.services.amendment_stage_changes import APPEALS_KIND
 
-        await bot_of(interaction).change_queue.ask(
+        await queue.ask(
             APPEALS_KIND,
             {
                 "round_id": state.round_id,
@@ -1481,7 +1617,7 @@ async def _ask_appeals_approved(
         return
     from leaguebot.results.services.appeals_approval_change import KIND
 
-    await bot_of(interaction).change_queue.ask(
+    await queue.ask(
         KIND,
         {
             "round_id": state.round_id,
@@ -1568,19 +1704,21 @@ class PenaltyReviewView(LeagueView):
             ):
                 return
             if idx < len(self.state.staged):
-                removed = self.state.staged.pop(idx)
-                await interaction.response.defer(ephemeral=True)
-                await _refresh_prompt(self.state)
+                removed = self.state.staged[idx]
                 pl = _pen_label(removed)
                 shown = await _shown(self.state, removed.driver_user_id)
-                await interaction.followup.send(
-                    f"🗑️ Removed: <@{shown}> | {pl}",
-                    ephemeral=True,
-                )
-                await _record_press(
+                what = _button(f"Remove #{idx + 1}", self.state)
+                await _ask_stage(
+                    bot_of(interaction).change_queue,
                     interaction,
-                    _button(f"Remove #{idx + 1}", self.state),
-                    f"removed: {pl} for <@{shown}>",
+                    self.state,
+                    {"op": "remove", "list": "staged", "entry": removed.to_payload()},
+                    appeals=False,
+                    doing="Removing a staged penalty from the penalty review",
+                    reply=f"🗑️ Removed: <@{shown}> | {pl}",
+                    what=what,
+                    log_what=what,
+                    log_detail=[f"removed: {pl} for <@{shown}>"],
                 )
             else:
                 await refuse(
@@ -1610,18 +1748,20 @@ class PenaltyReviewView(LeagueView):
             ):
                 return
             if idx < len(self.state.staged_pardons):
-                removed = self.state.staged_pardons.pop(idx)
-                await interaction.response.defer(ephemeral=True)
-                await _refresh_prompt(self.state)
+                removed = self.state.staged_pardons[idx]
                 shown = await _shown(self.state, removed.driver_user_id)
-                await interaction.followup.send(
-                    f"🗑️ Removed pardon: <@{shown}> | {removed.pardon_type}",
-                    ephemeral=True,
-                )
-                await _record_press(
+                what = _button(f"Remove Pardon #{idx + 1}", self.state)
+                await _ask_stage(
+                    bot_of(interaction).change_queue,
                     interaction,
-                    _button(f"Remove Pardon #{idx + 1}", self.state),
-                    f"removed: {removed.pardon_type} pardon for <@{shown}>",
+                    self.state,
+                    {"op": "remove", "list": "pardons", "entry": removed.to_payload()},
+                    appeals=False,
+                    doing="Removing a staged pardon from the penalty review",
+                    reply=f"🗑️ Removed pardon: <@{shown}> | {removed.pardon_type}",
+                    what=what,
+                    log_what=what,
+                    log_detail=[f"removed: {removed.pardon_type} pardon for <@{shown}>"],
                 )
             else:
                 await refuse(
@@ -1685,14 +1825,16 @@ class PenaltyReviewView(LeagueView):
         ):
             return
         if not self.state.staged:
-            # No penalties — advance directly to approval step (T019)
-            await interaction.response.defer(ephemeral=True)
+            # No penalties — advance directly to approval step (T019); the question is posted by
+            # a change on the round's lane, which refuses the press where the channel is out of reach.
             what = _button("No Penalties / Confirm", self.state)
-            if not await _show_approval_step(interaction, self.state):
-                await _approval_not_posted(interaction, self.state, what=what)
-                return
-            await _record_press(
-                interaction, what, "posted the approval question: no penalties staged"
+            await _ask_confirm(
+                bot_of(interaction).change_queue,
+                interaction,
+                self.state,
+                what=what,
+                log_what=what,
+                log_detail=["posted the approval question: no penalties staged"],
             )
         else:
             # Ask for explicit confirmation before clearing (T019)
@@ -1733,7 +1875,12 @@ class PenaltyReviewView(LeagueView):
                 what=_button(button.label, self.state),
             )
             return
-        await _ask_reports_approved(interaction, self.state, what=_button(button.label, self.state))
+        await _ask_reports_approved(
+            interaction,
+            self.state,
+            queue=bot_of(interaction).change_queue,
+            what=_button(button.label, self.state),
+        )
 
     @discord.ui.button(
         label="🔄 Resubmit Initial Results",
@@ -1759,10 +1906,13 @@ class PenaltyReviewView(LeagueView):
             interaction, self.state, what=_button(button.label, self.state)
         ):
             return
-        await interaction.response.defer(ephemeral=True)
-        from leaguebot.results.services.result_submission_service import enter_resubmit_flow
-        await enter_resubmit_flow(
-            interaction, self.state, what=_button(button.label, self.state)
+        from leaguebot.results.services.resubmission_changes import ask_resubmission_start
+
+        await ask_resubmission_start(
+            interaction,
+            self.state,
+            queue=bot_of(interaction).change_queue,
+            what=_button(button.label, self.state),
         )
 
     @discord.ui.button(
@@ -1856,15 +2006,18 @@ class ApprovalView(LeagueView):
             interaction, self.state, what=_button(button.label, self.state)
         ):
             return
-        await interaction.response.defer(ephemeral=True)
-        await _refresh_prompt(self.state)
-        await interaction.followup.send(
-            "↩️ Returned to penalty staging. The staged list is intact.", ephemeral=True
-        )
-        await _record_press(
+        what = _button(button.label, self.state)
+        await _ask_stage(
+            bot_of(interaction).change_queue,
             interaction,
-            _button(button.label, self.state),
-            "withdrew the approval question; the staged list is intact",
+            self.state,
+            {"op": "make_changes"},
+            appeals=False,
+            doing="Returning the penalty review to staging",
+            reply="↩️ Returned to penalty staging. The staged list is intact.",
+            what=what,
+            log_what=what,
+            log_detail=["withdrew the approval question; the staged list is intact"],
         )
 
     @discord.ui.button(
@@ -1917,7 +2070,12 @@ class ApprovalView(LeagueView):
                 what=_button(button.label, self.state),
             )
             return
-        await _ask_reports_approved(interaction, self.state, what=_button(button.label, self.state))
+        await _ask_reports_approved(
+            interaction,
+            self.state,
+            queue=bot_of(interaction).change_queue,
+            what=_button(button.label, self.state),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1975,19 +2133,21 @@ class AppealsReviewView(LeagueView):
             ):
                 return
             if idx < len(self.state.staged_appeals):
-                removed = self.state.staged_appeals.pop(idx)
-                await interaction.response.defer(ephemeral=True)
-                await _refresh_appeals_prompt(self.state)
+                removed = self.state.staged_appeals[idx]
                 pl = _pen_label(removed)
                 shown = await _shown(self.state, removed.driver_user_id)
-                await interaction.followup.send(
-                    f"\U0001f5d1\ufe0f Removed: <@{shown}> | {pl}",
-                    ephemeral=True,
-                )
-                await _record_press(
+                what = _button(f"Remove #{idx + 1}", self.state, "appeals")
+                await _ask_stage(
+                    bot_of(interaction).change_queue,
                     interaction,
-                    _button(f"Remove #{idx + 1}", self.state, "appeals"),
-                    f"removed: {pl} for <@{shown}>",
+                    self.state,
+                    {"op": "remove", "list": "appeals", "entry": removed.to_payload()},
+                    appeals=True,
+                    doing="Removing a staged correction from the appeals review",
+                    reply=f"\U0001f5d1\ufe0f Removed: <@{shown}> | {pl}",
+                    what=what,
+                    log_what=what,
+                    log_detail=[f"removed: {pl} for <@{shown}>"],
                 )
             else:
                 await refuse(
@@ -2057,7 +2217,10 @@ class AppealsReviewView(LeagueView):
         if not self.state.staged_appeals:
             # No corrections — finalise directly
             await _ask_appeals_approved(
-                interaction, self.state, what=_button(button.label, self.state, "appeals")
+                interaction,
+                self.state,
+                queue=bot_of(interaction).change_queue,
+                what=_button(button.label, self.state, "appeals"),
             )
         else:
             # Ask for explicit confirmation before clearing
@@ -2103,7 +2266,10 @@ class AppealsReviewView(LeagueView):
             )
             return
         await _ask_appeals_approved(
-            interaction, self.state, what=_button(button.label, self.state, "appeals")
+            interaction,
+            self.state,
+            queue=bot_of(interaction).change_queue,
+            what=_button(button.label, self.state, "appeals"),
         )
 
 
@@ -2161,7 +2327,10 @@ class _AppealsConfirmClearView(LeagueView):
             f"cleared: {cleared}",
         )
         await _ask_appeals_approved(
-            interaction, self.state, what=_button(button.label, self.state, "appeals")
+            interaction,
+            self.state,
+            queue=bot_of(interaction).change_queue,
+            what=_button(button.label, self.state, "appeals"),
         )
 
     @discord.ui.button(

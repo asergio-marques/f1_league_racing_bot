@@ -1,7 +1,7 @@
 """Attach the check-in call graphic (041, US3).
 
 **This module has exactly one caller**, and that is the whole of its design. ``try_attach`` is
-reached from the initial post in ``rsvp_service.run_rsvp_notice`` and from nowhere else: not
+reached from the initial post in the check-in call's ``post_call`` job (``check_in_changes``) and from nowhere else: not
 from the button callbacks, not from the reserve distribution, not from the deadline handler,
 not from the embed rebuild. Each of those edits the embed in place, and the attachment rides
 through untouched.

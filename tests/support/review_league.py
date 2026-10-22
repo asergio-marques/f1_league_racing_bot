@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import itertools
 import os
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -76,7 +77,9 @@ def channel(channel_id: int, events: list[tuple[str, int, int]]) -> Any:
     `send_fails`, an exception, refuses every send; `fail_when(content, kwargs)`, where it returns
     True, refuses that send alone; `delete_fails` refuses the channel's own deletion, recorded as
     a `delete_channel` event. `messages` maps an id to the message standing, with its
-    `content` and `view`; `seed(id, content)` places one as though posted earlier.
+    `content` and `view`; `seed(id, content)` places one as though posted earlier. A deleted
+    channel drops every message it holds, as on Discord; `held_at_deletion` keeps what it held as
+    it went, for a test to read what the channel showed before it was deleted.
     """
     channel = MagicMock(spec=discord.TextChannel)
     channel.id = channel_id
@@ -86,6 +89,7 @@ def channel(channel_id: int, events: list[tuple[str, int, int]]) -> Any:
     channel.send_fails = None
     channel.fail_when = None
     channel.delete_fails = None
+    channel.held_at_deletion = {}
 
     def _message(message_id: int, content: str, view: Any = None) -> Any:
         message = MagicMock()
@@ -128,16 +132,35 @@ def channel(channel_id: int, events: list[tuple[str, int, int]]) -> Any:
         return message
 
     async def _fetch(message_id: int) -> Any:
+        # A message a member typed (`typed_message`) is found until it is deleted.
+        typed = [m for m in getattr(channel, "posted", ()) if m.id == message_id]
+        if typed:
+            return typed[0]
         if message_id not in channel.messages:
             raise http_error(discord.NotFound, status=404, text="Unknown Message")
         return channel.messages[message_id]
 
     def _partial(message_id: int) -> Any:
-        return channel.messages.get(message_id) or _message(message_id, "")
+        # A message a member typed (`typed_message`) stands in `posted`, where a test keeps it; one
+        # since deleted is gone, and its reactions raise `NotFound`.
+        typed = [m for m in getattr(channel, "posted", ()) if m.id == message_id]
+        if typed:
+            return typed[0]
+        found = channel.messages.get(message_id)
+        if found is not None:
+            return found
+        absent = _message(message_id, "")
+        for name in ("add_reaction", "remove_reaction", "clear_reaction"):
+            setattr(absent, name, AsyncMock(
+                side_effect=http_error(discord.NotFound, status=404, text="Unknown Message")
+            ))
+        return absent
 
     async def _delete_channel(*_args: Any, **_kwargs: Any) -> None:
         if channel.delete_fails is not None:
             raise channel.delete_fails
+        channel.held_at_deletion = dict(channel.messages)
+        channel.messages.clear()
         events.append(("delete_channel", channel_id, channel_id))
 
     channel.seed = seed
@@ -336,6 +359,9 @@ class ReviewLeague:
     def sent_to(self, cid: int) -> list[int]:
         return [mid for kind, ch, mid in self.events if kind == "send" and ch == cid]
 
+    def deleted_in(self, cid: int) -> list[int]:
+        return [mid for kind, ch, mid in self.events if kind == "delete" and ch == cid]
+
     def log(self) -> str:
         return "\n".join(self.bot.log_channel.sent)
 
@@ -496,9 +522,12 @@ async def stopped_at(league: ReviewLeague) -> str | None:
     return None if job is None else job["name"]
 
 
-async def block_queue(league: ReviewLeague) -> dict[str, Any]:
+async def block_queue(league: ReviewLeague, *, lane: str | None = None) -> dict[str, Any]:
     """Ask for a change of the test's own whose one job fails while `holder["fail"]` is set, and
-    run the queue, so that the queue is stopped at it. Gives the holder."""
+    run the queue, so that the queue is stopped at it. Gives the holder.
+
+    It stops the league lane, or with *lane* a conversation's (`"channel:<id>"`); `"league"` names
+    the league's own."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.change_queue import ChangeType, Step
 
@@ -512,30 +541,101 @@ async def block_queue(league: ReviewLeague) -> dict[str, Any]:
     async def check(_ctx: Any) -> Any:
         return Verdict.go()
 
+    on_league = lane in (None, "league")
+    kind = "test.blocker" if on_league else f"test.blocker:{lane}"
+    lanes: dict[str, Any] = {} if on_league else {"lane": lambda _payload: lane}
     register(league.bot, ChangeType(
-        kind="test.blocker",
+        kind=kind,
         opening=(PlannedStep("block"),),
         steps={"block": Step("block", StepKind.ACT, act)},
         check=check,
-        key=lambda _payload: "test.blocker",
+        key=lambda _payload: kind,
         doing=lambda _payload: "Blocking the queue",
         outcome=lambda _ctx: "Unblocked.",
+        **lanes,
     ))
     await league.bot.change_queue.ask(
-        "test.blocker", {}, interaction=member_interaction(league.bot), what="the blocker",
+        kind, {}, interaction=member_interaction(league.bot), what="the blocker",
     )
     await run_queue(league.bot)
-    assert await stopped_at(league) == "block"
+    job = await stopped_job(league.db_path, lane)
+    assert job is not None and job["name"] == "block"
     return holder
 
 
 async def race_rows(db_path: str) -> dict[int, dict[str, Any]]:
+    """Each driver's row of the round's race results: its finishing position, penalties and
+    points, by driver."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT driver_user_id, postrace_time_penalties_ms, appeal_time_penalties_ms, "
-            "points_awarded FROM race_session_results"
+            "SELECT driver_user_id, finishing_position, postrace_time_penalties_ms, "
+            "appeal_time_penalties_ms, points_awarded FROM race_session_results"
         )
         return {row["driver_user_id"]: dict(row) for row in await cursor.fetchall()}
+
+
+async def snapshot_amendment(db_path: str, round_id: int,
+                             session_types: list[SessionType]) -> None:
+    """Record the round as it stands before an amendment's stage one writes, as stage one does,
+    for a test that seeds an amendment past stage one: through `snapshot_before_amendment_on`, on
+    a connection opened and committed here."""
+    from leaguebot.results.services import result_submission_service as service
+
+    async with get_connection(db_path) as db:
+        await service.snapshot_before_amendment_on(db, round_id, session_types)
+        await db.commit()
+
+
+async def amend_stage_one(db_path: str, round_id: int, division_id: int, sessions: list[Any],
+                          amended_by: int, bot: Any,
+                          display_names: Mapping[int, str] | None = None) -> None:
+    """Record an amendment's stage one, as its last paste hands it to the league: the round
+    snapshotted, each corrected classification written over it, its points applied and the
+    standings recomputed, all in one save; nothing posted.
+
+    Through `amend_round_results_on(db, round_id, division_id, sessions, amended_by,
+    display_names)`, on a connection opened and committed here: `results.amend.stage_one` runs it
+    in its save. That save waits on nothing but its own connection (architecture.md, "The
+    database"), so the standings names a full tie is settled by are resolved before it and handed
+    in as *display_names*, as the stage approvals hand them to `cascade_recompute_from_round_on`;
+    *bot* is not used, and the stage's log line is the change's, not the save's."""
+    from leaguebot.results.services import result_submission_service as service
+
+    async with get_connection(db_path) as db:
+        await service.amend_round_results_on(
+            db, round_id, division_id, sessions, amended_by, display_names
+        )
+        await db.commit()
+
+
+async def revert_amendment(db_path: str, round_id: int,
+                           display_names: Mapping[int, str] | None = None) -> bool:
+    """Put a round back from its amendment's snapshot, as the amendment's lapse and cancel do;
+    gives whether there was anything to put back.
+
+    Through `revert_abandoned_amendment_on`, on a connection opened and committed here: the lapse
+    and cancel run it inside their `revert` save. That save waits on nothing but its own connection
+    (architecture.md, "The database"), so the standings names are resolved before it, by a job of
+    their own, and handed in as *display_names*, as the stage approvals hand them to
+    `cascade_recompute_from_round_on`; none handed, a full tie is settled by user id."""
+    from leaguebot.results.services import result_submission_service as service
+
+    async with get_connection(db_path) as db:
+        reverted = await service.revert_abandoned_amendment_on(db, round_id, display_names)
+        await db.commit()
+    return bool(reverted)
+
+
+async def claim_amendment(db_path: str, round_id: int) -> str | None:
+    """Take an open amendment's deadline, as a stage's approval does before it writes; gives the
+    deadline taken, or None where there was nothing to claim: through `_claim_amendment_on`, on a
+    connection opened and committed here."""
+    from leaguebot.results.services import result_submission_service as service
+
+    async with get_connection(db_path) as db:
+        claimed = await service._claim_amendment_on(db, round_id)
+        await db.commit()
+    return claimed
 
 
 async def one(db_path: str, sql: str, *args: Any) -> Any:

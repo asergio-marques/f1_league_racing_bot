@@ -6,7 +6,10 @@ timeout, so a manager who pastes and then walks away leaves the round scored one
 another — on "Provisional Results" indefinitely, with nothing that would later notice.
 
 So the round is snapshotted before stage one writes, and put back if the stages go unapproved
-past their deadline. Two routes reach the same revert: the expiry sweep, and restart recovery.
+past their deadline. Two routes reach the same revert: the expiry sweep, and restart recovery. Since #439's slice 6b
+both ask the queue for the amendment's lapse (`results.amend.lapse`), whose job reverts it; the
+revert is reached here through the form the bot has (`tests.support.review_league`), and Cancel
+Amendment's change is pinned by `test_amend_changes.py`.
 
 **Only the driver rows, the header and the verdict references are snapshotted.** The points and
 the standings follow from the driver rows, so they are recomputed rather than stored — a snapshot
@@ -19,21 +22,19 @@ import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.result_submission_service import (
     AMENDMENT_STAGE_TIMEOUT_SECONDS,
-    _claim_amendment,
-    cancel_amendment,
-    revert_abandoned_amendment,
-    snapshot_before_amendment,
     sweep_expired_amendments,
 )
+from tests.support.change_queue import attach_queue, change_rows, run_queue
+from tests.support.review_league import claim_amendment, revert_amendment, snapshot_amendment
 from tests.support.teams import seed_team_instances
 
+LAPSE = "results.amend.lapse"
 SEASON_ID = 91
 DIVISION_ID = 92
 ROUND_ID = 93
@@ -123,9 +124,30 @@ def _bot(db_path):
     bot.db_path = db_path
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
+    # The queue delivers the lines each job saved through the router after the job; this one saves
+    # none, and there is nothing to deliver.
+    bot.output_router.deliver_queued = AsyncMock()
     bot.get_guild = MagicMock(return_value=None)
     bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     return bot
+
+
+def _queued(db_path, now):
+    """The bot of `_bot`, with a real change queue on *db_path* whose clock reads *now*."""
+    bot = _bot(db_path)
+    attach_queue(bot, db_path, now=now)
+    return bot
+
+
+async def _lapses(db_path) -> list[dict]:
+    return [row for row in await change_rows(db_path) if row["kind"] == LAPSE]
+
+
+def _cascade():
+    return patch(
+        "leaguebot.results.services.standings_service.cascade_recompute_from_round",
+        new=AsyncMock(),
+    )
 
 
 # ── The snapshot ──────────────────────────────────────────────────────────
@@ -134,7 +156,7 @@ def _bot(db_path):
 async def test_the_round_is_snapshotted_before_it_is_overwritten(tmp_path):
     db_path = await _db(tmp_path, "snap_taken")
 
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
 
     state = json.loads((await _snapshot_row(db_path))["pre_amendment_state"])
     [session] = state["sessions"]
@@ -147,7 +169,7 @@ async def test_the_snapshot_carries_a_deadline(tmp_path):
     db_path = await _db(tmp_path, "snap_deadline")
     before = datetime.now(timezone.utc)
 
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
 
     expires = datetime.fromisoformat((await _snapshot_row(db_path))["expires_at"])
     assert expires > before
@@ -166,26 +188,26 @@ async def test_the_timeout_leaves_room_to_work_through_two_stages(tmp_path):
 async def test_the_classification_is_put_back(tmp_path):
     """The league keeps the round it raced rather than a half-amended one."""
     db_path = await _db(tmp_path, "revert_rows")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
     assert await _drivers(db_path) == [(102, 1)]
 
     with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        assert await revert_abandoned_amendment(db_path, ROUND_ID) is True
+        assert await revert_amendment(db_path, ROUND_ID) is True
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
 
 async def test_the_standings_are_recomputed_rather_than_restored(tmp_path):
-    """They follow from the driver rows, so a second stored copy would only drift."""
+    """They follow from the driver rows, so a second stored copy would only drift. The lapse's and
+    the cancel's revert recompute them in their own save, through the form of the cascade that
+    takes its connection."""
     db_path = await _db(tmp_path, "revert_cascade")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
 
-    with patch(
-        "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
-    ) as cascade:
-        await revert_abandoned_amendment(db_path, ROUND_ID)
+    with _cascade_in_the_save() as cascade:
+        await revert_amendment(db_path, ROUND_ID)
 
     cascade.assert_awaited_once()
 
@@ -193,39 +215,48 @@ async def test_the_standings_are_recomputed_rather_than_restored(tmp_path):
 async def test_the_standings_put_back_settle_a_full_tie_by_name(tmp_path):
     """As the posting does (decided 2026-09-15). Recomputed by user id instead, the stored order
     disagrees with the posted one, and the next round's movement arrows show a driver moving
-    who did not. The names are resolved through the bot, where the revert is handed one."""
+    who did not. The names are resolved before the revert's save, by a job of their own, and
+    handed in: the save waits on nothing but its own connection (architecture.md, "The
+    database")."""
     db_path = await _db(tmp_path, "revert_names")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
     names = {101: "Alice", 102: "Bob"}
 
-    with patch(
-        "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
-    ) as cascade, patch(
-        "leaguebot.results.services.results_post_service.standings_display_names",
-        new=AsyncMock(return_value=names),
-    ):
-        await revert_abandoned_amendment(db_path, ROUND_ID, _bot(db_path))
+    with _cascade_in_the_save() as cascade:
+        await revert_amendment(db_path, ROUND_ID, names)
 
-    assert cascade.await_args.args[3] == names
+    assert _names_handed(cascade) == names
 
 
 async def test_standings_names_that_cannot_be_had_still_leave_the_cascade_running(tmp_path):
-    """Ordering a full tie by id is the lesser fault; not recomputing at all is the greater."""
+    """Ordering a full tie by id is the lesser fault; not recomputing at all is the greater. Where
+    the names could not be had, none are handed, and the cascade runs on ids."""
     db_path = await _db(tmp_path, "revert_names_fail")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
 
-    with patch(
-        "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
-    ) as cascade, patch(
-        "leaguebot.results.services.results_post_service.standings_display_names",
-        new=AsyncMock(side_effect=RuntimeError("gateway")),
-    ):
-        await revert_abandoned_amendment(db_path, ROUND_ID, _bot(db_path))
+    with _cascade_in_the_save() as cascade:
+        await revert_amendment(db_path, ROUND_ID)
 
     cascade.assert_awaited_once()
-    assert cascade.await_args.args[3] is None
+    assert _names_handed(cascade) is None
+
+
+def _cascade_in_the_save():
+    """The standings cascade the revert runs inside its save, stood in for."""
+    return patch(
+        "leaguebot.results.services.standings_service.cascade_recompute_from_round_on",
+        new=AsyncMock(),
+    )
+
+
+def _names_handed(cascade):
+    """The display names the revert handed its cascade, however it passed them."""
+    call = cascade.await_args
+    if "display_names" in call.kwargs:
+        return call.kwargs["display_names"]
+    return call.args[3] if len(call.args) > 3 else None
 
 
 async def _pardons(db_path) -> list[tuple]:
@@ -258,7 +289,7 @@ async def test_the_rounds_pardons_come_back_as_they_were(tmp_path):
         )
         await db.commit()
     before = await _pardons(db_path)
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     # What the appeal stage writes: the round's pardons gone, and another in their place.
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM attendance_pardons")
@@ -269,7 +300,7 @@ async def test_the_rounds_pardons_come_back_as_they_were(tmp_path):
         await db.commit()
 
     with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        await revert_abandoned_amendment(db_path, ROUND_ID)
+        await revert_amendment(db_path, ROUND_ID)
 
     assert await _pardons(db_path) == before
 
@@ -277,10 +308,10 @@ async def test_the_rounds_pardons_come_back_as_they_were(tmp_path):
 async def test_the_snapshot_is_cleared_once_it_has_been_used(tmp_path):
     """A snapshot left behind would let a later sweep undo the round a second time."""
     db_path = await _db(tmp_path, "revert_clears")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
 
     with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        await revert_abandoned_amendment(db_path, ROUND_ID)
+        await revert_amendment(db_path, ROUND_ID)
 
     assert (await _snapshot_row(db_path))["pre_amendment_state"] is None
 
@@ -291,7 +322,7 @@ async def test_an_amendment_abandoned_before_stage_one_has_nothing_to_undo(tmp_p
 
     # False: there was nothing to revert, which is not the same as having reverted — restart
     # recovery must not claim to have put the round back.
-    assert await revert_abandoned_amendment(db_path, ROUND_ID) is False
+    assert await revert_amendment(db_path, ROUND_ID) is False
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
 
@@ -299,26 +330,43 @@ async def test_an_amendment_abandoned_before_stage_one_has_nothing_to_undo(tmp_p
 
 
 async def test_an_expired_amendment_is_reverted(tmp_path):
+    """Round 4's amendment is past stage one, the Feature Race overwritten, and its half-hour has
+    run. The sweep asks the queue for its lapse, as the bot, and puts nothing back itself; once the
+    queue runs, the round's classification is put back."""
     db_path = await _db(tmp_path, "sweep_expired")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
     later = datetime.now(timezone.utc) + timedelta(
         seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60
     )
+    bot = _queued(db_path, later)
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        assert await sweep_expired_amendments(_bot(db_path), now=later) == 1
+    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+
+    [lapse] = await _lapses(db_path)
+    assert lapse["origin"] == "BOT"
+    assert await _drivers(db_path) == [(102, 1)]
+
+    with _cascade():
+        await run_queue(bot)
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
 
 async def test_an_amendment_still_within_its_deadline_is_left_alone(tmp_path):
-    """**The one that matters**: a manager mid-review must not have it pulled from under them."""
+    """**The one that matters**: a manager mid-review must not have it pulled from under them.
+    Round 4's amendment is past stage one and within its half-hour: the sweep asks no lapse and
+    the amended classification stands."""
     db_path = await _db(tmp_path, "sweep_live")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
+    now = datetime.now(timezone.utc)
 
-    assert await sweep_expired_amendments(_bot(db_path), now=datetime.now(timezone.utc)) == 0
+    bot = _queued(db_path, now)
+
+    await sweep_expired_amendments(bot, queue=bot.change_queue, now=now)
+
+    assert await _lapses(db_path) == []
     assert await _drivers(db_path) == [(102, 1)]
 
 
@@ -326,15 +374,18 @@ async def test_the_revert_is_announced(tmp_path):
     """An amendment quietly undone would be worse than one left hanging. It is announced in the
     standard lapse form; a row that recorded nobody names "a member", with no mention."""
     db_path = await _db(tmp_path, "sweep_announced")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
-    bot = _bot(db_path)
     later = datetime.now(timezone.utc) + timedelta(
         seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60
     )
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        await sweep_expired_amendments(bot, now=later)
+    bot = _queued(db_path, later)
+
+    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+    assert len(await _lapses(db_path)) == 1
+    with _cascade():
+        await run_queue(bot)
 
     logged = "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
     assert "AMEND_REVERTED" not in logged
@@ -349,15 +400,18 @@ async def test_the_revert_notice_says_to_re_run_results_rounds_amend(tmp_path):
     """The league is told the amendment lapsed and may be run again, so the notice sends the
     manager to the command they now type. The line beneath the standard lapse form says so."""
     db_path = await _db(tmp_path, "sweep_announced_rerun")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
-    bot = _bot(db_path)
     later = datetime.now(timezone.utc) + timedelta(
         seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60
     )
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        await sweep_expired_amendments(bot, now=later)
+    bot = _queued(db_path, later)
+
+    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+    assert len(await _lapses(db_path)) == 1
+    with _cascade():
+        await run_queue(bot)
 
     notice = next(
         str(call.args[0])
@@ -371,11 +425,16 @@ async def test_the_revert_notice_says_to_re_run_results_rounds_amend(tmp_path):
 
 
 async def test_a_round_with_no_deadline_is_not_swept(tmp_path):
-    """A row written before stage one has no snapshot and no deadline."""
+    """A row written before stage one has no snapshot and no deadline: a day on, the sweep asks
+    no lapse of it."""
     db_path = await _db(tmp_path, "sweep_no_deadline")
     later = datetime.now(timezone.utc) + timedelta(days=1)
 
-    assert await sweep_expired_amendments(_bot(db_path), now=later) == 0
+    bot = _queued(db_path, later)
+
+    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+
+    assert await _lapses(db_path) == []
 
 
 # ── The sweep is actually armed ────────────────────────────────────────────
@@ -436,13 +495,18 @@ async def test_a_naive_now_does_not_abort_the_whole_sweep(tmp_path):
     `_amendment_sweep_job`'s blanket `except` logged it where nobody would connect the two.
     """
     db_path = await _db(tmp_path, "sweep_naive")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
     naive = datetime.now() + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60)
     assert naive.tzinfo is None
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        assert await sweep_expired_amendments(_bot(db_path), now=naive) == 1
+    bot = _queued(db_path, naive.replace(tzinfo=timezone.utc))
+
+    await sweep_expired_amendments(bot, queue=bot.change_queue, now=naive)
+    with _cascade():
+        await run_queue(bot)
+
+    assert len(await _lapses(db_path)) == 1
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
@@ -469,7 +533,7 @@ async def test_the_verdict_records_come_back_whole(tmp_path):
             (first,),
         )
         await db.commit()
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
 
     # The report stage deletes the round's records outright.
     async with get_connection(db_path) as db:
@@ -478,7 +542,7 @@ async def test_the_verdict_records_come_back_whole(tmp_path):
     await _overwrite_the_classification(db_path)
 
     with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        await revert_abandoned_amendment(db_path, ROUND_ID)
+        await revert_amendment(db_path, ROUND_ID)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -496,23 +560,28 @@ async def test_the_verdict_records_come_back_whole(tmp_path):
 async def test_the_sweep_leaves_an_amendment_a_stage_has_claimed(tmp_path):
     """**A stage being approved at the moment the sweep runs is left to finish.** Reverting from
     under it would restore the round and then let the stage write its reports on top — doubling
-    every sanction of the round it had just put back."""
+    every sanction of the round it had just put back. A stage has claimed round 4's amendment; a
+    day on, the sweep asks no lapse of it and the amended classification stands."""
     db_path = await _db(tmp_path, "sweep_claimed")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
-    assert await _claim_amendment(db_path, ROUND_ID) is not None
+    assert await claim_amendment(db_path, ROUND_ID) is not None
     later = datetime.now(timezone.utc) + timedelta(days=1)
 
-    assert await sweep_expired_amendments(_bot(db_path), now=later) == 0
+    bot = _queued(db_path, later)
+
+    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+
+    assert await _lapses(db_path) == []
     assert await _drivers(db_path) == [(102, 1)]
 
 
 async def test_only_one_claim_on_an_amendment_succeeds(tmp_path):
     db_path = await _db(tmp_path, "claim_once")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
 
-    first = await _claim_amendment(db_path, ROUND_ID)
-    second = await _claim_amendment(db_path, ROUND_ID)
+    first = await claim_amendment(db_path, ROUND_ID)
+    second = await claim_amendment(db_path, ROUND_ID)
 
     assert first is not None
     assert second is None
@@ -522,146 +591,23 @@ async def test_an_amendment_with_no_snapshot_cannot_be_claimed(tmp_path):
     """Before stage one has written there is nothing for a stage to act on."""
     db_path = await _db(tmp_path, "claim_nothing")
 
-    assert await _claim_amendment(db_path, ROUND_ID) is None
+    assert await claim_amendment(db_path, ROUND_ID) is None
 
 
-async def test_the_sweep_deletes_the_channel_of_what_it_reverted(tmp_path):
-    db_path = await _db(tmp_path, "sweep_channel")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
-    later = datetime.now(timezone.utc) + timedelta(
-        seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60
-    )
-    channel = MagicMock()
-    channel.delete = AsyncMock()
-    guild = MagicMock()
-    guild.get_channel = MagicMock(return_value=channel)
-
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()), \
-            patch(
-                "leaguebot.results.services.result_submission_service.league_guild",
-                new=AsyncMock(return_value=guild),
-            ):
-        await sweep_expired_amendments(_bot(db_path), now=later)
-
-    guild.get_channel.assert_called_with(CHANNEL_ID)
-    channel.delete.assert_awaited_once()
-    assert (await _snapshot_row_or_none(db_path)) is None
 
 
-async def test_a_sweep_whose_revert_fails_tries_again_next_time(tmp_path):
-    """The deadline is handed back, so the next sweep finds it — the snapshot is kept."""
-    db_path = await _db(tmp_path, "sweep_retry")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
-    later = datetime.now(timezone.utc) + timedelta(
-        seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60
-    )
-
-    with patch(
-        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
-        new=AsyncMock(side_effect=RuntimeError("locked")),
-    ):
-        assert await sweep_expired_amendments(_bot(db_path), now=later) == 0
-
-    row = await _snapshot_row(db_path)
-    assert row["pre_amendment_state"] is not None
-    assert row["expires_at"] is not None
 
 
-async def _snapshot_row_or_none(db_path):
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT * FROM round_amend_channels")
-        row = await cursor.fetchone()
-    return dict(row) if row else None
 
 
-# ── Cancel, after stage one ────────────────────────────────────────────────
 
 
-def _guild_holding(channel):
-    guild = MagicMock()
-    guild.get_channel = MagicMock(return_value=channel)
-    return guild
 
 
-def _deletable_channel(error=None):
-    channel = MagicMock()
-    channel.delete = AsyncMock(side_effect=error)
-    return channel
 
 
-async def _cancel(db_path, bot, guild):
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()), \
-            patch(
-                "leaguebot.results.services.result_submission_service.league_guild",
-                new=AsyncMock(return_value=guild),
-            ):
-        return await cancel_amendment(bot, ROUND_ID, cancelled_by=77)
 
 
-async def test_cancelling_puts_the_round_back_and_closes_the_channel(tmp_path):
-    db_path = await _db(tmp_path, "cancel_reverts")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
-    await _overwrite_the_classification(db_path)
-    bot = _bot(db_path)
-    channel = _deletable_channel()
-
-    assert await _cancel(db_path, bot, _guild_holding(channel)) is True
-
-    assert await _drivers(db_path) == [(101, 1), (102, 2)]
-    channel.delete.assert_awaited_once()
-    assert (await _snapshot_row_or_none(db_path)) is None
-    # The cancel line is the button's to write, naming whoever pressed it; the service that
-    # puts the round back writes none of its own.
-    logged = "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
-    assert "AMEND_CANCELLED" not in logged
-    assert "cancelled by" not in logged
-
-
-@pytest.mark.parametrize("reach", ["out of reach", "undeletable"])
-async def test_a_channel_not_deleted_keeps_its_record_closed(tmp_path, reach):
-    """#345: the record used to go first, so a channel out of cache — or one the bot may no
-    longer delete — stood for good with nothing naming it. Kept, closed, it holds nothing, and
-    restart recovery deletes the channel by it."""
-    from leaguebot.results.services.result_submission_service import open_amendment_in_division
-
-    db_path = await _db(tmp_path, f"cancel_kept_{reach.split()[0]}")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
-    if reach == "out of reach":
-        guild = _guild_holding(None)
-    else:
-        guild = _guild_holding(_deletable_channel(
-            discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Access")
-        ))
-
-    assert await _cancel(db_path, _bot(db_path), guild) is True
-
-    row = await _snapshot_row_or_none(db_path)
-    assert row is not None and row["closed_at"] is not None
-    assert row["pre_amendment_state"] is None
-    assert await open_amendment_in_division(db_path, DIVISION_ID) is None
-
-
-async def test_a_channel_already_gone_lets_the_record_go(tmp_path):
-    db_path = await _db(tmp_path, "cancel_gone")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
-    guild = _guild_holding(_deletable_channel(
-        discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
-    ))
-
-    assert await _cancel(db_path, _bot(db_path), guild) is True
-
-    assert (await _snapshot_row_or_none(db_path)) is None
-
-
-async def test_cancelling_an_amendment_already_being_committed_does_nothing(tmp_path):
-    """The appeal stage claims the amendment before it writes; a cancel then is too late."""
-    db_path = await _db(tmp_path, "cancel_too_late")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
-    await _overwrite_the_classification(db_path)
-    await _claim_amendment(db_path, ROUND_ID)
-
-    assert await cancel_amendment(_bot(db_path), ROUND_ID, cancelled_by=77) is False
-    assert await _drivers(db_path) == [(102, 1)]
 
 
 # ── Several sessions (#345, decided 2026-09-21) ────────────────────────────
@@ -683,7 +629,7 @@ async def test_every_amended_session_is_snapshotted_and_put_back(tmp_path):
             (quali.lastrowid,),
         )
         await db.commit()
-    await snapshot_before_amendment(
+    await snapshot_amendment(
         db_path, ROUND_ID, [SessionType.FEATURE_QUALIFYING, SessionType.FEATURE_RACE]
     )
     await _overwrite_the_classification(db_path)
@@ -692,7 +638,7 @@ async def test_every_amended_session_is_snapshotted_and_put_back(tmp_path):
         await db.commit()
 
     with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        assert await revert_abandoned_amendment(db_path, ROUND_ID) is True
+        assert await revert_amendment(db_path, ROUND_ID) is True
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
     async with get_connection(db_path) as db:
@@ -707,40 +653,16 @@ async def test_every_amended_session_is_snapshotted_and_put_back(tmp_path):
 # ties by user id — so only these show it.
 
 
-async def test_the_sweep_hands_the_bot_to_the_revert(tmp_path):
-    db_path = await _db(tmp_path, "sweep_hands_bot")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
-    bot = _bot(db_path)
-    later = datetime.now(timezone.utc) + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60)
-
-    with patch(
-        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
-        new=AsyncMock(return_value=True),
-    ) as revert:
-        await sweep_expired_amendments(bot, now=later)
-
-    revert.assert_awaited_once_with(db_path, ROUND_ID, bot)
 
 
-async def test_cancel_hands_the_bot_to_the_revert(tmp_path):
-    db_path = await _db(tmp_path, "cancel_hands_bot")
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
-    bot = _bot(db_path)
-
-    with patch(
-        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
-        new=AsyncMock(return_value=True),
-    ) as revert:
-        await _cancel(db_path, bot, _guild_holding(_deletable_channel()))
-
-    revert.assert_awaited_once_with(db_path, ROUND_ID, bot)
 
 
 # ── The member who started a lapsed amendment is named (#442) ─────────────
 
 
 async def _lapse(tmp_path, name: str, *, member_name: str | None):
-    """An amendment opened by member 77 whose stages went unapproved, swept once it lapsed.
+    """An amendment opened by member 77 whose stages went unapproved, swept once it lapsed, and
+    its lapse run on the queue.
 
     The league's server is reached either way. Member 77 is on it as *member_name*, or, where
     that is None, has since left it and is not found there."""
@@ -748,7 +670,7 @@ async def _lapse(tmp_path, name: str, *, member_name: str | None):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE round_amend_channels SET started_by = 77")
         await db.commit()
-    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
     bot = _bot(db_path)
     member = None
@@ -761,8 +683,13 @@ async def _lapse(tmp_path, name: str, *, member_name: str | None):
     guild.get_channel = MagicMock(return_value=None)
     bot.get_guild = MagicMock(return_value=guild)
     later = datetime.now(timezone.utc) + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60)
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        await sweep_expired_amendments(bot, now=later)
+    attach_queue(bot, db_path, now=later)
+
+    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+    assert len(await _lapses(db_path)) == 1
+    with _cascade():
+        await run_queue(bot)
+
     lines = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
     return next(line for line in lines if line.startswith("⌛ "))
 
@@ -789,7 +716,8 @@ async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path):
 
 async def test_the_sweep_skips_an_amendment_whose_stage_is_in_hand(tmp_path):
     """**Leave it while stuck** (#439). A stage's approval asked for and waiting on the queue holds
-    the amendment as the claim did: the sweep, past the half-hour, leaves it for the queue."""
+    the amendment as the claim did: the sweep, past the half-hour, leaves it for the queue, its
+    snapshot kept."""
     from tests.support import review_league as league_of
     from tests.support.change_queue import member_interaction
 
@@ -813,9 +741,8 @@ async def test_the_sweep_skips_an_amendment_whose_stage_is_in_hand(tmp_path):
         interaction=member_interaction(league.bot), what="✅ Approve on the amendment's reports",
     )
 
-    swept = await sweep_expired_amendments(league.bot, now=deadline + timedelta(hours=2))
+    await sweep_expired_amendments(league.bot, queue=league.bot.change_queue, now=deadline + timedelta(hours=2))
 
-    assert swept == 0
     assert await league_of.one(
         league.db_path, "SELECT pre_amendment_state FROM round_amend_channels"
     ) is not None

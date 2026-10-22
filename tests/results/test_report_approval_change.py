@@ -39,6 +39,7 @@ from tests.support.change_queue import (
     retry_job,
     run_queue,
     step_rows,
+    stopped_job,
     tier_member,
     updated_reply,
 )
@@ -1195,18 +1196,31 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     approves round 3's reports: Lewis is moved to Pro's Reserve team, and Pro's lineup is posted
     once, by the review's own job, not by the move as well (core spec: "posted once")."""
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import LineupPosted, PlacementService
     from tests.support.change_queue import attach_queue
-    from tests.support.review_league import NOW
+    from tests.support.review_league import NOW, channel
 
     league = await review_league(tmp_path, attendance=True)
     await _lewis_owed_an_autoreserve(league)
+    # Pro's attendance channel is set, as a missing one now stops the queue at the sheet.
+    league.channels[707] = channel(707, league.events)
+    league.channels[707].guild = league.guild
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (DIVISION_ID, "707"),
+        )
+        await db.commit()
     league.bot.user = MagicMock(id=9000)
     league.bot.user.__str__.return_value = "LeagueBot"
     placement = PlacementService(league.db_path, league.bot)
     placement._grant_roles = AsyncMock()
     placement._revoke_roles = AsyncMock()
-    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    # Pro has no lineup channel of its own here: the post is stood in for, as one posted.
+    placement._refresh_lineup_post = AsyncMock(return_value=LineupPosted(
+        message_id=9100, channel_id=9101, previous=None, division_name="Pro", form="text",
+    ))
     league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
     attach_queue(league.bot, league.db_path, now=NOW)
 
@@ -1423,6 +1437,10 @@ async def test_the_approval_writes_penalty_review_approved_with_its_audit_body(t
 
 async def test_the_prompt_and_approval_message_are_taken_down_after_the_reposts(tmp_path):
     league = await review_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE round_submission_channels SET approval_message_id = ?",
+                         (APPROVAL,))
+        await db.commit()
     await _approve(league, approval=APPROVAL)
     await run_queue(league.bot)
 
@@ -1478,3 +1496,112 @@ async def test_the_save_awaits_nothing_but_its_connection(tmp_path):
 
     assert await stopped_at(league) is None
     assert len(await penalty_records(league.db_path)) == 2
+
+
+# ---------------------------------------------------------------------------
+# The appeals prompt through the round's lane (#439, slice 6b, C44b)
+# ---------------------------------------------------------------------------
+
+
+async def test_the_appeals_prompt_is_posted_on_the_round_s_lane(tmp_path):
+    """Round 3's reports are approved by Alex while Discord refuses the appeals prompt. The
+    approval finishes on the league lane, the round moved on to its appeals; round 3's lane, not
+    the league's, stops at the appeals prompt's post. Retry on the round's lane posts it and saves
+    its id."""
+    lane = f"channel:{SUBMISSION_CHANNEL}"
+    league = await review_league(tmp_path)
+    league.channel(SUBMISSION_CHANNEL).fail_when = is_appeals_prompt
+
+    await _approve(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path, "league") is None
+    stopped = await stopped_job(league.db_path, lane)
+    assert stopped is not None
+    [approval] = await changes_of(league.db_path, KIND)
+    assert approval["state"] == "DONE"
+    assert stopped["change_id"] != approval["id"]
+    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
+    assert appeals_prompts(league) == []
+
+    league.channel(SUBMISSION_CHANNEL).fail_when = None
+    await retry_job(league.bot, lane=lane)
+
+    assert await stopped_job(league.db_path) is None
+    [prompt] = appeals_prompts(league)
+    assert await one(
+        league.db_path, "SELECT appeals_prompt_message_id FROM round_submission_channels"
+    ) == prompt
+
+
+# ---------------------------------------------------------------------------
+# Approve waits for the staging (#439, slice 6b, C56a; decision 26)
+# ---------------------------------------------------------------------------
+
+async def test_approve_is_refused_while_a_staging_is_in_hand(tmp_path):
+    """Round 3's lane is stopped, so the penalty for Lewis Alex has just added is still waiting
+    to be shown on the prompt. Alex presses Approve on the review: it is refused at the press,
+    telling him a change to the review is still being shown and to press Approve once it appears;
+    nothing is applied and round 3 still awaits its report verdicts."""
+    from tests.results.test_review_stage_change import LANE, _add_penalty, _alex, _state
+
+    league = await review_league(tmp_path)
+    await block_queue(league, lane=LANE)
+    await _add_penalty(_state(league), _alex(league))
+
+    interaction = await _approve(league)
+    await run_queue(league.bot)
+
+    # Refused at the press, so no change of the approval's is saved at all.
+    assert await changes_of(league.db_path, KIND) == []
+    said = acknowledgement(interaction) + updated_reply(interaction)
+    assert "still being shown" in said
+    assert await penalty_records(league.db_path) == []
+    assert await round_status(league.db_path) == "AWAITING_REPORT_VERDICTS"
+
+
+async def test_an_approve_on_the_prompt_goes_through_after_a_discarded_withdrawal(tmp_path):
+    """Alex staged a penalty after No Penalties / Confirm had posted approval message 8901, so
+    the review's state forgot it; Discord refused taking 8901 down and an admin discarded that,
+    leaving the row naming 8901. Alex presses Approve on the prompt, which carries no approval
+    message: no newer one stands, so it is not refused as replaced, and the reports are approved."""
+    league = await review_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE round_submission_channels SET approval_message_id = ?",
+                         (APPROVAL,))
+        await db.commit()
+
+    interaction = await _approve(league, staged=[], approval=None)
+    await run_queue(league.bot)
+
+    [approval] = await changes_of(league.db_path, KIND)
+    assert approval["state"] != "REFUSED"
+    assert "replaced by a newer one" not in updated_reply(interaction)
+    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
+
+
+async def test_an_approval_whose_message_was_replaced_is_refused_as_it_runs(tmp_path):
+    """Alex presses Approve on round 3's approval message 8901 while the league lane is stopped,
+    so his approval waits. Before it runs, the review's approval message is replaced (the row now
+    names 8960). When the stop clears his approval is refused: nothing applied, round 3 still in
+    its report stage, and his answer says why."""
+    league = await review_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE round_submission_channels SET approval_message_id = ?",
+                         (APPROVAL,))
+        await db.commit()
+    holder = await block_queue(league)
+    interaction = await _approve(league, staged=[], approval=APPROVAL)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE round_submission_channels SET approval_message_id = 8960")
+        await db.commit()
+
+    holder["fail"] = False
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    [approval] = await changes_of(league.db_path, KIND)
+    assert approval["state"] == "REFUSED"
+    assert await penalty_records(league.db_path) == []
+    assert await round_status(league.db_path) == "AWAITING_REPORT_VERDICTS"
+    assert updated_reply(interaction) != ""

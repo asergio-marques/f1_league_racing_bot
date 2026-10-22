@@ -38,6 +38,7 @@ import os
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -620,20 +621,25 @@ async def test_the_state_carries_the_round_and_division_it_describes(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "route", ["reports-approve", "reports-approve-bare", "paste", "recovery", "appeals-recovery"],
+    "route",
+    [
+        "reports-approve",
+        "reports-approve-bare",
+        "recovery",
+        "appeals-recovery",
+    ],
 )
 async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
     """What a review's change is doing names round 3 (Pro) wherever its payload carries the
     round's number and the division's name: the approval of its reports as Alex presses Approve,
-    read in his acknowledgement; the opening of its review asked for by the last paste
-    (`ask_review_open`), read in the refusal of the paste asked again, the queue held stopped so
-    nothing starts, or by restart recovery; and the appeals prompt recovery posts again. A bot's
+    read in his acknowledgement; the opening of its review asked for by restart recovery, the
+    queue held stopped so nothing starts; and the appeals prompt recovery posts again. (The last
+    paste's ask is a turn's job, its payload's naming pinned in `test_result_submission_wizard.py`.) A bot's
     request has no acknowledgement, so its change type's own wording of the saved payload is read.
     An approval asked with a bare payload reads as it did before."""
     import json
     import logging
 
-    from leaguebot.results.services.result_submission_service import ask_review_open
     from leaguebot.results.services.review_open_change import (
         APPEALS_OPEN_KIND,
         appeals_open_change,
@@ -669,18 +675,7 @@ async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
             assert said.startswith("⏳ Approving the round's reports.")
         return
 
-    if route == "paste":
-        for _ in range(2):
-            await ask_review_open(
-                league.bot, league.channel(SUBMISSION_CHANNEL), ROUND_ID, 3,
-                {"label": "Provisional Results", "publish": False}, actor=alex,
-            )
-        assert any(
-            "Opening the penalty review of round 3 (Pro) has already been asked for"
-            in record.getMessage() for record in caplog.records
-        )
-    else:
-        await _recover(league)
+    await _recover(league)
 
     kind, change_type = ((APPEALS_OPEN_KIND, appeals_open_change()) if appeals
                          else (KIND, review_open_change()))
@@ -938,6 +933,53 @@ async def test_a_cancelled_resubmission_whose_prompt_was_discarded_is_recorded_o
     assert (await _channel_row(league.db_path))["resubmitting"] == 0
 
 
+async def test_a_cancel_button_whose_take_down_is_refused_stops_the_queue(tmp_path):
+    """A cancel puts round 3's review back, and Discord refuses the edit that takes the Cancel
+    button off the resubmission's announcement. The queue stops at that job, with the button
+    still standing and the cancel's line not yet posted; Retry takes the button off and the line
+    follows."""
+    league = await _league(tmp_path, name="open_cancel_refused", in_review=True,
+                           results_posted=True, resubmitting=True,
+                           round_status=RoundStatus.AWAITING_REPORT_VERDICTS.value)
+    submission = league.channel(SUBMISSION_CHANNEL)
+    submission.seed(CANCEL_MESSAGE, "🔄 Resubmission under way")
+    announcement = submission.messages[CANCEL_MESSAGE]
+    announcement.view = MagicMock()
+    edit = announcement.edit
+    announcement.edit = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+
+    await _open(league, publish=False, returning="cancelled", cancel_message_id=CANCEL_MESSAGE)
+
+    assert await stopped_at(league) == "take_down_cancel"
+    assert announcement.view is not None
+    assert not any("Resubmission cancelled" in text for text in _contents(league, SUBMISSION_CHANNEL))
+
+    announcement.edit = edit
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert announcement.view is None
+    assert any("Resubmission cancelled" in text for text in _contents(league, SUBMISSION_CHANNEL))
+
+
+async def test_a_cancel_button_already_gone_completes_its_take_down(tmp_path):
+    """A cancel puts round 3's review back, but the resubmission's announcement carrying the
+    Cancel button was deleted by hand. Taking the button down finds nothing to edit, completes,
+    and the cancel's line is posted: the queue does not stop."""
+    league = await _league(tmp_path, name="open_cancel_gone", in_review=True,
+                           results_posted=True, resubmitting=True,
+                           round_status=RoundStatus.AWAITING_REPORT_VERDICTS.value)
+
+    await _open(league, publish=False, returning="cancelled", cancel_message_id=CANCEL_MESSAGE)
+
+    assert await stopped_at(league) is None
+    assert any("Resubmission cancelled" in text
+               for text in _contents(league, SUBMISSION_CHANNEL))
+    assert (await _channel_row(league.db_path))["resubmitting"] == 0
+
+
 async def test_a_resubmission_that_fails_before_the_swap_returns_to_review_and_says_so(tmp_path):
     """A resubmission that failed before its results were swapped in leaves the earlier results
     standing: the bot asks for the review back, and the log says the resubmission ended."""
@@ -1125,7 +1167,7 @@ async def test_recovery_leaves_alone_a_round_whose_paste_is_queued_or_stopped(tm
 
     with patch(
         "leaguebot.results.services.result_submission_service.run_result_submission_job",
-        new=AsyncMock(),
+        new=AsyncMock(), create=True,
     ) as wizard:
         await _recover(league)
 

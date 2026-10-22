@@ -510,7 +510,7 @@ async def test_a_fault_before_anything_is_saved_says_nothing_was_changed(tmp_pat
     job = await stopped_job(seeded.db_path)
     assert job is not None and job["name"] == "switch_off"
     [stop] = await _stop_lines(bot)
-    assert f"for {WHAT} ({NAMED}) failed (IntegrityError)." in stop
+    assert f"for {WHAT} ({NAMED}) failed (the bot could not read or write its database)." in stop
     reply = updated_reply(interaction)
     assert reply.startswith("❌") and f"job #{job['id']}" in reply
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "RUNNING"
@@ -596,6 +596,24 @@ async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(
     assert await _count(seeded.db_path, "verdict_banner_messages") == 0
 
 
+async def test_turning_results_off_deletes_a_session_cancelled_line(tmp_path):
+    """The round's qualifying was cancelled, its line standing in the results channel as message
+    1500, recorded as that session's results message. Turning results off deletes it with the
+    round's other results (results spec :16)."""
+    seeded = await _seed(tmp_path)
+    await _set(
+        seeded.db_path,
+        "INSERT INTO session_results (round_id, division_id, session_type, status, "
+        "results_message_id) VALUES (?, ?, 'QUALIFYING', 'CANCELLED', 1500)",
+        (seeded.round_ids[0], seeded.division_id),
+    )
+    bot = _league(seeded.db_path)
+    await _confirm(bot)
+    await run_queue(bot)
+
+    assert 1500 in _deleted(bot, RESULTS_CHANNEL_ID)
+
+
 async def test_a_removal_discord_refuses_stops_the_queue_and_once_discarded_is_linked_not_counted(
     tmp_path,
 ):
@@ -615,7 +633,8 @@ async def test_a_removal_discord_refuses_stops_the_queue_and_once_discarded_is_l
     removal = f"removing the verdict ({_link(VERDICTS_CHANNEL_ID, 5001)})"
     [stop] = await _stop_lines(bot)
     assert stop.startswith(
-        f"{STOPPED_AT}{job['id']}: {removal} for {WHAT} ({NAMED}) failed (Forbidden)."
+        f"{STOPPED_AT}{job['id']}: {removal} for {WHAT} ({NAMED}) failed "
+        "(Discord refused or failed a request from the bot)."
     )
     bot.clock.advance(minutes=1)
     await run_queue(bot)
@@ -698,7 +717,7 @@ async def test_a_fault_in_the_take_down_says_the_season_can_still_be_completed(t
 
     assert (await stopped_job(seeded.db_path))["name"] == "take_down"
     [stop] = await _stop_lines(bot)
-    assert "failed (RuntimeError)." in stop
+    assert "failed (the bot hit an internal fault)." in stop
     assert await _flag(seeded.db_path) == 0
     assert await _round_status(seeded.db_path, seeded.round_ids[0]) == "FINAL"
 
@@ -732,7 +751,7 @@ async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_compl
     [stop] = await _stop_lines(bot)
     assert stop.startswith(
         f"{STOPPED_AT}{job['id']}: counting what was removed for {WHAT} ({NAMED}) failed "
-        "(RuntimeError)."
+        "(the bot hit an internal fault)."
     )
 
     await discard_job(bot)
@@ -760,7 +779,7 @@ async def test_the_season_is_wound_down_as_a_change_of_its_own(tmp_path, monkeyp
     """A season with placements still open has the wind-down's Discord work left to do."""
     from leaguebot.core.services import season_lifecycle_service
 
-    wind_down = AsyncMock(return_value=[])
+    wind_down = AsyncMock(return_value=((), ()))
     monkeypatch.setattr(season_lifecycle_service, "close_window_for_wind_down", wind_down)
     seeded = await _seed(tmp_path, stage="ONGOING_PLACEMENTS")
     bot = _league(seeded.db_path)
@@ -794,7 +813,7 @@ async def test_a_season_that_cannot_be_wound_down_is_reported_and_the_switch_off
 
     [stop] = await _stop_lines(bot)
     assert "winding the season down" in stop
-    assert "failed (RuntimeError)." in stop
+    assert "failed (the bot hit an internal fault)." in stop
     assert (await _stopped_change(seeded.db_path))["kind"] == "season.wind_down"
     assert not any("not done" in line for line in await _lines(bot))
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
@@ -842,34 +861,42 @@ async def test_a_wind_down_discord_keeps_failing_says_only_retry_continues_after
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
 
 
-async def test_the_hub_is_refreshed_once_the_flag_is_down(tmp_path, monkeypatch):
-    from leaguebot.core.services import hub_service
+async def _set_hub(db_path: str) -> None:
+    """The league has a hub set, so its refresh is due."""
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET hub_channel_id = 7930")
+        await db.commit()
 
+
+async def test_the_hub_is_refreshed_once_the_flag_is_down(tmp_path):
+    """The hub is set. The switch-off asks the queue for the refresh in its own save, after it:
+    the refresh is asked once, naming `/module disable`, its change after the switch-off's, and
+    the flag is down by the time it is asked."""
     seeded = await _seed(tmp_path)
-    seen: list[int] = []
-
-    async def _refresh(_bot: Any) -> None:
-        seen.append(await _flag(seeded.db_path))
-
-    monkeypatch.setattr(hub_service, "refresh_panel", _refresh)
+    await _set_hub(seeded.db_path)
     bot = _league(seeded.db_path)
     await _confirm(bot)
 
     await run_queue(bot)
 
-    assert seen == [0]
-    assert (await _change(seeded.db_path, "hub.refresh"))["state"] == "DONE"
+    switch_off = await _change(seeded.db_path, "module.off:results")
+    refresh = await _change(seeded.db_path, "hub.refresh")
+    assert switch_off["state"] == "DONE"
+    assert refresh["id"] > switch_off["id"]
+    assert "/module disable" in json.loads(refresh["payload"])["command"]
+    assert await _flag(seeded.db_path) == 0
 
 
 async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
     tmp_path, monkeypatch,
 ):
-    """The hub refresh failing stops the queue at the refresh's own job, named as refreshing the
-    hub panel; the switch-off, done before it, keeps its success."""
+    """The hub is set; the hub refresh failing stops the queue at the refresh's own job, named
+    as refreshing the hub panel; the switch-off, done before it, keeps its success."""
     from leaguebot.core.services import hub_service
 
     monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(side_effect=RuntimeError("x")))
     seeded = await _seed(tmp_path)
+    await _set_hub(seeded.db_path)
     bot = _league(seeded.db_path)
     interaction = await _confirm(bot)
 
@@ -877,7 +904,6 @@ async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
 
     [stop] = await _stop_lines(bot)
     assert "refreshing the hub panel" in stop
-    assert "failed (RuntimeError)." in stop
     assert (await _stopped_change(seeded.db_path))["kind"] == "hub.refresh"
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
     assert updated_reply(interaction).startswith(SUCCESS)
@@ -1108,3 +1134,56 @@ async def test_an_open_amendment_is_forgotten_with_the_season_and_its_channel_ta
 
     await run_queue(bot)
     assert bot.channels[AMEND_CHANNEL_ID].deleted is True
+
+
+# ---------------------------------------------------------------------------
+# Results off ends every submission and amendment (#439, slice 6b, C88a)
+# ---------------------------------------------------------------------------
+#
+# A round's submission channel and an amendment's channel each have a lane of their own, their
+# pastes taken there as turns. The switch-off ends both conversations in its own save, erasing
+# their rows with the season's; each lane's waiting turns are then found no longer due when they
+# come, and dropped.
+
+
+async def test_turning_results_off_ends_every_submission_and_amendment(tmp_path):
+    """Division 1's round 1 waits for its results, its submission open in channel 8000; its
+    round 2 is final and being amended in channel 9100. The admin confirms `/module disable
+    results`; before the queue runs, the manager types a paste into 8000 and another into 9100,
+    each a turn on its channel's own lane, asked after the switch-off. The queue run: the
+    switch-off erases both rows and closes the rounds; both turns are then found no longer due
+    and dropped, nothing saved for either round's sessions, and neither lane stopped."""
+    from tests.support.change_queue import member
+
+    seeded = await _seed(tmp_path, rounds=("AWAITING_RESULTS", "FINAL"))
+    await _set(
+        seeded.db_path,
+        "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+        "pre_amendment_state, expires_at) VALUES (?, ?, '[\"RACE\"]', "
+        "'2026-01-01T00:00:00', '{}', '2026-01-01T00:30:00')",
+        (seeded.round_ids[1], AMEND_CHANNEL_ID),
+    )
+    bot = _league(seeded.db_path)
+    await _confirm(bot)
+    turns = []
+    for kind, channel_id, message_id in (("results.submission.turn", 8000, 8101),
+                                         ("results.amend.turn", AMEND_CHANNEL_ID, 9101)):
+        turns.append(await bot.change_queue.ask(
+            kind,
+            {"channel_id": channel_id, "message_id": message_id, "author_id": MEMBER_ID,
+             "content": "1. Lewis Hamilton 1:30.000", "attachments": [],
+             "typed_at": NOW.isoformat()},
+            actor=member(MEMBER_ID), what="a typed paste",
+        ))
+    assert None not in turns
+
+    await run_queue(bot)
+
+    assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
+    assert await _count(seeded.db_path, "round_submission_channels") == 0
+    assert await _count(seeded.db_path, "round_amend_channels") == 0
+    states = {row["id"]: row["state"] for row in await change_rows(seeded.db_path)}
+    assert [states[turn] for turn in turns] == ["DROPPED", "DROPPED"]
+    assert await _count(seeded.db_path, "session_results") == 0
+    assert await stopped_job(seeded.db_path, "channel:8000") is None
+    assert await stopped_job(seeded.db_path, f"channel:{AMEND_CHANNEL_ID}") is None

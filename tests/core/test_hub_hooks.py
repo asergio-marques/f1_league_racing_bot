@@ -1,17 +1,18 @@
 """What keeps the hub's panel and its permissions current (issue #279).
 
 **The panel follows the modules.** A module's options are offered while it is enabled, so every
-enable and disable refreshes the panel. Turning results off is the exception in form, not in
-effect: it is carried out on the change queue, which refreshes the panel as a change of its own
-once the flag is down, so the command leaves it alone (#439). A refresh that fails is logged, and
-never fails the toggle behind it.
+enable and disable asks the change queue to refresh the panel, as the bot's change (#439,
+slice 6b): the toggle refreshes nothing itself. Turning results off is the exception in form, not
+in effect: it is carried out on the change queue, whose switch-off asks the refresh in its own
+save once the flag is down, so the command leaves it alone. A refresh the hub refuses is the
+queue's to stop on (`test_hub_service.py`), never a line the toggle writes.
 
 **The permissions follow the roles.** The hub is seen by the base role (or everyone, where none
 is set) and by both tier roles, so changing any of the three sets them again. The driver role
 and the channel settings name nobody the hub cares about.
 
-**A restart recovers the hub.** Its buttons are routed again and its panel posted afresh where
-it was deleted.
+**A restart recovers the hub.** Its buttons are routed again and its panel's refresh asked of the
+change queue, handed to the recovery by the start-up.
 """
 from __future__ import annotations
 
@@ -49,15 +50,45 @@ def _interaction():
     return interaction
 
 
-def _module_cog(*, refused: bool = False) -> ModuleCog:
+HUB = 7930
+
+
+def _module_cog(bot, *, refused: bool = False) -> ModuleCog:
     cog = ModuleCog.__new__(ModuleCog)
-    cog.bot = MagicMock()
-    cog.bot.output_router.post_log = AsyncMock()
+    cog.bot = bot
     cog._refuse_module_change = AsyncMock(return_value=refused)
     for name in ("weather", "results", "attendance", "images", "signup"):
         setattr(cog, f"_enable_{name}", AsyncMock())
         setattr(cog, f"_disable_{name}", AsyncMock())
     return cog
+
+
+@pytest.fixture
+async def queued_bot(tmp_path):
+    """The league's bot with a real change queue, its hub set to channel 7930."""
+    from datetime import datetime, timezone
+
+    from tests.support.change_queue import attach_queue, league_double, seed_server
+
+    db_path = str(tmp_path / "hub_toggle.db")
+    await run_migrations(db_path)
+    await seed_server(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET hub_channel_id = ?", (HUB,))
+        await db.commit()
+    bot = league_double(db_path)
+    attach_queue(bot, db_path, now=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc))
+    return bot
+
+
+async def _refreshes_asked(bot) -> list[dict]:
+    """The payload of every hub refresh asked of the queue, in order."""
+    import json
+
+    from tests.support.change_queue import change_rows
+
+    return [json.loads(row["payload"]) for row in await change_rows(bot.db_path)
+            if row["kind"] == hub_service.HUB_REFRESH]
 
 
 # ── The panel follows the modules ─────────────────────────────────────────
@@ -69,31 +100,47 @@ def _module_cog(*, refused: bool = False) -> ModuleCog:
         pytest.param(module, command, id=f"{module}-{command}")
         for module in ("weather", "results", "attendance", "images", "signup")
         for command in ("enable", "disable")
+        if (module, command) != ("results", "disable")
     ],
 )
-async def test_every_toggle_refreshes_the_panel(monkeypatch, command, module):
-    """Every toggle but turning results off, whose change refreshes the panel once it is done."""
+async def test_every_toggle_asks_the_queue_to_refresh_the_panel(
+    monkeypatch, queued_bot, command, module,
+):
+    """Every toggle but turning results off, whose switch-off asks the refresh in its own save.
+    The hub is set; the manager runs `/module <command> <module>`: one refresh is asked of the
+    queue, naming the command, and the panel is not refreshed by the toggle itself."""
     refresh = AsyncMock(return_value=None)
-    monkeypatch.setattr(hub_service, "refresh_panel", refresh)
-    cog = _module_cog()
+    monkeypatch.setattr(hub_service, "refresh_panel", refresh, raising=False)
+    cog = _module_cog(queued_bot)
+    interaction = _interaction()
+    interaction.command.qualified_name = f"module {command}"
 
-    await undecorate(getattr(ModuleCog, command))(cog, _interaction(), _choice(module))
+    await undecorate(getattr(ModuleCog, command))(cog, interaction, _choice(module))
 
     getattr(cog, f"_{command}_{module}").assert_awaited_once()
-    if (module, command) == ("results", "disable"):
-        refresh.assert_not_awaited()
-    else:
-        refresh.assert_awaited_once_with(cog.bot)
+    [asked] = await _refreshes_asked(queued_bot)
+    assert f"/module {command}" in asked["command"]
+    refresh.assert_not_awaited()
 
 
-async def test_a_refused_toggle_leaves_the_panel_alone(monkeypatch):
-    refresh = AsyncMock(return_value=None)
-    monkeypatch.setattr(hub_service, "refresh_panel", refresh)
-    cog = _module_cog(refused=True)
+async def test_turning_results_off_by_the_command_asks_no_refresh_of_its_own(queued_bot):
+    """`/module disable results` only asks for its confirmation: the queue's switch-off asks
+    the refresh, so the command asks none."""
+    cog = _module_cog(queued_bot)
+
+    await undecorate(ModuleCog.disable)(cog, _interaction(), _choice("results"))
+
+    cog._disable_results.assert_awaited_once()
+    assert await _refreshes_asked(queued_bot) == []
+
+
+async def test_a_refused_toggle_leaves_the_panel_alone(queued_bot):
+    """The toggle is refused: no refresh is asked of the queue."""
+    cog = _module_cog(queued_bot, refused=True)
 
     await undecorate(ModuleCog.enable)(cog, _interaction(), _choice("weather"))
 
-    refresh.assert_not_awaited()
+    assert await _refreshes_asked(queued_bot) == []
 
 
 async def _queued_results_off(tmp_path) -> tuple[ModuleCog, MagicMock]:
@@ -116,6 +163,7 @@ async def _queued_results_off(tmp_path) -> tuple[ModuleCog, MagicMock]:
         await db.execute(
             "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 1)"
         )
+        await db.execute("UPDATE server_configs SET hub_channel_id = ?", (HUB,))
         await db.commit()
     bot = league_double(db_path)
     bot.attendance_service = AttendanceService(db_path)
@@ -127,72 +175,20 @@ async def _queued_results_off(tmp_path) -> tuple[ModuleCog, MagicMock]:
     return cog, interaction
 
 
-async def test_the_confirmed_results_disable_refreshes_the_panel(monkeypatch, tmp_path):
-    """The confirmation asks the queue; the panel is refreshed when the queue runs the change."""
+async def test_the_confirmed_results_disable_asks_the_queue_to_refresh_the_panel(tmp_path):
+    """The confirmation asks the queue; the switch-off asks the refresh, naming
+    `/module disable`, once the queue runs it — never before."""
     from tests.support.change_queue import run_queue
 
-    refresh = AsyncMock(return_value=None)
-    monkeypatch.setattr(hub_service, "refresh_panel", refresh)
     cog, interaction = await _queued_results_off(tmp_path)
     view = _ConfirmDisableResultsView(cog, actor_id=77)
 
     await view.confirm.callback(interaction)
-    refresh.assert_not_awaited()
+    assert await _refreshes_asked(cog.bot) == []
     await run_queue(cog.bot)
 
-    refresh.assert_awaited_once_with(cog.bot)
-
-
-async def test_a_panel_that_cannot_be_refreshed_is_logged(monkeypatch):
-    """The line names the member and the command that caused the refresh (#482)."""
-    monkeypatch.setattr(
-        hub_service, "refresh_panel", AsyncMock(return_value="The hub channel is gone.")
-    )
-    cog = _module_cog()
-    interaction = _interaction()
-    interaction.command.qualified_name = "module disable"
-
-    await undecorate(ModuleCog.disable)(cog, interaction, _choice("weather"))
-
-    [line] = [
-        str(call.args[0])
-        for call in cog.bot.output_router.post_log.await_args_list
-        if "The hub channel is gone." in str(call.args[0])
-    ]
-    assert "Admin (<@77>)" in line and "/module disable" in line
-
-
-async def test_a_panel_not_refreshed_after_the_confirmed_results_disable_names_the_command(
-    monkeypatch, tmp_path,
-):
-    """The confirmation's button carries no command, so the line names `/module disable` itself,
-    never "an interaction" (#482). The queue's refresh writes it, mention wrapped as every log
-    line's is."""
-    from tests.support.change_queue import queued_log_lines, run_queue
-
-    monkeypatch.setattr(
-        hub_service, "refresh_panel", AsyncMock(return_value="The hub channel is gone.")
-    )
-    cog, interaction = await _queued_results_off(tmp_path)
-    view = _ConfirmDisableResultsView(cog, actor_id=77)
-
-    await view.confirm.callback(interaction)
-    await run_queue(cog.bot)
-
-    lines = list(cog.bot.log_channel.sent) + await queued_log_lines(cog.bot.db_path)
-    assert [line for line in lines if "Hub panel not refreshed" in line] == [
-        "Admin (`<@77>`) | `/module disable` | Hub panel not refreshed: The hub channel is gone."
-        + "\n" + "\u2015" * 36
-    ]
-
-
-async def test_a_refresh_that_raises_does_not_fail_the_toggle(monkeypatch):
-    monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(side_effect=RuntimeError("x")))
-    cog = _module_cog()
-
-    await undecorate(ModuleCog.disable)(cog, _interaction(), _choice("weather"))
-
-    cog._disable_weather.assert_awaited_once()
+    [asked] = await _refreshes_asked(cog.bot)
+    assert "/module disable" in asked["command"]
 
 
 # ── The permissions follow the roles ──────────────────────────────────────
@@ -294,6 +290,7 @@ async def test_permissions_that_raise_do_not_fail_the_role_command(monkeypatch):
 
 
 def test_the_hub_is_recovered_at_start_up():
-    """`on_ready` is a closure inside `main`, so its wiring is asserted on the source; the
-    recovery itself is tested in `test_hub_service.py`."""
-    assert "recover_hub(bot)" in inspect.getsource(bot_module.main)
+    """`on_ready` is a closure inside `main`, so its wiring is asserted on the source: the
+    start-up hands the recovery the change queue, which it asks for the panel. The recovery
+    itself is tested in `test_hub_service.py`."""
+    assert "recover_hub(bot, queue=bot.change_queue)" in inspect.getsource(bot_module.main)

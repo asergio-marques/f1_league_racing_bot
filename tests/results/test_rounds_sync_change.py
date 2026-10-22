@@ -356,3 +356,41 @@ async def test_a_rounds_sync_with_a_discarded_table_says_what_was_not_synced(tmp
     [line] = [line for line in league.bot.log_channel.sent
               if "| /results rounds sync |" in line]
     assert line.startswith("Admin (`<@4242>`) | /results rounds sync | Incomplete")
+
+
+OLD_CANCELLED_LINE = 8820
+
+
+async def test_a_rounds_sync_replaces_a_session_cancelled_line(tmp_path):
+    """Round 3's Feature Qualifying was cancelled, its line standing in the results channel as
+    message 8820, recorded as the qualifying's. `/results rounds sync` for Pro posts a new line in
+    the qualifying's place, before round 3's race table, records it as the qualifying's, and
+    deletes 8820 after it."""
+    from leaguebot.core.db.database import get_connection
+
+    league = await _league(tmp_path)
+    await _write(
+        league,
+        "INSERT INTO session_results (round_id, division_id, session_type, status, "
+        "results_message_id, results_message_ids) "
+        "VALUES (?, ?, 'FEATURE_QUALIFYING', 'CANCELLED', ?, ?)",
+        ROUND_ID, DIVISION_ID, OLD_CANCELLED_LINE, f"[{OLD_CANCELLED_LINE}]",
+    )
+    league.channel(RESULTS_CHANNEL).seed(
+        OLD_CANCELLED_LINE, "🚫 Round 3 — Qualifying (Pro): This session was cancelled.")
+
+    await _sync(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    line, _table = league.sent_to(RESULTS_CHANNEL)
+    assert "This session was cancelled" in league.channel(RESULTS_CHANNEL).messages[line].content
+    async with get_connection(league.db_path) as db:
+        row = await (await db.execute(
+            "SELECT results_message_id FROM session_results "
+            "WHERE round_id = ? AND session_type = 'FEATURE_QUALIFYING'", (ROUND_ID,),
+        )).fetchone()
+    assert row["results_message_id"] == line
+    assert OLD_CANCELLED_LINE in league.deleted_in(RESULTS_CHANNEL)
+    assert league.events.index(("send", RESULTS_CHANNEL, line)) < league.events.index(
+        ("delete", RESULTS_CHANNEL, OLD_CANCELLED_LINE))

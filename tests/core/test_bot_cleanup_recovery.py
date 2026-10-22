@@ -14,12 +14,14 @@ has its job armed, which will run at its own moment.
 weather module keeps the forecasts of a round called off. **A completed season is not**: the
 live jobs fire after a season completes, and the catch-up does what they would have.
 
-**Each module's gate applies.** Weather's is asked here; attendance's is inside
-`run_rsvp_cleanup`, which this hands every due round to.
+**Each module's gate applies.** Weather's is asked here; attendance's is the check-in
+clean-up change's own, which this asks of the queue for every due round.
 
 The two cleanups themselves are tested elsewhere; here they are stubbed, and what is pinned is
-which rounds reach them. The forecast's is asked of the change queue, through weather's
-`ask_forecast_clean_up` (#439), which these record, patched in `forecast_changes`.
+which rounds reach them. Both are asked of the change queue (#439): the forecast's through
+weather's `ask_forecast_clean_up`, patched in `forecast_changes`, and the check-in's through
+attendance's `ask_check_in_clean_up` (slice 6b), patched in `check_in_changes`; these record
+each ask.
 """
 from __future__ import annotations
 
@@ -102,8 +104,8 @@ def _bot(db_path: str, *, weather_enabled: bool = True) -> MagicMock:
 async def _recover(
     bot, *, forecast_error: Exception | None = None
 ) -> tuple[list[int], list[int]]:
-    """Run the recovery, returning the rounds whose forecast clean-up it asked the queue for and
-    whose check-in it cleaned; *forecast_error* makes the clean-up's ask raise."""
+    """Run the recovery, returning the rounds whose forecast clean-up and whose check-in
+    clean-up it asked the queue for; *forecast_error* makes the forecast clean-up's ask raise."""
     forecasts: list[int] = []
     check_ins: list[int] = []
 
@@ -112,13 +114,16 @@ async def _recover(
             raise forecast_error
         forecasts.append(round_id)
 
-    async def _check_in(round_id, _bot):
+    async def _check_in(_queue, _db_path, round_id, **_kwargs):
         check_ins.append(round_id)
 
     with patch(
         "leaguebot.weather.services.forecast_changes.ask_forecast_clean_up",
         new=AsyncMock(side_effect=_forecast),
-    ), patch("leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup", new=AsyncMock(side_effect=_check_in)):
+    ), patch(
+        "leaguebot.attendance.services.check_in_changes.ask_check_in_clean_up",
+        new=AsyncMock(side_effect=_check_in),
+    ):
         await bot_module._recover_missed_cleanups(bot)
     return forecasts, check_ins
 
@@ -223,7 +228,7 @@ async def test_a_cancelled_round_is_left_alone(tmp_path, kwargs):
 
 async def test_weather_switched_off_keeps_its_forecasts(tmp_path):
     """Disabling weather cancels its cleanup jobs; the catch-up must not run them anyway. The
-    check-in's gate is attendance's own, inside `run_rsvp_cleanup`."""
+    check-in's gate is attendance's own, in its clean-up change's check."""
     db_path = await _make_db(tmp_path)
 
     assert await _recover(_bot(db_path, weather_enabled=False)) == ([], [ROUND_ID])

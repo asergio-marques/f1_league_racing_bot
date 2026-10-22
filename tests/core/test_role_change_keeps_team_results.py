@@ -29,7 +29,6 @@ from leaguebot.results.services.result_submission_service import (
     _row_dict_from_qualifying,
     _row_dict_from_race,
     other_active_team_assignments,
-    save_session_result,
     validate_submission_block,
 )
 from leaguebot.results.services.standings_service import (
@@ -38,6 +37,8 @@ from leaguebot.results.services.standings_service import (
     previous_standing_positions,
 )
 from leaguebot.core.services.team_service import TeamService
+from tests.support.session_writes import save_session_result
+from tests.support.change_queue import in_a_job
 
 DIVISION_ID = 37
 OTHER_DIVISION_ID = 38
@@ -224,10 +225,11 @@ async def test_results_post_names_a_team_after_its_role_is_replaced(tmp_path):
         submitted_by=77, submitted_at=None,
     )
 
-    await produce_session_results(
-        db_path, session, rows, {FERRARI_DRIVER: 25, RIVAL_DRIVER: 18}, channel, guild,
-        1, "Spa", "Provisional Results", is_sprint=False,
-    )
+    with in_a_job():
+        await produce_session_results(
+            db_path, session, rows, {FERRARI_DRIVER: 25, RIVAL_DRIVER: 18}, channel, guild,
+            1, "Spa", "Provisional Results", is_sprint=False,
+        )
 
     text = "\n".join(sent)
     assert "(Ferrari)" in text and "(Rival)" in text

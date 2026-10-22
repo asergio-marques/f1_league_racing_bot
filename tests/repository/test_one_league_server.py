@@ -200,11 +200,11 @@ async def test_a_modal_submitted_in_another_server_is_refused():
 async def test_the_sign_up_button_left_on_an_old_server_is_refused():
     """The case that matters: a persistent view registered once at start-up, pressed on a
     server the league has left."""
-    from leaguebot.signup.cogs.signup_cog import SignupButtonView
+    from leaguebot.signup.services.signup_views import SignupButtonView
 
     interaction = _pressed_on(ELSEWHERE, LEAGUE)
 
-    assert await SignupButtonView().interaction_check(interaction) is False
+    assert await SignupButtonView(MagicMock()).interaction_check(interaction) is False
 
 
 # ── While no server is claimed ─────────────────────────────────────────────
@@ -248,11 +248,11 @@ async def test_a_modal_submitted_while_no_server_is_claimed_is_refused():
 
 
 async def test_the_sign_up_button_left_behind_by_a_pack_is_refused():
-    from leaguebot.signup.cogs.signup_cog import SignupButtonView
+    from leaguebot.signup.services.signup_views import SignupButtonView
 
     interaction = _pressed_on(ELSEWHERE, None)
 
-    assert await SignupButtonView().interaction_check(interaction) is False
+    assert await SignupButtonView(MagicMock()).interaction_check(interaction) is False
 
 
 async def test_a_command_while_no_server_is_claimed_still_reaches_the_tier_guards():
@@ -401,7 +401,7 @@ def _listener_bot():
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=LEAGUE)
     bot.wizard_service.get_wizard_by_channel = AsyncMock(return_value=None)
-    bot.wizard_service.handle_member_remove = AsyncMock()
+    bot.change_queue.ask = AsyncMock(return_value=1)
     bot.output_router.post_log = AsyncMock()
     return bot
 
@@ -417,7 +417,8 @@ def _message_elsewhere():
 
 
 async def test_the_reason_listener_ignores_another_server():
-    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+    from leaguebot.signup.services.signup_views import _PENDING_REASONS
 
     bot = _listener_bot()
     _PENDING_REASONS[(70, 7)] = {"action": "reject"}
@@ -437,6 +438,7 @@ async def test_the_wizard_listener_ignores_another_server():
     await cog.on_message(_message_elsewhere())
 
     cog.bot.wizard_service.get_wizard_by_channel.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_a_member_leaving_another_server_is_nothing_to_the_league():
@@ -450,17 +452,19 @@ async def test_a_member_leaving_another_server_is_nothing_to_the_league():
 
     await cog.on_member_remove(member)
 
-    cog.bot.wizard_service.handle_member_remove.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
     cog.bot.output_router.post_log.assert_not_awaited()
 
 
 async def test_the_penalty_review_lock_ignores_another_server(monkeypatch):
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    """The lock is results' listener (#439, slice 6b, C39): a message typed in another server
+    is never looked up, nor deleted."""
+    from leaguebot.results.cogs.results_cog import ResultsCog
     from leaguebot.results.services import result_submission_service
 
     asked = AsyncMock(return_value=True)
     monkeypatch.setattr(result_submission_service, "is_channel_in_penalty_review", asked)
-    cog = SeasonCog.__new__(SeasonCog)
+    cog = ResultsCog.__new__(ResultsCog)
     cog.bot = _listener_bot()
     message = _message_elsewhere()
 

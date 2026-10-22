@@ -11,7 +11,6 @@ jobs of its appeals stage on the change queue (`test_amendment_stage_changes.py`
 from __future__ import annotations
 
 import os
-from types import SimpleNamespace
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.teams import seed_team_instances
@@ -68,30 +67,22 @@ async def _banner(db_path, round_id: int, message_id: int, channel=VERDICTS_CHAN
         await db.commit()
 
 async def test_a_sanction_card_marks_exactly_its_banner(tmp_path):
-    from leaguebot.results.services.verdict_announcement_service import _mark_banner_over_sanction
+    from leaguebot.results.services.verdict_announcement_service import (
+        _mark_banner_over_sanction_on,
+    )
 
     db_path, _ = await _seed(tmp_path, "banner_marked", rounds=(1, 2))
     for round_id, message_id in ((1, 6001), (1, 6003), (2, 6004)):
         await _banner(db_path, round_id, message_id)
 
-    await _mark_banner_over_sanction(db_path, SimpleNamespace(id=6003))
+    # The card's job marks its banner in its own save (#439, slice 6b), so the form that
+    # committed by itself is gone.
+    async with get_connection(db_path) as db:
+        await _mark_banner_over_sanction_on(db, 6003)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT message_id FROM verdict_banner_messages WHERE heads_sanctions = 1"
         )
         assert [row[0] for row in await cursor.fetchall()] == ["6003"]
-
-async def test_a_card_under_no_banner_marks_nothing(tmp_path):
-    from leaguebot.results.services.verdict_announcement_service import _mark_banner_over_sanction
-
-    db_path, _ = await _seed(tmp_path, "banner_unmarked", rounds=(1,))
-    await _banner(db_path, 1, 6001)
-
-    await _mark_banner_over_sanction(db_path, None)
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT COUNT(*) FROM verdict_banner_messages WHERE heads_sanctions = 1"
-        )
-        assert (await cursor.fetchone())[0] == 0

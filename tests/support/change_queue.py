@@ -17,6 +17,13 @@ A job that fails stops the queue until it is cleared (owner, 2026-10-02): `stopp
 job the queue is stopped at, and `retry_job` and `discard_job` press Retry and Discard on its stop
 notice, as a member holding the tier `tier_member` gives them.
 
+A message a member types into a conversation's channel is a turn (#439, 6b): `typed_message` is
+one, recording the marks the bot holds on it, and `ask_turn` does with it what a listener does,
+turning it away where a turn in its channel still waits, else marking it and asking its turn.
+
+A function that posts refuses to run outside a job (`posts_in_a_job`). A unit test calling one
+directly, with no queue, wraps the call in `in_a_job()`, which runs it as a job would.
+
 A queue `restart_queue` starts has a worker running in the background, and is stopped before the
 test ends: `tests/conftest.py` calls `stop_started_queues` once the test has run, while its event
 loop is still open, and it waits there for any database thread a stopped worker left running.
@@ -24,10 +31,12 @@ loop is still open, and it waits there for any database thread a stopped worker 
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import threading
 import time
-from collections.abc import Collection
+from collections.abc import Collection, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -114,7 +123,10 @@ def register(bot: Any, *change_types: Any) -> None:
 
 
 async def run_queue(bot: Any, *, steps: int | None = None) -> None:
-    """Run the bot's queue until nothing can run now, or until *steps* steps are done."""
+    """Run the bot's queue until nothing can run now, or until *steps* steps are done.
+
+    Every lane is run, the league's and each conversation's, one change at a time: the queue's own
+    `run_until_idle` is the tests' serial runner, taking the runnable change asked first."""
     if steps is None:
         await bot.change_queue.run_until_idle()
     else:
@@ -221,9 +233,10 @@ def text_channel(channel_id: int) -> Any:
     """A text channel recording what it is sent; set `fails` to an exception to refuse.
 
     `sent` holds the content of each message, and `posted` each message as Discord returned it:
-    its `id`, `content` and `view`, which an `edit` with `view=` replaces. `fetch_message` and
-    `get_partial_message` find a posted message by id; one removed from `posted` is gone, and
-    `NotFound` is raised for it.
+    its `id`, `content` and `view`, which an `edit` with `view=` replaces, and a `delete` that
+    takes it out of `posted`. `fetch_message` and `get_partial_message` find a posted message by
+    id; one removed from `posted` is gone, and `NotFound` is raised for it: by an edit, a delete,
+    or a reaction added, removed or cleared.
     """
     channel = MagicMock(spec=discord.TextChannel)
     channel.id = channel_id
@@ -249,15 +262,22 @@ def text_channel(channel_id: int) -> Any:
                     setattr(message, name, changes[name])
             return message
 
+        async def _delete(*_args: Any, **_kwargs: Any) -> None:
+            if message not in channel.posted:
+                raise http_error(discord.NotFound, status=404, text="Unknown Message")
+            channel.posted.remove(message)
+
         message.edit = AsyncMock(side_effect=_edit)
+        message.delete = AsyncMock(side_effect=_delete)
         channel.posted.append(message)
         return message
 
     def _gone(message_id: int) -> Any:
         gone = MagicMock(id=message_id)
-        gone.edit = AsyncMock(
-            side_effect=http_error(discord.NotFound, status=404, text="Unknown Message")
-        )
+        for name in ("edit", "delete", "add_reaction", "remove_reaction", "clear_reaction"):
+            setattr(gone, name, AsyncMock(
+                side_effect=http_error(discord.NotFound, status=404, text="Unknown Message")
+            ))
         return gone
 
     def _partial(message_id: int) -> Any:
@@ -274,6 +294,70 @@ def text_channel(channel_id: int) -> Any:
     channel.fetch_message = AsyncMock(side_effect=_fetch)
     channel.get_partial_message = MagicMock(side_effect=_partial)
     return channel
+
+
+def history_channel(channel_id: int) -> Any:
+    """A text channel whose messages stand newest first in `messages`, and each one deleted is kept
+    in `deleted`. `history` reads what stands when it is read; `get_partial_message` and
+    `fetch_message` find a message standing, and `NotFound` is raised for one gone. The bot may
+    manage its messages. A message is added by `post_in`."""
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = channel_id
+    channel.mention = f"<#{channel_id}>"
+    channel.messages = []
+    channel.deleted = []
+    channel.permissions_for = MagicMock(return_value=MagicMock(manage_messages=True))
+
+    async def _history(*, limit: int = 100, **_kwargs: Any) -> Any:
+        for message in list(channel.messages)[:limit]:
+            yield message
+
+    def _find(message_id: int) -> Any:
+        found = [m for m in channel.messages if m.id == message_id]
+        if found:
+            return found[0]
+        gone = MagicMock(id=message_id)
+        gone.delete = AsyncMock(
+            side_effect=http_error(discord.NotFound, status=404, text="Unknown Message")
+        )
+        return gone
+
+    async def _fetch(message_id: int) -> Any:
+        found = [m for m in channel.messages if m.id == message_id]
+        if not found:
+            raise http_error(discord.NotFound, status=404, text="Unknown Message")
+        return found[0]
+
+    channel.history = _history
+    channel.get_partial_message = MagicMock(side_effect=_find)
+    channel.fetch_message = AsyncMock(side_effect=_fetch)
+    return channel
+
+
+#: The ids `post_in` gives the messages it posts.
+_POSTED_IDS = itertools.count(9001)
+
+
+def post_in(channel: Any, author: Any, *, fails: Exception | None = None) -> Any:
+    """A message *author* posts in *channel*, now its newest. `fails` refuses its deletion."""
+    message = MagicMock(spec=discord.Message)
+    message.id = next(_POSTED_IDS)
+    message.author = author
+    message.channel = channel
+    message.jump_url = f"https://discord.test/{channel.id}/{message.id}"
+    message.fails = fails
+
+    async def _delete(*_args: Any, **_kwargs: Any) -> None:
+        if message not in channel.messages:
+            raise http_error(discord.NotFound, status=404, text="Unknown Message")
+        if message.fails is not None:
+            raise message.fails
+        channel.messages.remove(message)
+        channel.deleted.append(message)
+
+    message.delete = AsyncMock(side_effect=_delete)
+    channel.messages.insert(0, message)
+    return message
 
 
 def http_error(cls: type[discord.HTTPException] = discord.HTTPException, *, status: int = 500,
@@ -422,13 +506,16 @@ async def step_rows(db_path: str, change_id: int | None = None) -> list[dict[str
 # ---------------------------------------------------------------------------
 
 
-async def stopped_job(db_path: str) -> dict[str, Any] | None:
+async def stopped_job(db_path: str, lane: str | None = None) -> dict[str, Any] | None:
     """The job the queue is stopped at: not done, and failed since `failing_since`; or None.
 
     Only a job of a change still QUEUED or RUNNING counts: a change that has ended (discarded
-    at a job, say) leaves the job it stopped at as it was."""
+    at a job, say) leaves the job it stopped at as it was. With *lane* (`"league"`, or a
+    conversation's `"channel:<id>"`), only a job of a change on that lane; a change saved with no
+    lane is the league's."""
     live = {row["id"] for row in await change_rows(db_path)
-            if row["state"] in ("QUEUED", "RUNNING")}
+            if row["state"] in ("QUEUED", "RUNNING")
+            and (lane is None or row.get("lane", "league") == lane)}
     stopped = [
         row for row in await step_rows(db_path)
         if row["change_id"] in live and row["done_at"] is None
@@ -437,8 +524,8 @@ async def stopped_job(db_path: str) -> dict[str, Any] | None:
     return stopped[0] if stopped else None
 
 
-async def _press(bot: Any, action: str, user: Any, run: bool) -> Any:
-    job = await stopped_job(bot.db_path)
+async def _press(bot: Any, action: str, user: Any, run: bool, lane: str | None = None) -> Any:
+    job = await stopped_job(bot.db_path, lane)
     assert job is not None, f"no job stops the queue for {action} to act on"
     interaction = member_interaction(bot, user=user)
     interaction.message.id = job["notice_message_id"]
@@ -448,17 +535,145 @@ async def _press(bot: Any, action: str, user: Any, run: bool) -> Any:
     return interaction
 
 
-async def retry_job(bot: Any, *, user: Any = None, run: bool = True) -> Any:
+async def retry_job(bot: Any, *, user: Any = None, run: bool = True,
+                    lane: str | None = None) -> Any:
     """Press Retry on the stop notice of the job the queue is stopped at, then run the queue.
 
-    The presser is *user*, or a league manager. Gives the presser's interaction.
+    The presser is *user*, or a league manager. With *lane*, the job that lane is stopped at.
+    Gives the presser's interaction.
     """
-    return await _press(bot, "retry", user or tier_member("manager"), run)
+    return await _press(bot, "retry", user or tier_member("manager"), run, lane)
 
 
-async def discard_job(bot: Any, *, user: Any = None, run: bool = True) -> Any:
+async def discard_job(bot: Any, *, user: Any = None, run: bool = True,
+                      lane: str | None = None) -> Any:
     """Press Discard on the stop notice of the job the queue is stopped at, then run the queue.
 
-    The presser is *user*, or a league admin. Gives the presser's interaction.
+    The presser is *user*, or a league admin. With *lane*, the job that lane is stopped at.
+    Gives the presser's interaction.
     """
-    return await _press(bot, "discard", user or tier_member("admin"), run)
+    return await _press(bot, "discard", user or tier_member("admin"), run, lane)
+
+
+#: The job number `in_a_job` runs a unit test's call as.
+TEST_JOB = 1
+
+
+@contextmanager
+def in_a_job(job_id: int = TEST_JOB) -> Iterator[None]:
+    """Run the body as job *job_id* runs, for a unit test calling a function that posts directly,
+    with no queue to run it in a job. Where the bot keeps no running job's number yet
+    (`leaguebot.core.utils.in_a_job`, #439 6b), no function refuses a post outside a job, and the
+    body runs as it is."""
+    try:
+        from leaguebot.core.utils.in_a_job import running_job
+    except ModuleNotFoundError as missing:
+        if missing.name != "leaguebot.core.utils.in_a_job":
+            raise
+        yield
+        return
+    with running_job(job_id):
+        yield
+
+
+# ---------------------------------------------------------------------------
+# A typed message, and a turn asked for it
+# ---------------------------------------------------------------------------
+
+#: Ids for the messages members type, apart from those the bot posts (numbered from 1).
+_TYPED_IDS = itertools.count(5001)
+
+#: The mark the bot adds to a typed message at once, and clears when its turn is done.
+MARK = "\u23f3"
+
+
+def typed_message(channel: Any, author: Any, content: str = "", *,
+                  created_at: datetime) -> Any:
+    """A message *author* typed into *channel* (a `text_channel`) at *created_at*.
+
+    `marks` holds the reactions the bot holds on it: `add_reaction` adds one, and
+    `remove_reaction` or `clear_reaction` takes it off. Set `fails_marks` to an exception to refuse
+    a reaction, and `fails_delete` to refuse its deletion. It is found by the channel's
+    `fetch_message` and `get_partial_message` until it is deleted, by `delete()` or
+    `typed_message_deleted`; once deleted, every reaction and delete raises `NotFound`.
+    """
+    message = MagicMock(spec=discord.Message)
+    message.id = next(_TYPED_IDS)
+    message.channel = channel
+    # Typed in a server: the server of the channel, as a listener asks which it came from.
+    message.guild = getattr(channel, "guild", None)
+    message.author = author
+    message.content = content
+    message.created_at = created_at
+    message.attachments = []
+    message.marks = set()
+    message.fails_marks = None
+    message.fails_delete = None
+    message.gone = False
+    message.jump_url = f"https://discord.test/{channel.id}/{message.id}"
+
+    def _check(fails: Any) -> None:
+        if message.gone:
+            raise http_error(discord.NotFound, status=404, text="Unknown Message")
+        if fails is not None:
+            raise fails
+
+    async def _add(emoji: Any) -> None:
+        _check(message.fails_marks)
+        message.marks.add(str(emoji))
+
+    async def _remove(emoji: Any, *_member: Any) -> None:
+        _check(message.fails_marks)
+        message.marks.discard(str(emoji))
+
+    async def _delete(*_args: Any, **_kwargs: Any) -> None:
+        _check(message.fails_delete)
+        typed_message_deleted(message)
+
+    message.add_reaction = AsyncMock(side_effect=_add)
+    message.remove_reaction = AsyncMock(side_effect=_remove)
+    message.clear_reaction = AsyncMock(side_effect=_remove)
+    message.delete = AsyncMock(side_effect=_delete)
+    channel.posted.append(message)
+    return message
+
+
+def typed_message_deleted(message: Any) -> None:
+    """*message* is deleted from its channel, by the member or by Discord."""
+    message.gone = True
+    if message in message.channel.posted:
+        message.channel.posted.remove(message)
+
+
+def turn_payload(message: Any) -> dict[str, Any]:
+    """The payload a listener asks a typed message's turn with: its channel, its id, its author,
+    what it says, its attachments' URLs and when it was typed."""
+    return {
+        "channel_id": message.channel.id,
+        "message_id": message.id,
+        "author_id": message.author.id,
+        "content": message.content,
+        "attachments": [attachment.url for attachment in message.attachments],
+        "typed_at": message.created_at.isoformat(),
+    }
+
+
+async def ask_turn(bot: Any, kind: str, message: Any, *, types: Any = None,
+                   what: str = "a typed answer") -> int | None:
+    """Do what a listener does with a typed *message* it would act on, and give the change's id.
+
+    Where a turn in the message's channel is still waiting, the message is turned away at once,
+    off the queue, with the note (`typed_turns.turn_away`), and nothing is asked: None. Otherwise
+    it is marked at once and the turn of *kind* asked for as the member's, with no interaction.
+    *types* are the change types `turn_waiting` reads, by default those the test registered.
+    """
+    from leaguebot.core.services import typed_turns
+
+    chosen = types if types is not None else getattr(bot, _SETUP).types
+    if await typed_turns.turn_waiting(bot.db_path, chosen, message.channel.id):
+        await typed_turns.turn_away(message, typed_turns.TURN_AWAY_NOTE)
+        return None
+    await typed_turns.mark(message)
+    return await bot.change_queue.ask(
+        kind, turn_payload(message), actor=message.author, what=what,
+    )

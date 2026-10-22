@@ -273,15 +273,12 @@ async def take_down(bot: LeagueBot, item: dict[str, Any]) -> dict[str, Any]:
     `StepFailedOnDiscord` where anything is left standing: for a message, with ``left``, the ids
     still posted, which the change names to the league with their links; for a channel, with none.
 
-    **Messages go through `_delete_posting`, channels through the channel closers**, the routes
+    **Messages go through `_delete_posting`, channels through `delete_round_channel`**, the routes
     an amendment's replay and a finished submission take, so none can disagree about what a
-    posting's messages are. No new direct post is made. A message already gone is not left.
+    posting's messages are. The switch-off's save has already erased the rows that name the
+    channels, so a channel is only deleted here. No new direct post is made. A message already gone is not left.
     """
-    from leaguebot.results.services.result_submission_service import (
-        _close_amend_channel_record,
-        close_submission_channel,
-    )
-    from leaguebot.results.services.results_post_service import _delete_posting
+    from leaguebot.results.services.results_post_service import _delete_posting, delete_round_channel
 
     guild = await league_guild(bot)
     if guild is None:
@@ -306,14 +303,12 @@ async def take_down(bot: LeagueBot, item: dict[str, Any]) -> dict[str, Any]:
                 f"{len(left)} message(s) could not be removed", result={"left": left}
             ) from (failures[0] if failures else None)
         return {"removed": True}
-    if kind == "submission":
-        gone = await close_submission_channel(channel_id, item["round_id"], guild, bot.db_path)
-    else:
-        gone = await _close_amend_channel_record(
-            bot.db_path, item["round_id"], channel_id, channel, reason="Results module disabled"
-        )
-    if not gone:
-        raise StepFailedOnDiscord(f"channel {channel_id} could not be deleted")
+    try:
+        await delete_round_channel(channel, reason="Results module disabled")
+    except discord.NotFound:
+        pass
+    except discord.HTTPException as error:
+        raise StepFailedOnDiscord(f"channel {channel_id} could not be deleted") from error
     return {"removed": True}
 
 

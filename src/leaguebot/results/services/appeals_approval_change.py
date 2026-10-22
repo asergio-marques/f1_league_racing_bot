@@ -23,8 +23,9 @@ of jobs the queue saves and resumes:
    of every later round, and **`delete_batch_notice`** (`review_posting`).
 4. **The verdicts** (`review_verdicts`): the heading, then one `announce_verdict` for each
    correction.
-5. **`delete_message`** for the appeals prompt, then **`delete_channel`** for the submission
-   channel, last, since every job above posts or deletes in it.
+5. **`delete_channel`** for the submission channel, last, since every job above posts or deletes
+   in it. The appeals prompt is not deleted on its own: it goes with the channel, the conversation's
+   end (C44b).
 6. **`close`**, **an opening job**, so that it runs last whatever was discarded before it. It
    writes `APPEALS_REVIEW_APPROVED | Success`, or `| Incomplete` naming every job a league admin
    discarded.
@@ -33,7 +34,8 @@ of jobs the queue saves and resumes:
 one included), refused with the wording the review's controls use, that the round still awaits its
 appeal verdicts and the prompt is the current one (`appeals_stage_refusal`), and that no amendment
 holds the division. Once the first approval is done the round's status refuses any later one, so
-the corrections are applied once.
+the corrections are applied once. It also refuses while a staging or a confirmation is still in
+hand on the round's lane (`staging_in_hand`, C56a): press Approve once the change appears.
 
 The payload is ``round_id``, ``division_id``, ``staged`` (the corrections, each as plain data,
 `to_payload`) and ``appeals_prompt_message_id``, with ``round_number`` and ``division_name`` where
@@ -69,6 +71,7 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.services.driver_service import current_account_map_for_division
 from leaguebot.core.services import season_lifecycle_service, season_service
 from leaguebot.core.services.season_service import set_round_status_on
+from leaguebot.results.services.review_confirm_change import STAGING_IN_HAND, staging_in_hand
 from leaguebot.results.services import review_posting, review_verdicts
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.penalty_service import StagedPenalty
@@ -85,7 +88,6 @@ from leaguebot.results.services.result_submission_service import (
 )
 from leaguebot.results.services.review_posting import (
     DELETE_CHANNEL,
-    DELETE_MESSAGE,
     NAMES,
     display_names,
     plan_posts,
@@ -133,6 +135,8 @@ def appeals_approval_change(
                 ctx.db_path, round_id, int(payload["division_id"]),
                 then="Approve the appeals again then.",
             )
+        if refusal is None and await staging_in_hand(ctx.db_path, round_id):
+            refusal = STAGING_IN_HAND
         if refusal is not None:
             return Verdict.refuse(refusal)
         return Verdict.go()
@@ -222,11 +226,6 @@ def appeals_approval_change(
         then.extend(
             review_verdicts.plan_verdicts(round_id, round_number, "appeal_records", records)
         )
-        if payload.get("appeals_prompt_message_id") is not None:
-            then.append(PlannedStep(DELETE_MESSAGE, {
-                "channel_id": channel_id, "message_id": int(payload["appeals_prompt_message_id"]),
-                "what": "appeals review prompt",
-            }))
         then.append(PlannedStep(DELETE_CHANNEL, {
             "channel_id": channel_id, "round_id": round_id, "what": "submission channel",
         }))

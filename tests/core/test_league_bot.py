@@ -159,12 +159,13 @@ def test_the_season_s_end_is_registered():
         "season.complete", "season.cancel", "season.abort", "season.wind_down")
 
 
-def test_only_the_two_armings_are_undiscardable():
+def test_only_the_armings_and_a_submission_s_channel_are_undiscardable():
     """Over every change type the builder registers, the jobs marked as never to be discarded
-    are exactly two: the arming of an approved season's timed work ("season.approve", its "arm")
-    and the arming of an amended round's ("season.round.amend", its "arm"). Without either a
-    round would never run; every other job a league admin may discard (#439, slice 4b,
-    amendment A)."""
+    are exactly three: the arming of an approved season's timed work ("season.approve", its
+    "arm"), the arming of an amended round's ("season.round.amend", its "arm"), and the creation
+    of a round's results submission channel ("results.submission.open", its "create_channel").
+    Without any of them a round would never run or never have its results submitted; every other
+    job a league admin may discard (#439, slice 4b, amendment A; slice 6b, decision 12)."""
     from leaguebot.__main__ import register_change_types
 
     bot = MagicMock()
@@ -176,4 +177,8 @@ def test_only_the_two_armings_are_undiscardable():
         for name, step in change_type.steps.items()
         if getattr(step, "undiscardable", None) is not None
     )
-    assert marked == [("season.approve", "arm"), ("season.round.amend", "arm")]
+    assert marked == [
+        ("results.submission.open", "create_channel"),
+        ("season.approve", "arm"),
+        ("season.round.amend", "arm"),
+    ]

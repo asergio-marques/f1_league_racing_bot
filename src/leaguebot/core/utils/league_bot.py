@@ -86,6 +86,10 @@ class LeagueBot(commands.Bot):
     #: None where that module is off, weather's always set. The builder sets it, as it does
     #: `approval_windows`, so that `/round amend` and its change read the same windows (#439).
     amendment_windows: Callable[[], Awaitable[tuple[AttendanceWindows | None, WeatherWindows]]]
+    #: Drops the penalty reviews results holds for staging changes. The builder sets it, so that
+    #: the clear of what the bot holds in memory reaches results without looking its cog up by
+    #: name or importing it (#439).
+    clear_held_reviews: Callable[[], None]
 
 
 def bot_of(interaction: discord.Interaction) -> LeagueBot:

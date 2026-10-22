@@ -96,3 +96,19 @@ async def record_change_on(
             now.isoformat(),
         ),
     )
+
+
+async def record_system_change_on(
+    db: "aiosqlite.Connection", *, change_type: str, old_value: str, new_value: str, now: datetime
+) -> None:
+    """Write the row of a change nobody ran, on *db*, inside the caller's transaction.
+
+    The actor is the system (id 0), and the old and new values are the plain words the audit has
+    always carried for such a change ("open", "closed"), not JSON. Nothing is committed here.
+    """
+    await db.execute(
+        "INSERT INTO audit_entries "
+        "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+        "VALUES (?, ?, NULL, ?, ?, ?, ?)",
+        (0, "system", change_type, old_value, new_value, now.isoformat()),
+    )

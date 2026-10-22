@@ -19,7 +19,9 @@ is (#345), but they are changed in its report stage alone.
 
 **The approval message confirms the review as it stood when it was posted**, and its Approve
 commits the review as it stands when pressed. So it is withdrawn whenever the review changes, a
-second one replaces the first, and its buttons act only on the message the review records.
+second one replaces the first, and its buttons act only on the message the review records. Its
+withdrawal when the staged list changes is a job of the staging's change (#439, slice 6b), pinned
+in `test_review_stage_change.py`.
 """
 from __future__ import annotations
 
@@ -30,17 +32,16 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
 from leaguebot.results.services.penalty_wizard import (
     AddPardonModal,
     ApprovalView,
     PenaltyReviewState,
     PenaltyReviewView,
     StagedPardon,
-    _refresh_prompt,
     _review_moved_on,
     _show_approval_step,
 )
+from tests.support.change_queue import in_a_job
 
 SERVER_ID = 14402
 SEASON_ID = 1
@@ -347,32 +348,14 @@ async def test_a_second_approval_message_replaces_the_first(tmp_path):
     state = _state(await _make_db(tmp_path))
     channel = _in_channel(state)
 
-    await _show_approval_step(MagicMock(), state)
+    with in_a_job():
+        await _show_approval_step(MagicMock(), state)
     first = state.approval_message_id
-    await _show_approval_step(MagicMock(), state)
+    with in_a_job():
+        await _show_approval_step(MagicMock(), state)
 
     assert channel.deleted == [first]
     assert state.approval_message_id == channel.posted[-1] != first
-
-
-async def test_changing_the_staged_list_withdraws_the_approval_message(tmp_path):
-    """**It said there were no penalties, and applied one.** **Make Changes** went back to the
-    review and left the approval message up; a penalty staged then was applied by its Approve."""
-    state = _state(await _make_db(tmp_path))
-    channel = _in_channel(state)
-    await _show_approval_step(MagicMock(), state)
-    approval = state.approval_message_id
-
-    state.staged.append(
-        StagedPenalty(
-            driver_user_id=4001, session_type=SessionType.FEATURE_RACE,
-            penalty_type="TIME", penalty_seconds=5,
-        )
-    )
-    await _refresh_prompt(state)
-
-    assert channel.deleted == [approval]
-    assert state.approval_message_id is None
 
 
 @pytest.mark.parametrize("button", ["make_changes_btn", "approve_btn"])

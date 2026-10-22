@@ -337,7 +337,7 @@ async def test_a_notice_discord_refuses_stops_the_queue_and_once_discarded_is_na
     assert "posting the forecast note for **Pro**" in stop
     assert "`/round cancel`" in stop
     assert "Admin (`<@77>`)" in stop
-    assert "failed (Forbidden)" in stop
+    assert "failed (Discord refused or failed a request from the bot)" in stop
 
     await discard_job(league.bot)
 
@@ -1252,9 +1252,11 @@ async def _empty_submission(league: Any) -> None:
     await open_submission(league, R3)
 
 
-async def _submission_closed(league: Any) -> int:
+async def _submission_closed(league: Any) -> int | None:
+    """Round 3's submission row's `closed`; None once its channel's deletion has removed the row,
+    which ends the submission's conversation (design-6-1)."""
     rows = await league.rows("SELECT closed FROM round_submission_channels WHERE round_id = ?", R3)
-    return rows[0]["closed"]
+    return rows[0]["closed"] if rows else None
 
 
 def _channel_deleted(league: Any) -> bool:
@@ -1275,7 +1277,7 @@ async def test_a_round_whose_open_submission_has_accepted_nothing_is_cancelled_a
     await _done(league)
 
     assert await _status(league) == "CANCELLED"
-    assert await _submission_closed(league) == 1
+    assert await _submission_closed(league) is None
     names = await _names(league)
     assert names[names.index("apply") + 1] == "delete_channel"
     assert json.loads((await _job(league, "delete_channel"))["payload"])["channel_id"] == (
@@ -1381,4 +1383,80 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_save(tmp_pat
     assert await _submission_closed(league) == 0
     assert await _round_audits(league) == []
     assert len(_refusal_lines(league)) == 1
+    assert not _channel_deleted(league)
+
+
+# ── A cancellation ends its submission's conversation (#439, slice 6b, C88a) ────────
+#
+# A round's submission channel has a lane of its own, its pastes taken there as turns. A league
+# change that ends the conversation marks it ended in its own save; the lane's waiting turns are
+# then found no longer due when they come. The save is checked again inside itself, so a paste
+# accepted on the round's lane after the cancellation's check is not lost to it: the
+# cancellation's save already reads the submission's accepted sessions afresh, and that test pins
+# it against the lanes.
+
+SUBMISSION_TURN = "results.submission.turn"
+
+
+async def test_a_round_cancellation_ends_its_submission_s_conversation(tmp_path):
+    """Round 3 of Pro waits for its results, its submission open in channel 690 with nothing
+    accepted. The admin runs `/round cancel Pro 3`; before the queue runs, the manager types
+    CANCELLED into channel 690, its turn asked on the round's own lane after the cancellation.
+    The queue run: round 3 is cancelled and its submission closed, and the manager's turn is
+    then found no longer due — dropped, with nothing saved for the round's sessions and nothing
+    posted in the channel by it."""
+    from tests.support.change_queue import member
+
+    league = await ongoing_league(tmp_path)
+    await _empty_submission(league)
+    await _asked(league)
+    turn = await league.bot.change_queue.ask(
+        SUBMISSION_TURN,
+        {"channel_id": SUBMISSION_CHANNEL, "message_id": 6901, "author_id": 77,
+         "content": "CANCELLED", "attachments": [],
+         "typed_at": league.clock.now.isoformat()},
+        actor=member(77), what="a typed answer",
+    )
+    assert turn is not None
+
+    await run_queue(league.bot)
+
+    assert await _status(league) == "CANCELLED"
+    assert await _submission_closed(league) is None
+    [row] = [row for row in await change_rows(league.db_path) if row["id"] == turn]
+    assert row["state"] == "DROPPED"
+    assert await league.rows("SELECT * FROM session_results WHERE round_id = ?", R3) == []
+    assert await stopped_job(league.db_path, f"channel:{SUBMISSION_CHANNEL}") is None
+
+
+async def test_a_cancellation_s_save_finds_a_paste_saved_after_its_check(tmp_path):
+    """Round 3 of Pro waits for its results, its submission open in channel 690 with nothing
+    accepted, and the admin runs `/round cancel Pro 3`. The cancellation's check passes when it
+    runs; then, while its timed work is being removed and before its save, the round's own lane
+    accepts the manager's race result (as a paste's turn may, running beside the league). The
+    save checks again inside itself and writes nothing: round 3 still awaits its results, its
+    submission stays open with the session accepted, and its channel is not deleted."""
+    league = await ongoing_league(tmp_path)
+    await _empty_submission(league)
+    await _asked(league)
+
+    def _unarm_and_accept(round_id: int) -> None:
+        league.unarmed.append(round_id)
+        with sqlite3.connect(league.db_path) as db:
+            db.execute(
+                "INSERT INTO session_results (round_id, division_id, session_type, status, "
+                "config_name, submitted_by, submitted_at) VALUES (?, ?, 'FEATURE_RACE', "
+                "'ACTIVE', 'Standard', 77, ?)",
+                (R3, R3 // 10, league.clock.now.isoformat()),
+            )
+
+    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=_unarm_and_accept)
+
+    await run_queue(league.bot)
+
+    assert R3 in league.unarmed
+    assert await _status(league) == "AWAITING_RESULTS"
+    assert await _submission_closed(league) == 0
+    assert len(await league.rows("SELECT * FROM session_results WHERE round_id = ?", R3)) == 1
+    assert await _round_audits(league) == []
     assert not _channel_deleted(league)

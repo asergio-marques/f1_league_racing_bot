@@ -325,206 +325,302 @@ async def test_a_confirmation_refused_because_the_season_moved_on_fixes_no_signu
     bot.signup_module_service.snapshot_season_config.assert_not_awaited()
 
 
+async def test_a_confirmation_the_stage_refuses_takes_no_review_down(monkeypatch):
+    """Ben's confirmation loses the race to Alex's: set_stage refuses a season that has left
+    configuration. Only a press that confirms takes a review down (core, "Confirming placements"),
+    so Ben's review is not asked down as confirmed, and when the stage does move it is."""
+    from leaguebot.core.cogs import season_cog
+
+    took_down = AsyncMock()
+    monkeypatch.setattr(season_cog, "_take_the_review_down", took_down)
+    refused = _bot()
+    refused.season_service.set_stage = AsyncMock(side_effect=InvalidStageTransition("moved"))
+    interaction = _interaction()
+    interaction.client = refused
+
+    await _cog(refused)._do_confirm_configuration(interaction)
+
+    took_down.assert_not_awaited()
+
+    moved = _bot()
+    interaction = _interaction()
+    interaction.client = moved
+
+    await _cog(moved)._do_confirm_configuration(interaction)
+
+    took_down.assert_awaited_once()
+
+
 # ── The button ─────────────────────────────────────────────────────────────────────
+#
+# The button reads its review from the review's row, not from its view's memory: the question's
+# `posted_at` for its five minutes and the `evidence` its report was computed from for whether the
+# season has changed (#439, slice 6b: C93, C97a). It deletes and posts nothing itself: a review it
+# ends is taken down by the queue (C92, C97). These build the league's queue with Alex's
+# configuration review of season 1 standing in channel 700 (report R1 and R2, question Q), as the
+# press tests of every review's button do.
+
+CONFIG_REVIEW = "/season config-review"
+#: The area of the season these tests change, as the review's evidence names it.
+TEAM_LIST = "the team list"
 
 
-def _member(user_id: int, league_admin: bool = False):
-    import discord
+async def _standing_review(tmp_path):
+    """The league's queue, and Alex's configuration review of season 1 standing in channel 700,
+    posted a moment ago."""
+    from tests.core.test_review_outcomes_recorded import _standing
 
-    member = MagicMock(spec=discord.Member)
-    member.id = user_id
-    role = MagicMock()
-    role.id = ADMIN_ROLE
-    member.roles = [role] if league_admin else []
-    return member
+    return await _standing(tmp_path, CONFIG_REVIEW)
 
 
-def _view():
-    cog = MagicMock()
-    # Said outright: a press that reaches the helper goes through (#439).
-    cog._do_confirm_configuration = AsyncMock(return_value=True)
-    cog.bot.db_path = "/nonexistent/nowhere.db"
-    cog.bot.config_service.get_server_config = AsyncMock(return_value=_server_config())
-    view = _ConfirmConfigurationView(cog, REVIEWER)
-    view._season_id = SEASON_ID
+async def _team_list_since_the_review(env, monkeypatch, now: str = "as reviewed") -> None:
+    """Every standing review's row records the evidence its report was computed from, the team
+    list "as reviewed"; the season as it stands now has the team list as *now*."""
+    import json
+
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services import season_fingerprint_service as sfs
+
+    async with get_connection(env.db_path) as db:
+        await db.execute("UPDATE season_review_prompts SET evidence = ?",
+                         (json.dumps({TEAM_LIST: "as reviewed"}),))
+        await db.commit()
+
+    async def _now(*_args, **_kwargs):
+        return sfs.SeasonFingerprint({TEAM_LIST: now})
+
+    monkeypatch.setattr(sfs, "take_fingerprint", _now)
+
+
+def _confirm_view(env, *, goes_through: bool = True):
+    """Alex's review's ✅ Confirm configuration, built as the question's view is, on a cog whose
+    confirmation is recorded and goes through, or is refused at its own check."""
+    from tests.core.test_review_outcomes_recorded import _view_on
+
+    view, cog = _view_on(env, _ConfirmConfigurationView, "_do_confirm_configuration")
+    cog._do_confirm_configuration = AsyncMock(return_value=goes_through)
     return view, cog
 
 
-async def test_the_reviewer_may_confirm():
-    view, cog = _view()
-    interaction = _interaction()
-    interaction.user = _member(REVIEWER)
+def asking_the_take_down(env, cog, helper: str) -> None:
+    from tests.core.test_review_outcomes_recorded import asking_the_take_down as asking
 
-    await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
-
-    cog._do_confirm_configuration.assert_awaited_once()
+    asking(env, cog, helper)
 
 
-async def test_another_league_manager_may_not_confirm():
-    view, cog = _view()
-    interaction = _interaction()
-    interaction.user = _member(99)
-    interaction.response.is_done = MagicMock(return_value=False)
+def _press(env, user_id: int = REVIEWER, name: str = "Alex", *, question=None):
+    """A press of the button on *question* (Alex's Q unless given), in channel 700, by *name*."""
+    from tests.core.test_review_outcomes_recorded import _press_on
 
-    await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
-
-    cog._do_confirm_configuration.assert_not_awaited()
-    assert "Nothing has been confirmed" in interaction.response.send_message.await_args.args[0]
+    interaction = _press_on(env, user_id, name)
+    if question is not None:
+        interaction.message = question
+    return interaction
 
 
-async def _posted_review(tmp_path, bot):
-    """A posted configuration review whose button reaches the real confirmation, its prompt
-    recorded in a migrated database."""
-    from leaguebot.core.db.database import run_migrations
+async def _take_downs(env) -> list[dict]:
+    from tests.core.test_review_outcomes_recorded import _take_downs as take_downs
 
-    bot.db_path = str(tmp_path / "config-review.db")
-    await run_migrations(bot.db_path)
-    cog = _cog(bot)
-    view = _ConfirmConfigurationView(cog, REVIEWER)
-    view._server_id = SERVER_ID
-    view._season_id = SEASON_ID
-    report = [MagicMock(id=900 + n, delete=AsyncMock()) for n in range(2)]
-    message = MagicMock(id=999, delete=AsyncMock())
-    message.channel.id = 111
-    message.channel.send = AsyncMock()
-    view.carries(report)
-    await view.bind(message)
-    return view, message, report
+    return await take_downs(env)
 
 
-async def _prompt_rows(view) -> int:
+def _lines(env, mark: str) -> list[str]:
+    from tests.core.test_review_outcomes_recorded import _lines as lines
+
+    return lines(env, mark)
+
+
+async def _prompt_rows(env) -> int:
     from leaguebot.core.db.database import get_connection
 
-    async with get_connection(view._cog.bot.db_path) as db:
+    async with get_connection(env.db_path) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM season_review_prompts")
         (count,) = await cursor.fetchone()
     return count
 
 
-def _reviewer_press() -> MagicMock:
-    interaction = _interaction()
-    interaction.user = _member(REVIEWER)
-    interaction.client = None
-    return interaction
+async def test_the_reviewer_may_confirm(tmp_path, monkeypatch):
+    """Alex's configuration review stands in channel 700, posted a moment ago, the season as its
+    report described it. Alex, who ran it, presses ✅ Confirm configuration: the confirmation is
+    worked, once."""
+    env = await _standing_review(tmp_path)
+    await _team_list_since_the_review(env, monkeypatch)
+    view, cog = _confirm_view(env)
+
+    await _ConfirmConfigurationView.approve(view, _press(env), MagicMock())
+
+    cog._do_confirm_configuration.assert_awaited_once()
 
 
-async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path):
-    """Every review's button alike: a press refused at the press (here a fault found afresh)
-    leaves the review and its button standing, to be pressed again within its five minutes."""
-    bot = _bot(signup=True, signup_config=_signup_config(channel=None))
-    view, message, report = await _posted_review(tmp_path, bot)
-    interaction = _reviewer_press()
+async def test_another_league_manager_may_not_confirm(tmp_path):
+    """Sam, a league manager who neither ran Alex's configuration review nor is a league admin,
+    presses its ✅ Confirm configuration. Sam is refused privately, nothing is confirmed, and
+    the review is left alone: nothing deleted or posted, no take-down asked of the queue."""
+    from tests.support.change_queue import acknowledgement
 
-    await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
-
-    assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
-    bot.season_service.set_stage.assert_not_awaited()
-    for posted in [*report, message]:
-        posted.delete.assert_not_awaited()
-    assert view._message is message
-    assert not view.is_finished(), "the view was stopped, so a second press goes unheard"
-    assert await _prompt_rows(view) == 1
-
-
-async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path):
-    """The one press that ends the review: the configuration confirmed and the season moved on.
-    The review is deleted, its record forgotten and the view stopped."""
-    bot = _bot()
-    view, message, report = await _posted_review(tmp_path, bot)
-    interaction = _reviewer_press()
+    env = await _standing_review(tmp_path)
+    view, cog = _confirm_view(env)
+    interaction = _press(env, 99, "Sam")
 
     await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
 
-    bot.season_service.set_stage.assert_awaited_once()
-    for posted in [*report, message]:
-        posted.delete.assert_awaited_once()
-    assert view.is_finished()
-    assert await _prompt_rows(view) == 0
+    cog._do_confirm_configuration.assert_not_awaited()
+    assert "Nothing has been confirmed" in acknowledgement(interaction)
+    assert env.channel.deleted == [] and env.channel.sent == []
+    assert await _take_downs(env) == []
 
 
-async def test_confirming_one_review_ends_another_of_the_same_season_when_pressed(tmp_path):
-    """Two configuration reviews of one season stand; the newer is confirmed, and Confirm is
-    then pressed on the older. The season has moved on since the older was posted, so its
-    review ends as an expired one does: the expiry notice posted, one refusal line in the log
-    channel and no lapse line."""
-    from leaguebot.core.db.database import get_connection, run_migrations
+async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path, monkeypatch):
+    """Every review's button alike: Alex presses ✅ Confirm configuration a moment after the
+    question appears, the season unchanged, and the confirmation is refused at its own check (a
+    fault found afresh). The review and its button stand, to be pressed again within its five
+    minutes: nothing is deleted or posted, no take-down is asked of the queue, its row is kept
+    and its expiry timer is neither re-armed nor disarmed."""
+    from tests.core.test_review_outcomes_recorded import _expiry_timer_touched
 
-    bot = _bot()
-    bot.db_path = str(tmp_path / "two-reviews.db")
-    await run_migrations(bot.db_path)
-    async with get_connection(bot.db_path) as db:
-        await db.execute(
-            "INSERT INTO seasons (id, start_date, status, stage, season_number) "
-            "VALUES (?, '2026-03-01', 'SETUP', 'CONFIGURATION', 4)",
-            (SEASON_ID,),
+    env = await _standing_review(tmp_path)
+    await _team_list_since_the_review(env, monkeypatch)
+    view, cog = _confirm_view(env, goes_through=False)
+
+    await _ConfirmConfigurationView.approve(view, _press(env), MagicMock())
+
+    cog._do_confirm_configuration.assert_awaited_once()
+    assert env.channel.deleted == [] and env.channel.sent == []
+    assert await _take_downs(env) == []
+    assert await _prompt_rows(env) == 1
+    assert _expiry_timer_touched(env) == []
+
+
+async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, monkeypatch):
+    """The one press that ends the review: Alex presses ✅ Confirm configuration, the season
+    unchanged, and the real confirmation runs past its gates (no fault found afresh, signup off),
+    so the configuration is confirmed. By the time the confirmation's own work moves the season on,
+    the review's take-down has already been asked of the queue, ending confirmed and naming Q, R1
+    and R2; the button deletes nothing itself. Once the queue runs Q, R1 and R2 are deleted, the
+    review's row is forgotten, and neither an expiry notice nor a lapse line is posted."""
+    from types import MethodType
+
+    from tests.support.change_queue import run_queue
+
+    env = await _standing_review(tmp_path)
+    channel = env.channel
+    await _team_list_since_the_review(env, monkeypatch)
+    view, cog = _confirm_view(env)
+    # The real confirmation, on a cog whose gates pass: the season in configuration, no fault.
+    cog._get_pending = MagicMock(
+        return_value=PendingConfig(season_id=1, season_number=4, game_edition=25)
+    )
+    cog._configuration_faults = AsyncMock(return_value=[])
+    cog._do_confirm_configuration = MethodType(SeasonCog._do_confirm_configuration, cog)
+    env.bot.module_service.is_signup_enabled = AsyncMock(return_value=False)
+    asked_before: list[dict] = []
+
+    async def _move_on(*_args, **_kwargs):
+        asked_before.extend(await _take_downs(env))
+
+    env.bot.season_service.set_stage = AsyncMock(side_effect=_move_on)
+
+    await _ConfirmConfigurationView.approve(view, _press(env), MagicMock())
+
+    env.bot.season_service.set_stage.assert_awaited_once()
+    # Only a press that confirms takes the review down, so it is asked once the stage has moved
+    # and not before: a stage that refuses leaves the review standing (core :282).
+    assert asked_before == []
+    [payload] = await _take_downs(env)
+    assert (payload["ending"], payload["question_id"]) == ("confirmed", channel.q.id)
+    assert sorted(payload["report_ids"]) == sorted([channel.r1.id, channel.r2.id])
+    assert channel.deleted == []
+
+    await run_queue(env.bot)
+
+    assert {m.id for m in channel.deleted} == {channel.q.id, channel.r1.id, channel.r2.id}
+    assert channel.sent == []
+    assert await _prompt_rows(env) == 0
+    assert _lines(env, "⌛ ") == []
+
+
+async def test_confirming_one_review_ends_another_of_the_same_season_when_pressed(
+    tmp_path, monkeypatch
+):
+    """Two configuration reviews of season 1 stand in channel 700: Alex's older one (R1, R2, Q)
+    and a newer question Q2, both as the season stood. Alex confirms the newer, and the queue
+    takes it down. The season has moved on since, so when Alex then presses Confirm on the older
+    he is refused, privately, and nothing is confirmed; the older ends as an expired one does.
+    Once the queue runs, Q, R1 and R2 are deleted and the expiry notice pinging Alex posted,
+    once; the log holds one refusal line for the press and no lapse line."""
+    from datetime import datetime, timezone
+
+    from leaguebot.core.db.database import get_connection
+    from tests.support.change_queue import acknowledgement, post_in, run_queue
+    from tests.support.review_prompts import store_review_prompt
+
+    env = await _standing_review(tmp_path)
+    channel = env.channel
+    newer = post_in(channel, env.bot.user)
+    async with get_connection(env.db_path) as db:
+        await store_review_prompt(
+            db, season_id=1, channel_id=channel.id, message_id=newer.id, reviewer_id=REVIEWER,
+            review=CONFIG_REVIEW, posted_at=datetime.now(timezone.utc).isoformat(),
         )
         await db.commit()
-    bot.image_config_service.get_config = AsyncMock(return_value=None)
+    await _team_list_since_the_review(env, monkeypatch)
+    view, cog = _confirm_view(env)
+    asking_the_take_down(env, cog, "_do_confirm_configuration")
+    await _ConfirmConfigurationView.approve(view, _press(env, question=newer), MagicMock())
+    await run_queue(env.bot)
+    assert [m.id for m in channel.deleted] == [newer.id]
+    assert channel.sent == []
+    await _team_list_since_the_review(env, monkeypatch, now="moved on")
+    older_view, older_cog = _confirm_view(env)
+    pressing = _press(env)
 
-    async def _set_stage(season_id, target):
-        async with get_connection(bot.db_path) as db:
-            cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
-            if (await cursor.fetchone())["stage"] != "CONFIGURATION":
-                raise InvalidStageTransition("moved on")
-            await db.execute(
-                "UPDATE seasons SET stage = ? WHERE id = ?", (target.value, season_id)
-            )
-            await db.commit()
+    await _ConfirmConfigurationView.approve(older_view, pressing, MagicMock())
 
-    bot.season_service.set_stage = AsyncMock(side_effect=_set_stage)
-    cog = _cog(bot)
-
-    async def _review(message_id: int):
-        view = _ConfirmConfigurationView(cog, REVIEWER)
-        view._server_id = SERVER_ID
-        await view.record_fingerprint(SEASON_ID)
-        report = [MagicMock(id=message_id - 1, delete=AsyncMock())]
-        message = MagicMock(id=message_id, delete=AsyncMock())
-        message.channel.id = 111
-        message.channel.send = AsyncMock()
-        view.carries(report)
-        await view.bind(message)
-        return view, message, report
-
-    older, older_message, older_report = await _review(901)
-    newer, _newer_message, _newer_report = await _review(903)
-    confirming = _reviewer_press()
-    confirming.client = bot
-    await _ConfirmConfigurationView.approve(newer, confirming, MagicMock())
-    assert newer.is_finished()
-    bot.output_router.post_log.reset_mock()
-
-    pressing = _reviewer_press()
-    pressing.client = bot
-    await _ConfirmConfigurationView.approve(older, pressing, MagicMock())
-
-    older_message.delete.assert_awaited_once()
-    older_report[0].delete.assert_awaited_once()
-    assert "your review has expired" in older_message.channel.send.await_args.args[0]
-    assert older.is_finished()
-    assert await _prompt_rows(older) == 0
-    lines = [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
-    assert [line[:1] for line in lines] == ["⛔"], lines
-    assert not any(line.startswith("⌛") for line in lines), lines
+    older_cog._do_confirm_configuration.assert_not_awaited()
+    assert "Nothing has been confirmed" in acknowledgement(pressing)
+    await run_queue(env.bot)
+    assert {m.id for m in channel.deleted} == {newer.id, channel.q.id, channel.r1.id,
+                                               channel.r2.id}
+    [notice] = channel.sent
+    assert "<@4242> your review has expired" in notice
+    assert len(_lines(env, "⛔ ")) == 1, _lines(env, "")
+    assert _lines(env, "⌛ ") == []
+    assert await _prompt_rows(env) == 0
 
 
-async def test_an_expired_configuration_review_names_its_own_command():
-    view, _ = _view()
-    message = MagicMock()
-    message.delete = AsyncMock()
-    message.channel.send = AsyncMock()
-    view._message = message
+async def test_an_expired_configuration_review_names_its_own_command(tmp_path):
+    """Alex's configuration review is left for its five minutes: its expiry timer fires for Q.
+    Once the queue takes it down, the expiry notice it posts in channel 700 names the command to
+    run again, `/season config-review`."""
+    from tests.core.test_review_outcomes_recorded import _expiry_callback
+    from tests.support.change_queue import run_queue
 
-    await view.on_timeout()
+    env = await _standing_review(tmp_path)
 
-    assert "/season config-review" in message.channel.send.await_args.args[0]
+    await _expiry_callback(env)(env.channel.q.id)
+    await run_queue(env.bot)
+
+    [notice] = env.channel.sent
+    assert CONFIG_REVIEW in notice
 
 
 # ── The report ─────────────────────────────────────────────────────────────────────
+#
+# The command computes the report and the evidence it is computed from, and asks the queue to post
+# the review, `season.review.post`, with the manager's interaction (#439, slice 6b: C96): the
+# report's sections and the question are posted by that change's jobs, in order, and the
+# question's view is the builder's to make (C93). These run the command on a cog whose change
+# queue records what it is asked, and read the review from the request.
+
+POST = "season.review.post"
+#: The channel the manager runs the command in, where the review is posted.
+COMMAND_CHANNEL = 111
 
 
 class _RecordedView:
-    """Stands in for the confirm view, recording what the review did with it."""
+    """Stands in for the confirm view, recording any the command builds itself: since #439 the
+    question's view is made by the review's change, so a command that builds one has posted its
+    question itself."""
 
     made: list["_RecordedView"] = []
 
@@ -552,27 +648,60 @@ def _report_bot(**kwargs) -> MagicMock:
     bot.signup_module_service.get_slots = AsyncMock(
         return_value=[SimpleNamespace(display_label="Sunday 20:00")]
     )
+    bot.change_queue.ask = AsyncMock(return_value=1)
     return bot
 
 
-async def _report(cog, interaction, monkeypatch):
+async def _review_asked(cog, interaction, monkeypatch) -> dict:
+    """Run `/season config-review` as the manager in channel 111, the season's evidence the team
+    list "as reported", and return the review it asked the queue to post: one request, of
+    `season.review.post`, carrying the manager's interaction."""
     import leaguebot.core.cogs.season_cog as season_cog
+    from leaguebot.core.services import season_fingerprint_service as sfs
+
+    async def _evidence(*_args, **_kwargs):
+        return sfs.SeasonFingerprint({"the team list": "as reported"})
 
     _RecordedView.made = []
     monkeypatch.setattr(season_cog, "_ConfirmConfigurationView", _RecordedView)
+    monkeypatch.setattr(sfs, "take_fingerprint", _evidence)
+    interaction.client = cog.bot
+    interaction.channel_id = COMMAND_CHANNEL
     interaction.followup.send = AsyncMock(return_value=MagicMock())
-    sent = interaction.followup.send
     await undecorate(SeasonCog.season_config_review)(cog, interaction)
-    return [call.args[0] for call in sent.await_args_list]
+    asked = [call for call in cog.bot.change_queue.ask.await_args_list
+             if (call.kwargs.get("kind") or call.args[0]) == POST]
+    assert len(asked) == 1, cog.bot.change_queue.ask.await_args_list
+    [call] = asked
+    assert call.kwargs.get("interaction") is interaction
+    assert _RecordedView.made == []
+    return call.kwargs.get("payload") or call.args[1]
+
+
+def _texts(review: dict) -> list[str]:
+    """What the review posts, in order: its report's sections, then its question, if any."""
+    return [*review["report"], *([review["question"]] if review.get("question") else [])]
+
+
+async def _report(cog, interaction, monkeypatch) -> list[str]:
+    return _texts(await _review_asked(cog, interaction, monkeypatch))
 
 
 async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(monkeypatch):
+    """Manager runs `/season config-review` in channel 111 on a sound configuration of season 31
+    (test mode on, signup on, results off; teams Alpha with its role, Reserve with none). The
+    command posts nothing itself: it asks the queue to post the review in channel 111, with the
+    manager's interaction, naming season 31, the manager as reviewer and `/season config-review`,
+    and carrying the evidence its report was computed from. The report's first section heads the
+    review and says what is on and off and which role each team has, warning of the reserve
+    team's missing role; the review ends in the question asking to confirm the configuration."""
     bot = _report_bot(signup=True, test_mode=True)
     cog = _cog(bot)
     interaction = _interaction()
 
-    messages = await _report(cog, interaction, monkeypatch)
+    review = await _review_asked(cog, interaction, monkeypatch)
 
+    messages = _texts(review)
     report = messages[0]
     assert "Configuration Review (Season #4 — F1 25)" in report
     assert "Test mode: ✅ On" in report
@@ -582,11 +711,10 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     assert "Reserve → no role" in report
     assert "Reserve team has no role assigned" in report
     assert "Do you confirm this season's configuration?" in messages[-1]
-
-    (view,) = _RecordedView.made
-    view.record_fingerprint.assert_awaited_once_with(SEASON_ID)
-    view.bind.assert_awaited_once()
-    view.carries.assert_called_once()
+    assert (review["channel_id"], review["season_id"]) == (COMMAND_CHANNEL, SEASON_ID)
+    assert (review["reviewer_id"], review["review"]) == (REVIEWER, "/season config-review")
+    assert review["evidence"]
+    interaction.followup.send.assert_not_awaited()
 
 
 async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
@@ -595,6 +723,8 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     """The half of #409 folded in from the configuration review. Test mode attaches Standard
     and Half Points when it is enabled and at no other moment (decided 2026-09-23), and the
     review once promised them "on approval" while refusing in the same report for want of one.
+    A test season with results on and no points configuration attached: the review asked of the
+    queue says none is attached, promises nothing, refuses for want of one, and asks no question.
     """
     from leaguebot.core.db.database import run_migrations
 
@@ -611,13 +741,14 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     assert "**Points Configs:** *(none attached)*" in text
     assert "auto-seeded" not in text
     assert "No points configuration is attached to this season" in text
-    assert _RecordedView.made == []
+    assert "Do you confirm this season's configuration?" not in text
 
 
 @pytest.mark.parametrize("signup", [True, False])
 async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, signup):
-    """The one review that reports them (issue #276). They are the league's, so they are
-    shown whether or not signup is on, and confirming the configuration fixes them."""
+    """The one review that reports them (issue #276). They are the league's, so the review asked
+    of the queue shows them whether or not signup is on, and confirming the configuration fixes
+    them."""
     cog = _cog(_report_bot(signup=signup))
 
     messages = await _report(cog, _interaction(), monkeypatch)
@@ -627,7 +758,9 @@ async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, 
 
 
 async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
-    """The placements review's subsections, save the divisions, in the same words (#220)."""
+    """The placements review's subsections, save the divisions, in the same words (#220): with
+    signup, results, attendance and weather on, the review asked of the queue carries each
+    module's configuration."""
     import leaguebot.core.cogs.season_cog as season_cog
     from leaguebot.weather.services import weather_config_service
 
@@ -662,6 +795,7 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
 
 
 async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
+    """With every module off, the review asked of the queue carries no module's configuration."""
     cog = _cog(_report_bot())
 
     text = "\n".join(await _report(cog, _interaction(), monkeypatch))
@@ -671,6 +805,7 @@ async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
 
 
 async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch):
+    """With the image module on, the review asked of the queue carries its outputs."""
     bot = _report_bot(images=True)
     cog = _cog(bot)
     cog._build_image_review_section = AsyncMock(return_value=["**Image outputs**", "  lineup: on"])
@@ -682,6 +817,9 @@ async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch)
 
 
 async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
+    """Signup is on and the league's base role is unset. The review asked of the queue ends in
+    the faults, naming the base role and `/bot base-role`, and saying to run
+    `/season config-review` again once they are put right; it asks no question to confirm."""
     bot = _report_bot(signup=True, roles=(None, 3))
     cog = _cog(bot)
 
@@ -690,13 +828,15 @@ async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     assert "cannot be confirmed yet" in messages[-1]
     assert "**base role** — `/bot base-role`" in messages[-1]
     assert "/season config-review" in messages[-1]
-    assert _RecordedView.made == []
+    assert not any("Do you confirm this season's configuration?" in m for m in messages)
 
 
 async def test_the_followup_is_restored_after_the_report(monkeypatch):
-    """The review wraps the followup to collect its report; a later reply must not be caught."""
+    """The review wraps the followup to collect what it says privately; a later reply must not be
+    caught."""
     cog = _cog(_report_bot())
     interaction = _interaction()
+    interaction.client = cog.bot
 
     import leaguebot.core.cogs.season_cog as season_cog
 
@@ -780,49 +920,55 @@ async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass(monkeypatch)
 # ── The button, on a season changed since the report ───────────────────────────────
 
 
-async def test_a_configuration_changed_since_the_review_is_not_confirmed(monkeypatch):
-    import leaguebot.core.services.season_fingerprint_service as fingerprints
+async def test_a_configuration_changed_since_the_review_is_not_confirmed(tmp_path, monkeypatch):
+    """Alex's configuration review stands, its row recording the team list as its report
+    described it; the team list has changed since. Alex presses ✅ Confirm configuration a moment
+    after the question appeared. He is refused, privately, the reply naming the team list as
+    changed and `/season config-review` as the command to run again, and nothing is confirmed.
+    The button deletes nothing itself: it asks the queue to take the review down, ending
+    refused."""
+    from tests.support.change_queue import acknowledgement
 
-    view, cog = _view()
-    view._fingerprint = MagicMock()
-    view._fingerprint.differs_from = MagicMock(return_value=["the team list"])
-    view._expire_now = AsyncMock()
-    monkeypatch.setattr(fingerprints, "take_fingerprint", AsyncMock(return_value=MagicMock()))
-    interaction = _interaction()
-    interaction.user = _member(REVIEWER)
-    interaction.response.is_done = MagicMock(return_value=False)
+    env = await _standing_review(tmp_path)
+    await _team_list_since_the_review(env, monkeypatch, now="changed")
+    view, cog = _confirm_view(env)
+    interaction = _press(env)
 
     await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
 
     cog._do_confirm_configuration.assert_not_awaited()
-    reply = interaction.response.send_message.await_args.args[0]
-    assert "• the team list" in reply
+    reply = acknowledgement(interaction)
+    assert f"• {TEAM_LIST}" in reply
     assert "`/season config-review`" in reply
-    view._expire_now.assert_awaited_once()
+    assert env.channel.deleted == []
+    [payload] = await _take_downs(env)
+    assert (payload["ending"], payload["question_id"]) == ("refused", env.channel.q.id)
 
 
-async def test_an_unchanged_configuration_is_confirmed_and_its_report_cleared(monkeypatch):
-    import leaguebot.core.services.season_fingerprint_service as fingerprints
+async def test_an_unchanged_configuration_is_confirmed_and_its_report_cleared(
+    tmp_path, monkeypatch
+):
+    """Alex presses ✅ Confirm configuration on his review, the team list as its report described
+    it. The confirmation is worked once, handed the press and the button's own name (which it
+    records any refusal under), and the review's take-down is asked of the queue, ending
+    confirmed and naming Q, R1 and R2."""
+    from leaguebot.core.cogs.season_cog import _review_button
 
-    view, cog = _view()
-    view._fingerprint = MagicMock()
-    view._fingerprint.differs_from = MagicMock(return_value=[])
-    view._forget = AsyncMock()
-    view._clear_report = AsyncMock()
-    monkeypatch.setattr(fingerprints, "take_fingerprint", AsyncMock(return_value=MagicMock()))
-    interaction = _interaction()
-    interaction.user = _member(REVIEWER)
+    env = await _standing_review(tmp_path)
+    channel = env.channel
+    await _team_list_since_the_review(env, monkeypatch)
+    view, cog = _confirm_view(env)
+    asking_the_take_down(env, cog, "_do_confirm_configuration")
+    interaction = _press(env)
 
     await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
 
-    from leaguebot.core.cogs.season_cog import _review_button
-
-    # The button passes its own name, which the helper records any refusal under.
     cog._do_confirm_configuration.assert_awaited_once_with(
-        interaction, what=_review_button("Confirm configuration", "/season config-review")
+        interaction, what=_review_button("Confirm configuration", CONFIG_REVIEW)
     )
-    view._forget.assert_awaited_once()
-    view._clear_report.assert_awaited_once()
+    [payload] = await _take_downs(env)
+    assert (payload["ending"], payload["question_id"]) == ("confirmed", channel.q.id)
+    assert sorted(payload["report_ids"]) == sorted([channel.r1.id, channel.r2.id])
 
 
 @pytest.mark.parametrize(
@@ -901,20 +1047,21 @@ async def test_every_config_review_refusal_is_recorded(stage, set_up):
     ]
 
 
-async def test_a_posted_config_review_writes_one_line_naming_who_ran_it(monkeypatch):
-    """A review that posts its question writes one line naming who ran it (#482, criterion 6),
-    so a later lapse line reads against it."""
+async def test_a_posted_config_review_writes_no_line_of_its_own_and_asks_the_review_as_the_manager_s(
+    monkeypatch,
+):
+    """Manager runs `/season config-review` on a sound configuration. The command writes no line
+    to the log channel itself, no refusal and no "Review posted": the review is asked of the
+    queue as Manager's, with his interaction, naming him as reviewer and `/season config-review`,
+    and the line naming who ran it is written once its question is posted (#482, criterion 6)."""
     bot = _report_bot(signup=True, test_mode=True)
     cog = _cog(bot)
     interaction = _run_by_the_manager(bot, _interaction())
 
-    await _report(cog, interaction, monkeypatch)
+    review = await _review_asked(cog, interaction, monkeypatch)
 
-    (view,) = _RecordedView.made
-    view.bind.assert_awaited_once()
-    lines = [line for line in _logged(bot) if "/season config-review" in line]
-    assert len(lines) == 1
-    assert lines[0].startswith(f"Manager (<@{REVIEWER}>) | /season config-review")
+    assert (review["reviewer_id"], review["review"]) == (REVIEWER, "/season config-review")
+    assert not [line for line in _logged(bot) if "Review posted" in line]
     assert not any(line.startswith("⛔") for line in _logged(bot))
 
 

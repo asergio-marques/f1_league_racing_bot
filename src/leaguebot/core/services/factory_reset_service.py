@@ -30,7 +30,11 @@ import discord
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services import backup_service
-from leaguebot.core.services.change_queue import carry_job_numbering, highest_job_number
+from leaguebot.core.services.change_queue import (
+    ChangeQueue,
+    carry_job_numbering,
+    highest_job_number,
+)
 from leaguebot.core.services.channel_registry_service import DIVISION_SOURCES, SERVER_SOURCES
 from leaguebot.core.services.in_memory_state import clear_in_memory_state
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -164,7 +168,12 @@ async def gather_targets(db_path: str) -> DiscordTargets:
 # ── The wipe ──────────────────────────────────────────────────────────────
 
 
-async def wipe(db_path: str, scheduler_service, bot: LeagueBot | None = None) -> None:
+async def wipe(
+    db_path: str,
+    scheduler_service,
+    bot: LeagueBot | None = None,
+    queue: ChangeQueue | None = None,
+) -> None:
     """Return the database, the scheduled work and the memory to a fresh install.
 
     **The database is replaced by a freshly migrated one, not emptied table by table.** A
@@ -176,10 +185,13 @@ async def wipe(db_path: str, scheduler_service, bot: LeagueBot | None = None) ->
 
     **One counter is carried over: the job number.** A job's number is never reused, so the fresh
     database is told the highest the live one has issued before it replaces it.
+
+    *bot* and *queue* travel together: the memory is cleared where both are given, the command
+    handing the queue on to the clear, and left alone otherwise.
     """
     scheduler_service.cancel_all()
-    if bot is not None:
-        clear_in_memory_state(bot)
+    if bot is not None and queue is not None:
+        clear_in_memory_state(bot, queue=queue)
 
     live = Path(db_path)
     fresh = live.with_name(f"{live.stem}.fresh.db")
@@ -256,6 +268,12 @@ async def clean_discord(
 
     Channels are visited in the order `gather_targets` gives, which is sorted, so a report
     of where it stopped reads the same against a second run.
+
+    **It stays off the change queue**, though it deletes messages and channels (named in
+    `POSTS_OFF_THE_QUEUE`): the reset empties the database the queue lives in and takes the
+    channels and roles with it, so no log channel remains to carry a notice and no lane to hold a
+    job for Retry and Discard. A refusal is therefore not a stop but a fault in *outcome*, which
+    the report names, and the run goes on.
     """
     moment = now or datetime.now(timezone.utc)
     outcome = CleanOutcome(total=len(targets.created) + len(targets.channels))
@@ -294,7 +312,11 @@ async def clean_discord(
 
 
 async def _delete_own_messages(channel, bot_user_id: int, now: datetime) -> int:
-    """Delete the bot's messages in *channel*: in bulk where Discord allows, singly where not."""
+    """Delete the bot's messages in *channel*: in bulk where Discord allows, singly where not.
+
+    Off the change queue for the reason `clean_discord` gives, which calls it: a refusal ends this
+    channel's clean-up and is reported as a fault of the reset, never retried.
+    """
     deleted = 0
     batch: list = []
     async for message in channel.history(limit=None):

@@ -42,6 +42,7 @@ a `Modal`: apt's discord.py calls `asyncio.get_running_loop()` in the constructo
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -54,6 +55,14 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.penalty_service import StagedPenalty
 from leaguebot.results.services.penalty_wizard import AddPenaltyModal, PenaltyReviewState
+from tests.support.change_queue import (
+    acknowledgement,
+    attach_queue,
+    league_double,
+    member_interaction,
+    run_queue,
+    updated_reply,
+)
 from tests.support.teams import seed_team_instances
 
 SERVER_ID = 11208
@@ -62,6 +71,7 @@ DIVISION_ID = 11
 ROUND_ID = 5
 DRIVER = 4001
 STRANGER = 4099
+NOW = datetime(2026, 6, 1, 20, 0, tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -151,36 +161,39 @@ def _state(db_path: str, *, staged=(), appeals=()):
     return state
 
 
-def _interaction():
-    """A submission by the league manager Alex (id 77), answering as Discord's does — not done
-    until it replies or defers — and connected to a log channel of its own."""
-    answered = {"done": False}
-
-    async def _answer(*_args, **_kwargs):
-        answered["done"] = True
-
-    interaction = MagicMock()
-    interaction.user = MagicMock()
-    interaction.user.id = 77
-    interaction.user.display_name = "Alex"
-    interaction.client = MagicMock()
-    interaction.client.output_router = MagicMock()
-    interaction.client.output_router.post_log = AsyncMock(return_value=None)
-    interaction.response = MagicMock()
-    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
-    interaction.response.send_message = AsyncMock(side_effect=_answer)
-    interaction.response.defer = AsyncMock(side_effect=_answer)
-    interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
+def _interaction(db_path: str):
+    """A submission by the league manager Alex (id 77) in the review's submission channel (1),
+    answering as Discord's does — not done until it replies or defers. Its bot carries a real
+    change queue on *db_path* and the league's log channel, so a staging asked of the queue
+    (#439, slice 6b, C54) runs when `_submit` runs the queue, and every line the form or its
+    change writes lands in `bot.log_channel`."""
+    bot = league_double(db_path)
+    attach_queue(bot, db_path, now=NOW)
+    user = MagicMock()
+    user.id = 77
+    user.display_name = "Alex"
+    user.mention = "<@77>"
+    user.bot = False
+    interaction = member_interaction(bot, user=user)
+    interaction.channel_id = 1
     return interaction
 
 
 def _replied(interaction) -> str:
+    """Everything Alex was answered: the acknowledgement, its updates and any follow-ups."""
     return "\n".join(
-        str(call.args[0])
-        for call in interaction.followup.send.await_args_list
-        if call.args
+        part for part in (acknowledgement(interaction), updated_reply(interaction)) if part
     )
+
+
+def _lines(interaction) -> list[str]:
+    """The lines written to the log channel, as the router writes them: the mentions it wraps in
+    backticks unwrapped and the rule closing each entry dropped."""
+    lines = []
+    for sent in interaction.client.log_channel.sent:
+        kept = [part for part in str(sent).splitlines() if part.strip("―")]
+        lines.append("\n".join(kept).replace("`<@", "<@").replace(">`", ">"))
+    return [line for line in lines if line]
 
 
 async def _submit(
@@ -193,13 +206,15 @@ async def _submit(
     description: str = "Contact at turn one",
     justification: str = "Reviewed the footage",
 ):
-    """Build the modal, fill it in, and submit — with the prompt refresh stubbed."""
+    """Build the modal, fill it in, and submit, then run the change queue: a staging is a change
+    of its own (#439, slice 6b, C54), applied when its turn comes. The prompt refresh is stubbed."""
     modal = AddPenaltyModal(state, session, use_appeals_staging=appeals)
     modal.driver_input._value = driver
     modal.penalty_input._value = penalty
     modal.description_input._value = description
     modal.justification_input._value = justification
-    interaction = _interaction()
+    interaction = _interaction(state.db_path)
+    state.bot = interaction.client
 
     with patch(
         "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock(return_value=None)
@@ -207,6 +222,7 @@ async def _submit(
         "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock(return_value=None)
     ):
         await modal.on_submit(interaction)
+        await run_queue(interaction.client)
     return interaction
 
 
@@ -382,7 +398,10 @@ async def test_the_prompt_is_refreshed_for_the_pass_being_staged_into(tmp_path):
     ) as penalty_refresh, patch(
         "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock(return_value=None)
     ) as appeals_refresh:
-        await modal.on_submit(_interaction())
+        interaction = _interaction(state.db_path)
+        state.bot = interaction.client
+        await modal.on_submit(interaction)
+        await run_queue(interaction.client)
 
     appeals_refresh.assert_awaited_once()
     penalty_refresh.assert_not_awaited()
@@ -737,13 +756,13 @@ async def test_every_refused_penalty_or_correction_form_is_recorded(tmp_path, ap
     interaction = await _submit(state, appeals=appeals, **typed)
 
     assert state.staged == [] and state.staged_appeals == []
-    (replied,) = [call.args[0] for call in interaction.followup.send.await_args_list]
+    replied = _replied(interaction)
     assert "Staged" not in replied
     if moved_on:
         assert "already been approved" in replied
     reason = replied.splitlines()[0].split(" ", 1)[1]
     title = f"{'Add Correction' if appeals else 'Add Penalty'} — Feature Race"
-    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    (line,) = _lines(interaction)
     assert line.startswith(f"⛔ the “{title}” form"), line
     assert line.endswith(f" refused for Alex (<@77>) — {reason}"), line
 
@@ -759,14 +778,10 @@ async def test_a_correction_is_not_staged_once_the_appeals_are_approved(tmp_path
     interaction = await _submit(state, penalty="+3s", appeals=True)
 
     assert state.staged == [] and state.staged_appeals == []
-    (replied,) = [
-        str(call.args[0])
-        for call in interaction.response.send_message.await_args_list
-        + interaction.followup.send.await_args_list
-    ]
+    replied = _replied(interaction)
     assert "Staged" not in replied
     reason = replied.splitlines()[0].split(" ", 1)[1]
-    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    (line,) = _lines(interaction)
     assert line.startswith("⛔ the “Add Correction — Feature Race” form"), line
     assert line.endswith(f" refused for Alex (<@77>) — {reason}"), line
 
@@ -787,16 +802,11 @@ async def test_staging_writes_one_line(tmp_path, appeals):
     session and the penalty."""
     round_status = "AWAITING_APPEAL_VERDICTS" if appeals else "AWAITING_REPORT_VERDICTS"
     state = _state(await _make_db(tmp_path, round_status=round_status))
-    state.bot.output_router.post_log = AsyncMock(return_value=None)
 
     interaction = await _submit(state, appeals=appeals)
 
     assert len(state.staged_appeals if appeals else state.staged) == 1
-    (line,) = [
-        call.args[0]
-        for call in interaction.client.output_router.post_log.await_args_list
-        + state.bot.output_router.post_log.await_args_list
-    ]
+    (line,) = _lines(interaction)
     assert not line.startswith(("⛔", "↩️", "⌛")), line
     review = "appeals review" if appeals else "penalty review"
     for fragment in (

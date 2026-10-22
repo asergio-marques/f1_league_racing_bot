@@ -24,7 +24,7 @@ from tests.core.test_change_queue import (  # noqa: F401 — `env` is the fixtur
     _type,
     env,
 )
-from tests.support.change_queue import http_error, run_queue, step_rows, stopped_job
+from tests.support.change_queue import http_error, in_a_job, run_queue, step_rows, stopped_job
 from tests.support.review_league import channel
 
 CALENDAR_CHANNEL = 601
@@ -183,11 +183,13 @@ async def test_a_copy_a_failed_record_left_is_removed_before_the_next_try(env, r
 
     if refused:
         with pytest.raises(StepFailedOnDiscord) as failed:
-            await standing_posts.remove_kept(env.bot, kept)
+            with in_a_job():
+                await standing_posts.remove_kept(env.bot, kept)
         assert failed.value.result["new"] in (NEW, [NEW])
         assert failed.value.result["channel_id"] == CALENDAR_CHANNEL
         assert NEW in calendar.messages
     else:
-        await standing_posts.remove_kept(env.bot, kept)
+        with in_a_job():
+            await standing_posts.remove_kept(env.bot, kept)
         assert NEW not in calendar.messages
     assert OLD in calendar.messages

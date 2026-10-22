@@ -38,17 +38,22 @@ accepted_may_still_step_in_after_the_deadline` is the one that would catch it.
 **Times are taken from the clock, never pinned, where the handler is driven.** The handler
 reads `datetime.now` itself and takes no `now` parameter, so a fixture that seeded a fixed date
 would pass today and fail silently once it went by. Every round it is driven against is
-scheduled relative to the real present. `AttendanceService.answer_rsvp`, which applies the lock
-rules and writes the answer in one transaction (#482), takes `now`, and its tests pin it.
+scheduled relative to the real present. `AttendanceService.answer_rsvp_on`, which applies the
+lock rules and writes the answer in the answer's save (#482, #439), takes `now`, and its tests pin
+it.
 
-**Two presses at once are run against a real database** (#482). `_HeldWrite` holds the first
-press's write open, uncommitted, until the second press reaches its own, so the order is fixed
-rather than left to the scheduler: the second press must see the first's answer, not the one
-the first is replacing.
+**Two presses at once are taken in turn** (#482). Each press asks the change queue for its
+answer (#439, slice 6b), which runs one change at a time, so the second press sees the first's
+answer, not the one the first is replacing.
+
+**Every press goes through the change queue** (#439, slice 6b). A press asks an
+`attendance.check_in.answer` change; its jobs save the answer and redraw the call when the queue
+runs them. Each test presses (`_press`), then runs the queue, and reads what the driver was told
+from the acknowledgement and its update together (`_reply`). The press carries the moment it was
+made, and its answer is judged against the locks at that moment.
 """
 from __future__ import annotations
 
-import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -58,6 +63,13 @@ import pytest
 from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import AttendanceService
+from tests.support.change_queue import (
+    acknowledgement,
+    attach_queue,
+    league_double,
+    run_queue,
+    updated_reply,
+)
 
 SERVER_ID = 8508
 SEASON_ID = 1
@@ -72,7 +84,7 @@ STRANGER_PROFILE = 303
 #: The configured deadline, in hours before the round.
 DEADLINE_HOURS = 6
 
-#: The moment `answer_rsvp` is told it is, in the tests that call it directly.
+#: The moment `answer_rsvp_on` is told it is, in the tests that call it directly.
 NOW = datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc)
 
 
@@ -253,33 +265,59 @@ async def _accepted_at(db_path: str, profile_id: int) -> str | None:
 
 
 def _make_interaction(db_path: str, profile_id: int) -> MagicMock:
-    """A pressed button, from *profile_id*, on a bot wired to *db_path*.
+    """A pressed button, from *profile_id*, on a bot wired to *db_path*, made now.
 
     The driver's Discord id and their profile id are the same number in this fixture, which
     is what `_make_db` seeds — it keeps the lookup by Discord id honest without a second
-    mapping to keep in step.
+    mapping to keep in step. The bot carries a change queue on *db_path* whose clock reads the
+    real present; its log lines are recorded by the router's `post_log`.
     """
-    bot = MagicMock()
-    bot.db_path = db_path
+    now = datetime.now(timezone.utc)
+    bot = league_double(db_path)
     bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.get_channel = MagicMock(return_value=None)
     bot.output_router.post_log = AsyncMock(return_value=None)
+    attach_queue(bot, db_path, now=now)
+    # The lines the queue writes reach the log channel the database names (300), whose sends are
+    # the router's `post_log` record, where `_logged` reads them with the refusals' (#439), as the
+    # direct posts wrote them.
+    import discord
+
+    log_channel = MagicMock(spec=discord.TextChannel)
+
+    async def _send(content=None, **_kwargs):
+        # The queue's delivery names the member in code format and ends a line with a rule.
+        await bot.output_router.post_log(content.replace("`", "").split("\n\u2015")[0])
+        return MagicMock(id=1)
+
+    log_channel.send = _send
+    bot.fetch_channel = AsyncMock(return_value=log_channel)
 
     interaction = MagicMock()
     interaction.client = bot
     interaction.guild_id = SERVER_ID
+    interaction.created_at = now
     interaction.user.id = profile_id
     interaction.user.display_name = "Driver"
     interaction.response.send_message = AsyncMock(return_value=None)
     interaction.response.is_done = MagicMock(
         side_effect=lambda: bool(interaction.response.send_message.await_count)
     )
+    interaction.edit_original_response = AsyncMock(return_value=None)
+    interaction.followup.send = AsyncMock(return_value=None)
     return interaction
 
 
+async def _press(interaction: MagicMock, custom_id: str) -> None:
+    """The driver presses the button *custom_id*, and the queue runs what the press asked."""
+    await handle_rsvp_button(interaction, custom_id)
+    await run_queue(interaction.client)
+
+
 def _reply(interaction: MagicMock) -> str:
-    return str(interaction.response.send_message.await_args.args[0])
+    """What the driver was told: the acknowledgement, then its update."""
+    return acknowledgement(interaction) + "\n" + updated_reply(interaction)
 
 
 async def _ignore_answers(db_path: str) -> None:
@@ -297,54 +335,6 @@ async def _ignore_answers(db_path: str) -> None:
         await db.commit()
 
 
-def _writes_an_answer(sql: str) -> bool:
-    statement = " ".join(sql.split()).upper()
-    return statement.startswith("BEGIN IMMEDIATE") or (
-        statement.startswith(("INSERT", "UPDATE")) and "DRIVER_ROUND_ATTENDANCE" in statement
-    )
-
-
-class _HeldWrite:
-    """Holds the first answer's write open, uncommitted, until a second press reaches its own.
-
-    The first connection to begin writing an answer is the first press's. Its commit waits
-    until another connection begins writing an answer, so the second press runs while the
-    first holds the write lock and has not saved. `after_the_first` starts the second press
-    only once the first holds it.
-    """
-
-    def __init__(self, monkeypatch) -> None:
-        import aiosqlite
-
-        self.first = None
-        self.holding = asyncio.Event()
-        self.second_reached = asyncio.Event()
-        real_execute = aiosqlite.Connection.execute
-        real_commit = aiosqlite.Connection.commit
-        held = self
-
-        def execute(connection, sql, *args, **kwargs):
-            if _writes_an_answer(sql):
-                if held.first is None:
-                    held.first = connection
-                elif connection is not held.first:
-                    held.second_reached.set()
-            return real_execute(connection, sql, *args, **kwargs)
-
-        async def commit(connection):
-            if connection is held.first and not held.holding.is_set():
-                held.holding.set()
-                await asyncio.wait_for(held.second_reached.wait(), timeout=10)
-            return await real_commit(connection)
-
-        monkeypatch.setattr(aiosqlite.Connection, "execute", execute)
-        monkeypatch.setattr(aiosqlite.Connection, "commit", commit)
-
-    async def after_the_first(self, press):
-        await asyncio.wait_for(self.holding.wait(), timeout=10)
-        return await press()
-
-
 # ---------------------------------------------------------------------------
 # The custom id
 # ---------------------------------------------------------------------------
@@ -355,7 +345,7 @@ async def test_an_unparseable_button_id_says_so_rather_than_raising(tmp_path):
     A malformed one must not take the interaction down with an unhandled exception."""
     interaction = _make_interaction(await _make_db(tmp_path, starts_in=timedelta(days=3)), 1)
 
-    await handle_rsvp_button(interaction, "nonsense")
+    await _press(interaction, "nonsense")
 
     assert "invalid button ID" in _reply(interaction)
 
@@ -365,7 +355,7 @@ async def test_an_unknown_action_says_so(tmp_path):
     bot still sitting on a message in the channel."""
     interaction = _make_interaction(await _make_db(tmp_path, starts_in=timedelta(days=3)), 1)
 
-    await handle_rsvp_button(interaction, f"rsvp_maybe_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_maybe_r{ROUND_ID}")
 
     assert "unknown action" in _reply(interaction)
 
@@ -379,7 +369,7 @@ async def test_someone_with_no_driver_profile_is_turned_away(tmp_path):
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     interaction = _make_interaction(db_path, 999999)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "not registered as a driver" in _reply(interaction)
 
@@ -394,7 +384,7 @@ async def test_a_call_no_longer_standing_records_no_answer(tmp_path):
         await db.commit()
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "no longer open" in _reply(interaction)
     assert await _status(db_path, FULL_TIME_PROFILE) == before
@@ -410,7 +400,7 @@ async def test_a_cancelled_round_records_no_answer(tmp_path):
         await db.commit()
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "no longer open" in _reply(interaction)
     assert await _status(db_path, FULL_TIME_PROFILE) == before
@@ -422,7 +412,7 @@ async def test_a_driver_of_another_division_is_turned_away(tmp_path):
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     interaction = _make_interaction(db_path, STRANGER_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "not a member of this division" in _reply(interaction)
 
@@ -447,7 +437,7 @@ async def test_a_driver_whose_placement_is_not_confirmed_is_turned_away(tmp_path
     await _uncommit_placement(db_path, FULL_TIME_PROFILE)
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "not a member of this division" in _reply(interaction)
     assert await _status(db_path, FULL_TIME_PROFILE) is None
@@ -458,7 +448,7 @@ async def test_a_button_for_a_deleted_round_says_so(tmp_path):
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, "rsvp_accept_r9999")
+    await _press(interaction, "rsvp_accept_r9999")
 
     assert "no longer exists" in _reply(interaction)
 
@@ -476,7 +466,7 @@ async def test_each_button_records_its_own_status(tmp_path, action, expected):
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_{action}_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_{action}_r{ROUND_ID}")
 
     assert await _status(db_path, FULL_TIME_PROFILE) == expected
     assert "has been updated" in _reply(interaction)
@@ -487,7 +477,7 @@ async def test_a_driver_may_change_their_answer_before_the_deadline(tmp_path):
     await _set_status(db_path, FULL_TIME_PROFILE, "ACCEPTED")
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_decline_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_decline_r{ROUND_ID}")
 
     assert await _status(db_path, FULL_TIME_PROFILE) == "DECLINED"
 
@@ -501,7 +491,7 @@ async def test_pressing_the_button_already_pressed_is_a_no_op(tmp_path):
     await _set_status(db_path, FULL_TIME_PROFILE, "ACCEPTED")
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "already marked as" in _reply(interaction)
 
@@ -515,7 +505,7 @@ async def test_a_full_time_driver_may_answer_before_the_deadline(tmp_path):
     db_path = await _make_db(tmp_path, starts_in=timedelta(hours=DEADLINE_HOURS + 2))
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
 
@@ -526,7 +516,7 @@ async def test_a_full_time_driver_is_locked_out_after_the_deadline(tmp_path):
     db_path = await _make_db(tmp_path, starts_in=timedelta(hours=DEADLINE_HOURS - 1))
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "deadline has passed" in _reply(interaction)
     assert await _status(db_path, FULL_TIME_PROFILE) == "NO_RSVP"
@@ -537,7 +527,7 @@ async def test_with_no_deadline_configured_a_full_time_driver_locks_at_the_start
     db_path = await _make_db(tmp_path, starts_in=timedelta(hours=-1), deadline_hours=0)
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "deadline has passed" in _reply(interaction)
 
@@ -546,7 +536,7 @@ async def test_with_no_deadline_configured_answers_stay_open_until_the_start(tmp
     db_path = await _make_db(tmp_path, starts_in=timedelta(hours=1), deadline_hours=0)
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
 
@@ -563,7 +553,7 @@ async def test_a_reserve_who_accepted_is_locked_out_after_the_deadline(tmp_path)
     await _set_status(db_path, RESERVE_PROFILE, "ACCEPTED")
     interaction = _make_interaction(db_path, RESERVE_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_decline_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_decline_r{ROUND_ID}")
 
     assert "already accepted" in _reply(interaction)
     assert await _status(db_path, RESERVE_PROFILE) == "ACCEPTED"
@@ -577,7 +567,7 @@ async def test_a_reserve_who_has_not_accepted_may_still_step_in_after_the_deadli
     await _set_status(db_path, RESERVE_PROFILE, "NO_RSVP")
     interaction = _make_interaction(db_path, RESERVE_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert await _status(db_path, RESERVE_PROFILE) == "ACCEPTED"
 
@@ -594,7 +584,7 @@ async def test_a_reserve_with_no_answer_at_all_may_step_in_after_the_deadline(tm
     )
     interaction = _make_interaction(db_path, RESERVE_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert await _status(db_path, RESERVE_PROFILE) == "ACCEPTED"
 
@@ -605,7 +595,7 @@ async def test_a_reserve_is_locked_out_once_the_round_has_started(tmp_path):
     db_path = await _make_db(tmp_path, starts_in=timedelta(hours=-1))
     interaction = _make_interaction(db_path, RESERVE_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "round has started" in _reply(interaction)
     assert await _status(db_path, RESERVE_PROFILE) == "NO_RSVP"
@@ -631,7 +621,7 @@ async def test_a_driver_placed_after_the_call_has_their_answer_recorded(tmp_path
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3), call_posted=False)
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
     assert await _accepted_at(db_path, FULL_TIME_PROFILE) is not None
@@ -647,7 +637,7 @@ async def test_an_answer_recorded_for_a_late_joiner_leaves_accepted_at_null_when
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3), call_posted=False)
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_decline_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_decline_r{ROUND_ID}")
 
     assert await _status(db_path, FULL_TIME_PROFILE) == "DECLINED"
     assert await _accepted_at(db_path, FULL_TIME_PROFILE) is None
@@ -661,7 +651,7 @@ async def test_a_driver_placed_after_the_deadline_is_locked_out_and_gets_no_row(
     db_path = await _make_db(tmp_path, starts_in=timedelta(hours=1), call_posted=False)
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "deadline has passed" in _reply(interaction)
     assert await _status(db_path, FULL_TIME_PROFILE) is None
@@ -679,7 +669,7 @@ async def test_an_answer_that_writes_nothing_is_not_reported_as_recorded(tmp_pat
     await _ignore_answers(db_path)
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "could not be recorded" in _reply(interaction)
     assert "has been updated" not in _reply(interaction)
@@ -720,7 +710,7 @@ async def test_the_call_is_edited_in_place_when_an_answer_changes(tmp_path):
         "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round",
         new=AsyncMock(return_value=MagicMock()),
     ):
-        await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+        await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     message.edit.assert_awaited_once()
     assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
@@ -732,7 +722,7 @@ async def test_an_answer_is_still_recorded_when_the_call_cannot_be_found(tmp_pat
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
     assert "has been updated" in _reply(interaction)
@@ -755,7 +745,7 @@ async def test_a_press_from_a_drivers_past_account_answers_for_the_driver(tmp_pa
         await db.commit()
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
     assert "has been updated" in _reply(interaction)
@@ -830,7 +820,7 @@ async def test_every_refused_press_is_recorded(
     if arrange is not None:
         await arrange(db_path, interaction)
 
-    await handle_rsvp_button(interaction, custom_id)
+    await _press(interaction, custom_id)
 
     interaction.response.send_message.assert_awaited_once()
     assert reason in _reply(interaction)
@@ -845,13 +835,22 @@ async def test_an_answer_given_is_recorded_with_the_one_it_replaced(tmp_path):
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _set_status(db_path, FULL_TIME_PROFILE, "TENTATIVE")
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
-    interaction.client.get_channel = MagicMock(return_value=_redrawable_channel())
+    # The call's channel alone is found, a text channel as Discord gives one: the log channel's
+    # lines are delivered through the bot's own record of it (`_make_interaction`), and a stub
+    # answering for every id would be sent them.
+    import discord
+
+    redrawable = MagicMock(spec=discord.TextChannel)
+    redrawable.fetch_message = _redrawable_channel().fetch_message
+    interaction.client.get_channel = MagicMock(
+        side_effect=lambda cid: redrawable if cid == RSVP_CHANNEL_ID else None
+    )
 
     with patch(
         "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round",
         new=AsyncMock(return_value=MagicMock()),
     ):
-        await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+        await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert _logged(interaction) == [
         f"Driver (<@{FULL_TIME_PROFILE}>) | the \u201cAccept\u201d button {CALL} | Success\n"
@@ -864,7 +863,7 @@ async def test_a_first_answer_was_no_answer(tmp_path):
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_decline_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_decline_r{ROUND_ID}")
 
     logged = _logged(interaction)
     assert len(logged) == 1
@@ -877,7 +876,7 @@ async def test_the_answer_already_held_records_that_nothing_changed(tmp_path):
     await _set_status(db_path, FULL_TIME_PROFILE, "ACCEPTED")
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert _logged(interaction) == [
         f"Driver (<@{FULL_TIME_PROFILE}>) | the \u201cAccept\u201d button {CALL} | "
@@ -891,7 +890,7 @@ async def test_an_answer_not_recorded_is_recorded_as_failed(tmp_path):
     await _ignore_answers(db_path)
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert _logged(interaction) == [
         f"Driver (<@{FULL_TIME_PROFILE}>) | the \u201cAccept\u201d button {CALL} | Failed\n"
@@ -915,21 +914,37 @@ def _redrawable_channel(*, fails: bool = False) -> MagicMock:
     "channel", [None, _redrawable_channel(fails=True)], ids=["no-channel", "edit-fails"]
 )
 async def test_a_call_not_redrawn_is_named_in_the_line(tmp_path, channel):
-    """A18: the answer stands, and the line says the call still shows the old one."""
+    """A18: the answer stands. Where the call's channel cannot be found, the redraw completes
+    and the line says the call still shows the old answer. Where Discord answers the call's edit
+    with a 500, the redraw is refused, and a refused redraw stops the queue at it, the answer
+    saved, as any refusal does (#439, slice 6b, Q4): its Success line is written only once the
+    redraw completes, after a Retry."""
+    from tests.support.change_queue import stopped_job
+
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
-    interaction.client.get_channel = MagicMock(return_value=channel)
+    # The call's channel alone is found: the log channel's lines are delivered through the bot's
+    # own record of it (`_make_interaction`), so that the lines checked are the lines written.
+    interaction.client.get_channel = MagicMock(
+        side_effect=lambda cid: channel if cid == RSVP_CHANNEL_ID else None
+    )
 
     with patch(
         "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round",
         new=AsyncMock(return_value=MagicMock()),
     ):
-        await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+        await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
     logged = _logged(interaction)
-    assert len(logged) == 1
-    assert logged[0].endswith("\n  call not redrawn")
+    if channel is None:
+        assert len(logged) == 1
+        assert logged[0].endswith("\n  call not redrawn")
+    else:
+        stopped = await stopped_job(db_path)
+        assert stopped is not None and stopped["name"] == "redraw"
+        assert [line for line in logged if "The queue is stopped at job #" in line]
+        assert not [line for line in logged if "| Success" in line]
 
 
 async def test_a_failed_line_that_cannot_be_posted_does_not_raise(tmp_path):
@@ -942,41 +957,39 @@ async def test_a_failed_line_that_cannot_be_posted_does_not_raise(tmp_path):
         side_effect=RuntimeError("log channel down")
     )
 
-    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "could not be recorded" in _reply(interaction)
 
 
 # ---------------------------------------------------------------------------
-# Two presses at once (#482, F1 and F2)
+# Two presses at once (#482, F1; F2's race is gone, every press taken in turn by the queue)
 # ---------------------------------------------------------------------------
 
 
-async def test_two_quick_presses_of_the_same_button_record_one_answer(tmp_path, monkeypatch):
-    """F1: the second press sees the first's answer, so it is answered and logged as nothing
-    changed, not as a second success."""
+async def test_two_quick_presses_of_the_same_button_record_one_answer(tmp_path):
+    """F1: the full-time driver presses Accept twice before either is answered. The queue takes
+    the presses in turn, so the second sees the first's answer: the first is told the answer is
+    updated and logged as a success, the second is not told so, and one answer stands."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     first = _make_interaction(db_path, FULL_TIME_PROFILE)
     second = _make_interaction(db_path, FULL_TIME_PROFILE)
-    held = _HeldWrite(monkeypatch)
+    second.client = first.client
     press = f"rsvp_accept_r{ROUND_ID}"
 
-    await asyncio.gather(
-        handle_rsvp_button(first, press),
-        held.after_the_first(lambda: handle_rsvp_button(second, press)),
-    )
+    await handle_rsvp_button(first, press)
+    await handle_rsvp_button(second, press)
+    await run_queue(first.client)
 
     assert "has been updated" in _reply(first)
-    assert "already marked as" in _reply(second)
-    outcomes = [
-        line.split("\n")[0].rsplit(" | ", 1)[1] for line in _logged(first) + _logged(second)
-    ]
-    assert outcomes == ["Success", "Nothing changed"]
+    assert "has been updated" not in _reply(second)
+    outcomes = [line.split("\n")[0].rsplit(" | ", 1)[-1] for line in _logged(first)]
+    assert outcomes.count("Success") == 1
     assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
 
 
 # ---------------------------------------------------------------------------
-# AttendanceService.answer_rsvp — the lock rules and the answer in one transaction (#482)
+# AttendanceService.answer_rsvp_on — the lock rules and the answer in one save (#482, #439)
 # ---------------------------------------------------------------------------
 
 
@@ -992,17 +1005,22 @@ async def _seed_answer(db_path: str, profile_id: int, status: str, accepted_at=N
 
 
 async def _answer(db_path, profile_id, status, *, starts_in, deadline_hours=DEADLINE_HOURS):
-    """`answer_rsvp` as the handler calls it, at `NOW`, for a round *starts_in* from then."""
-    return await AttendanceService(db_path).answer_rsvp(
-        ROUND_ID,
-        DIVISION_ID,
-        profile_id,
-        status,
-        now=NOW,
-        scheduled_at=NOW + starts_in,
-        deadline_hours=deadline_hours,
-        is_reserve=profile_id == RESERVE_PROFILE,
-    )
+    """`answer_rsvp_on` as the answer's save calls it, at `NOW`, for a round *starts_in* from
+    then, on a connection of the test's own that it then commits, as the job's save does."""
+    async with get_connection(db_path) as db:
+        result = await AttendanceService(db_path).answer_rsvp_on(
+            db,
+            ROUND_ID,
+            DIVISION_ID,
+            profile_id,
+            status,
+            now=NOW,
+            scheduled_at=NOW + starts_in,
+            deadline_hours=deadline_hours,
+            is_reserve=profile_id == RESERVE_PROFILE,
+        )
+        await db.commit()
+    return result
 
 
 #: Each case: its id, who answers, the answer held, the answer given, when the round starts
@@ -1122,29 +1140,3 @@ async def test_answer_rsvp_reports_an_answer_it_could_not_write(tmp_path):
     assert result.outcome is RsvpOutcome.NOT_RECORDED
     assert result.found == "NO_RSVP"
     assert await _status(db_path, FULL_TIME_PROFILE) == "NO_RSVP"
-
-
-async def test_a_reserve_s_accept_then_decline_after_the_deadline_leaves_the_accept(
-    tmp_path, monkeypatch
-):
-    """F2: after the deadline a reserve presses Accept, then Decline before Accept has saved.
-    Decline waits for Accept, sees it, and is refused as locked: an accepted reserve is locked
-    at the deadline whatever presses follow."""
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
-
-    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
-    held = _HeldWrite(monkeypatch)
-    after_the_deadline = timedelta(hours=DEADLINE_HOURS - 1)
-
-    accept, decline = await asyncio.gather(
-        _answer(db_path, RESERVE_PROFILE, "ACCEPTED", starts_in=after_the_deadline),
-        held.after_the_first(
-            lambda: _answer(db_path, RESERVE_PROFILE, "DECLINED", starts_in=after_the_deadline)
-        ),
-    )
-
-    assert accept.outcome is RsvpOutcome.RECORDED
-    assert decline.outcome is RsvpOutcome.LOCKED_ACCEPTED
-    assert decline.found == "ACCEPTED"
-    assert await _status(db_path, RESERVE_PROFILE) == "ACCEPTED"
-    assert await _accepted_at(db_path, RESERVE_PROFILE) == NOW.isoformat()

@@ -58,7 +58,9 @@ CREATE TABLE "forecast_messages" (
     division_id  INTEGER NOT NULL REFERENCES divisions(id),
     phase_number INTEGER NOT NULL CHECK (phase_number IN (0, 1, 2, 3)),
     message_id   INTEGER NOT NULL,
-    posted_at    TEXT    NOT NULL
+    posted_at    TEXT    NOT NULL,
+    channel_id   INTEGER,
+    message_ids  TEXT
 );
 CREATE UNIQUE INDEX uq_forecast_messages_round_div_phase
     ON forecast_messages(round_id, division_id, phase_number);
@@ -277,6 +279,9 @@ CREATE TABLE round_submission_channels (
     -- appeals_prompt_message_id: the appeals review's prompt in the submission channel, saved with
     -- its post, so that a prompt put back after a restart takes the old one down (#439).
     appeals_prompt_message_id INTEGER,
+    -- approval_message_id: the report stage's approval question in the submission channel, saved
+    -- with its post, so that a staging on a review built afresh withdraws it (#439).
+    approval_message_id INTEGER,
     UNIQUE (round_id)
 );
 
@@ -322,6 +327,7 @@ CREATE TABLE rsvp_embed_messages (
     message_id  TEXT    NOT NULL,
     channel_id  TEXT    NOT NULL,
     posted_at   TEXT    NOT NULL, last_notice_msg_id TEXT, distribution_msg_id TEXT,
+    last_notice_channel_id TEXT, distribution_channel_id TEXT, deadline_run_at TEXT,
     UNIQUE (round_id, division_id)
 );
 
@@ -661,8 +667,52 @@ CREATE TABLE "round_amend_channels" (
     -- The stage's approval is a change on the queue, which keeps nothing in memory, so the row
     -- is what says the report stage is done and the pardons close with it.
     reports_approved_at TEXT,
+    -- prompt_posted_at: when the amendment's first prompt was shown in its channel (#439). The
+    -- amendment's five minutes run from it, not from when the paste was asked for, so a prompt
+    -- that waited behind other work on the queue does not use up the manager's time. NULL until
+    -- the prompt is up.
+    prompt_posted_at TEXT,
     -- One amendment of a round at a time; the command allows one per division besides.
     UNIQUE (round_id)
+);
+
+-- resubmission_drafts
+-- A resubmission's pastes, held until the last swaps the round's results (#439). Each paste is a
+-- turn on the change queue, which keeps nothing in memory, so the session the resubmission
+-- expects next is read from here: the first with no draft. status is ACTIVE, or CANCELLED where
+-- the paste said the session was cancelled. config_name is NULL while the points configuration
+-- is still to be chosen, and the session is then expected again.
+CREATE TABLE resubmission_drafts (
+    round_id     INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+    session_type TEXT    NOT NULL,
+    status       TEXT    NOT NULL DEFAULT 'ACTIVE',
+    rows_json    TEXT    NOT NULL,
+    config_name  TEXT,
+    submitted_by INTEGER,
+    PRIMARY KEY (round_id, session_type)
+);
+
+-- amend_drafts
+-- An amendment's pastes, held as a resubmission's are (#439), keyed by the amendment. The
+-- amendment expects the first of its own session_types with no draft; config_name is NULL while
+-- the points configuration is still to be chosen.
+CREATE TABLE amend_drafts (
+    amend_id     INTEGER NOT NULL REFERENCES round_amend_channels(id) ON DELETE CASCADE,
+    session_type TEXT    NOT NULL,
+    rows_json    TEXT    NOT NULL,
+    config_name  TEXT,
+    PRIMARY KEY (amend_id, session_type)
+);
+
+-- review_lock_warnings
+-- The "channel locked during penalty review" warning a round's submission channel carries until
+-- its eight seconds are up (#439). The warning is a message the bot posted by a job, and the timer
+-- that takes it down is armed by a job of its own, so the row is what the timer finds when it
+-- fires: with the row gone, there is nothing to take down. due_at is when the timer was armed for.
+CREATE TABLE review_lock_warnings (
+    message_id INTEGER PRIMARY KEY,
+    channel_id INTEGER NOT NULL,
+    due_at     TEXT    NOT NULL
 );
 
 -- signup_module_settings
@@ -700,13 +750,13 @@ CREATE TABLE "signup_wizard_records" (
     last_activity_at            TEXT    NOT NULL DEFAULT (datetime('now')),
     created_at                  TEXT    NOT NULL DEFAULT (datetime('now')),
     -- Whether a close of the signup window owes this driver their closing notice: 0 none; 1 the
-    -- change queue's close, cleared when the queue plans the notice; 2 a close off the queue,
-    -- cleared in its audit save once it reached the driver, or by the start-up step that
-    -- finishes a close a stop cut off. Set in the save that returns the driver.
+    -- change queue's close, cleared when the queue plans the notice. Set in the save that returns
+    -- the driver. (A value 2, a close off the queue, is no longer written: no close is made
+    -- off the queue.)
     closing_notice_owed         INTEGER NOT NULL DEFAULT 0,
-    -- With a mark of a close off the queue (2): the Sign Up button message of the window that
-    -- close was closing, so that the start-up step closes that window and never a later one
-    closing_window_message_id   INTEGER
+    -- When the correction choices a manager asked for were posted in the driver's channel: the
+    -- five minutes to choose run from then. NULL while no correction is awaited.
+    correction_offered_at       TEXT
 );
 CREATE INDEX idx_signup_wizard_channel
     ON signup_wizard_records(signup_channel_id);
@@ -856,7 +906,9 @@ CREATE TABLE "pending_messages" (
 -- stays as it was: the stop is the job's, in its `failing_since`.
 -- `actor_name` is str(member), as the audit records it; `actor_display` the display name, as the
 -- log channel names a member. `what` is how the change's lines name it. `acknowledged_at` bounds
--- the update of the member's reply.
+-- the update of the member's reply. `lane` is the lane the change runs on: `league`, or
+-- `channel:<id>` for a conversation's own channel; each lane runs one change at a time and stops
+-- alone.
 CREATE TABLE "queued_changes" (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     kind            TEXT    NOT NULL,
@@ -869,11 +921,12 @@ CREATE TABLE "queued_changes" (
     actor_name      TEXT,
     actor_display   TEXT,
     what            TEXT    NOT NULL,
-    acknowledged_at TEXT
+    acknowledged_at TEXT,
+    lane            TEXT    NOT NULL DEFAULT 'league'
 );
-CREATE INDEX "queued_changes_open" ON "queued_changes" (id)
+CREATE INDEX "queued_changes_open" ON "queued_changes" (lane, id)
     WHERE state IN ('QUEUED', 'RUNNING');
-CREATE UNIQUE INDEX "queued_changes_one_running" ON "queued_changes" (state)
+CREATE UNIQUE INDEX "queued_changes_one_running" ON "queued_changes" (lane)
     WHERE state = 'RUNNING';
 
 -- queued_change_steps
@@ -904,6 +957,11 @@ CREATE INDEX "queued_change_steps_stopped" ON "queued_change_steps" (next_try_at
 -- One row per standing review prompt, keyed by the prompt message: two reviews may stand at
 -- once, and one ending must not clear the other's record. `review` is the command whose question
 -- it is; `report_message_ids` the report above it (a JSON list), deleted with it at a restart.
+-- `evidence` is what the report was computed from (a JSON object), which Approve judges the season
+-- against when it is pressed. `verb` is what the review would have done ("approved" or
+-- "confirmed"), for the notice that says it did not. What became of the button's last press is not
+-- recorded here: it is held in memory (`season_review_changes._PRESSES`), as nothing that survives
+-- a restart reads it.
 CREATE TABLE "season_review_prompts" (
     message_id         INTEGER PRIMARY KEY,
     season_id          INTEGER NOT NULL,
@@ -911,7 +969,9 @@ CREATE TABLE "season_review_prompts" (
     reviewer_id        INTEGER NOT NULL,
     review             TEXT    NOT NULL,
     report_message_ids TEXT    NOT NULL DEFAULT '[]',
-    posted_at          TEXT    NOT NULL
+    posted_at          TEXT    NOT NULL,
+    evidence           TEXT,
+    verb               TEXT    NOT NULL DEFAULT 'confirmed'
 );
 
 -- The circuits a league can schedule, seeded once.

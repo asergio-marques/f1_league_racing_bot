@@ -154,12 +154,22 @@ def _replied(interaction) -> str:
 
 
 async def _standings_sync(cog, interaction, *, division="Pro", status="ok"):
+    """The standings sync reads its division's standings channel and rounds through
+    `standings_repost_status`, given *status* here, and on "ok" asks the change queue for the
+    sync (#439 6b), whose `ask` is recorded rather than run. Gives the `ask`.
+
+    The repost the command made at once before 6b is patched to give *status* as well, each
+    created where it is missing, so that a case whose answer the change leaves alone holds on
+    either side of it."""
+    service = "leaguebot.results.services.results_post_service"
     with patch(
-        "leaguebot.results.services.results_post_service.repost_standings_for_division",
-        new=AsyncMock(return_value=status),
-    ) as repost:
+        f"{service}.standings_repost_status", new=AsyncMock(return_value=status), create=True,
+    ), patch(
+        f"{service}.repost_standings_for_division", new=AsyncMock(return_value=status),
+        create=True,
+    ):
         await undecorate(ResultsCog.standings_sync)(cog, interaction, division)
-    return repost
+    return cog.bot.change_queue.ask
 
 
 async def _rounds_sync(cog, interaction, *, division="Pro", status="ok"):
@@ -189,24 +199,27 @@ async def _reserves(db_path) -> int | None:
 
 
 #: The rounds sync reads its division's channel and rounds through
-#: `results_post_service.division_repost_status` (#439), which `_rounds_sync` patches.
+#: `results_post_service.division_repost_status` (#439), which `_rounds_sync` patches, and the
+#: standings sync through `standings_repost_status` (#439 6b), which `_standings_sync` patches.
 SYNCS = [
     ("standings", _standings_sync),
     ("rounds", _rounds_sync),
 ]
 
-#: The rounds sync's cases that hold once it is asked of the change queue (#439).
+#: The cases that hold once each sync is asked of the change queue (#439): the standings sync's
+#: fail until it is (6b).
 SYNCS_ON_THE_QUEUE = [
-    ("standings", _standings_sync),
+    pytest.param("standings", _standings_sync, id="standings"),
     ("rounds", _rounds_sync),
 ]
 
+#: The kind each sync asks of the change queue.
+SYNC_KINDS = {"standings": "results.standings.sync", "rounds": "results.rounds.sync"}
 
-def _division_synced(repost) -> int:
-    """The division a sync reposted: the standings service's argument, or the division of the
-    rounds sync asked of the queue."""
-    asked = repost.await_args.args[1]
-    return asked["division_id"] if isinstance(asked, dict) else asked
+
+def _division_synced(ask) -> int:
+    """The division of the sync asked of the queue."""
+    return ask.await_args.args[1]["division_id"]
 
 
 # ---------------------------------------------------------------------------
@@ -227,24 +240,21 @@ async def test_a_sync_reposts_the_division(tmp_path, label, run):
 
 @pytest.mark.parametrize("label,run", SYNCS_ON_THE_QUEUE)
 async def test_a_successful_sync_says_so(tmp_path, label, run):
-    """The rounds sync is asked of the change queue with the interaction, whose acknowledgement
-    the queue updates with "synced" once it has run (`test_rounds_sync_change.py`)."""
+    """Each sync is asked of the change queue with the interaction, whose acknowledgement the
+    queue updates with "synced" once it has run (`test_rounds_sync_change.py`,
+    `test_standings_sync_change.py`)."""
     db_path = await _make_db(tmp_path, name=f"sync_ok_{label}")
     cog = _make_cog(db_path)
     interaction = _interaction()
 
-    repost = await run(cog, interaction, status="ok")
+    ask = await run(cog, interaction, status="ok")
 
-    if label == "rounds":
-        repost.assert_awaited_once()
-        assert repost.await_args.args[0] == "results.rounds.sync"
-        assert repost.await_args.kwargs["interaction"] is interaction
-        return
-    assert "synced" in _replied(interaction)
-    assert "Pro" in _replied(interaction)
+    ask.assert_awaited_once()
+    assert ask.await_args.args[0] == SYNC_KINDS[label]
+    assert ask.await_args.kwargs["interaction"] is interaction
 
 
-@pytest.mark.parametrize("label,run", SYNCS_ON_THE_QUEUE)
+@pytest.mark.parametrize("label,run", SYNCS)
 async def test_a_division_with_no_completed_rounds_is_told_so(tmp_path, label, run):
     """Distinct from an unconfigured channel: there is nothing to post rather than nowhere
     to post it, and the manager's next step differs."""
@@ -274,7 +284,7 @@ async def test_a_division_with_no_channel_configured_is_told_so(tmp_path, label,
     assert "synced" not in replied
 
 
-@pytest.mark.parametrize("label,run", SYNCS_ON_THE_QUEUE)
+@pytest.mark.parametrize("label,run", SYNCS)
 async def test_a_sync_with_nothing_to_post_records_that_nothing_changed(tmp_path, label, run):
     """A sync that found no completed round to post changed nothing a league can see: the
     log records one line saying nothing changed, naming the division, and never a success."""
@@ -452,19 +462,16 @@ async def test_every_sync_and_toggle_refusal_is_recorded(tmp_path, command, run,
 
 
 async def test_the_two_syncs_call_different_services(tmp_path):
-    """They sit beside each other and read almost identically; one calling the other's
-    service would repost standings where a manager asked for results."""
+    """They sit beside each other and read almost identically; one asking for the other's
+    change would repost standings where a manager asked for results. Each asks the change
+    queue for its own kind alone."""
     db_path = await _make_db(tmp_path, name="sync_distinct")
-    cog = _make_cog(db_path)
+    for label, run in SYNCS:
+        cog = _make_cog(db_path)
 
-    with patch(
-        "leaguebot.results.services.results_post_service.repost_standings_for_division",
-        new=AsyncMock(return_value="ok"),
-    ) as standings:
-        await undecorate(ResultsCog.standings_sync)(cog, _interaction(), "Pro")
+        ask = await run(cog, _interaction(), status="ok")
 
-    standings.assert_awaited_once()
-    cog.bot.change_queue.ask.assert_not_awaited()
+        assert [call.args[0] for call in ask.await_args_list] == [SYNC_KINDS[label]]
 
 
 # ---------------------------------------------------------------------------

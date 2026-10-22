@@ -10,10 +10,18 @@ from __future__ import annotations
 
 import os
 
+
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.image.services.image_verdict_post import _driver_nationality
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+async def _mark_approved(svc, db_path, discord_user_id):
+    """Mark the driver's latest signup approved in a save of the test's own, as Approve's does."""
+    async with get_connection(db_path) as db:
+        await svc.mark_approved_on(db, discord_user_id)
+        await db.commit()
+
 
 SERVER_ID = 2433
 A, B = "7101", "7102"
@@ -94,7 +102,7 @@ async def _newer_rejected_signup_on_b(db_path: str) -> None:
 async def test_an_approved_signup_outranks_a_later_one_that_was_not(tmp_path):
     """The usual merge: A's signup approved, B's later one rejected. A's is the driver's."""
     db_path, _ = await _make_db(tmp_path)
-    await SignupModuleService(db_path).mark_approved(A)
+    await _mark_approved(SignupModuleService(db_path), db_path, A)
     await _newer_rejected_signup_on_b(db_path)
 
     drivers = await PlacementService(db_path).get_unassigned_drivers_seeded()
@@ -106,7 +114,7 @@ async def test_an_approved_signup_outranks_a_later_one_that_was_not(tmp_path):
 async def test_a_turned_down_signup_no_longer_outranks_the_others(tmp_path):
     db_path, profile_id = await _make_db(tmp_path)
     service = SignupModuleService(db_path)
-    await service.mark_approved(A)
+    await _mark_approved(service, db_path, A)
     await _newer_rejected_signup_on_b(db_path)
 
     await service.withdraw_approval(profile_id)
@@ -127,7 +135,7 @@ async def test_approval_marks_only_the_latest_signup_of_the_account(tmp_path):
         )
         await db.commit()
 
-    await SignupModuleService(db_path).mark_approved(A)
+    await _mark_approved(SignupModuleService(db_path), db_path, A)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

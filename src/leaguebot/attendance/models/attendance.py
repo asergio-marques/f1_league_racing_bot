@@ -60,3 +60,10 @@ class RsvpEmbedMessage:
     posted_at: str
     last_notice_msg_id: str | None = None
     distribution_msg_id: str | None = None
+    #: The channel each of the two was posted in, which may not be the call's: the division's
+    #: check-in channel is read when they are posted, and may have moved since the call.
+    last_notice_channel_id: str | None = None
+    distribution_channel_id: str | None = None
+    #: When the call's deadline ran (its distribution was written), apart from the announcement it
+    #: posts: a deadline whose announcement was discarded has still run, and is not run again.
+    deadline_run_at: str | None = None

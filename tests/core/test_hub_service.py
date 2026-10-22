@@ -14,6 +14,8 @@ a running loop when a view is made.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -30,12 +32,26 @@ from leaguebot.core.services.hub_service import (
     offered_options,
     reapply_hub_permissions,
     recover_hub,
-    refresh_panel,
     register_option,
     registered_options,
     render_panel,
 )
 from leaguebot.core.utils.league_server import LeagueView
+from tests.support.change_queue import (
+    SERVER_ID as LEAGUE_SERVER_ID,
+    Clock,
+    attach_queue,
+    change_rows,
+    http_error,
+    league_double,
+    member_interaction,
+    retry_job,
+    run_queue,
+    seed_server,
+    step_rows,
+    stopped_job,
+    text_channel,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -299,90 +315,203 @@ def _bot(db_path, guild):
     return bot
 
 
-def _not_found():
-    return discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Message")
+# ── The panel on the change queue (#439, slice 6b, C89–C90) ───────────────
+#
+# The panel is refreshed by `hub.refresh`, a bot's change on the league lane: a refused panel,
+# or a hub channel set but gone, stops the queue with Retry and Discard rather than being
+# reported in a line; the panel's id is saved by the job's record, with its mark; a hub not set
+# is not due. A stale press and the start-up ask for the refresh rather than making it.
+#
+# The league: `league_double`'s, its configuration read from the database, with the hub set to
+# channel 7900, which the league's server finds. Nothing of the change that is not built yet is
+# imported at the head of the file.
+
+NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
 
-def _forbidden():
-    return discord.HTTPException(MagicMock(status=403, reason="Forbidden"), "Missing Access")
+
+@pytest.fixture
+async def league(tmp_path):
+    """The league's queue, its hub set to channel 7900 and no panel yet posted."""
+    path = str(tmp_path / "hub_queue.db")
+    await run_migrations(path)
+    await seed_server(path)
+    await _configure(path, hub_channel_id=HUB)
+    bot = league_double(path)
+    bot.config_service = ConfigService(path)
+    from leaguebot.core.services.output_router import OutputRouter
+
+    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=path)
+    hub = text_channel(HUB)
+    guild = MagicMock(spec=discord.Guild)
+    guild.id = LEAGUE_SERVER_ID
+    guild.get_channel = MagicMock(side_effect={HUB: hub}.get)
+    bot.get_guild = MagicMock(return_value=guild)
+    bot.add_view = MagicMock()
+    attach_queue(bot, path, now=Clock(NOW))
+    return SimpleNamespace(db_path=path, bot=bot, hub=hub, guild=guild)
 
 
-async def test_nothing_is_posted_while_no_hub_is_set(db_path):
-    channel = _hub_channel()
+async def _ask_refresh(league, command="/module enable weather"):
+    """The bot asks the queue to refresh the panel, as a module toggle's save does."""
+    from leaguebot.core.models.change import ChangeOrigin
 
-    assert await refresh_panel(_bot(db_path, _guild(channel))) is None
-
-    channel.send.assert_not_awaited()
-
-
-async def test_the_panel_is_posted_and_its_id_kept(db_path):
-    """Kept so that the next refresh edits it in place rather than posting a second."""
-    await _configure(db_path, hub_channel_id=HUB)
-    channel = _hub_channel()
-    bot = _bot(db_path, _guild(channel))
-
-    assert await refresh_panel(bot) is None
-
-    assert "Nothing is offered here yet." in channel.send.await_args.args[0]
-    assert (await bot.config_service.get_server_config()).hub_message_id == PANEL + 1
+    return await league.bot.change_queue.ask(
+        hub_service.HUB_REFRESH, {"command": command},
+        what="refreshing the hub panel", origin=ChangeOrigin.BOT,
+    )
 
 
-async def test_a_standing_panel_is_edited_in_place(db_path):
-    await _configure(db_path, hub_channel_id=HUB, hub_message_id=PANEL)
+async def _stored_panel(league):
+    return (await league.bot.config_service.get_server_config()).hub_message_id
+
+
+async def _refreshes(league):
+    return [row for row in await change_rows(league.db_path)
+            if row["kind"] == hub_service.HUB_REFRESH]
+
+
+def _log(league) -> str:
+    return "\n".join(league.bot.log_channel.sent)
+
+
+async def test_the_panel_is_posted_and_its_id_kept(league):
+    """Kept so that the next refresh edits it in place rather than posting a second. The hub
+    is set and no panel stands; the refresh is asked and the queue run."""
+    await _ask_refresh(league)
+    await run_queue(league.bot)
+
+    assert "Nothing is offered here yet." in league.hub.sent[0]
+    assert await _stored_panel(league) == league.hub.posted[0].id
+
+
+async def test_a_standing_panel_is_edited_in_place(league):
+    """The panel stands in the hub; a refresh asked once an option is registered edits it in
+    place, with the option's button, and posts nothing new."""
+    standing = await league.hub.send("old panel")
+    await _configure(league.db_path, hub_message_id=standing.id)
     register_option(_option("licence"))
-    channel = _hub_channel()
 
-    assert await refresh_panel(_bot(db_path, _guild(channel))) is None
+    await _ask_refresh(league)
+    await run_queue(league.bot)
 
-    channel.get_partial_message.assert_called_once_with(PANEL)
-    edit = channel._partial.edit.await_args
-    assert "Press an option below." in edit.kwargs["content"]
-    assert [b.custom_id for b in edit.kwargs["view"].children] == ["hub:licence"]
-    channel.send.assert_not_awaited()
+    assert "Press an option below." in standing.content
+    assert [b.custom_id for b in standing.view.children] == ["hub:licence"]
+    assert league.hub.sent == ["old panel"]
 
 
-async def test_a_deleted_panel_is_posted_again(db_path):
-    """Somebody deleted it by hand; the hub is not left empty."""
-    await _configure(db_path, hub_channel_id=HUB, hub_message_id=PANEL)
-    channel = _hub_channel(edit_raises=_not_found())
-    bot = _bot(db_path, _guild(channel))
+async def test_a_deleted_panel_is_posted_again(league):
+    """Somebody deleted it by hand; the hub is not left empty. The panel recorded is gone from
+    the channel; the refresh posts a fresh one and keeps its id."""
+    await _configure(league.db_path, hub_message_id=PANEL)
 
-    assert await refresh_panel(bot) is None
+    await _ask_refresh(league)
+    await run_queue(league.bot)
 
-    channel.send.assert_awaited_once()
-    assert (await bot.config_service.get_server_config()).hub_message_id == PANEL + 1
-
-
-async def test_a_hub_channel_gone_from_the_server_is_reported(db_path):
-    await _configure(db_path, hub_channel_id=HUB)
-    guild = _guild(None)
-
-    fault = await refresh_panel(_bot(db_path, guild))
-
-    assert f"id {HUB}" in fault and "not in the server" in fault
+    assert len(league.hub.sent) == 1
+    assert await _stored_panel(league) == league.hub.posted[0].id
 
 
-async def test_a_panel_the_bot_may_not_post_is_reported(db_path):
-    await _configure(db_path, hub_channel_id=HUB)
-    channel = _hub_channel(send_raises=_forbidden())
+async def test_a_refused_panel_stops_the_queue(league):
+    """Discord refuses the panel in the hub: the queue stops at the refresh, no panel id is
+    kept, and once the bot is let post there, Retry posts it and keeps its id."""
+    league.hub.fails = http_error(discord.Forbidden, status=403, text="Missing Access")
 
-    fault = await refresh_panel(_bot(db_path, _guild(channel)))
+    await _ask_refresh(league)
+    await run_queue(league.bot)
 
-    assert "could not be posted" in fault
+    assert await stopped_job(league.db_path) is not None
+    assert await _stored_panel(league) is None
+    league.hub.fails = None
+    await retry_job(league.bot)
+    assert await stopped_job(league.db_path) is None
+    assert await _stored_panel(league) == league.hub.posted[0].id
 
 
-async def test_a_stale_press_refreshes_the_panel(db_path):
-    """The panel still carried the option; after the refusal it no longer does."""
-    await _configure(db_path, hub_channel_id=HUB, hub_message_id=PANEL)
-    offered = _offered(False)
-    register_option(_option("licence", offered=offered))
-    channel = _hub_channel()
-    bot = _bot(db_path, _guild(channel))
-    view = HubPanelView(registered_options())
+async def test_a_hub_channel_gone_stops_the_queue_naming_the_command(league):
+    """The hub channel set (7900) is no longer in the server: the queue stops at the refresh,
+    its notice naming `/bot hub-channel`, and nothing is posted."""
+    league.guild.get_channel = MagicMock(return_value=None)
 
-    await view.children[0].callback(_interaction(bot))
+    await _ask_refresh(league)
+    await run_queue(league.bot)
 
-    assert "Nothing is offered here yet." in channel._partial.edit.await_args.kwargs["content"]
+    assert await stopped_job(league.db_path) is not None
+    assert "/bot hub-channel" in _log(league)
+    assert league.hub.sent == []
+
+
+async def test_the_panel_s_id_is_saved_with_its_mark(league, monkeypatch):
+    """The panel is posted; its id is written in the refresh job's own save, with its mark,
+    never by a commit of the configuration service's own."""
+    written = []
+    own_commit = league.bot.config_service.set_core_setting
+
+    async def _spy(column, value):
+        written.append(column)
+        return await own_commit(column, value)
+
+    monkeypatch.setattr(league.bot.config_service, "set_core_setting", _spy)
+
+    await _ask_refresh(league)
+    await run_queue(league.bot)
+
+    assert "hub_message_id" not in written
+    assert await _stored_panel(league) == league.hub.posted[0].id
+    [change] = await _refreshes(league)
+    assert all(job["done_at"] is not None for job in await step_rows(league.db_path, change["id"]))
+
+
+async def test_a_hub_not_set_is_not_due(league):
+    """No hub channel is set: the refresh asked is not due, so nothing is saved on the queue
+    and nothing posted."""
+    await _configure(league.db_path, hub_channel_id=None)
+
+    assert await _ask_refresh(league) is None
+
+    await run_queue(league.bot)
+    assert await _refreshes(league) == []
+    assert league.hub.sent == []
+
+
+async def _panel_with(league, option):
+    """The panel posted through the queue with *option* offered; its view, as Discord holds it."""
+    register_option(option)
+    await _ask_refresh(league)
+    await run_queue(league.bot)
+    return league.hub.posted[0].view
+
+
+async def test_a_stale_press_refreshes_the_panel(league):
+    """The panel still carried the option; Alex presses it after it stopped being offered. The
+    press is refused and the refresh asked of the queue: the panel is unchanged until the queue
+    runs, and then no longer carries the option."""
+    offered = _offered(True)
+    view = await _panel_with(league, _option("licence", offered=offered))
+    offered.return_value = False
+
+    await view.children[0].callback(member_interaction(league.bot))
+
+    assert "Press an option below." in league.hub.posted[0].content
+    assert [r["state"] for r in await _refreshes(league)] == ["DONE", "QUEUED"]
+    await run_queue(league.bot)
+    assert "Nothing is offered here yet." in league.hub.posted[0].content
+
+
+async def test_a_burst_of_stale_presses_asks_one_refresh(league):
+    """Alex presses the stale option twice before the queue runs: one refresh is asked,
+    the second press's request dropped while the first waits, and the panel is refreshed once."""
+    offered = _offered(True)
+    view = await _panel_with(league, _option("licence", offered=offered))
+    offered.return_value = False
+
+    await view.children[0].callback(member_interaction(league.bot))
+    await view.children[0].callback(member_interaction(league.bot))
+
+    assert [r["state"] for r in await _refreshes(league)] == ["DONE", "QUEUED"]
+    await run_queue(league.bot)
+    assert league.hub.posted[0].edit.await_count == 1
+    assert "Nothing is offered here yet." in league.hub.posted[0].content
 
 
 # ── Who may see the hub ───────────────────────────────────────────────────
@@ -463,25 +592,37 @@ async def test_permissions_are_left_alone_while_no_hub_is_set(db_path):
 # ── Start-up ──────────────────────────────────────────────────────────────
 
 
-async def test_a_restart_routes_every_registered_option_and_refreshes(db_path):
-    """Every option, offered or not: a stale press is refused in words, not in silence."""
-    await _configure(db_path, hub_channel_id=HUB, hub_message_id=PANEL)
+async def test_a_restart_routes_every_registered_option_and_refreshes(league):
+    """Every option, offered or not: a stale press is refused in words, not in silence. The
+    panel stands in the hub; after a restart every registered option's button is routed again,
+    and the panel's refresh is asked of the queue rather than made at once."""
+    standing = await league.hub.send("old panel")
+    await _configure(league.db_path, hub_message_id=standing.id)
     register_option(_option("on", offered=_offered(True)))
     register_option(_option("off", offered=_offered(False)))
-    channel = _hub_channel()
-    bot = _bot(db_path, _guild(channel))
 
-    await recover_hub(bot)
+    await recover_hub(league.bot, queue=league.bot.change_queue)
 
-    (view,), _ = bot.add_view.call_args
+    (view,), _ = league.bot.add_view.call_args
     assert sorted(b.custom_id for b in view.children) == ["hub:off", "hub:on"]
-    channel._partial.edit.assert_awaited_once()
+    standing.edit.assert_not_awaited()
+    assert [r["state"] for r in await _refreshes(league)] == ["QUEUED"]
 
 
-async def test_a_restart_with_no_option_registered_adds_no_view(db_path):
-    channel = _hub_channel()
-    bot = _bot(db_path, _guild(channel))
+async def test_the_start_up_asks_for_the_panel_before_the_queue_starts(league):
+    """The hub is set and no panel stands. The start-up asks the queue for the panel, as the
+    bot's, and posts nothing itself; the panel is posted, and its id kept, once the queue runs."""
+    await recover_hub(league.bot, queue=league.bot.change_queue)
 
-    await recover_hub(bot)
+    assert league.hub.sent == []
+    [change] = await _refreshes(league)
+    assert change["state"] == "QUEUED"
+    await run_queue(league.bot)
+    assert "Nothing is offered here yet." in league.hub.sent[0]
+    assert await _stored_panel(league) == league.hub.posted[0].id
 
-    bot.add_view.assert_not_called()
+
+async def test_a_restart_with_no_option_registered_adds_no_view(league):
+    await recover_hub(league.bot, queue=league.bot.change_queue)
+
+    league.bot.add_view.assert_not_called()

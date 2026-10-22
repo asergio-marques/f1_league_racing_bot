@@ -29,14 +29,20 @@ let the close go through with no confirmation at all.
 
 Each group is truncated at ten with a count of the rest, because a division of thirty
 mid-signup would otherwise overflow the message Discord will accept.
+
+**Both commands run on the league's change queue** (#439, slice 6b, C68–C69). The bot here has
+a real queue: `/signup open` asks `signup.open`, whose check holds the refusals below, and the
+helpers run the queue after each command, so the information message and the window it opens are
+read once the queue has run. A close goes on the queue as `signup.close`, its confirmation still
+the command's own reply; the close tests run on `tests.support.season_league`'s league.
+`tests/signup/test_window_changes.py` holds the queue's own rules for both.
 """
 from __future__ import annotations
 
 import json
 import os
-from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -45,9 +51,24 @@ from leaguebot.signup.cogs.signup_cog import ConfirmCloseView, SignupCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.config_service import ConfigService
 from leaguebot.signup.services.signup_module_service import SignupModuleService
+from tests.support.change_queue import (
+    INTERACTION_CHANNEL_ID,
+    LOG_CHANNEL_ID,
+    SERVER_ID,
+    Clock,
+    attach_queue,
+    change_rows,
+    league_double,
+    member_interaction,
+    run_queue,
+    stopped_job,
+    tier_member,
+    updated_reply,
+)
+from tests.support.review_league import channel as recording_channel
+from tests.support.season_league import SIGNUP_CHANNEL_BASE, setup_league, signing_up
 from tests.support.undecorate import undecorate
 
-SERVER_ID = 9008
 CHANNEL_ID = 777001
 BASE_ROLE_ID = 555001
 DRIVER_ROLE_ID = 555002
@@ -123,18 +144,32 @@ async def _seed(
 
 
 def _cog(db_path: str) -> SignupCog:
-    bot = MagicMock()
-    bot.db_path = db_path
+    """The cog, its bot carrying the league's log channel, a real output router and a real
+    change queue (#439, slice 6b)."""
+    bot = league_double(db_path)
+    bot.module_service = MagicMock()
     bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
     bot.signup_module_service = SignupModuleService(db_path)
     bot.config_service = ConfigService(db_path)
     bot.scheduler_service = MagicMock()
-    bot.output_router = MagicMock()
-    bot.output_router.post_log = AsyncMock(return_value=None)
+    attach_queue(bot, db_path, now=Clock(datetime.now(timezone.utc)))
 
     cog = SignupCog.__new__(SignupCog)
     cog.bot = bot
     return cog
+
+
+def _wire(cog, interaction) -> None:
+    """Let the bot find the interaction's server and its signup channel, as the queue's jobs
+    look them up, and make the bot the interaction's client."""
+    bot = cog.bot
+    interaction.client = bot
+    channels = {LOG_CHANNEL_ID: bot.log_channel, INTERACTION_CHANNEL_ID: bot.interaction_channel}
+    found = interaction.guild.get_channel(CHANNEL_ID)
+    if found is not None:
+        channels[CHANNEL_ID] = found
+    bot.get_channel = MagicMock(side_effect=channels.get)
+    bot.get_guild = MagicMock(return_value=interaction.guild)
 
 
 def _role(role_id: int, *, above_the_bot: bool = False) -> MagicMock:
@@ -169,6 +204,7 @@ def _interaction(
     signup_channel.mention = "#signups"
     signup_channel.send = AsyncMock(return_value=posted)
     signup_channel.fetch_message = AsyncMock(return_value=MagicMock(delete=AsyncMock()))
+    signup_channel.get_partial_message = MagicMock(return_value=MagicMock(delete=AsyncMock()))
 
     roles = {
         BASE_ROLE_ID: _role(BASE_ROLE_ID),
@@ -178,6 +214,7 @@ def _interaction(
         roles.pop(role_id)
 
     guild = MagicMock()
+    guild.id = SERVER_ID
     guild.get_channel = MagicMock(return_value=signup_channel if channel_found else None)
     guild.get_role = MagicMock(side_effect=roles.get)
     guild.get_member = MagicMock(
@@ -185,9 +222,16 @@ def _interaction(
     )
     interaction.guild = guild
 
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
     interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.edit_original_response = AsyncMock()
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     interaction._signup_channel = signup_channel
@@ -195,21 +239,36 @@ def _interaction(
 
 
 def _replied(interaction) -> str:
-    parts = [
-        str(call.args[0])
-        for call in interaction.response.send_message.await_args_list
+    """Everything the member was answered with: the response, its edits and the follow-ups."""
+    calls = (
+        interaction.response.send_message.await_args_list
+        + interaction.edit_original_response.await_args_list
         + interaction.followup.send.await_args_list
-        if call.args
+    )
+    parts = [
+        str(call.args[0]) if call.args else str(call.kwargs.get("content") or "")
+        for call in calls
     ]
-    return "\n".join(parts)
+    return "\n".join(part for part in parts if part)
 
 
 async def _open(cog, interaction, track_ids=None, close_time=None):
+    """The manager runs `/signup open`, and the queue runs whatever it asked."""
+    _wire(cog, interaction)
     await undecorate(SignupCog.signup_open)(cog, interaction, track_ids, close_time)
+    await run_queue(cog.bot)
 
 
 async def _close(cog, interaction):
+    """The manager runs `/signup close`, and the queue runs whatever it asked."""
+    _wire(cog, interaction)
     await undecorate(SignupCog.signup_close)(cog, interaction)
+    await run_queue(cog.bot)
+
+
+async def _close_changes(db_path: str) -> list[dict]:
+    """Every `signup.close` change asked of the queue."""
+    return [row for row in await change_rows(db_path) if row["kind"] == "signup.close"]
 
 
 async def _is_open(db_path: str) -> bool:
@@ -528,7 +587,7 @@ async def test_opening_with_a_close_time_states_it_in_the_line_and_the_audit_row
     armed = (await SignupModuleService(db_path).get_config()).close_at
     assert armed is not None
     [line] = _lines(cog)
-    assert line.startswith("Manager (<@42>) | /signup open | Success")
+    assert line.startswith("Manager (`<@42>`) | /signup open | Success")
     assert armed in line
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -536,22 +595,6 @@ async def test_opening_with_a_close_time_states_it_in_the_line_and_the_audit_row
         )
         row = await cursor.fetchone()
     assert armed in json.loads(row["new_value"]).values()
-
-
-async def test_a_previous_closed_notice_is_taken_down(tmp_path):
-    """Otherwise the channel carries a "signups are closed" message above an open button."""
-    db_path = await _seed(tmp_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE signup_module_config SET signup_closed_message_id = 9001 "
-            "",
-        )
-        await db.commit()
-    interaction = _interaction()
-
-    await _open(_cog(db_path), interaction)
-
-    interaction._signup_channel.fetch_message.assert_awaited_once()
 
 
 async def test_a_closed_notice_already_deleted_does_not_stop_the_open(tmp_path):
@@ -566,127 +609,41 @@ async def test_a_closed_notice_already_deleted_does_not_stop_the_open(tmp_path):
     interaction._signup_channel.fetch_message = AsyncMock(
         side_effect=discord.NotFound(MagicMock(), "gone")
     )
+    interaction._signup_channel.get_partial_message = MagicMock(
+        return_value=MagicMock(delete=AsyncMock(side_effect=discord.NotFound(MagicMock(), "gone")))
+    )
 
     await _open(_cog(db_path), interaction)
 
     assert await _is_open(db_path)
+    assert await stopped_job(db_path) is None
 
 
 async def test_a_failed_post_leaves_signups_closed(tmp_path):
     """The button is how a driver signs up. Recording the window as open without one would
     leave a league believing signups were running with no way in. A fault in the post is the
-    bot's, so it goes to the command's failure path rather than being answered here."""
+    bot's: the queue stops at the `post_info` job that posts it (#439, slice 6b), the window
+    stays closed, and no reply carries the error's text."""
     db_path = await _seed(tmp_path)
-    interaction = _interaction()
-    interaction._signup_channel.send = AsyncMock(side_effect=RuntimeError("no perms"))
-
-    with pytest.raises(RuntimeError):
-        await _open(_cog(db_path), interaction)
-
-    assert not await _is_open(db_path)
-
-
-# ---------------------------------------------------------------------------
-# /signup open — what the bot may not do, and every refusal, reach the log channel (#442)
-# ---------------------------------------------------------------------------
-
-#: The hub's words for a signup channel the bot may not post the button in.
-MAY_NOT_POST = (
-    "❌ The bot needs **View Channel**, **Send Messages** and **Embed Links** on #signups to "
-    "post the Sign Up button. Signups were not opened."
-)
-
-
-def _lines(cog) -> list[str]:
-    return [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
-
-
-def _forbidden():
-    return discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Access")
-
-
-async def _with_a_closed_notice(db_path) -> None:
-    """The "signups closed" notice the last close posted, still standing in the channel."""
-    async with get_connection(db_path) as db:
-        await db.execute("UPDATE signup_module_config SET signup_closed_message_id = 9001")
-        await db.commit()
-
-
-@pytest.mark.parametrize(
-    "notice", [False, True], ids=["no-closed-notice", "closed-notice-in-place"]
-)
-async def test_a_signup_post_the_bot_may_not_make_is_refused(tmp_path, notice):
-    """Discord refuses the post: the hub's words, no error text, the window left closed, and
-    the refusal logged. The "signups closed" notice is taken down only once the open message
-    is posted, so it still stands, and the refusal need say nothing about it."""
-    db_path = await _seed(tmp_path)
-    if notice:
-        await _with_a_closed_notice(db_path)
-    cog = _cog(db_path)
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "signup open"
-    interaction._signup_channel.send = AsyncMock(side_effect=_forbidden())
-
-    await _open(cog, interaction)
-
-    replied = _replied(interaction)
-    assert MAY_NOT_POST in replied
-    assert "Missing Access" not in replied
-    assert "Failed to post" not in replied
-    assert "closed" not in replied.replace(MAY_NOT_POST, "")
-    interaction._signup_channel.fetch_message.return_value.delete.assert_not_awaited()
-    assert not await _is_open(db_path)
-    [line] = _lines(cog)
-    assert line.startswith("⛔ ")
-    assert "/signup open" in line
-    assert "refused for Manager (<@42>)" in line
-
-
-async def test_a_signup_post_fault_goes_to_the_failure_path(tmp_path):
-    """Anything but Discord's refusal is a fault in the bot: it goes to the command's failure
-    path, the window stays closed, the "signups closed" notice still stands, and no reply
-    carries the error's text."""
-    db_path = await _seed(tmp_path)
-    await _with_a_closed_notice(db_path)
-    cog = _cog(db_path)
     interaction = _interaction()
     interaction._signup_channel.send = AsyncMock(side_effect=RuntimeError("gateway closed"))
 
-    with pytest.raises(RuntimeError):
-        await _open(cog, interaction)
-
-    assert "gateway closed" not in _replied(interaction)
-    interaction._signup_channel.fetch_message.return_value.delete.assert_not_awaited()
-    assert not await _is_open(db_path)
-    assert not any("Success" in line for line in _lines(cog))
-
-
-async def test_the_closed_notice_is_taken_down_only_once_the_open_message_is_posted(tmp_path):
-    """So that the channel always shows one notice or the other: the open message and its
-    Sign Up button go up first, and the "signups closed" notice comes down after."""
-    db_path = await _seed(tmp_path)
-    await _with_a_closed_notice(db_path)
-    interaction = _interaction()
-    order: list[str] = []
-    posted = interaction._signup_channel.send.return_value
-
-    async def _post(*_a, **_k):
-        order.append("post")
-        return posted
-
-    async def _take_down(*_a, **_k):
-        order.append("take down")
-
-    interaction._signup_channel.send = AsyncMock(side_effect=_post)
-    interaction._signup_channel.fetch_message.return_value.delete = AsyncMock(
-        side_effect=_take_down
-    )
-
     await _open(_cog(db_path), interaction)
 
-    assert order == ["post", "take down"]
-    assert await _is_open(db_path)
+    job = await stopped_job(db_path)
+    assert job is not None and job["name"] == "post_info"
+    assert not await _is_open(db_path)
+    assert "gateway closed" not in _replied(interaction)
+
+
+# ---------------------------------------------------------------------------
+# /signup open — every refusal reaches the log channel (#442)
+# ---------------------------------------------------------------------------
+
+
+def _lines(cog) -> list[str]:
+    """The lines the log channel was sent."""
+    return list(cog.bot.log_channel.sent)
 
 
 #: Every refusal `/signup open` makes: how the server is seeded, how the interaction is built,
@@ -726,7 +683,7 @@ async def test_every_signup_open_refusal_reaches_the_log_channel(
     [line] = _lines(cog)
     assert line.startswith("⛔ ")
     assert "/signup open" in line
-    assert "refused for Manager (<@42>)" in line
+    assert "refused for Manager (`<@42>`)" in line
 
 
 # ---------------------------------------------------------------------------
@@ -743,17 +700,50 @@ async def test_closing_signups_that_are_not_open_is_refused(tmp_path):
     assert "not currently open" in _replied(interaction)
 
 
+async def _close_league(tmp_path, *drivers: int):
+    """`setup_league` at Signups with the window open, on a real change queue; each of *drivers*
+    still filling in the wizard (Pending Signup Completion), their signup channel standing."""
+    os.makedirs(str(tmp_path), exist_ok=True)
+    league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
+    for user_id in drivers:
+        await signing_up(league, user_id, state="PENDING_SIGNUP_COMPLETION")
+        cid = SIGNUP_CHANNEL_BASE + user_id
+        held = league._recording(recording_channel(cid, league.events))
+        held.guild = league.guild
+        held.set_permissions = AsyncMock()
+        league.channels[cid] = held
+    return league
+
+
+def _league_manager(league):
+    interaction = member_interaction(league.bot, user=tier_member("manager", member_id=77))
+    interaction.guild = league.guild
+    interaction.command = MagicMock(qualified_name="signup close")
+    return interaction
+
+
+async def _league_close(league):
+    """League manager 77 runs `/signup close` on *league*; gives his interaction."""
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    interaction = _league_manager(league)
+    await undecorate(SignupCog.signup_close)(cog, interaction)
+    return interaction
+
+
 async def test_an_empty_window_closes_without_asking(tmp_path):
-    """Nobody is mid-signup, so there is nothing to confirm."""
-    db_path = await _seed(tmp_path, signups_open=True)
-    cog = _cog(db_path)
-    interaction = _interaction()
+    """Nobody is mid-signup, so there is nothing to confirm: manager 77's `/signup close` asks
+    the close of the queue at once, and once the queue has run the window is closed and his
+    reply says signups closed."""
+    league = await _close_league(tmp_path)
 
-    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()) as forced:
-        await _close(cog, interaction)
+    interaction = await _league_close(league)
 
-    forced.assert_awaited_once()
-    assert "Signups closed" in _replied(interaction)
+    assert len(await _close_changes(league.db_path)) == 1
+    await run_queue(league.bot)
+    [window] = await league.rows("SELECT signups_open FROM signup_module_config WHERE id = 1")
+    assert not window["signups_open"]
+    assert "Signups closed" in updated_reply(interaction)
 
 
 @pytest.mark.parametrize(
@@ -772,10 +762,9 @@ async def test_every_in_progress_state_forces_a_confirmation(tmp_path, state):
     cog = _cog(db_path)
     interaction = _interaction()
 
-    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()) as forced:
-        await _close(cog, interaction)
+    await _close(cog, interaction)
 
-    forced.assert_not_awaited()
+    assert await _close_changes(db_path) == []
     assert isinstance(
         interaction.response.send_message.await_args.kwargs["view"], ConfirmCloseView
     )
@@ -792,8 +781,7 @@ async def test_the_confirmation_counts_and_names_the_drivers(tmp_path):
     max_.display_name = "Max"
     interaction = _interaction(members={7000: lewis, 7001: max_})
 
-    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
-        await _close(_cog(db_path), interaction)
+    await _close(_cog(db_path), interaction)
 
     returned, kept = _replied(interaction).split("keep their place")
     assert "return 1 driver(s) to Not Signed Up" in returned
@@ -817,8 +805,7 @@ async def test_the_confirmation_counts_only_the_drivers_the_close_will_return(tm
     )
     interaction = _interaction(members={})
 
-    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
-        await _close(_cog(db_path), interaction)
+    await _close(_cog(db_path), interaction)
 
     replied = _replied(interaction)
     assert "return 1 driver(s) to Not Signed Up" in replied
@@ -833,10 +820,9 @@ async def test_a_close_with_only_drivers_in_review_says_nobody_loses_their_signu
     )
     interaction = _interaction(members={})
 
-    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()) as forced:
-        await _close(_cog(db_path), interaction)
+    await _close(_cog(db_path), interaction)
 
-    forced.assert_not_awaited()
+    assert await _close_changes(db_path) == []
     replied = _replied(interaction)
     assert "Nobody will lose their signup" in replied
     assert "7000" in replied
@@ -868,8 +854,7 @@ async def test_each_driver_is_listed_with_their_signup_channel(tmp_path):
     await _give_signup_channel(db_path, "7001", 880002)
     interaction = _interaction(members={})
 
-    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
-        await _close(_cog(db_path), interaction)
+    await _close(_cog(db_path), interaction)
 
     returned, kept = _replied(interaction).split("keep their place")
     assert "7000 — <#880001>" in returned
@@ -892,8 +877,7 @@ async def test_a_driver_with_no_signup_channel_is_listed_by_name_alone(tmp_path)
         await db.commit()
     interaction = _interaction(members={})
 
-    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
-        await _close(_cog(db_path), interaction)
+    await _close(_cog(db_path), interaction)
 
     replied = _replied(interaction)
     assert "• 7000\n" in replied
@@ -905,7 +889,7 @@ def test_every_state_the_close_returns_is_one_the_confirmation_lists():
     """A state added to the close alone would drop drivers the confirmation never named, and
     one of them parked alone would let the close through with no confirmation at all."""
     from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
-    from leaguebot.signup.cogs.signup_cog import IN_PROGRESS_STATES
+    from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES
 
     assert RETURNED_BY_CLOSE <= IN_PROGRESS_STATES
 
@@ -918,8 +902,7 @@ async def test_a_driver_who_has_left_is_listed_by_id(tmp_path):
     )
     interaction = _interaction(members={})
 
-    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
-        await _close(_cog(db_path), interaction)
+    await _close(_cog(db_path), interaction)
 
     assert "7000" in _replied(interaction)
 
@@ -934,8 +917,7 @@ async def test_a_long_list_of_drivers_is_truncated(tmp_path):
     )
     interaction = _interaction(members={})
 
-    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
-        await _close(_cog(db_path), interaction)
+    await _close(_cog(db_path), interaction)
 
     replied = _replied(interaction)
     assert "13 driver(s)" in replied
@@ -951,8 +933,7 @@ async def test_each_list_is_truncated_on_its_own(tmp_path):
     )
     interaction = _interaction(members={})
 
-    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
-        await _close(_cog(db_path), interaction)
+    await _close(_cog(db_path), interaction)
 
     returned, kept = _replied(interaction).split("keep their place")
     assert "return 12 driver(s)" in returned
@@ -968,8 +949,7 @@ async def test_the_confirmation_warns_what_closing_will_do(tmp_path):
     )
     interaction = _interaction(members={})
 
-    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
-        await _close(_cog(db_path), interaction)
+    await _close(_cog(db_path), interaction)
 
     assert "Not Signed Up" in _replied(interaction)
 
@@ -989,7 +969,6 @@ async def _confirmation(tmp_path, *, in_progress=("PENDING_SIGNUP_COMPLETION",))
         await db.commit()
     cog = _cog(db_path)
     cog.bot.driver_service.transition = AsyncMock()
-    cog.bot.wizard_service.trigger_channel_hold = AsyncMock()
     asked = _interaction(members={})
     asked.client = cog.bot
     asked.edit_original_response = AsyncMock()
@@ -1021,20 +1000,26 @@ def _pressed(cog):
 async def test_confirming_reports_how_many_drivers_the_close_returned(tmp_path):
     """The reply and the log say what the close did, not what the confirmation feared. The log
     used to record `in_progress_drivers_discarded: true` whoever was waiting (issue #128).
-    The number is the close's own, since a driver may have moved on while the buttons stood.
+    The number is the close's own, since a driver may have moved on while the buttons stood. The
+    line is headed "/signup close (force)", as a close confirmed over drivers still signing up
+    always was.
 
-    Two drivers are still filling in the wizard; the manager confirms the close `/signup close`
-    asked about, and the real close returns both."""
-    db_path, cog, _asked, view = await _confirmation(
-        tmp_path, in_progress=("PENDING_SIGNUP_COMPLETION", "PENDING_SIGNUP_COMPLETION")
-    )
-    press = _pressed(cog)
+    Kimi (105) and a second driver (107) are still filling in the wizard; manager 77 runs
+    `/signup close`, presses Confirm Close, and the queue runs the close, which returns both."""
+    league = await _close_league(tmp_path, 105, 107)
+    asked = await _league_close(league)
+    view = asked.response.send_message.await_args.kwargs["view"]
+    press = _league_manager(league)
 
     await view.confirm.callback(press)
+    assert len(await _close_changes(league.db_path)) == 1
+    await run_queue(league.bot)
 
-    assert not await _is_open(db_path)
-    assert "2 driver(s) still signing up were returned to Not Signed Up" in _replied(press)
-    log = _lines(cog)[-1]
+    [window] = await league.rows("SELECT signups_open FROM signup_module_config WHERE id = 1")
+    assert not window["signups_open"]
+    assert "2 driver(s) still signing up were returned to Not Signed Up" in updated_reply(press)
+    [log] = [line for line in league.bot.log_channel.sent if "| /signup close (force) |" in line]
+    assert "| /signup close (force) | Success" in log
     assert "drivers_returned_to_not_signed_up: 2" in log
     assert "discarded" not in log
 
@@ -1054,7 +1039,7 @@ async def test_cancelling_the_close_is_recorded_and_signups_stay_open(tmp_path):
     first, *beneath = line.splitlines()
     assert first.startswith("↩️ ")
     assert "/signup close" in first
-    assert first.endswith("cancelled by Manager (<@42>)")
+    assert first.endswith("cancelled by Manager (`<@42>`)")
     assert any("Signups remain open." in text for text in beneath)
     assert any("/signup close" in text and "again" in text for text in beneath)
 
@@ -1074,7 +1059,7 @@ async def test_a_close_confirmation_left_unanswered_is_recorded_and_its_buttons_
     first, *beneath = line.splitlines()
     assert first.startswith("⌛ ")
     assert "/signup close" in first
-    assert first.endswith("lapsed unconfirmed (started by Manager (<@42>))")
+    assert first.endswith("lapsed unconfirmed (started by Manager (`<@42>`))")
     assert any("Signups remain open." in text for text in beneath)
     asked.edit_original_response.assert_awaited_once()
     assert asked.edit_original_response.await_args.kwargs.get("view", "kept") is None
@@ -1107,7 +1092,8 @@ async def test_confirming_a_close_whose_window_has_changed_is_refused(tmp_path, 
     given a close time. The press is refused with the reason (the armed case in the command's
     own words, stating the time and naming `/signup close-time cancel`), one refusal line names
     the Confirm Close button and the manager, and nothing is closed: the driver is not returned,
-    no notice is posted, the window is as the change left it, and no close is audited."""
+    no notice is posted and no close is asked of the queue, the window is as the change left it,
+    and no close is audited."""
     db_path, cog, asked, view = await _confirmation(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(change)
@@ -1123,156 +1109,13 @@ async def test_confirming_a_close_whose_window_has_changed_is_refused(tmp_path, 
     [line] = _lines(cog)
     assert line.startswith("⛔ ")
     assert "Confirm Close" in line
-    assert "refused for Manager (<@42>)" in line
+    assert "refused for Manager (`<@42>`)" in line
     cog.bot.driver_service.transition.assert_not_awaited()
     asked._signup_channel.send.assert_not_awaited()
+    assert [row for row in await change_rows(db_path) if row["kind"] == "signup.close"] == []
     assert await SignupModuleService(db_path).get_config() == before
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT COUNT(*) FROM audit_entries WHERE change_type = 'SIGNUP_FORCE_CLOSE'"
         )
         assert (await cursor.fetchone())[0] == 0
-
-
-#: One failed step, as the forced close words it for the reply and the line.
-_NOTICE_NOT_POSTED = "The closed notice could not be posted in the signup channel."
-
-
-async def test_a_close_with_failed_steps_names_them_in_the_reply_and_the_line(tmp_path):
-    """Signups are open and nobody is mid-signup, so `/signup close` closes at once; the close
-    shuts the window but cannot post its closed notice. The manager is told of the failed step
-    in the reply, and the success line carries it beneath."""
-    db_path = await _seed(tmp_path, signups_open=True)
-    cog = _cog(db_path)
-    interaction = _interaction()
-    outcome = SimpleNamespace(returned=0, failed=(_NOTICE_NOT_POSTED,), refused=None)
-
-    with patch(
-        "leaguebot.signup.cogs.signup_cog.execute_forced_close",
-        new=AsyncMock(return_value=outcome),
-    ):
-        await _close(cog, interaction)
-
-    replied = _replied(interaction)
-    assert "Signups closed" in replied
-    assert _NOTICE_NOT_POSTED in replied
-    [line] = _lines(cog)
-    first, *beneath = line.splitlines()
-    assert "/signup close" in first
-    assert any(_NOTICE_NOT_POSTED in text for text in beneath)
-
-
-async def test_confirming_a_close_with_failed_steps_names_them_in_the_reply_and_the_line(
-    tmp_path,
-):
-    """A driver is mid-signup, `/signup close` asks, and the manager presses Confirm Close; the
-    close returns the driver but cannot post its closed notice. The reply says one driver was
-    returned and names the failed step, and the line carries the count and, beneath it, the
-    failed step."""
-    _db_path, cog, _asked, view = await _confirmation(tmp_path)
-    outcome = SimpleNamespace(returned=1, failed=(_NOTICE_NOT_POSTED,), refused=None)
-    press = _pressed(cog)
-
-    with patch(
-        "leaguebot.signup.cogs.signup_cog.execute_forced_close",
-        new=AsyncMock(return_value=outcome),
-    ):
-        await view.confirm.callback(press)
-
-    replied = _replied(press)
-    assert "1 driver(s) still signing up were returned to Not Signed Up" in replied
-    assert _NOTICE_NOT_POSTED in replied
-    [line] = _lines(cog)
-    first, *beneath = line.splitlines()
-    assert "/signup close" in first
-    assert "drivers_returned_to_not_signed_up: 1" in line
-    assert any(_NOTICE_NOT_POSTED in text for text in beneath)
-
-
-#: Discord's limit on one message, in characters.
-_DISCORD_LIMIT = 2000
-
-#: How many failed steps each case has: two fit in one message, three hundred cannot.
-_STEP_COUNTS = [
-    pytest.param(2, id="two_steps"),
-    pytest.param(300, id="three_hundred_steps"),
-]
-
-
-def _failed_steps(count: int) -> tuple[str, ...]:
-    """*count* failed steps, each its own sentence naming its own driver."""
-    return tuple(
-        f"Driver {n:03d} could not be returned to Not Signed Up: Discord refused the change."
-        for n in range(1, count + 1)
-    )
-
-
-def _parts(interaction) -> list[tuple[str, dict]]:
-    """Each message the member was sent after the close was deferred, with how it was sent."""
-    return [
-        (str(call.args[0]) if call.args else str(call.kwargs.get("content")), call.kwargs)
-        for call in interaction.followup.send.await_args_list
-    ]
-
-
-def _assert_replied_in_parts(parts: list[tuple[str, dict]], steps: tuple[str, ...]) -> None:
-    """Every step reaches the member whole, in messages each inside Discord's limit and each
-    seen only by them, with nothing cut short: two steps fit in one message, hundreds do not."""
-    texts = [text for text, _ in parts]
-    assert all(len(text) <= _DISCORD_LIMIT for text in texts)
-    assert all(kwargs.get("ephemeral") is True for _, kwargs in parts)
-    for step in steps:
-        assert sum(step in text for text in texts) == 1, step
-    assert not any("more, listed in the log channel" in text for text in texts)
-    if len(steps) == 2:
-        assert len(texts) == 1
-    else:
-        assert len(texts) > 1
-
-
-@pytest.mark.parametrize("count", _STEP_COUNTS)
-async def test_a_close_with_many_failed_steps_is_replied_in_parts(tmp_path, count):
-    """Signups are open and nobody is mid-signup, so `/signup close` closes at once, but the
-    close fails *count* steps. The reply names every one, in as many messages as Discord's limit
-    needs and no more, never cut short; and the success line names every one beneath it."""
-    db_path = await _seed(tmp_path, signups_open=True)
-    cog = _cog(db_path)
-    interaction = _interaction()
-    steps = _failed_steps(count)
-    outcome = SimpleNamespace(returned=0, failed=steps, refused=None)
-
-    with patch(
-        "leaguebot.signup.cogs.signup_cog.execute_forced_close",
-        new=AsyncMock(return_value=outcome),
-    ):
-        await _close(cog, interaction)
-
-    parts = _parts(interaction)
-    assert "Signups closed" in parts[0][0]
-    _assert_replied_in_parts(parts, steps)
-    [line] = _lines(cog)
-    assert all(step in line for step in steps)
-
-
-@pytest.mark.parametrize("count", _STEP_COUNTS)
-async def test_confirming_a_close_with_many_failed_steps_is_replied_in_parts(tmp_path, count):
-    """A driver is mid-signup, `/signup close` asks, and the manager presses Confirm Close; the
-    close returns the driver but fails *count* steps. The reply names every one, in as many
-    messages as Discord's limit needs and no more, never cut short; and the success line names
-    every one beneath it."""
-    _db_path, cog, _asked, view = await _confirmation(tmp_path)
-    steps = _failed_steps(count)
-    outcome = SimpleNamespace(returned=1, failed=steps, refused=None)
-    press = _pressed(cog)
-
-    with patch(
-        "leaguebot.signup.cogs.signup_cog.execute_forced_close",
-        new=AsyncMock(return_value=outcome),
-    ):
-        await view.confirm.callback(press)
-
-    parts = _parts(press)
-    assert "1 driver(s) still signing up were returned to Not Signed Up" in parts[0][0]
-    _assert_replied_in_parts(parts, steps)
-    [line] = _lines(cog)
-    assert all(step in line for step in steps)

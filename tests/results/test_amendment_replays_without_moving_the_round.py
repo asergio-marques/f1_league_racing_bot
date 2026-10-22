@@ -54,6 +54,18 @@ def _function(relative: str, name: str) -> ast.AST:
     raise AssertionError(f"{name} not found in {relative}")
 
 
+def _revert() -> ast.AST:
+    """The revert's body: its form taking a connection, which the lapse and cancel run in their
+    save."""
+    return _function(MODULE, "revert_abandoned_amendment_on")
+
+
+def _stage_one() -> ast.AST:
+    """Stage one's body: its form taking a connection, which `results.amend.stage_one` runs in its
+    save."""
+    return _function(MODULE, "amend_round_results_on")
+
+
 def _code(node: ast.AST) -> str:
     """The function's source without its docstring, which names what it avoids in prose."""
     body = list(node.body)
@@ -238,7 +250,7 @@ async def test_a_settled_round_is_not_moved_on_by_the_first_pass(tmp_path, movin
 
 def test_stage_one_publishes_nothing_at_all():
     """It records the corrected classification; every posting belongs to the final stage."""
-    source = _code(_function(MODULE, "amend_round_results"))
+    source = _code(_stage_one())
 
     assert "replay_division_channels" not in source
     assert "repost_round_results" not in source
@@ -250,7 +262,7 @@ def test_stage_one_publishes_nothing_at_all():
 def test_the_revert_publishes_nothing_either():
     """Nothing was posted before the snapshot was released, so a revert has nothing to repost —
     and reposting one round would only move it to the bottom of the channel, out of order."""
-    source = _code(_function(MODULE, "revert_abandoned_amendment"))
+    source = _code(_revert())
 
     assert "repost" not in source
     assert "cascade_recompute_from_round" in source

@@ -23,6 +23,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import pytest
+
 from leaguebot.core.db.database import get_connection
 from tests.support.change_queue import (
     acknowledgement,
@@ -32,6 +34,7 @@ from tests.support.change_queue import (
     restart_queue,
     retry_job,
     run_queue,
+    stopped_job,
     tier_member,
     updated_reply,
 )
@@ -44,6 +47,7 @@ from tests.support.review_league import (
     VERDICTS_CHANNEL,
     ReviewLeague,
     appeals_prompts,
+    block_queue,
     changes_of,
     one,
     penalty,
@@ -368,3 +372,51 @@ async def test_the_manager_is_told_the_round_is_final(tmp_path):
         in updated_reply(interaction)
     )
     assert "APPEALS_REVIEW_APPROVED | Success" in league.log()
+
+
+async def test_the_final_approval_deletes_the_channel_on_the_league_and_ends_the_conversation(
+    tmp_path,
+):
+    """Round 3 awaits its appeal verdicts, its appeals prompt 8902 standing in submission channel
+    702, and Discord refuses the channel's deletion. Alex approves the appeals. The league lane
+    stops at the channel's deletion, round 3's lane does not, and the submission row is closed:
+    the conversation is ended. No job deletes the appeals prompt on its own; Retry deletes the
+    channel, the prompt with it."""
+    league = await _league(tmp_path)
+    league.channel(SUBMISSION_CHANNEL).delete_fails = http_error(status=403, text="Missing Access")
+
+    await _approve(league)
+    await run_queue(league.bot)
+
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "delete_channel"
+    assert await stopped_job(league.db_path, f"channel:{SUBMISSION_CHANNEL}") is None
+    assert await _closed(league.db_path) == 1
+
+    league.channel(SUBMISSION_CHANNEL).delete_fails = None
+    await retry_job(league.bot, lane="league")
+
+    assert await stopped_job(league.db_path) is None
+    assert _channel_deletions(league) == [SUBMISSION_CHANNEL]
+    assert ("delete", SUBMISSION_CHANNEL, APPEALS_PROMPT) not in league.events
+
+
+async def test_appeals_approve_is_refused_while_a_staging_is_in_hand(tmp_path):
+    """Round 3 awaits its appeal verdicts and its lane is stopped, so the correction for Lewis
+    Alex has just added is still waiting to be shown on the appeals prompt. Alex presses Approve
+    on the appeals review: it is refused at the press, telling him a change to the review is still
+    being shown; no appeal is recorded and round 3 still awaits its appeal verdicts."""
+    from tests.results.test_review_stage_change import LANE, _add_penalty, _alex, _state
+
+    league = await _league(tmp_path)
+    await block_queue(league, lane=LANE)
+    await _add_penalty(_state(league, appeals=True), _alex(league), appeals=True)
+
+    interaction = await _approve(league)
+    await run_queue(league.bot)
+
+    # Refused at the press, so no change of the approval's is saved at all.
+    assert await changes_of(league.db_path, KIND) == []
+    assert "still being shown" in acknowledgement(interaction) + updated_reply(interaction)
+    assert await _appeal_records(league.db_path) == 0
+    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"

@@ -33,6 +33,7 @@ from tests.support.change_queue import (
     change_rows,
     discard_job,
     http_error,
+    in_a_job,
     member_interaction,
     retry_job,
     run_queue,
@@ -64,7 +65,6 @@ from tests.support.season_league import (
     season_league,
 )
 from tests.support.undecorate import undecorate
-
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 APPROVED = "✅ **Season approved and activated!**\nSeason #3 (ID: 7)"
@@ -119,6 +119,16 @@ async def _run_through(league: Any, name: str) -> None:
             return
         await run_queue(league.bot, steps=1)
     raise AssertionError(f"the approval's job {name} never finished: {await _jobs(league)}")
+
+
+async def _run_take_down(league: Any) -> None:
+    """Run the queue a job at a time until the review's take-down, which the press asked ahead
+    of the approval, has taken the review down and forgotten its row."""
+    for _ in range(100):
+        if not await league.rows("SELECT * FROM season_review_prompts"):
+            return
+        await run_queue(league.bot, steps=1)
+    raise AssertionError("the review was never taken down")
 
 
 async def _stopped_at(league: Any) -> str | None:
@@ -251,7 +261,7 @@ async def test_a_stop_after_the_season_is_saved_finishes_its_roles_lineups_calen
 ):
     league = await _league_for(tmp_path, monkeypatch, attendance=True)
     await _pressed(league)
-    await run_queue(league.bot, steps=1)
+    await _run_through(league, "apply")
     assert [job["name"] for job in await _jobs(league) if job["done_at"]] == ["apply"]
 
     await league.restart()
@@ -432,11 +442,13 @@ async def test_a_refusal_found_when_the_approval_runs_updates_the_reply_and_the_
     assert league.armed == []
     assert await _stopped_at(league) is None
     from leaguebot.core.services.season_approval_change import TELL_KIND
+    from leaguebot.core.services.season_review_changes import TAKE_DOWN
 
     # Past the 14 minutes, the approval asks the change that tells the review's channel (2.1b).
     told = [TELL_KIND] if change == "a date passed" else []
+    # The review came down ahead of the approval, and stays down whatever became of it.
     assert [row["kind"] for row in await change_rows(league.db_path)] == [
-        (await _approval(league))["kind"], *told
+        TAKE_DOWN, (await _approval(league))["kind"], *told
     ]
 
 
@@ -564,7 +576,7 @@ async def test_the_save_reads_nothing_but_its_own_connection(tmp_path, monkeypat
         return await real_sessions(*args, **kwargs)
 
     with _everywhere("create_sessions_for_round_on", _first_write):
-        await run_queue(league.bot, steps=1)
+        await _run_through(league, "apply")
     reading["forbidden"] = False
 
     apply = (await _jobs(league))[0]
@@ -750,8 +762,11 @@ async def test_a_season_with_weather_and_results_off_arms_a_result_submission_fo
 async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_division_finishes(
     tmp_path, monkeypatch,
 ):
-    """Each armed job fired as the scheduler would fire it at its round's moment."""
-    from leaguebot.results.services import result_submission_service
+    """Each armed job fired as the scheduler would fire it at its round's moment: each asks the
+    change queue to open its round's submission, as the bot, and the queue is run. With results
+    off every round is made FINAL, each division finishes, no channel is created and nothing is
+    posted."""
+    from leaguebot.core.models.change import ChangeOrigin
 
     league = await _league_for(tmp_path, monkeypatch, weather=False, results=False)
     await _pressed(league)
@@ -760,16 +775,18 @@ async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_
     assert fired == sorted(_all_rounds())
     before = {cid: league.texts(cid) for cid in league.channels}
 
-    with patch.object(result_submission_service, "create_submission_channel",
-                      AsyncMock()) as create:
-        for each in fired:
-            await result_submission_service.run_result_submission_job(each, league.bot)
+    for each in fired:
+        await league.bot.change_queue.ask(
+            "results.submission.open", {"round_id": each}, what="opening a results submission",
+            origin=ChangeOrigin.BOT,
+        )
+    await run_queue(league.bot)
 
     rounds = await league.rows("SELECT status FROM rounds")
     assert {row["status"] for row in rounds} == {"FINAL"}
     divisions = await league.rows("SELECT status FROM divisions")
     assert {row["status"] for row in divisions} == {"FINISHED"}
-    create.assert_not_awaited()
+    league.guild.create_text_channel.assert_not_awaited()
     assert {cid: league.texts(cid) for cid in league.channels} == before
 
 
@@ -1283,12 +1300,55 @@ async def test_a_division_with_no_standings_channel_set_posts_no_opening_standin
     )
 
     for division in (PRO, AM):
-        await season_classification_service.post_opening_standings(
-            league.bot, league.guild, league.db_path, division, as_text=False,
-        )
+        with in_a_job():
+            await season_classification_service.post_opening_standings(
+                league.bot, league.guild, league.db_path, division, as_text=False,
+            )
 
     assert league.texts(PRO_CH.standings)
     assert league.texts(AM_CH.standings) == []
+
+
+async def test_the_opening_sheet_with_no_channel_stops_the_queue(tmp_path, monkeypatch):
+    """Attendance is on, and Approve is pressed with every channel set, Am's attendance channel
+    included, and the season is saved. Am's attendance channel is then cleared before the rest of
+    the queue runs: Pro's opening sheet is posted, and the queue stops at Am's, its stop line
+    naming the command that sets the channel, rather than Am's sheet completing having posted
+    nothing."""
+    league = await _league_for(tmp_path, monkeypatch, attendance=True)
+    await _pressed(league)
+    await _run_through(league, "apply")
+    await league.write(
+        "UPDATE attendance_division_config SET attendance_channel_id = NULL WHERE division_id = ?",
+        AM,
+    )
+
+    await run_queue(league.bot)
+
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "opening_sheet"
+    assert json.loads(job["payload"])["division_id"] == AM
+    assert len(league.texts(PRO_CH.attendance)) == 1
+    assert "/attendance channel attendance" in league.log()
+
+
+async def test_the_approval_s_lineup_with_no_channel_stops_the_queue(tmp_path, monkeypatch):
+    """Approve is pressed with every channel set, Am's lineup channel included. Am's lineup
+    channel is cleared once the season is saved, before the rest of the queue runs: Pro's lineup
+    is posted, and the queue stops at Am's, its stop line naming the command that sets the
+    channel, rather than Am's lineup completing having posted nothing."""
+    league = await _league_for(tmp_path, monkeypatch)
+    await _pressed(league)
+    await _run_through(league, "apply")
+    await league.write("UPDATE divisions SET lineup_channel_id = NULL WHERE id = ?", AM)
+
+    await run_queue(league.bot)
+
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "refresh_lineup"
+    assert json.loads(job["payload"])["division_id"] == AM
+    assert len(league.texts(PRO_CH.lineup)) == 1
+    assert "/division lineup-channel" in league.log()
 
 
 async def test_the_batch_notice_brackets_the_posts_in_the_review_s_channel(
@@ -1490,6 +1550,7 @@ async def test_the_review_is_cleared_and_its_prompt_forgotten_once_the_approval_
 
     assert (await _approval(league))["state"] == "QUEUED"
     assert (await league.season())["stage"] == "PLACEMENTS"
+    await _run_take_down(league)
     assert await league.rows("SELECT * FROM season_review_prompts") == []
     for message in [*review.report, review.prompt]:
         assert ("delete", REVIEW_CHANNEL, message.id) in league.events

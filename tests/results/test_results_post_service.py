@@ -3,7 +3,7 @@
 Covers:
 - _label_from_status: all three status values and fallback
 - produce_session_results: heading + label appear in the sent message
-- post_standings: heading + label appear in the sent message
+- produce_standings: heading + label appear in the sent message
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from leaguebot.results.services.results_post_service import _label_from_status
+from tests.support.change_queue import in_a_job
 
 
 # ---------------------------------------------------------------------------
@@ -112,17 +113,18 @@ async def test_session_results_include_heading_and_label(tmp_path):
     mock_guild.get_member.return_value = None
     mock_guild.fetch_member = AsyncMock(side_effect=Exception("not found"))
 
-    await produce_session_results(
-        db_path=db_path,
-        session_result=session_result,
-        driver_rows=driver_rows,
-        points_map={},
-        results_channel=mock_channel,
-        guild=mock_guild,
-        round_number=5,
-        track_name="Monaco",
-        label="Provisional Results",
-    )
+    with in_a_job():
+        await produce_session_results(
+            db_path=db_path,
+            session_result=session_result,
+            driver_rows=driver_rows,
+            points_map={},
+            results_channel=mock_channel,
+            guild=mock_guild,
+            round_number=5,
+            track_name="Monaco",
+            label="Provisional Results",
+        )
 
     assert len(captured_content) == 1
     content = captured_content[0]
@@ -204,30 +206,31 @@ async def test_session_results_label_appears_for_all_status_values(tmp_path):
             return msg
         mock_channel.send = fake_send
 
-        await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=mock_channel,
-            guild=mock_guild,
-            round_number=1,
-            track_name="Monza",
-            label=label,
-        )
+        with in_a_job():
+            await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=mock_channel,
+                guild=mock_guild,
+                round_number=1,
+                track_name="Monza",
+                label=label,
+            )
 
         assert label in captured[0], f"Label '{label}' not found for status {status}"
 
 
 # ---------------------------------------------------------------------------
-# post_standings — heading and label in message content
+# produce_standings — heading and label in message content
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_post_standings_includes_heading_and_label(tmp_path):
-    """post_standings must include the heading and label in the posted standings message."""
+async def test_produce_standings_includes_heading_and_label(tmp_path):
+    """produce_standings must include the heading and label in the posted standings message."""
     from leaguebot.core.db.database import run_migrations, get_connection
-    from leaguebot.results.services.results_post_service import post_standings
+    from leaguebot.results.services.results_post_service import produce_standings
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -273,19 +276,20 @@ async def test_post_standings_includes_heading_and_label(tmp_path):
     mock_guild.get_member.return_value = None
     mock_guild.get_role.return_value = None
 
-    await post_standings(
-        db_path=db_path,
-        division_id=division_id,
-        round_id=round_id,
-        round_number=3,
-        track_name="Silverstone",
-        standings_channel=mock_channel,
-        driver_snapshots=[],
-        team_snapshots=[],
-        guild=mock_guild,
-        show_reserves=False,
-        label="Final Results",
-    )
+    with in_a_job():
+        await produce_standings(
+            db_path=db_path,
+            division_id=division_id,
+            round_id=round_id,
+            round_number=3,
+            track_name="Silverstone",
+            standings_channel=mock_channel,
+            driver_snapshots=[],
+            team_snapshots=[],
+            guild=mock_guild,
+            show_reserves=False,
+            label="Final Results",
+        )
 
     assert len(captured_content) == 1
     content = captured_content[0]
@@ -1030,16 +1034,18 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
     )
 
     async def _results(**kwargs) -> PostedTable:
-        return await produce_session_results(
-            db_path, session, [], {}, results_channel, guild, 3, "Silverstone",
-            "Provisional Results", **kwargs,
-        )
+        with in_a_job():
+            return await produce_session_results(
+                db_path, session, [], {}, results_channel, guild, 3, "Silverstone",
+                "Provisional Results", **kwargs,
+            )
 
     async def _standings(label: str = "Provisional Results", **kwargs) -> list[PostedTable]:
-        return await produce_standings(
-            db_path, DIVISION_ID, ROUND_ID, 3, "Silverstone", standings_channel, [], [],
-            guild, True, label, **kwargs,
-        )
+        with in_a_job():
+            return await produce_standings(
+                db_path, DIVISION_ID, ROUND_ID, 3, "Silverstone", standings_channel, [], [],
+                guild, True, label, **kwargs,
+            )
 
     # A session's results: posted afresh, the old posting handed back and left standing.
     posted = await _results()
@@ -1076,10 +1082,23 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
         "leaguebot.image.services.image_results_post.try_post", new=AsyncMock(return_value=drew)
     ):
         assert await _results(bot=bot) == PostedTable([9990], [OLD_RESULTS], drawn=True)
+    # The standings drawn as pictures save and delete nothing either; what they report is
+    # pinned in `test_image_standings_post.py`.
+    from leaguebot.image.services.image_standings_post import (
+        POSTED,
+        ChampionshipOutcome,
+        StandingsPostOutcome,
+    )
+
+    pictures = StandingsPostOutcome(
+        drivers=ChampionshipOutcome(action=POSTED, message_id=9991),
+        constructors=ChampionshipOutcome(action=POSTED, message_id=9992),
+    )
     with patch(
-        "leaguebot.image.services.image_standings_post.try_post", new=AsyncMock(return_value=drew)
+        "leaguebot.image.services.image_standings_post.try_post",
+        new=AsyncMock(return_value=pictures),
     ):
-        assert await _standings(bot=bot) == []
+        await _standings(bot=bot)
 
     assert not [event for event in events if event[0] == "delete"]
     assert await _stored() == stored

@@ -14,6 +14,7 @@ from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverProfile, DriverState
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.signup.models.signup_module import AvailabilitySlot
 from leaguebot.core.models.team import TeamRoleConfig
 from leaguebot.core.utils.input_validator import parse_time
@@ -2059,25 +2060,32 @@ class PlacementService:
 
         What the post job of a change on the change queue calls (#439): a lineup channel the
         division was given and the guild no longer holds, or a send Discord refuses, raises
-        `StepFailedOnDiscord`, for the queue to stop on and try again. A division never given a
-        lineup channel posts nothing and gives None. The post is all it does: the job's `record`
+        `StepFailedOnDiscord`, for the queue to stop on and try again; so does a division never
+        given a lineup channel, the message naming `/division lineup-channel`. A division no
+        longer there posts nothing and gives None. The post is all it does: the job's `record`
         saves the new id and a job after it deletes the message replaced.
 
         *as_text* skips the picture and posts the textual lineup: a job tried again goes as text
         (Constitution XIV, rule 8).
         """
-        return await self._refresh_lineup_post(guild, division_id, as_text=as_text)
+        return await self._refresh_lineup_post(
+            guild, division_id, as_text=as_text, require_channel=True
+        )
 
+    @posts_in_a_job
     async def _refresh_lineup_post(
         self,
         guild: discord.Guild,
         division_id: int,
         *,
         as_text: bool = False,
+        require_channel: bool = False,
     ) -> LineupPosted | None:
         """Post the division's lineup: as a graphic where configured, else as the embed.
 
-        *as_text* leaves the image path out altogether, whatever is configured.
+        *as_text* leaves the image path out altogether, whatever is configured. *require_channel*
+        raises for a division never given a lineup channel, as the post job of a change must;
+        without it such a division posts nothing, since configuring one is optional.
 
         **The image path is a guard clause in front of the textual body.** Where the images
         module is enabled, the `lineup` aspect is on and a valid template is configured,
@@ -2096,8 +2104,15 @@ class PlacementService:
             )
             div_row = await cur.fetchone()
 
-        if div_row is None or div_row["lineup_channel_id"] is None:
+        if div_row is None:
             return None
+        if div_row["lineup_channel_id"] is None:
+            if not require_channel:
+                return None
+            raise StepFailedOnDiscord(
+                f"{div_row['div_name'] or division_id} has no lineup channel set: set one with "
+                "/division lineup-channel, then press Retry"
+            )
 
         lineup_channel_id: int = div_row["lineup_channel_id"]
         lineup_message_id: int | None = div_row["lineup_message_id"]

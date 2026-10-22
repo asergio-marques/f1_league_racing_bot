@@ -9,9 +9,11 @@ failure. They are now changes of their own, which the queue saves and resumes:
 - **`results.amendment.reports.approve`**: `apply`, one save (the superseded announcements noted,
   the amended sessions' verdict records cleared and the approved reports written back with the
   points recalculated, `round_amend_channels.reports_approved_at` set while the amendment is still
-  unclaimed, the deadline kept), the take-down of the stage's prompt and approval message, the
-  amendment's appeals prompt, and `close`, writing `AMEND_STAGE_2 | Recorded`. Nothing is
-  published: an amendment abandoned part-way has nothing on Discord to take back.
+  unclaimed, the deadline kept) and `close`, writing `AMEND_STAGE_2 | Recorded` and asking the
+  amendment's lane for **`results.amend.prompt`**, which takes the stage's prompt and approval
+  message down and posts the amendment's appeals prompt in the amend channel (C44c): a prompt
+  Discord refuses stops that lane alone. Nothing is published: an amendment abandoned part-way has
+  nothing on Discord to take back.
 - **`results.amendment.appeals.approve`**: `names`, then `apply`, one save (the upheld appeals and
   the points, the round's pardons, the former drivers, the cascade of standings snapshots, the
   attendance recalculation, the release of the snapshot and the deadline, and the amend row's
@@ -24,7 +26,10 @@ retried ("Retry like any job"). While a stage's job is in hand, stopped included
 neither lapses nor can be cancelled, restart recovery leaves it alone, and a Retry approves it
 even past its half-hour. Once a league admin discards it, the next sweep undoes an amendment past
 its half-hour ("Leave it while stuck"). One change at a time already stops two stages running
-together, so the stage claim of the old code (`_claim_amendment`) is not used on this path.
+together, so no stage claim is taken on this path.
+
+**A stage's Approve waits for the stage to be shown**: it is refused while the amendment's lane
+holds a staging or a confirmation in hand (`staging_in_hand`, C56a), whichever stage it is.
 
 **The release and everything the rebuild writes are saved together**, so a stop after the release
 leaves no standings or attendance owed. Once that save is made the amendment can no longer be
@@ -50,7 +55,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
 
@@ -58,6 +63,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
+    FollowOn,
     PlannedStep,
     StepFailedOnDiscord,
     StepKind,
@@ -106,6 +112,7 @@ from leaguebot.results.services.review_posting import (
     plan_division_posts,
     posting_steps,
 )
+from leaguebot.results.services.review_confirm_change import STAGING_IN_HAND, staging_in_hand
 from leaguebot.results.services.standings_service import cascade_recompute_from_round_on
 from leaguebot.results.services.verdict_announcement_service import (
     _banners_heading_sanctions_on,
@@ -116,14 +123,16 @@ from leaguebot.results.services.verdict_records import VERDICT_TABLES, select_ve
 
 log = logging.getLogger(__name__)
 
-__all__ = ["APPEALS_KIND", "REPORTS_KIND", "amendment_stage_changes"]
+__all__ = ["APPEALS_KIND", "PROMPT_KIND", "REPORTS_KIND", "amendment_stage_changes"]
 
 REPORTS_KIND = "results.amendment.reports.approve"
 APPEALS_KIND = "results.amendment.appeals.approve"
+PROMPT_KIND = "results.amend.prompt"
 
 _APPLY = "apply"
 _CLOSE = "close"
 POST_AMENDMENT_APPEALS_PROMPT = review_verdicts.POST_APPEALS_PROMPT
+POST_AMENDMENT_REPORTS_PROMPT = "post_reports_prompt"
 TAKE_DOWN_VERDICT = "take_down_verdict"
 TAKE_DOWN_BANNER = "take_down_banner"
 
@@ -255,9 +264,10 @@ def _doing(stage: str) -> Callable[[dict[str, Any]], str]:
 
 def amendment_stage_changes(
     *, attendance: AttendanceAfterReview, now: Callable[[], datetime]
-) -> tuple[ChangeType, ChangeType]:
-    """The two change types of an amendment's stages; see the module. *attendance* is the hook the
-    builder hands every change type of the review, and *now* the queue's clock."""
+) -> tuple[ChangeType, ChangeType, ChangeType]:
+    """The change types of an amendment's stages, the report stage's, the appeals stage's and the
+    amendment's lane's prompt (`results.amend.prompt`); see the module. *attendance* is the hook
+    the builder hands every change type of the review, and *now* the queue's clock."""
 
     async def _in_hand(ctx: CheckContext, kind: str, round_id: int) -> bool:
         others = await unfinished(ctx.db_path, [kind], excluding=ctx.change_id)
@@ -283,6 +293,8 @@ def amendment_stage_changes(
         refusal = await _open_refusal(ctx.db_path, round_id, now(), reports_stage=True)
         if refusal is None and await _in_hand(ctx, REPORTS_KIND, round_id):
             refusal = _AMENDMENT_NOT_OPEN
+        if refusal is None and await staging_in_hand(ctx.db_path, round_id, amendment=True):
+            refusal = STAGING_IN_HAND
         return Verdict.go() if refusal is None else Verdict.refuse(refusal)
 
     async def apply_reports(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
@@ -316,27 +328,13 @@ def amendment_stage_changes(
         # it (stuck on the queue, then retried) is recorded, and nothing carries on from it. The
         # amendment is undone at the next sweep, and the manager runs the command again.
         late = await _deadline_passed(db, round_id, when)
-        then: list[PlannedStep] = []
-        taken_down = () if late else (
-            ("prompt_message_id", "report review prompt"),
-            ("approval_message_id", "approval message"),
-        )
-        for key, what in taken_down:
-            if payload.get(key) is not None:
-                then.append(PlannedStep(DELETE_MESSAGE, {
-                    "channel_id": channel_id, "message_id": int(payload[key]), "what": what,
-                }))
-        if not late:
-            then.append(PlannedStep(POST_AMENDMENT_APPEALS_PROMPT, {
-                "round_id": round_id, "division_id": division_id, "channel_id": channel_id,
-            }))
         return StepResult(
             result={
                 "round_number": round_number, "division_name": division_name,
                 "reports": len(staged), "applied": applied,
                 "sessions": list(payload["session_types"]), "late": late,
+                "channel_id": channel_id,
             },
-            then=tuple(then),
         )
 
     async def close_reports(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
@@ -358,11 +356,37 @@ def amendment_stage_changes(
             + ("\n  The half-hour had passed: the amendment is undone at the next sweep."
                if result.get("late") else "")
         )
-        return StepResult(result={"closed": True}, lines=(line,))
+        if result.get("late"):
+            return StepResult(result={"closed": True}, lines=(line,))
+        # The amendment's lane is asked, in the last save, to take the stage's two screens down
+        # and put the appeals stage's prompt up: the amend channel is the conversation's, so its
+        # lane posts there (C44c), and a prompt Discord refuses stops that lane alone.
+        payload = ctx.payload
+        asked = FollowOn(
+            PROMPT_KIND,
+            {
+                "round_id": int(payload["round_id"]),
+                "division_id": int(payload["division_id"]),
+                "channel_id": int(result["channel_id"]),
+                "session_types": list(payload["session_types"]),
+                "pardons": list(payload["pardons"]),
+                "takedowns": [
+                    {"message_id": int(payload[key]), "what": what}
+                    for key, what in (
+                        ("prompt_message_id", "report review prompt"),
+                        ("approval_message_id", "approval message"),
+                    )
+                    if payload.get(key) is not None
+                ],
+                "round_number": result["round_number"],
+                "division_name": result["division_name"],
+            },
+            what="the amendment's appeals stage prompt, with the report stage taken down",
+        )
+        return StepResult(result={"closed": True}, lines=(line,), follow_ons=(asked,))
 
     def outcome_reports(ctx: OutcomeContext) -> str:
-        views = {view.name: view for view in ctx.steps}
-        applied = views.get(_APPLY)
+        applied = next((view for view in ctx.steps if view.name == _APPLY), None)
         if _unapplied(applied):
             if _lapsed(ctx):
                 return _NOTHING_CHANGED_LAPSED
@@ -381,15 +405,7 @@ def amendment_stage_changes(
                 f"⚠️ {named}\nThe amendment's half-hour has passed, so it will be undone in the "
                 "next few minutes. Run `/results rounds amend` again."
             )
-        reply = f"✅ {named}"
-        prompt = views.get(POST_AMENDMENT_APPEALS_PROMPT)
-        if prompt is not None and _discarded(prompt.result):
-            return (
-                f"{reply}\n⚠️ The appeals stage's prompt could not be posted in the amendment "
-                "channel, so the amendment cannot go on: cancel it, or let it lapse, then run "
-                "`/results rounds amend` again."
-            )
-        return f"{reply} Its appeals stage is posted below."
+        return f"✅ {named} Its appeals stage is posted below."
 
     # ── The appeals stage ─────────────────────────────────────────────────
 
@@ -398,6 +414,8 @@ def amendment_stage_changes(
         refusal = await _open_refusal(ctx.db_path, round_id, now(), reports_stage=False)
         if refusal is None and await _in_hand(ctx, APPEALS_KIND, round_id):
             refusal = _AMENDMENT_NOT_OPEN
+        if refusal is None and await staging_in_hand(ctx.db_path, round_id, amendment=True):
+            refusal = STAGING_IN_HAND
         return Verdict.go() if refusal is None else Verdict.refuse(refusal)
 
     async def names_not_discarded(ctx: StepContext) -> bool:
@@ -516,6 +534,32 @@ def amendment_stage_changes(
         message = await send_appeals_prompt(ctx.bot, channel, state)
         return StepResult(result={"message_id": message.id, "channel_id": channel.id})
 
+    async def describe_reports_prompt(ctx: StepContext) -> str:
+        return f"posting the amendment's report stage in <#{ctx.step_payload['channel_id']}>"
+
+    async def post_reports_prompt(ctx: StepContext) -> StepResult:
+        """Open the amendment's second stage in its channel, once stage one is recorded: the
+        decisions the amended sessions already carry, for the manager to change."""
+        from leaguebot.results.services.result_submission_service import (
+            run_amendment_review_stages,
+        )
+
+        payload = ctx.step_payload
+        guild = await review_posting._league_guild(ctx.bot)
+        channel = review_posting._channel(guild, int(payload["channel_id"]), "amendment")
+        # A try that posted the prompt and failed to save the job's mark left it standing.
+        kept = (ctx.kept or {}).get("message_id")
+        if kept is not None:
+            await _delete_posting(
+                channel, int(kept), [int(kept)], label="amendment report prompt", failures=[]
+            )
+        state = await run_amendment_review_stages(
+            ctx.db_path, int(payload["round_id"]), int(payload["division_id"]), channel, ctx.bot,
+            round_number=int(payload["round_number"]), division_name=str(payload["division_name"]),
+            session_types=[SessionType(value) for value in payload["session_types"]],
+        )
+        return StepResult(result={"message_id": state.prompt_message_id, "channel_id": channel.id})
+
     async def replacements_posted(ctx: StepContext) -> bool:
         """A round's old announcements and banner come down only once every verdict replacing
         them stands: a verdict deleted from a channel is in no channel at all."""
@@ -584,10 +628,6 @@ def amendment_stage_changes(
     steps: dict[str, Step] = {
         **posting_steps(),
         **review_verdicts.verdict_steps(now, attendance),
-        POST_AMENDMENT_APPEALS_PROMPT: Step(
-            POST_AMENDMENT_APPEALS_PROMPT, StepKind.ACT, post_appeals_prompt,
-            describe=describe_appeals_prompt,
-        ),
         TAKE_DOWN_VERDICT: Step(
             TAKE_DOWN_VERDICT, StepKind.DELETE, take_down_verdict, still_due=replacements_posted,
             describe=describe_take_down,
@@ -607,11 +647,9 @@ def amendment_stage_changes(
     async def describe_close(_ctx: StepContext) -> str:
         return "recording the amendment's approval"
 
-    # The report stage publishes and moves nothing: only the jobs that take its own screens down
-    # and open the next stage.
+    # The report stage publishes and moves nothing: its one save, and the request for the lane's
+    # prompt that takes its own screens down and opens the next stage.
     reports_steps = {
-        DELETE_MESSAGE: steps[DELETE_MESSAGE],
-        POST_AMENDMENT_APPEALS_PROMPT: steps[POST_AMENDMENT_APPEALS_PROMPT],
         _APPLY: Step(_APPLY, StepKind.SAVE, apply_reports, describe=describe_reports),
         _CLOSE: Step(_CLOSE, StepKind.SAVE, close_reports, describe=describe_close),
     }
@@ -641,7 +679,167 @@ def amendment_stage_changes(
         doing=_doing("appeals"),
         outcome=outcome_appeals,
     )
-    return reports, appeals
+    return reports, appeals, _prompt_change(
+        post_appeals_prompt, describe_appeals_prompt, post_reports_prompt, describe_reports_prompt
+    )
+
+
+# ---------------------------------------------------------------------------
+# The amendment's lane: the appeals stage's prompt
+# ---------------------------------------------------------------------------
+
+
+def _prompt_change(
+    post: Callable[[StepContext], Awaitable[StepResult]],
+    describe_post: Callable[[StepContext], Awaitable[str]],
+    post_reports: Callable[[StepContext], Awaitable[StepResult]],
+    describe_reports: Callable[[StepContext], Awaitable[str]],
+) -> ChangeType:
+    """The change that puts the amendment's report stage, or its appeals stage, up, on the
+    amendment's lane (C44c).
+
+    Asked by `results.amend.stage_one` with ``stage`` "reports", it posts the report stage's
+    prompt in the amendment channel (*post_reports*) and nothing more; the payload is the
+    amendment's ``round_id``, ``division_id``, ``channel_id``, ``session_types``,
+    ``round_number`` and ``division_name``. Asked by the report stage's approval, as follows.
+
+    Asked by `results.amendment.reports.approve` in its last save: it takes the report stage's
+    prompt and approval message down (``takedowns``, each ``message_id`` and ``what``), then posts
+    the appeals stage's prompt in the amendment channel. A refusal stops the amendment's lane
+    alone; the report stage's approval is done by then. The payload is the report stage's
+    (``round_id``, ``division_id``, ``session_types``, ``pardons``, ``round_number``,
+    ``division_name``) with ``channel_id`` (the lane) and ``takedowns``. The conversation stands
+    while the round's amendment row names the channel and is not closed.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        async with get_connection(ctx.db_path) as db:
+            if not await _amendment_stands(db, ctx.payload):
+                return Verdict.not_due("The amendment is over.")
+        return Verdict.go()
+
+    async def conversation_open(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
+        return await _amendment_stands(db, payload)
+
+    async def close(_db: aiosqlite.Connection, _ctx: StepContext) -> StepResult:
+        return StepResult(result={"closed": True})
+
+    async def describe_close(_ctx: StepContext) -> str:
+        return "recording that the amendment's appeals stage is up"
+
+    def _not_posted(ctx: OutcomeContext) -> bool:
+        prompt = next(
+            (v for v in ctx.steps
+             if v.name in (POST_AMENDMENT_APPEALS_PROMPT, POST_AMENDMENT_REPORTS_PROMPT)),
+            None,
+        )
+        return prompt is not None and _discarded(prompt.result)
+
+    _CANNOT_GO_ON = (
+        "⚠️ The appeals stage's prompt could not be posted in the amendment channel, so the "
+        "amendment cannot go on: cancel it, or let it lapse, then run `/results rounds amend` "
+        "again."
+    )
+    _REPORTS_CANNOT_GO_ON = _CANNOT_GO_ON.replace("appeals stage's", "report stage's")
+
+    def _cannot_go_on(payload: dict[str, Any]) -> str:
+        return _REPORTS_CANNOT_GO_ON if payload.get("stage") == "reports" else _CANNOT_GO_ON
+
+    def outcome(ctx: OutcomeContext) -> str:
+        if _not_posted(ctx):
+            return _cannot_go_on(ctx.payload)
+        if ctx.payload.get("stage") == "reports":
+            return f"✅ The amendment's report stage is up (round {ctx.payload['round_id']})."
+        return f"✅ The amendment's appeals stage is up (round {ctx.payload['round_id']})."
+
+    def finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
+        """A discarded prompt is named in the log, where the manager who approved the reports
+        will read it: the reply that approved them has long been sent."""
+        if not _not_posted(ctx):
+            return ()
+        return (
+            f"{ctx.named} | AMEND_STAGE_2 | Incomplete\n"
+            f"  round: {ctx.payload.get('round_number') or ctx.payload['round_id']} "
+            f"({ctx.payload.get('division_name', '?')})\n"
+            f"  {_cannot_go_on(ctx.payload)}",
+        )
+
+    def tell_origin(ctx: OutcomeContext) -> str | None:
+        """The manager's reply to the approval, while it can be updated, hears of a discarded
+        prompt too."""
+        return _cannot_go_on(ctx.payload) if _not_posted(ctx) else None
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        channel_id = int(payload["channel_id"])
+        if payload.get("stage") == "reports":
+            return (
+                PlannedStep(POST_AMENDMENT_REPORTS_PROMPT, dict(payload)),
+                PlannedStep(_CLOSE),
+            )
+        return (
+            *(
+                PlannedStep(DELETE_MESSAGE, {
+                    "channel_id": channel_id, "message_id": int(down["message_id"]),
+                    "what": down["what"],
+                })
+                for down in payload.get("takedowns", [])
+            ),
+            PlannedStep(POST_AMENDMENT_APPEALS_PROMPT, {
+                "round_id": int(payload["round_id"]), "division_id": int(payload["division_id"]),
+                "channel_id": channel_id,
+            }),
+            PlannedStep(_CLOSE),
+        )
+
+    def doing(payload: dict[str, Any]) -> str:
+        if payload.get("stage") == "reports":
+            return f"Putting up the report stage of round {payload['round_number']}'s amendment"
+        if payload.get("round_number") is None:
+            return "Putting up an amendment's appeals stage"
+        return (
+            f"Putting up the appeals stage of round {payload['round_number']}'s amendment "
+            f"({payload.get('division_name', 'its division')})"
+        )
+
+    return ChangeType(
+        kind=PROMPT_KIND,
+        opening=(),
+        steps={
+            DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
+            POST_AMENDMENT_APPEALS_PROMPT: Step(
+                POST_AMENDMENT_APPEALS_PROMPT, StepKind.ACT, post, describe=describe_post,
+            ),
+            POST_AMENDMENT_REPORTS_PROMPT: Step(
+                POST_AMENDMENT_REPORTS_PROMPT, StepKind.ACT, post_reports,
+                describe=describe_reports,
+            ),
+            _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
+        },
+        check=check,
+        key=lambda payload: f"{PROMPT_KIND}:{payload['round_id']}",
+        doing=doing,
+        outcome=outcome,
+        lane=lambda payload: f"channel:{int(payload['channel_id'])}",
+        conversation_open=conversation_open,
+        writes=(),
+        plan=plan,
+        finished_lines=finished_lines,
+        tell_origin=tell_origin,
+        turn_channel=lambda payload: int(payload["channel_id"]),
+    )
+
+
+async def _amendment_stands(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
+    """Whether the round's amendment still holds the channel the lane is named for: its row stands
+    in that channel and is not closed."""
+    row = await (
+        await db.execute(
+            "SELECT 1 FROM round_amend_channels WHERE round_id = ? AND channel_id = ? "
+            "AND closed_at IS NULL",
+            (int(payload["round_id"]), int(payload["channel_id"])),
+        )
+    ).fetchone()
+    return row is not None
 
 
 # ---------------------------------------------------------------------------

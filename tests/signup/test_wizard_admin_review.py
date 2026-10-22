@@ -1,163 +1,214 @@
-"""Approving, rejecting and sending back a signup.
+"""Approving, rejecting and sending back a signup, through the change queue.
 
-Issue #208. These three are what a league manager actually does with a completed signup, and
-all three were unexecuted. `tests/signup/test_correction_parameter_timeout.py` covers what
-happens when a correction window *lapses*; nothing covered opening one, or the two decisions
-either side of it.
+Issue #208, then #439 slice 6b (C78, C84, C85). These three are what a league manager does with
+a completed signup. Each is asked of the queue as the manager's change on the league lane:
+Approve by its press (`signup.approve`), Reject and Request Changes by the reason the manager
+types after pressing (`signup.end` with ``reason="rejected"``, `signup.request_changes`). The
+driver's status, record and role change on the league lane; what is posted back in the driver's
+channel comes back on the driver's own lane (`signup.closing`, `signup.choices`). The tests here
+press or type as a manager does and read what the queue saved and posted once it has run.
 
-**Approval is the only one that grants anything, and the order it works in matters.** The
-driver's total lap time is computed and stored *before* the state transition, because the
-seeding value is read off the signup record and the transition is what makes the record a
-driver. Reversed, a league would seed its divisions from a value that was not there yet.
-`test_the_seeding_lap_time_is_stored_before_the_driver_becomes_unassigned` holds the ordering
-rather than merely that both happened.
-
-**Every failure along the way is survivable, deliberately.** A missing role, a role the bot
-cannot grant, a driver who has left the server, a state transition that refuses — none of them
-may stop an approval or a rejection part-way. A signup half-approved leaves a driver with a
-role and no state, or a state and no channel notice, and there is no command that finishes the
-job. Each is pinned with its own test.
+**Every failure of the role is survivable, deliberately.** A missing role, a role the bot cannot
+grant, a driver who has left the server: none of them may stop an approval part-way (signup
+:122). `tests/signup/test_review_changes.py` pins the queue's shape of each change; this file
+pins the rules each outcome holds.
 
 **All three hold the channel for 24 hours rather than deleting it.** The driver is told the
-outcome in the channel, so deleting it immediately would take the message away with it. The
-hold is what gives them a day to read it.
+outcome in the channel, so deleting it at once would take the message with it.
 
-`request_changes` writes down **who** asked and **why** before posting the view. The actor is
-only a Discord object here and the window outlives the process, so the id is persisted — that
-is what lets the timeout mention the right manager when it lapses.
+Request Changes writes down **who** asked and **why**, so that the lapse can mention the right
+manager when the five minutes run out.
 """
 from __future__ import annotations
 
-import asyncio
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+import json
+import os
+from datetime import timedelta
+from typing import Any
+from unittest.mock import AsyncMock
 
 import discord
 import pytest
 
+from tests.support.change_queue import (
+    MANAGER_ROLE_ID,
+    acknowledgement,
+    change_rows,
+    discard_job,
+    http_error,
+    member_interaction,
+    run_queue,
+    stopped_job,
+    typed_message,
+    updated_reply,
+)
+from tests.support.review_league import channel
+from tests.support.season_league import (
+    DRIVER_ROLE,
+    SEASON_ID,
+    SIGNING_UP,
+    SIGNUP_CHANNEL_BASE,
+    SeasonLeague,
+    setup_league,
+    signing_up,
+)
 
-SERVER_ID = 1
-DRIVER_ID = "7"
-CHANNEL_ID = 99
-DRIVER_ROLE_ID = 4242
-ACTOR_ID = 555
+
+KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
+REVIEWER = 77
+LAP_TIMES = {"1": "1:30.000", "2": "1:31.500"}
+INACTIVITY_TIMER = "signup_inactivity"
+DELETE_TIMER = "signup_channel_delete"
+CLOSING_KIND = "signup.closing"
+LABELS = {"reject": "Reject", "request_changes": "Request Changes"}
 
 
-# ---------------------------------------------------------------------------
-# Fixtures / helpers
-# ---------------------------------------------------------------------------
-
-
-def _wizard(**draft):
-    from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
-
-    return SignupWizardRecord(
-        id=1,
-        discord_user_id=DRIVER_ID,
-        # The wizard has no review state of its own — `WizardState` stops at the last
-        # question. Awaiting review is carried on the *driver profile*, so a completed
-        # wizard sits in its final collection state until the channel is cleared up.
-        wizard_state=WizardState.COLLECTING_NOTES,
-        signup_channel_id=CHANNEL_ID,
-        config_snapshot=ConfigSnapshot(
-            nationality_required=False,
-            time_type="TIME_TRIAL",
-            time_image_required=False,
-            selected_track_ids=[],
-            slots=[],
-        ),
-        draft_answers=dict(draft),
-        current_lap_track_index=0,
-        last_activity_at=None,
+async def _league(tmp_path: Any, *, state: str = "PENDING_ADMIN_APPROVAL",
+                  lap_times: dict[str, str] | None = None) -> SeasonLeague:
+    """`setup_league` at Signups, the window open, the driver role (820) set; Kimi at *state*,
+    his wizard unengaged in his signup channel, his signup record saved with *lap_times* (Kimi's
+    two times unless given); manager 77 holding the interaction role. Today's handlers off the
+    queue are stand-ins that do nothing, so that only what is asked of the queue shows."""
+    os.makedirs(str(tmp_path), exist_ok=True)
+    league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
+    await league.write("UPDATE server_configs SET driver_role_id = ?", DRIVER_ROLE)
+    league.roles_held[REVIEWER] = {MANAGER_ROLE_ID}
+    await signing_up(league, SIGNING_UP, state=state)
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED', draft_answers_json = '{}' "
+        "WHERE discord_user_id = ?", str(SIGNING_UP),
     )
-
-
-def _record(lap_times: dict | None = None):
-    return SimpleNamespace(lap_times=lap_times or {})
-
-
-@pytest.fixture
-def review():
-    """A `WizardService` wired for the three review outcomes, with an ordered call log."""
-    from leaguebot.core.models.driver_profile import DriverState
-    from leaguebot.signup.services.wizard_service import WizardService
-
-    svc = WizardService.__new__(WizardService)
-    svc._correction_tasks = {}
-    order: list[str] = []
-
-    svc._cancel_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
-    svc.trigger_channel_hold = AsyncMock(return_value=None)  # type: ignore[method-assign]
-
-    async def _transition(user_id, state):
-        order.append(f"transition:{state.value if hasattr(state, 'value') else state}")
-
-    async def _store_total(user_id, lap_times):
-        order.append("store_total_lap_ms")
-
-    driver_service = MagicMock()
-    driver_service.transition = AsyncMock(side_effect=_transition)
-    # Awaiting review, as a driver whose panel a manager presses is (#492).
-    driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(current_state=DriverState.PENDING_ADMIN_APPROVAL)
+    await league.write(
+        "INSERT INTO signup_records (season_id, discord_user_id, server_display_name, "
+        "nationality, platform, platform_id, driver_type, lap_times_json, signup_channel_id) "
+        "VALUES (?, ?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', ?, ?)",
+        SEASON_ID, str(SIGNING_UP), str(SIGNING_UP),
+        json.dumps(LAP_TIMES if lap_times is None else lap_times), KIMI_CHANNEL,
     )
+    made = league._recording(channel(KIMI_CHANNEL, league.events))
+    made.guild = league.guild
+    made.posted = []
+    made.set_permissions = AsyncMock()
+    league.channels[KIMI_CHANNEL] = made
+    wizards = league.bot.wizard_service
+    wizards.approve_signup = AsyncMock(return_value=None)
+    wizards.reject_signup = AsyncMock(return_value=None)
+    wizards.request_changes = AsyncMock(return_value=None)
+    return league
 
-    signup_svc = MagicMock()
-    # The module's configuration need only exist; the driver role is the league's (#276).
-    signup_svc.get_config = AsyncMock(return_value=SimpleNamespace(signup_channel_id=700))
-    signup_svc.get_record = AsyncMock(return_value=_record())
-    signup_svc.mark_approved = AsyncMock()
-    signup_svc.get_wizard = AsyncMock(return_value=_wizard())
-    signup_svc.save_wizard = AsyncMock(return_value=None)
 
-    bot = MagicMock()
-    bot.driver_service = driver_service
-    bot.signup_module_service = signup_svc
-    bot.placement_service.store_total_lap_ms = AsyncMock(side_effect=_store_total)
-    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    bot.config_service.get_server_config = AsyncMock(
-        return_value=SimpleNamespace(driver_role_id=DRIVER_ROLE_ID)
+def _manager(league: SeasonLeague) -> Any:
+    manager = league._member(REVIEWER)
+    manager.bot = False
+    return manager
+
+
+def _press(league: SeasonLeague) -> Any:
+    """Manager 77's press in Kimi's signup channel, now."""
+    press = member_interaction(league.bot, user=_manager(league), created_at=league.clock.now)
+    press.guild = league.guild
+    press.channel_id = KIMI_CHANNEL
+    press.channel = league.channel(KIMI_CHANNEL)
+    return press
+
+
+async def _approve(league: SeasonLeague, *, run: bool = True) -> Any:
+    """Manager 77 presses Approve on Kimi's review panel, handed the change queue when built
+    (A23), and the queue runs unless *run* is false."""
+    from leaguebot.signup.services.signup_views import AdminReviewView
+
+    press = _press(league)
+    view = AdminReviewView(str(SIGNING_UP), change_queue=league.bot.change_queue)
+    await view.approve_button.callback(press)
+    if run:
+        await run_queue(league.bot)
+    return press
+
+
+async def _type_reason(league: SeasonLeague, action: str, reason: str,
+                       *, moved_to: str | None = None,
+                       moved_after_ask: str | None = None) -> Any:
+    """Manager 77 has pressed *action* ("reject" or "request_changes") on Kimi's review panel,
+    the press deferred and parked as the button parks it; where *moved_to* is given Kimi's
+    signup moves on to that state meanwhile, and where *moved_after_ask* is given it moves on to
+    that state only once the queue has accepted the press, before the queue runs. 77 types *reason* in Kimi's channel, the review cog
+    hears it, and the queue runs. Gives the stored press."""
+    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+
+    manager = _manager(league)
+    press = _press(league)
+    await press.response.defer(ephemeral=True)
+    _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)] = {
+        "action": action,
+        "discord_user_id": str(SIGNING_UP),
+        "actor": manager,
+        "guild": league.guild,
+        "interaction": press,
+        "followup": press.followup,
+    }
+    if moved_to is not None:
+        await league.write(
+            "UPDATE driver_profiles SET current_state = ? WHERE discord_user_id = ?",
+            moved_to, str(SIGNING_UP),
+        )
+    message = typed_message(league.channel(KIMI_CHANNEL), manager, reason,
+                            created_at=league.clock.now)
+    message.guild = league.guild
+    try:
+        await AdminReviewCog(league.bot).on_message(message)
+    finally:
+        _PENDING_REASONS.clear()
+    if moved_after_ask is not None:
+        await league.write(
+            "UPDATE driver_profiles SET current_state = ? WHERE discord_user_id = ?",
+            moved_after_ask, str(SIGNING_UP),
+        )
+    await run_queue(league.bot)
+    return press
+
+
+async def _state(league: SeasonLeague) -> str | None:
+    rows = await league.rows(
+        "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", str(SIGNING_UP)
     )
-    svc._bot = bot
+    return str(rows[0]["current_state"]) if rows else None
 
-    svc._output_router = MagicMock()
-    svc._output_router.post_log = AsyncMock(return_value=None)
 
-    member = MagicMock()
-    member.display_name = "Lewis"
-    member.mention = f"<@{DRIVER_ID}>"
-    member.add_roles = AsyncMock(return_value=None)
-
-    role = MagicMock()
-    channel = MagicMock(spec=discord.TextChannel)
-    channel.send = AsyncMock(return_value=None)
-
-    guild = MagicMock(spec=discord.Guild)
-    guild.get_member = MagicMock(return_value=member)
-    guild.get_role = MagicMock(return_value=role)
-    guild.get_channel = MagicMock(return_value=channel)
-
-    actor = MagicMock()
-    actor.id = ACTOR_ID
-    actor.display_name = "Manager"
-
-    return SimpleNamespace(
-        svc=svc,
-        guild=guild,
-        actor=actor,
-        member=member,
-        role=role,
-        channel=channel,
-        order=order,
-        signup_svc=signup_svc,
-        driver_service=driver_service,
+async def _record(league: SeasonLeague) -> dict[str, Any]:
+    [row] = await league.rows(
+        "SELECT * FROM signup_records WHERE discord_user_id = ?", str(SIGNING_UP)
     )
+    return row
 
 
-def _logged(ctx) -> str:
-    return "\n".join(
-        str(call.args[0]) for call in ctx.svc._output_router.post_log.await_args_list
+async def _draft(league: SeasonLeague) -> dict[str, Any]:
+    [row] = await league.rows(
+        "SELECT draft_answers_json FROM signup_wizard_records WHERE discord_user_id = ?",
+        str(SIGNING_UP),
     )
+    return dict(json.loads(row["draft_answers_json"] or "{}"))
+
+
+def _texts(league: SeasonLeague) -> list[str]:
+    return list(league.channel(KIMI_CHANNEL).texts)
+
+
+def _answered(press: Any) -> str:
+    """All the manager was told: the acknowledgement, then the reply as updated, then any
+    follow-up."""
+    told = [acknowledgement(press), updated_reply(press)]
+    told += [str(call.args[0]) for call in press.followup.send.await_args_list if call.args]
+    return "\n".join(part for part in told if part)
+
+
+def _lines(league: SeasonLeague) -> list[str]:
+    """The log channel's lines as a reader sees them: the router wraps each mention in backticks
+    so that it names without notifying, and the backticks are not part of what a line says."""
+    return league.log().replace("`", "").splitlines()
+
+
+async def _closings(league: SeasonLeague) -> list[dict[str, Any]]:
+    return [row for row in await change_rows(league.db_path) if row["kind"] == CLOSING_KIND]
 
 
 # ---------------------------------------------------------------------------
@@ -165,172 +216,211 @@ def _logged(ctx) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def test_an_approved_driver_is_granted_the_driver_role(review):
-    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+async def test_an_approved_driver_is_granted_the_driver_role(tmp_path):
+    """Manager 77 approves Kimi and the queue runs: Kimi is given the league's driver role
+    (820), once."""
+    league = await _league(tmp_path)
 
-    review.guild.get_role.assert_called_once_with(DRIVER_ROLE_ID)
-    review.member.add_roles.assert_awaited_once()
-    assert review.member.add_roles.await_args.args[0] is review.role
+    await _approve(league)
+
+    assert league.granted.get(SIGNING_UP) == [DRIVER_ROLE]
 
 
-async def test_an_approved_driver_becomes_unassigned(review):
+async def test_an_approved_driver_becomes_unassigned(tmp_path):
     """Unassigned, not placed. Approval says they may race; the placement commands decide
     where."""
-    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+    league = await _league(tmp_path)
 
-    assert "transition:UNASSIGNED" in review.order
+    await _approve(league)
 
-
-async def test_the_seeding_lap_time_is_stored_before_the_driver_becomes_unassigned(review):
-    """The ordering, not merely that both happened. The seeding value is read off the
-    signup record, and the transition is what turns that record into a driver — reversed,
-    a league would seed its divisions from a value that was not there yet."""
-    review.signup_svc.get_record = AsyncMock(return_value=_record({"1": "1:23.456"}))
-
-    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
-
-    assert review.order.index("store_total_lap_ms") < review.order.index(
-        "transition:UNASSIGNED"
-    )
+    assert await _state(league) == "UNASSIGNED"
 
 
-async def test_a_driver_with_no_lap_times_stores_no_seeding_value(review):
-    """A league that asked for no times has nothing to seed from, and storing a zero would
-    seed every driver identically."""
-    review.signup_svc.get_record = AsyncMock(return_value=_record({}))
+async def test_a_driver_with_no_lap_times_stores_no_seeding_value(tmp_path):
+    """A league that asked for no times has nothing to seed from, and storing a zero would seed
+    every driver identically: Kimi's record, holding no lap times, is approved with no total."""
+    league = await _league(tmp_path, lap_times={})
 
-    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+    await _approve(league)
 
-    assert "store_total_lap_ms" not in review.order
-
-
-async def test_approval_without_a_signup_configuration_does_nothing(review):
-    review.signup_svc.get_config = AsyncMock(return_value=None)
-
-    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
-
-    assert review.order == []
-    review.member.add_roles.assert_not_awaited()
+    assert await _state(league) == "UNASSIGNED"
+    assert (await _record(league))["total_lap_ms"] is None
 
 
-async def test_a_role_the_bot_cannot_grant_does_not_stop_the_approval(review):
-    """Discord refuses a role above the bot's own. The driver must still be approved —
-    a half-approval leaves them with a state and no role and nothing to finish the job."""
-    review.member.add_roles = AsyncMock(
-        side_effect=discord.HTTPException(MagicMock(), "forbidden")
-    )
+async def test_approval_without_a_signup_configuration_does_nothing(tmp_path):
+    """The signup module's configuration is gone when manager 77 presses Approve: Kimi stays
+    awaiting approval, holds no role, and nothing is posted in his channel; the manager is told
+    it was refused."""
+    league = await _league(tmp_path)
+    await league.write("DELETE FROM signup_module_config")
 
-    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+    press = await _approve(league)
 
-    assert "transition:UNASSIGNED" in review.order
+    assert await _state(league) == "PENDING_ADMIN_APPROVAL"
+    assert league.granted.get(SIGNING_UP) is None
+    assert _texts(league) == []
+    told = _answered(press)
+    assert "⛔" in told and "✅" not in told, told
 
 
 @pytest.mark.parametrize("why", ["role missing", "member left", "Discord refuses"])
-async def test_a_driver_role_not_granted_is_reported_and_the_approval_stands(review, why):
-    """The driver role cannot be given: the role has been deleted, the driver has left the
-    server, or Discord refuses it. The approval stands, as the core specification's role rules
-    have it, and `approve_signup` returns one sentence saying the role was not granted, which
-    the Approve button puts in its reply and which is written beneath the Approved line."""
+async def test_a_driver_role_not_granted_is_reported_and_the_approval_stands(tmp_path, why):
+    """The driver role cannot be given: the role has been deleted, Kimi has left the server, or
+    Discord refuses it. The approval stands, as the core specification's role rules have it:
+    Kimi is Unassigned, the league lane is not stopped, and both the manager's updated reply and
+    the Approved line in the log channel say the driver role could not be granted."""
+    from tests.support.change_queue import stopped_job
+
+    league = await _league(tmp_path)
     if why == "role missing":
-        review.guild.get_role = MagicMock(return_value=None)
+        league.roles_gone.add(DRIVER_ROLE)
     elif why == "member left":
-        review.guild.get_member = MagicMock(return_value=None)
+        league.absent.add(SIGNING_UP)
     else:
-        review.member.add_roles = AsyncMock(
-            side_effect=discord.HTTPException(MagicMock(), "forbidden")
-        )
+        league.grant_fails[SIGNING_UP] = http_error(discord.Forbidden, status=403)
 
-    note = await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+    press = await _approve(league)
 
-    assert "transition:UNASSIGNED" in review.order
-    assert isinstance(note, str) and "role" in note.lower(), note
-    lines = _logged(review).splitlines()
-    assert lines[0] == f"Manager (<@{ACTOR_ID}>) | Signup | Approved"
-    assert any(note in line for line in lines[1:]), lines
+    assert await _state(league) == "UNASSIGNED"
+    assert await stopped_job(league.db_path, "league") is None
+    assert "role" in updated_reply(press).lower()
+    assert any("| Signup | Approved" in line for line in _lines(league)), league.log()
+    assert "driver role could not be granted" in league.log().lower()
 
 
-async def test_a_driver_role_granted_adds_nothing_to_the_approval(review):
-    """Where the role is given, there is nothing to report: `approve_signup` returns nothing
-    and the Approved line names only the driver."""
-    note = await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+async def test_a_driver_role_granted_adds_nothing_to_the_approval(tmp_path):
+    """Where the role is given there is nothing to report: neither the manager's reply nor the
+    log says a role could not be granted, and the Approved line names the manager and Kimi."""
+    league = await _league(tmp_path)
 
-    assert note is None
-    assert _logged(review).splitlines() == [
-        f"Manager (<@{ACTOR_ID}>) | Signup | Approved",
-        f"  driver: Lewis (<@{DRIVER_ID}>)",
-    ]
+    press = await _approve(league)
 
-
-async def test_a_league_with_no_driver_role_configured_still_approves(review):
-    review.svc._bot.config_service.get_server_config = AsyncMock(
-        return_value=SimpleNamespace(driver_role_id=None)
-    )
-
-    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
-
-    review.member.add_roles.assert_not_awaited()
-    assert "transition:UNASSIGNED" in review.order
+    assert "could not be granted" not in updated_reply(press).lower()
+    assert "could not be granted" not in league.log().lower()
+    [approved] = [line for line in _lines(league) if "| Signup | Approved" in line]
+    assert f"<@{REVIEWER}>" in approved
+    assert any(line.startswith("  driver:") and f"<@{SIGNING_UP}>" in line
+               for line in _lines(league)), league.log()
 
 
-async def test_a_driver_who_has_left_the_server_is_still_approved(review):
-    """They may come back, and the record is the league's either way."""
-    review.guild.get_member = MagicMock(return_value=None)
+async def test_a_league_with_no_driver_role_configured_still_approves(tmp_path):
+    """No driver role is set for the league: Kimi is approved and given no role."""
+    league = await _league(tmp_path)
+    await league.write("UPDATE server_configs SET driver_role_id = NULL")
 
-    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+    await _approve(league)
 
-    assert "transition:UNASSIGNED" in review.order
+    assert await _state(league) == "UNASSIGNED"
+    assert league.granted.get(SIGNING_UP) is None
 
 
-async def test_approval_holds_the_channel_rather_than_deleting_it(review):
+async def test_a_driver_who_has_left_the_server_is_still_approved(tmp_path):
+    """Kimi has left the server: he may come back, and the record is the league's either way,
+    so he is approved all the same."""
+    league = await _league(tmp_path)
+    league.absent.add(SIGNING_UP)
+
+    await _approve(league)
+
+    assert await _state(league) == "UNASSIGNED"
+    assert (await _record(league))["approved"] == 1
+
+
+async def test_approval_holds_the_channel_rather_than_deleting_it(tmp_path):
     """The driver is told the outcome in the channel; deleting it at once would take the
-    message with it."""
-    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+    message with it. After the queue runs Kimi's channel still stands, is told he was approved,
+    his typing there is revoked and its deletion is armed a day on."""
+    league = await _league(tmp_path)
 
-    review.svc.trigger_channel_hold.assert_awaited_once()
-    notice = review.svc.trigger_channel_hold.await_args.args[2]
-    assert "approved" in notice
-    assert "Manager" in notice
+    await _approve(league)
+
+    assert KIMI_CHANNEL in league.channels
+    league.channel(KIMI_CHANNEL).delete.assert_not_awaited()
+    assert any("approved" in text.lower() for text in _texts(league)), _texts(league)
+    assert any(call.kwargs.get("send_messages") is False
+               for call in league.channel(KIMI_CHANNEL).set_permissions.call_args_list)
+    armed = [call.args for call in league.bot.scheduler_service.arm_once.call_args_list
+             if call.args and call.args[0] == DELETE_TIMER]
+    assert armed == [(DELETE_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))]
 
 
-async def test_approval_cancels_the_inactivity_timeout(review):
-    """The wizard is finished. Left armed, the timeout would later close a signup that had
-    already been approved."""
-    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+async def test_approval_cancels_the_inactivity_timeout(tmp_path):
+    """The wizard is finished. Left armed, the 24-hour timeout would later close a signup that
+    had already been approved, so the approval disarms Kimi's inactivity timer."""
+    league = await _league(tmp_path)
 
-    review.svc._cancel_inactivity_job.assert_awaited_once()
+    await _approve(league)
+
+    league.bot.scheduler_service.disarm.assert_any_call(INACTIVITY_TIMER, str(SIGNING_UP))
 
 
-async def test_approval_is_logged_naming_the_manager_and_the_driver(review):
-    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+async def test_approval_is_logged_naming_the_manager_and_the_driver(tmp_path):
+    """Manager 77 approves Kimi: the log channel carries an Approved line naming 77, with Kimi
+    named beneath it."""
+    league = await _league(tmp_path)
 
-    logged = _logged(review)
-    assert "Approved" in logged
-    assert "Manager" in logged
+    await _approve(league)
+
+    [approved] = [line for line in _lines(league) if "| Signup | Approved" in line]
+    assert f"<@{REVIEWER}>" in approved
+    assert f"<@{SIGNING_UP}>" in league.log()
+
+
+async def test_an_approval_whose_role_job_is_discarded_is_still_recorded(tmp_path, monkeypatch):
+    """Manager 77 approves Kimi and a fault of the bot's own stops the queue at the job that
+    gives the driver role; an admin discards it. Kimi is Unassigned, and the log channel carries
+    the Approved line naming 77 and Kimi all the same, saying the role was not granted."""
+    league = await _league(tmp_path)
+
+    await _approve(league, run=False)
+    monkeypatch.setattr(
+        "leaguebot.signup.services.review_changes.league_guild",
+        AsyncMock(side_effect=RuntimeError("fault")),
+    )
+    await run_queue(league.bot)
+    await discard_job(league.bot)
+
+    assert await _state(league) == "UNASSIGNED"
+    [approved] = [line for line in _lines(league) if "| Signup | Approved" in line]
+    assert f"<@{REVIEWER}>" in approved
+    assert "driver role could not be granted" in league.log().lower(), league.log()
+
+
+async def test_an_approved_signup_is_marked_as_such(tmp_path):
+    """Issue #243: an approved signup outranks a later one of the driver's that was not. Kimi's
+    signup record is marked approved once the queue has run his approval."""
+    league = await _league(tmp_path)
+
+    await _approve(league)
+
+    assert (await _record(league))["approved"] == 1
 
 
 @pytest.mark.parametrize(
     ("outcome", "action"),
     [
-        ("approve_signup", "Approved"),
-        ("reject_signup", "Rejected"),
-        ("request_changes", "Correction requested"),
+        pytest.param("approve", "Approved"),
+        pytest.param("reject", "Rejected"),
+        pytest.param("request_changes", "Correction requested"),
     ],
 )
-async def test_a_driver_who_has_left_is_named_by_mention_alone(review, outcome, action):
-    """A manager's Approve, Reject or Request Changes on a driver no longer on the server names
-    the driver by mention alone beneath the manager's line, never by the raw id beside it (core
-    specification, "The record of what changed")."""
-    review.signup_svc.get_wizard = AsyncMock(return_value=_wizard())
-    review.guild.get_member = MagicMock(return_value=None)
-    review.svc._bot.get_guild = MagicMock(return_value=review.guild)
+async def test_a_driver_who_has_left_is_named_by_mention_alone(tmp_path, outcome, action):
+    """Kimi has left the server. Manager 77's Approve, or the reason 77 types after Reject or
+    Request Changes, is carried out by the queue, and its line names Kimi by mention alone
+    beneath 77's line, never by the raw id beside it (core specification, "The record of what
+    changed")."""
+    league = await _league(tmp_path)
+    league.absent.add(SIGNING_UP)
 
-    await getattr(review.svc, outcome)(DRIVER_ID, review.guild, review.actor)
-    for task in review.svc._correction_tasks.values():
-        task.cancel()
+    if outcome == "approve":
+        await _approve(league)
+    else:
+        await _type_reason(league, outcome, "Lap times look mistyped")
 
-    lines = _logged(review).splitlines()
-    assert lines[0] == f"Manager (<@{ACTOR_ID}>) | Signup | {action}"
-    assert f"  driver: <@{DRIVER_ID}>" in lines
+    lines = _lines(league)
+    [first] = [line for line in lines if f"| Signup | {action}" in line]
+    assert f"<@{REVIEWER}>" in first
+    assert f"  driver: <@{SIGNING_UP}>" in lines, lines
 
 
 # ---------------------------------------------------------------------------
@@ -338,180 +428,63 @@ async def test_a_driver_who_has_left_is_named_by_mention_alone(review, outcome, 
 # ---------------------------------------------------------------------------
 
 
-async def test_a_rejected_driver_returns_to_not_signed_up(review):
-    await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
+async def test_a_rejected_driver_returns_to_not_signed_up(tmp_path):
+    """Manager 77 pressed Reject and types the reason: once the queue runs, Kimi is Not Signed
+    Up."""
+    league = await _league(tmp_path)
 
-    assert "transition:NOT_SIGNED_UP" in review.order
+    await _type_reason(league, "reject", "Lap time unverified")
 
-
-async def test_rejection_grants_no_role(review):
-    await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
-
-    review.member.add_roles.assert_not_awaited()
+    assert await _state(league) == "NOT_SIGNED_UP"
 
 
-async def test_a_rejection_reason_reaches_the_driver(review):
-    """The driver has to know what to fix before signing up again."""
-    await review.svc.reject_signup(
-        DRIVER_ID, review.guild, review.actor, reason="Lap time unverified"
-    )
+async def test_rejection_grants_no_role(tmp_path):
+    """Kimi's rejection, once run, grants him no role, though the league has a driver role and
+    his channel is told he was rejected."""
+    league = await _league(tmp_path)
 
-    notice = review.svc.trigger_channel_hold.await_args.args[2]
-    assert "Lap time unverified" in notice
+    await _type_reason(league, "reject", "Lap time unverified")
 
-
-async def test_a_rejection_without_a_reason_omits_the_reason_line(review):
-    """An empty **Reason:** would read as a reason nobody gave."""
-    await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
-
-    assert "Reason:" not in review.svc.trigger_channel_hold.await_args.args[2]
+    assert league.granted.get(SIGNING_UP) is None
+    assert any("rejected" in text.lower() for text in _texts(league)), _texts(league)
 
 
-async def test_a_failed_transition_does_not_stop_the_rejection(review):
-    """The driver may already be NOT_SIGNED_UP. The notice and the channel hold must still
-    happen, or the driver is never told."""
-    review.driver_service.transition = AsyncMock(side_effect=ValueError("already there"))
+async def test_a_rejection_reason_reaches_the_driver(tmp_path):
+    """The driver has to know what to fix before signing up again: the closing notice posted in
+    Kimi's channel gives "Lap time unverified"."""
+    league = await _league(tmp_path)
 
-    await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
+    await _type_reason(league, "reject", "Lap time unverified")
 
-    review.svc.trigger_channel_hold.assert_awaited_once()
-
-
-async def test_a_rejection_whose_transition_fails_otherwise_is_not_swallowed(review):
-    """Only the expected refusal (`ValueError`) is caught by name. Any other error reaches the
-    caller, whose failure handler tells the manager: the driver is not told they were rejected
-    and no Rejected line is written for a rejection that did not happen."""
-    review.driver_service.transition = AsyncMock(side_effect=RuntimeError("database is locked"))
-
-    with pytest.raises(RuntimeError):
-        await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
-
-    review.svc.trigger_channel_hold.assert_not_awaited()
-    review.svc._output_router.post_log.assert_not_awaited()
+    assert any("Lap time unverified" in text for text in _texts(league)), _texts(league)
 
 
-# ---------------------------------------------------------------------------
-# A reason arriving after the signup has moved on (#492)
-# ---------------------------------------------------------------------------
+async def test_a_rejection_reason_is_logged(tmp_path):
+    """Manager 77 rejects Kimi as a duplicate entry: the log channel carries a Rejected line
+    naming 77, with the reason beneath it."""
+    league = await _league(tmp_path)
 
-@pytest.mark.parametrize("outcome", ["reject_signup", "request_changes"])
-@pytest.mark.parametrize(
-    "state", ["UNASSIGNED", "NOT_SIGNED_UP", "AWAITING_CORRECTION_PARAMETER"],
-    ids=["approved", "withdrawn-or-rejected", "changes-already-requested"],
-)
-async def test_a_signup_that_has_moved_on_is_refused_and_left_as_it_is(review, outcome, state):
-    """The manager pressed Reject or Request Changes, and before their reason arrived the
-    signup moved on: another manager approved it, the driver withdrew or was rejected, or a
-    correction was already asked for. The service acts only on a driver still awaiting review,
-    so it returns why it refused and changes nothing: no transition, no notice to the driver,
-    no correction window, and no line."""
-    from leaguebot.core.models.driver_profile import DriverState
+    await _type_reason(league, "reject", "Duplicate entry")
 
-    review.driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(current_state=DriverState[state])
-    )
-
-    refused = await getattr(review.svc, outcome)(DRIVER_ID, review.guild, review.actor)
-
-    assert isinstance(refused, str) and refused, refused
-    review.driver_service.transition.assert_not_awaited()
-    review.svc.trigger_channel_hold.assert_not_awaited()
-    review.signup_svc.save_wizard.assert_not_awaited()
-    review.channel.send.assert_not_awaited()
-    assert review.svc._correction_tasks == {}
-    review.svc._output_router.post_log.assert_not_awaited()
+    [rejected] = [line for line in _lines(league) if "| Signup | Rejected" in line]
+    assert f"<@{REVIEWER}>" in rejected
+    assert "Duplicate entry" in league.log()
 
 
-@pytest.mark.parametrize("outcome", ["reject_signup", "request_changes"])
-async def test_a_signup_still_awaiting_review_is_acted_on_and_nothing_is_refused(review, outcome):
-    """The state check does not stop a reason for a driver still awaiting review: the service
-    acts and returns no refusal."""
-    refused = await getattr(review.svc, outcome)(DRIVER_ID, review.guild, review.actor)
-    for task in review.svc._correction_tasks.values():
-        task.cancel()
-
-    assert refused is None
-    assert review.order, "the driver was not moved on"
-
-
-async def test_rejection_cancels_a_pending_correction_window(review):
-    """A driver sent back and then rejected must not still have a correction window open,
-    which would let them re-submit into a signup that no longer exists."""
-    task = MagicMock()
-    review.svc._correction_tasks[DRIVER_ID] = task
-
-    await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
-
-    task.cancel.assert_called_once()
-    assert DRIVER_ID not in review.svc._correction_tasks
-
-
-async def test_a_rejection_reason_is_logged(review):
-    await review.svc.reject_signup(
-        DRIVER_ID, review.guild, review.actor, reason="Duplicate entry"
-    )
-
-    logged = _logged(review)
-    assert "Rejected" in logged
-    assert "Duplicate entry" in logged
-
-
-_CHANNEL_KEPT = (
-    f"  not done: the closing notice could not be posted in <#{CHANNEL_ID}> (Forbidden); "
-    "the channel is kept, readable but locked, and will not delete itself: delete it by hand"
-)
-
-
-def _notice_refused(review):
-    """The real channel hold, over Lewis's signup channel, whose notice Discord refuses (403)."""
-    del review.svc.trigger_channel_hold  # the fixture's double; the service's own hold runs
-    review.svc._scheduler = MagicMock()
-    review.channel.id = CHANNEL_ID
-    review.channel.mention = f"<#{CHANNEL_ID}>"
-    review.channel.send = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "no"))
-    review.channel.set_permissions = AsyncMock(return_value=None)
-    return review.channel
-
-
-async def test_an_approval_whose_notice_is_refused_keeps_the_channel_and_names_it_in_its_line(
-    review,
+@pytest.mark.parametrize("outcome", ["reject", "request_changes"])
+async def test_a_signup_still_awaiting_review_is_acted_on_and_nothing_is_refused(
+    tmp_path, outcome
 ):
-    """Manager approves Lewis, whose signup channel refuses the closing notice: the channel is
-    kept readable with Lewis's typing locked and no deletion armed, and the "Approved" line
-    names it for a league manager to delete by hand (#439, F2, P2)."""
-    channel = _notice_refused(review)
+    """Kimi's signup still awaits review when manager 77's reason arrives: the queue acts on it
+    (Kimi Not Signed Up after Reject, awaiting a correction parameter after Request Changes),
+    and the manager is told of no refusal."""
+    league = await _league(tmp_path)
 
-    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+    press = await _type_reason(league, outcome, "Lap times look mistyped")
 
-    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
-    review.svc._scheduler._scheduler.add_job.assert_not_called()
-    lines = [c.args[0] for c in review.svc._output_router.post_log.await_args_list]
-    assert lines == [
-        f"Manager (<@{ACTOR_ID}>) | Signup | Approved\n"
-        f"  driver: Lewis (<@{DRIVER_ID}>)\n{_CHANNEL_KEPT}"
-    ]
-
-
-async def test_a_rejection_whose_notice_is_refused_keeps_the_channel_and_names_it_in_its_line(
-    review,
-):
-    """Manager rejects Lewis as a duplicate entry, and Lewis's signup channel refuses the
-    closing notice: the channel is kept readable with Lewis's typing locked and no deletion
-    armed, and the "Rejected" line names it for a league manager to delete by hand (#439, F2,
-    P3)."""
-    channel = _notice_refused(review)
-
-    await review.svc.reject_signup(
-        DRIVER_ID, review.guild, review.actor, reason="Duplicate entry"
-    )
-
-    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
-    review.svc._scheduler._scheduler.add_job.assert_not_called()
-    lines = [c.args[0] for c in review.svc._output_router.post_log.await_args_list]
-    assert lines == [
-        f"Manager (<@{ACTOR_ID}>) | Signup | Rejected\n"
-        f"  driver: Lewis (<@{DRIVER_ID}>)\n  reason: Duplicate entry\n{_CHANNEL_KEPT}"
-    ]
+    wanted = "NOT_SIGNED_UP" if outcome == "reject" else "AWAITING_CORRECTION_PARAMETER"
+    assert await _state(league) == wanted
+    assert "⛔" not in _answered(press)
 
 
 # ---------------------------------------------------------------------------
@@ -519,253 +492,184 @@ async def test_a_rejection_whose_notice_is_refused_keeps_the_channel_and_names_i
 # ---------------------------------------------------------------------------
 
 
-async def test_requesting_changes_awaits_a_correction_parameter(review):
-    wizard = _wizard()
-    review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
+async def test_requesting_changes_awaits_a_correction_parameter(tmp_path):
+    """Manager 77 pressed Request Changes and types the reason: once the queue runs, Kimi awaits
+    a correction parameter."""
+    league = await _league(tmp_path)
 
-    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
+    await _type_reason(league, "request_changes", "Wrong platform")
 
-    assert "transition:AWAITING_CORRECTION_PARAMETER" in review.order
-    for task in review.svc._correction_tasks.values():
-        task.cancel()
-
-
-async def test_the_manager_who_asked_is_written_down(review):
-    """The actor is only a Discord object here and the window outlives the process, so the
-    id is persisted — it is what lets the timeout mention the right manager."""
-    wizard = _wizard()
-    review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
-
-    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
-
-    assert wizard.draft_answers["_correction_requested_by"] == str(ACTOR_ID)
-    review.signup_svc.save_wizard.assert_awaited_once()
-    for task in review.svc._correction_tasks.values():
-        task.cancel()
+    assert await _state(league) == "AWAITING_CORRECTION_PARAMETER"
 
 
-async def test_the_reason_is_saved_alongside_it(review):
-    wizard = _wizard()
-    review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
+async def test_the_manager_who_asked_is_written_down(tmp_path):
+    """The window outlives the process, so the manager's id is saved on Kimi's wizard: it is
+    what lets the lapse mention the right manager."""
+    league = await _league(tmp_path)
 
-    await review.svc.request_changes(
-        DRIVER_ID, review.guild, review.actor, reason="Wrong platform"
-    )
+    await _type_reason(league, "request_changes", "Wrong platform")
 
-    assert wizard.draft_answers["_correction_reason"] == "Wrong platform"
-    for task in review.svc._correction_tasks.values():
-        task.cancel()
+    assert (await _draft(league))["_correction_requested_by"] == str(REVIEWER)
 
 
-async def test_no_reason_writes_no_reason(review):
-    """An absent key rather than an empty string, so the re-submission prompt can tell
-    "no reason given" from "the reason was blank"."""
-    wizard = _wizard()
-    review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
+async def test_the_reason_is_saved_alongside_it(tmp_path):
+    """The reason 77 typed, "Wrong platform", is saved on Kimi's wizard beside the manager's
+    id, for the re-collection prompt to give."""
+    league = await _league(tmp_path)
 
-    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
+    await _type_reason(league, "request_changes", "Wrong platform")
 
-    assert "_correction_reason" not in wizard.draft_answers
-    for task in review.svc._correction_tasks.values():
-        task.cancel()
+    assert (await _draft(league))["_correction_reason"] == "Wrong platform"
 
 
-async def test_the_driver_is_prompted_in_their_own_channel(review):
-    wizard = _wizard()
-    review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
+async def test_the_driver_is_prompted_in_their_own_channel(tmp_path):
+    """Once the queue runs, Kimi's own signup channel is told a correction was requested, with
+    the choices of what to correct."""
+    league = await _league(tmp_path)
 
-    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
+    await _type_reason(league, "request_changes", "Wrong platform")
 
-    review.channel.send.assert_awaited_once()
-    assert "requested a correction" in review.channel.send.await_args.args[0]
-    for task in review.svc._correction_tasks.values():
-        task.cancel()
+    assert any("requested a correction" in text for text in _texts(league)), _texts(league)
 
 
-async def test_a_five_minute_window_is_armed(review):
-    wizard = _wizard()
-    review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
+async def test_a_driver_with_no_wizard_is_left_alone(tmp_path):
+    """Kimi's wizard is gone when manager 77's reason arrives: nothing is asked of him, he stays
+    awaiting approval, nothing is posted in his channel, and the manager is told it was refused
+    rather than that a correction was requested."""
+    league = await _league(tmp_path)
+    await league.write("DELETE FROM signup_wizard_records WHERE discord_user_id = ?",
+                       str(SIGNING_UP))
 
-    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
+    press = await _type_reason(league, "request_changes", "Wrong platform")
 
-    assert DRIVER_ID in review.svc._correction_tasks
-    for task in review.svc._correction_tasks.values():
-        task.cancel()
-
-
-async def test_asking_twice_replaces_the_window_rather_than_stacking_them(review):
-    """Two live timeouts would close the window at the first of them, cutting the driver's
-    time short without explanation."""
-    wizard = _wizard()
-    review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
-    existing = MagicMock()
-    review.svc._correction_tasks[DRIVER_ID] = existing
-
-    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
-
-    existing.cancel.assert_called_once()
-    assert review.svc._correction_tasks[DRIVER_ID] is not existing
-    for task in review.svc._correction_tasks.values():
-        if isinstance(task, asyncio.Task):
-            task.cancel()
-
-
-async def test_a_driver_with_no_wizard_is_left_alone(review):
-    review.signup_svc.get_wizard = AsyncMock(return_value=None)
-
-    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
-
-    assert review.order == []
-    review.channel.send.assert_not_awaited()
-
-
-async def test_a_missing_channel_still_transitions_and_arms_the_window(review):
-    """The channel may have been deleted by hand. The driver can still be sent back; they
-    simply will not see the prompt, and the window will lapse and say so."""
-    wizard = _wizard()
-    review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
-    review.guild.get_channel = MagicMock(return_value=None)
-
-    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
-
-    assert "transition:AWAITING_CORRECTION_PARAMETER" in review.order
-    assert DRIVER_ID in review.svc._correction_tasks
-    for task in review.svc._correction_tasks.values():
-        task.cancel()
-
-
-async def test_an_approved_signup_is_marked_as_such(review):
-    """Issue #243: an approved signup outranks a later one of the driver's that was not."""
-    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
-
-    review.signup_svc.mark_approved.assert_awaited_once_with(DRIVER_ID)
+    assert await _state(league) == "PENDING_ADMIN_APPROVAL"
+    assert _texts(league) == []
+    told = _answered(press)
+    assert "⛔" in told and "✅" not in told, told
 
 
 # ---------------------------------------------------------------------------
-# The reason typed into the channel, through the panel's listener (#492, #457)
+# The reason typed after the signup has moved on (#492)
 # ---------------------------------------------------------------------------
-
-
-
-@pytest.fixture
-async def panel(review, monkeypatch):
-    """The review panel over the real review service: a manager (Manager, id 555) presses a
-    button on Lewis's panel, then types the reason into the channel, where the cog's listener
-    takes it. Every line, the panel's and the service's, lands in one log."""
-    import leaguebot.signup.cogs.admin_review_cog as arc
-
-    bot = review.svc._bot
-    bot.wizard_service = review.svc
-    bot.output_router = review.svc._output_router
-    monkeypatch.setattr(arc, "_may_review_signup", AsyncMock(return_value=True))
-    arc._PENDING_REASONS.clear()
-
-    async def press(button: str):
-        interaction = MagicMock()
-        interaction.client = bot
-        interaction.guild_id = SERVER_ID
-        interaction.channel_id = CHANNEL_ID
-        interaction.guild = review.guild
-        interaction.user = review.actor
-        interaction.response = MagicMock()
-        interaction.response.send_message = AsyncMock()
-        interaction.response.defer = AsyncMock()
-        interaction.response.is_done = lambda: bool(
-            interaction.response.send_message.await_count
-            + interaction.response.defer.await_count
-        )
-        interaction.followup = MagicMock()
-        interaction.followup.send = AsyncMock()
-        view = arc.AdminReviewView(DRIVER_ID, bot)
-        await getattr(type(view), button)(view, interaction, MagicMock())
-        return interaction
-
-    async def type_reason(text: str = "Lap time could not be verified."):
-        message = MagicMock()
-        message.content = text
-        message.author = MagicMock()
-        message.author.id = ACTOR_ID
-        message.author.bot = False
-        message.guild = MagicMock()
-        message.guild.id = SERVER_ID
-        message.channel = MagicMock()
-        message.channel.id = CHANNEL_ID
-        message.delete = AsyncMock(return_value=None)
-        await arc.AdminReviewCog(bot).on_message(message)
-
-    yield SimpleNamespace(press=press, type_reason=type_reason)
-
-    for entry in list(arc._PENDING_REASONS.values()):
-        lapse = entry.get("lapse")
-        if lapse is not None:
-            lapse.cancel()
-    arc._PENDING_REASONS.clear()
-    for task in review.svc._correction_tasks.values():
-        task.cancel()
-
-
-def _told(interaction) -> list[str]:
-    return [str(call.args[0]) for call in interaction.followup.send.await_args_list if call.args]
 
 
 @pytest.mark.parametrize(
-    "button,label",
-    [("reject_button", "Reject"), ("request_changes_button", "Request Changes")],
+    "action",
+    ["reject", "request_changes"],
     ids=["reject", "request-changes"],
 )
 @pytest.mark.parametrize(
-    "state", ["UNASSIGNED", "NOT_SIGNED_UP"], ids=["after-approve", "after-withdrawal"]
+    "state", ["UNASSIGNED", "NOT_SIGNED_UP", "AWAITING_CORRECTION_PARAMETER"],
+    ids=["after-approve", "after-withdrawal", "changes-already-requested"],
 )
 async def test_a_reason_typed_after_the_signup_moved_on_is_refused_and_recorded(
-    review, panel, button, label, state
+    tmp_path, action, state
 ):
-    """Manager presses Reject or Request Changes on Lewis's panel; before the reason arrives,
-    another manager approves Lewis, or Lewis withdraws. The reason is refused to the manager
-    who pressed, one refusal line names the button, and Lewis is left as he is."""
-    from leaguebot.core.models.driver_profile import DriverState
+    """Manager 77 presses Reject or Request Changes on Kimi's panel; before the reason arrives,
+    another manager approves Kimi, Kimi withdraws, or a correction was already asked for. 77
+    types the reason and the queue runs. 77 is told the signup has moved on since they pressed
+    the button, one refusal line names the button and 77, and Kimi is left as he is: his state
+    unchanged, nothing posted in his channel, no closing notice asked."""
+    label = LABELS[action]
+    league = await _league(tmp_path)
 
-    interaction = await panel.press(button)
-    review.driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(current_state=DriverState[state])
-    )
+    press = await _type_reason(league, action, "Lap time could not be verified.",
+                               moved_to=state)
 
-    await panel.type_reason()
-
-    told = _told(interaction)
-    assert any(f"⛔ This signup has moved on since you pressed {label}." in text for text in told), told
-    if label == "Reject":
-        assert any("Nothing was rejected." in text for text in told), told
-    assert not any(text.startswith("✅") for text in told), told
-    review.driver_service.transition.assert_not_awaited()
-    review.svc.trigger_channel_hold.assert_not_awaited()
-    review.channel.send.assert_not_awaited()
-    assert review.svc._correction_tasks == {}
-    refusals = [line for line in _logged(review).split("\n") if line.startswith("⛔")]
-    assert len(refusals) == 1, _logged(review)
+    told = _answered(press)
+    assert f"⛔ This signup has moved on since you pressed {label}." in told, told
+    assert "✅" not in told
+    assert await _state(league) == state
+    assert _texts(league) == []
+    assert await _closings(league) == []
+    refusals = [line for line in _lines(league) if line.startswith("⛔")]
+    assert len(refusals) == 1, league.log()
     assert refusals[0].startswith(f"⛔ the “{label}” button of"), refusals[0]
-    assert f"refused for Manager (<@{ACTOR_ID}>)" in refusals[0]
+    assert f"refused for {_manager(league).display_name} (<@{REVIEWER}>)" in refusals[0]
     assert "has moved on" in refusals[0]
 
 
-async def test_a_rejection_whose_transition_fails_is_reported_to_the_manager(review, panel):
-    """Manager presses Reject and types the reason; moving Lewis to Not Signed Up fails on
-    something other than the expected refusal. The manager is told once that the Reject button
-    failed, one failure line names it, and no Rejected line is written or notice posted for a
-    rejection that did not happen."""
-    interaction = await panel.press("reject_button")
-    review.driver_service.transition = AsyncMock(side_effect=RuntimeError("database is locked"))
+@pytest.mark.parametrize(
+    "action",
+    ["reject", "request_changes"],
+    ids=["reject", "request-changes"],
+)
+async def test_a_reason_typed_after_the_signup_moved_on_is_taken_down(tmp_path, action):
+    """Manager 77 presses Reject or Request Changes on Kimi's panel; Kimi withdraws before the
+    reason arrives. 77 types the reason, is told the signup has moved on, and the queue runs:
+    the reason is deleted from Kimi's channel, where Kimi could otherwise read it."""
+    league = await _league(tmp_path)
 
-    await panel.type_reason()
+    await _type_reason(league, action, "Lap time could not be verified.",
+                       moved_to="NOT_SIGNED_UP")
 
-    told = _told(interaction)
-    failures = [text for text in told if text.startswith("❌")]
-    assert len(failures) == 1, told
-    assert "“Reject” button" in failures[0]
-    assert not any(text.startswith("✅") for text in told), told
-    lines = _logged(review)
-    failed = [line for line in lines.split("\n") if line.startswith("❌")]
-    assert len(failed) == 1, lines
-    assert failed[0].startswith("❌ the “Reject” button of"), failed[0]
-    assert f"failed for Manager (<@{ACTOR_ID}>)" in failed[0]
-    assert "| Rejected" not in lines
-    review.svc.trigger_channel_hold.assert_not_awaited()
+    standing = [m.content for m in league.channel(KIMI_CHANNEL).posted
+                if getattr(m, "content", None) == "Lap time could not be verified."]
+    assert standing == [], standing
+
+
+def _reason_standing(league: SeasonLeague, reason: str) -> list[str]:
+    return [m.content for m in league.channel(KIMI_CHANNEL).posted
+            if getattr(m, "content", None) == reason]
+
+
+@pytest.mark.parametrize(
+    "action",
+    ["reject", "request_changes"],
+    ids=["reject", "request-changes"],
+)
+async def test_a_reason_whose_press_is_refused_as_it_comes_up_to_run_is_taken_down(
+    tmp_path, action
+):
+    """Manager 77 presses Reject or Request Changes on Kimi's panel and types the reason while
+    Kimi is still awaiting review, so the queue accepts the press. Kimi withdraws before the
+    queue reaches it; the press is refused as it comes up to run, 77 is told the signup has moved
+    on, and the reason is deleted from Kimi's channel, where Kimi could otherwise read it."""
+    league = await _league(tmp_path)
+
+    await _type_reason(league, action, "Lap time could not be verified.",
+                       moved_after_ask="NOT_SIGNED_UP")
+
+    refusals = [line for line in _lines(league) if line.startswith("⛔")]
+    assert len(refusals) == 1 and "has moved on" in refusals[0], league.log()
+    assert _reason_standing(league, "Lap time could not be verified.") == []
+    assert await _state(league) == "NOT_SIGNED_UP"
+
+
+@pytest.mark.parametrize(
+    "action",
+    ["reject", "request_changes"],
+    ids=["reject", "request-changes"],
+)
+async def test_a_reason_whose_press_is_discarded_at_its_check_is_taken_down(
+    tmp_path, monkeypatch, action
+):
+    """Manager 77 presses Reject or Request Changes on Kimi's panel and types the reason; the
+    queue accepts the press, but reading Kimi's profile raises as the check runs again when the
+    change starts, so the queue
+    stops at it. A league admin discards the job before any of it began, and the reason is
+    deleted from Kimi's channel, the change that would have taken it down having never run."""
+    from leaguebot.core.services.driver_service import DriverService
+
+    league = await _league(tmp_path)
+    original = DriverService.get_profile
+
+    calls: list[int] = []
+
+    async def failing(self: Any, *args: Any, **kwargs: Any) -> Any:
+        # The ask's own check passes; the check as the queue starts the change raises.
+        calls.append(1)
+        if len(calls) > 1:
+            raise RuntimeError("disk I/O error")
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(DriverService, "get_profile", failing)
+    await _type_reason(league, action, "Lap time could not be verified.")
+    assert await stopped_job(league.db_path) is not None
+    assert _reason_standing(league, "Lap time could not be verified.") != []
+
+    monkeypatch.setattr(DriverService, "get_profile", original)
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert _reason_standing(league, "Lap time could not be verified.") == []

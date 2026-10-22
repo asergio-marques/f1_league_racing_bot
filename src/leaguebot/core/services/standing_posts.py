@@ -68,8 +68,12 @@ async def _delete_replaced(ctx: StepContext) -> StepResult:
     message went with it); a `NotFound` propagates, which the queue completes; any other Discord
     refusal stops the queue, keeping the message's link for a Discard to name."""
     payload = ctx.step_payload
-    guild = await _guild(ctx.bot)
-    channel = as_text_channel(guild.get_channel(int(payload["channel_id"])))
+    channel = as_text_channel(ctx.bot.get_channel(int(payload["channel_id"])))
+    if channel is None:
+        # Not in the cache at all: the league's server is asked, so that a server not yet cached
+        # stops the queue rather than counting the message as gone with its channel.
+        guild = await _guild(ctx.bot)
+        channel = as_text_channel(guild.get_channel(int(payload["channel_id"])))
     if channel is None:
         return StepResult(result={"gone": True})
     message = channel.get_partial_message(int(payload["message_id"]))
@@ -93,10 +97,12 @@ async def _describe_delete(ctx: StepContext) -> str:
     )
 
 
-def delete_replaced_step() -> Step:
-    """The `delete_replaced` job, for a change type's `steps`."""
+def delete_replaced_step(name: str = DELETE_REPLACED) -> Step:
+    """The `delete_replaced` job, for a change type's `steps`. A change type whose delete wears
+    another name in its job list (the check-in call's `delete_earlier`) builds the same step
+    under *name*, so that every standing message comes down through the one delete."""
     return Step(
-        DELETE_REPLACED, StepKind.DELETE, _delete_replaced, describe=_describe_delete,
+        name, StepKind.DELETE, _delete_replaced, describe=_describe_delete,
     )
 
 

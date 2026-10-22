@@ -25,6 +25,7 @@ from leaguebot.attendance.models.attendance import (
 )
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
@@ -135,7 +136,7 @@ class SettingChange:
 
 
 class RsvpOutcome(Enum):
-    """What `AttendanceService.answer_rsvp` did with one press of a check-in button."""
+    """What `AttendanceService.answer_rsvp_on` did with one press of a check-in button."""
 
     # a full-time driver, at the deadline (the round's start where it is 0)
     LOCKED_AT_DEADLINE = "locked at the deadline"
@@ -148,11 +149,38 @@ class RsvpOutcome(Enum):
 
 @dataclass(frozen=True)
 class RsvpAnswer:
-    """The result of `AttendanceService.answer_rsvp`: the *outcome*, and *found*, the answer
+    """The result of `AttendanceService.answer_rsvp_on`: the *outcome*, and *found*, the answer
     the driver held when it was decided (``NO_RSVP`` for a driver with no row)."""
 
     outcome: RsvpOutcome
     found: str
+
+
+def rsvp_lock(
+    found: str,
+    *,
+    is_reserve: bool,
+    now: datetime,
+    scheduled_at: datetime,
+    deadline_hours: int,
+) -> RsvpOutcome | None:
+    """The lock that bars an answer given at *now* to a call whose driver holds *found*, else None.
+
+    The lock rules (attendance specification, RSVPing), in the order they are applied, each before
+    the answer held is compared:
+
+    - a full-time driver is locked at the deadline (``LOCKED_AT_DEADLINE``);
+    - a reserve who has accepted is locked at the deadline (``LOCKED_ACCEPTED``);
+    - any other reserve is locked at the round's start (``LOCKED_AT_START``);
+    - a deadline of 0 puts the deadline at the round's start.
+    """
+    deadline_at = derive_checkin_deadline(scheduled_at, deadline_hours)
+    start = deadline_at + timedelta(hours=deadline_hours)
+    if not is_reserve:
+        return RsvpOutcome.LOCKED_AT_DEADLINE if now >= deadline_at else None
+    if found == "ACCEPTED":
+        return RsvpOutcome.LOCKED_ACCEPTED if now >= deadline_at else None
+    return RsvpOutcome.LOCKED_AT_START if now >= start else None
 
 
 class AttendanceService:
@@ -306,26 +334,28 @@ class AttendanceService:
 
     # ── driver_round_attendance CRUD ───────────────────────────────────────
 
-    async def bulk_insert_attendance_rows(
-        self,
+    @staticmethod
+    async def bulk_insert_attendance_rows_on(
+        db: aiosqlite.Connection,
         round_id: int,
         division_id: int,
         driver_profile_ids: list[int],
     ) -> None:
-        """Insert NO_RSVP rows for every driver in the list (ignore if already exists)."""
-        async with get_connection(self._db_path) as db:
-            await db.executemany(
-                """
-                INSERT OR IGNORE INTO driver_round_attendance
-                    (round_id, division_id, driver_profile_id)
-                VALUES (?, ?, ?)
-                """,
-                [(round_id, division_id, dp_id) for dp_id in driver_profile_ids],
-            )
-            await db.commit()
+        """Insert NO_RSVP rows for every driver in the list (ignore if already exists) on *db*,
+        committing nothing: the call's record writes its rows in the save that marks the posting
+        job done."""
+        await db.executemany(
+            """
+            INSERT OR IGNORE INTO driver_round_attendance
+                (round_id, division_id, driver_profile_id)
+            VALUES (?, ?, ?)
+            """,
+            [(round_id, division_id, dp_id) for dp_id in driver_profile_ids],
+        )
 
-    async def upsert_rsvp_status(
-        self,
+    @staticmethod
+    async def upsert_rsvp_status_on(
+        db: aiosqlite.Connection,
         round_id: int,
         division_id: int,
         driver_profile_id: int,
@@ -333,7 +363,10 @@ class AttendanceService:
         *,
         now: datetime,
     ) -> bool:
-        """Record *status* for one driver of one round, and manage accepted_at with it.
+        """Record *status* for one driver of one round on *db*, and manage accepted_at with it.
+
+        Nothing is committed: the bulk-set change's save writes every entry of a paste and commits
+        them once.
 
         - Transitioning TO 'ACCEPTED': set accepted_at to *now*.
         - Re-accepting after a non-ACCEPTED status: reset accepted_at to *now*.
@@ -345,13 +378,13 @@ class AttendanceService:
         **It inserts, and that is the point** (issue #209). This was two bare ``UPDATE``
         statements despite its name, so a driver holding no ``driver_round_attendance`` row
         had their answer discarded in silence while the button handler thanked them for it.
-        Only ``bulk_insert_attendance_rows`` creates those rows and only ``run_rsvp_notice``
-        calls it, against the roster as it stood when the call was posted — so a driver
+        Only ``bulk_insert_attendance_rows_on`` creates those rows and only the check-in call's
+        record calls it, against the roster as it stood when the call was posted — so a driver
         assigned, moved or confirmed into the division afterwards has none, and pressing a
         button was the one way they could ever get one.
 
         The insert belongs here rather than on the paths that place a driver. A press reaches the
-        same write through ``answer_rsvp`` (by way of ``_write_answer``), which has established
+        same write through ``answer_rsvp_on`` (by way of ``_write_answer``), which has established
         everything the row needs — the driver holds a confirmed placement in this division, the
         round exists, and the answer is inside the lock — so the fact arrives at the press and
         nowhere earlier; the test-mode bulk-set form is this method's caller.
@@ -363,15 +396,12 @@ class AttendanceService:
         A row created here is written carrying the answered status in one statement, never
         created as NO_RSVP and then updated: the intermediate state has no reader, and
         ``accepted_at`` follows the ordinary rule above rather than a special case of it.
-        Every other column takes the same default ``bulk_insert_attendance_rows`` gives it.
+        Every other column takes the same default ``bulk_insert_attendance_rows_on`` gives it.
         """
         accepted_at = now.isoformat() if status == "ACCEPTED" else None
-        async with get_connection(self._db_path) as db:
-            recorded = await self._write_answer(
-                db, round_id, division_id, driver_profile_id, status, accepted_at
-            )
-            await db.commit()
-        return recorded
+        return await AttendanceService._write_answer(
+            db, round_id, division_id, driver_profile_id, status, accepted_at
+        )
 
     @staticmethod
     async def _write_answer(
@@ -384,7 +414,7 @@ class AttendanceService:
     ) -> bool:
         """Write one driver's answer on *db* without committing, and say whether a row holds it.
 
-        The one statement `upsert_rsvp_status` and `answer_rsvp` share, so the row an answer
+        The one statement `upsert_rsvp_status_on` and `answer_rsvp_on` share, so the row an answer
         opens and the `accepted_at` it carries are decided in one place. The caller commits.
         """
         cursor = await db.execute(
@@ -400,8 +430,9 @@ class AttendanceService:
         )
         return cursor.rowcount > 0
 
-    async def answer_rsvp(
-        self,
+    @staticmethod
+    async def answer_rsvp_on(
+        db: aiosqlite.Connection,
         round_id: int,
         division_id: int,
         driver_profile_id: int,
@@ -412,62 +443,42 @@ class AttendanceService:
         deadline_hours: int,
         is_reserve: bool,
     ) -> RsvpAnswer:
-        """Decide one press of a check-in button and, where it stands, write it (#482).
+        """Decide one press of a check-in button and, where it stands, write it, on *db*.
 
-        The answer the driver holds is read, the lock rules applied and the new answer written
-        in one ``BEGIN IMMEDIATE`` transaction on this method's own connection, so a second
-        press waits for the first and decides on the answer the first left. That is what makes
-        two quick presses of one button one answer and a "nothing changed" (F1), and what keeps
-        an accepted reserve locked at the deadline whatever presses follow (F2).
+        The answer the driver holds is read, the lock rules (`rsvp_lock`) applied against *now*,
+        the moment the button was pressed and not the moment the answer's turn comes (Constitution
+        XIII), and the new answer written, all on the caller's connection and commit: the answer's
+        job runs this in its save, one change at a time, so a second press waits for the first and
+        decides on the answer the first left (#482, F1). That is what keeps an accepted reserve
+        locked at the deadline whatever presses follow (F2).
 
-        The lock rules (attendance specification, RSVPing), in the order they are applied,
-        each before the answer held is compared:
-
-        - a full-time driver is locked at the deadline (``LOCKED_AT_DEADLINE``);
-        - a reserve who has accepted is locked at the deadline (``LOCKED_ACCEPTED``);
-        - any other reserve is locked at the round's start (``LOCKED_AT_START``);
-        - a deadline of 0 puts the deadline at the round's start.
-
-        Past the locks, an answer equal to *status* is ``UNCHANGED`` and nothing is written,
-        so a reserve's ``accepted_at`` stays as it was. Otherwise it is written, with
-        ``accepted_at`` set from *now* by `upsert_rsvp_status`'s rule, and ``RECORDED`` or, where
-        the write changed no row, ``NOT_RECORDED``.
-
-        It never calls `upsert_rsvp_status`: that opens a connection of its own, which would
-        wait on this one's write lock. Both write through `_write_answer`. Every Discord call
-        stays with the caller, after this returns, so the lock is held for the database alone.
+        Past the locks, an answer equal to *status* is ``UNCHANGED`` and nothing is written, so a
+        reserve's ``accepted_at`` stays as it was. Otherwise it is written, with ``accepted_at``
+        set from *now* by `upsert_rsvp_status_on`'s rule, and ``RECORDED`` or, where the write
+        changed no row, ``NOT_RECORDED``. Nothing is committed; every Discord call is the job's
+        after, so the lock is held for the database alone.
         """
-        deadline_at = derive_checkin_deadline(scheduled_at, deadline_hours)
-        start = deadline_at + timedelta(hours=deadline_hours)
-        async with get_connection(self._db_path) as db:
-            await db.execute("BEGIN IMMEDIATE")
-            cursor = await db.execute(
-                """
-                SELECT rsvp_status FROM driver_round_attendance
-                 WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?
-                """,
-                (round_id, division_id, driver_profile_id),
-            )
-            row = await cursor.fetchone()
-            found: str = row["rsvp_status"] if row is not None else "NO_RSVP"
-
-            if not is_reserve:
-                if now >= deadline_at:
-                    return RsvpAnswer(RsvpOutcome.LOCKED_AT_DEADLINE, found)
-            elif found == "ACCEPTED":
-                if now >= deadline_at:
-                    return RsvpAnswer(RsvpOutcome.LOCKED_ACCEPTED, found)
-            elif now >= start:
-                return RsvpAnswer(RsvpOutcome.LOCKED_AT_START, found)
-
-            if found == status:
-                return RsvpAnswer(RsvpOutcome.UNCHANGED, found)
-
-            accepted_at = now.isoformat() if status == "ACCEPTED" else None
-            recorded = await self._write_answer(
-                db, round_id, division_id, driver_profile_id, status, accepted_at
-            )
-            await db.commit()
+        cursor = await db.execute(
+            """
+            SELECT rsvp_status FROM driver_round_attendance
+             WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?
+            """,
+            (round_id, division_id, driver_profile_id),
+        )
+        row = await cursor.fetchone()
+        found: str = row["rsvp_status"] if row is not None else "NO_RSVP"
+        locked = rsvp_lock(
+            found, is_reserve=is_reserve, now=now, scheduled_at=scheduled_at,
+            deadline_hours=deadline_hours,
+        )
+        if locked is not None:
+            return RsvpAnswer(locked, found)
+        if found == status:
+            return RsvpAnswer(RsvpOutcome.UNCHANGED, found)
+        accepted_at = now.isoformat() if status == "ACCEPTED" else None
+        recorded = await AttendanceService._write_answer(
+            db, round_id, division_id, driver_profile_id, status, accepted_at
+        )
         return RsvpAnswer(
             RsvpOutcome.RECORDED if recorded else RsvpOutcome.NOT_RECORDED, found
         )
@@ -485,6 +496,20 @@ class AttendanceService:
             )
             rows = await cursor.fetchall()
         return [_dra_from_row(r) for r in rows]
+
+    async def driver_profile_id_for_account(self, discord_user_id: int) -> int | None:
+        """The id of the driver profile whose current account is *discord_user_id*, or None.
+
+        What the test-mode bulk-set form reads an entry's id by; a profile is matched on its
+        number so that an id stored as text still finds it.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id FROM driver_profiles WHERE CAST(discord_user_id AS INTEGER) = ?",
+                (discord_user_id,),
+            )
+            row = await cursor.fetchone()
+        return int(row["id"]) if row is not None else None
 
     async def get_attendance_row_for_driver(
         self,
@@ -506,34 +531,38 @@ class AttendanceService:
 
     # ── rsvp_embed_messages CRUD ───────────────────────────────────────────
 
-    async def insert_embed_message(
-        self,
+    @staticmethod
+    async def insert_embed_message_on(
+        db: aiosqlite.Connection,
         round_id: int,
         division_id: int,
         message_id: str,
         channel_id: str,
+        *,
+        posted_at: datetime | None = None,
     ) -> None:
-        """Store (or replace) the RSVP embed message IDs for a (round, division) pair.
-
-        A call replacing one recorded for the pair takes its record in this one statement, its
-        last notice and distribution announcement cleared: they were the earlier call's, and the
-        new one has none yet (`run_rsvp_notice`'s *replacing*)."""
-        now_iso = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, posted_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(round_id, division_id)
-                DO UPDATE SET message_id = excluded.message_id,
-                              channel_id = excluded.channel_id,
-                              posted_at  = excluded.posted_at,
-                              last_notice_msg_id = NULL,
-                              distribution_msg_id = NULL
-                """,
-                (round_id, division_id, message_id, channel_id, now_iso),
-            )
-            await db.commit()
+        """Store (or replace) the RSVP embed message IDs for a (round, division) pair on *db*,
+        committing nothing, the call posted at *posted_at* (now where none is given): the call's record is saved with the
+        mark of the job that posted it. A call replacing one recorded for the pair takes its record
+        in this one statement, its last notice and distribution announcement cleared: they were
+        the earlier call's, and the new one has none yet."""
+        await db.execute(
+            """
+            INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, posted_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(round_id, division_id)
+            DO UPDATE SET message_id = excluded.message_id,
+                          channel_id = excluded.channel_id,
+                          posted_at  = excluded.posted_at,
+                          last_notice_msg_id = NULL,
+                          last_notice_channel_id = NULL,
+                          distribution_msg_id = NULL,
+                          distribution_channel_id = NULL,
+                          deadline_run_at = NULL
+            """,
+            (round_id, division_id, message_id, channel_id,
+             (posted_at or datetime.now(timezone.utc)).isoformat()),
+        )
 
     async def get_embed_message(
         self,
@@ -563,9 +592,9 @@ class AttendanceService:
         """The call *division_id*'s check-in is at: the earliest whose deadline has not run.
 
         Where every standing call's deadline has run, the latest of them; where none stands,
-        None. A deadline records its distribution message on the call, which is how
-        `/test-mode advance` and the restart's catch-up of a missed deadline tell the same thing
-        (#429), and the three must agree.
+        None. A deadline marks its call (`deadline_run_at`) when it writes its distribution, whatever
+        becomes of its announcement; the restart's catch-up of a missed deadline reads the same
+        mark (#429), and the two must agree.
 
         A division can hold more than one call. Each stands until 24 hours after its own round
         (#425), so two rounds close together — a double-header — stand side by side, and "the
@@ -583,40 +612,42 @@ class AttendanceService:
                 (division_id,),
             )
             calls = [_rem_from_row(r) for r in await cursor.fetchall()]
-        still_open = [call for call in calls if call.distribution_msg_id is None]
+        still_open = [call for call in calls if call.deadline_run_at is None]
         if still_open:
             return still_open[0]
         return calls[-1] if calls else None
 
-    async def update_embed_last_notice_msg(
-        self,
+    @staticmethod
+    async def update_embed_last_notice_msg_on(
+        db: aiosqlite.Connection,
         round_id: int,
         division_id: int,
         msg_id: str,
+        channel_id: str | None = None,
     ) -> None:
-        """Store the Discord message ID of the last-notice ping for this round."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE rsvp_embed_messages SET last_notice_msg_id = ?"
-                " WHERE round_id = ? AND division_id = ?",
-                (msg_id, round_id, division_id),
-            )
-            await db.commit()
+        """Store the last-notice ping's message ID for this round on *db*, committing nothing:
+        the last notice's record is saved with the mark of the job that posted it."""
+        await db.execute(
+            "UPDATE rsvp_embed_messages SET last_notice_msg_id = ?, last_notice_channel_id = ?"
+            " WHERE round_id = ? AND division_id = ?",
+            (msg_id, channel_id, round_id, division_id),
+        )
 
-    async def update_embed_distribution_msg(
-        self,
+    @staticmethod
+    async def update_embed_distribution_msg_on(
+        db: aiosqlite.Connection,
         round_id: int,
         division_id: int,
         msg_id: str,
+        channel_id: str | None = None,
     ) -> None:
-        """Store the Discord message ID of the reserve distribution announcement."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE rsvp_embed_messages SET distribution_msg_id = ?"
-                " WHERE round_id = ? AND division_id = ?",
-                (msg_id, round_id, division_id),
-            )
-            await db.commit()
+        """Store the reserve distribution announcement's message ID on *db*, committing nothing:
+        the announcement's record is saved with the mark of the job that posted it."""
+        await db.execute(
+            "UPDATE rsvp_embed_messages SET distribution_msg_id = ?, distribution_channel_id = ?"
+            " WHERE round_id = ? AND division_id = ?",
+            (msg_id, channel_id, round_id, division_id),
+        )
 
 
 # ── Row-to-dataclass helpers ───────────────────────────────────────────────
@@ -648,6 +679,9 @@ def _rem_from_row(row: aiosqlite.Row) -> RsvpEmbedMessage:
         posted_at=row["posted_at"],
         last_notice_msg_id=row["last_notice_msg_id"],
         distribution_msg_id=row["distribution_msg_id"],
+        last_notice_channel_id=row["last_notice_channel_id"],
+        distribution_channel_id=row["distribution_channel_id"],
+        deadline_run_at=row["deadline_run_at"],
     )
 
 
@@ -1051,6 +1085,7 @@ async def _rewrite_round_pardons_on(
         )
 
 
+@posts_in_a_job
 async def post_attendance_sheet(
     bot: LeagueBot,
     guild: discord.Guild,
@@ -1073,9 +1108,10 @@ async def post_attendance_sheet(
     **A sheet that cannot be posted is raised** (#439): a channel the division was given and the
     guild no longer holds, or a send Discord refuses, raises `StepFailedOnDiscord`, so the queue
     stops on the job that called this and tries it again, and nothing is put on the old retry
-    queue, which would post a second copy beside the retry. A division never given a channel, and
-    a cancelled round, post nothing and raise nothing. *as_text* leaves the graphic out, which is
-    how a job retries (Constitution XIV rule 8).
+    queue, which would post a second copy beside the retry. A division never given a channel
+    raises too, its message naming `/attendance channel attendance`, so the queue stops there and
+    does not complete having posted nothing; a cancelled round posts nothing and raises nothing.
+    *as_text* leaves the graphic out, which is how a job retries (Constitution XIV rule 8).
 
     Pass ``sanctioned_profile_ids`` to annotate those drivers with "(reached point limit)"
     on this posting.
@@ -1100,7 +1136,14 @@ async def post_attendance_sheet(
 
     if row is None or not row["attendance_channel_id"]:
         log.warning("post_attendance_sheet: no attendance_channel_id configured for division %s", division_id)
-        return None
+        async with get_connection(db_path) as db:
+            named = await (
+                await db.execute("SELECT name FROM divisions WHERE id = ?", (division_id,))
+            ).fetchone()
+        raise StepFailedOnDiscord(
+            f"**{named['name'] if named else 'the division'}** has no attendance channel set: "
+            "set one with `/attendance channel attendance`, then press Retry."
+        )
 
     # A round recorded as cancelled distributes no attendance points and produces no sheet,
     # whatever the `attendance` toggle says (FR-047). The recording flow already skips a
@@ -1278,9 +1321,9 @@ class PostedSheet:
 
 def sheet_result(posted: PostedSheet | None) -> dict[str, Any]:
     """A sheet job's result: the sheet posted (`new`, `old`, `channel_id`, `takes_slot`), or
-    `{"unset": True}` where nothing was posted."""
+    an empty result where nothing was due (a cancelled round, a division with no opening round)."""
     if posted is None:
-        return {"unset": True}
+        return {}
     return {
         "new": posted.message_id, "old": posted.previous, "channel_id": posted.channel_id,
         "takes_slot": posted.takes_slot,
@@ -1942,24 +1985,18 @@ async def enforce_attendance_sanctions(
     round_id: int,
     division_id: int,
     season_id: int,
-    head=None,
     *,
     queue: "ChangeQueue",
 ) -> SanctionOutcome:
     """Evaluate every full-time driver against autosack/autoreserve thresholds (FR-022–FR-027).
 
-    *head* is the banner poster for the run of verdicts this belongs to, an attendance
-    sanction being a verdict and headed like one (decided 2026-09-09). A penalty approval
-    reaches this further down the same call that posted its penalty verdicts and passes
-    **its** poster, already spent, so the sanctions fall under that banner rather than
-    raising a second. Reached any other way — a recalculation after a pardon or an amendment
-    — this builds one of its own, which is the case that would otherwise post sanctions
-    with nothing above them.
-
-    **The lineups and the sheets a sanction touches are asked of *queue*,** the change queue the
-    caller hands in, and not posted here (#439): the lineup of the division, and of every other
-    division an applied autosack reached, and the sheet of each division that has one. A post
-    Discord refuses stops the queue and is tried again, instead of being reported with this run.
+    **The cards, the lineups and the sheets a sanction touches are asked of *queue*,** the change
+    queue the caller hands in, and not posted here (#439): the announcement of the sanctions
+    applied (`attendance.sanctions.announce`), which heads them like a verdict (decided
+    2026-09-09) with the round's banner, or a heading of its own where none stands; the lineup of
+    the division, and of every other division an applied autosack reached; and the sheet of each
+    division that has one. A post Discord refuses stops the queue and is tried again, instead of
+    being reported with this run.
 
     **No driver's failure stops the run, and none is swallowed** (decided 2026-09-18, #239).
     A sanction that raises is recorded in the returned :class:`SanctionOutcome` and the next
@@ -1983,13 +2020,12 @@ async def enforce_attendance_sanctions(
         return outcome  # both disabled — nothing to do (FR-027)
 
     from leaguebot.core.services.placement_service import PlacementService
-    from leaguebot.results.services import verdict_announcement_service as _vas
-    if head is None:
-        head = _vas.banner_for_round(bot, db_path, round_id)
     placement: PlacementService = bot.placement_service
 
     # Track which profiles were actually sanctioned for the attendance sheet re-post.
     sanctioned_profile_ids: set[int] = set()
+    # The candidates whose sanction applied, whose cards the queue is asked for.
+    applied_candidates: list[dict] = []
     # Other divisions an autosacked driver sat in, and who of theirs was sacked from them.
     other_divisions: dict[int, set[int]] = {}
 
@@ -2017,22 +2053,7 @@ async def enforce_attendance_sanctions(
             outcome.applied.append((driver, label))
             for other in candidate["other_divisions"]:
                 other_divisions.setdefault(other, set()).add(profile_id)
-            # An announcement that never went out is recorded with the run (#237). The
-            # `except` below only ever caught what *raised*, and this returns quietly
-            # instead — so `ATTENDANCE_SANCTIONS | Incomplete` has been promising a
-            # line about unannounced sanctions that it could not produce.
-            outcome.posting_faults += await _vas.post_autosanction_announcement(
-                bot=bot,
-                db_path=db_path,
-                round_id=round_id,
-                driver_discord_id=driver_discord_id,
-                driver_display_name=test_display_name,
-                sanction_type=sanction,
-                threshold=(
-                    autosack_threshold if sanction == "AUTOSACK" else autoreserve_threshold
-                ) or 0,
-                head=head,
-            )
+            applied_candidates.append(candidate)
         except SanctionNotApplicable as exc:
             outcome.failed.append((driver, label, str(exc)))
         except Exception as exc:  # noqa: BLE001 — recorded, reported, and the next driver taken
@@ -2043,16 +2064,19 @@ async def enforce_attendance_sanctions(
                 exc, applied=profile_id in sanctioned_profile_ids
             )))
 
-    # Ask for the lineup and the attendance sheet to be posted again, the sheet with the
+    # Ask for the cards, the lineup and the attendance sheet to be posted, the sheet with the
     # sanctioned drivers annotated. The queue posts them (#439).
     if sanctioned_profile_ids:
-        from leaguebot.attendance.services import sheet_posting
+        from leaguebot.attendance.services import sanctions_announce_change, sheet_posting
         from leaguebot.core.services.lineup_posting import ask_lineup_posts
 
         reached = [
             other_division_id for other_division_id, profile_ids in other_divisions.items()
             if profile_ids & sanctioned_profile_ids
         ]
+        await sanctions_announce_change.ask_sanctions_announce(
+            queue, db_path, round_id, division_id, applied_candidates
+        )
         await ask_lineup_posts(queue, db_path, [division_id, *reached])
         await sheet_posting.ask_sheet_post(
             queue, db_path, division_id, round_id, sanctioned_profile_ids

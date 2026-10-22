@@ -1,4 +1,4 @@
-"""`run_rsvp_last_notice` — the reminder ping, and who it names.
+"""The last check-in notice — the reminder ping, and who it names.
 
 Issue #208. `tests/attendance/test_attendance_module_gate.py` covers this job's module gate and
 nothing else; the body was unexecuted. It is the bot's last word to a division before check-in
@@ -24,6 +24,12 @@ reserves are asked, not required — so `ti.is_reserve = 0` in the query is load
 `test_a_silent_reserve_is_not_named` sits on it. Naming reserves would publicly chase drivers
 who owe the division nothing, every round.
 
+Since #439 (slice 6b, C29) the last notice is a change on the queue: each test asks it as its
+timer does, as the bot (`ask_check_in_last_notice`), and runs the queue; the notice is posted in
+the division's check-in channel (770277) by the change's job. Where the division has no check-in
+channel, or the bot cannot find it, or Discord refuses the notice, the queue stops, naming the
+command that sets the channel where it is missing.
+
 The round's moment is rendered as a Discord relative timestamp, so the tests assert on the
 `<t:...:R>` form rather than any rendered wording — what a reader sees is Discord's, computed
 from the unix seconds the bot supplies, and that number is the only part the bot decides.
@@ -39,7 +45,14 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import AttendanceService
-from leaguebot.attendance.services.rsvp_service import run_rsvp_last_notice
+from tests.support.change_queue import (
+    attach_queue,
+    http_error,
+    league_double,
+    run_queue,
+    stopped_job,
+)
+from tests.support.review_league import channel as recording_channel
 
 SERVER_ID = 8608
 SEASON_ID = 1
@@ -50,6 +63,7 @@ RSVP_CHANNEL_ID = 770277
 FULL_TIME_A = 401
 FULL_TIME_B = 402
 RESERVE = 403
+
 
 
 # ---------------------------------------------------------------------------
@@ -172,25 +186,65 @@ async def _answer(db_path: str, profile_id: int, status: str) -> None:
         await db.commit()
 
 
-def _make_channel() -> MagicMock:
-    channel = MagicMock()
-    sent = MagicMock()
-    sent.id = 991199
-    channel.send = AsyncMock(return_value=sent)
-    return channel
-
-
-def _make_bot(db_path: str, channel: MagicMock | None) -> MagicMock:
-    bot = MagicMock()
-    bot.db_path = db_path
+def _make_bot(db_path: str, *, visible: bool = True) -> MagicMock:
+    """The league's bot double with its change queue and attendance on, the division's
+    check-in channel (770277) on the server where *visible*, recording its sends in
+    `bot.events`; a channel the bot cannot find is refused as Discord refuses it."""
+    bot = league_double(db_path)
     bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
-    bot.get_channel = MagicMock(return_value=channel)
+    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    bot.events = []
+    bot.rsvp_channel = recording_channel(RSVP_CHANNEL_ID, bot.events)
+    known = {bot.log_channel.id: bot.log_channel,
+             bot.interaction_channel.id: bot.interaction_channel}
+    if visible:
+        known[RSVP_CHANNEL_ID] = bot.rsvp_channel
+
+    async def _fetch(cid: int) -> object:
+        if int(cid) in known:
+            return known[int(cid)]
+        raise http_error(discord.NotFound, status=404, text="Unknown Channel")
+
+    bot.get_channel = MagicMock(side_effect=lambda cid: known.get(int(cid)))
+    bot.fetch_channel = AsyncMock(side_effect=_fetch)
+    attach_queue(bot, db_path, now=datetime.now(timezone.utc))
     return bot
 
 
-def _posted(channel: MagicMock) -> str:
-    return str(channel.send.await_args.args[0])
+async def _ask(bot: MagicMock, round_id: int = ROUND_ID) -> None:
+    """Ask the queue for *round_id*'s last notice as its timer does, as the bot; run the
+    queue."""
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_last_notice
+    from leaguebot.core.models.change import ChangeOrigin
+
+    await ask_check_in_last_notice(bot.change_queue, bot.db_path, round_id,
+                                   origin=ChangeOrigin.BOT)
+    await run_queue(bot)
+
+
+def _sent(bot: MagicMock) -> list[int]:
+    """The ids of the messages posted in the division's check-in channel, in order."""
+    return [mid for kind, cid, mid in bot.events if kind == "send" and cid == RSVP_CHANNEL_ID]
+
+
+def _posted(bot: MagicMock) -> str:
+    """The text of the one notice posted in the division's check-in channel."""
+    [message_id] = _sent(bot)
+    return str(bot.rsvp_channel.messages[message_id].content)
+
+
+def _logged(bot: MagicMock) -> str:
+    return "\n".join(bot.log_channel.sent)
+
+
+async def _recorded_notice(db_path: str) -> str | None:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT last_notice_msg_id FROM rsvp_embed_messages WHERE round_id = ?",
+            (ROUND_ID,),
+        )
+        return (await cursor.fetchone())["last_notice_msg_id"]
 
 
 # ---------------------------------------------------------------------------
@@ -201,11 +255,11 @@ def _posted(channel: MagicMock) -> str:
 async def test_a_silent_full_time_driver_is_mentioned(tmp_path):
     db_path = await _make_db(tmp_path)
     await _answer(db_path, FULL_TIME_B, "ACCEPTED")
-    channel = _make_channel()
+    bot = _make_bot(db_path)
 
-    await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel))
+    await _ask(bot)
 
-    body = _posted(channel)
+    body = _posted(bot)
     assert "RSVP Reminder" in body
     assert f"<@{FULL_TIME_A}>" in body
 
@@ -215,11 +269,11 @@ async def test_a_driver_who_has_answered_is_not_chased(tmp_path):
     ignore the reminder."""
     db_path = await _make_db(tmp_path)
     await _answer(db_path, FULL_TIME_B, "ACCEPTED")
-    channel = _make_channel()
+    bot = _make_bot(db_path)
 
-    await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel))
+    await _ask(bot)
 
-    assert f"<@{FULL_TIME_B}>" not in _posted(channel)
+    assert f"<@{FULL_TIME_B}>" not in _posted(bot)
 
 
 @pytest.mark.parametrize("status", ["ACCEPTED", "TENTATIVE", "DECLINED"])
@@ -229,20 +283,20 @@ async def test_any_answer_at_all_counts_as_having_responded(tmp_path, status):
     db_path = await _make_db(tmp_path)
     for profile_id in (FULL_TIME_A, FULL_TIME_B):
         await _answer(db_path, profile_id, status)
-    channel = _make_channel()
+    bot = _make_bot(db_path)
 
-    await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel))
+    await _ask(bot)
 
-    assert "All drivers have responded" in _posted(channel)
+    assert "All drivers have responded" in _posted(bot)
 
 
 async def test_every_silent_driver_is_named_not_only_the_first(tmp_path):
     db_path = await _make_db(tmp_path)
-    channel = _make_channel()
+    bot = _make_bot(db_path)
 
-    await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel))
+    await _ask(bot)
 
-    body = _posted(channel)
+    body = _posted(bot)
     assert f"<@{FULL_TIME_A}>" in body
     assert f"<@{FULL_TIME_B}>" in body
 
@@ -253,11 +307,11 @@ async def test_a_silent_reserve_is_not_named(tmp_path):
     db_path = await _make_db(tmp_path)
     for profile_id in (FULL_TIME_A, FULL_TIME_B):
         await _answer(db_path, profile_id, "ACCEPTED")
-    channel = _make_channel()
+    bot = _make_bot(db_path)
 
-    await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel))
+    await _ask(bot)
 
-    body = _posted(channel)
+    body = _posted(bot)
     assert f"<@{RESERVE}>" not in body
     assert "All drivers have responded" in body
 
@@ -266,22 +320,22 @@ async def test_a_test_driver_s_display_name_is_carried_into_the_mention(tmp_path
     """Test drivers all share one Discord account, so the mention alone cannot tell them
     apart — the display name is what makes the reminder legible in test mode."""
     db_path = await _make_db(tmp_path, named=True)
-    channel = _make_channel()
+    bot = _make_bot(db_path)
 
-    await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel))
+    await _ask(bot)
 
-    assert f"({'Driver %d' % FULL_TIME_A})" in _posted(channel)
+    assert f"({'Driver %d' % FULL_TIME_A})" in _posted(bot)
 
 
 async def test_a_driver_with_no_display_name_is_mentioned_plainly(tmp_path):
     """The other branch of the same mention. An empty pair of brackets would read as a
     missing name rather than as a real driver."""
     db_path = await _make_db(tmp_path, named=False)
-    channel = _make_channel()
+    bot = _make_bot(db_path)
 
-    await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel))
+    await _ask(bot)
 
-    body = _posted(channel)
+    body = _posted(bot)
     assert f"<@{FULL_TIME_A}>" in body
     assert "()" not in body
 
@@ -298,27 +352,31 @@ async def test_a_division_that_has_all_answered_still_gets_a_notice(tmp_path):
     db_path = await _make_db(tmp_path)
     for profile_id in (FULL_TIME_A, FULL_TIME_B, RESERVE):
         await _answer(db_path, profile_id, "ACCEPTED")
-    channel = _make_channel()
+    bot = _make_bot(db_path)
 
-    await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel))
+    await _ask(bot)
 
-    channel.send.assert_awaited_once()
-    assert "All drivers have responded" in _posted(channel)
+    assert len(_sent(bot)) == 1
+    assert "All drivers have responded" in _posted(bot)
 
 
 async def test_both_shapes_of_notice_carry_the_race_time(tmp_path):
     """The relative timestamp is the whole point of the notice, and it is computed from the
-    round rather than written by Discord, so it is the bot's to get right."""
+    round rather than written by Discord, so it is the bot's to get right. Each shape is
+    posted in a league of its own, a round having one last notice."""
     db_path = await _make_db(tmp_path)
-    channel = _make_channel()
-    await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel))
-    reminder = _posted(channel)
+    bot = _make_bot(db_path)
+    await _ask(bot)
+    reminder = _posted(bot)
 
+    other = tmp_path / "all_answered"
+    other.mkdir()
+    db_path = await _make_db(other)
     for profile_id in (FULL_TIME_A, FULL_TIME_B):
         await _answer(db_path, profile_id, "ACCEPTED")
-    channel = _make_channel()
-    await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel))
-    visibility = _posted(channel)
+    bot = _make_bot(db_path)
+    await _ask(bot)
+    visibility = _posted(bot)
 
     assert ":R>" in reminder
     assert ":R>" in visibility
@@ -329,63 +387,125 @@ async def test_both_shapes_of_notice_carry_the_race_time(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_round_that_no_longer_exists_posts_nothing(tmp_path, caplog):
+async def test_a_round_that_no_longer_exists_posts_nothing(tmp_path):
+    """Work no longer due is dropped: nothing is posted and the queue does not stop."""
     db_path = await _make_db(tmp_path)
-    channel = _make_channel()
+    bot = _make_bot(db_path)
 
-    with caplog.at_level("ERROR"):
-        await run_rsvp_last_notice(9999, _make_bot(db_path, channel))
+    await _ask(bot, round_id=9999)
 
-    channel.send.assert_not_awaited()
+    assert _sent(bot) == []
+    assert await stopped_job(db_path) is None
 
 
-async def test_a_division_with_no_rsvp_channel_configured_posts_nothing(tmp_path, caplog):
+async def test_a_division_with_no_rsvp_channel_configured_stops_the_queue_naming_the_command(
+    tmp_path,
+):
+    """A bot change lacking its channel stops the queue, the notice naming the command that
+    sets it, rather than the host's log alone saying so."""
     db_path = await _make_db(tmp_path, with_division_config=False)
-    channel = _make_channel()
+    bot = _make_bot(db_path)
 
-    with caplog.at_level("WARNING"):
-        await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel))
+    await _ask(bot)
 
-    channel.send.assert_not_awaited()
-    assert "no RSVP channel" in caplog.text
+    assert _sent(bot) == []
+    assert await stopped_job(db_path) is not None
+    assert "/attendance channel rsvp" in _logged(bot)
 
 
-async def test_a_channel_the_bot_cannot_see_posts_nothing(tmp_path, caplog):
+async def test_a_channel_the_bot_cannot_see_stops_the_queue_naming_the_command(tmp_path):
     db_path = await _make_db(tmp_path)
+    bot = _make_bot(db_path, visible=False)
 
-    with caplog.at_level("ERROR"):
-        await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel=None))
+    await _ask(bot)
 
-    assert "channel not found" in caplog.text
+    assert _sent(bot) == []
+    assert await stopped_job(db_path) is not None
+    assert "/attendance channel rsvp" in _logged(bot)
 
 
-async def test_a_failed_send_records_no_message(tmp_path, caplog):
+async def test_a_refused_last_notice_stops_the_queue_recording_nothing(tmp_path):
     """The recorded id is what the round's cleanup, a day after it, deletes; one pointing at
-    a message that was never sent would have it delete something else, or nothing."""
+    a message that was never sent would have it delete something else, or nothing. Discord
+    refusing the notice stops the queue with nothing recorded."""
     db_path = await _make_db(tmp_path)
-    channel = _make_channel()
-    channel.send = AsyncMock(side_effect=discord.HTTPException(MagicMock(), "forbidden"))
+    bot = _make_bot(db_path)
+    bot.rsvp_channel.send_fails = http_error(discord.Forbidden, status=403, text="Missing Access")
 
-    with caplog.at_level("ERROR"):
-        await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel))
+    await _ask(bot)
 
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT last_notice_msg_id FROM rsvp_embed_messages WHERE round_id = ?",
-            (ROUND_ID,),
-        )
-        assert (await cursor.fetchone())["last_notice_msg_id"] is None
+    assert await stopped_job(db_path) is not None
+    assert await _recorded_notice(db_path) is None
 
 
 async def test_the_posted_notice_is_recorded_for_the_cleanup(tmp_path):
     db_path = await _make_db(tmp_path)
-    channel = _make_channel()
+    bot = _make_bot(db_path)
 
-    await run_rsvp_last_notice(ROUND_ID, _make_bot(db_path, channel))
+    await _ask(bot)
 
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT last_notice_msg_id FROM rsvp_embed_messages WHERE round_id = ?",
-            (ROUND_ID,),
-        )
-        assert (await cursor.fetchone())["last_notice_msg_id"] == "991199"
+    [posted] = _sent(bot)
+    assert await _recorded_notice(db_path) == str(posted)
+
+
+# ---------------------------------------------------------------------------
+# No last notice where no call stands (#439, slice 6b, fault 8)
+# ---------------------------------------------------------------------------
+#
+# A round with no check-in call standing has nobody to remind: the last notice used to post
+# "All drivers have responded" for it, tracked by nothing. It is now dropped as no longer due
+# when it is asked, and the host's log says so.
+#
+# These use `ongoing_league` with attendance on, its queue rebuilt on a real `AttendanceService`:
+# Pro's round 3 is three hours off, past its last-notice time and before its two-hour deadline,
+# and its call (seeded in Pro's check-in channel, 603) is taken off the record, as though it was
+# never posted. The last notice is asked of the queue as its timer asks it, and the queue run.
+
+
+
+async def _no_call_league(tmp_path):
+    from tests.support.change_queue import attach_queue
+    from tests.support.season_league import PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, attendance=True)
+    league.bot.attendance_service = AttendanceService(league.db_path)
+    attach_queue(league.bot, league.db_path, now=league.clock)
+    when = league.clock.now + timedelta(hours=3)
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                       when.replace(tzinfo=None).isoformat(), round_id(PRO, 3))
+    await league.write("DELETE FROM rsvp_embed_messages WHERE round_id = ?", round_id(PRO, 3))
+    return league
+
+
+async def _ask_last_notice(league) -> None:
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_last_notice
+    from leaguebot.core.models.change import ChangeOrigin
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import PRO, round_id
+
+    await ask_check_in_last_notice(league.bot.change_queue, league.db_path, round_id(PRO, 3),
+                                   origin=ChangeOrigin.BOT)
+    await run_queue(league.bot)
+
+
+async def test_no_last_notice_is_posted_where_no_call_stands(tmp_path):
+    from tests.support.change_queue import change_rows, stopped_job
+    from tests.support.season_league import DIVISIONS, PRO
+
+    league = await _no_call_league(tmp_path)
+
+    await _ask_last_notice(league)
+
+    assert [kind for kind, cid, _ in league.events
+            if cid == DIVISIONS[PRO][3].checkin and kind == "send"] == []
+    assert await stopped_job(league.db_path) is None
+    assert await change_rows(league.db_path) == []
+
+
+async def test_a_last_notice_with_no_call_is_recorded_in_the_host_log(tmp_path, caplog):
+    league = await _no_call_league(tmp_path)
+
+    with caplog.at_level("INFO"):
+        await _ask_last_notice(league)
+
+    assert any("no longer due" in record.getMessage() for record in caplog.records)

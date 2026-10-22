@@ -608,24 +608,6 @@ def test_format_time_ms(ms, expected_str):
 # ---------------------------------------------------------------------------
 
 
-async def test_submission_channel_not_closed_after_final_session(monkeypatch):
-    """Structural check: run_result_submission_job ends by asking the change queue for
-    `results.review.open` (not close_submission_channel) for normal rounds (#439, slice 2).
-
-    The only legitimate close_submission_channel call is for the all-cancelled early-exit path.
-    We verify that the ask is the final step after all session loops and that it appears after
-    any early-exit returns."""
-    import inspect
-    from leaguebot.results.services.result_submission_service import run_result_submission_job
-
-    source = inspect.getsource(run_result_submission_job)
-    assert "results.review.open" in source
-    assert "enter_penalty_state" not in source
-    # close_submission_channel may appear for the all-cancelled early-exit branch, but the ask
-    # must come after it, as the normal round's final call.
-    assert source.rfind("results.review.open") > source.rfind("close_submission_channel")
-
-
 async def test_penalty_state_entered_after_final_session(tmp_path):
     """is_channel_in_penalty_review returns True once in_penalty_review=1 is set in the DB."""
     from leaguebot.core.db.database import get_connection, run_migrations

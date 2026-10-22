@@ -3,7 +3,7 @@
 It is **not** the way every post leaves the bot. A graphic, an embed, and every post the bot
 later replaces in place are sent by the module that makes them, so a forecast drawn as a
 graphic, a calendar or a results table never passes through here. The one message with buttons
-that does is the change queue's stop notice, sent to the log channel (`post_notice`). Which channels exist, and what each may carry, is Constitution Principle VII and
+that does is the change queue's stop notice, sent to the log channel (`post_notice`). The turn-away of a message typed while an earlier turn waits is also sent from here (`turn_away`), at once and off the queue. Which channels exist, and what each may carry, is Constitution Principle VII and
 `core/services/channel_registry_service.py`.
 
 What it holds, for its two kinds of post, are the rules for them: a mention in a log line
@@ -31,6 +31,7 @@ import discord
 from leaguebot.core.db.database import inserted_id
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.utils.answering import answering_now
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import ROLE_MENTION, USER_MENTION
 from leaguebot.core.utils.messages import chunk_message
 
@@ -92,16 +93,30 @@ class OutputRouter:
     # Public API
     # ------------------------------------------------------------------
 
+    @posts_in_a_job
     async def post_forecast(
-        self, division: ForecastTarget, content: str
+        self,
+        division: ForecastTarget,
+        content: str,
+        *,
+        mentions: discord.AllowedMentions,
+        parts: "Optional[list[discord.Message]]" = None,
     ) -> "Optional[discord.Message]":
-        """Post *content* to the division's forecast channel.
+        """Post *content* to the division's forecast channel, letting *mentions* notify.
+
+        *mentions* is the caller's to state, every part of the text is sent with it, and there is
+        no default: a forecast that names its division's role passes that role, and the mystery
+        round's notice passes `AllowedMentions.none()` (architecture.md, "Posting to Discord",
+        "Who it may mention, stated where it is sent").
 
         Returns the ``discord.Message`` sent (the last, where the text is split), or ``None``
-        where the division has no forecast channel set. A post Discord refuses, or to a channel
-        the bot cannot reach, raises `StepFailedOnDiscord` naming the channel: a forecast is a
-        job of the change queue, which stops on the failure and tries the text again itself, so
-        nothing is put on the old retry queue (#439).
+        where the division has no forecast channel set; a caller that records every part passes a
+        list as *parts*, which is given each message sent, in order. A post Discord refuses, or to
+        a channel the bot cannot reach, raises `StepFailedOnDiscord` naming the channel: a
+        forecast is a job of the change queue, which stops on the failure and tries the text
+        again itself, so nothing is put on the old retry queue (#439). Where the failure comes
+        after a part was sent, the exception keeps the parts sent (``new``, in ``channel_id``),
+        for the next try to remove before it posts the forecast afresh.
         """
         channel_id = division.forecast_channel_id
         if channel_id is None:
@@ -109,11 +124,20 @@ class OutputRouter:
             # channel with no id and logged the failure — less the request.
             log.error("post_forecast: the division has no forecast channel")
             return None
-        message, reason, _retryable = await self._try_send(channel_id, content, "forecast", False)
+        sent: list[discord.Message] = []
+        message, reason, _retryable = await self._try_send(
+            channel_id, content, "forecast", False, mentions=mentions, sent=sent
+        )
         if message is None:
             raise StepFailedOnDiscord(
-                f"the forecast could not be posted to <#{channel_id}>: {reason}"
+                f"the forecast could not be posted to <#{channel_id}>: {reason}",
+                result=(
+                    {"new": [each.id for each in sent], "channel_id": channel_id}
+                    if sent else None
+                ),
             )
+        if parts is not None:
+            parts.extend(sent)
         return message
 
     async def log_destination(self) -> "Optional[int]":
@@ -185,11 +209,14 @@ class OutputRouter:
         view: discord.ui.View,
         *,
         interaction: "Optional[discord.Interaction]" = None,
+        mention_role: int | None = None,
     ) -> "Optional[discord.Message]":
         """Post *content* to the log channel as a notice carrying *view*'s buttons.
 
-        Formed and sent as a log line is, mentions wrapped and the separator appended, but **never
-        put on the retry queue**: a line retried would come back without its buttons, so the
+        Formed and sent as a log line is, mentions wrapped and the separator appended, but
+        *mention_role*'s mention, where given, left as it is and allowed to notify that role alone,
+        the one mention the log channel notifies (the stop notice's, for the league admins). It is
+        **never put on the retry queue**: a line retried would come back without its buttons, so the
         caller keeps the notice itself and posts it again until it lands. Where the post fails
         the member whose interaction *interaction* is, where it can still be answered, is
         warned here, as `post_log` does (`_warn_member`), so the caller never does.
@@ -203,12 +230,39 @@ class OutputRouter:
             return None
         channel_id = config.log_channel_id
         message = await self._send(
-            channel_id, self._as_log_line(content), enqueue_on_failure=False,
-            fallback_label="log", view=view,
+            channel_id, self._as_log_line(content, keep_role=mention_role),
+            enqueue_on_failure=False, fallback_label="log", view=view, mention_role=mention_role,
         )
         if message is None:
             await self._warn_member(channel_id, interaction)
         return message
+
+    @staticmethod
+    async def turn_away(message: discord.Message, note: str) -> None:
+        """Turn *message* away at once, off the queue: post *note* (with ``{member}`` filled in)
+        in its channel, mentioning the author alone, and delete the message.
+
+        Each is tried once. A refusal of either is logged on the host and lost, never retried, and
+        the note stays: this is a named exception to every post being a job (#439, decision 9),
+        made at once so the member is told while the earlier answer they typed still waits, where a
+        job would wait behind it. It is here, in the one file that posts directly, and not in the
+        turn's own module (`typed_turns.turn_away` asks it), so that the posting check needs no
+        line for it. A static method: it needs the message alone.
+        """
+        try:
+            await message.channel.send(
+                note.format(member=message.author.mention),
+                allowed_mentions=discord.AllowedMentions(
+                    everyone=False, roles=False, users=[message.author]),
+            )
+        except discord.HTTPException:
+            log.warning("could not post the turn-away note in channel %s", message.channel.id,
+                        exc_info=True)
+        try:
+            await message.delete()
+        except discord.HTTPException:
+            log.warning("could not delete the turned-away message %s in channel %s", message.id,
+                        message.channel.id, exc_info=True)
 
     async def strip_view(self, channel_id: int, message_id: int) -> None:
         """Take the buttons off the message *message_id* of channel *channel_id*.
@@ -378,9 +432,14 @@ class OutputRouter:
                 log.error("deliver_queued: could not deliver line id=%s", entry_id, exc_info=True)
 
     @staticmethod
-    def _as_log_line(content: str) -> str:
-        """Wrap mentions in code so they name without notifying, and append the separator."""
-        content = _MENTION_RE.sub(r"`\1`", content)
+    def _as_log_line(content: str, *, keep_role: int | None = None) -> str:
+        """Wrap mentions in code so they name without notifying, and append the separator;
+        *keep_role*'s mention alone is left as it is."""
+        kept = None if keep_role is None else f"<@&{keep_role}>"
+        content = _MENTION_RE.sub(
+            lambda found: found.group(1) if found.group(1) == kept else f"`{found.group(1)}`",
+            content,
+        )
         return content + "\n" + "\u2015" * 36
 
     async def _send(
@@ -392,6 +451,7 @@ class OutputRouter:
         fallback_label: str = "unknown",
         return_first: bool = False,
         view: "Optional[discord.ui.View]" = None,
+        mention_role: int | None = None,
     ) -> "Optional[discord.Message]":
         """Attempt to send *content* to *channel_id*.
 
@@ -407,7 +467,7 @@ class OutputRouter:
         *view* is sent with the last part, so that its buttons end the message.
         """
         message, reason, retryable = await self._try_send(
-            channel_id, content, fallback_label, return_first, view
+            channel_id, content, fallback_label, return_first, view, mention_role
         )
         if message is None and retryable:
             await self._enqueue_if_configured(enqueue_on_failure, channel_id, content, reason)
@@ -420,10 +480,16 @@ class OutputRouter:
         fallback_label: str,
         return_first: bool,
         view: "Optional[discord.ui.View]" = None,
+        mention_role: int | None = None,
+        mentions: "Optional[discord.AllowedMentions]" = None,
+        sent: "Optional[list[discord.Message]]" = None,
     ) -> "tuple[Optional[discord.Message], str, bool]":
         """Send *content*, and say how it went: the message, or None with why and whether a
         retry could mend it (a refused or failed post can; a channel not found cannot).
-        Logs every failure and never raises."""
+        Logs every failure and never raises.
+
+        *sent*, where given, is added each message sent, in order, so that a caller finds what
+        stands in the channel when a later part is refused."""
         channel = self._bot.get_channel(channel_id)
         if channel is None:
             try:
@@ -446,16 +512,19 @@ class OutputRouter:
             # Discord messages have a 2000-char limit; chunk if needed
             first_msg: Optional[discord.Message] = None
             last_msg: Optional[discord.Message] = None
+            allowed = mentions if mentions is not None else (
+                discord.AllowedMentions.none() if mention_role is None
+                else discord.AllowedMentions(
+                    everyone=False, users=False, roles=[discord.Object(id=mention_role)])
+            )
             chunks = chunk_message(content)
             for number, chunk in enumerate(chunks, start=1):
                 if view is not None and number == len(chunks):
-                    last_msg = await channel.send(
-                        chunk, allowed_mentions=discord.AllowedMentions.none(), view=view
-                    )
+                    last_msg = await channel.send(chunk, allowed_mentions=allowed, view=view)
                 else:
-                    last_msg = await channel.send(
-                        chunk, allowed_mentions=discord.AllowedMentions.none()
-                    )
+                    last_msg = await channel.send(chunk, allowed_mentions=allowed)
+                if sent is not None:
+                    sent.append(last_msg)
                 if first_msg is None:
                     first_msg = last_msg
             return (first_msg if return_first else last_msg), "", False

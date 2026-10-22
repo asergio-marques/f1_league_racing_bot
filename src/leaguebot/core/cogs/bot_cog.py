@@ -39,6 +39,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import LEAGUE_LANE, ChangeOrigin
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.services import backup_service, factory_reset_service, pack_service
 from leaguebot.core.utils.channel_guard import (
@@ -52,7 +53,7 @@ from leaguebot.core.utils.channel_guard import (
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.interaction_errors import describe, describe_fault, report_failure
 from leaguebot.core.utils.league_server import guild_of
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.log_lines import lane_name, refuse
 
 log = logging.getLogger(__name__)
 
@@ -443,7 +444,7 @@ class BotCog(commands.Cog):
             )
             return
 
-        # The driver role is granted at every approval, and `wizard_service.approve_signup`
+        # The driver role is granted at every approval, and the `signup.approve` change
         # only logs a grant Discord refuses (#374). The base role is granted by the league.
         if column == "driver_role_id":
             refusal = role_grant_refusal(
@@ -646,14 +647,24 @@ class BotCog(commands.Cog):
         await self.bot.config_service.set_core_setting("hub_message_id", None)
 
         faults: list[str] = []
-        if old_channel_id is not None and old_channel_id != channel.id:
-            faults += await _stand_down_old_hub(guild, old_channel_id, old_message_id)
-        for fault in (
-            await hub_service.apply_hub_permissions(self.bot, guild, channel),
-            await hub_service.refresh_panel(self.bot),
-        ):
-            if fault is not None:
-                faults.append(fault)
+        moved = old_channel_id is not None and old_channel_id != channel.id
+        if old_channel_id is not None and moved:
+            faults += await _stand_down_old_hub(guild, old_channel_id)
+        fault = await hub_service.apply_hub_permissions(self.bot, guild, channel)
+        if fault is not None:
+            faults.append(fault)
+        # The panel is posted by the change queue, which stops for a refusal.
+        await self.bot.change_queue.ask(
+            hub_service.HUB_REFRESH,
+            {"command": describe(interaction)}
+            | (
+                {"old_channel_id": old_channel_id, "old_message_id": old_message_id}
+                if moved and old_message_id is not None else {}
+            ),
+            actor=interaction.user,
+            what="posting the hub panel",
+            origin=ChangeOrigin.BOT,
+        )
 
         await _audit(
             self.bot,
@@ -663,7 +674,7 @@ class BotCog(commands.Cog):
             {"channel_id": channel.id},
         )
 
-        reply = f"✅ **Hub channel** set to {channel.mention}."
+        reply = f"✅ **Hub channel** set to {channel.mention}. Its panel follows on the change queue."
         if faults:
             reply += "\n⚠️ " + "\n⚠️ ".join(faults)
         await interaction.followup.send(reply, ephemeral=True)
@@ -737,12 +748,13 @@ class BotCog(commands.Cog):
                 self.bot.db_path,
                 self.bot.scheduler_service,
                 self.bot,
+                self.bot.change_queue,
                 actor_id=interaction.user.id,
                 actor_name=str(interaction.user),
             )
         except pack_service.PackRefused as refused:
             if refused.job_id is not None:
-                reason = _queue_refusal(refused.job_id, refused.stopped)
+                reason = _queue_refusal(refused.job_id, refused.stopped, refused.lane)
             elif refused.season_number is not None:
                 reason = _current_season_refusal(refused.season_number, refused.stage)
             else:
@@ -843,7 +855,9 @@ class BotCog(commands.Cog):
         # The wipe takes the configuration and with it any way to find the log channel, so
         # where the closing line goes is learned now.
         log_channel = await self.bot.output_router.log_destination()
-        await factory_reset_service.wipe(db_path, scheduler, self.bot)
+        await factory_reset_service.wipe(
+            db_path, scheduler, self.bot, self.bot.change_queue
+        )
         log.warning(
             "/bot factory-reset by %s (id=%s): the league was erased; backup at %s",
             interaction.user, interaction.user.id, backup.database,
@@ -952,30 +966,20 @@ async def _reapply_hub_permissions(
         await bot.output_router.post_log(f"{who}Hub permissions not updated: {fault}")
 
 
-async def _stand_down_old_hub(
-    guild: discord.Guild, channel_id: int, message_id: int | None
-) -> list[str]:
-    """Delete the panel from the hub's old channel and clear what the bot set there.
+async def _stand_down_old_hub(guild: discord.Guild, channel_id: int) -> list[str]:
+    """Clear what the bot set on the hub's old channel: its permission overwrites.
 
-    A panel already deleted, or a channel already gone, is not a fault: there is nothing
-    left to stand down.
+    The old panel is not deleted here: the refresh deletes it as a job of its own, once the new one
+    is up. A channel already gone is not a fault: there is nothing left to stand down.
     """
     old = guild.get_channel(channel_id)
     if not isinstance(old, discord.TextChannel):
         return []
-    faults: list[str] = []
-    if message_id is not None:
-        try:
-            await old.get_partial_message(message_id).delete()
-        except discord.NotFound:
-            pass
-        except discord.HTTPException as exc:
-            faults.append(f"The old hub panel in <#{channel_id}> could not be deleted: {exc}")
     try:
         await old.edit(overwrites={})
     except discord.HTTPException as exc:
-        faults.append(f"The permissions on the old hub <#{channel_id}> could not be cleared: {exc}")
-    return faults
+        return [f"The permissions on the old hub <#{channel_id}> could not be cleared: {exc}"]
+    return []
 
 
 async def _clean_up(guild, bot_user_id: int, targets, report, close) -> None:
@@ -1008,7 +1012,13 @@ async def _clean_up(guild, bot_user_id: int, targets, report, close) -> None:
 
 
 async def _open_progress(user: discord.User | discord.Member) -> discord.Message | None:
-    """The direct message the clean-up edits as it goes, or None where DMs are closed."""
+    """The direct message the clean-up edits as it goes, or None where DMs are closed.
+
+    Off the change queue, as the clean-up it reports on is (`clean_discord`): the message is the
+    reply to the owner's own command, not a post to the league, and the reset empties the database
+    the queue lives in, so there is nothing to hold a refusal for Retry and Discard. A refusal is
+    logged on the host and the progress goes to the log alone.
+    """
     try:
         return await user.send("🧹 Factory reset: starting the Discord clean-up.")
     except discord.HTTPException:
@@ -1016,17 +1026,19 @@ async def _open_progress(user: discord.User | discord.Member) -> discord.Message
         return None
 
 
-def _queue_refusal(job_id: int, stopped: bool) -> str:
-    """Why pack will not run while the queue holds a job, naming the job it would wait on."""
+def _queue_refusal(job_id: int, stopped: bool, lane: str = LEAGUE_LANE) -> str:
+    """Why pack will not run while a lane holds a job, naming the job it would wait on and the
+    lane it is on: the queue (the league's), or the turns in a conversation's channel."""
+    where = lane_name(lane)
     if stopped:
         return (
-            f"⛔ The bot does not leave a server while its queue holds a job, and the queue is "
-            f"stopped at job #{job_id}. A league manager or admin can press Retry on its notice "
-            f"in the log channel, or a league admin Discard, and then pack again."
+            f"⛔ The bot does not leave a server while a lane holds a job: job #{job_id} on "
+            f"{where} is stopped. A league manager or admin can press Retry on its notice in "
+            f"the log channel, or a league admin Discard, and then pack again."
         )
     return (
-        f"⛔ The bot does not leave a server while its queue holds a job: job #{job_id} is "
-        f"still to run. Let it finish, then pack again."
+        f"⛔ The bot does not leave a server while a lane holds a job: job #{job_id} on "
+        f"{where} is still to run. Let it finish, then pack again."
     )
 
 

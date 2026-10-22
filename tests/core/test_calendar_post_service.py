@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import leaguebot.core.services.calendar_post_service as cps
+from tests.support.change_queue import in_a_job
 
 TRACKS = {
     "Silverstone Circuit": NS(
@@ -420,9 +421,10 @@ async def test_a_raising_post_raises_and_queues_no_retry(tmp_path, monkeypatch, 
         guild = _guild(channel)
 
     with pytest.raises(StepFailedOnDiscord):
-        await cps.post_division_calendar(
-            _bot(tmp_path), guild, _division(calendar_message_id=111), _rounds(), TRACKS,
-        )
+        with in_a_job():
+            await cps.post_division_calendar(
+                _bot(tmp_path), guild, _division(calendar_message_id=111), _rounds(), TRACKS,
+            )
 
     enqueue.assert_not_awaited()
     partial.delete.assert_not_awaited()

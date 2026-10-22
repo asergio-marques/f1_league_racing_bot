@@ -16,9 +16,9 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.result_submission_service import (
     _save_session_result_in_tx,
-    save_session_result,
 )
 from leaguebot.core.services.season_service import SeasonImmutableError
+from tests.support.session_writes import save_session_result
 from tests.support.teams import seed_team_instances
 
 SERVER_ID = 13210

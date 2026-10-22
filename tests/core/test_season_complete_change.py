@@ -28,7 +28,6 @@ import re
 import sqlite3
 from contextlib import ExitStack
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -41,6 +40,7 @@ from tests.support.change_queue import (
     change_rows,
     discard_job,
     http_error,
+    member_interaction,
     retry_job,
     run_queue,
     step_rows,
@@ -126,7 +126,12 @@ BACKUP_KEPT = (
 )
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
 SIGNUPS_CLOSED = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
-WINDOW_OPEN = "The signup window could not be closed. Close it with `/signup close`."
+WINDOW_OPEN = (
+    "The signup window could not be closed. Close it with `/signup close`. "
+    "Where a close time is set, run `/signup close-time cancel` first, and where a season's end "
+    "or wind-down is still on the queue, let it finish first, as `/signup close` is refused "
+    "until then."
+)
 FORECASTS_KEPT = (
     "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
     "forecast channel."
@@ -467,12 +472,15 @@ async def test_a_discarded_final_classification_is_named_as_never_posted_and_the
 
 
 async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
+    """The signup window is open and the completion queued; recording the window closed fails.
+    The queue stops at `post_closed`, whose record writes the window's close, with the season
+    still active and the window open; retried, the window closes and the season completes."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     league.close_fails = RuntimeError("the window could not be recorded closed")
     await _asked(league)
 
     await run_queue(league.bot)
-    assert await _stopped_at(league) == ("close_window", None)
+    assert await _stopped_at(league) == ("post_closed", None)
     assert await _status(league) == "ACTIVE"
     assert await window_open(league)
 
@@ -1003,10 +1011,24 @@ async def test_a_driver_who_left_the_server_and_a_role_deleted_are_passed_over(t
 
 
 async def test_the_signup_window_is_closed_as_the_season_ends_before_the_driver_pass(tmp_path):
+    """The signup window open and the completion queued. Run as far as `post_closed`, whose
+    record writes the window's close, the window is closed while the season is still active,
+    no history written and Max still assigned: the driver pass has not yet run. Driver 105,
+    still filling in the wizard, is returned by the close. The window's close is audited once,
+    by the system, and its one "🔒 Signups closed as the season ended" line written in that
+    post's record: it names no member, and states the one driver returned beneath it (signup
+    :67). The rest of the queue completes the season."""
     league = await pending_completion_league(tmp_path, signups_open=True)
+    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     await _asked(league)
 
-    await _run_through(league, "close_window")
+    await _run_through(league, "post_closed")
+    assert await _window_close_audits(league) == [
+        ("SIGNUP_SEASON_END_CLOSE", "open", "closed", "system")
+    ]
+    [line] = await _closed_lines(league)
+    assert "<@" not in line, line
+    assert any("returned" in text and "1" in text for text in line.splitlines()[1:]), line
     assert not await window_open(league)
     assert await _history(league) == []
     assert await driver_state(league, MAX) == "ASSIGNED"
@@ -1218,7 +1240,7 @@ async def _sheet_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
 #: Each job a league admin may discard: the league that makes it fail, where the queue stops,
 #: and what the reply and the line say was not done.
 _DISCARDS = {
-    "close_window": (_window_refused, ("close_window", None), WINDOW_OPEN),
+    "post_closed": (_window_refused, ("post_closed", None), WINDOW_OPEN),
     "flush_forecasts": (_flush_refused, ("flush_forecasts", None), FORECASTS_KEPT),
     "close_signup": (_lock_refused, ("close_signup", SIGNING_UP), SIGNUP_KEPT),
     "take_driver_role": (_role_refused, ("take_driver_role", UNASSIGNED), DRIVER_ROLE_KEPT),
@@ -1226,7 +1248,9 @@ _DISCARDS = {
 }
 
 
-@pytest.mark.parametrize("job", sorted(_DISCARDS))
+@pytest.mark.parametrize("job", [
+    job for job in sorted(_DISCARDS)
+])
 async def test_a_discarded_job_is_named_with_what_to_do_by_hand_and_the_line_says_incomplete(
     tmp_path, monkeypatch, job,
 ):
@@ -1295,11 +1319,20 @@ async def test_a_discarded_signup_notice_still_closes_the_channel_and_the_outcom
     assert await _status(league) == "COMPLETED"
 
 
+def _close_recording(service: Any) -> str:
+    """The name of the form through which the signup service records the window closed:
+    `set_window_closed_on`, which `post_closed`'s record calls on its save's connection from
+    C66 on, or until then the committing `set_window_closed`."""
+    return ("set_window_closed_on" if hasattr(service, "set_window_closed_on")
+            else "set_window_closed")
+
+
 def _closes_then_fails_once(league: Any) -> None:
-    """The window's close records the window closed, then fails once, after it has returned its
-    drivers: as an audit that cannot be written would make it."""
+    """Recording the window closed goes through, then fails once, after the close has returned
+    its drivers: as an audit that cannot be written would make it."""
     service = league.bot.signup_module_service
-    closing = service.set_window_closed
+    name = _close_recording(service)
+    closing = getattr(service, name)
     failing = {"now": True}
 
     async def _set_window_closed(*args: Any, **kwargs: Any) -> Any:
@@ -1309,32 +1342,32 @@ def _closes_then_fails_once(league: Any) -> None:
             raise RuntimeError("disk I/O error")
         return closed
 
-    service.set_window_closed = _set_window_closed
+    setattr(service, name, _set_window_closed)
 
 
 async def test_a_window_close_that_stopped_after_returning_its_drivers_still_tells_and_closes_them(
     tmp_path,
 ):
     """The signup window open with a driver still filling in the wizard, and the completion
-    queued. The window's close returns the driver, records the window closed, then fails: the
-    queue stops at `close_window`. Retried with the window now read as closed, the job is not
-    dropped as no longer due: it plans the driver's notice and the close of their channel, the
-    notice posted before the lock, and the season is completed."""
+    queued. The window's close returns the driver; `post_closed`'s record then writes the window
+    closed and fails, so its save is undone: the queue stops at `post_closed` with the window
+    still open and the driver Not Signed Up, told nothing. Retried, the window is recorded
+    closed, the driver's notice is posted before their channel's lock, and the season is
+    completed."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     _closes_then_fails_once(league)
     await _asked(league)
 
     await run_queue(league.bot)
-    assert await _stopped_at(league) == ("close_window", None)
+    assert await _stopped_at(league) == ("post_closed", None)
     assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
-    assert not await window_open(league)
+    assert await window_open(league)
     assert league.notices == [] and league.locked == []
 
     await retry_job(league.bot)
 
-    [close] = [job for job in await _jobs(league) if job["name"] == "close_window"]
-    assert close["result"] == {"returned": [str(SIGNING_UP)]}
+    assert not await window_open(league)
     names = await _names(league)
     assert names.index(("signup_notice", SIGNING_UP)) < names.index(("close_signup", SIGNING_UP))
     assert [(kind, uid) for kind, uid, _n in league.events
@@ -1355,7 +1388,8 @@ def _killed_before_the_window_is_recorded_closed(league: Any) -> None:
     after the close has returned its drivers, their transitions committed, and before the job's
     mark or any result of its is saved. The bot started again closes as it should."""
     service = league.bot.signup_module_service
-    closing = service.set_window_closed
+    name = _close_recording(service)
+    closing = getattr(service, name)
     killing = {"now": True}
 
     async def _set_window_closed(*args: Any, **kwargs: Any) -> Any:
@@ -1364,7 +1398,7 @@ def _killed_before_the_window_is_recorded_closed(league: Any) -> None:
             raise _Killed()
         return await closing(*args, **kwargs)
 
-    service.set_window_closed = _set_window_closed
+    setattr(service, name, _set_window_closed)
 
 
 async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_still_tells_and_closes_them_at_start(
@@ -1372,9 +1406,9 @@ async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_stil
 ):
     """The signup window open with a driver still filling in the wizard, and the completion
     queued. The bot is killed in the window's close, after the driver is returned to Not Signed
-    Up and before the window is recorded closed or the job's mark and result are saved. When the
-    bot starts again, the close is finished as for a recorded stop: the driver it had returned is
-    told, then their channel closed, and the season is completed."""
+    Up, as `post_closed` comes to record the window closed and before its mark is saved. When
+    the bot starts again, the close is finished as for a recorded stop: the driver it had
+    returned is told, then their channel closed, and the season is completed."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     _killed_before_the_window_is_recorded_closed(league)
@@ -1382,8 +1416,8 @@ async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_stil
 
     with pytest.raises(_Killed):
         await run_queue(league.bot)
-    [close] = [job for job in await _jobs(league) if job["name"] == "close_window"]
-    assert close["done_at"] is None and close["result"] is None
+    [closed] = [job for job in await _jobs(league) if job["name"] == "post_closed"]
+    assert closed["done_at"] is None and closed["result"] is None
     assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
     assert await window_open(league)
 
@@ -1408,8 +1442,8 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
 ):
     """The signup window open with driver 105 still filling in the wizard, and the completion
     queued. The close returns 105, then recording the window closed fails: the queue stops at
-    `close_window`, keeping 105 on the job, with the window still open. Where the first Retry
-    fails the same way, the job still keeps 105. Once the record goes through, 105 is told, then
+    `post_closed`, with the window still open and 105 Not Signed Up, told nothing. Where the
+    first Retry fails the same way, it stops there again. Once the record goes through, 105 is told, then
     their channel closed, each once, and the season is completed."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
@@ -1420,9 +1454,7 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
     for attempt in range(failures):
         if attempt:
             await retry_job(league.bot)
-        assert await _stopped_at(league) == ("close_window", None)
-        [close] = [job for job in await _jobs(league) if job["name"] == "close_window"]
-        assert close["result"] == {"returned": [str(SIGNING_UP)]}
+        assert await _stopped_at(league) == ("post_closed", None)
         assert await window_open(league)
         assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
         assert league.notices == [] and league.locked == []
@@ -1446,11 +1478,35 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
 
 # ── A signup's end, marked in the save that ends it (amendment K2) ───────────────────
 
-#: How a driver a discarded window close returned is named, in the reply and the line.
+#: How a driver returned and left untold would be named, in the reply and the line: never for a
+#: discarded closed notice, which drops only that post (b15-2).
 RETURNED_NOT_TOLD = (
     f"<@{SIGNING_UP}> was returned to Not Signed Up when signups closed, but was not told and "
     "their channel was not closed: tell them and delete it by hand."
 )
+#: The head of the line a season end's close writes, with its audit, in `post_closed`'s record.
+CLOSED_AS_THE_SEASON_ENDED = "🔒 Signups closed as the season ended"
+
+
+async def _window_close_audits(league: Any) -> list[tuple[str, str, str, str]]:
+    """Each audit record of the window's close as the season ends, with who it names."""
+    rows = await league.rows(
+        "SELECT change_type, old_value, new_value, actor_name FROM audit_entries "
+        "WHERE change_type = ?",
+        "SIGNUP_SEASON_END_CLOSE",
+    )
+    return [(row["change_type"], row["old_value"], row["new_value"], row["actor_name"])
+            for row in rows]
+
+
+async def _closed_lines(league: Any) -> list[str]:
+    """Each line, sent or still queued, saying signups closed as the season ended."""
+    from tests.support.change_queue import queued_log_lines
+
+    lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+    return [line for line in lines if CLOSED_AS_THE_SEASON_ENDED in line]
+
+
 #: How a driver the season's end cannot tell for want of a signup channel is named.
 NO_CHANNEL = f"<@{SIGNING_UP}> had no signup channel left to tell"
 
@@ -1477,7 +1533,8 @@ def _killed_after_the_window_is_recorded_closed(league: Any) -> None:
     once, before the close's audit is written and before the job's mark or any result of its is
     saved. The bot started again closes as it should."""
     service = league.bot.signup_module_service
-    closing = service.set_window_closed
+    name = _close_recording(service)
+    closing = getattr(service, name)
     killing = {"now": True}
 
     async def _set_window_closed(*args: Any, **kwargs: Any) -> Any:
@@ -1487,17 +1544,17 @@ def _killed_after_the_window_is_recorded_closed(league: Any) -> None:
             raise _Killed()
         return closed
 
-    service.set_window_closed = _set_window_closed
+    setattr(service, name, _set_window_closed)
 
 
 async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_closed_still_tells_and_closes_its_drivers_at_start(
     tmp_path,
 ):
     """The signup window open with driver 105 still filling in the wizard, and the completion
-    queued. The bot is killed in the window's close straight after the window is recorded closed,
-    before the close's audit and the job's mark. When the bot starts again, the close is not
-    dropped as no longer due: 105 is told once, then their channel locked, the season completed,
-    and 105 is owed nothing more."""
+    queued. The bot is killed in `post_closed`'s record straight after it writes the window
+    closed, before its save commits: the window is still open. When the bot starts again, the
+    close is not dropped as no longer due: 105 is told once, then their channel locked, the
+    season completed, and 105 is owed nothing more."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     _killed_after_the_window_is_recorded_closed(league)
@@ -1505,10 +1562,10 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
 
     with pytest.raises(_Killed):
         await run_queue(league.bot)
-    [close] = [job for job in await _jobs(league) if job["name"] == "close_window"]
-    assert close["done_at"] is None and close["result"] is None
+    [closed] = [job for job in await _jobs(league) if job["name"] == "post_closed"]
+    assert closed["done_at"] is None and closed["result"] is None
     assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
-    assert not await window_open(league)
+    assert await window_open(league)
 
     await league.restart()
     await run_queue(league.bot)
@@ -1524,35 +1581,65 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
     assert await _owed(league) == []
 
 
-async def test_a_discarded_window_close_names_and_forgets_the_drivers_it_returned(tmp_path):
+@pytest.mark.parametrize("refused", ["the record", "the post"])
+async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_close_returned(
+    tmp_path, refused,
+):
     """The signup window open with driver 105 still filling in the wizard. The window's close
-    returns 105, then recording the window closed fails, and a league admin discards
-    `close_window`. 105 is never told: the reply and the closing line name them as returned but
-    not told, their channel to delete by hand; no `signup_notice` is planned for them, and the
-    mark is taken, so no later close finds them."""
+    returns 105, then `post_closed` fails: where *refused* is "the record", recording the window
+    closed fails; where "the post", Discord refuses the "Signups are now closed" post itself. A
+    league admin discards it. Only that post is dropped (b15-2): where its record failed, the
+    "Signups are now closed" message already sent is left standing; where Discord refused it,
+    none stands. 105 is still told, then their channel locked, by their own jobs; the
+    reply and the closing line say the window was not closed, to be closed with `/signup close`,
+    and never name 105 as returned but not told; the window is still recorded open, with no
+    audit of its close and no "🔒 Signups closed" line, the season completed, and 105 is owed
+    nothing more."""
+    from tests.support.season_league import SIGNUP_CHANNEL
+
     league = await pending_completion_league(tmp_path, signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
-    league.close_fails = RuntimeError("the window could not be recorded closed")
+    if refused == "the record":
+        league.close_fails = RuntimeError("the window could not be recorded closed")
+    else:
+        league.channel(SIGNUP_CHANNEL).send_fails = _forbidden()
     interaction = await _asked(league)
     await run_queue(league.bot)
-    assert await _stopped_at(league) == ("close_window", None)
+    assert await _stopped_at(league) == ("post_closed", None)
+    assert league.notices == [] and league.locked == []
 
     await discard_job(league.bot)
 
-    assert RETURNED_NOT_TOLD in reply(interaction)
+    closed_notices = [message for message in league.channel(SIGNUP_CHANNEL).messages.values()
+                      if "Signups are now closed" in str(message.content)]
+    # Where the post went out and only its record failed, it is left standing (the owner:
+    # "Leave it standing"); where Discord refused it, none stands.
+    assert len(closed_notices) == (1 if refused == "the record" else 0)
+    assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED)]
+    assert league.locked == [SIGNING_UP]
+    assert [(kind, uid) for kind, uid, _n in league.events
+            if kind in ("notice", "lock") and uid == SIGNING_UP] == [
+        ("notice", SIGNING_UP), ("lock", SIGNING_UP),
+    ]
+    assert WINDOW_OPEN in _not_done(reply(interaction))
+    assert RETURNED_NOT_TOLD not in reply(interaction)
     [line] = _closing_lines(league)
-    assert _logged(RETURNED_NOT_TOLD) in line
-    assert ("signup_notice", SIGNING_UP) not in await _names(league)
-    assert league.notices == []
+    assert f"  not done: {_logged(WINDOW_OPEN)}" in line
+    assert _logged(RETURNED_NOT_TOLD) not in line
+    assert await window_open(league)
+    assert await _window_close_audits(league) == []
+    assert await _closed_lines(league) == []
     assert await _status(league) == "COMPLETED"
     assert await _owed(league) == []
 
 
 async def _withdrew_with_the_notice_refused(league: Any, user_id: int = SIGNING_UP) -> Any:
-    """Driver *user_id*, part-way through the wizard, withdraws through the real wizard service;
-    Discord refuses the closing notice in their signup channel, so the channel is kept, readable
-    with their typing locked and no deletion armed (P3). Gives the channel kept."""
-    from leaguebot.signup.services.wizard_service import WizardService
+    """Driver *user_id*, part-way through the wizard, presses Cancel Signup in their signup
+    channel, on a view handed the change queue, and Discord refuses the closing notice there.
+    Once the queue has run they are Not Signed Up (the league's `signup.end` done), and the turns
+    in their channel stop at `signup_notice`: nothing posted, their typing not revoked, no
+    deletion armed (C76, decision 25). Gives the channel."""
+    from leaguebot.signup.services.signup_views import WithdrawButtonView
 
     await _mid_wizard(league, user_id)
     kept = MagicMock(spec=discord.TextChannel)
@@ -1561,30 +1648,43 @@ async def _withdrew_with_the_notice_refused(league: Any, user_id: int = SIGNING_
     kept.send = AsyncMock(side_effect=_forbidden())
     kept.set_permissions = AsyncMock(return_value=None)
     league.channels[kept.id] = kept
-    wizards = WizardService.__new__(WizardService)
-    wizards._db_path = league.db_path
-    wizards._correction_tasks = {}
-    wizards._scheduler = league.bot.scheduler_service
-    wizards._output_router = league.bot.output_router
-    wizards._bot = league.bot
-    assert await wizards.withdraw(str(user_id), league.guild) is None
-    assert kept.set_permissions.await_args.kwargs["send_messages"] is False
+    # Today's withdrawal off the queue, a stand-in that does nothing, so that only what the
+    # press asks of the queue shows.
+    league.bot.wizard_service.withdraw = AsyncMock(return_value=None)
+    press = member_interaction(league.bot, user=league._member(user_id))
+    press.guild = league.guild
+    press.channel_id = kept.id
+    press.channel = kept
+    await WithdrawButtonView(str(user_id), league.bot.change_queue).withdraw_button.callback(press)
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path, _lane_of(user_id))
+    assert job is not None and job["name"] == "signup_notice"
+    assert not any(call.kwargs.get("send_messages") is False
+                   for call in kept.set_permissions.call_args_list)
     return kept
 
 
-def _deletions_armed(league: Any) -> list[str]:
-    return [call.kwargs.get("id") for call in
-            league.bot.scheduler_service._scheduler.add_job.call_args_list
-            if str(call.kwargs.get("id", "")).startswith("wizard_channel_delete_")]
+def _lane_of(user_id: int = SIGNING_UP) -> str:
+    """The lane of driver *user_id*'s signup channel."""
+    return f"channel:{SIGNUP_CHANNEL_BASE + user_id}"
+
+
+def _deletions_armed(league: Any) -> list[Any]:
+    """Each 24-hour deletion of a signup channel armed through the scheduler service."""
+    return [call.args for call in league.bot.scheduler_service.arm_once.call_args_list
+            if call.args and call.args[0] == "signup_channel_delete"]
+
+
 
 
 async def test_a_signup_channel_kept_after_a_refused_notice_is_not_reached_by_the_season_s_end(
     tmp_path,
 ):
     """Driver 105 withdrew while the signup window stood open, and Discord refused their
-    closing notice, so their channel is kept, readable with their typing locked (P3). The
+    closing notice, so the turns in their signup channel stand stopped at `signup_notice`. The
     completion then closes the window: it plans no `signup_notice` and no `close_signup` for
-    105, locks nothing of theirs and arms no deletion; their kept channel is told nothing more."""
+    105, locks nothing of theirs and arms no deletion; their channel is told nothing more, and
+    their stopped job is left stopped for Retry or Discard (decision 24)."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     kept = await _withdrew_with_the_notice_refused(league)
     await _asked(league)
@@ -1598,6 +1698,8 @@ async def test_a_signup_channel_kept_after_a_refused_notice_is_not_reached_by_th
     assert league.notices == []
     assert _deletions_armed(league) == []
     assert kept.send.await_count == 1
+    job = await stopped_job(league.db_path, _lane_of())
+    assert job is not None and job["name"] == "signup_notice"
     assert await _status(league) == "COMPLETED"
 
 
@@ -1619,31 +1721,33 @@ async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
 
 
 def _channel_gone(league: Any, user_id: int = SIGNING_UP) -> None:
-    """Driver *user_id*'s signup channel is gone: holding it finds nothing to tell
-    (`channel_id` None), as the wizard service answers for a wizard with no channel. The lock is
-    the support's double still, so a lock asked for them is recorded in `league.locked`."""
-    wizard = league.bot.wizard_service
-    holding = wizard.trigger_channel_hold.side_effect
-
-    async def _hold(uid: Any, guild: Any, notice: str, **kwargs: Any) -> Any:
-        if int(uid) == user_id:
-            league.events.append(("notice", int(uid), 0))
-            return SimpleNamespace(channel_id=None, posted=False, locked=False, reason=None)
-        return await holding(uid, guild, notice, **kwargs)
-
-    wizard.trigger_channel_hold = AsyncMock(side_effect=_hold)
+    """Driver *user_id*'s signup channel is gone from the server: deleted before their
+    `signup_notice` ran, so there is nothing to tell or lock in it."""
+    league.remove_channel(SIGNUP_CHANNEL_BASE + user_id)
 
 
 def _locks_asked(league: Any, user_id: int = SIGNING_UP) -> list[Any]:
-    """Each lock of driver *user_id*'s signup channel asked of the wizard service."""
-    return [call for call in league.bot.wizard_service.lock_signup_channel.await_args_list
-            if int(call.args[0]) == user_id]
+    """Each permission edit taking driver *user_id*'s typing away in their signup channel, the
+    channel looked for on the server and among those removed from it."""
+    cid = SIGNUP_CHANNEL_BASE + user_id
+    held = league.channels.get(cid) or league._removed.get(cid)
+    if held is None:
+        return []
+    return [call for call in held.set_permissions.call_args_list
+            if call.kwargs.get("send_messages") is False]
 
 
 def _deletion_armed_for(league: Any, user_id: int = SIGNING_UP) -> bool:
-    """Whether a deletion of driver *user_id*'s signup channel was armed on the scheduler."""
-    return any(call.kwargs.get("id") == f"wizard_channel_delete_{user_id}"
-               for call in league.bot.scheduler_service._scheduler.add_job.call_args_list)
+    """Whether a deletion of driver *user_id*'s signup channel was armed: through the scheduler
+    service's `signup_channel_delete` timer, or the wizard service's own job on the scheduler."""
+    scheduler = league.bot.scheduler_service
+    return any(
+        call.args[:2] == ("signup_channel_delete", str(user_id))
+        for call in scheduler.arm_once.call_args_list
+    ) or any(
+        call.kwargs.get("id") == f"wizard_channel_delete_{user_id}"
+        for call in scheduler._scheduler.add_job.call_args_list
+    )
 
 
 @pytest.mark.parametrize("whose", ["returned by the window's close", "in review"])
@@ -1741,24 +1845,29 @@ async def test_a_completion_with_a_discard_and_a_driver_with_no_channel_left_rea
     assert await _status(league) == "COMPLETED"
 
 
-async def test_a_completion_whose_discarded_close_left_drivers_untold_reads_incomplete(tmp_path):
-    """The signup window's close returns driver 105, then recording the window closed fails, and
-    a league admin discards `close_window`: 105 is left untold. The closing line reads
-    "| Incomplete", naming 105 as returned but not told beneath it, the drivers so left counting
-    as a discard."""
+async def test_a_completion_whose_closed_notice_was_discarded_reads_incomplete_for_the_window_alone(
+    tmp_path,
+):
+    """The signup window's close returns driver 105, then `post_closed`, whose record writes the
+    window closed, fails, and a league admin discards it. 105 is still told by their own job
+    (b15-2), so the closing line reads "| Incomplete" for the window alone: beneath it the window
+    is named as not closed, and nothing not done names 105; the reply says the same."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     league.close_fails = RuntimeError("the window could not be recorded closed")
     interaction = await _asked(league)
     await run_queue(league.bot)
-    assert await _stopped_at(league) == ("close_window", None)
+    assert await _stopped_at(league) == ("post_closed", None)
 
     await discard_job(league.bot)
 
     [line] = _closing_lines(league)
     assert line.startswith(INCOMPLETE)
-    assert f"  not done: {_logged(RETURNED_NOT_TOLD)}" in line
-    assert RETURNED_NOT_TOLD in _not_done(reply(interaction))
+    not_done = [each.split("  not done: ", 1)[1] for each in line.splitlines()
+                if each.startswith("  not done: ")]
+    assert not_done == [_logged(WINDOW_OPEN)]
+    assert _not_done(reply(interaction)) == [WINDOW_OPEN]
+    assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED)]
 
 
 #: Work in hand that is not an end of the season, as a request about it would find it: each kind,
@@ -1901,6 +2010,63 @@ async def test_a_forecast_that_will_not_delete_stops_the_completion_and_once_dis
     assert "9401" in entry
     [line] = _closing_lines(league)
     assert INCOMPLETE in line and named in line and "9401" in line
+
+
+async def _forecast_in_two_parts(tmp_path: Any) -> Any:
+    """A season pending completion under test mode, with Pro's Phase 1 forecast of round 4 posted
+    in two messages: 9400, then 9401, the last, which its record names."""
+    from tests.support.season_league import _refusing_delete
+
+    league = await pending_completion_league(tmp_path, test_mode=True)
+    await posted_forecast(league, round_id(PRO, 4), 1, 9401)
+    forecast = league.channel(PRO_CH.forecast)
+    forecast.seed(9400, "Phase 1 forecast, first part")
+    _refusing_delete(league, forecast.messages[9400])
+    await league.write("UPDATE forecast_messages SET message_ids = ? WHERE message_id = ?",
+                       "[9400, 9401]", 9401)
+    return league
+
+
+async def test_a_forecast_posted_in_two_parts_is_deleted_whole_when_the_season_is_completed(
+    tmp_path,
+):
+    """Pro's Phase 1 forecast of round 4 stands as two messages. Admin 77 completes the season
+    and the queue runs: both parts are deleted, the season is completed and the queue does not
+    stop."""
+    league = await _forecast_in_two_parts(tmp_path)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert await _status(league) == "COMPLETED"
+    assert not {9400, 9401} & set(league.channel(PRO_CH.forecast).messages)
+    assert await league.rows("SELECT * FROM forecast_messages") == []
+
+
+async def test_a_discarded_deletion_of_a_forecast_s_earlier_part_is_named_with_its_link(tmp_path):
+    """As above, but Discord refuses to delete the first part (9400). The queue stops at the
+    deletion of that part; a league admin discards it. The season is completed, and the reply and
+    the closing line (Incomplete) name the earlier Phase 1 forecast as to be deleted by hand,
+    with the message's link."""
+    league = await _forecast_in_two_parts(tmp_path)
+    league.undeletable.add(9400)
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) == ("delete_replaced", None)
+    assert 9400 in league.channel(PRO_CH.forecast).messages
+
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert await _status(league) == "COMPLETED"
+    named = "its earlier Phase 1 forecast could not be deleted ("
+    [entry] = [line for line in _not_done(reply(interaction)) if named in line]
+    assert "9400" in entry and "delete it by hand" in entry
+    [line] = _closing_lines(league)
+    assert INCOMPLETE in line and named in line and "9400" in line
 
 
 # ── A refused standings picture: its text in the same try (owner, 2026-10-13) ──────────────

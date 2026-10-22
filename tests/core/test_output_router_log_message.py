@@ -21,6 +21,10 @@ import discord
 import pytest
 
 from leaguebot.core.services.output_router import OutputRouter
+from tests.support.change_queue import in_a_job
+
+#: The mentions a forecast of a division with role 801 is sent with.
+ROLE_801 = discord.AllowedMentions(everyone=False, users=False, roles=[discord.Object(801)])
 
 
 def _channel(sent):
@@ -78,9 +82,10 @@ async def test_post_forecast_still_returns_its_last_message():
     router = OutputRouter(bot, bot.config_service)
     division = MagicMock(forecast_channel_id=99)
 
-    message = await router.post_forecast(
-        division, "\n".join(f"line {i}" * 40 for i in range(200))
-    )
+    with in_a_job():
+        message = await router.post_forecast(
+            division, "\n".join(f"line {i}" * 40 for i in range(200)), mentions=ROLE_801
+        )
 
     assert len(sent) > 1, "this content was meant to be split"
     assert message.jump_url == f"http://j/{len(sent) - 1}"
@@ -133,7 +138,10 @@ async def test_a_forecast_for_a_division_with_no_forecast_channel_posts_nothing(
     bot.fetch_channel = AsyncMock()
     router = OutputRouter(bot, bot.config_service)
 
-    assert await router.post_forecast(ForecastChannel(None), "forecast") is None
+    with in_a_job():
+        assert await router.post_forecast(
+            ForecastChannel(None), "forecast", mentions=ROLE_801
+        ) is None
     bot.get_channel.assert_not_called()
     bot.fetch_channel.assert_not_awaited()
 
@@ -154,7 +162,8 @@ async def test_a_forecast_the_channel_refuses_raises_for_the_queue_and_queues_no
     router = OutputRouter(bot, bot.config_service, retry_db_path=str(tmp_path / "retry.db"))
 
     with pytest.raises(StepFailedOnDiscord, match="<#605>"):
-        await router.post_forecast(ForecastChannel(605), "forecast")
+        with in_a_job():
+            await router.post_forecast(ForecastChannel(605), "forecast", mentions=ROLE_801)
 
     enqueue.assert_not_awaited()
 

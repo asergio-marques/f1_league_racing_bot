@@ -24,7 +24,6 @@ SERVER = 4242
 #: The member who packs. Nothing but a member's command packs the bot, so it is required.
 ACTOR = {"actor_id": 7, "actor_name": "admin"}
 
-
 def _scheduler() -> MagicMock:
     scheduler = MagicMock()
     scheduler.cancel_all.return_value = 3
@@ -240,16 +239,20 @@ async def test_pack_clears_the_scheduled_work_but_the_portrait_refresh(db_path):
 
 
 async def test_pack_drops_the_league_state_held_in_memory(db_path, monkeypatch):
+    """A pack clears what the bot holds in memory, handing the clear the change queue it was
+    handed (#439 slice 6b, fold-in 6)."""
     await _seed(db_path)
     cleared = []
     monkeypatch.setattr(
-        "leaguebot.core.services.pack_service.clear_in_memory_state", lambda bot: cleared.append(bot)
+        "leaguebot.core.services.pack_service.clear_in_memory_state",
+        lambda bot, *, queue: cleared.append((bot, queue)),
     )
     bot = object()
+    queue = object()
 
-    await pack(db_path, _scheduler(), bot, **ACTOR)
+    await pack(db_path, _scheduler(), bot, queue=queue, **ACTOR)
 
-    assert cleared == [bot]
+    assert cleared == [(bot, queue)]
 
 
 # ── What travels with the league ──────────────────────────────────────────
@@ -400,3 +403,56 @@ async def test_pack_keeps_every_finished_change(db_path):
     assert kept == ["DONE", "REFUSED", "DROPPED", "DISCARDED"]
     steps = [r[0] for r in await _all(db_path, "SELECT name FROM queued_change_steps ORDER BY name")]
     assert steps == ["DISCARDED", "DONE", "DROPPED", "REFUSED"]
+
+
+# ── Every lane (#439, 6b) ──────────────────────────────────────────────────
+
+
+async def _on_lane(db_path: str, lane: str, *, stopped: bool) -> int:
+    """A member's `/dummy` on *lane*: waiting its turn with one job not yet run, or *stopped*,
+    under way and stopped at its one job, which Discord refused. Gives the job's number."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, origin, state, what, lane) "
+            "VALUES ('dummy', ?, 'MEMBER', ?, '`/dummy`', ?)",
+            (lane, "RUNNING" if stopped else "QUEUED", lane),
+        )
+        cursor = await db.execute(
+            "INSERT INTO queued_change_steps (change_id, position, name, tries, failing_since, "
+            "last_failure) VALUES (?, 0, 'a', ?, ?, ?)",
+            (cursor.lastrowid, 1 if stopped else 0,
+             "2026-10-01T12:00:00+00:00" if stopped else None, "Forbidden" if stopped else None),
+        )
+        await db.commit()
+        return int(cursor.lastrowid)
+
+
+async def test_a_pack_is_refused_while_any_lane_holds_a_job_naming_it_and_its_lane(db_path):
+    """The league's lane is empty, but a turn in channel 7 waits its turn there. The pack is
+    refused all the same, naming that job and channel 7's lane, and nothing is cleared."""
+    await _seed(db_path)
+    job = await _on_lane(db_path, "channel:7", stopped=False)
+    scheduler = _scheduler()
+
+    with pytest.raises(PackRefused) as refused:
+        await pack(db_path, scheduler, **ACTOR)
+
+    assert (refused.value.job_id, refused.value.stopped) == (job, False)
+    assert refused.value.lane == "channel:7"
+    scheduler.cancel_all.assert_not_called()
+    assert (await _one(db_path, "SELECT server_id FROM server_configs"))[0] == SERVER
+
+
+async def test_the_refusal_names_a_stopped_job_first(db_path):
+    """A league change waits its turn, asked first; a turn in channel 8, asked after it, is
+    stopped at a job Discord refused. The pack's refusal names the stopped job on channel 8's
+    lane, which needs Retry or Discard, not the league's waiting job."""
+    await _seed(db_path)
+    await _on_lane(db_path, "league", stopped=False)
+    job = await _on_lane(db_path, "channel:8", stopped=True)
+
+    with pytest.raises(PackRefused) as refused:
+        await pack(db_path, _scheduler(), **ACTOR)
+
+    assert (refused.value.job_id, refused.value.stopped) == (job, True)
+    assert refused.value.lane == "channel:8"

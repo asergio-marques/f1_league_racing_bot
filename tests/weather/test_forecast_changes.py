@@ -28,6 +28,7 @@ import pytest
 from tests.support.change_queue import (
     change_rows,
     http_error,
+    in_a_job,
     retry_job,
     run_queue,
     step_rows,
@@ -37,6 +38,7 @@ from tests.support.season_league import (
     AM,
     DIVISIONS,
     PRO,
+    PRO_ROLE,
     ongoing_league,
     posted_forecast,
     round_id,
@@ -460,6 +462,188 @@ async def test_a_mystery_round_s_phase_1_is_asked_as_its_notice_and_its_later_ph
 
 
 # ---------------------------------------------------------------------------
+# Whom a forecast notifies (#439, slice 6b, folded fault 2)
+#
+# A forecast names its division's role, and notifies it whether posted as a picture or as text;
+# the mystery round's notice names and notifies nobody.
+# ---------------------------------------------------------------------------
+
+
+def _sends(league: Any) -> list[Any]:
+    """Every send the forecast channel was asked to make, refused ones included, in order."""
+    return list(league.channel(FORECAST).send.await_args_list)
+
+
+def _notified_roles(send: Any) -> set[int]:
+    """The roles a send lets notify: none where it allows no role, every one named in its text
+    where it allows them all."""
+    mentions = send.kwargs.get("allowed_mentions")
+    roles = getattr(mentions, "roles", False)
+    if roles is True:
+        text = str(send.args[0]) if send.args else str(send.kwargs.get("content", ""))
+        return {PRO_ROLE} if f"<@&{PRO_ROLE}>" in text else set()
+    return {getattr(role, "id", role) for role in roles} if isinstance(roles, list) else set()
+
+
+def _notifies_no_member(send: Any) -> bool:
+    mentions = send.kwargs.get("allowed_mentions")
+    return not getattr(mentions, "users", False) and not getattr(mentions, "everyone", False)
+
+
+async def test_a_forecast_posted_as_text_notifies_the_division_s_role(tmp_path):
+    """Images off: Pro's phase 1 forecast for round 3 is asked and the queue run. It is posted as
+    text in Pro's forecast channel, naming Pro's role 801, and is sent letting that role notify,
+    and no member and not everyone."""
+    league = await _league(tmp_path)
+
+    await _ask(league, 1)
+    await run_queue(league.bot)
+
+    [send] = _sends(league)
+    assert f"<@&{PRO_ROLE}>" in str(send.args[0])
+    assert _notified_roles(send) == {PRO_ROLE}
+    assert _notifies_no_member(send)
+
+
+async def test_a_retried_forecast_notifies_the_role(tmp_path):
+    """Pro's phase 1 forecast is refused by Discord, stopping the queue; Retry posts it again, as
+    text. The forecast that finally stands notifies Pro's role 801 as the first would have."""
+    league = await _league(tmp_path)
+    _refusing(league)
+
+    await _ask(league, 1)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "post_forecast"
+
+    _accepting(league)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    retried = _sends(league)[-1]
+    assert "file" not in retried.kwargs or retried.kwargs["file"] is None
+    assert _notified_roles(retried) == {PRO_ROLE}
+    assert _notifies_no_member(retried)
+
+
+async def test_the_mystery_notice_notifies_nobody(tmp_path):
+    """Round 3 is a mystery round and its phase 1 asked: the notice posted in Pro's forecast
+    channel names no role and is sent letting no role, no member and not everyone notify."""
+    league = await _league(tmp_path, mystery=True)
+
+    await _ask(league, 1)
+    await run_queue(league.bot)
+
+    [send] = _sends(league)
+    assert "<@&" not in str(send.args[0])
+    assert _notified_roles(send) == set()
+    assert _notifies_no_member(send)
+
+
+@pytest.mark.parametrize("phase, payload", [
+    (1, {"track": TRACK, "rpc": 40}),
+    (2, {"track": TRACK, "session_draws": [{"session_type": "LONG_RACE", "slot": "rain"}]}),
+    (3, {"track": TRACK, "session_draws": [{"session_type": "LONG_RACE",
+                                            "slots": ["rain", "sunny"]}]}),
+])
+def test_a_forecast_with_no_division_role_writes_no_mention(phase, payload):
+    """A phase's forecast text is composed for a division with no role set: it names the track and
+    mentions no role at all, rather than the role `<@&0>`."""
+    from leaguebot.weather.utils.message_builder import forecast_text
+
+    text = forecast_text(phase, None, payload)
+
+    assert TRACK in text
+    assert "<@&" not in text
+
+
+# ---------------------------------------------------------------------------
+# A forecast too long for one message (#439, slice 6b, folded fault 4)
+#
+# Every part a forecast is posted in is recorded with it, so a forecast superseded is deleted
+# whole, and a part sent before a later part was refused is removed before the next try.
+# ---------------------------------------------------------------------------
+
+#: A track name long enough that Phase 2's forecast takes two messages.
+LONG_TRACK = TRACK + " " + "x" * 1850
+
+
+async def _two_part_phase_2(league: Any) -> None:
+    """Phase 1 posted, then round 3's track renamed so long that Phase 2's forecast, which names
+    it, takes two messages."""
+    await _posted(league, 1)
+    await league.write("UPDATE rounds SET track_name = ? WHERE id = ?", LONG_TRACK, ROUND)
+
+
+async def test_a_forecast_in_two_parts_records_both(tmp_path):
+    """Round 3's track has a name of some 1,870 characters, and Phase 2 is asked after Phase 1:
+    the Phase 2 forecast is posted in two messages, and its record keeps both, in order."""
+    league = await _league(tmp_path)
+    await _two_part_phase_2(league)
+    before = len(_events(league))
+
+    await _posted(league, 2)
+
+    parts = [mid for kind, mid in _events(league)[before:] if kind == "send"]
+    assert len(parts) == 2
+    [row] = await league.rows(
+        "SELECT message_ids FROM forecast_messages WHERE round_id = ? AND phase_number = 2", ROUND)
+    assert json.loads(row["message_ids"]) == parts
+
+
+async def test_a_superseded_forecast_in_two_parts_is_deleted_whole(tmp_path):
+    """Round 3's Phase 2 forecast was posted in two messages; Phase 3 is then asked. Once Phase 3
+    is posted, both messages of Phase 2 are deleted from Pro's forecast channel, and no record of
+    Phase 2 is left."""
+    league = await _league(tmp_path)
+    await _two_part_phase_2(league)
+    before = len(_events(league))
+    await _posted(league, 2)
+    parts = [mid for kind, mid in _events(league)[before:] if kind == "send"]
+    assert len(parts) == 2
+
+    await _posted(league, 3)
+
+    for part in parts:
+        assert ("delete", part) in _events(league)
+        assert part not in league.channel(FORECAST).messages
+    assert 2 not in await _forecasts(league)
+
+
+async def test_a_forecast_failing_after_its_first_part_removes_it_before_its_next_try(tmp_path):
+    """Round 3's Phase 2 forecast takes two messages; Discord accepts the first and refuses the
+    second, so the queue stops at the post with the first part standing in Pro's forecast channel.
+    Discord accepting again, Retry deletes that first part before posting the forecast afresh,
+    and the record holds only the messages of the new post."""
+    league = await _league(tmp_path)
+    await _two_part_phase_2(league)
+    before = len(_events(league))
+    league.channel(FORECAST).fail_when = (
+        lambda content, _kwargs: not str(content).startswith(f"<@&{PRO_ROLE}>")
+    )
+
+    await _ask(league, 2)
+    await run_queue(league.bot)
+
+    assert (await stopped_job(league.db_path))["name"] == "post_forecast"
+    [stray] = [mid for kind, mid in _events(league)[before:] if kind == "send"]
+    assert stray in league.channel(FORECAST).messages
+
+    league.channel(FORECAST).fail_when = None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    after = _events(league)[before:]
+    assert ("delete", stray) in after
+    removed = after.index(("delete", stray))
+    reposted = [mid for kind, mid in after if kind == "send" and mid != stray]
+    assert reposted and after.index(("send", reposted[0])) > removed
+    assert stray not in league.channel(FORECAST).messages
+    [row] = await league.rows(
+        "SELECT message_ids FROM forecast_messages WHERE round_id = ? AND phase_number = 2", ROUND)
+    assert json.loads(row["message_ids"]) == reposted
+
+
+# ---------------------------------------------------------------------------
 # The deletion of forecasts a day after the round, and their clearing, as jobs
 # ---------------------------------------------------------------------------
 
@@ -864,11 +1048,12 @@ async def test_a_clean_up_for_a_round_that_is_not_there_asks_nothing(tmp_path):
     assert await _states(league, CLEAN_UP_KIND) == []
 
 
-async def test_a_forecast_whose_channel_was_unset_is_forgotten_by_its_clean_up_without_a_delete(
+async def test_a_forecast_whose_division_channel_was_unset_is_still_deleted_from_its_own(
     tmp_path,
 ):
-    """Pro's Phase 3 forecast of round 3 (9303) is recorded, and Pro's forecast channel has since
-    been unset: the clean-up's delete asks nothing of Discord, completes, and drops the record."""
+    """Pro's Phase 3 forecast of round 3 (9303) is recorded as posted in Pro's forecast channel,
+    and Pro's forecast channel has since been unset: the clean-up deletes it from the channel it
+    was posted in, completes, and drops the record."""
     league = await _league(tmp_path)
     await posted_forecast(league, ROUND, 3, 9303)
     await league.write("UPDATE divisions SET forecast_channel_id = NULL WHERE id = ?", PRO)
@@ -879,8 +1064,75 @@ async def test_a_forecast_whose_channel_was_unset_is_forgotten_by_its_clean_up_w
     assert await stopped_job(league.db_path) is None
     [job] = await _deletes_of(league, CLEAN_UP_KIND)
     assert job["done_at"]
-    assert ("delete", 9303) not in _events(league)
+    assert ("delete", FORECAST, 9303) in league.events
+    assert 9303 not in league.channel(FORECAST).messages
     assert await _forecasts(league) == {}
+
+
+# ---------------------------------------------------------------------------
+# Each forecast deleted from the channel it was posted in (#439, slice 6b, folded fault 3)
+#
+# `/weather channel` moves a division's forecast channel; a forecast posted before the move is
+# deleted, when superseded or a day after the race, from the channel it was posted in.
+# ---------------------------------------------------------------------------
+
+#: A channel of the league's, standing in for the channel Pro's forecasts are moved to.
+MOVED = DIVISIONS[PRO][3].verdicts
+
+
+async def _move_forecast_channel(league: Any) -> None:
+    """Pro's forecast channel moved to MOVED, as `/weather channel` does."""
+    await league.write("UPDATE divisions SET forecast_channel_id = ? WHERE id = ?", MOVED, PRO)
+
+
+async def test_a_forecast_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
+    tmp_path,
+):
+    """Pro's Phase 1 forecast of round 3 is posted in Pro's forecast channel (605); the forecast
+    channel is then moved to 607, and Phase 2 asked. Phase 2 is posted in 607, and the Phase 1
+    forecast it supersedes is deleted from 605, where it was posted, leaving 607's forecast alone."""
+    league = await _league(tmp_path)
+    await _posted(league, 1)
+    [first] = _ids(_events(league), "send")
+    await _move_forecast_channel(league)
+
+    await _posted(league, 2)
+
+    [second] = [mid for kind, cid, mid in league.events if kind == "send" and cid == MOVED]
+    assert ("delete", FORECAST, first) in league.events
+    assert first not in league.channel(FORECAST).messages
+    assert second in league.channel(MOVED).messages
+    assert await _forecasts(league) == {2: second}
+
+
+async def test_a_forecast_clean_up_after_a_channel_move_deletes_from_the_old_channel(tmp_path):
+    """Pro's Phase 3 forecast of round 3 (9303) is recorded as posted in Pro's forecast channel
+    (605); the forecast channel is then moved to 607. A day after the race the clean-up deletes
+    9303 from 605, completes, and drops the record."""
+    league = await _league(tmp_path)
+    await posted_forecast(league, ROUND, 3, 9303)
+    await _move_forecast_channel(league)
+
+    await _clean_up(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert ("delete", FORECAST, 9303) in league.events
+    assert 9303 not in league.channel(FORECAST).messages
+    assert await _forecasts(league) == {}
+
+
+async def test_a_forecast_s_channel_is_saved_with_its_message(tmp_path):
+    """Pro's Phase 1 forecast of round 3 is asked and posted: its record names the message and
+    the channel it was posted in, Pro's forecast channel (605)."""
+    league = await _league(tmp_path)
+
+    await _posted(league, 1)
+
+    [sent] = _ids(_events(league), "send")
+    [row] = await league.rows(
+        "SELECT message_id, channel_id FROM forecast_messages WHERE round_id = ?", ROUND)
+    assert (int(row["message_id"]), int(row["channel_id"])) == (sent, FORECAST)
 
 
 # ---------------------------------------------------------------------------
@@ -927,7 +1179,8 @@ async def test_a_delete_naming_no_division_finds_the_round_s_and_its_record_forg
     step = _steps(league)[DELETE_FORECAST]
     ctx = _step_context(league, {"round_id": ROUND, "phase": 3})
 
-    result = await step.run(ctx)
+    with in_a_job():
+        result = await step.run(ctx)
     async with get_connection(league.db_path) as db:
         await step.record(db, ctx, result)
         await db.commit()

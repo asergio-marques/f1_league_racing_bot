@@ -194,7 +194,7 @@ def league_role_faults(
     Opening signups and confirming a season's configuration both ask this (#374). A role that
     is only *stored* is not enough: the base role is who can see the signup channel and who is
     pinged when it opens, and the driver role is granted at every approval by
-    `wizard_service.approve_signup`, which passes over a role that has gone and only logs one
+    `signup.approve`, which passes over a role that has gone and only logs one
     Discord refuses. Either fault would otherwise cost every signup of the window in silence.
 
     Three faults: the base role no longer on the server, the driver role no longer on the

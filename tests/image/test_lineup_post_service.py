@@ -24,6 +24,7 @@ from leaguebot.image.services.image_lineup_post import (
     LineupPostOutcome,
     lineup_enabled,
 )
+from tests.support.change_queue import in_a_job
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
@@ -55,7 +56,8 @@ def test_a_missing_guild_is_never_applicable():
 async def _try_post_without_guild():
     from leaguebot.image.services.image_lineup_post import try_post
 
-    return await try_post(object(), None, 1)
+    with in_a_job():
+        return await try_post(object(), None, 1)
 
 
 # ── The enablement gate ───────────────────────────────────────────────────
@@ -189,21 +191,6 @@ def test_team_lineup_posts_one_image_per_division():
     block = source[source.index("render_for_command"):]
     assert "for div in all_divisions:" in block
     assert "files.append(" in block
-
-
-def test_season_review_posts_the_image_in_place_of_the_text():
-    """038 FR-027 **reversed** (decided 2026-08-27).
-
-    The review shows a manager what their league will actually see, so where the lineup
-    aspect is on the graphic replaces the textual lineup rather than joining it. The
-    text is still built and sent where no graphic was drawn — see
-    tests/core/test_season_review_images.py for the three states in full.
-    """
-    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
-    image_at = source.index("_post_review_lineup_image")
-    text_at = source.index("join(lineup_lines)")
-    assert image_at < text_at, "the graphic must decide before the text is built"
-    assert "if lineup_state == REVIEW_IMAGE_DREW:" in source
 
 
 def test_season_review_sends_one_message_per_subsection():

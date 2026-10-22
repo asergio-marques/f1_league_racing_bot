@@ -50,7 +50,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.result_submission_service import (
     _build_division_validation_data,
-    _get_round_context,
     _make_slug,
     other_active_team_assignments,
 )
@@ -402,43 +401,6 @@ async def test_a_round_with_no_other_sessions_yields_nothing(tmp_path):
     )
 
     assert found == {}
-
-
-# ---------------------------------------------------------------------------
-# Resolving a round to the things a result is titled with
-# ---------------------------------------------------------------------------
-
-
-async def test_a_round_resolves_to_its_season_and_division(tmp_path):
-    """Every posted result is titled with these, and the chain is what makes a round id
-    enough to post with."""
-    db_path = await _make_db(tmp_path, name="validation_context")
-
-    ctx = await _get_round_context(db_path, ROUND_ID)
-
-    assert ctx["season_number"] == 7
-    assert ctx["round_number"] == 3
-    assert ctx["division_name"] == "Pro Division"
-
-
-async def test_a_round_resolves_to_what_resubmission_collects_with(tmp_path):
-    """A resubmission needs the season to score against and the format to know which sessions
-    to ask for. Neither was selected, so resubmitting raised before asking for anything
-    (issue #210)."""
-    db_path = await _make_db(tmp_path, name="validation_context_resubmit")
-
-    ctx = await _get_round_context(db_path, ROUND_ID)
-
-    assert ctx["season_id"] == SEASON_ID
-    assert ctx["round_format"] == "NORMAL"
-
-
-async def test_an_unknown_round_is_refused_rather_than_posted_empty(tmp_path):
-    """A result titled after nothing is worse than a failure a maintainer can read."""
-    db_path = await _make_db(tmp_path, name="validation_noround")
-
-    with pytest.raises(ValueError, match="Round 404"):
-        await _get_round_context(db_path, 404)
 
 
 # ---------------------------------------------------------------------------

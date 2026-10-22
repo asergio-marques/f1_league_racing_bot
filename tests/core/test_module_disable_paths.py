@@ -162,8 +162,8 @@ async def _division_configs(db_path: str) -> int:
 
 async def _turn_results_off_with_the_cascade(db_path: str):
     """Results & Standings on, attendance on: the admin confirms turning results off with the
-    cascade, on the bot as the builder makes it, and the change queue runs to the end."""
-    from leaguebot.core.services import hub_service
+    cascade, on the bot as the builder makes it, and the change queue runs to the end. No hub is
+    set, so the refresh the switch-off asks finds nothing to post."""
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.season_service import SeasonService
 
@@ -181,15 +181,10 @@ async def _turn_results_off_with_the_cascade(db_path: str):
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = bot
     view = _ConfirmDisableResultsView(cog, ACTOR_ID, cascade_attendance=True)
-    refresh = hub_service.refresh_panel
-    hub_service.refresh_panel = AsyncMock(return_value=None)
-    try:
-        await type(view).confirm(
-            view, member_interaction(bot, user=member(ACTOR_ID)), view.confirm
-        )
-        await run_queue(bot)
-    finally:
-        hub_service.refresh_panel = refresh
+    await type(view).confirm(
+        view, member_interaction(bot, user=member(ACTOR_ID)), view.confirm
+    )
+    await run_queue(bot)
     return bot
 
 

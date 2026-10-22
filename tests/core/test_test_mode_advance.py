@@ -52,6 +52,15 @@ ROUND_ID = 5
 FORECAST = "weather.forecast"
 FORECAST_CLEAN_UP = "weather.forecast.clean_up"
 
+#: The kinds of the four check-in steps, asked of the change queue by name as a forecast's is.
+CHECK_IN_CALL = "attendance.check_in.call"
+CHECK_IN_LAST_NOTICE = "attendance.check_in.last_notice"
+CHECK_IN_DEADLINE = "attendance.check_in.deadline"
+CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
+
+#: The check-in runners advance called before #439, stubbed while they exist.
+_CHECK_IN_RUNNERS = ("run_rsvp_notice", "run_rsvp_last_notice", "run_rsvp_deadline", "run_rsvp_cleanup")
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -178,22 +187,32 @@ def _asked(cog) -> list[tuple[str, dict]]:
 
 async def _advance(cog, interaction, entry, **patches):
     """Run advance with the queue answering *entry* and every phase service stubbed. A weather
-    step has no runner to stub: advance asks the change queue for it (#439)."""
+    step has no runner to stub: advance asks the change queue for it (#439). Nor, once the
+    check-in steps are asked of the queue too, has a check-in step: the check-in runners are
+    stubbed only while the attendance module still has them, so that a test asserting an ask
+    fails on the runner's call rather than on a post. The submission job is stubbed likewise, only
+    while the results module still has it."""
+    from leaguebot.attendance.services import rsvp_service
+
     defaults = {
-        "leaguebot.attendance.services.rsvp_service.run_rsvp_notice": AsyncMock(return_value=None),
-        "leaguebot.attendance.services.rsvp_service.run_rsvp_last_notice": AsyncMock(return_value=None),
-        "leaguebot.attendance.services.rsvp_service.run_rsvp_deadline": AsyncMock(return_value=None),
-        "leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup": AsyncMock(return_value=None),
+        f"leaguebot.attendance.services.rsvp_service.{name}": AsyncMock(return_value=None)
+        for name in _CHECK_IN_RUNNERS
+        if hasattr(rsvp_service, name)
+    }
+    defaults |= {
         "leaguebot.results.services.result_submission_service.is_submission_open": AsyncMock(
             return_value=False
-        ),
-        "leaguebot.results.services.result_submission_service.run_result_submission_job": AsyncMock(
-            return_value=None
         ),
         "leaguebot.core.services.test_mode_service.round_result_status": AsyncMock(
             return_value="AWAITING_RESULTS"
         ),
     }
+    from leaguebot.results.services import result_submission_service
+
+    if hasattr(result_submission_service, "run_result_submission_job"):
+        defaults["leaguebot.results.services.result_submission_service.run_result_submission_job"] = (
+            AsyncMock(return_value=None)
+        )
     defaults.update(patches)
 
     from contextlib import ExitStack
@@ -365,18 +384,30 @@ async def test_a_failing_notice_is_not_marked_done(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_result_submission_opens_a_wizard(tmp_path):
+
+async def test_advancing_a_round_start_replies_on_the_change_queue(tmp_path):
+    """Round 3 of Division 1's result submission (4) is next, none open. Advance asks the change
+    queue for `results.submission.open` of the round and replies that it is on the change queue,
+    naming the division and the round, as a weather step's reply does; it starts no submission
+    job of its own."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
-    await _advance(cog, interaction, _entry(4))
+    mocks = await _advance(cog, interaction, _entry(4))
 
-    assert "Opening result submission wizard" in _replied(interaction)
+    [(kind, payload)] = _asked(cog)
+    assert (kind, payload["round_id"]) == ("results.submission.open", ROUND_ID)
+    replied = _replied(interaction)
+    assert "is on the change queue" in replied
+    assert "**Division 1**" in replied and "Round 3" in replied
+    if "run_result_submission_job" in mocks:
+        mocks["run_result_submission_job"].assert_not_awaited()
 
 
-async def test_an_opened_submission_wizard_is_recorded_as_started(tmp_path):
-    """The wizard runs on its own once opened, so its line says it was started, never that the
-    results were submitted (#482)."""
+async def test_an_opened_submission_is_recorded_as_asked_of_the_queue(tmp_path):
+    """Advance's line names the division and the round, and never says the results were
+    submitted: the submission is opened, not done (#482). Nor does it say the submission has
+    started: it is asked of the change queue, as the reply says, and names its phase so."""
     cog = _make_cog(await _make_db(tmp_path))
 
     await _advance(cog, _interaction(), _entry(4))
@@ -384,7 +415,9 @@ async def test_an_opened_submission_wizard_is_recorded_as_started(tmp_path):
     [line] = _log_lines(cog)
     assert line.startswith("Maintainer (<@77>) | /test-mode advance")
     assert "Division 1" in line and "Round 3" in line
-    assert "wizard" in line.lower() and "started" in line.lower()
+    assert "submitted" not in line.lower()
+    assert "phase: result submission (on the change queue)" in line
+    assert "started" not in line and "runs on its own" not in line
 
 
 async def _noop(round_id: int) -> None:
@@ -451,7 +484,9 @@ async def test_an_open_submission_blocks_the_next_advance(tmp_path):
         },
     )
 
-    mocks["run_result_submission_job"].assert_not_awaited()
+    assert _asked(cog) == []
+    if "run_result_submission_job" in mocks:
+        mocks["run_result_submission_job"].assert_not_awaited()
     assert "awaiting" in _replied(interaction)
 
 
@@ -532,32 +567,27 @@ async def test_a_finalised_round_with_an_open_channel_says_so_differently(tmp_pa
 
 
 async def test_the_rsvp_notice_is_fired(tmp_path):
+    """Round 3 of Division 1's check-in call is next. Advance asks the change queue for it (an
+    `attendance.check_in.call` of the round), and its reply names the RSVP notice."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
-    mocks = await _advance(cog, interaction, _entry(5))
+    await _advance(cog, interaction, _entry(5))
 
-    mocks["run_rsvp_notice"].assert_awaited_once()
+    [(kind, payload)] = _asked(cog)
+    assert (kind, payload["round_id"]) == (CHECK_IN_CALL, ROUND_ID)
     assert "RSVP notice" in _replied(interaction)
 
 
 async def test_a_failing_rsvp_notice_is_reported_not_raised(tmp_path):
-    """The standard failure reply and one failure line name the RSVP notice, the division and
-    the round (#482)."""
+    """The change queue cannot save the check-in call's ask. The standard failure reply and one
+    failure line name the RSVP notice, the division and the round (#482)."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
     interaction.client = cog.bot
+    cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("no channel"))
 
-    await _advance(
-        cog,
-        interaction,
-        _entry(5),
-        **{
-            "leaguebot.attendance.services.rsvp_service.run_rsvp_notice": AsyncMock(
-                side_effect=RuntimeError("no channel")
-            )
-        },
-    )
+    await _advance(cog, interaction, _entry(5))
 
     _assert_failure_recorded(cog, interaction, "RSVP notice")
 
@@ -573,19 +603,26 @@ async def test_a_fired_rsvp_notice_is_logged_to_the_league(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "phase,runner,label",
+    "phase,kind,label",
     [
-        (6, "run_rsvp_last_notice", "RSVP last-notice"),
-        (7, "run_rsvp_deadline", "RSVP deadline"),
+        pytest.param(
+            6, CHECK_IN_LAST_NOTICE, "RSVP last-notice",
+        ),
+        pytest.param(
+            7, CHECK_IN_DEADLINE, "RSVP deadline",
+        ),
     ],
 )
-async def test_the_later_check_in_phases_are_fired(tmp_path, phase, runner, label):
+async def test_the_later_check_in_phases_are_fired(tmp_path, phase, kind, label):
+    """Round 3's last notice (6) or deadline (7) is next. Advance asks the change queue for it
+    by its kind, for the round, and its reply names the step."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
-    mocks = await _advance(cog, interaction, _entry(phase))
+    await _advance(cog, interaction, _entry(phase))
 
-    mocks[runner].assert_awaited_once_with(ROUND_ID, cog.bot)
+    [(asked_kind, payload)] = _asked(cog)
+    assert (asked_kind, payload["round_id"]) == (kind, ROUND_ID)
     assert label in _replied(interaction)
 
 
@@ -609,22 +646,25 @@ async def test_a_check_in_phase_with_no_job_cancels_nothing(tmp_path, phase):
 
 
 @pytest.mark.parametrize(
-    "phase,runner,phrase",
+    "phase,phrase",
     [
-        (6, "leaguebot.attendance.services.rsvp_service.run_rsvp_last_notice", "RSVP last-notice"),
-        (7, "leaguebot.attendance.services.rsvp_service.run_rsvp_deadline", "RSVP deadline"),
+        pytest.param(
+            6, "RSVP last-notice"
+        ),
+        pytest.param(
+            7, "RSVP deadline"
+        ),
     ],
 )
-async def test_a_failing_check_in_phase_is_reported_not_raised(tmp_path, phase, runner, phrase):
-    """The standard failure reply and one failure line name the phase, the division and the
-    round (#482)."""
+async def test_a_failing_check_in_phase_is_reported_not_raised(tmp_path, phase, phrase):
+    """The change queue cannot save the step's ask. The standard failure reply and one failure
+    line name the phase, the division and the round (#482)."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
     interaction.client = cog.bot
+    cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("x"))
 
-    await _advance(
-        cog, interaction, _entry(phase), **{runner: AsyncMock(side_effect=RuntimeError("x"))}
-    )
+    await _advance(cog, interaction, _entry(phase))
 
     _assert_failure_recorded(cog, interaction, phrase)
 
@@ -638,15 +678,49 @@ async def test_a_fired_check_in_phase_is_logged_by_name(tmp_path, phase, name):
     assert f"phase: {name}" in str(cog.bot.output_router.post_log.await_args.args[0])
 
 
-async def test_the_deadline_reply_says_reserves_were_distributed(tmp_path):
-    """The deadline is where reserves are called up, which is what a maintainer rehearsing
-    it is looking to see happen."""
+async def test_the_deadline_reply_does_not_say_reserves_were_distributed(tmp_path):
+    """Round 3's deadline is advanced. Its reserves are distributed only once the change queue
+    reaches it, so the reply says it is on the change queue and does not say the distribution
+    is complete."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
     await _advance(cog, interaction, _entry(7))
 
-    assert "Reserve distribution complete" in _replied(interaction)
+    replied = _replied(interaction)
+    assert "is on the change queue" in replied
+    assert "Reserve distribution complete" not in replied
+
+
+async def test_a_deadline_whose_announcement_was_refused_is_not_offered_again(tmp_path):
+    """Test mode on, attendance and results on. Round 3's check-in deadline has run, its
+    distribution saved and marked (`deadline_run_at`), but Discord refused its announcement, so
+    none is recorded (`distribution_msg_id` NULL). The scheduler holds nothing more. The next
+    advance moves on to the round's results phase (4), not the deadline (7) again, which would
+    do nothing and hold every later step behind it (#439)."""
+    from leaguebot.core.services.test_mode_service import get_next_pending_phase
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute("INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1)")
+        await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, "
+            "posted_at, last_notice_msg_id, distribution_msg_id, deadline_run_at) "
+            "VALUES (?, ?, 'call', 'ch1', '2026-05-27T00:00:00', 'last', NULL, "
+            "'2026-05-31T22:00:00')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.commit()
+    scheduler = MagicMock()
+    scheduler.get_pending_advance_jobs = MagicMock(return_value=[])
+
+    entry = await get_next_pending_phase(
+        db_path, scheduler, now=datetime(2026, 6, 2, tzinfo=timezone.utc),
+    )
+
+    assert entry is not None
+    assert (entry["round_id"], entry["phase_number"]) == (ROUND_ID, 4)
 
 
 # ---------------------------------------------------------------------------
@@ -659,10 +733,10 @@ CLEANUPS = [
 ]
 
 
-#: The cleanups, the forecast's asked of the change queue once the build makes it a job.
+#: The cleanups, each asked of the change queue: the check-in cleanup's once advance asks it.
 CLEANUPS_ASKED = [
     pytest.param(*CLEANUPS[0]),
-    CLEANUPS[1],
+    pytest.param(*CLEANUPS[1]),
 ]
 
 
@@ -670,22 +744,21 @@ CLEANUPS_ASKED = [
 async def test_each_cleanup_reaches_its_own_runner(tmp_path, phase, runner, label, prefix):
     """The forecast cleanup (8) is asked of the change queue as a `weather.forecast.clean_up`
     of the round, replying '🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on
-    the change queue: …'; the check-in cleanup (9) runs its own runner, as today, and asks
-    nothing."""
+    the change queue: …'; the check-in cleanup (9) is asked of it as an
+    `attendance.check_in.clean_up` of the round, its reply saying it is on the change queue."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
-    mocks = await _advance(cog, interaction, _entry(phase))
+    await _advance(cog, interaction, _entry(phase))
 
+    [(kind, payload)] = _asked(cog)
     if phase == 8:
-        [(kind, payload)] = _asked(cog)
         assert (kind, payload["round_id"]) == (FORECAST_CLEAN_UP, ROUND_ID)
-        mocks["run_rsvp_cleanup"].assert_not_awaited()
         assert ("🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on the change "
                 "queue") in _replied(interaction)
     else:
-        mocks[runner].assert_awaited_once_with(ROUND_ID, cog.bot)
-        assert _asked(cog) == []
+        assert (kind, payload["round_id"]) == (CHECK_IN_CLEAN_UP, ROUND_ID)
+        assert "is on the change queue" in _replied(interaction)
     assert label in _replied(interaction)
 
 
@@ -705,22 +778,16 @@ async def test_a_fired_cleanup_cancels_its_job_by_kind(
     )
 
 
-@pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS)
+@pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS_ASKED)
 async def test_a_failing_cleanup_is_reported_not_raised(tmp_path, phase, runner, label, prefix):
-    """The standard failure reply and one failure line name the cleanup, the division and the
-    round (#482): the forecast cleanup where the change queue cannot save its ask, the check-in
-    cleanup where its runner raises."""
+    """The change queue cannot save the cleanup's ask. The standard failure reply and one
+    failure line name the cleanup, the division and the round (#482)."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
     interaction.client = cog.bot
-    patches = {}
-    if phase == 8:
-        cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("x"))
-    else:
-        target = "leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup"
-        patches[target] = AsyncMock(side_effect=RuntimeError("x"))
+    cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("x"))
 
-    await _advance(cog, interaction, _entry(phase), **patches)
+    await _advance(cog, interaction, _entry(phase))
 
     _assert_failure_recorded(cog, interaction, label)
 
@@ -732,6 +799,36 @@ async def test_a_fired_cleanup_is_logged_by_name(tmp_path, phase, runner, label,
     await _advance(cog, _interaction(), _entry(phase))
 
     assert f"phase: {prefix}" in str(cog.bot.output_router.post_log.await_args.args[0])
+
+
+#: Each check-in step advance asks of the change queue: its phase and its kind.
+CHECK_IN_STEPS = [
+    pytest.param(5, CHECK_IN_CALL, id="call"),
+    pytest.param(6, CHECK_IN_LAST_NOTICE, id="last notice"),
+    pytest.param(7, CHECK_IN_DEADLINE, id="deadline"),
+    pytest.param(9, CHECK_IN_CLEAN_UP, id="clean-up"),
+]
+
+
+@pytest.mark.parametrize("phase,kind", CHECK_IN_STEPS)
+async def test_advancing_a_check_in_step_replies_on_the_change_queue(tmp_path, phase, kind):
+    """Round 3 of Division 1's check-in call (5), last notice (6), deadline (7) or clean-up (9)
+    is next. Advance asks the change queue for that step by its kind, for the round, and replies
+    that it is on the change queue, naming the division and the round, as a weather step's
+    reply does; it runs no check-in runner of its own."""
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+
+    mocks = await _advance(cog, interaction, _entry(phase))
+
+    [(asked_kind, payload)] = _asked(cog)
+    assert (asked_kind, payload["round_id"]) == (kind, ROUND_ID)
+    replied = _replied(interaction)
+    assert "is on the change queue" in replied
+    assert "**Division 1**" in replied and "Round 3" in replied
+    for name in _CHECK_IN_RUNNERS:
+        if name in mocks:
+            mocks[name].assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -1133,3 +1230,104 @@ async def test_advance_reads_the_clock_once_for_the_step_it_offers_and_those_it_
     assert moment is not None
     assert passed.await_args.kwargs["now"] == moment
 
+
+
+# ---------------------------------------------------------------------------
+# A past-dated round's check-in, advanced by hand on a real queue (attendance spec :221-222)
+# ---------------------------------------------------------------------------
+# Under test mode a restored save's rounds are dated in the past, and a restart posts no late
+# call for them. Advance posts each step in its turn instead, however late the round is: the
+# step carries `advanced` and is judged by no clock (test-mode.md :100).
+
+
+async def _ask_as_advance(league, kind: str, round_id: int, round_number: int) -> None:
+    """Ask the change queue for check-in step *kind* of *round_id* as advance does, through the
+    cog's own ask, with the league's real queue; the queue is not run."""
+    cog = _Cog.__new__(_Cog)
+    cog.bot = league.bot
+    entry = {"round_id": round_id, "round_number": round_number, "division_name": "Pro"}
+    await cog._ask_check_in(entry, kind, "advancing the check-in")
+
+
+async def test_advance_posts_a_past_dated_rounds_call_instead_of_giving_it_up(tmp_path):
+    """Round 4 was raced an hour ago, so its check-in deadline passed three hours ago and no call
+    was ever posted for it. Advance asks its call and the queue runs: the call is posted in
+    Pro's check-in channel and recorded, the round's check-in is left open, and no line says the
+    call was given up."""
+    from datetime import timedelta as delta
+
+    from tests.attendance.test_check_in_call_change import (
+        ROUND_4,
+        _answers,
+        _call_league,
+        _call_record,
+        _round_4_in,
+        _sent,
+    )
+    from tests.support.change_queue import run_queue, stopped_job
+
+    league = await _call_league(tmp_path)
+    await _round_4_in(league, delta(hours=-1))
+
+    await _ask_as_advance(league, CHECK_IN_CALL, ROUND_4, 4)
+    await run_queue(league.bot)
+
+    assert len(_sent(league)) == 1
+    assert len(await _call_record(league)) == 1
+    [round_] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", ROUND_4)
+    assert round_["checkin_cleared"] == 0
+    assert "could not be posted" not in league.log()
+    assert "counts nothing against anyone" not in league.log()
+    assert await stopped_job(league.db_path) is None
+    assert set((await _answers(league)).values()) == {"NO_RSVP"}
+
+
+async def test_an_advanced_last_notice_is_posted_after_the_real_deadline(tmp_path):
+    """Round 3 is an hour off, so its two-hour deadline passed an hour ago, and its call stands
+    with no last notice. Advance asks the last notice and the queue runs: it is posted in Pro's
+    check-in channel, not dropped for the real clock."""
+    from datetime import timedelta as delta
+
+    from tests.attendance.test_last_notice_change import ROUND_3, _call_row, _league, _sent
+    from tests.support.change_queue import run_queue, stopped_job
+
+    league = await _league(tmp_path)
+    when = league.clock.now + delta(hours=1)
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+
+    await _ask_as_advance(league, CHECK_IN_LAST_NOTICE, ROUND_3, 3)
+    await run_queue(league.bot)
+
+    [posted] = _sent(league)
+    assert (await _call_row(league))["last_notice_msg_id"] == str(posted)
+    assert await stopped_job(league.db_path) is None
+
+
+async def test_an_advanced_deadline_places_the_reserves_on_every_answer_held(tmp_path):
+    """Round 3's deadline passed an hour ago. Rhea accepted half an hour before it and Sam ten
+    minutes after it. A timer's deadline places Rhea alone; advance's places both, Sam at least
+    on standby, whatever the real clock says."""
+    from datetime import timedelta as delta
+
+    from tests.attendance.test_deadline_change import (
+        FERRARI,
+        RHEA,
+        ROUND_3,
+        SAM,
+        _deadline,
+        _league,
+        _placement,
+        _reserves,
+    )
+    from tests.support.change_queue import run_queue
+
+    league = await _league(tmp_path)
+    deadline = _deadline(league)
+    await _reserves(league, rhea=deadline - delta(minutes=30), sam=deadline + delta(minutes=10))
+
+    await _ask_as_advance(league, CHECK_IN_DEADLINE, ROUND_3, 3)
+    await run_queue(league.bot)
+
+    assert await _placement(league, RHEA) == (FERRARI, 0)
+    assert await _placement(league, SAM) != (None, 0)

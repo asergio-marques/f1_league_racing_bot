@@ -1,181 +1,119 @@
-"""`select_correction_parameter` — sending a driver back to one question.
+"""Choosing a parameter — sending a driver back to one question, on the change queue.
 
-Issue #208. `tests/signup/test_correction_parameter_timeout.py` covers the window *lapsing*;
-choosing a parameter within it was unexecuted. This is the step that turns "something is wrong
-with your signup" into a specific question the driver can answer.
+Issue #208. `tests/signup/test_correction_parameter_timeout.py` covers the window *lapsing*, and
+`tests/signup/test_correction_parameter_view.py` the panel and that each button re-opens its own
+step; this file holds what the choice does to the driver's signup once the queue reaches it. On
+the queue (#439, slice 6b, C86) a press on the correction choices asks
+`signup.correction.choose` on the league lane — Kimi's state, the step re-opened, a fresh 24-hour
+deadline armed by a job of its own — which asks `signup.recollect` back of his lane for the
+permission and the prompt.
 
 **It re-opens exactly one question, and the wizard must not run on from there.** The
-`_is_correction` flag is what `_advance_wizard_in_channel` reads to commit instead of
-continuing, so without it a driver asked to fix their platform would be walked through every
-subsequent question again. `test_the_wizard_is_marked_as_a_correction` holds it; its absence
-would be invisible here and only surface as a driver being re-interrogated.
+`_is_correction` flag is what the last answer's turn reads to commit instead of continuing, so
+without it a driver asked to fix their platform would be walked through every subsequent question
+again. `test_the_wizard_is_marked_as_a_correction` holds it.
 
-**Two of the nine parameters need state reset beyond the wizard's step**, and both are the
-kind of thing a reader trims:
+**Two of the nine parameters need state reset beyond the wizard's step**, and both are the kind of
+thing a reader trims: *lap times* go back to the first track, and *preferred teams* clears its
+sub-step counter and accumulated picks.
 
-- *Lap times* are collected one track at a time, so the track index goes back to zero. Left
-  where it was, the driver would be asked only about the track after the last one they
-  answered, or about none at all.
-- *Preferred teams* is a sub-step loop with its own counter and an accumulating list. Both are
-  cleared, so the driver picks afresh rather than appending to what the league already
-  rejected.
+**The write permission is set for the step being returned to, not merely restored.** A driver
+returned to a typed question with typing revoked cannot answer at all.
 
-**The write permission is set for the step being returned to, not merely restored.** A
-correction can send a driver back to a button step or a typed one, and the permission has to
-match: a driver returned to a typed question with typing revoked cannot answer at all, and the
-correction stalls until the 24-hour timeout ends their signup.
+**The reason is consumed.** It was written down when the manager asked for changes, and appears
+exactly once — in the prompt the driver reads.
 
-**The reason is consumed here.** It was written down when the manager asked for changes, and
-appears exactly once — in the prompt the driver reads. Popping it rather than reading it means
-a second correction cannot carry the first one's reason.
+The league is `tests/signup/test_review_changes.py`'s: Kimi (105) awaiting a correction parameter,
+the choices posted a minute ago at manager 77's request, in his signup channel (6405), which
+records what it is sent and its permission edits. His wizard's configuration names two tracks
+and two teams, and stands at the third lap-time track.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+import json
+from datetime import timedelta
+from typing import Any
 
-import discord
 import pytest
 
+from tests.signup.test_review_changes import (
+    INACTIVITY_TIMER,
+    KIMI_CHANNEL,
+    _answered,
+    _armed,
+    _driver_state,
+    _league,
+    _press_choice,
+    _texts,
+    _wizard,
+)
+from tests.support.change_queue import run_queue, updated_reply
+from tests.support.season_league import SIGNING_UP, SeasonLeague
 
-SERVER_ID = 1
-DRIVER_ID = "7"
-CHANNEL_ID = 99
+_ENDED = "This correction request has ended. Nothing was changed."
 
-#: Every parameter a manager may send back, and the step it re-opens.
-PARAMETERS = [
-    ("nationality", "COLLECTING_NATIONALITY"),
-    ("platform", "COLLECTING_PLATFORM"),
-    ("platform_id", "COLLECTING_PLATFORM_ID"),
-    ("availability", "COLLECTING_AVAILABILITY"),
-    ("driver_type", "COLLECTING_DRIVER_TYPE"),
-    ("preferred_teams", "COLLECTING_PREFERRED_TEAMS"),
-    ("preferred_teammate", "COLLECTING_PREFERRED_TEAMMATE"),
-    ("lap_times", "COLLECTING_LAP_TIME"),
-    ("notes", "COLLECTING_NOTES"),
-]
+#: The configuration Kimi's wizard started against.
+SNAPSHOT = {
+    "nationality_required": True,
+    "time_type": "TIME_TRIAL",
+    "time_image_required": False,
+    "selected_track_ids": ["1", "2"],
+    "team_names": ["Alpha", "Beta"],
+    "slots": [],
+}
 
 
-def _wizard(**draft):
-    from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
-
-    return SignupWizardRecord(
-        id=1,
-        discord_user_id=DRIVER_ID,
-        wizard_state=WizardState.UNENGAGED,
-        signup_channel_id=CHANNEL_ID,
-        config_snapshot=ConfigSnapshot(
-            nationality_required=True,
-            time_type="TIME_TRIAL",
-            time_image_required=False,
-            selected_track_ids=["1", "2"],
-            slots=[],
-            team_names=["Alpha", "Beta"],
-        ),
-        draft_answers=dict(draft),
-        current_lap_track_index=2,
-        last_activity_at=None,
+async def _awaiting(tmp_path: Any, *, state: str = "AWAITING_CORRECTION_PARAMETER",
+                    **draft: Any) -> SeasonLeague:
+    """Kimi at *state* (awaiting a correction parameter unless given), the choices posted a
+    minute ago by 77, his wizard at the third lap-time track holding *draft* beside the
+    manager who asked."""
+    league = await _league(tmp_path, state=state, offered_ago=timedelta(minutes=1))
+    answers = {"_correction_requested_by": "77", **draft}
+    await league.write(
+        "UPDATE signup_wizard_records SET config_snapshot_json = ?, draft_answers_json = ?, "
+        "current_lap_track_index = 2 WHERE discord_user_id = ?",
+        json.dumps(SNAPSHOT), json.dumps(answers), str(SIGNING_UP),
     )
+    return league
 
 
-@pytest.fixture
-def correction():
-    from leaguebot.signup.services.wizard_service import WizardService
-
-    svc = WizardService.__new__(WizardService)
-    svc._correction_tasks = {}
-
-    svc._arm_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
-    svc._grant_driver_write = AsyncMock(return_value=None)  # type: ignore[method-assign]
-    svc._revoke_driver_write = AsyncMock(return_value=None)  # type: ignore[method-assign]
-    svc._get_track_name_map = AsyncMock(return_value={})  # type: ignore[method-assign]
-    svc._prompt_for_state = MagicMock(return_value="prompt")  # type: ignore[method-assign]
-    svc._build_step_view = MagicMock(return_value=None)  # type: ignore[method-assign]
-
-    signup_svc = MagicMock()
-    signup_svc.get_wizard = AsyncMock(return_value=_wizard())
-    signup_svc.save_wizard = AsyncMock(return_value=None)
-
-    from leaguebot.core.models.driver_profile import DriverState
-
-    driver_service = MagicMock()
-    driver_service.transition = AsyncMock(return_value=None)
-    # Awaiting a correction parameter, as a driver whose panel a manager presses is (D2).
-    driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(current_state=DriverState.AWAITING_CORRECTION_PARAMETER)
-    )
-
-    bot = MagicMock()
-    bot.signup_module_service = signup_svc
-    bot.driver_service = driver_service
-    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    svc._bot = bot
-
-    member = MagicMock()
-    member.mention = f"<@{DRIVER_ID}>"
-    channel = MagicMock(spec=discord.TextChannel)
-    channel.send = AsyncMock(return_value=None)
-    guild = MagicMock(spec=discord.Guild)
-    guild.get_channel = MagicMock(return_value=channel)
-    guild.get_member = MagicMock(return_value=member)
-
-    return SimpleNamespace(
-        svc=svc,
-        guild=guild,
-        channel=channel,
-        signup_svc=signup_svc,
-        driver_service=driver_service,
-    )
+async def _choose(league: SeasonLeague, parameter: str) -> Any:
+    """Manager 77 presses *parameter* among the choices; the queue then runs."""
+    press = await _press_choice(league, parameter)
+    await run_queue(league.bot)
+    return press
 
 
-async def _select(ctx, parameter: str, wizard=None):
-    if wizard is not None:
-        ctx.signup_svc.get_wizard = AsyncMock(return_value=wizard)
-    await ctx.svc.select_correction_parameter(
-        DRIVER_ID, parameter, ctx.guild
-    )
+async def _draft(league: SeasonLeague) -> dict[str, Any]:
+    return dict(json.loads((await _wizard(league))["draft_answers_json"] or "{}"))
+
+
+def _typing(league: SeasonLeague) -> list[bool]:
+    """Each permission edit of Kimi's channel's typing, in order."""
+    return [call.kwargs["send_messages"]
+            for call in league.channel(KIMI_CHANNEL).set_permissions.call_args_list
+            if "send_messages" in call.kwargs]
 
 
 # ---------------------------------------------------------------------------
-# The parameter map
+# A request that has ended
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("parameter,state", PARAMETERS)
-async def test_each_parameter_re_opens_its_own_step(correction, parameter, state):
-    """Nine hand-written map entries. One pointing at the wrong step would send a driver
-    back to a question the manager did not ask about."""
-    from leaguebot.signup.models.signup_module import WizardState
+async def test_a_driver_with_no_wizard_is_left_alone(tmp_path):
+    """Kimi's wizard is gone when manager 77 presses Platform. The choice is refused, 77 told
+    why rather than that Kimi is being re-collected, and nothing changes: Kimi still awaits a
+    correction parameter and nothing is posted in his channel."""
+    league = await _awaiting(tmp_path)
+    await league.write("DELETE FROM signup_wizard_records WHERE discord_user_id = ?",
+                       str(SIGNING_UP))
 
-    wizard = _wizard()
+    press = await _choose(league, "platform")
 
-    await _select(correction, parameter, wizard)
-
-    assert wizard.wizard_state == getattr(WizardState, state)
-
-
-async def test_an_unknown_parameter_changes_nothing(correction):
-    """A stale button from an older version of the bot."""
-    wizard = _wizard()
-
-    await _select(correction, "favourite_colour", wizard)
-
-    correction.driver_service.transition.assert_not_awaited()
-    correction.signup_svc.save_wizard.assert_not_awaited()
-
-
-async def test_a_driver_with_no_wizard_is_left_alone(correction):
-    """The driver's wizard is gone when the manager chooses a parameter. Nothing is changed,
-    and the service returns why it refused, so the button refuses rather than answering that
-    it is re-collecting."""
-    correction.signup_svc.get_wizard = AsyncMock(return_value=None)
-
-    refused = await correction.svc.select_correction_parameter(
-        DRIVER_ID, "platform", correction.guild
-    )
-
-    assert isinstance(refused, str) and refused, refused
-    correction.driver_service.transition.assert_not_awaited()
+    assert "re-collect" not in (updated_reply(press) or "").lower()
+    assert await _driver_state(league) == "AWAITING_CORRECTION_PARAMETER"
+    assert _texts(league) == []
 
 
 @pytest.mark.parametrize(
@@ -183,61 +121,21 @@ async def test_a_driver_with_no_wizard_is_left_alone(correction):
     ["PENDING_ADMIN_APPROVAL", "PENDING_DRIVER_CORRECTION", "UNASSIGNED", "NOT_SIGNED_UP"],
     ids=["window-lapsed", "already-chosen", "approved", "rejected"],
 )
-async def test_a_request_that_has_ended_is_refused_and_changes_nothing(correction, state):
-    """A manager chooses a parameter after the correction request has ended: its five minutes
-    lapsed and the driver is back awaiting review, another parameter was already chosen, or
-    the signup was approved or rejected. The service acts only on a driver still awaiting a
-    correction parameter, so it returns "This correction request has ended. Nothing was
-    changed." and changes nothing: no transition, no wizard saved, no deadline armed and no
-    prompt posted (D2)."""
-    from leaguebot.core.models.driver_profile import DriverState
+async def test_a_request_that_has_ended_is_refused_and_changes_nothing(tmp_path, state):
+    """Manager 77 presses Platform after the correction request has ended: its five minutes
+    lapsed and Kimi is back awaiting review, another parameter was already chosen, or the signup
+    was approved or rejected. The choice is refused with "This correction request has ended.
+    Nothing was changed." and changes nothing: Kimi stays at *state*, his wizard's step is
+    untouched, no 24-hour deadline is armed and nothing is posted in his channel (D2)."""
+    league = await _awaiting(tmp_path, state=state)
 
-    correction.driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(current_state=DriverState[state])
-    )
+    press = await _choose(league, "platform")
 
-    refused = await correction.svc.select_correction_parameter(
-        DRIVER_ID, "platform", correction.guild
-    )
-
-    assert refused == "This correction request has ended. Nothing was changed."
-    correction.driver_service.transition.assert_not_awaited()
-    correction.signup_svc.save_wizard.assert_not_awaited()
-    correction.svc._arm_inactivity_job.assert_not_awaited()
-    correction.channel.send.assert_not_awaited()
-
-
-async def test_a_choice_that_loses_the_race_to_the_request_ending_is_refused(correction):
-    """A manager chooses "platform" at the moment the correction request ends: the five minutes
-    lapse, or a second manager's choice lands first, just after the service has read the driver
-    as still awaiting a correction parameter. The state change that follows is refused, so the
-    request has ended all the same: the service returns "This correction request has ended.
-    Nothing was changed." and changes nothing, with no wizard saved, no deadline armed and no
-    prompt posted."""
-    correction.driver_service.transition = AsyncMock(
-        side_effect=ValueError("Illegal transition: PENDING_ADMIN_APPROVAL -> PENDING_DRIVER_CORRECTION")
-    )
-
-    refused = await correction.svc.select_correction_parameter(
-        DRIVER_ID, "platform", correction.guild
-    )
-
-    assert refused == "This correction request has ended. Nothing was changed."
-    correction.driver_service.transition.assert_awaited_once()
-    correction.signup_svc.save_wizard.assert_not_awaited()
-    correction.svc._arm_inactivity_job.assert_not_awaited()
-    correction.channel.send.assert_not_awaited()
-
-
-async def test_a_request_still_awaiting_a_choice_is_acted_on_and_nothing_is_refused(correction):
-    """The state check does not stop a choice made while the request is open: the driver is
-    sent back to the question and nothing is refused."""
-    refused = await correction.svc.select_correction_parameter(
-        DRIVER_ID, "platform", correction.guild
-    )
-
-    assert refused is None
-    correction.driver_service.transition.assert_awaited_once()
+    assert _ENDED in _answered(press)
+    assert await _driver_state(league) == state
+    assert (await _wizard(league))["wizard_state"] == "UNENGAGED"
+    assert _armed(league, INACTIVITY_TIMER) == []
+    assert _texts(league) == []
 
 
 # ---------------------------------------------------------------------------
@@ -245,43 +143,37 @@ async def test_a_request_still_awaiting_a_choice_is_acted_on_and_nothing_is_refu
 # ---------------------------------------------------------------------------
 
 
-async def test_the_driver_is_asked_to_correct_rather_than_to_sign_up_again(correction):
-    from leaguebot.core.models.driver_profile import DriverState
+async def test_the_driver_is_asked_to_correct_rather_than_to_sign_up_again(tmp_path):
+    """Manager 77 presses Platform; once the queue runs Kimi is Pending Driver Correction, not
+    back at the start of signing up."""
+    league = await _awaiting(tmp_path)
 
-    await _select(correction, "platform")
+    await _choose(league, "platform")
 
-    assert correction.driver_service.transition.await_args.args[1] == (
-        DriverState.PENDING_DRIVER_CORRECTION
-    )
-
-
-async def test_the_wizard_is_marked_as_a_correction(correction):
-    """`_advance_wizard_in_channel` reads this to commit instead of continuing. Without it
-    a driver asked to fix one answer is walked through every later question again."""
-    wizard = _wizard()
-
-    await _select(correction, "platform", wizard)
-
-    assert wizard.draft_answers["_is_correction"] is True
+    assert await _driver_state(league) == "PENDING_DRIVER_CORRECTION"
 
 
-async def test_the_selection_window_is_cancelled(correction):
-    """The manager has chosen, so the five-minute timeout must not still fire and release
-    the driver from a correction they are part-way through."""
-    task = MagicMock()
-    correction.svc._correction_tasks[DRIVER_ID] = task
+async def test_the_wizard_is_marked_as_a_correction(tmp_path):
+    """The last answer's turn reads this to commit instead of continuing. Without it a driver
+    asked to fix one answer is walked through every later question again. Once the queue runs
+    Kimi's wizard is marked as a correction."""
+    league = await _awaiting(tmp_path)
 
-    await _select(correction, "platform")
+    await _choose(league, "platform")
 
-    task.cancel.assert_called_once()
-    assert DRIVER_ID not in correction.svc._correction_tasks
+    assert (await _draft(league))["_is_correction"] is True
 
 
-async def test_a_fresh_inactivity_deadline_is_armed(correction):
-    """The driver now has 24 hours to answer, the same as any other step."""
-    await _select(correction, "platform")
+async def test_a_fresh_inactivity_deadline_is_armed(tmp_path):
+    """Kimi now has 24 hours to answer, the same as any other step: once the queue runs his
+    24-hour inactivity timer is armed, a day from now."""
+    league = await _awaiting(tmp_path)
 
-    correction.svc._arm_inactivity_job.assert_awaited_once()
+    await _choose(league, "platform")
+
+    [armed] = _armed(league, INACTIVITY_TIMER)
+    assert armed[1] == str(SIGNING_UP)
+    assert armed[2] == league.clock.now + timedelta(hours=24)
 
 
 # ---------------------------------------------------------------------------
@@ -289,36 +181,38 @@ async def test_a_fresh_inactivity_deadline_is_armed(correction):
 # ---------------------------------------------------------------------------
 
 
-async def test_correcting_lap_times_starts_again_from_the_first_track(correction):
-    """Left where it was, the driver would be asked about the track after the last one
-    they answered — or, at the end of the list, about nothing at all."""
-    wizard = _wizard()
-    assert wizard.current_lap_track_index == 2
+async def test_correcting_lap_times_starts_again_from_the_first_track(tmp_path):
+    """Kimi's wizard stands at the third lap-time track. Left there, he would be asked about the
+    track after the last one he answered, or about none at all. Once Lap Times is chosen and the
+    queue runs, his wizard is back at the first track."""
+    league = await _awaiting(tmp_path)
 
-    await _select(correction, "lap_times", wizard)
+    await _choose(league, "lap_times")
 
-    assert wizard.current_lap_track_index == 0
-
-
-async def test_correcting_preferred_teams_clears_the_previous_picks(correction):
-    """The loop appends. Without the reset the driver's new choices would be added to the
-    ones the league had just rejected."""
-    wizard = _wizard(preferred_teams=["Alpha", "Beta"], _pref_teams_step=2)
-
-    await _select(correction, "preferred_teams", wizard)
-
-    assert wizard.draft_answers["preferred_teams"] == []
-    assert "_pref_teams_step" not in wizard.draft_answers
+    assert (await _wizard(league))["current_lap_track_index"] == 0
 
 
-async def test_correcting_another_parameter_leaves_the_lap_index_alone(correction):
-    """The reset is specific to lap times; a driver correcting their notes has not
-    unanswered their lap times."""
-    wizard = _wizard()
+async def test_correcting_preferred_teams_clears_the_previous_picks(tmp_path):
+    """Kimi had picked Alpha and Beta, two picks into the loop. The loop appends, so without the
+    reset his new choices would join the ones the league rejected: once Preferred Teams is chosen
+    and the queue runs, his picks are empty and the loop's counter is gone."""
+    league = await _awaiting(tmp_path, preferred_teams=["Alpha", "Beta"], _pref_teams_step=2)
 
-    await _select(correction, "notes", wizard)
+    await _choose(league, "preferred_teams")
 
-    assert wizard.current_lap_track_index == 2
+    draft = await _draft(league)
+    assert draft["preferred_teams"] == []
+    assert "_pref_teams_step" not in draft
+
+
+async def test_correcting_another_parameter_leaves_the_lap_index_alone(tmp_path):
+    """The reset is specific to lap times; Kimi correcting his notes has not unanswered his lap
+    times, and his wizard stays at the third track."""
+    league = await _awaiting(tmp_path)
+
+    await _choose(league, "notes")
+
+    assert (await _wizard(league))["current_lap_track_index"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -326,63 +220,78 @@ async def test_correcting_another_parameter_leaves_the_lap_index_alone(correctio
 # ---------------------------------------------------------------------------
 
 
-async def test_the_driver_is_prompted_in_their_channel_and_named(correction):
-    await _select(correction, "platform_id")
+async def test_the_driver_is_prompted_in_their_channel_and_named(tmp_path):
+    """Manager 77 presses Platform ID; once the queue runs one prompt in Kimi's channel mentions
+    him and asks for his platform id."""
+    league = await _awaiting(tmp_path)
 
-    correction.channel.send.assert_awaited_once()
-    sent = correction.channel.send.await_args.args[0]
-    assert DRIVER_ID in sent
-    assert "platform id" in sent
+    await _choose(league, "platform_id")
 
-
-async def test_the_reason_the_manager_gave_reaches_the_driver(correction):
-    """It is the whole point of asking rather than rejecting."""
-    wizard = _wizard(_correction_reason="Your platform ID does not match your account")
-
-    await _select(correction, "platform_id", wizard)
-
-    assert "does not match your account" in correction.channel.send.await_args.args[0]
+    [prompt] = _texts(league)
+    assert f"<@{SIGNING_UP}>" in prompt
+    assert "platform id" in prompt.lower()
 
 
-async def test_the_reason_is_consumed_so_a_later_correction_cannot_reuse_it(correction):
-    """Popped, not read. A second correction carrying the first one's reason would tell
-    the driver to fix something they had already fixed."""
-    wizard = _wizard(_correction_reason="Wrong platform")
+async def test_the_reason_the_manager_gave_reaches_the_driver(tmp_path):
+    """It is the whole point of asking rather than rejecting: the reason 77 gave, "Your platform
+    ID does not match your account", is in Kimi's prompt."""
+    league = await _awaiting(
+        tmp_path, _correction_reason="Your platform ID does not match your account"
+    )
 
-    await _select(correction, "platform_id", wizard)
+    await _choose(league, "platform_id")
 
-    assert "_correction_reason" not in wizard.draft_answers
-
-
-async def test_no_reason_gives_no_reason_line(correction):
-    await _select(correction, "platform_id")
-
-    assert "**Reason:**" not in correction.channel.send.await_args.args[0]
+    assert "does not match your account" in "\n".join(_texts(league))
 
 
-async def test_returning_to_a_button_step_revokes_typing(correction):
-    await _select(correction, "platform")
+async def test_the_reason_is_consumed_so_a_later_correction_cannot_reuse_it(tmp_path):
+    """Popped, not read: once the queue has run the choice, Kimi's wizard holds no reason, so a
+    second correction cannot tell him to fix what he already fixed."""
+    league = await _awaiting(tmp_path, _correction_reason="Wrong platform")
 
-    correction.svc._revoke_driver_write.assert_awaited_once()
-    correction.svc._grant_driver_write.assert_not_awaited()
+    await _choose(league, "platform_id")
 
-
-async def test_returning_to_a_typed_step_restores_typing(correction):
-    """The case that matters. A driver returned to a typed question with typing revoked
-    cannot answer at all, and the correction stalls until the timeout ends their signup."""
-    await _select(correction, "notes")
-
-    correction.svc._grant_driver_write.assert_awaited_once()
-    correction.svc._revoke_driver_write.assert_not_awaited()
+    assert "_correction_reason" not in await _draft(league)
 
 
-async def test_a_missing_channel_still_records_the_correction(correction):
-    """The driver state and the wizard step are the league's record; the prompt is only
-    how the driver learns of it."""
-    wizard = _wizard()
-    correction.guild.get_channel = MagicMock(return_value=None)
+async def test_no_reason_gives_no_reason_line(tmp_path):
+    """With no reason given, Kimi's prompt carries no "Reason:" line."""
+    league = await _awaiting(tmp_path)
 
-    await _select(correction, "platform", wizard)
+    await _choose(league, "platform_id")
 
-    assert wizard.draft_answers["_is_correction"] is True
-    correction.channel.send.assert_not_awaited()
+    assert "**Reason:**" not in "\n".join(_texts(league))
+
+
+async def test_returning_to_a_button_step_revokes_typing(tmp_path):
+    """Platform is answered by a button, so once the queue runs Kimi's typing in his channel is
+    revoked, and never granted."""
+    league = await _awaiting(tmp_path)
+
+    await _choose(league, "platform")
+
+    assert _typing(league) == [False]
+
+
+async def test_returning_to_a_typed_step_restores_typing(tmp_path):
+    """The case that matters. Notes are typed, so once the queue runs Kimi's typing in his
+    channel is granted, and never revoked: with it revoked he could not answer at all, and the
+    correction would stall until his 24 hours ended his signup."""
+    league = await _awaiting(tmp_path)
+
+    await _choose(league, "notes")
+
+    assert _typing(league) == [True]
+
+
+async def test_a_missing_channel_still_records_the_correction(tmp_path):
+    """Manager 77 presses Platform and Kimi's signup channel is deleted before the queue reaches
+    the choice. The driver's state is the league's record, the prompt only how he learns of it:
+    once the queue runs Kimi is Pending Driver Correction, though no prompt reached him."""
+    league = await _awaiting(tmp_path)
+
+    await _press_choice(league, "platform")
+    league.remove_channel(KIMI_CHANNEL)
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "PENDING_DRIVER_CORRECTION"
