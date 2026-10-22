@@ -332,7 +332,7 @@ class ImageCog(commands.Cog):
     # nesting level, and `config` would otherwise carry 31: 1 template directory +
     # 16 filenames + 8 asset directories + 4 preferences + toggle + view.
     #
-    # As split, `config` carries 15 of the 25 and `template` the other 16. Each asset class
+    # As split, `config` carries nineteen of the 25 and `template` the other 16. Each asset class
     # added costs `config` one and each template costs `template` one, so the arithmetic is
     # worth redoing rather than assuming.
     template = app_commands.Group(

@@ -297,7 +297,7 @@ Three filenames are spoken for: `fallback.svg`; `mystery.svg`, in **both** the t
 
 ## Step 5 — The drawing files
 
-Fifteen of them, one per kind of picture, and they all come with the bot. You can leave every one alone to begin with and restyle them later.
+Sixteen of them, one per kind of picture, and they all come with the bot. You can leave every one alone to begin with and restyle them later.
 
 That folder is `resources/defaults/templates`, and `/images config template-directory` moves it. **It does not behave like the artwork folders in step 4, and the order matters:**
 
@@ -455,8 +455,8 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 > **If you have re-laid any of those three, rename the slot before your next season.** Give the text
 > the id `classification_label`, delete the `ROUND` lettering next to it, and give it room for a
 > phrase rather than a two-digit number. It is required on all three, and `round_number` is no
-> longer read on any of them — `/images config template-directory` checks all sixteen at once and
-> refuses the whole change while one still declares the old slot, so you find out then rather than
+> longer read on any of them — `/images config template-directory` checks every drawing your switched-on outputs
+> need at once and refuses the whole change while one still declares the old slot, so you find out then rather than
 > at season approval. Every other drawing keeps `round_number` unchanged; those are always about
 > one round.
 >

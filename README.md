@@ -2494,7 +2494,7 @@ Giving a template the filename it already holds changes nothing: the reply says 
 > **If you drew your own copies of these three, rename the field before your next season.** Give the
 > text element `id="classification_label"`, delete the `ROUND` lettering beside it, and give it room
 > for a phrase rather than a two-digit number — `Opening Classification` is a good deal wider than
-> `10`. `/images config template-directory` checks all sixteen files at once and refuses the whole
+> `10`. `/images config template-directory` checks every file your switched-on outputs need at once and refuses the whole
 > change if one of them still declares the old field, so you will be told rather than finding out at
 > season approval. Every other template — results, check-in, weather, verdicts — keeps `round_number`
 > exactly as it was; those are always about one round.
