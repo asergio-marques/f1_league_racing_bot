@@ -298,3 +298,27 @@ async def test_set_session_points_many_writes_every_pair_in_one_transaction(db_p
     }
     first = next(r for r in rows if "25" in r["new_value"])
     assert "20" in json.dumps(json.loads(first["old_value"]))
+
+
+@pytest.mark.xfail(strict=True, reason="#439: points_value_refusal is not written yet")
+@pytest.mark.parametrize(
+    ("given", "refusal"),
+    [
+        ({"position": 0}, "❌ Position must be >= 1, got 0."),
+        ({"position": 1}, None),
+        ({"points": -1}, "❌ Points must be >= 0, got -1."),
+        ({"points": 0}, None),
+        ({"limit": 0}, "❌ Position limit must be >= 1, got 0."),
+        ({"limit": 1}, None),
+        ({"position": 0, "points": -1}, "❌ Position must be >= 1, got 0."),
+    ],
+    ids=["position-0", "position-1", "points-minus-1", "points-0", "limit-0", "limit-1",
+         "position-first"],
+)
+def test_points_value_refusal_follows_the_bulk_rule(given, refusal):
+    """A single position, points value or fastest-lap limit is held to the bulk paste's rule: a
+    position or a limit below 1, or points below 0, is refused in the paste's words, the position
+    judged before the points; anything else passes."""
+    from leaguebot.results.services.points_config_service import points_value_refusal
+
+    assert points_value_refusal(**given) == refusal
