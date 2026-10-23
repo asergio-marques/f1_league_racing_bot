@@ -360,7 +360,8 @@ audit record, which is how some settings came to have none.
   acknowledged as usual, joins the back of its lane and says that the lane is stopped.
 
   **One exception: a league's settings.** A change to one of a league's settings is one atomic
-  save of its value, its audit record and its line, and the work after it that the setting does not
+  save of its value and its audit record (its line with them, or after the arming of the daily
+  portrait job; see "The record is the queue's"), and the work after it that the setting does not
   need (checking it against the templates, arming or removing a timed job) is work nothing later
   depends on. A fault in either leaves nothing half-done, nothing behind it on the lane waits on
   it, and the member can simply ask again. So such a step carries `Step.on_fault`: where it raises,
@@ -459,8 +460,8 @@ audit record, which is how some settings came to have none.
 
   A league's settings share the mechanism rather than each forming its own: a command declares a
   `Setting` (its check, its save on a connection, its reply and the tables it writes) and
-  `setting_change` builds the change type, so that the line, the audit record, the answer for a
-  value already held and the answer for a fault are formed in one place. A setting's value, its
+  `setting_change` builds the change type, so that the line, whether an audit record is written, the
+  answer for a value already held and the answer for a fault are decided in one place. A setting's value, its
   audit record and its line are one save, save where a step after it arms the daily portrait job:
   there the value and the audit record share the save and the line follows in the arming job's
   save, so that an arming that failed records no success. *Rejected:* a bespoke change type for
