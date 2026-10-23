@@ -3,7 +3,10 @@
 `evaluate_all_templates` parses all sixteen templates, which takes seconds on a Raspberry Pi,
 and a single template's parse a good part of a second; run on the loop either would leave the
 bot answering nothing until it finished. Each async entry point of the image module that runs
-a sweep or parses a template hands it to a worker thread.
+a sweep or only reads a template hands it to a worker thread. The render and the fastest-lap
+contrast measurement change the tree they parse on the loop, and so parse it there: a tree
+parsed in a worker thread never leaves that thread (`load_svg`), which every test here also
+holds the entry point to.
 
 Each test patches the evaluation with a `Held` one (`tests/support/off_the_loop.py`), which
 waits for a coroutine on the loop to release it: in a worker thread it goes through, and the
@@ -13,25 +16,20 @@ holds core's entry points to the same.
 """
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from lxml import etree
 
 from leaguebot.core.models.change import ChangeOrigin, Verdict
 from leaguebot.core.services.change_queue import CheckContext
-from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_ID
 from leaguebot.image.services import driver_portrait_service, image_render_service
 from leaguebot.image.services import image_validity_service as validity_module
-from leaguebot.image.services.image_render_service import ImageRenderService
-from leaguebot.image.services.image_setting_advice import measure_fastest_lap_contrast
 from leaguebot.image.services.image_settings import TEMPLATE, TEMPLATE_DIRECTORY, image_settings
-from leaguebot.image.models.image_module import PROBLEM_NOT_SVG
 from leaguebot.image.services.image_validity_service import ImageValidityService
 from leaguebot.image.utils import svg_document
-from leaguebot.image.utils.svg_document import SvgError
 from tests.support.off_the_loop import Held, answered_while, answering
 
 
@@ -98,32 +96,6 @@ async def test_the_template_directory_check_leaves_the_loop_answering(monkeypatc
     assert held.calls == [(proposed, toggles)]
 
 
-async def test_the_contrast_measurement_leaves_the_loop_answering(monkeypatch, tmp_path):
-    """`/images config fastest-lap-colour` reads the race results template in a worker thread,
-    after the sweep, and measures the colour against the plate it parsed."""
-    path = tmp_path / "results_race.svg"
-    plate = etree.fromstring(
-        '<svg xmlns="http://www.w3.org/2000/svg">'
-        f'<rect id="{FASTEST_LAP_BACKGROUND_ID}" fill="#000000"/></svg>'
-    )
-    held = answering(plate)
-    monkeypatch.setattr(svg_document, "load_svg", held)
-    validity = MagicMock()
-    validity.template_reports = AsyncMock(return_value={
-        "results_race_template": SimpleNamespace(valid=True, reason=None, resolved_path=path),
-    })
-    config = MagicMock()
-    config.get_config = AsyncMock(return_value=SimpleNamespace(per_tier_colour_enabled=False))
-
-    reading = await answered_while(held, lambda: measure_fastest_lap_contrast(
-        "#ffffff", config=config, render=MagicMock(), validity=validity, seasons=MagicMock(),
-    ))
-
-    assert held.calls == [(path,)]
-    assert reading.problem is None
-    assert reading.ratio == pytest.approx(21.0)
-
-
 async def test_the_template_check_leaves_the_loop_answering(monkeypatch):
     """`/images config template`'s check parses the one template named in a worker thread, on
     the configuration it would make, and goes ahead on what it found."""
@@ -138,31 +110,6 @@ async def test_the_template_check_leaves_the_loop_answering(monkeypatch):
 
     assert verdict == Verdict.go()
     assert held.calls == [(proposed, "calendar_template")]
-
-
-async def test_a_render_parses_its_template_off_the_loop(monkeypatch, tmp_path):
-    """A render parses its template in a worker thread, and a template that does not parse is
-    still refused as one that is not SVG, as the parse's own error says."""
-    path = tmp_path / "calendar.svg"
-
-    def broken(*_args: Any) -> Any:
-        raise SvgError("the file is not well-formed")
-
-    held = Held(broken)
-    monkeypatch.setattr(svg_document, "load_svg", held)
-    monkeypatch.setattr(image_render_service, "converter_available", lambda: True)
-    validity = MagicMock()
-    validity.template_reports = AsyncMock(return_value={
-        "calendar_template": SimpleNamespace(valid=True, reason=None, resolved_path=path),
-    })
-
-    outcome = await answered_while(
-        held, lambda: ImageRenderService(MagicMock(), validity).render("calendar_template", None)
-    )
-
-    assert held.calls == [(path,)]
-    assert outcome.problem.kind == PROBLEM_NOT_SVG
-    assert outcome.problem.detail == "not a valid SVG file — the file is not well-formed"
 
 
 def _refreshed(monkeypatch) -> tuple[Held, AsyncMock]:
@@ -214,3 +161,17 @@ async def test_the_daily_portrait_refresh_reads_the_shape_off_the_loop(monkeypat
     assert written == 3
     assert held.calls == [(config,)]
     assert refresh.await_args.kwargs["aspect"] == 0.75
+
+
+async def test_a_tree_handed_back_to_the_loop_fails_the_check(tmp_path):
+    """The rule's own check: a worker thread that returns a parsed tree to the loop fails,
+    however deeply the tree is held in what it returns."""
+    path = tmp_path / "plain.svg"
+    path.write_text('<svg xmlns="http://www.w3.org/2000/svg"><rect id="r"/></svg>')
+    held = Held(svg_document.load_svg)
+
+    async def parse_and_return_it() -> Any:
+        return await asyncio.to_thread(lambda: {"root": [held(path)]})
+
+    with pytest.raises(AssertionError, match="came back to the loop"):
+        await answered_while(held, parse_and_return_it)

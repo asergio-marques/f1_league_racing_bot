@@ -104,9 +104,17 @@ def load_svg(path: Path | str) -> etree._Element:
     one and the annotation used to say otherwise.
 
     A parse takes long enough on the Raspberry Pi that the bot would answer nothing while it
-    ran, so every caller on the event loop runs it in a worker thread (`asyncio.to_thread`).
-    It must therefore stay pure: it reads the file alone, and touches no database connection
-    and no Discord object.
+    ran, so a caller on the event loop that only reads the tree runs the parse in a worker
+    thread (`asyncio.to_thread`), and reads it there too. **A tree parsed in a worker thread
+    never leaves that thread:** lxml gives each document the name dictionary of the thread
+    that parsed it, and libxml2 does not lock it, so a tree read or changed on the loop while
+    the same pooled thread parses again can corrupt memory. Each such call returns plain data
+    (counts, names, reports, exceptions), never an element or a tree. A caller that changes
+    the tree on the loop parses it on the loop: the render, which fills its template there,
+    and the fastest-lap contrast measurement, which paints each tier's palette into it.
+
+    It must stay pure: it reads the file alone, and touches no database connection and no
+    Discord object.
     """
     # A directory is named as unreadable here rather than left to lxml, because which
     # fault lxml reports for one depends on the libxml2 it was linked against. libxml2

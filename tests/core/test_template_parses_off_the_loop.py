@@ -3,7 +3,8 @@
 A template's parse takes a good part of a second on a Raspberry Pi, and on the loop it would
 leave the bot answering nothing until it finished. The season review's capacity checks, the
 round guard and the placement guards each parse one configured template, and each hands the
-parse to a worker thread; the placement guards hand over the measurement with it.
+parse to a worker thread with its reading of the tree, so that only counts and names come back:
+a tree parsed in a worker thread never leaves that thread (`load_svg`).
 
 Each test runs its entry point twice against the templates the bot ships: once as it stands,
 and once with the parse replaced by a `Held` one (`tests/support/off_the_loop.py`), which waits

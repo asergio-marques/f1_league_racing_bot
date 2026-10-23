@@ -117,6 +117,9 @@ from leaguebot.core.utils.round_import import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    from leaguebot.image.models.image_catalogues import FieldCatalogue
     from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint
 
 log = logging.getLogger(__name__)
@@ -184,6 +187,19 @@ def _pending_to_division_models(cfg: PendingConfig) -> list[Division]:
 #: a reply over 2000 characters is refused by Discord whole rather than truncated, which
 #: would lose the report entirely.
 _MAX_REPORTED_ERRORS = 25
+
+
+def _rows_and_rounds(catalogue: FieldCatalogue, path: Path) -> tuple[int, int]:
+    """The rows and the round columns the standings template at *path* draws, nought for none.
+
+    Parsed and counted here, in the worker thread the review runs it in, so that the tree never
+    leaves the thread that parsed it (`load_svg`). Raises `CapacityError` for a template that
+    cannot be counted.
+    """
+    from leaguebot.image.utils.svg_document import load_svg
+
+    root = load_svg(path)
+    return catalogue.capacity(root) or 0, catalogue.column_capacity(root) or 0
 
 
 def _format_import_errors(errors: list[str]) -> str:
@@ -923,12 +939,15 @@ class SeasonCog(commands.Cog):
             from leaguebot.image.models.image_catalogues import catalogue_for
             from leaguebot.image.utils.svg_document import FieldIndex, load_svg
 
-            # Parsed off the event loop, as every template parse is (`load_svg`).
-            root = await asyncio.to_thread(load_svg, report.resolved_path)
             catalogue = catalogue_for("lineup_template")
-            blocks = catalogue.capacity(root) or 0
+
+            def measure(catalogue: FieldCatalogue, path: Path) -> tuple[int, set[str]]:
+                # Parsed and read in one worker thread: the tree never leaves it (`load_svg`).
+                root = load_svg(path)
+                return catalogue.capacity(root) or 0, FieldIndex(root).declared()
+
+            blocks, declared = await asyncio.to_thread(measure, catalogue, report.resolved_path)
             nest = catalogue.rows.nested if catalogue.rows is not None else None
-            declared = FieldIndex(root).declared()
 
             divisions = await self.bot.season_service.get_divisions(season_id)
             problems: list[str] = []
@@ -995,8 +1014,10 @@ class SeasonCog(commands.Cog):
 
             from leaguebot.image.utils.svg_document import load_svg
 
-            capacity = catalogue_for("calendar_template").capacity(
-                await asyncio.to_thread(load_svg, report.resolved_path)
+            # Parsed and counted in one worker thread: the tree never leaves it (`load_svg`).
+            capacity = await asyncio.to_thread(
+                lambda path: catalogue_for("calendar_template").capacity(load_svg(path)),
+                report.resolved_path,
             )
         except Exception as exc:  # noqa: BLE001
             log.error("round add: calendar capacity guard could not run: %s", exc, exc_info=True)
@@ -1038,8 +1059,10 @@ class SeasonCog(commands.Cog):
 
             from leaguebot.image.utils.svg_document import load_svg
 
-            capacity = catalogue_for("calendar_template").capacity(
-                await asyncio.to_thread(load_svg, report.resolved_path)
+            # Parsed and counted in one worker thread: the tree never leaves it (`load_svg`).
+            capacity = await asyncio.to_thread(
+                lambda path: catalogue_for("calendar_template").capacity(load_svg(path)),
+                report.resolved_path,
             )
             if not capacity:
                 return []
@@ -1099,8 +1122,12 @@ class SeasonCog(commands.Cog):
             ):
                 report = reports.get("attendance_template")
                 if report is not None and report.valid and report.resolved_path:
-                    declared = catalogue_for("attendance_template").column_capacity(
-                        await asyncio.to_thread(load_svg, report.resolved_path)
+                    # Parsed and counted in one worker thread: the tree never leaves it.
+                    declared = await asyncio.to_thread(
+                        lambda path: catalogue_for("attendance_template").column_capacity(
+                            load_svg(path)
+                        ),
+                        report.resolved_path,
                     )
                     # Nought means the template draws no grid at all, which is a legitimate
                     # choice (XIV.3) and never a divergence.
@@ -1138,8 +1165,10 @@ class SeasonCog(commands.Cog):
             ):
                 report = reports.get("rsvp_template")
                 if report is not None and report.valid and report.resolved_path:
-                    declared = catalogue_for("rsvp_template").capacity(
-                        await asyncio.to_thread(load_svg, report.resolved_path)
+                    # Parsed and counted in one worker thread: the tree never leaves it.
+                    declared = await asyncio.to_thread(
+                        lambda path: catalogue_for("rsvp_template").capacity(load_svg(path)),
+                        report.resolved_path,
                     )
                     if declared:
                         async with get_connection(self.bot.db_path) as db:
@@ -1189,7 +1218,6 @@ class SeasonCog(commands.Cog):
             CONSTRUCTORS_TEMPLATE_KEY,
             DRIVERS_TEMPLATE_KEY,
         )
-        from leaguebot.image.utils.svg_document import load_svg
 
         async with get_connection(self.bot.db_path) as db:
             cursor = await db.execute(
@@ -1221,9 +1249,9 @@ class SeasonCog(commands.Cog):
             # Read through the same two counters ``build_fill_spec`` reads, so what the
             # review promises and what the render does cannot disagree (XIV.10).
             try:
-                root = await asyncio.to_thread(load_svg, report.resolved_path)
-                declared_rows = catalogue.capacity(root) or 0
-                declared_rounds = catalogue.column_capacity(root) or 0
+                declared_rows, declared_rounds = await asyncio.to_thread(
+                    _rows_and_rounds, catalogue, report.resolved_path
+                )
             except CapacityError:
                 continue  # an uncountable template is Layer 2's to report, not this
 
