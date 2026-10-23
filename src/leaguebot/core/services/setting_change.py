@@ -42,7 +42,7 @@ the arming writes it once it has succeeded, so that a failed arming records no s
 between the two reaches the arming as the change carries on. The steps after the save are planned
 only where the save changed something.
 
-**A setting is confined to the tables it declares** (`Setting.writes`, the queue's authorizer): a
+**A setting is confined to the tables it declares** (`Setting.writes`, the queue's authoriser): a
 save writing another table raises, is rolled back and ends as any fault in the save.
 """
 
@@ -125,8 +125,8 @@ class Setting:
     connection it is handed and returns what it did; *reply* forms the member's answer from the
     payload and every step's result, by step name; *writes* are the tables the save may write;
     *not_saved* is what a fault's reply says became of the change, or a function of the payload
-    that returns it, for a setting whose command is a paste as well as a single value (the check
-    that raises as the change starts is not handed the payload, so asks it with an empty one);
+    that returns it, for a setting whose command is a paste as well as a single value (the reply
+    to a check that raises as the change starts is formed from the payload, as the outcome is);
     *after* are the steps that may follow the save, by name.
     """
 

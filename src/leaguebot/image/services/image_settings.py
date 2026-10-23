@@ -622,12 +622,6 @@ def _per_tier(modules: "ModuleService", validity: "ImageValidityService") -> Set
     )
 
 
-#: What switching per-tier colours off means, said beneath the reply.
-_OFF_MEANS = (
-    "Your templates draw the colours they were authored in, and nothing is validated while "
-    "this is off.",
-)
-
 #: The commands a tier's colours are set through, by whether the form was used.
 _TIER_COMMANDS = {False: "/images config per-tier-set-colour", True: "/images config per-tier-bulk-colour"}
 

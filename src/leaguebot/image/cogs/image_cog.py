@@ -329,8 +329,8 @@ class ImageCog(commands.Cog):
 
     # The sixteen template filename setters live in their own group rather than under
     # `config`. Discord allows at most 25 subcommands per group and forbids a third
-    # nesting level, and `config` would otherwise carry 31: 1 template directory +
-    # 16 filenames + 8 asset directories + 4 preferences + toggle + view.
+    # nesting level, and `config` would otherwise carry 35: 1 template directory +
+    # 16 filenames + 8 asset directories + 4 preferences + 4 per-tier + toggle + view.
     #
     # As split, `config` carries nineteen of the 25 and `template` the other 16. Each asset class
     # added costs `config` one and each template costs `template` one, so the arithmetic is

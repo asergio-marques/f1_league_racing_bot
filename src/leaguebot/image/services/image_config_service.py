@@ -32,12 +32,12 @@ SETTABLE_COLUMNS: frozenset[str] = frozenset(
     | {"pfp_daily_time"}
 )
 
-#: The three portrait toggles. Booleans, so they are written through `set_pfp_flag` rather
-#: than the string-valued `set_field`, and are deliberately absent from SETTABLE_COLUMNS.
+#: The three portrait toggles. Booleans, so they are written through `set_flag_on` rather
+#: than the string-valued `set_field_on`, and are deliberately absent from SETTABLE_COLUMNS.
 PFP_FLAG_COLUMNS: frozenset[str] = frozenset({"use_pfp", "pfp_prerender", "pfp_daily"})
 
 #: Every boolean column a command may write, portraits included. Booleans go through
-#: `set_flag` for the same reason the portraits always did — `set_field` is string-valued —
+#: `set_flag_on` for the same reason the portraits always did — `set_field_on` is string-valued —
 #: and are likewise absent from SETTABLE_COLUMNS.
 FLAG_COLUMNS: frozenset[str] = PFP_FLAG_COLUMNS | {"per_tier_colour_enabled"}
 
@@ -211,7 +211,7 @@ class ImageConfigService:
 # The settings' saves (`image_settings`) write through these, on the connection the change
 # queue hands a step, never committing: the value and its audit entry stand or fall together.
 # Each judges "held" on the connection that writes (a change ahead may have moved the value),
-# keeps the allow-list of its committing twin above, and returns what `Saved` carries.
+# keeps its own allow-list, and returns what `Saved` carries.
 
 
 async def read_config_on(db: aiosqlite.Connection) -> ImageConfig | None:
