@@ -10,10 +10,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.services.amendment_mode_service import get_amendment_state
 from tests.support.change_queue import run_queue, stopped_job
 from tests.support.saves import (
     enable_amendment_mode,
-    get_amendment_state,
     modify_fl_bonus,
     modify_fl_position_limit,
     modify_session_points,
