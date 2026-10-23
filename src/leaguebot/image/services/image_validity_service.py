@@ -17,7 +17,6 @@ Four invariants bind the growth:
 """
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 import logging
 import re
@@ -68,6 +67,7 @@ from leaguebot.image.utils.svg_document import (
     SvgParseError,
     canvas_of,
     load_svg,
+    off_the_loop,
 )
 from leaguebot.image.utils.svg_palette import colour_slots
 
@@ -1530,12 +1530,13 @@ class ImageValidityService:
         Raspberry Pi, and on the loop the bot would answer nothing until it finished. It runs
         in a worker thread instead, which is safe because it is pure: it reads the
         configuration read here, on the loop, and the template files, and touches no database
-        connection and no Discord object.
+        connection and no Discord object. Through `off_the_loop`, only the reports come back,
+        and a fault as its class and message: no tree it parsed leaves the thread.
         """
         config = await self._config_service.get_config()
         if config is None:
             return {}
-        return await asyncio.to_thread(evaluate_all_templates, config)
+        return await off_the_loop(evaluate_all_templates, config)
 
     async def directory_reports(self) -> dict[str, DirectoryReport]:
         """Every asset directory's report, run off the event loop as `template_reports` is,
@@ -1544,7 +1545,7 @@ class ImageValidityService:
         config = await self._config_service.get_config()
         if config is None:
             return {}
-        return await asyncio.to_thread(evaluate_directories, config)
+        return await off_the_loop(evaluate_directories, config)
 
     async def disabled_source_modules(self) -> set[str]:
         disabled: set[str] = set()

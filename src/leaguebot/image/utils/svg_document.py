@@ -8,9 +8,14 @@ type.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+import traceback
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, TypeVar
 
 from lxml import etree
 
@@ -105,13 +110,16 @@ def load_svg(path: Path | str) -> etree._Element:
 
     A parse takes long enough on the Raspberry Pi that the bot would answer nothing while it
     ran, so a caller on the event loop that only reads the tree runs the parse in a worker
-    thread (`asyncio.to_thread`), and reads it there too. **A tree parsed in a worker thread
-    never leaves that thread:** lxml gives each document the name dictionary of the thread
-    that parsed it, and libxml2 does not lock it, so a tree read or changed on the loop while
-    the same pooled thread parses again can corrupt memory. Each such call returns plain data
-    (counts, names, reports, exceptions), never an element or a tree. A caller that changes
-    the tree on the loop parses it on the loop: the render, which fills its template there,
-    and the fastest-lap contrast measurement, which paints each tier's palette into it.
+    thread, and reads it there too, through `off_the_loop`. **Nothing parsed in a worker
+    thread leaves it, neither a return value nor an exception:** lxml gives each document the
+    name dictionary of the thread that parsed it, and libxml2 does not lock it, so a tree read,
+    changed or even freed on the loop while the same pooled thread parses again can corrupt
+    memory. An exception counts because its traceback keeps the worker's frames, and the tree
+    in them, alive until the loop drops it. So the thread hands back plain data alone (counts,
+    names, reports), and a fault as its class and message, raised afresh on the loop. A caller
+    that changes the tree on the loop parses it on the loop: the render, which fills its
+    template there, and the fastest-lap contrast measurement, which paints each tier's palette
+    into it.
 
     It must stay pure: it reads the file alone, and touches no database connection and no
     Discord object.
@@ -142,6 +150,69 @@ def load_svg(path: Path | str) -> etree._Element:
             f"the root element is <{etree.QName(root).localname}>, not <svg>"
         )
     return root
+
+
+_T = TypeVar("_T")
+
+
+class TemplateReadError(Exception):
+    """A fault in a worker thread whose class cannot be raised afresh from its message alone,
+    raised on the loop in its stead, naming that class (`off_the_loop`)."""
+
+
+@dataclass(frozen=True)
+class _Fault:
+    """What a worker thread's exception leaves behind: its class, its message and its
+    traceback as text, no more."""
+
+    kind: type[Exception]
+    message: str
+    trace: str
+
+    def rebuilt(self) -> Exception:
+        """The exception raised afresh: its own class where that is built from the message alone
+        and says it back unchanged, as `CapacityError`, `SvgError` and `ValueError` do;
+        `TemplateReadError` naming the class otherwise. The worker's traceback rides along as a
+        note, so the host's log still shows where it was raised."""
+        error: Exception
+        try:
+            error = self.kind(self.message)
+        except TypeError:
+            error = TemplateReadError(f"{self.kind.__name__}: {self.message}")
+        else:
+            if type(error) is not self.kind or str(error) != self.message:
+                error = TemplateReadError(f"{self.kind.__name__}: {self.message}")
+        error.add_note(f"Raised in a worker thread:\n{self.trace}")
+        return error
+
+
+def _contained(func: Callable[..., _T], args: tuple[Any, ...]) -> _T | _Fault:
+    """Call *func* in the worker thread, keeping its exception there: only its class and its
+    message come out. A parsed tree returned whole is a fault too."""
+    try:
+        value = func(*args)
+    except Exception as exc:  # noqa: BLE001 — reported on the loop, as its class and message
+        fault = _Fault(type(exc), str(exc), traceback.format_exc())
+    else:
+        if not isinstance(value, (etree._Element, etree._ElementTree)):
+            return value
+        fault = _Fault(TypeError, "a parsed tree may not leave the thread that parsed it", "")
+    return fault
+
+
+async def off_the_loop(func: Callable[..., _T], *args: Any) -> _T:
+    """Run *func* on *args* in a worker thread and return what it returns, which must be plain
+    data: it may parse a template, and nothing parsed there leaves the thread (`load_svg`).
+
+    An exception it raises is caught in the thread and raised here, on the loop, afresh from
+    its class and message (`_Fault.rebuilt`), with no traceback, cause or context reaching back
+    into the thread; so a caller catches what it caught before. *func* must be pure: it touches
+    no database connection and no Discord object.
+    """
+    outcome = await asyncio.to_thread(_contained, func, args)
+    if isinstance(outcome, _Fault):
+        raise outcome.rebuilt()
+    return outcome
 
 
 def parse_svg_bytes(data: bytes) -> etree._Element:

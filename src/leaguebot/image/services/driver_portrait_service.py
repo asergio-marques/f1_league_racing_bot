@@ -46,6 +46,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.image.utils.asset_resolver import filename_for
+from leaguebot.image.utils.svg_document import off_the_loop
 from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -388,7 +389,7 @@ async def run_daily_refresh(bot: LeagueBot, *, now: datetime | None = None) -> i
             bot.db_path,
             members,
             directory,
-            aspect=await asyncio.to_thread(portrait_aspect, config),
+            aspect=await off_the_loop(portrait_aspect, config),
             budget_seconds=None,
             now=now,
         )
@@ -480,7 +481,7 @@ async def refresh_before_render(
             bot.db_path,
             members,
             directory,
-            aspect=await asyncio.to_thread(portrait_aspect, config),
+            aspect=await off_the_loop(portrait_aspect, config),
             now=now,
         )
     except Exception:  # noqa: BLE001 -- a portrait never fails a render

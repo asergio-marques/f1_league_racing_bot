@@ -31,7 +31,6 @@ plain functions here, handed the services they read and never reaching through t
 
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
@@ -66,6 +65,7 @@ from leaguebot.image.services.image_setting_advice import (
     measure_fastest_lap_contrast,
     toggle_enabled_lines,
 )
+from leaguebot.image.utils.svg_document import off_the_loop
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -313,7 +313,7 @@ def _template_directory(modules: "ModuleService", config: "ImageConfigService") 
             return refusal(NO_CONFIGURATION)
         # The survey parses every template the switched-on outputs need, seconds on the Pi:
         # it runs off the event loop, which `blocking_template_problems` is pure enough for.
-        problems = await asyncio.to_thread(
+        problems = await off_the_loop(
             blocking_template_problems, proposed, await config.get_toggles()
         )
         if problems:
@@ -370,7 +370,7 @@ def _template(modules: "ModuleService", config: "ImageConfigService") -> Setting
         if proposed is None:
             return _template_refusal(label, NO_CONFIGURATION)
         # One template's parse, run off the event loop as the folder's survey is.
-        problem = await asyncio.to_thread(check_template, proposed, column)
+        problem = await off_the_loop(check_template, proposed, column)
         if problem is not None:
             return _template_refusal(label, problem.message())
         return Verdict.go()

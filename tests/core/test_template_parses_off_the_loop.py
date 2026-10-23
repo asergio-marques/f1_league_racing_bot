@@ -10,7 +10,9 @@ Each test runs its entry point twice against the templates the bot ships: once a
 and once with the parse replaced by a `Held` one (`tests/support/off_the_loop.py`), which waits
 for a coroutine on the loop to release it. The two must answer alike, and the held parse must
 never have found the loop held. These checks swallow their own faults, so a parse on the loop
-would show as `held_loop` and as an answer that differs, never as an error.
+would show as `held_loop` and as an answer that differs, never as an error. Each is run once
+more with a parse that fails holding its tree, and must keep the fault, and the tree, to the
+worker thread.
 `tests/image/test_image_sweeps_off_the_loop.py` holds the image module to the same.
 """
 from __future__ import annotations
@@ -21,10 +23,12 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from lxml import etree
 
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.image.models.image_catalogues import CapacityError
 from leaguebot.image.utils import svg_document
 from tests.support.off_the_loop import Held, answered_while
 
@@ -185,3 +189,55 @@ async def test_a_placement_guard_measures_its_template_off_the_loop(
     answer, _held = await _held_alike(monkeypatch, refusal)
 
     assert "was **not** assigned" in answer
+
+
+def _parse_then_refuse(load_svg):
+    """A parse that fails after it has the tree, as a template that cannot be counted does,
+    while the failing frame still holds it."""
+
+    def parse(path: Any) -> Any:
+        root = load_svg(path)
+        raise CapacityError(f"the <{etree.QName(root).localname}> cannot be counted")
+
+    return parse
+
+
+#: What each season check answers where its template cannot be counted: nothing to say.
+SEASON_FALLBACKS = {"calendar-round": None}
+
+
+@pytest.mark.parametrize(
+    "aspects,check", [case[1:3] for case in SEASON_CHECKS], ids=[c[0] for c in SEASON_CHECKS]
+)
+async def test_a_season_check_s_fault_crosses_back_with_nothing_it_parsed(
+    tmp_path, monkeypatch, request, aspects, check
+):
+    """A template that fails as it is counted is kept to the worker thread: only its class and
+    message come back, the check stays quiet as it always has, and no tree reaches the loop."""
+    cog = _cog(await _season(tmp_path), aspects=aspects)
+    held = Held(_parse_then_refuse(svg_document.load_svg))
+    monkeypatch.setattr(svg_document, "load_svg", held)
+
+    answer = await answered_while(held, lambda: check(cog))
+
+    assert held.calls
+    assert answer == SEASON_FALLBACKS.get(request.node.callspec.id, [])
+
+
+@pytest.mark.parametrize(
+    "enabled,reserve,guard", [case[1:] for case in PLACEMENT_GUARDS],
+    ids=[c[0] for c in PLACEMENT_GUARDS],
+)
+async def test_a_placement_guard_s_fault_crosses_back_with_nothing_it_parsed(
+    tmp_path, monkeypatch, enabled, reserve, guard
+):
+    """A template that fails as it is measured is kept to the worker thread: the guard lets
+    the placement through, as it always has, and no tree reaches the loop."""
+    service = await _service(tmp_path, monkeypatch, enabled=enabled, reserve=reserve)
+    held = Held(_parse_then_refuse(svg_document.load_svg))
+    monkeypatch.setattr(svg_document, "load_svg", held)
+
+    answer = await answered_while(held, lambda: guard(service))
+
+    assert held.calls
+    assert answer is None

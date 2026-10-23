@@ -23,7 +23,6 @@ Commands:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import sqlite3
@@ -937,7 +936,7 @@ class SeasonCog(commands.Cog):
                 return []
 
             from leaguebot.image.models.image_catalogues import catalogue_for
-            from leaguebot.image.utils.svg_document import FieldIndex, load_svg
+            from leaguebot.image.utils.svg_document import FieldIndex, load_svg, off_the_loop
 
             catalogue = catalogue_for("lineup_template")
 
@@ -946,7 +945,7 @@ class SeasonCog(commands.Cog):
                 root = load_svg(path)
                 return catalogue.capacity(root) or 0, FieldIndex(root).declared()
 
-            blocks, declared = await asyncio.to_thread(measure, catalogue, report.resolved_path)
+            blocks, declared = await off_the_loop(measure, catalogue, report.resolved_path)
             nest = catalogue.rows.nested if catalogue.rows is not None else None
 
             divisions = await self.bot.season_service.get_divisions(season_id)
@@ -1012,10 +1011,10 @@ class SeasonCog(commands.Cog):
             if report is None or not report.valid or report.resolved_path is None:
                 return None
 
-            from leaguebot.image.utils.svg_document import load_svg
+            from leaguebot.image.utils.svg_document import load_svg, off_the_loop
 
             # Parsed and counted in one worker thread: the tree never leaves it (`load_svg`).
-            capacity = await asyncio.to_thread(
+            capacity = await off_the_loop(
                 lambda path: catalogue_for("calendar_template").capacity(load_svg(path)),
                 report.resolved_path,
             )
@@ -1057,10 +1056,10 @@ class SeasonCog(commands.Cog):
             if report is None or not report.valid or report.resolved_path is None:
                 return []  # already named by the template problems list
 
-            from leaguebot.image.utils.svg_document import load_svg
+            from leaguebot.image.utils.svg_document import load_svg, off_the_loop
 
             # Parsed and counted in one worker thread: the tree never leaves it (`load_svg`).
-            capacity = await asyncio.to_thread(
+            capacity = await off_the_loop(
                 lambda path: catalogue_for("calendar_template").capacity(load_svg(path)),
                 report.resolved_path,
             )
@@ -1112,7 +1111,7 @@ class SeasonCog(commands.Cog):
 
         lines: list[str] = []
         try:
-            from leaguebot.image.utils.svg_document import load_svg
+            from leaguebot.image.utils.svg_document import load_svg, off_the_loop
 
             reports = await self.bot.image_validity_service.template_reports()
 
@@ -1123,7 +1122,7 @@ class SeasonCog(commands.Cog):
                 report = reports.get("attendance_template")
                 if report is not None and report.valid and report.resolved_path:
                     # Parsed and counted in one worker thread: the tree never leaves it.
-                    declared = await asyncio.to_thread(
+                    declared = await off_the_loop(
                         lambda path: catalogue_for("attendance_template").column_capacity(
                             load_svg(path)
                         ),
@@ -1166,7 +1165,7 @@ class SeasonCog(commands.Cog):
                 report = reports.get("rsvp_template")
                 if report is not None and report.valid and report.resolved_path:
                     # Parsed and counted in one worker thread: the tree never leaves it.
-                    declared = await asyncio.to_thread(
+                    declared = await off_the_loop(
                         lambda path: catalogue_for("rsvp_template").capacity(load_svg(path)),
                         report.resolved_path,
                     )
@@ -1218,6 +1217,7 @@ class SeasonCog(commands.Cog):
             CONSTRUCTORS_TEMPLATE_KEY,
             DRIVERS_TEMPLATE_KEY,
         )
+        from leaguebot.image.utils.svg_document import off_the_loop
 
         async with get_connection(self.bot.db_path) as db:
             cursor = await db.execute(
@@ -1249,7 +1249,7 @@ class SeasonCog(commands.Cog):
             # Read through the same two counters ``build_fill_spec`` reads, so what the
             # review promises and what the render does cannot disagree (XIV.10).
             try:
-                declared_rows, declared_rounds = await asyncio.to_thread(
+                declared_rows, declared_rounds = await off_the_loop(
                     _rows_and_rounds, catalogue, report.resolved_path
                 )
             except CapacityError:

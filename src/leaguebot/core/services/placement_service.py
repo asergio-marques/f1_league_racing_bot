@@ -1,7 +1,6 @@
 """PlacementService — driver placement, role management, and seeded listing."""
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from collections.abc import Mapping
@@ -807,7 +806,7 @@ class PlacementService:
         try:
             from leaguebot.image.models.image_catalogues import reserve_capacity_problem
             from leaguebot.image.services.image_lineup_post import lineup_enabled
-            from leaguebot.image.utils.svg_document import load_svg
+            from leaguebot.image.utils.svg_document import load_svg, off_the_loop
 
             # Not a reserve placement, or no such team — `assign_driver` reports a team
             # that does not exist in its own words, and this guard stays quiet.
@@ -835,7 +834,7 @@ class PlacementService:
             seated = (row["seated"] if row else 0) or 0
             # The template is parsed and measured off the event loop: both are pure.
             path = report.resolved_path
-            problem = await asyncio.to_thread(
+            problem = await off_the_loop(
                 lambda: reserve_capacity_problem(load_svg(path), seated + adding)
             )
         except Exception as exc:  # noqa: BLE001
@@ -880,7 +879,7 @@ class PlacementService:
         try:
             from leaguebot.image.models.image_catalogues import row_capacity_problem
             from leaguebot.image.services.image_attendance_post import attendance_enabled
-            from leaguebot.image.utils.svg_document import load_svg
+            from leaguebot.image.utils.svg_document import load_svg, off_the_loop
 
             if not await attendance_enabled(bot):
                 return
@@ -901,7 +900,7 @@ class PlacementService:
             seated = (row["seated"] if row else 0) or 0
             # The template is parsed and measured off the event loop: both are pure.
             path = report.resolved_path
-            problem = await asyncio.to_thread(
+            problem = await off_the_loop(
                 lambda: row_capacity_problem("attendance_template", load_svg(path), seated + adding)
             )
         except Exception as exc:  # noqa: BLE001
@@ -949,7 +948,7 @@ class PlacementService:
             from leaguebot.image.models.image_catalogues import row_capacity_problem
             from leaguebot.image.services.image_standings_post import standings_enabled
             from leaguebot.image.services.image_standings_service import DRIVERS_TEMPLATE_KEY
-            from leaguebot.image.utils.svg_document import load_svg
+            from leaguebot.image.utils.svg_document import load_svg, off_the_loop
 
             # A reserve placement adds no entry to the classification, and no such team —
             # `assign_driver` reports a team that does not exist in its own words.
@@ -977,7 +976,7 @@ class PlacementService:
             seated = (row["seated"] if row else 0) or 0
             # The template is parsed and measured off the event loop: both are pure.
             path = report.resolved_path
-            problem = await asyncio.to_thread(
+            problem = await off_the_loop(
                 lambda: row_capacity_problem(DRIVERS_TEMPLATE_KEY, load_svg(path), seated + adding)
             )
         except Exception as exc:  # noqa: BLE001
