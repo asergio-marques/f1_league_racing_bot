@@ -9,6 +9,7 @@ fault here cannot undo it. It lives apart from the cog so the settings
 """
 from __future__ import annotations
 
+import asyncio
 import copy
 from dataclasses import dataclass
 from pathlib import Path
@@ -276,7 +277,8 @@ async def measure_fastest_lap_contrast(
         return FastestLapContrast(problem="the race results template could not be read.")
 
     try:
-        root = load_svg(report.resolved_path)
+        # Parsed off the event loop, as the sweep above is: `load_svg` reads the file alone.
+        root = await asyncio.to_thread(load_svg, report.resolved_path)
     except SvgError as exc:
         return FastestLapContrast(
             problem=f"the race results template could not be parsed — {exc}"

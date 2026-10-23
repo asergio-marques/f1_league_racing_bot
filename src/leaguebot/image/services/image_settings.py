@@ -31,6 +31,7 @@ plain functions here, handed the services they read and never reaching through t
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
@@ -310,7 +311,11 @@ def _template_directory(modules: "ModuleService", config: "ImageConfigService") 
         proposed = await config.candidate_config("template_directory", stored)
         if proposed is None:
             return refusal(NO_CONFIGURATION)
-        problems = blocking_template_problems(proposed, await config.get_toggles())
+        # The survey parses every template the switched-on outputs need, seconds on the Pi:
+        # it runs off the event loop, which `blocking_template_problems` is pure enough for.
+        problems = await asyncio.to_thread(
+            blocking_template_problems, proposed, await config.get_toggles()
+        )
         if problems:
             return refusal(
                 f"`{stored}` does not hold every template the bot needs for the outputs you "
