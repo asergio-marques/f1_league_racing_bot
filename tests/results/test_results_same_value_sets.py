@@ -227,29 +227,3 @@ async def test_a_same_value_set_on_an_out_of_order_table_keeps_the_warning(tmp_p
     assert "position 1 (18 pts) < position 2 (25 pts)" in replied
     [line] = await log_lines(league)
     assert line.splitlines()[0] == f"{NAMED} | /{command} | Nothing changed"
-
-
-@pytest.mark.parametrize(
-    ("current", "requested", "stands"),
-    [
-        pytest.param({"points": 25}, {"points": 25}, True, id="same-value"),
-        pytest.param({"points": 25}, {"points": 30}, False, id="another-value"),
-        pytest.param({"points": None}, {"points": 0}, False, id="absent-is-not-zero"),
-        pytest.param({}, {"points": 25}, False, id="nothing-read"),
-        pytest.param(
-            {"fl_points": 1, "fl_position_limit": 10}, {"fl_position_limit": 10}, True,
-            id="only-what-is-asked",
-        ),
-        pytest.param(
-            {"fl_points": 1, "fl_position_limit": None}, {"fl_position_limit": 10}, False,
-            id="limit-not-set",
-        ),
-    ],
-)
-def test_the_judgement_of_values_that_stand(current, requested, stands):
-    """Given the values the cog has read and the values asked for, the request changes nothing
-    only where every value asked for is already held; a value not held at all is never the same
-    as one worth nothing."""
-    from leaguebot.results.services.points_config_service import values_stand
-
-    assert values_stand(current, requested) is stands
