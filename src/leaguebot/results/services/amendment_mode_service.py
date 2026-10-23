@@ -46,8 +46,16 @@ async def modification_ordering_warnings_on(
     config_name: str,
     session_type: str,
 ) -> list[str]:
-    """:func:`modification_ordering_warnings` read on *db*, so a save can judge the table it has
-    just written."""
+    """How one staged session's table now reads out of order, if it does, read on *db* so a save
+    can judge the table it has just written.
+
+    The modification store's answer to
+    :func:`leaguebot.results.services.points_config_service.ordering_warnings_on`, and given on
+    the same terms: a staged edit that breaks the ordering **warns and still applies**. A manager
+    restructuring a table mid-season moves through the same transient states as one building it in
+    the first place, and the refusal waits for the approval, which is where the table would stop
+    being staged and start scoring a championship.
+    """
     cursor = await db.execute(
         "SELECT position, points FROM season_modification_entries "
         "WHERE season_id = ? AND config_name = ? AND session_type = ?",
@@ -60,76 +68,6 @@ async def modification_ordering_warnings_on(
             [(r["position"], r["points"]) for r in rows]
         )
     ]
-
-
-async def modification_ordering_warnings(
-    db_path: str,
-    season_id: int,
-    config_name: str,
-    session_type: str,
-) -> list[str]:
-    """Return how one staged session's table now reads out of order, if it does.
-
-    The modification store's answer to
-    :func:`leaguebot.results.services.points_config_service.ordering_warnings`, and given on the same
-    terms: a staged edit that breaks the ordering **warns and still applies**. A manager
-    restructuring a table mid-season moves through the same transient states as one
-    building it in the first place, and the refusal waits for
-    the approval, which is where the table would stop being staged and start scoring a
-    championship.
-    """
-    async with get_connection(db_path) as db:
-        return await modification_ordering_warnings_on(
-            db, season_id, config_name, session_type
-        )
-
-
-async def staged_position_points(
-    db_path: str,
-    season_id: int,
-    config_name: str,
-    session_type: str,
-    position: int,
-) -> dict[str, int | None]:
-    """The points the modification store holds for one position, read so that the results cog
-    can judge whether a request changes nothing (#482).
-
-    ``{"points": None}`` where nothing is held, and always where the season is not in
-    amendment mode: a request made outside the mode can never stand, so it reaches the
-    store's own refusal, which comes before "nothing changed".
-    """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT e.points FROM season_modification_entries e "
-            "JOIN season_amendment_state s ON s.season_id = e.season_id AND s.amendment_active = 1 "
-            "WHERE e.season_id = ? AND e.config_name = ? AND e.session_type = ? "
-            "AND e.position = ?",
-            (season_id, config_name, session_type, position),
-        )
-        row = await cursor.fetchone()
-    return {"points": None if row is None else row["points"]}
-
-
-async def staged_fastest_lap(
-    db_path: str,
-    season_id: int,
-    config_name: str,
-    session_type: str,
-) -> dict[str, int | None]:
-    """The fastest-lap bonus and position limit the modification store holds for one session,
-    both ``None`` where it holds no row or the season is not in amendment mode (#482). See
-    :func:`staged_position_points`."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT f.fl_points, f.fl_position_limit FROM season_modification_fl f "
-            "JOIN season_amendment_state s ON s.season_id = f.season_id AND s.amendment_active = 1 "
-            "WHERE f.season_id = ? AND f.config_name = ? AND f.session_type = ?",
-            (season_id, config_name, session_type),
-        )
-        row = await cursor.fetchone()
-    if row is None:
-        return {"fl_points": None, "fl_position_limit": None}
-    return {"fl_points": row["fl_points"], "fl_position_limit": row["fl_position_limit"]}
 
 
 _COPY_ENTRIES = """
