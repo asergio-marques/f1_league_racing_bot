@@ -37,7 +37,7 @@ import json
 import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -68,9 +68,13 @@ SETTERS: list[tuple[str, int]] = [
 
 
 async def _set(service: AttendanceService, column: str, value):
-    """`set_setting` as a league manager's command calls it."""
+    """`set_setting` as a league manager's command calls it; the log line it saves with the
+    value is `test_attendance_config_record.py`'s to pin, so a router that writes none."""
+    router = MagicMock()
+    router.queue_log_on = AsyncMock(return_value=None)
     return await service.set_setting(
-        column, value, actor_id=42, actor_name="Manager", now=NOW
+        column, value, actor_id=42, actor_name="Manager", now=NOW,
+        router=router, line=lambda _change: "line",
     )
 
 
