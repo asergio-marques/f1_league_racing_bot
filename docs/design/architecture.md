@@ -224,11 +224,7 @@ audit record, which is how some settings came to have none.
   before any job of it started (`ChangeType.on_discarded`), saved with the Discard. A refusal hook
   that raises stops its lane at the change's first job, as a check that raises does, and the
   change is checked again at each try; a discard hook that raises is logged on the host and the
-  Discard goes ahead without it, Discard being the queue's last way past a stop. A check that
-  raises as a member's settings change starts is the exception to that: a change type that gives
-  `ChangeType.on_check_fault` has the change ended in one save as a failure, the member told that
-  nothing was saved and to ask again, and the lane goes on (see "A job that fails stops its
-  lane"). A bot's change of the same type, whose check raises, still stops its lane. *Rejected:*
+  Discard goes ahead without it, Discard being the queue's last way past a stop. *Rejected:*
   planning a step on the refused change, which would leave a refused change with jobs to run.
   A change a timer, an event, or a handler or start step the sweep calls asked for is dropped once
   its work is no longer due, as a job that fires after its work was cancelled does nothing (see
@@ -236,8 +232,10 @@ audit record, which is how some settings came to have none.
   no longer due (a channel unset, the bot's permission lost), it has nobody to refuse, so it stops
   its lane like a job that fails (below), at its first job and with the check's reason, and is
   checked again at each try. So does any change, a member's included, whose check raises as it
-  starts; meanwhile the log channel records what failed, as the core
-  specification's "Setting the bot up" has it do. This `steward_module.md` §4 designs for a cycle's close, made bot-wide.
+  starts, save a member's settings change: a change type that gives `ChangeType.on_check_fault`
+  has such a change ended in one save as a failure and the lane goes on (see "A job that fails
+  stops its lane"), while a bot's change of the same type still stops its lane. Meanwhile the log
+  channel records what failed, as the core specification's "Setting the bot up" has it do. This `steward_module.md` §4 designs for a cycle's close, made bot-wide.
 
   A check that must refuse a press while the same approval is already in hand reads the queue
   (`unfinished`, or `in_hand` where the refusal names the job it waits on), which give the changes
@@ -369,11 +367,11 @@ audit record, which is how some settings came to have none.
   the queue does not stop the lane but marks the job done with what `on_fault` returns, in a save
   of its own with its lines, and the change carries on to its next step or finishes. A save that
   faults has been rolled back whole, so nothing is saved but the mark and the failure line; a step
-  after the save leaves the setting saved and its reply says what was not done. A change type may
-  likewise give `ChangeType.on_check_fault` for a check that raises as a **member's** change
-  starts: the change is ended as REFUSED in one save, with the failure line in place of a refusal's,
-  and the reply it returns. Both are recorded in the log channel as a failure naming the kind of
-  fault, and the full detail goes to the host's log. A step that is `undiscardable` may not carry
+  after the save leaves the setting saved. A change type may likewise give
+  `ChangeType.on_check_fault` for a check that raises as a **member's** change starts: the change
+  is ended as REFUSED in one save, with the failure line in place of a refusal's, and the reply it
+  returns. What the member is told and what the log channel records of either is the core
+  specification's "How a change is carried out"; the full detail goes to the host's log. A step that is `undiscardable` may not carry
   `on_fault`, since it is a step a stop must hold. Every other job, and a bot's own change whose
   check raises, keeps the rule. `core/services/setting_change.py` builds both hooks for every
   settings command once. *Rejected:* a step that catches its own fault, which would leave its
@@ -892,7 +890,7 @@ to it would switch off the one failure path for every command.
 In every case it keeps the full error details for the host's log. Beyond the first place's own
 catch-all, a command catches only the errors it expects by name, and only to turn them into a
 refusal the member can act on, or to hand them to `report_failure` itself with context or an
-outcome, as `/test-mode roster add` does with a database fault, naming that the test driver was not added.
+outcome, as `/test-mode backup save` does with a backup fault, saying that the previous backup is unchanged.
 
 ---
 
