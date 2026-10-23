@@ -2032,7 +2032,7 @@ A **❌ Cancel Amendment** button is posted in the channel to abort at any time.
 
 No parameters. Toggles amendment mode for the active season. When amendment mode is active, changes made via `/results amend session`, `/results amend fl`, and `/results amend fl-plimit` are staged in a modification store and do not affect live standings until approved with `/results amend review`. While a points approval of the season is waiting, running or stopped on the queue, `toggle`, `revert`, `session`, `fl`, `fl-plimit` and `bulk-session` are refused, naming its job.
 
-Disabling amendment mode while there are uncommitted changes is blocked — use `/results amend revert` to discard them first. Switching it on is refused while the season is still in setup: a season in setup takes its points from the configurations attached to it, which `/results config` changes.
+Disabling amendment mode while there are uncommitted changes is blocked — use `/results amend revert` to discard them first. Switching it on is refused while the season is still in setup: a season in setup takes its points from the configurations attached to it, which `/results config` changes. It switches to the opposite of the state it read when you ran it, so a second run made before the first was carried out asks for the same state: it is refused as a repeat while the first waits, and answers that nothing changed once it has run.
 
 ##### `/results amend revert` — Discard modification store changes
 *Access: League manager*
@@ -2145,7 +2145,7 @@ It is acknowledged at once ("⏳ Syncing the results of every round of **Pro**. 
 |-----------|------|----------|-------------|
 | `division` | String | ✅ | Division name |
 
-Toggles whether reserve drivers appear in the publicly posted standings for the specified division. Reserves are **shown by default**. Hiding them affects presentation only: a hidden reserve still accrues points, and those points still count towards the team whose car they drove.
+Toggles whether reserve drivers appear in the publicly posted standings for the specified division. Reserves are **shown by default**. Hiding them affects presentation only: a hidden reserve still accrues points, and those points still count towards the team whose car they drove. It switches to the opposite of the state it read when you ran it, so a second run made before the first was carried out asks for the same state: it is refused as a repeat while the first waits, and answers that nothing changed once it has run.
 
 > **Only while the season is being raced.** Once every division is done the display is settled — decide before the last round. Refused on a completed or cancelled season too.
 
