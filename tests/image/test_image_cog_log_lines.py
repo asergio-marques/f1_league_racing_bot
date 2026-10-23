@@ -14,6 +14,7 @@ The rasteriser is taken as present, since no test here draws.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -187,7 +188,8 @@ async def test_a_long_configuration_report_is_sent_in_the_parts_core_splits_it_i
 
 # ── A22: a refused folder's reply arrives whole ───────────────────────────
 
-#: The folder the bot ships its templates in, inside the project root.
+#: The folder the bot ships its templates in, inside the project root. The reply spells it as
+#: the host does, so a check reads it through `Path` (backslashes on Windows).
 SHIPPED_TEMPLATES = "resources/defaults/templates"
 
 
@@ -225,7 +227,7 @@ async def test_a_long_refusal_of_a_folder_is_sent_whole_in_parts(tmp_path, monke
     assert len(asked.said) > 1
     assert "fault 5: " in reply
     assert any(
-        line.startswith("Searched: `") and line.endswith(f"{SHIPPED_TEMPLATES}`")
+        line.startswith("Searched: `") and line.endswith(f"{Path(SHIPPED_TEMPLATES)}`")
         for line in reply.splitlines()
     ), reply
 
