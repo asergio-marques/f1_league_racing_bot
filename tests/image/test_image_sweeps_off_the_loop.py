@@ -307,10 +307,56 @@ async def test_a_fault_that_cannot_be_built_from_its_message_is_named_instead():
         await off_the_loop(unicode_fault)
 
 
-async def test_a_tree_returned_whole_is_refused_in_the_thread(tmp_path):
-    """A function that returns the tree it parsed is refused before the tree leaves."""
+@dataclasses.dataclass
+class _Report:
+    held: Any
+
+
+#: Results that hold a parsed tree within the two levels the worker thread looks.
+RETURNED = {
+    "whole": lambda root: root,
+    "in-a-tuple": lambda root: (root, 1),
+    "iterator": lambda root: root.iter(),
+    "field-index": lambda root: FieldIndex(root),
+    "dataclass": lambda root: _Report(root),
+    "in-a-dict": lambda root: {"lineup": root},
+}
+
+
+@pytest.mark.parametrize("shape", list(RETURNED), ids=list(RETURNED))
+async def test_a_result_holding_a_tree_is_refused_in_the_thread(shape):
+    """A function whose result holds the tree it parsed is refused before the tree leaves."""
+
+    def parse_and_return(path: Path) -> Any:
+        return RETURNED[shape](svg_document.load_svg(path))
+
     with pytest.raises(TypeError, match="may not leave the thread"):
-        await off_the_loop(svg_document.load_svg, SHIPPED / "calendar_template.svg")
+        await off_the_loop(parse_and_return, SHIPPED / "calendar_template.svg")
+
+
+class _Unsayable(Exception):
+    def __str__(self) -> str:
+        raise RuntimeError("this fault cannot say what it is")
+
+
+async def test_a_fault_that_cannot_say_its_message_leaks_nothing():
+    """An exception whose message itself raises, holding a parsed tree, crosses back as a
+    `TemplateReadError` naming its class, with the failure to read it in its note; neither
+    it nor the tree reaches the loop."""
+
+    def parse_then_fail(path: Path) -> Any:
+        root = svg_document.load_svg(path)
+        raise _Unsayable(root)
+
+    with recording_threads() as crossed:
+        with pytest.raises(svg_document.TemplateReadError) as raised:
+            await off_the_loop(parse_then_fail, SHIPPED / "calendar_template.svg")
+
+    assert str(raised.value) == "_Unsayable: _Unsayable"
+    assert any("cannot say what it is" in note for note in raised.value.__notes__)
+    assert not holds_a_tree(raised.value)
+    assert crossed
+    assert_no_tree_crossed(crossed)
 
 
 # ---------------------------------------------------------------------------
