@@ -2735,7 +2735,7 @@ Colours are stored whether or not the feature is on and whether or not a templat
 
 The reason is that you supply **one file per thing**. There is a single `united_kingdom.svg`, and it goes into every flag box there is. If two boxes on a drawing are different shapes, that one file is letterboxed in one of them, and no artwork you could draw would fix it — the bot never pads or crops to fit.
 
-> **The bot does not compare one drawing against another.** If your calendar draws flags at 3:2 and your standings draws them at 2:1, both are accepted and your flags are letterboxed on one of them. This is deliberate: checking it would make re-shaping a class impossible, because the first drawing you changed would disagree with the other fourteen and be refused. **So when you change the shape of a class, change it in every drawing that uses it.** Flags appear on fifteen of the sixteen templates and team badges on seven — those two are the ones easy to half-finish.
+> **The bot does not compare one drawing against another.** If your calendar draws flags at 3:2 and your standings draws them at 2:1, both are accepted and your flags are letterboxed on one of them. This is deliberate: checking it would make re-shaping a class impossible, because the first drawing you changed would disagree with the other fifteen and be refused. **So when you change the shape of a class, change it in every drawing that uses it.** Flags appear on fifteen of the sixteen templates and team badges on seven — those two are the ones easy to half-finish.
 
 > **`markers` is the exception, and is never checked at all.** That one folder holds the square position-change arrows *and* the marks that stretch into a result cell, so there is no single shape for it to hold you to.
 
