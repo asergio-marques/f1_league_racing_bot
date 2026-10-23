@@ -1632,7 +1632,8 @@ Removing it also **detaches it from a season still in setup**, so no season is l
 attached to a configuration that does not exist. Where a season in setup stands on it, the
 command names that season and asks before deleting anything; that season will then need
 another configuration attached before it can be approved. Where nothing is attached, it is
-removed straight away.
+removed without asking; if a season in setup has taken it up by the time the removal runs,
+the removal is refused and nothing is deleted — run the command again to be asked first.
 
 A season already **approved** keeps its attachment. It holds its own copy of the points,
 taken at approval, and that copy is what its results are scored from and what the
