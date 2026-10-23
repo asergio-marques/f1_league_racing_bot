@@ -1,8 +1,9 @@
-"""One settings change, built from a `Setting`: the value, its audit entry and its line in one save.
+"""One settings change, built from a `Setting`: the value, its audit entry and its line, saved together (bar a step that carries the line).
 
 Every settings command of results, weather and images declares a `Setting`, and `setting_change`
 turns it into a `ChangeType` for the change queue (`change_queue`), so that the line, the audit
-entry, the answer for a value already held and the answer for a fault are formed in one place.
+entry's being written, the answer for a value already held and the answer for a fault are decided
+in one place (each setting's save builds the audit record itself).
 `docs/design/architecture.md`, "How a change is carried out", designs the queue; the core
 specification's section of that name holds the rules a league sees. This module holds the
 engineering decisions, each pinned by a test in `tests/core/test_setting_change.py`.
