@@ -24,78 +24,86 @@ Covers:
   4. A folder failing wholesale names every template at fault, in parts.
   5. A path escaping the project root is still refused on containment, before any parse.
   6. Refusals reach the calculation log, as accepted changes do.
+
+Each command runs on the change queue (#439, slice 7): it is driven past its permission guard on
+a league built by the migrations, with the real image services, the folders the bot ships and the
+real queue, which the test runs; the reply read is the acknowledgement's update, or the refusal
+given at once, and the lines are those the log channel took and those the queue saved.
 """
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
 
 import pytest
 
+from leaguebot.core.db.database import get_connection
 from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.models.image_constants import ASPECTS
 from leaguebot.image.services.image_validity_service import Problem
-from leaguebot.core.utils.paths import PathContainmentError
+from tests.support.change_queue import run_queue
 from tests.support.image_cog_doubles import (
+    assert_one_line,
     assert_one_refusal,
-    interaction as _image_interaction,
+    interaction as _interaction,
     log_bot,
     said,
 )
+from tests.support.settings_league import settings_league
+from tests.support.undecorate import undecorate
 
 COMMAND = "images config template-directory"
+#: The folder the bot ships its sixteen templates in, every one of them sound.
+SHIPPED = "resources/defaults/templates"
+#: A folder inside the project root that holds no template at all.
+NO_TEMPLATES = "resources/defaults/tracks"
+#: Where the league's template folder stands before each test.
+BEFORE = "resources/league/templates"
 
 
-def _interaction(bot=None):
-    return _image_interaction(COMMAND, bot=bot)
+@pytest.fixture(autouse=True)
+def _rasteriser_present(monkeypatch):
+    """The rasteriser taken as present: no test here draws, and its absence would be a
+    problem of its own."""
+    import leaguebot.image.services.image_render_service as render
+
+    monkeypatch.setattr(render, "converter_available", lambda: True)
+    try:
+        import leaguebot.image.services.image_settings as image_settings
+    except ImportError:
+        return
+    monkeypatch.setattr(image_settings, "converter_available", lambda: True, raising=False)
 
 
-def _cog(monkeypatch, *, problems=None, contained=True):
-    cog = MagicMock(spec=ImageCog)
-    cog._config_service = MagicMock()
-    cog._config_service.candidate_config = AsyncMock(return_value=MagicMock())
-    cog._config_service.set_field = AsyncMock(return_value=True)
-    # The survey is scoped to the aspects that are switched on, so the command reads
-    # them. Everything on here, which is the strictest case and what these assert.
-    cog._config_service.get_toggles = AsyncMock(
-        return_value={aspect: True for aspect in ASPECTS}
-    )
-    cog._module_gate = AsyncMock(return_value=True)
-    # The real `_reply`, so a refusal and a success are read off the interaction alike.
-    cog._reply = ImageCog._reply
-    cog.bot = log_bot()
-    cog._reject_directory = AsyncMock()
-
-    import leaguebot.core.utils.paths as paths
-
-    if contained:
-        monkeypatch.setattr(
-            paths, "resolve_within_project_root", lambda value, root=None: MagicMock(
-                __str__=lambda self: f"C:\\\\bot\\\\{value}"
+async def _league(tmp_path, *, aspects=ASPECTS) -> Any:
+    """A league with images on, its template folder at `BEFORE`, *aspects* alone switched on
+    (every output by default, the strictest case); its bot is `log_bot`'s real-queue form."""
+    league = await settings_league(tmp_path, modules=("images",))
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE image_config SET template_directory = ?", (BEFORE,))
+        await db.execute("UPDATE image_aspect_toggles SET enabled = 0")
+        for aspect in aspects:
+            await db.execute(
+                "UPDATE image_aspect_toggles SET enabled = 1 WHERE aspect = ?", (aspect,)
             )
-        )
-    else:
-        def _refuse(value, root=None):
-            raise PathContainmentError(value, Path("C:/elsewhere"))
+        await db.commit()
+    log_bot(league)
+    return league
 
-        monkeypatch.setattr(paths, "resolve_within_project_root", _refuse)
 
-    monkeypatch.setattr(paths, "relative_to_root", lambda resolved: "resources/mine")
+async def _stored(league) -> Any:
+    async with get_connection(league.db_path) as db:
+        row = await (await db.execute("SELECT template_directory FROM image_config")).fetchone()
+    return row[0] if row else None
 
-    import leaguebot.image.services.image_validity_service as validity
 
-    monkeypatch.setattr(
-        validity,
-        "blocking_template_problems",
-        lambda config, toggles, **kwargs: problems or [],
+async def _run(league, directory=SHIPPED):
+    """`/images config template-directory` given *directory*, then the queue; returns the
+    interaction, which holds every reply."""
+    interaction = _interaction(COMMAND, bot=league.bot)
+    await undecorate(ImageCog.config_template_directory)(
+        ImageCog(league.bot), interaction, directory
     )
-    return cog
-
-
-async def _run(cog, directory="resources/mine"):
-    """Run the command; returns the interaction, which holds every reply."""
-    interaction = _interaction(cog.bot)
-    await ImageCog._set_template_directory(cog, interaction, directory)
+    await run_queue(league.bot)
     return interaction
 
 
@@ -103,132 +111,139 @@ def _problem(key, detail):
     return Problem(kind="NOT_FOUND", detail=detail, template_key=key)
 
 
-@pytest.mark.asyncio
-async def test_a_folder_holding_every_valid_template_is_stored(monkeypatch):
-    cog = _cog(monkeypatch)
+def _problems_found(monkeypatch, problems) -> list[Any]:
+    """Make the survey of the folder find *problems*, wherever it is asked from; returns the
+    list each survey records the configuration it was asked about in."""
+    import leaguebot.image.services.image_validity_service as validity
 
-    interaction = await _run(cog)
+    asked: list[Any] = []
 
-    cog._config_service.set_field.assert_awaited_once()
-    assert cog._config_service.set_field.await_args.args[0] == "template_directory"
-    cog._reject_directory.assert_not_awaited()
+    def survey(config, toggles, **kwargs):
+        asked.append(config)
+        return list(problems)
 
-    reply = said(interaction)
+    monkeypatch.setattr(validity, "blocking_template_problems", survey)
+    try:
+        import leaguebot.image.services.image_settings as image_settings
+    except ImportError:
+        return asked
+    monkeypatch.setattr(image_settings, "blocking_template_problems", survey, raising=False)
+    return asked
+
+
+async def test_a_folder_holding_every_valid_template_is_stored(tmp_path):
+    """Every output switched on, the folder moved to the one the bot ships: acknowledged at
+    once; once run, the folder is stored, the reply says every drawing the switched-on outputs
+    need is present and valid, and one Success line names it."""
+    league = await _league(tmp_path)
+
+    interaction = await _run(league)
+
+    assert interaction.said[0].startswith("⏳ "), interaction.said
+    assert await _stored(league) == SHIPPED
+    reply = interaction.said[-1]
+    assert reply.startswith(f"✅ **Template directory** set to `{SHIPPED}`.")
     # Not "all fifteen" any more: the survey covers the drawings the switched-on outputs
     # need, so a league posting verdicts as text is not held to a verdicts template.
     assert "switched on" in reply
-    assert "resources/mine" in reply
+    assert assert_one_line(league.bot, COMMAND) == [f"Template directory: {SHIPPED}"]
 
 
-@pytest.mark.asyncio
-async def test_a_folder_missing_a_template_is_refused_and_names_it(monkeypatch):
-    cog = _cog(
-        monkeypatch,
-        problems=[_problem("results_race_template", "the file is not there.")],
-    )
+async def test_a_folder_missing_a_template_is_refused_and_names_it(tmp_path):
+    """The calendar alone switched on, the folder moved to one holding no drawing: refused
+    saying the folder does not hold every template the switched-on outputs need, naming the
+    calendar's drawing and no other, and the folder stays where it was."""
+    league = await _league(tmp_path, aspects=("calendar",))
 
-    await _run(cog)
+    interaction = await _run(league, NO_TEMPLATES)
 
-    cog._config_service.set_field.assert_not_awaited()
-    cog._reject_directory.assert_awaited_once()
-    problems = cog._reject_directory.await_args.kwargs["problems"]
-    assert len(problems) == 1
-    assert problems[0].template_key == "results_race_template"
-
-
-@pytest.mark.asyncio
-async def test_an_invalid_template_is_refused_the_same_way(monkeypatch):
-    cog = _cog(
-        monkeypatch,
-        problems=[_problem("lineup_template", "declares no canvas size.")],
-    )
-
-    await _run(cog)
-
-    cog._config_service.set_field.assert_not_awaited()
-    cog._reject_directory.assert_awaited_once()
+    reply = said(interaction)
+    assert reply.startswith(
+        f"❌ **Template directory** was **not** changed — `{NO_TEMPLATES}` does not hold every "
+        "template the bot needs for the outputs you have switched on."
+    ), reply
+    assert [line for line in reply.splitlines() if line.startswith("  ↳ ")] == [
+        line for line in reply.splitlines() if line.startswith("  ↳ **Calendar**: ")
+    ] != []
+    assert await _stored(league) == BEFORE
 
 
-@pytest.mark.asyncio
+async def test_an_invalid_template_is_refused_the_same_way(tmp_path, monkeypatch):
+    """The survey finding the lineup drawing declares no canvas size: refused the same way,
+    naming it, and the folder stays where it was."""
+    _problems_found(monkeypatch, [_problem("lineup_template", "declares no canvas size.")])
+    league = await _league(tmp_path)
+
+    interaction = await _run(league)
+
+    reply = said(interaction)
+    assert reply.startswith("❌ **Template directory** was **not** changed — "), reply
+    assert "declares no canvas size." in reply
+    assert await _stored(league) == BEFORE
+
+
 async def test_a_path_escaping_the_project_root_is_refused_before_any_parsing(
-    monkeypatch,
+    tmp_path, monkeypatch,
 ):
-    """Containment first: a rejected path must never cost fifteen SVG parses, and the
+    """Containment first: a rejected path must never cost sixteen SVG parses, and the
     stored value must be untouched. The refusal is recorded as one "⛔" line."""
-    checked = []
+    asked = _problems_found(monkeypatch, [])
+    league = await _league(tmp_path)
 
-    cog = _cog(monkeypatch, contained=False)
+    interaction = await _run(league, "../elsewhere")
 
-    import leaguebot.image.services.image_validity_service as validity
+    assert asked == [], "templates were surveyed for a path that was never going to store"
+    assert await _stored(league) == BEFORE
+    assert "outside the project root" in said(interaction)
+    assert_one_refusal(league.bot, f"`/{COMMAND}`")
 
+
+async def test_a_server_with_no_configuration_is_refused(tmp_path, monkeypatch):
+    """The configuration service finding no configuration to propose the folder against:
+    refused saying there is none to amend, and the folder stays where it was."""
+    from unittest.mock import AsyncMock
+
+    league = await _league(tmp_path)
     monkeypatch.setattr(
-        validity,
-        "check_all_templates",
-        lambda config: checked.append(config) or [],
+        league.bot.image_config_service, "candidate_config", AsyncMock(return_value=None)
     )
 
-    interaction = await _run(cog, "../elsewhere")
+    interaction = await _run(league)
 
-    assert checked == [], "templates were parsed for a path that was never going to store"
-    cog._config_service.set_field.assert_not_awaited()
-    assert "outside the project root" in said(interaction)
-    assert_one_refusal(cog.bot, f"`/{COMMAND}`")
-
-
-@pytest.mark.asyncio
-async def test_a_server_with_no_configuration_is_refused(monkeypatch):
-    cog = _cog(monkeypatch)
-    cog._config_service.candidate_config = AsyncMock(return_value=None)
-
-    await _run(cog)
-
-    cog._config_service.set_field.assert_not_awaited()
-    cog._reject_directory.assert_awaited_once()
+    assert said(interaction).startswith(
+        "❌ **Template directory** was **not** changed — this server has no image "
+        "configuration to amend."
+    ), said(interaction)
+    assert await _stored(league) == BEFORE
 
 
 # ── The refusal itself ────────────────────────────────────────────────────
 
 
-def _reject_cog():
-    cog = MagicMock(spec=ImageCog)
-    cog._reply = ImageCog._reply
-    cog.bot = log_bot()
-    return cog
+async def test_a_refusal_says_the_previous_folder_still_stands(tmp_path):
+    """The calendar alone switched on, the folder moved to one holding no drawing: the refusal
+    says the folder was not changed, the previous one is still in force, and why the calendar's
+    drawing cannot be used."""
+    league = await _league(tmp_path, aspects=("calendar",))
 
+    reply = said(await _run(league, NO_TEMPLATES))
 
-@pytest.mark.asyncio
-async def test_a_refusal_says_the_previous_folder_still_stands():
-    cog = _reject_cog()
-    interaction = _interaction(cog.bot)
-
-    await ImageCog._reject_directory(
-        cog,
-        interaction,
-        "Template directory",
-        "`resources/mine` does not hold every template the bot needs.",
-        problems=[_problem("rsvp_template", "the file is not there.")],
-    )
-
-    reply = said(interaction)
     assert "not** changed" in reply
     assert "still in force" in reply
-    assert "the file is not there." in reply
+    assert "can't be found" in reply
 
 
-@pytest.mark.asyncio
-async def test_a_wholesale_failure_names_every_template_at_fault():
+async def test_a_wholesale_failure_names_every_template_at_fault(tmp_path, monkeypatch):
     """Image spec: a refused folder names each template at fault with its own reason. No
     cut at six and no "…and N more" line: the whole reply goes, in as many parts as it
-    needs."""
-    cog = _reject_cog()
-    interaction = _interaction(cog.bot)
-    problems = [
-        _problem(f"t{i}_template", f"fault {i}: " + "y" * 200) for i in range(15)
-    ]
-
-    await ImageCog._reject_directory(
-        cog, interaction, "Template directory", "nothing is there.", problems=problems
+    needs. The survey finds fifteen faults, each long."""
+    _problems_found(
+        monkeypatch,
+        [_problem(f"t{i}_template", f"fault {i}: " + "y" * 200) for i in range(15)],
     )
+    league = await _league(tmp_path)
+
+    interaction = await _run(league)
 
     reply = said(interaction)
     for i in range(15):
@@ -237,21 +252,15 @@ async def test_a_wholesale_failure_names_every_template_at_fault():
     # Sent in parts, each fitting one Discord message.
     assert len(interaction.said) > 1
     assert all(len(part) <= 2000 for part in interaction.said)
+    assert await _stored(league) == BEFORE
 
 
-@pytest.mark.asyncio
-async def test_a_refusal_is_logged_like_an_accepted_change():
+async def test_a_refusal_is_logged_like_an_accepted_change(tmp_path):
     """Principle V: a refused configuration is as much a part of the audit trail. It is
     recorded as one "⛔" line naming the command, with the reason it was refused."""
-    cog = _reject_cog()
+    league = await _league(tmp_path, aspects=("calendar",))
 
-    await ImageCog._reject_directory(
-        cog,
-        _interaction(cog.bot),
-        "Template directory",
-        "nothing is there.",
-        problems=[_problem("rsvp_template", "the file is not there.")],
-    )
+    await _run(league, NO_TEMPLATES)
 
-    line = assert_one_refusal(cog.bot, f"`/{COMMAND}`")
-    assert "nothing is there." in line
+    line = assert_one_refusal(league.bot, f"`/{COMMAND}`")
+    assert "does not hold every template" in line

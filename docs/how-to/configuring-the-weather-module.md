@@ -89,6 +89,8 @@ Three settings, and they are the only real dials the weather module has.
 
 Each one must be at least 1, and they have to stay in order — phase 1 earlier than phase 2, phase 2 earlier than phase 3. The bot works that out in hours, so a phase 2 of 2 days and a phase 3 of 48 hours is refused for landing at the same moment. When it refuses, it shows you both values in hours so you can see why.
 
+Each command is acknowledged at once, and that message is updated with the reply. If the save fails, nothing is saved, the reply tells you to run the command again, and the queue goes on.
+
 Every reply also tells you where the other two stand, which saves setting one and forgetting what it now sits next to. Give one the value it already has and the bot says nothing changed, writes nothing, and records that in the log channel.
 
 **Do this before the season is approved.** The bot notes the timings at approval and works to those for the whole season. Afterwards the commands are refused outright, and there is no way to shift a running season's forecasts.

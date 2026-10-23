@@ -11,9 +11,7 @@ is disabled (FR-005).
 """
 from __future__ import annotations
 
-import copy
 import logging
-from dataclasses import dataclass
 
 import discord
 from discord import app_commands
@@ -23,29 +21,44 @@ from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
 from leaguebot.core.utils.autocomplete import bounded_autocomplete
 from leaguebot.image.models.image_constants import (
     ASPECT_LABELS,
-    ASPECTS,
     ASSET_LABELS,
-    LIVE_POSTING_ASPECTS,
     PENDING_POSTING_ASPECTS,
     TEMPLATE_COLUMNS,
     TEMPLATE_COMMAND_NAMES,
     TEMPLATE_LABELS,
 )
 from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
-from leaguebot.image.services.image_config_service import pfp_change_refusal, tier_name_refusal
+from leaguebot.image.services.image_config_service import tier_name_refusal
+from leaguebot.image.services.image_settings import (
+    ASPECT,
+    DAILY_PORTRAITS,
+    DAILY_TOGGLE,
+    DIRECTORY,
+    FASTEST_LAP_COLOUR,
+    PER_TIER,
+    PORTRAITS,
+    PRESENTATION,
+    TEMPLATE,
+    TEMPLATE_DIRECTORY,
+    TIER_COLOURS,
+    TIER_IMPORT,
+    daily_portraits_refusal,
+)
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.interaction_errors import (
     describe as describe_command,
     describe_form,
-    report_failure,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
-from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.messages import chunk_message
-from leaguebot.core.utils.paths import PathContainmentError, relative_to_root
+from leaguebot.core.utils.paths import (
+    PathContainmentError,
+    relative_to_root,
+    resolve_within_project_root,
+)
 from leaguebot.core.utils.time_parsing import parse_time_of_day
-from leaguebot.core.utils.timezones import clear_zone_cache, is_known_zone, zone_names
+from leaguebot.core.utils.timezones import clear_zone_cache, zone_names
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
@@ -64,156 +77,6 @@ _STATE_ICONS = {
 }
 _INVALID_ICON = "⚠️"
 
-
-def toggle_enabled_lines(aspect: str, label: str, blocking: list[str]) -> list[str]:
-    """The reply confirming an aspect has been enabled.
-
-    An aspect with no posting path yet records intent alone, and says so: a manager who
-    enables one and sees no change in the next post would otherwise reasonably think it
-    broken. An aspect that does post says nothing of the sort — the claim was once made
-    of all eight and outlived the truth of it for seven.
-    """
-    lines = [f"✅ **{label}** image output **enabled**."]
-
-    if aspect not in LIVE_POSTING_ASPECTS:
-        lines.append(
-            "⏳ **Not yet in effect** — posting for this aspect is wired in a later "
-            "update. Use the matching `/images test` command to see what it will produce."
-        )
-
-    if blocking:
-        lines.append("")
-        lines.append("⚠️ It would not produce an image as configured:")
-        lines += [f"  ↳ {reason}" for reason in blocking]
-
-    return lines
-
-
-@dataclass(frozen=True)
-class FastestLapContrast:
-    """What `/images config fastest-lap-colour` reports, and what it was measured on.
-
-    Either `ratio` and `background` are set, or `problem` says why nothing could be
-    measured: an unmeasurable contrast is reported as such, never guessed (FR-027).
-
-    `divisions` names every tier the figure belongs to, in tier order — more than one
-    where tiers tie at the figure shown (decided 2026-09-24, #165). It is empty where the
-    plate was measured as the template was authored, which is what per-tier colours being
-    off means. `every_division` says every division ties, which is said rather than listed.
-    `background` is None where tied tiers reach the same figure on different colours.
-    `unmeasured` holds each (division, reason) whose plate had no colour to measure, the
-    figure being the lowest of the rest. `no_season` says per-tier colours were on and
-    there was no division to measure in, so the authored plate stood in for every tier.
-    All three decided 2026-09-24 (#165).
-    """
-
-    ratio: float | None = None
-    background: str | None = None
-    problem: str | None = None
-    divisions: tuple[str, ...] = ()
-    every_division: bool = False
-    unmeasured: tuple[tuple[str, str], ...] = ()
-    no_season: bool = False
-
-
-def _listed(names: tuple[str, ...]) -> str:
-    """`**A**`, `**A** and **B**`, `**A**, **B** and **C**`."""
-    bold = [f"**{name}**" for name in names]
-    if len(bold) < 3:
-        return " and ".join(bold)
-    return f"{', '.join(bold[:-1])} and {bold[-1]}"
-
-
-def _no_plate_problem() -> str:
-    from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_ID
-
-    return (
-        f"the race results template declares no `{FASTEST_LAP_BACKGROUND_ID}` "
-        f"element to measure against."
-    )
-
-
-def _plate_fill(root) -> tuple[str | None, str | None]:
-    """(background, problem): the plain colour the fastest-lap plate is drawn in, or why not.
-
-    The plate is located by a single documented ``@id`` in the race results template
-    (FR-026a), and its fill read through `computed_style`, so a colour set by a stylesheet
-    rule, an inline style or a presentation attribute is read as the drawing would take it.
-    """
-    from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_ID
-    from leaguebot.image.utils.colour import coerce_css_colour
-    from leaguebot.image.utils.svg_document import FieldIndex, computed_style, stylesheet
-
-    element = FieldIndex(root).resolve(FASTEST_LAP_BACKGROUND_ID)
-    if element is None:
-        return None, _no_plate_problem()
-
-    declared = computed_style(element, stylesheet(root)).get("fill")
-    if declared is None:
-        # Said in the league's words. Interpolating the raw value put Python's `None`
-        # in the reply. Not measured as black, which is what SVG draws: the bot reads
-        # only simple selectors, so a fill it cannot see may still be declared, and an
-        # unmeasurable contrast is reported rather than guessed (FR-027).
-        return None, (
-            f"the `{FASTEST_LAP_BACKGROUND_ID}` element has no fill the bot can read."
-        )
-    background = coerce_css_colour(declared)
-    if background is None:
-        return None, (
-            f"the `{FASTEST_LAP_BACKGROUND_ID}` element's fill (`{declared}`) is not "
-            f"a plain colour."
-        )
-    return background, None
-
-
-def fastest_lap_contrast_lines(reading: FastestLapContrast) -> list[str]:
-    """The lines reporting *reading*, beneath the confirmation that the colour was stored.
-
-    Kept apart from the command so what a manager reads can be asserted without a gateway.
-    """
-    from leaguebot.image.utils.colour import CONTRAST_AA_NORMAL, meets_aa_normal
-
-    if reading.ratio is None:
-        return [f"ℹ️ Contrast could not be measured: {reading.problem}"]
-
-    colour = f" (`{reading.background}`)" if reading.background else ""
-    figure = f"**{reading.ratio:.2f}:1**"
-    if reading.every_division:
-        lines = [
-            f"Contrast against the template's plate{colour} is the same for every "
-            f"division: {figure}"
-        ]
-    elif reading.divisions:
-        lines = [
-            f"Contrast against the template's plate is lowest for "
-            f"{_listed(reading.divisions)}{colour}: {figure}"
-        ]
-    else:
-        lines = [f"Contrast against the template's plate{colour}: {figure}"]
-    if not meets_aa_normal(reading.ratio):
-        lines.append(
-            f"⚠️ That is below {CONTRAST_AA_NORMAL}:1, the threshold at which text "
-            f"of this size stays legible. The colour is stored all the same — "
-            f"it is your league's to choose."
-        )
-    if reading.unmeasured:
-        # One line whatever the count. Every unmeasured tier falls back to the plate as
-        # authored, so in practice they share a reason; grouping keeps it one clause each
-        # where they somehow do not.
-        by_reason: dict[str, list[str]] = {}
-        for division, reason in reading.unmeasured:
-            by_reason.setdefault(reason, []).append(division)
-        clauses = [
-            f"{_listed(tuple(divisions))}: {reason}"
-            for reason, divisions in by_reason.items()
-        ]
-        lines.append(f"ℹ️ Not measured for {'; '.join(clauses)}")
-    if reading.no_season:
-        lines.append(
-            "ℹ️ There is no division of a season under way to measure, so no tier was "
-            "measured: this is the drawing as authored."
-        )
-    return lines
 
 
 class PortraitTimeModal(LeagueModal, title="Daily portrait updates"):
@@ -254,7 +117,9 @@ class PortraitTimeModal(LeagueModal, title="Daily portrait updates"):
         # The form may have stood open while another manager changed the module or the setting,
         # and a confirmation offered for a change that can no longer be made would only be
         # refused at the end of it.
-        stale = await self._cog.daily_portraits_refusal(form=True)
+        stale = await daily_portraits_refusal(
+            modules=self._cog.bot.module_service, config=self._cog._config_service, form=True
+        )
         if stale is not None:
             await refuse(interaction, stale, what=what)
             return
@@ -266,10 +131,6 @@ class PortraitTimeModal(LeagueModal, title="Daily portrait updates"):
             view=PortraitTimeConfirm(self._cog, normalised, interaction),
             ephemeral=True,
         )
-
-
-#: The command the portrait confirmation belongs to, as the log channel names it.
-DAILY_TOGGLE = "/images use-pfp daily-toggle"
 
 
 class PortraitTimeConfirm(LeagueView):
@@ -323,7 +184,12 @@ class PortraitTimeConfirm(LeagueView):
             return
         try:
             await self._take_down(interaction.response.edit_message)
-            await self._cog.commit_daily_portraits(interaction, self._normalised)
+            await self._cog.bot.change_queue.ask(
+                DAILY_PORTRAITS,
+                {"time": self._normalised},
+                interaction=interaction,
+                what=f"`{DAILY_TOGGLE}`",
+            )
         finally:
             self.stop()
 
@@ -445,39 +311,6 @@ async def _module_still_on(cog, interaction: discord.Interaction, form: discord.
     return False
 
 
-def _command(interaction: discord.Interaction) -> str:
-    """The slash command *interaction* ran, as a success line names it: "/images config view"."""
-    return describe_command(interaction).strip("`")
-
-
-async def _record(
-    bot: LeagueBot,
-    interaction: discord.Interaction,
-    what: str,
-    outcome: str,
-    *details: str,
-) -> None:
-    """Write one line in the success form, "Name (<@id>) | *what* | *outcome*", *details* beneath.
-
-    For a success and for nothing changed; *what* is the command as the line names it,
-    "/images config time-zone". The post is bare: a line reporting that nothing went wrong
-    is no place for a catch-all, so a post that raises reaches the command's error handling.
-    A refusal, a cancel, a lapse and a fault have lines of their own
-    (`core/utils/log_lines.py`, `report_failure`).
-    """
-    await bot.output_router.post_log(
-        f"{interaction_member(interaction)} | {what} | {outcome}"
-        + "".join(f"\n  {detail}" for detail in details)
-    )
-
-
-#: What a failure to schedule the daily portrait job says became of the change: the setting is
-#: stored before the job is scheduled, and the start-up recovery arms it.
-DAILY_JOB_NOT_SCHEDULED = (
-    "The setting is stored, and the daily job will be scheduled when the bot next starts."
-)
-
-
 class ImageCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
@@ -496,10 +329,10 @@ class ImageCog(commands.Cog):
 
     # The sixteen template filename setters live in their own group rather than under
     # `config`. Discord allows at most 25 subcommands per group and forbids a third
-    # nesting level, and `config` would otherwise carry 31: 1 template directory +
-    # 16 filenames + 8 asset directories + 4 preferences + toggle + view.
+    # nesting level, and `config` would otherwise carry 35: 1 template directory +
+    # 16 filenames + 8 asset directories + 4 preferences + 4 per-tier + toggle + view.
     #
-    # As split, `config` carries 15 of the 25 and `template` the other 16. Each asset class
+    # As split, `config` carries nineteen of the 25 and `template` the other 16. Each asset class
     # added costs `config` one and each template costs `template` one, so the arithmetic is
     # worth redoing rather than assuming.
     template = app_commands.Group(
@@ -546,10 +379,6 @@ class ImageCog(commands.Cog):
     def _validity_service(self):
         return self.bot.image_validity_service
 
-    @property
-    def _render_service(self):
-        return self.bot.image_render_service
-
     @staticmethod
     async def _reply(interaction: discord.Interaction, content: str) -> None:
         """Send an ephemeral response, following up when already deferred.
@@ -564,31 +393,18 @@ class ImageCog(commands.Cog):
             else:
                 await interaction.response.send_message(part, ephemeral=True)
 
-    async def _already_held(
-        self, interaction: discord.Interaction, setting: str, value: str, detail: str
-    ) -> None:
-        """Answer a setting given the value it already holds: nothing is changed or written.
-
-        The reply says so in the form results and attendance use, and one "Nothing changed"
-        line records it, with *detail* beneath. Only a command that would otherwise have been
-        carried out gets here: every refusal has been made first.
-        """
-        await self._reply(interaction, f"ℹ️ Nothing changed: {setting} is already **{value}**.")
-        await _record(self.bot, interaction, _command(interaction), "Nothing changed", detail)
-
     async def _set_directory(
-        self, interaction: discord.Interaction, column: str, value: str, label: str
+        self, interaction: discord.Interaction, column: str, value: str
     ) -> None:
         """Shared body for the eight asset directories.
 
-        A path that escapes the project root is rejected here, at the point of
-        configuration, rather than surfacing as a render failure later (FR-011, FR-016).
-        The stored value is left unchanged on rejection.
+        A path that escapes the project root is rejected here, at once, at the point of
+        configuration, rather than surfacing as a render failure later (FR-011, FR-016). The
+        stored value is left unchanged on rejection. What passes is asked of the change queue
+        (`image_settings`), which stores it and says whether the folder resolves.
         """
         if not await self._module_gate(interaction):
             return
-
-        from leaguebot.core.utils.paths import resolve_within_project_root
 
         try:
             resolved = resolve_within_project_root(value)
@@ -604,30 +420,12 @@ class ImageCog(commands.Cog):
             await refuse(interaction, f"❌ {exc}", what=describe_command(interaction))
             return
 
-        stored = relative_to_root(resolved)
-        if not await self._config_service.set_field(column, stored):
-            await self._already_held(interaction, label, f"`{stored}`", f"{label}: {stored}")
-            return
-
-        # Report the effect immediately, so the administrator does not need a second
-        # command to learn whether the new location resolves.
-        #
-        # An artwork folder that is empty, or not there yet, is not an error: every class
-        # falls back to what the bot ships, so the graphics keep being produced and files
-        # dropped in later are picked up with no further command. That is precisely what
-        # the template directory cannot do, which is why it no longer shares this body.
-        if resolved.is_dir():
-            verdict = "✅ Resolves."
-        elif resolved.exists():
-            verdict = "⚠️ That path exists but is not a directory."
-        else:
-            verdict = "⚠️ Nothing is there yet — files placed there later will be picked up."
-
-        await self._reply(
-            interaction,
-            f"✅ **{label}** set to `{stored}`.\n{verdict}\nSearched: `{resolved}`",
+        await self.bot.change_queue.ask(
+            DIRECTORY,
+            {"column": column, "value": relative_to_root(resolved)},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
-        await _record(self.bot, interaction, _command(interaction), "Success", f"{label}: {stored}")
 
     async def _set_template_filename(
         self, interaction: discord.Interaction, column: str, filename: str
@@ -639,8 +437,6 @@ class ImageCog(commands.Cog):
         file, and able to fix it. Nothing is written until every check passes, so a
         rejection leaves the stored value exactly as it stood.
         """
-        from leaguebot.image.services.image_validity_service import check_template
-
         # Validation parses the named SVG from disk, which outruns Discord's three-second
         # window on a slow host as readily as the sixteen-template sweep does.
         await interaction.response.defer(ephemeral=True)
@@ -660,39 +456,14 @@ class ImageCog(commands.Cog):
             )
             return
 
-        proposed = await self._config_service.candidate_config(
-            column, candidate
-        )
-        if proposed is None:
-            await self._reject(
-                interaction, label, "this server has no image configuration to amend."
-            )
-            return
-
-        problem = check_template(proposed, column)
-        if problem is not None:
-            await self._reject(interaction, label, problem.message())
-            return
-
-        # No stand-in comparison is made, for any type. The lineup was the only one that
-        # ever needed it — its fields were named after a league's own teams, so at this
-        # moment they could be compared only against a *stand-in* for the division that
-        # would be drawn, and XIV.9 made such a divergence a warning and not a refusal.
-        # Every field of every template is now verifiable against the file alone, so
-        # `check_template` above either passes or refuses and nothing is left to warn
-        # about (047 FR-024).
-        if not await self._config_service.set_field(column, candidate):
-            await self._already_held(
-                interaction, f"the {label} template", f"`{candidate}`",
-                f"{label} template: {candidate}",
-            )
-            return
-
-        lines = [f"✅ **{label}** template set to `{candidate}`.", "✅ Valid."]
-
-        await self._reply(interaction, "\n".join(lines))
-        await _record(
-            self.bot, interaction, _command(interaction), "Success", f"{label} template: {candidate}"
+        # The check at the ask parses the named file, and the change runs it again as it
+        # comes up. Nothing is written until every check passes, so a rejection leaves the
+        # stored value exactly as it stood.
+        await self.bot.change_queue.ask(
+            TEMPLATE,
+            {"column": column, "value": candidate},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     async def _reject(
@@ -731,85 +502,6 @@ class ImageCog(commands.Cog):
             return None
         return config
 
-    async def _apply_pfp_flag(
-        self, interaction: discord.Interaction, config, column: str, enabled: bool, label: str
-    ) -> bool:
-        """Write one toggle, or refuse and leave the configuration as it stood."""
-        refusal = pfp_change_refusal(config, column, enabled)
-        if refusal is not None:
-            await refuse(interaction, f"❌ {refusal}", what=describe_command(interaction))
-            return False
-
-        await self._config_service.set_pfp_flag(column, enabled)
-        await self._pfp_flag_written(interaction, label, enabled)
-        return True
-
-    async def _pfp_flag_written(
-        self, interaction: discord.Interaction, label: str, enabled: bool
-    ) -> None:
-        """Tell the member a toggle is written, and record it under the command that ran."""
-        state = "enabled" if enabled else "disabled"
-        await self._reply(interaction, f"{'✅' if enabled else '❌'} **{label}** {state}.")
-        await _record(
-            self.bot, interaction, _command(interaction), "Success", f"{label}: {state}"
-        )
-
-    async def daily_portraits_refusal(self, *, form: bool) -> str | None:
-        """Why daily portrait updates can no longer be enabled, or None if they still can.
-
-        Asked again when the time-of-day form is submitted and when its confirmation is
-        pressed, since either may have stood open while another manager switched the module
-        or portraits off, or enabled the daily updates. *form* says which is asking, so that
-        a confirmation does not call itself a form.
-        """
-        if not await self.bot.module_service.is_images_enabled():
-            return (
-                f"❌ The Image module was switched off while this {'form ' if form else ''}"
-                f"was open. Nothing was stored."
-            )
-        config = await self._config_service.get_config()
-        if config is None or not config.use_pfp:
-            return (
-                "❌ Driver portraits stopped being obtained from Discord while this was open. "
-                "Nothing was changed."
-            )
-        if config.pfp_daily:
-            return (
-                "ℹ️ Daily driver-portrait updates were already enabled while this was open. "
-                "Nothing was changed."
-            )
-        return None
-
-    async def commit_daily_portraits(
-        self, interaction: discord.Interaction, normalised: str
-    ) -> None:
-        """Enable the daily refresh at *normalised* UTC and arm the scheduled job.
-
-        The job is armed before the member is told anything, so that one that cannot be armed
-        is a failure with the setting stored, which start-up recovery arms on the next restart.
-        """
-        what = f"`{DAILY_TOGGLE}`"
-        stale = await self.daily_portraits_refusal(form=False)
-        if stale is not None:
-            await refuse(interaction, stale, what=what)
-            return
-
-        await self._config_service.set_field("pfp_daily_time", normalised)
-        await self._config_service.set_pfp_flag("pfp_daily", True)
-        try:
-            self.bot.scheduler_service.schedule_portrait_refresh(normalised)
-        except Exception as exc:  # noqa: BLE001 — reported, naming what became of it
-            await report_failure(interaction, exc, what=what, outcome=DAILY_JOB_NOT_SCHEDULED)
-            return
-        await self._reply(
-            interaction,
-            f"✅ **Daily driver-portrait updates** enabled, running at "
-            f"**{normalised} UTC** each day.",
-        )
-        await _record(
-            self.bot, interaction, DAILY_TOGGLE, "Success", f"Time of day: {normalised} UTC"
-        )
-
     @use_pfp.command(
         name="toggle",
         description="Obtain driver portraits from their Discord profile pictures.",
@@ -828,34 +520,15 @@ class ImageCog(commands.Cog):
             )
             return
 
-        enabling = not config.use_pfp
-        refusal = pfp_change_refusal(config, "use_pfp", enabling)
-        if refusal is not None:
-            await refuse(interaction, f"❌ {refusal}", what=describe_command(interaction))
-            return
-
-        await self._config_service.set_pfp_flag("use_pfp", enabling)
-
-        # The daily job is armed by the master toggle as well as by its own, so that turning
-        # the feature off stops the fetching rather than leaving a job running against a
-        # setting that says no. The job is scheduled before the member is told anything: a
-        # job that cannot be scheduled is a failure, with the setting stored, and not a
-        # success followed by an apology.
-        if enabling and config.pfp_daily:
-            try:
-                self.bot.scheduler_service.schedule_portrait_refresh(config.pfp_daily_time)
-            except Exception as exc:  # noqa: BLE001 — reported, naming what became of it
-                await report_failure(
-                    interaction,
-                    exc,
-                    what=describe_command(interaction),
-                    outcome=DAILY_JOB_NOT_SCHEDULED,
-                )
-                return
-        elif not enabling:
-            self.bot.scheduler_service.cancel_portrait_refresh()
-
-        await self._pfp_flag_written(interaction, "Discord profile pictures", enabling)
+        # The flip is resolved here, as the member saw the state; the daily job follows the
+        # save as a job of its own (`image_settings`), so a job that cannot be scheduled is a
+        # failure with the setting stored, and not a success followed by an apology.
+        await self.bot.change_queue.ask(
+            PORTRAITS,
+            {"column": "use_pfp", "enabled": not config.use_pfp},
+            interaction=interaction,
+            what=describe_command(interaction),
+        )
 
     @use_pfp.command(
         name="prerender-toggle",
@@ -866,12 +539,11 @@ class ImageCog(commands.Cog):
         config = await self._guard_portraits_enabled(interaction)
         if config is None:
             return
-        await self._apply_pfp_flag(
-            interaction,
-            config,
-            "pfp_prerender",
-            not config.pfp_prerender,
-            "Pre-render portrait updates",
+        await self.bot.change_queue.ask(
+            PORTRAITS,
+            {"column": "pfp_prerender", "enabled": not config.pfp_prerender},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     @use_pfp.command(
@@ -886,12 +558,12 @@ class ImageCog(commands.Cog):
 
         if config.pfp_daily:
             # Turning it off needs no time and therefore no modal.
-            if await self._apply_pfp_flag(
-                interaction, config, "pfp_daily", False, "Daily driver-portrait updates"
-            ):
-                self.bot.scheduler_service.cancel_portrait_refresh(
-
-                )
+            await self.bot.change_queue.ask(
+                PORTRAITS,
+                {"column": "pfp_daily", "enabled": False},
+                interaction=interaction,
+                what=describe_command(interaction),
+            )
             return
 
         # A modal must be the initial response, so nothing above this may defer.
@@ -926,13 +598,8 @@ class ImageCog(commands.Cog):
         files, and able to fix it — rather than letting it surface as a render failure at
         the next scheduled post, when nobody is looking.
         """
-        from leaguebot.image.services.image_validity_service import blocking_template_problems
-        from leaguebot.core.utils.paths import resolve_within_project_root
-
         if not await self._module_gate(interaction):
             return
-
-        label = "Template directory"
 
         try:
             resolved = resolve_within_project_root(directory)
@@ -954,78 +621,13 @@ class ImageCog(commands.Cog):
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
 
-        proposed = await self._config_service.candidate_config(
-            "template_directory", stored
+        # The check at the ask is the survey, and the change runs it again as it comes up.
+        await self.bot.change_queue.ask(
+            TEMPLATE_DIRECTORY,
+            {"value": stored},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
-        if proposed is None:
-            await self._reject_directory(
-                interaction, label, "this server has no image configuration to amend."
-            )
-            return
-
-        # The FR-007 survey, which also backs `/season placements-review` and the confirmation of placements, so
-        # the three surfaces cannot disagree about whether a template is usable.
-        #
-        # Scoped to the aspects that are switched on, as those two are: a folder holding
-        # no verdicts drawing is a perfectly good folder for a league that posts verdicts
-        # as text, and refusing it would force every league to supply all sixteen before
-        # it could move its artwork. Switching an aspect on checks its own drawings at
-        # that moment, so nothing reaches a posting path unverified.
-        toggles = await self._config_service.get_toggles()
-        problems = blocking_template_problems(proposed, toggles)
-        if problems:
-            await self._reject_directory(
-                interaction,
-                label,
-                f"`{stored}` does not hold every template the bot needs "
-                f"for the outputs you have switched on.",
-                problems=problems,
-                searched=resolved,
-            )
-            return
-
-        if not await self._config_service.set_field("template_directory", stored):
-            await self._already_held(interaction, label, f"`{stored}`", f"{label}: {stored}")
-            return
-        await self._reply(
-            interaction,
-            f"✅ **{label}** set to `{stored}`.\n"
-            f"✅ Every drawing the outputs you have switched on need is present and "
-            f"valid.\nSearched: `{resolved}`",
-        )
-        await _record(self.bot, interaction, _command(interaction), "Success", f"{label}: {stored}")
-
-    async def _reject_directory(
-        self,
-        interaction: discord.Interaction,
-        label: str,
-        reason: str,
-        *,
-        problems: list | None = None,
-        searched=None,
-    ) -> None:
-        """Refuse a directory change, naming every fault and leaving the config alone.
-
-        Recorded in the log channel as a refusal of the command, and the whole reply goes, in as
-        many parts as it needs: a manager fixing a folder needs every template at fault.
-        """
-        from leaguebot.image.services.image_validity_service import describe
-
-        lines = [
-            f"❌ **{label}** was **not** changed — {reason}",
-            "The previously configured folder is still in force.",
-        ]
-
-        if problems:
-            lines.append("")
-            for problem in problems:
-                lines.append(f"  ↳ {describe(problem)}")
-
-        if searched is not None:
-            lines.append("")
-            lines.append(f"Searched: `{searched}`")
-
-        await refuse(interaction, "\n".join(lines), what=describe_command(interaction))
 
     # ── The sixteen template filename commands ────────────────────────────
     #
@@ -1170,7 +772,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_track_image_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "track_image_directory", directory, "Circuit images")
+        await self._set_directory(interaction, "track_image_directory", directory)
 
     @config.command(
         name="team-image-directory",
@@ -1179,7 +781,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_team_image_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "team_image_directory", directory, "Team badges")
+        await self._set_directory(interaction, "team_image_directory", directory)
 
     @config.command(
         name="flag-directory",
@@ -1188,7 +790,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_flag_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "flag_directory", directory, "Nationality flags")
+        await self._set_directory(interaction, "flag_directory", directory)
 
     @config.command(
         name="driver-image-directory",
@@ -1197,7 +799,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_driver_image_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "driver_image_directory", directory, "Driver portraits")
+        await self._set_directory(interaction, "driver_image_directory", directory)
 
     @config.command(
         name="marker-directory",
@@ -1206,7 +808,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_marker_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "marker_directory", directory, "Markers and result marks")
+        await self._set_directory(interaction, "marker_directory", directory)
 
     @config.command(
         name="weather-icon-directory",
@@ -1215,7 +817,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_weather_icon_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "weather_icon_directory", directory, "Weather icons")
+        await self._set_directory(interaction, "weather_icon_directory", directory)
 
     @config.command(
         name="tyre-directory",
@@ -1224,7 +826,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_tyre_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "tyre_directory", directory, "Tyre compounds")
+        await self._set_directory(interaction, "tyre_directory", directory)
 
     @config.command(
         name="division-logo-directory",
@@ -1233,7 +835,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_division_logo_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "division_logo_directory", directory, "Division logos")
+        await self._set_directory(interaction, "division_logo_directory", directory)
 
     # ── /images config toggle ─────────────────────────────────────────────
 
@@ -1260,7 +862,7 @@ class ImageCog(commands.Cog):
         self, interaction: discord.Interaction, aspect: app_commands.Choice[str]
     ) -> None:
         # Switching an output *on* reports what still blocks it, and answering that means
-        # `_aspect_blocking_reasons` → `template_reports` → `evaluate_all_templates`,
+        # the setting's check (`aspect_blocking_reasons`) → `template_reports` → `evaluate_all_templates`,
         # which parses all sixteen template SVGs from disk on every call and caches
         # nothing. That is a third of a second on a development machine and several times
         # that on the Raspberry Pi's SD card, so the reply arrived after Discord had
@@ -1270,90 +872,18 @@ class ImageCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
 
-        label = ASPECT_LABELS[aspect.value]
-
-        # Switching *off* is always allowed: the output reverts to text, which needs no
-        # drawing at all, so nothing about the templates can stand in the way.
-        if await self._config_service.is_aspect_enabled(aspect.value):
-            await self._config_service.set_aspect(aspect.value, False)
-            await self._reply(
-                interaction, f"❌ **{label}** image output **disabled**. Posting stays as text."
-            )
-            await _record(
-                self.bot, interaction, _command(interaction), "Success",
-                f"{label} image output: disabled",
-            )
-            return
-
-        # Switching *on* is refused while the drawings behind it are unusable, and the
-        # aspect is left off. Enabling it would produce an aspect that cannot draw — one
-        # that withholds the season's approval, and posts nothing where a driver would
-        # otherwise have read text. The check is made against the configured directory,
-        # so it answers for the files the league actually has.
-        blocking = await self._aspect_blocking_reasons_if_enabled(aspect.value)
-        if blocking:
-            body = "\n".join(f"  • {reason}" for reason in blocking)
-            await refuse(
-                interaction,
-                f"⛔ **{label}** image output was **not** switched on — "
-                f"it cannot be drawn as things stand:\n{body}\n"
-                f"Put that right and run this command again. The output is still posted "
-                f"as text in the meantime.",
-                what=describe_command(interaction),
-                reason="\n".join(blocking),
-            )
-            return
-
-        await self._config_service.set_aspect(aspect.value, True)
-        lines = toggle_enabled_lines(aspect.value, label, [])
-
-        await self._reply(interaction, "\n".join(lines))
-        await _record(
-            self.bot, interaction, _command(interaction), "Success",
-            f"{label} image output: enabled",
+        # The flip is resolved here, from the state read now (image :180): the change asked is
+        # the state opposite the one the member saw. Switching *off* is always allowed, the
+        # output reverting to text. Switching *on* is refused while the drawings behind it are
+        # unusable, the output left off; the setting's check makes that refusal at the ask and
+        # again as the change starts.
+        enabled = not await self._config_service.is_aspect_enabled(aspect.value)
+        await self.bot.change_queue.ask(
+            ASPECT,
+            {"aspect": aspect.value, "enabled": enabled},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
-
-    async def _aspect_blocking_reasons(self, aspect: str) -> list[str]:
-        statuses = await self._validity_service.aspect_statuses()
-        for status in statuses:
-            if status.aspect == aspect:
-                return status.blocking_reasons
-        return []
-
-    async def _aspect_blocking_reasons_if_enabled(
-        self, aspect: str
-    ) -> list[str]:
-        """What would stop *aspect* drawing, asked while it is still switched off.
-
-        `aspect_statuses` reads the stored toggles, and an aspect that is off reports its
-        problems as ``disabled_reasons`` rather than ``blocking_reasons`` — so asking the
-        ordinary way, before the toggle is written, always answers "nothing blocks it".
-        The toggle is therefore overridden for this one question, which is what lets the
-        command refuse *before* storing rather than storing and then complaining.
-        """
-        from leaguebot.image.services.image_render_service import converter_available
-        from leaguebot.image.services.image_validity_service import build_aspect_statuses
-
-        toggles = dict(await self._config_service.get_toggles())
-        toggles[aspect] = True
-
-        reports = await self._validity_service.template_reports()
-        statuses = build_aspect_statuses(
-            toggles,
-            reports,
-            disabled_source_modules=await self._validity_service.disabled_source_modules(),
-            converter_available=converter_available(),
-            # The shortfall is passed here too, and must be: this builds its own status
-            # list rather than calling `aspect_statuses`, so an aspect could otherwise be
-            # switched on while a template of it wanted a colour no tier had set (051).
-            colour_shortfall=await self._validity_service.colour_shortfall(
-                reports
-            ),
-        )
-        for status in statuses:
-            if status.aspect == aspect:
-                return status.blocking_reasons
-        return []
 
     # ── Presentation preferences ──────────────────────────────────────────
 
@@ -1389,25 +919,13 @@ class ImageCog(commands.Cog):
             )
             return
 
-        # 2. Store it. Storing *before* measuring is deliberate: an unmeasurable
-        #    contrast must never cost the manager their input (FR-026, FR-027).
-        if not await self._config_service.set_field("fastest_lap_colour", canonical):
-            await self._already_held(
-                interaction, "the fastest-lap colour", f"`{canonical}`",
-                f"Fastest-lap colour: {canonical}",
-            )
-            return
-        lines = [f"✅ Fastest-lap colour set to `{canonical}`."]
-
-        # 3. Measure and report the contrast against the template's own background.
-        lines += fastest_lap_contrast_lines(
-            await self._measure_fastest_lap_contrast(canonical)
-        )
-
-        await self._reply(interaction, "\n".join(lines))
-        await _record(
-            self.bot, interaction, _command(interaction), "Success",
-            f"Fastest-lap colour: {canonical}",
+        # 2. Ask the change. The setting stores the colour *before* it measures it: an
+        #    unmeasurable contrast must never cost the manager their input (FR-026, FR-027).
+        await self.bot.change_queue.ask(
+            FASTEST_LAP_COLOUR,
+            {"value": canonical},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     # ── Per-tier colours (051) ────────────────────────────────────────────
@@ -1440,42 +958,13 @@ class ImageCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
 
-        state = "on" if enable else "off"
-        if not await self._config_service.set_flag("per_tier_colour_enabled", enable):
-            await self._already_held(
-                interaction,
-                "the per-tier colours setting",
-                state,
-                f"Per-tier colours: {state}",
-            )
-            return
-        lines = [f"✅ Per-tier colours are now **{'on' if enable else 'off'}**."]
-
-        if enable:
-            # Switching on is the moment the shortfall becomes real. Saying so here beats
-            # letting it be discovered at the season review, which is the worst moment to
-            # find out a graphic will not post.
-            shortfall = await self._validity_service.colour_shortfall()
-            if shortfall:
-                lines.append("")
-                lines.append("⚠️ These are wanted before your graphics will draw:")
-                for template_key in sorted(shortfall):
-                    for line in shortfall[template_key]:
-                        lines.append(f"  • `{template_key}` — {line}")
-            else:
-                lines.append(
-                    "Every colour slot your templates mark is set for every tier."
-                )
-        else:
-            lines.append(
-                "Your templates draw the colours they were authored in, and nothing is "
-                "validated while this is off."
-            )
-
-        await self._reply(interaction, "\n".join(lines))
-        await _record(
-            self.bot, interaction, _command(interaction), "Success",
-            f"Per-tier colours: {'on' if enable else 'off'}",
+        # The colour shortfall switching on reports is the setting's advice, read after the
+        # save; a setting found already as asked when it runs changes nothing and says so.
+        await self.bot.change_queue.ask(
+            PER_TIER,
+            {"enabled": enable},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     @config.command(
@@ -1497,9 +986,9 @@ class ImageCog(commands.Cog):
         self, interaction, division: str, slot: str, colour: str
     ) -> None:
         """Shared body for the setter. See `_set_per_tier_colours` for why it is split."""
-        # Whether any template marks the slot comes from `_declared_colour_slots`, which
-        # reads `template_reports` and so the whole sixteen-template sweep. Deferred first,
-        # as `config_toggle` is, so the refusals below answer on the followup too.
+        # Whether any template marks the slot is the setting's advice, read after the save from
+        # `template_reports` and so the whole sixteen-template sweep. Deferred first, as
+        # `config_toggle` is, so the refusals below answer on the followup too.
         await interaction.response.defer(ephemeral=True)
 
         if not await self._module_gate(interaction):
@@ -1533,39 +1022,17 @@ class ImageCog(commands.Cog):
             )
             return
 
-        if not await self._config_service.set_tier_colour(
-            division, canonical_slot, canonical_colour
-        ):
-            await self._already_held(
-                interaction,
-                f"`{canonical_slot}` for **{division}**",
-                f"`{canonical_colour}`",
-                f"Tier colour: {division} / {canonical_slot} = {canonical_colour}",
-            )
-            return
-        lines = [f"✅ **{division}** — `{canonical_slot}` set to `{canonical_colour}`."]
-
-        # A slot no template marks is stored all the same and merely reported, exactly as
-        # an unmeasurable fastest-lap contrast is: the input is the league's, and a slot
-        # may reasonably be set before the template that uses it is drawn.
-        declared = await self._declared_colour_slots()
-        if canonical_slot not in declared:
-            lines.append(
-                f"ℹ️ No template of yours marks `{canonical_slot}` yet, so nothing will "
-                f"change until one does."
-            )
-
-        config = await self._config_service.get_config()
-        if config is not None and not config.per_tier_colour_enabled:
-            lines.append(
-                "ℹ️ Per-tier colours are **off**, so this is stored but not drawn. "
-                "Turn them on with `/images config per-tier-colour-toggle`."
-            )
-
-        await self._reply(interaction, "\n".join(lines))
-        await _record(
-            self.bot, interaction, _command(interaction), "Success",
-            f"Tier colour: {division} / {canonical_slot} = {canonical_colour}",
+        # What no template marks, and per-tier colours being off, are said after the save, once
+        # the templates have been read: the slot is stored all the same.
+        await self.bot.change_queue.ask(
+            TIER_COLOURS,
+            {
+                "division": division,
+                "colours": {canonical_slot: canonical_colour},
+                "form": False,
+            },
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     @config.command(
@@ -1616,38 +1083,11 @@ class ImageCog(commands.Cog):
             )
             return
 
-        written = await self._config_service.set_tier_colours(
-            division, colours
-        )
-        if not written:
-            await self._reply(
-                interaction,
-                f"ℹ️ Nothing changed: every colour named is already held for **{division}**.",
-            )
-            await _record(
-                self.bot, interaction, "/images config per-tier-bulk-colour", "Nothing changed",
-                f"Tier colours: {division}",
-                *(f"{slot} = {colour}" for slot, colour in colours.items()),
-            )
-            return
-        held = ""
-        if written < len(colours):
-            held = f" ({written} changed, {len(colours) - written} already held)"
-        lines = [f"✅ **{division}** — {len(colours)} colour(s) set{held}."]
-        lines += [f"  • `{slot}` = `{colour}`" for slot, colour in colours.items()]
-
-        declared = await self._declared_colour_slots()
-        unknown = sorted(set(colours) - declared)
-        if unknown:
-            lines.append(
-                f"ℹ️ No template of yours marks {', '.join(f'`{s}`' for s in unknown)} yet."
-            )
-
-        await self._reply(interaction, "\n".join(lines))
-        await _record(
-            self.bot, interaction, "/images config per-tier-bulk-colour", "Success",
-            f"Tier colours: {division}",
-            *(f"{slot} = {colour}" for slot, colour in colours.items()),
+        await self.bot.change_queue.ask(
+            TIER_COLOURS,
+            {"division": division, "colours": colours, "form": True},
+            interaction=interaction,
+            what=describe_form(form) if form is not None else describe_command(interaction),
         )
 
     @config.command(
@@ -1740,147 +1180,17 @@ class ImageCog(commands.Cog):
             )
             return
 
-        written = 0
-        for block in blocks:
-            written += await self._config_service.set_tier_colours(
-                block.division, block.colours
-            )
-        named = sum(len(b.colours) for b in blocks)
-
-        lines = []
-        if blocks and not written:
-            lines.append("ℹ️ Nothing changed: every colour named is already held.")
-        elif blocks:
-            held = ""
-            if written < named:
-                held = f" ({written} changed, {named - written} already held)"
-            lines.append(
-                f"✅ Imported {named} colour(s) across {len(blocks)} tier(s){held}."
-            )
-            lines += [
-                f"  • **{b.division}** — {len(b.colours)} colour(s)" for b in blocks
-            ]
-        if problems:
-            lines.append(f"⚠️ {len(problems)} block(s) were not imported:")
-            lines += [f"  • {problem}" for problem in problems]
-
-        await self._reply(interaction, "\n".join(lines))
-        details = [f"{b.division}: {len(b.colours)} colour(s)" for b in blocks]
-        if problems:
-            details.append("passed over:")
-            details += [f"  {problem}" for problem in problems]
-        await _record(
-            self.bot, interaction, "/images config colour-xml-import",
-            "Success" if written else "Nothing changed", *details,
-        )
-
-    async def _declared_colour_slots(self) -> set[str]:
-        """Every colour slot any valid template of this server marks.
-
-        Read off the validity reports, which carry it from the parse Layer 1 already did,
-        so asking costs no second read of sixteen files.
-        """
-        reports = await self._validity_service.template_reports()
-        return {
-            slot
-            for report in reports.values()
-            if report.valid
-            for slot in report.colour_slots
-        }
-
-    async def _measure_fastest_lap_contrast(self, colour: str) -> FastestLapContrast:
-        """Measure *colour* against the plate each tier draws behind it, and keep the lowest.
-
-        With per-tier colours off the plate is measured once, as the template was
-        authored. With them on it is measured once per division of the season under way —
-        the same divisions the colour shortfall is checked against — and the lowest figure
-        is the one reported, with the division it belongs to (#165).
-
-        **Each division is painted by the render's own step, on a copy of its own.**
-        `ImageRenderService.apply_tier_palette` is what draws a division's graphic, so
-        measuring through it is what makes the figure the colour the plate is drawn in; a
-        slot the tier has not set is left as authored there, and so here. The copy is
-        because the palette is injected into the tree, and a second division painted over
-        the first would be measured against whatever the first left behind.
-        `test_the_contrast_check_paints_each_tier_through_the_render_path` pins it.
-
-        The plate's absence is an unmeasurable contrast, not a template validity failure:
-        Layer 1 cannot establish that the element exists (FR-026a).
-        """
-        from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_ID
-        from leaguebot.image.utils.colour import contrast_ratio
-        from leaguebot.image.utils.svg_document import FieldIndex, SvgError, load_svg
-
-        reports = await self._validity_service.template_reports()
-        report = reports.get("results_race_template")
-
-        if report is None:
-            return FastestLapContrast(
-                problem="the race results template could not be read."
-            )
-        if not report.valid:
-            return FastestLapContrast(
-                problem=f"the race results template is invalid — {report.reason}"
-            )
-
-        try:
-            root = load_svg(report.resolved_path)
-        except SvgError as exc:
-            return FastestLapContrast(
-                problem=f"the race results template could not be parsed — {exc}"
-            )
-
-        config = await self._config_service.get_config()
-        per_tier = config is not None and config.per_tier_colour_enabled
-        divisions: list[str] = []
-        if per_tier:
-            divisions = await self._config_service.season_division_names()
-
-        if not divisions:
-            # Per-tier colours off, or on with no season under way — or one holding no
-            # division yet. Either way no tier's colours exist to draw in, so the plate
-            # as authored is the plate; with the feature on, the reply says so.
-            background, problem = _plate_fill(root)
-            if background is None:
-                return FastestLapContrast(problem=problem)
-            return FastestLapContrast(
-                ratio=contrast_ratio(colour, background),
-                background=background,
-                no_season=per_tier,
-            )
-
-        # A palette neither adds an element nor takes one away, so a plate missing from
-        # the template is missing for every tier and is said once.
-        if FieldIndex(root).resolve(FASTEST_LAP_BACKGROUND_ID) is None:
-            return FastestLapContrast(problem=_no_plate_problem())
-
-        measured: list[tuple[float, str, str]] = []
-        unmeasured: list[tuple[str, str]] = []
-        for division in divisions:
-            tree = copy.deepcopy(root)
-            await self._render_service.apply_tier_palette(tree, division)
-            background, problem = _plate_fill(tree)
-            if background is None:
-                unmeasured.append((division, problem or ""))
-            else:
-                measured.append((contrast_ratio(colour, background), division, background))
-
-        if not measured:
-            # No tier has a colour to measure, which is the unmeasurable contrast of old:
-            # said once rather than once per division.
-            return FastestLapContrast(problem=unmeasured[0][1])
-
-        # A tie is judged at the figure the manager reads, two places, so tiers the reply
-        # shows alike are named alike. `measured` is in tier order, and so the names are.
-        lowest = min(ratio for ratio, _division, _background in measured)
-        tied = [entry for entry in measured if round(entry[0], 2) == round(lowest, 2)]
-        backgrounds = {background for _ratio, _division, background in tied}
-        return FastestLapContrast(
-            ratio=lowest,
-            background=backgrounds.pop() if len(backgrounds) == 1 else None,
-            divisions=tuple(division for _ratio, division, _background in tied),
-            every_division=len(divisions) > 1 and len(tied) == len(divisions),
-            unmeasured=tuple(unmeasured),
+        await self.bot.change_queue.ask(
+            TIER_IMPORT,
+            {
+                "blocks": [
+                    {"division": block.division, "colours": dict(block.colours)}
+                    for block in blocks
+                ],
+                "passed_over": list(problems),
+            },
+            interaction=interaction,
+            what=describe_form(form) if form is not None else describe_command(interaction),
         )
 
     @config.command(
@@ -1893,31 +1203,14 @@ class ImageCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
 
-        # Through the memoised list rather than `available_timezones()`, which walks the
-        # whole TZPATH tree on every call — 325 ms cold on the Pi, for one membership test.
+        # An unknown zone is refused by the setting's check, at the ask and again as the change
+        # starts.
         candidate = zone.strip()
-        if not is_known_zone(candidate):
-            await refuse(
-                interaction,
-                f"❌ `{candidate}` is not a recognised time zone. "
-                f"Use an IANA name such as `Europe/Lisbon` or `UTC`.",
-                what=describe_command(interaction),
-            )
-            return
-
-        if not await self._config_service.set_field("time_zone", candidate):
-            await self._already_held(
-                interaction, "the time zone", f"`{candidate}`", f"Time zone: {candidate}"
-            )
-            return
-        await self._reply(
-            interaction,
-            f"✅ Time zone set to `{candidate}`.\n"
-            f"Times are shown in the offset that zone carries **on the date displayed**, "
-            f"so a season spanning a daylight-saving change stays correct.",
-        )
-        await _record(
-            self.bot, interaction, _command(interaction), "Success", f"Time zone: {candidate}"
+        await self.bot.change_queue.ask(
+            PRESENTATION,
+            {"column": "time_zone", "value": candidate, "shown": candidate},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     @config_time_zone.autocomplete("zone")
@@ -1955,16 +1248,11 @@ class ImageCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        if not await self._config_service.set_field("time_format", clock.value):
-            await self._already_held(
-                interaction, "the clock format", clock.name,
-                f"Clock format: {clock.name} ({clock.value})",
-            )
-            return
-        await self._reply(interaction, f"✅ Clock format set to **{clock.name}**.")
-        await _record(
-            self.bot, interaction, _command(interaction), "Success",
-            f"Clock format: {clock.name} ({clock.value})",
+        await self.bot.change_queue.ask(
+            PRESENTATION,
+            {"column": "time_format", "value": clock.value, "shown": clock.name},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     @config.command(
@@ -2005,16 +1293,11 @@ class ImageCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        if not await self._config_service.set_field("date_format", style.value):
-            await self._already_held(
-                interaction, "the date format", style.name,
-                f"Date format: {style.name} ({style.value})",
-            )
-            return
-        await self._reply(interaction, f"✅ Date format set to **{style.name}**.")
-        await _record(
-            self.bot, interaction, _command(interaction), "Success",
-            f"Date format: {style.name} ({style.value})",
+        await self.bot.change_queue.ask(
+            PRESENTATION,
+            {"column": "date_format", "value": style.value, "shown": style.name},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     # ── /images config view ───────────────────────────────────────────────

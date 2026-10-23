@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from enum import Enum
@@ -30,6 +30,7 @@ from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.output_router import OutputRouter
 
 
 @asynccontextmanager
@@ -129,10 +130,13 @@ SETTING_COLUMNS: frozenset[str] = frozenset(
 @dataclass(frozen=True)
 class SettingChange:
     """What `AttendanceService.set_setting` did: *changed* says whether the value was replaced,
-    and *old* is the value the setting held, ``None`` for a threshold that was disabled."""
+    and *old* is the value the setting held, ``None`` for a threshold that was disabled.
+    *line_id* is the log line saved with it, for `OutputRouter.deliver_queued` once the save
+    is made, or ``None`` where none was written."""
 
     changed: bool
     old: int | None
+    line_id: int | None = None
 
 
 class RsvpOutcome(Enum):
@@ -293,15 +297,23 @@ class AttendanceService:
         actor_id: int,
         actor_name: str,
         now: datetime,
+        router: OutputRouter,
+        line: Callable[[SettingChange], str],
     ) -> SettingChange:
-        """Set one of the eight settings to *value*, with its audit entry, in one save (#482).
+        """Set one of the eight settings to *value*, with its audit entry and its log line, in
+        one save (#482, #439).
 
         The value held is read and compared on the connection that writes, so two commands
         racing for one setting cannot both see the old value. Where it already equals *value*
         nothing is written and no entry is recorded: the result says ``changed=False``.
         Otherwise the column and its ``ATTENDANCE_CONFIG_SET`` entry, holding *column* from and
-        to (``None`` for a disabled threshold), are committed together, so a failure between
-        the two leaves neither ("The record of what changed", core specification).
+        to (``None`` for a disabled threshold), are written. Either way the log line *line*
+        forms from the result is written on the same connection through *router*'s
+        `queue_log_on`, and the three are committed together, so a stop or a failure between
+        them leaves none ("The record of what changed", core specification). The line is not
+        sent here: the caller hands ``line_id`` to `OutputRouter.deliver_queued` once this has
+        returned, and the retry loop sends it should the bot stop first. The router is handed
+        in by the command, as a service looks no other service up on the bot.
 
         *column* is checked against `SETTING_COLUMNS` before anything is read, as the name is
         put into the statement: any other is a `ValueError`. Raises `ValueError` as well for a
@@ -317,20 +329,21 @@ class AttendanceService:
             if row is None:
                 raise ValueError("No attendance configuration found.")
             old = row[0]
-            if old == value:
-                return SettingChange(changed=False, old=old)
-            await db.execute(f"UPDATE attendance_config SET {column} = ?", (value,))
-            await audit_service.record_change_on(
-                db,
-                actor_id=actor_id,
-                actor_name=actor_name,
-                change_type="ATTENDANCE_CONFIG_SET",
-                old_value={column: old},
-                new_value={column: value},
-                now=now,
-            )
+            change = SettingChange(changed=old != value, old=old)
+            if change.changed:
+                await db.execute(f"UPDATE attendance_config SET {column} = ?", (value,))
+                await audit_service.record_change_on(
+                    db,
+                    actor_id=actor_id,
+                    actor_name=actor_name,
+                    change_type="ATTENDANCE_CONFIG_SET",
+                    old_value={column: old},
+                    new_value={column: value},
+                    now=now,
+                )
+            line_id = await router.queue_log_on(db, line(change))
             await db.commit()
-        return SettingChange(changed=True, old=old)
+        return SettingChange(changed=change.changed, old=old, line_id=line_id)
 
     # ── driver_round_attendance CRUD ───────────────────────────────────────
 

@@ -85,15 +85,34 @@ request is acknowledged once and is made of jobs that run one after another: `_c
 each lane, the RUNNING change, or else the QUEUED change with the lowest id, and nothing on that
 lane overtakes it; of the lanes that can run, the head asked first goes first.
 
-**A job that fails stops the queue.** Whatever the failure, from Discord or from the bot, and
-whether in a job or in a bot change's check as it starts (`_stop`), nothing behind the job runs
-on its lane until it is cleared: `_choose` runs nothing of a lane while its head's next job is
+**A job that fails stops the queue,** but for the jobs of a settings change (below). Whatever the
+failure, from Discord or from the bot, and whether in a job or in a bot change's check as it starts
+(`_stop`), nothing behind the job runs on its lane until it is cleared: `_choose` runs nothing of a lane while its head's next job is
 stopped and not yet due, and the other lanes carry on. A stop
 is the job's own record (`failing_since`, `tries`, `last_failure`, `next_try_at`), the change's
 state staying as it was. The bot tries a stopped job again on `RETRY_AFTER`, counted from the first
 failure, and says nothing of a try that fails but the last, which says the bot has stopped trying
 on its own. A request made while the queue is stopped is queued at the back and says where the
 queue is stopped.
+
+**A job that ends on a fault does not stop it** (`Step.on_fault`, `ChangeType.on_check_fault`). A
+settings change is one atomic save, and the work after it that the setting does not need (checking
+it against the templates, arming or removing a timed job) is work nothing later depends on: a fault
+leaves nothing half-done, nothing behind it waits on it, and the member can simply ask again. Where
+a step sets `on_fault`, `_step_failed` marks the job done with the result `on_fault` returns, in a
+save of its own, its lines written and delivered, and the change carries on to its next step or
+finishes, its outcome reading the failed step's result; there is no stop notice, no Retry or
+Discard and no try schedule, and the traceback still goes to the host's log. A save that faults has
+been rolled back whole before that, so nothing but the mark and `on_fault`'s lines is written.
+*Rejected:* a step that catches its own fault, which would leave its partial writes on the save's
+connection and could not catch what fails after it returns, the queue's own audit and line writes
+and the commit. A check that raises as a **member's** change starts, where its type sets
+`on_check_fault`, ends the change as REFUSED in one save with the failure line (`failure_line`, a
+`❌ … failed` line, never a refusal's) and the acknowledgement updated with the reply the hook
+returns, and the lane goes on. A bot's change whose check raises still stops its lane, and every
+other step and type keeps the rule above. A step that ends on a fault cannot be `undiscardable`,
+since it never stops a lane to be discarded: `register` refuses one that is both. Pinned by the
+tests under "A job that ends on a fault".
 
 **A stop is cleared in three ways:** a try that goes through (the bot's own, or Retry), which
 writes one line saying so, or finds the job no longer due, or the change's request refused at its
@@ -193,7 +212,7 @@ from leaguebot.core.services.audit_service import record_change_on
 from leaguebot.core.services.queue_stop_view import QueueStopView
 from leaguebot.core.utils.channel_guard import is_league_admin, is_league_manager
 from leaguebot.core.utils.in_a_job import running_job
-from leaguebot.core.utils.interaction_errors import describe_fault
+from leaguebot.core.utils.interaction_errors import describe_fault, failure_line
 from leaguebot.core.utils.log_lines import (
     cleared_line,
     conversation_ended_line,
@@ -350,6 +369,11 @@ class Step:
     Discard's refusal quotes. A reader rather than a flag, so the refusal can name the round or
     the season; every other step is discardable. The mark never changes for a step, so a press
     reads it before taking the queue's lock.
+
+    *on_fault*, where set, makes a fault in the step end the job instead of stopping the lane: it
+    is handed the context and the error and returns the result the job is marked done with (see the
+    module). It is for a step whose fault leaves nothing half-done and nothing waiting on it, so a
+    step cannot carry both it and *undiscardable*.
     """
 
     name: str
@@ -360,6 +384,7 @@ class Step:
     gone_line: Callable[[StepContext], str] | str | None = None
     record: Callable[[aiosqlite.Connection, StepContext, StepResult], Awaitable[None]] | None = None
     undiscardable: Callable[[StepContext], Awaitable[str]] | None = None
+    on_fault: Callable[[StepContext, BaseException], StepResult] | None = None
 
 
 @dataclass(frozen=True)
@@ -466,6 +491,11 @@ class ChangeType:
     a prompt the league discarded, which the member's reply has no other way of hearing of. None,
     or a note of None, tells nothing; the note is added beneath what the reply already says, or
     stands in the log alone once the reply can no longer be updated.
+
+    *on_check_fault*, where set, makes a check that raises as a **member's** change starts end the
+    change instead of stopping the lane: it is handed the change's `what`, its payload and the error, and returns
+    the reply the acknowledgement is updated with, and the queue records the failure line. It
+    applies to a member's change only: a bot's change whose check raises still stops its lane.
     """
 
     kind: str
@@ -485,6 +515,7 @@ class ChangeType:
     plan: Callable[[dict[str, Any]], tuple[PlannedStep, ...]] | None = None
     finished_lines: Callable[[OutcomeContext], tuple[str, ...]] | None = None
     tell_origin: Callable[[OutcomeContext], str | None] | None = None
+    on_check_fault: Callable[[str, dict[str, Any], BaseException], str] | None = None
 
     def opening_steps(self, payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         """The steps saved when the change is asked for with *payload*: *opening*, or where the
@@ -603,8 +634,14 @@ class ChangeQueue:
 
     def register(self, change_type: ChangeType) -> None:
         """Make *change_type* known. A `SAVE` step carrying a `record` is refused: it writes in
-        its own run."""
+        its own run. So is a step that both ends on a fault and is undiscardable: it never stops
+        a lane to be discarded."""
         for step in change_type.steps.values():
+            if step.on_fault is not None and step.undiscardable is not None:
+                raise ValueError(
+                    f"step {step.name!r} of {change_type.kind!r} ends on a fault and so cannot "
+                    "be undiscardable"
+                )
             if step.record is not None and step.kind is StepKind.SAVE:
                 raise ValueError(
                     f"step {step.name!r} of {change_type.kind!r} is a SAVE and cannot carry a record"
@@ -1402,7 +1439,8 @@ class ChangeQueue:
 
         A member's change refused is refused, and the queue goes on; a bot change no longer due is
         dropped. A bot change refused, or a check that raises, stops the queue on the change, at
-        its first job not done, and the check runs again at each try.
+        its first job not done, and the check runs again at each try. A member's change whose type
+        has `on_check_fault` is instead ended, as a failure, and the queue goes on.
         """
         try:
             verdict = await change_type.check(
@@ -1417,7 +1455,8 @@ class ChangeQueue:
         except Exception as error:  # noqa: BLE001 — a check that raises stops the queue
             log.log(self._failure_level(pending), "the check of %s raised (change %s)",
                     change["what"], change["id"], exc_info=error)
-            await self._stop(change, pending, error)
+            if not await self._end_on_check_fault(change, change_type, pending, error):
+                await self._stop(change, pending, error)
             return False
         if verdict.kind is VerdictKind.GO:
             await self._go(change, pending)
@@ -1440,6 +1479,34 @@ class ChangeQueue:
         else:
             await self._stop(change, pending, ChangeRefused(verdict.reason or verdict.reply))
         return False
+
+    async def _end_on_check_fault(
+        self, change: aiosqlite.Row, change_type: ChangeType, pending: aiosqlite.Row | None,
+        error: Exception,
+    ) -> bool:
+        """End a member's change whose check raised as it started, where its type says to: REFUSED,
+        in one save with the failure line (and the line clearing a stop it had, if any), the
+        acknowledgement then updated with the reply `on_check_fault` forms. False, and nothing
+        done, where the change is not a member's, its type has no hook, or the hook raises."""
+        hook = change_type.on_check_fault
+        if hook is None or change["origin"] != ChangeOrigin.MEMBER.value:
+            return False
+        try:
+            reply = hook(change["what"], json.loads(change["payload"]), error)
+        except Exception as hook_error:  # noqa: BLE001 — a hook that raises stops the queue
+            log.log(self._failure_level(pending), "the check-fault hook of %s raised (change %s)",
+                    change["what"], change["id"], exc_info=hook_error)
+            return False
+        lines = [failure_line(change["what"], self._named(change), error)]
+        cleared = self._cleared(change, pending, "its request failed at its check")
+        if cleared is not None:
+            lines.append(cleared)
+        ids = await self._end(change, ChangeState.REFUSED, *lines)
+        await self._router.deliver_queued(ids, interaction=self._answerable(change))
+        await self._strip_stop(pending)
+        await self._update_reply(change, reply)
+        self._release(change)
+        return True
 
     async def _go(self, change: aiosqlite.Row, pending: aiosqlite.Row | None) -> None:
         """Start the change whose check has passed.
@@ -1874,7 +1941,9 @@ class ChangeQueue:
 
         `NotFound` completes a `DELETE` job (the message is already gone, and no line says so)
         and an `EDIT` job (with its `gone_line`), its record run as it is marked. Every other
-        failure, from Discord or from the bot, stops the queue at the job. Where the step had
+        failure, from Discord or from the bot, stops the queue at the job, unless the step sets
+        `on_fault`: the job is then marked done with what that returns, in a save of its own, and
+        the lane goes on. Where the step had
         returned and what failed was the save that marks it (its record raising), *produced* is
         kept on the job as a partial result, so that the next try can remove what this one sent.
         """
@@ -1897,6 +1966,16 @@ class ChangeQueue:
                     await self._stopped_as(change, row, ctx),
                 ),
             )
+        if step.on_fault is not None:
+            try:
+                ended = step.on_fault(ctx, error)
+            except Exception as hook_error:  # noqa: BLE001 — a hook that raises stops the queue
+                log.log(self._failure_level(row), "the fault hook of job %s (%r) raised "
+                        "(change %s)", row["id"], row["name"], change["id"], exc_info=hook_error)
+            else:
+                return await self._complete(
+                    change, row, ended, await self._stopped_as(change, row, ctx)
+                )
         job = await self._name_job(change, row, ctx)
         kept = produced.result if produced is not None and step.kind is not StepKind.SAVE else None
         await self._stop(change, row, error, job=job, partial=kept)

@@ -1,147 +1,83 @@
-"""Every refusal of the `/results config` group is recorded in the log channel (#482).
+"""Every refusal of the `/results config` group is recorded in the log channel (#482; #439, slice 7).
 
 The rule is the core specification's "The record of what changed": a refusal is recorded as one
 line naming the member, what was refused and why. Each case runs a `/results config` command, or
 presses a button of `/results config remove`'s confirmation, in a way the bot turns away, and
 expects today's reply, seen by the member alone, and exactly one standard refusal line.
 
-The points configurations live in a real database built from the production migrations, so a
-case holds whatever the command reads before it refuses; the season is the season service's
-answer, since only its status decides the refusal.
+The commands ask a change on the queue (core :125): a refusal is given at once, nothing queued,
+where the state when asked already refuses it; where the state moves between the ask and the run
+(the configuration removed meanwhile), the change is acknowledged and refused when it runs, the
+acknowledgement updated with the same refusal.
+
+The league is built from the production migrations with the real queue, so a case holds whatever
+the command reads before it refuses: the points configuration CONFIG, and the season, where one
+is named, in the status the case gives.
 """
 from __future__ import annotations
 
-import os
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any
 
 import pytest
+from discord import app_commands
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.db.database import get_connection
 from leaguebot.results.cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.points_config_service import (
-    ConfigNotFoundError,
-    create_config,
+from tests.support import saves
+from tests.support.change_queue import MEMBER_ID, change_rows, member, run_queue
+from tests.support.settings_league import (
+    interaction,
+    log_lines,
+    said,
+    settings_league,
 )
 from tests.support.undecorate import undecorate
 
-SERVER_ID = 10482
-ACTOR_ID = 4242
 OTHER_ADMIN = 5151
 CONFIG = "100%"
 MISSING = "75%"
 
 
-async def _db(tmp_path) -> str:
-    """A server holding the one points configuration CONFIG, with no season built on it."""
-    db_path = os.path.join(str(tmp_path), "config_refusals.db")
-    await run_migrations(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-            (SERVER_ID,),
-        )
-        await db.commit()
-    await create_config(db_path, CONFIG)
-    return db_path
+async def _league(tmp_path, *, season_status: str | None = "SETUP") -> Any:
+    """A league, results alone on, holding the one points configuration CONFIG with no season
+    built on it, and a season in *season_status* (None: none)."""
+    league = await settings_league(tmp_path, modules=("results",))
+    await saves.create_config(league.db_path, CONFIG)
+    if season_status is not None:
+        stage = "CONFIGURATION" if season_status == "SETUP" else "ONGOING"
+        async with get_connection(league.db_path) as db:
+            await db.execute(
+                "INSERT INTO seasons (id, season_number, start_date, status, stage) "
+                "VALUES (1, 1, '2026-01-01', ?, ?)",
+                (season_status, stage),
+            )
+            await db.commit()
+    return league
 
 
-def _cog(db_path: str, *, season_status: str | None = "SETUP") -> ResultsCog:
-    """The results cog, the module on, and the server's season in *season_status* (None: none)."""
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_results_enabled = AsyncMock(return_value=True)
-    season = None if season_status is None else SimpleNamespace(id=1, status=season_status)
-    bot.season_service.get_season_for_server = AsyncMock(return_value=season)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    cog = ResultsCog.__new__(ResultsCog)
-    cog.bot = bot
-    return cog
-
-
-def _interaction(cog: ResultsCog, command: str | None, user_id: int = ACTOR_ID, name: str = "Alex"):
-    """An interaction by *name*, answering as Discord's does; *command* None for a button."""
-    state = {"done": False}
-
-    async def _answer(*_args, **_kwargs):
-        state["done"] = True
-
-    interaction = MagicMock()
-    interaction.client = cog.bot
-    interaction.guild_id = SERVER_ID
-    if command is None:
-        interaction.command = None
-    else:
-        interaction.command.qualified_name = command
-    interaction.user.id = user_id
-    interaction.user.display_name = name
-    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
-    interaction.response.send_message = AsyncMock(side_effect=_answer)
-    interaction.response.defer = AsyncMock(side_effect=_answer)
-    interaction.followup.send = AsyncMock()
-    return interaction
-
-
-def _choice(session: SessionType, label: str):
-    return SimpleNamespace(value=session.value, name=label)
+def _choice(session: SessionType, label: str) -> Any:
+    return app_commands.Choice(name=label, value=session.value)
 
 
 RACE = _choice(SessionType.FEATURE_RACE, "Feature Race")
 QUALIFYING = _choice(SessionType.FEATURE_QUALIFYING, "Feature Qualifying")
 
 
-async def _add(cog, interaction):
-    await undecorate(ResultsCog.config_add)(cog, interaction, "<@1>")
+def _run(method: str, *args: Any):
+    async def run(league: Any, asked: Any) -> None:
+        await undecorate(getattr(ResultsCog, method))(ResultsCog(league.bot), asked, *args)
+    return run
 
 
-async def _add_duplicate(cog, interaction):
-    await undecorate(ResultsCog.config_add)(cog, interaction, CONFIG)
-
-
-async def _remove_missing(cog, interaction):
-    await undecorate(ResultsCog.config_remove)(cog, interaction, MISSING)
-
-
-async def _remove_gone_meanwhile(cog, interaction):
-    with patch(
-        "leaguebot.results.services.points_config_service.remove_config",
-        new=AsyncMock(side_effect=ConfigNotFoundError(CONFIG)),
-    ):
-        await undecorate(ResultsCog.config_remove)(cog, interaction, CONFIG)
-
-
-async def _session_missing(cog, interaction):
-    await undecorate(ResultsCog.config_session)(cog, interaction, MISSING, RACE, 1, 25)
-
-
-async def _fl_missing(cog, interaction):
-    await undecorate(ResultsCog.config_fl)(cog, interaction, MISSING, RACE, 1)
-
-
-async def _fl_qualifying(cog, interaction):
-    await undecorate(ResultsCog.config_fl)(cog, interaction, CONFIG, QUALIFYING, 1)
-
-
-async def _plimit_missing(cog, interaction):
-    await undecorate(ResultsCog.config_fl_plimit)(cog, interaction, MISSING, RACE, 10)
-
-
-async def _plimit_qualifying(cog, interaction):
-    await undecorate(ResultsCog.config_fl_plimit)(cog, interaction, CONFIG, QUALIFYING, 10)
-
-
-async def _append(cog, interaction):
-    await undecorate(ResultsCog.config_append)(cog, interaction, CONFIG)
-
-
-async def _append_missing(cog, interaction):
-    await undecorate(ResultsCog.config_append)(cog, interaction, MISSING)
-
-
-async def _detach(cog, interaction):
-    await undecorate(ResultsCog.config_detach)(cog, interaction, CONFIG)
+async def _remove_gone_meanwhile(league: Any, asked: Any) -> None:
+    """Ask the removal of CONFIG, which no season stands on; before it runs, CONFIG is deleted;
+    then run the queue."""
+    await undecorate(ResultsCog.config_remove)(ResultsCog(league.bot), asked, CONFIG)
+    async with get_connection(league.db_path) as db:
+        await db.execute("DELETE FROM points_config_store WHERE config_name = ?", (CONFIG,))
+        await db.commit()
+    await run_queue(league.bot)
 
 
 _MENTION_REFUSAL = (
@@ -150,109 +86,117 @@ _MENTION_REFUSAL = (
 )
 
 
-def _case(case_id, command, run, reply, *, season_status="SETUP"):
-    return pytest.param(
-        command, run, reply, season_status,
-        id=case_id,
-    )
+def _case(case_id, command, run, reply, *, season_status="SETUP", at_once=True, marks=()):
+    return pytest.param(command, run, reply, season_status, at_once, id=case_id, marks=marks)
 
 
 @pytest.mark.parametrize(
-    ("command", "run", "reply", "season_status"),
+    ("command", "run", "reply", "season_status", "at_once"),
     [
-        _case("add-name", "results config add", _add, f"❌ {_MENTION_REFUSAL}"),
+        _case("add-name", "results config add", _run("config_add", "<@1>"),
+              f"❌ {_MENTION_REFUSAL}"),
         _case(
-            "add-duplicate", "results config add", _add_duplicate,
+            "add-duplicate", "results config add", _run("config_add", CONFIG),
             f"❌ A config named **{CONFIG}** already exists on this server.",
         ),
         _case(
-            "remove-not-found", "results config remove", _remove_missing,
+            "remove-not-found", "results config remove", _run("config_remove", MISSING),
             f"❌ Config **{MISSING}** not found.",
         ),
         _case(
             "remove-gone-meanwhile", "results config remove", _remove_gone_meanwhile,
-            f"❌ Config **{CONFIG}** not found.",
+            f"❌ Config **{CONFIG}** not found.", at_once=False,
         ),
         _case(
-            "session-not-found", "results config session", _session_missing,
+            "session-not-found", "results config session",
+            _run("config_session", MISSING, RACE, 1, 25),
             f"❌ Config **{MISSING}** not found.",
         ),
         _case(
-            "fl-not-found", "results config fl", _fl_missing,
+            "fl-not-found", "results config fl", _run("config_fl", MISSING, RACE, 1),
             f"❌ Config **{MISSING}** not found.",
         ),
         _case(
-            "fl-qualifying", "results config fl", _fl_qualifying,
+            "fl-qualifying", "results config fl", _run("config_fl", CONFIG, QUALIFYING, 1),
             "❌ Fastest-lap bonus cannot be set for qualifying sessions.",
         ),
         _case(
-            "fl-plimit-not-found", "results config fl-plimit", _plimit_missing,
+            "fl-plimit-not-found", "results config fl-plimit",
+            _run("config_fl_plimit", MISSING, RACE, 10),
             f"❌ Config **{MISSING}** not found.",
         ),
         _case(
-            "fl-plimit-qualifying", "results config fl-plimit", _plimit_qualifying,
+            "fl-plimit-qualifying", "results config fl-plimit",
+            _run("config_fl_plimit", CONFIG, QUALIFYING, 10),
             "❌ Position limit cannot be set for qualifying sessions.",
         ),
         _case(
-            "append-no-season", "results config append", _append,
+            "append-no-season", "results config append", _run("config_append", CONFIG),
             "❌ No season found for this server.", season_status=None,
         ),
         _case(
-            "append-not-in-setup", "results config append", _append,
+            "append-not-in-setup", "results config append", _run("config_append", CONFIG),
             "❌ Config attachment is only allowed for seasons in SETUP.", season_status="ACTIVE",
         ),
         _case(
-            "append-not-found", "results config append", _append_missing,
+            "append-not-found", "results config append", _run("config_append", MISSING),
             f"❌ Config **{MISSING}** does not exist on this server, so nothing was attached. "
             "Check the spelling, or create it with `/results config add`.",
         ),
         _case(
-            "detach-no-season", "results config detach", _detach,
+            "detach-no-season", "results config detach", _run("config_detach", CONFIG),
             "❌ No season found for this server.", season_status=None,
         ),
         _case(
-            "detach-not-in-setup", "results config detach", _detach,
+            "detach-not-in-setup", "results config detach", _run("config_detach", CONFIG),
             "❌ Config detachment is only allowed for seasons in SETUP.", season_status="ACTIVE",
         ),
     ],
 )
-async def test_every_config_refusal_is_recorded(tmp_path, command, run, reply, season_status):
-    """The manager Alex is refused as today, and one line records the refusal and its reason."""
-    cog = _cog(await _db(tmp_path), season_status=season_status)
-    interaction = _interaction(cog, command)
+async def test_every_config_refusal_is_recorded(tmp_path, command, run, reply, season_status,
+                                                at_once):
+    """The member Admin is refused as today, and one line records the refusal and its reason:
+    at once, nothing queued, where the state when asked refuses it; else acknowledged, then
+    refused when the change runs."""
+    league = await _league(tmp_path, season_status=season_status)
+    asked = interaction(league.bot, command)
 
-    await run(cog, interaction)
+    await run(league, asked)
 
-    interaction.followup.send.assert_awaited_once_with(reply, ephemeral=True)
+    if at_once:
+        assert said(asked) == [reply]
+        assert await change_rows(league.db_path) == []
+    else:
+        assert said(asked)[0].startswith("⏳ ")
+        assert said(asked)[-1] == reply
     reason = reply.removeprefix("❌ ")
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        f"⛔ `/{command}` refused for Alex (<@{ACTOR_ID}>) — {reason}"
-    )
+    assert await log_lines(league) == [
+        f"⛔ `/{command}` refused for Admin (`<@{MEMBER_ID}>`) — {reason}"
+    ]
 
 
 @pytest.mark.parametrize("button", ["confirm", "cancel"])
 async def test_a_confirmation_pressed_by_another_admin_is_recorded(tmp_path, button):
-    """Alex asked to remove 100% from a season in setup; another admin, Sam, presses one of
-    the confirmation's buttons. Sam is told it is not their action, nothing is removed, and
-    one line records the refusal naming the button, the removal it belongs to, and Sam."""
-    db_path = await _db(tmp_path)
-    cog = _cog(db_path)
-    view = _ConfirmRemoveConfigView(cog, ACTOR_ID, CONFIG)
-    interaction = _interaction(cog, None, user_id=OTHER_ADMIN, name="Sam")
+    """Admin asked to remove 100% from a season in setup; another admin, Sam, presses one of
+    the confirmation's buttons. Sam is told it is not their action, nothing is removed or
+    queued, and one line records the refusal naming the button, the removal it belongs to, and
+    Sam."""
+    league = await _league(tmp_path)
+    view = _ConfirmRemoveConfigView(ResultsCog(league.bot), MEMBER_ID, CONFIG)
+    pressed = interaction(league.bot, user=member(OTHER_ADMIN, "Sam", "Sam#0001"))
     label = {"confirm": "Remove it anyway", "cancel": "Cancel"}[button]
 
-    await getattr(type(view), button)(view, interaction, MagicMock(label=label))
+    await getattr(type(view), button)(view, pressed, type("Button", (), {"label": label})())
 
-    interaction.response.send_message.assert_awaited_once_with(
-        "⛔ Not your action.", ephemeral=True
-    )
-    [line] = [c.args[0] for c in cog.bot.output_router.post_log.await_args_list]
+    assert said(pressed) == ["⛔ Not your action."]
+    [line] = await log_lines(league)
     assert line.startswith("⛔ ")
     assert label in line
     assert "`/results config remove`" in line
     assert CONFIG in line
-    assert line.endswith(f"refused for Sam (<@{OTHER_ADMIN}>) — Not your action.")
-    async with get_connection(db_path) as db:
+    assert line.endswith(f"refused for Sam (`<@{OTHER_ADMIN}>`) — Not your action.")
+    assert await change_rows(league.db_path) == []
+    async with get_connection(league.db_path) as db:
         cursor = await db.execute(
             "SELECT COUNT(*) FROM points_config_store WHERE config_name = ?", (CONFIG,)
         )

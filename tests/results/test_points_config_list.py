@@ -6,15 +6,11 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.points_config_service import (
-    create_config,
     list_configs,
     list_configs_with_sessions,
-    set_session_points,
 )
-from leaguebot.results.services.season_points_service import (
-    attach_config,
-    list_season_configs_with_sessions,
-)
+from leaguebot.results.services.season_points_service import list_season_configs_with_sessions
+from tests.support.saves import attach_config, create_config, set_session_points
 from tests.support.season_points import snapshot_points
 
 

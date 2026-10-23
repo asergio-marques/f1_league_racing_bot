@@ -320,7 +320,7 @@ outcome, as it does for any outcome that arrives after 14 minutes (an approval o
 tells the review's channel, below). **Turning `results` off
 works this way, and so does a round's review: opening it, approving either of its stages, and
 approving either stage of an amendment; and so does approving a points amendment with
-`/results amend review`, and so does approving a season with the ✅ Approve button, and so do `/round cancel`, `/division cancel` and confirming `/round amend`, and so do `/season complete`, `/season cancel` and `/season abort`, and so does the wind-down once every division is done, and so do `/division calendar-sync` and `/results rounds sync`.** The lineups and attendance sheets that the `/driver` commands, a mid-season confirmation and `/attendance sync` ask for once their own change is made are posted on the queue too, and so is every weather forecast, its deletion when the next phase supersedes it, its deletion a day after the round, and the clearing of the forecasts when test mode is switched off. A command that asks for such a post replies as it always has, saying what it did, and the post follows on the queue. In each, **the new post goes up first and the message it replaces is deleted after**: for a calendar, a lineup, an attendance sheet, a results table, a forecast or the standings as text, that deletion is a job of its own, and so is the deletion of each standings picture it replaces, after the new one. A post Discord refuses stops the queue and is tried again as text (a lineup, results or standings picture Discord refuses is posted as text at once instead, and stops nothing), and a deletion job Discord refuses stops it too, the old message standing meanwhile, so a channel may briefly hold two posts but never none. A lineup or attendance sheet one of those commands asked for, or a forecast, whose channel is not set stops the queue as well, the notice naming the command that sets it. If a league admin discards a deletion, the log names the old message with a link, for you to delete by hand. Approving a stage again while the first approval is in
+`/results amend review`, and so does approving a season with the ✅ Approve button, and so do `/round cancel`, `/division cancel` and confirming `/round amend`, and so do `/season complete`, `/season cancel` and `/season abort`, and so does the wind-down once every division is done, and so do `/division calendar-sync` and `/results rounds sync`.** **So does every command that changes a setting of the results, weather and images modules**: the three `/weather config` deadlines; in `/results`, `config add`, `remove` (and its ✅ button), `session`, `fl`, `fl-plimit`, `bulk-session`, `xml-import`, `append` and `detach`, `amend toggle`, `revert`, `session`, `fl`, `fl-plimit` and `bulk-session`, and `reserves toggle`; and every `/images` command that sets something (`config`, `template` and `use-pfp`). Each is acknowledged at once, naming what is being set, and that message is updated with the reply the command always gave; a request refused on the spot is refused as ever. These still answer at once, off the queue, and are not affected: `/weather channel`, `/results channel …` and `/attendance …`. A settings change never stops the queue: see below. The lineups and attendance sheets that the `/driver` commands, a mid-season confirmation and `/attendance sync` ask for once their own change is made are posted on the queue too, and so is every weather forecast, its deletion when the next phase supersedes it, its deletion a day after the round, and the clearing of the forecasts when test mode is switched off. A command that asks for such a post replies as it always has, saying what it did, and the post follows on the queue. In each, **the new post goes up first and the message it replaces is deleted after**: for a calendar, a lineup, an attendance sheet, a results table, a forecast or the standings as text, that deletion is a job of its own, and so is the deletion of each standings picture it replaces, after the new one. A post Discord refuses stops the queue and is tried again as text (a lineup, results or standings picture Discord refuses is posted as text at once instead, and stops nothing), and a deletion job Discord refuses stops it too, the old message standing meanwhile, so a channel may briefly hold two posts but never none. A lineup or attendance sheet one of those commands asked for, or a forecast, whose channel is not set stops the queue as well, the notice naming the command that sets it. If a league admin discards a deletion, the log names the old message with a link, for you to delete by hand. Approving a stage again while the first approval is in
 hand, waiting, running or stopped on a failure, is refused as well, and so is approving a points
 amendment again while the first is, or approving a season again (without naming the job), or cancelling a round or division again (naming the job). **While a season's completion, cancellation or abort is in hand** — waiting, running or stopped on a failure — every request about that season is refused at once, naming the job and telling you to press Retry or Discard on its notice if it has stopped: completing, cancelling or aborting it again, `/round cancel`, `/division cancel`, `/round amend` and `/results rounds amend` for any of its rounds. A round's or division's cancellation, a `/round amend` or a review already in hand does not refuse the season's end; the league's lane runs it first, and the end is judged when its turn comes.
 
@@ -330,7 +330,7 @@ amendment again while the first is, or approving a season again (without naming 
 
 **A message typed into a conversation's channel is marked ⏳ at once**, and answered, saved and followed by the next question when its turn on that lane comes. A second message typed while the first waits is not taken: at once, and off the queue, the bot posts a note that the earlier answer is still waiting and this one was not taken, and deletes the message, the note staying. A timed window runs from when the bot showed the question, so an answer typed in time counts though its turn waits. **Every button press is acknowledged privately** as under way, and the acknowledgement updated with what became of it.
 
-**A job that fails stops its lane.** Nothing behind it on that lane runs until it is cleared, and the other lanes carry on: a stopped conversation holds only itself, and a stopped league lane leaves every conversation running. The log channel
+**A job that fails stops its lane.** Nothing behind it on that lane runs until it is cleared, and the other lanes carry on: a stopped conversation holds only itself, and a stopped league lane leaves every conversation running. **The one exception is a change to a setting** (the commands named above): when its save fails nothing is saved, the reply says so and tells you to run the command again (the pastes and imports say to paste or import again), the log channel records one ❌ line naming the kind of fault, and the queue goes on to the next change. The same holds when its check cannot be made as it comes up to run. A setting refused as it comes up to run is refused as ever, saying why, and the queue goes on. Work that follows a setting and that the setting does not need (checking a template against the new colour, arming or removing the daily portrait job) cannot hold the queue either: the setting stays saved, and the reply says what was not done. A change the bot asked for itself keeps the rule. When a job stops its lane, the log channel
 gets one ❌ message, with **Retry** and **Discard** buttons, naming the job's number, the lane's channel where it is a conversation's, what it was,
 the request, who asked and the kind of fault in plain words (that the bot could not read or write its database, that Discord refused a request, that the bot hit an internal fault, or the job's own reason), never the error's technical name, and the acknowledgement says the request is stopped
 and will be tried again. The notice of the league's lane always mentions the league admin role; a conversation's does only when no other conversation's stop notice is standing. A change asked for meanwhile is acknowledged, joins the back, and says
@@ -1632,7 +1632,8 @@ Removing it also **detaches it from a season still in setup**, so no season is l
 attached to a configuration that does not exist. Where a season in setup stands on it, the
 command names that season and asks before deleting anything; that season will then need
 another configuration attached before it can be approved. Where nothing is attached, it is
-removed straight away.
+removed without asking; if a season in setup has taken it up by the time the removal runs,
+the removal is refused and nothing is deleted — run the command again to be asked first.
 
 A season already **approved** keeps its attachment. It holds its own copy of the points,
 taken at approval, and that copy is what its results are scored from and what the
@@ -1648,7 +1649,7 @@ submission buttons offer.
 | `position` | Integer | ✅ | Finishing position (1-indexed) |
 | `points` | Integer | ✅ | Points awarded |
 
-The change is applied. If it leaves that session's table out of order, the confirmation says so and names the positions at fault. Setting a position to the points it already holds changes nothing: the reply says so, nothing is changed or audited, and the log channel records that nothing changed.
+`position` must be ≥ 1 and `points` ≥ 0, as in the bulk form, and a value out of range is refused at once. The change is applied. If it leaves that session's table out of order, the confirmation says so and names the positions at fault. Setting a position to the points it already holds changes nothing: the reply says so, nothing is changed or audited, and the log channel records that nothing changed.
 
 ##### `/results config fl` — Set the fastest-lap bonus
 *Access: League manager*
@@ -1661,7 +1662,7 @@ Only applicable to race session types (`Feature Race`, `Sprint Race`).
 | `session` | Choice | ✅ | Race session type |
 | `points` | Integer | ✅ | Bonus points for fastest lap |
 
-A value the configuration already holds changes nothing, and the reply says so.
+Negative points are refused at once. A value the configuration already holds changes nothing, and the reply says so.
 
 ##### `/results config fl-plimit` — Set the fastest-lap position eligibility limit
 *Access: League manager*
@@ -1674,7 +1675,7 @@ Only applicable to race session types. For example `limit:10` means only drivers
 | `session` | Choice | ✅ | Race session type |
 | `limit` | Integer | ✅ | Highest eligible position |
 
-A value the configuration already holds changes nothing, and the reply says so.
+A limit below 1 is refused at once. A value the configuration already holds changes nothing, and the reply says so.
 
 ##### `/results config append` — Attach a config to the current season
 *Access: League manager*
@@ -1686,7 +1687,7 @@ Only allowed when the season is in **SETUP** status.
 | `name` | String | ✅ | Config name to attach |
 
 The name must be one that exists on this server. A name that does not is refused and
-nothing is attached — a typo is never reported as a successful attachment.
+nothing is attached — a typo is never reported as a successful attachment. A configuration already attached to the season changes nothing, and the reply says so.
 
 ##### `/results config detach` — Detach a config from the current season
 *Access: League manager*
@@ -1731,7 +1732,7 @@ Displays position-to-points mappings and fastest-lap settings.
 
 Opens a modal taking one `position, points` pair per line (up to 2 000 characters). Blank lines are skipped. `position` must be ≥ 1 and `points` ≥ 0; a repeated position takes its last value and the override is reported.
 
-**A paste is all or nothing.** If any line cannot be read, nothing is applied, and every rejected line is listed back — in several messages where the list is long — so correct them and paste the whole table again. A repeated position is not a rejected line. The paste is written in one step: if the bot hits a fault while writing it, nothing from the paste is saved and the reply says so. The log channel lists every value set, and each position changed is recorded from what to what.
+**A paste is all or nothing.** If any line cannot be read, nothing is applied, and every rejected line is listed back — in several messages where the list is long — so correct them and paste the whole table again. A repeated position is not a rejected line. The paste is written in one step: if the bot hits a fault while writing it, nothing from the paste is saved and the reply says so, and the queue goes on. A paste whose every position already holds the value pasted changes nothing: the reply says so (`ℹ️ Nothing changed: …`) and the log channel records that nothing changed. The log channel lists every value set, and each position changed is recorded from what to what.
 
 ##### `/results config xml-import` — Import a full points configuration from XML
 *Access: League manager · Results module required*
@@ -1743,7 +1744,7 @@ Opens a modal taking one `position, points` pair per line (up to 2 000 character
 
 Bulk-upserts position points and fastest-lap bonuses for one or more session types in a single operation. Existing rows not mentioned in the XML are **left untouched** (partial imports are safe). The entire import is applied atomically — any validation failure leaves the database unchanged.
 
-Each position and fastest-lap bonus the import changes is recorded from what to what, and the log channel's line lists every value set. A refused import — too large, empty, not UTF-8, malformed, out of order, or into a configuration that does not exist — is written to the log channel with the reason. If the bot cannot write its database, you get the standard failure reply ending *"Nothing from the import was saved. Run the import again to retry."*
+Each position and fastest-lap bonus the import changes is recorded from what to what, and the log channel's line lists every value set. A refused import — too large, empty, not UTF-8, malformed, out of order, or into a configuration that does not exist — is written to the log channel with the reason. If the bot cannot write its database, you get the standard failure reply ending *"Nothing from the import was saved. Run the import again to retry."*, and the queue goes on. An import whose every value is already held changes nothing and says so.
 
 **Input methods:**
 - **Modal** (no `file` argument) — paste XML directly into the modal text field (up to 4 000 characters).
@@ -2032,7 +2033,7 @@ A **❌ Cancel Amendment** button is posted in the channel to abort at any time.
 
 No parameters. Toggles amendment mode for the active season. When amendment mode is active, changes made via `/results amend session`, `/results amend fl`, and `/results amend fl-plimit` are staged in a modification store and do not affect live standings until approved with `/results amend review`. While a points approval of the season is waiting, running or stopped on the queue, `toggle`, `revert`, `session`, `fl`, `fl-plimit` and `bulk-session` are refused, naming its job.
 
-Disabling amendment mode while there are uncommitted changes is blocked — use `/results amend revert` to discard them first.
+Disabling amendment mode while there are uncommitted changes is blocked — use `/results amend revert` to discard them first. Switching it on is refused while the season is still in setup: a season in setup takes its points from the configurations attached to it, which `/results config` changes. It switches to the opposite of the state it read when you ran it, so a second run made before the first was carried out asks for the same state: it is refused as a repeat while the first waits, and answers that nothing changed once it has run.
 
 ##### `/results amend revert` — Discard modification store changes
 *Access: League manager*
@@ -2051,7 +2052,7 @@ Requires amendment mode to be active.
 | `position` | Integer | ✅ | Finishing position |
 | `points` | Integer | ✅ | New points value |
 
-The change is staged. If it leaves that session's staged table out of order, the confirmation says so and names the positions at fault — and `/results amend review` will refuse to approve it until they are repaired. Staging the points the working copy already holds changes nothing: the reply says so, and the modified flag stays as it was, so amendment mode can still be switched off.
+The change is staged. If it leaves that session's staged table out of order, the confirmation says so and names the positions at fault — and `/results amend review` will refuse to approve it until they are repaired. Staging the points the working copy already holds changes nothing: the reply says so, and the modified flag stays as it was, so amendment mode can still be switched off. The position must be ≥ 1 and the points ≥ 0, and the configuration must be one of the season's own (the error names them); both are refused at once.
 
 ##### `/results amend fl` — Stage a fastest-lap bonus change
 *Access: League manager*
@@ -2064,7 +2065,7 @@ Requires amendment mode to be active. Race session types only.
 | `session` | Choice | ✅ | Race session type |
 | `points` | Integer | ✅ | New FL bonus value |
 
-A value already staged changes nothing, says so, and leaves the modified flag as it was.
+The configuration must be one of the season's, and negative points are refused. A value already staged changes nothing, says so, and leaves the modified flag as it was.
 
 ##### `/results amend fl-plimit` — Stage a fastest-lap position limit change
 *Access: League manager*
@@ -2077,7 +2078,7 @@ Requires amendment mode to be active. Race session types only.
 | `session` | Choice | ✅ | Race session type |
 | `limit` | Integer | ✅ | New position limit |
 
-A value already staged changes nothing, says so, and leaves the modified flag as it was.
+The configuration must be one of the season's, and a limit below 1 is refused. A value already staged changes nothing, says so, and leaves the modified flag as it was.
 
 ##### `/results amend bulk-session` — Stage many position changes at once via a modal
 *Access: League manager*
@@ -2089,7 +2090,7 @@ Requires amendment mode to be active.
 | `name` | String | ✅ | Config name |
 | `session` | Choice | ✅ | Session type |
 
-Same modal and same input rules as [`/results config bulk-session`](#results-config-bulk-session--set-many-positions-at-once-via-a-modal), all or nothing on the same terms, writing to the modification store instead of the server config.
+Same modal and same input rules as [`/results config bulk-session`](#results-config-bulk-session--set-many-positions-at-once-via-a-modal), all or nothing on the same terms, writing to the modification store instead of the server config. The configuration must be one of the season's, and a paste of values already staged changes nothing, says so and leaves the modified flag as it was.
 
 ##### `/results amend review` — Review and approve modification store changes
 *Access: League admin*
@@ -2145,7 +2146,7 @@ It is acknowledged at once ("⏳ Syncing the results of every round of **Pro**. 
 |-----------|------|----------|-------------|
 | `division` | String | ✅ | Division name |
 
-Toggles whether reserve drivers appear in the publicly posted standings for the specified division. Reserves are **shown by default**. Hiding them affects presentation only: a hidden reserve still accrues points, and those points still count towards the team whose car they drove.
+Toggles whether reserve drivers appear in the publicly posted standings for the specified division. Reserves are **shown by default**. Hiding them affects presentation only: a hidden reserve still accrues points, and those points still count towards the team whose car they drove. It switches to the opposite of the state it read when you ran it, so a second run made before the first was carried out asks for the same state: it is refused as a repeat while the first waits, and answers that nothing changed once it has run.
 
 > **Only while the season is being raced.** Once every division is done the display is settled — decide before the last round. Refused on a completed or cancelled season too.
 
@@ -2494,7 +2495,7 @@ Giving a template the filename it already holds changes nothing: the reply says 
 > **If you drew your own copies of these three, rename the field before your next season.** Give the
 > text element `id="classification_label"`, delete the `ROUND` lettering beside it, and give it room
 > for a phrase rather than a two-digit number — `Opening Classification` is a good deal wider than
-> `10`. `/images config template-directory` checks all sixteen files at once and refuses the whole
+> `10`. `/images config template-directory` checks every file your switched-on outputs need at once and refuses the whole
 > change if one of them still declares the old field, so you will be told rather than finding out at
 > season approval. Every other template — results, check-in, weather, verdicts — keeps `round_number`
 > exactly as it was; those are always about one round.
@@ -2734,7 +2735,7 @@ Colours are stored whether or not the feature is on and whether or not a templat
 
 The reason is that you supply **one file per thing**. There is a single `united_kingdom.svg`, and it goes into every flag box there is. If two boxes on a drawing are different shapes, that one file is letterboxed in one of them, and no artwork you could draw would fix it — the bot never pads or crops to fit.
 
-> **The bot does not compare one drawing against another.** If your calendar draws flags at 3:2 and your standings draws them at 2:1, both are accepted and your flags are letterboxed on one of them. This is deliberate: checking it would make re-shaping a class impossible, because the first drawing you changed would disagree with the other fourteen and be refused. **So when you change the shape of a class, change it in every drawing that uses it.** Flags appear on fifteen of the sixteen templates and team badges on seven — those two are the ones easy to half-finish.
+> **The bot does not compare one drawing against another.** If your calendar draws flags at 3:2 and your standings draws them at 2:1, both are accepted and your flags are letterboxed on one of them. This is deliberate: checking it would make re-shaping a class impossible, because the first drawing you changed would disagree with the other fifteen and be refused. **So when you change the shape of a class, change it in every drawing that uses it.** Flags appear on fifteen of the sixteen templates and team badges on seven — those two are the ones easy to half-finish.
 
 > **`markers` is the exception, and is never checked at all.** That one folder holds the square position-change arrows *and* the marks that stretch into a result cell, so there is no single shape for it to hold you to.
 
@@ -2782,7 +2783,7 @@ confirm. **That time is UTC**, not your local time, and the box says so — the 
 everything in UTC. It defaults to `03:00`. Most spellings work: `3`, `03:00`, `3am`, `1530`.
 Turning the daily updates back off needs no time and asks for nothing.
 
-**The confirmation is recorded whichever way it ends.** Confirming is logged as a success, pressing Cancel as a cancel, and a confirmation left unanswered until it lapses as a lapse, naming the manager who opened it; either says the daily updates are unchanged and to run the command again to enable them. The buttons come down at each ending. Pressing Confirm twice stores and logs once: the second press is told the confirmation has already been answered. If the module is switched off, portraits are switched off, or the daily updates are switched on while the box or the confirmation stood open, nothing is stored and you are told so. If the setting is stored but the daily job cannot be scheduled, you are told the setting is stored and the job will be scheduled when the bot next starts, not that it is running; `/images use-pfp toggle` does the same when it cannot schedule the job.
+**The confirmation is recorded whichever way it ends.** Confirming is logged as a success, pressing Cancel as a cancel, and a confirmation left unanswered until it lapses as a lapse, naming the manager who opened it; either says the daily updates are unchanged and to run the command again to enable them. The buttons come down at each ending. Pressing Confirm twice stores and logs once: the second press is told the confirmation has already been answered. If the module is switched off, portraits are switched off, or the daily updates are switched on while the box or the confirmation stood open, nothing is stored and you are told so. If the setting is stored but the daily job cannot be scheduled, you are told the setting is stored and the job will be scheduled when the bot next starts, not that it is running; `/images use-pfp toggle` does the same when it cannot schedule the job. If portraits or the daily updates are switched off and the daily job cannot be removed, you are told the setting is stored and the job does nothing while it is off.
 
 Both methods can be on at once. Pre-render updates keep a posted lineup current; daily
 updates keep the folder warm so the first lineup of a season is not the one that waits.
@@ -2829,7 +2830,7 @@ offer the approve button while the configuration is one that could never fetch a
 | `per-tier-bulk-colour` | `division` | — | Opens a form; paste `slot colour` lines to set several at once |
 | `colour-xml-import` | `file` (optional) | — | Several tiers at once, from an XML attachment or a pasted payload |
 
-**A value the setting already holds changes nothing.** `time-zone`, `time-format`, `date-format`, `fastest-lap-colour`, `per-tier-colour-toggle` and `per-tier-set-colour` given what they already hold reply `ℹ️ Nothing changed: … is already …`, write nothing, and have the log channel record that nothing changed. `per-tier-colour-toggle` says that and nothing more: it does not list the slots still lacking a colour. The two bulk commands do the same when every colour they name is already held, and an import still lists each block it rejected. `toggle` and the three `use-pfp` toggles flip a setting, so they never do. Every refusal comes first.
+**A value the setting already holds changes nothing.** `time-zone`, `time-format`, `date-format`, `fastest-lap-colour`, `per-tier-colour-toggle` and `per-tier-set-colour` given what they already hold reply `ℹ️ Nothing changed: … is already …`, write nothing, and have the log channel record that nothing changed. `per-tier-colour-toggle` says that and nothing more: it does not list the slots still lacking a colour. The two bulk commands do the same when every colour they name is already held, and an import still lists each block it rejected. `toggle` and the three `use-pfp` toggles flip a setting, so they are not subject to it: a flip is resolved when it is asked, switching to the state opposite the one it read, and one that finds the setting already there when it runs (two presses made before the first was carried out) changes nothing and says so. Every refusal comes first.
 
 `fastest-lap-colour` reports the contrast of the chosen colour against the plate the race results template draws behind that field, and warns below 4.5:1 — the threshold at which text of that size stays legible. The colour is stored either way; it is the league's to choose. Where the template is invalid or declares no `fastest_lap_background` element, the bot says the contrast could not be measured rather than guessing.
 

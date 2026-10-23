@@ -235,7 +235,7 @@ async def _review(
     discord.ui.View.wait = _wait  # type: ignore[assignment]
     try:
         with patch(
-            "leaguebot.core.services.amendment_service.get_amendment_state",
+            "leaguebot.results.services.amendment_mode_service.get_amendment_state",
             new=AsyncMock(return_value=state),
         ), patch(
             "leaguebot.core.services.amendment_service.get_modification_store_diff",

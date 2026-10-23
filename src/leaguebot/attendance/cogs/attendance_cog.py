@@ -20,6 +20,7 @@ from leaguebot.attendance.services.check_in_answer_changes import (
 )
 from leaguebot.attendance.services.check_in_changes import ask_check_in_call, judge_hand_post
 from leaguebot.attendance.services.attendance_service import (
+    SettingChange,
     recalculation_faults,
     sync_attendance,
     validate_timing_invariant,
@@ -59,7 +60,8 @@ async def _record(
 ) -> None:
     """Write one line in the success form, "Name (<@id>) | *what* | *outcome*", *details* beneath.
 
-    For a success and for nothing changed. The post is bare: a line reporting that nothing went
+    For a success and for nothing changed, where the line is not saved with what it records (the
+    settings' lines are: `AttendanceCog._set`). The post is bare: a line reporting that nothing went
     wrong is no place for a catch-all, so a post that raises reaches the command's error
     handling. A press that failed without raising has `_record_failed`, and a refusal, a cancel,
     a lapse and a fault have lines of their own (`core/utils/log_lines.py`, `report_failure`).
@@ -191,10 +193,23 @@ class AttendanceCog(commands.Cog):
         written nowhere and audited nowhere, and is answered and recorded here as nothing
         changed, as the results module's setters are. A change is recorded twice, as "The
         record of what changed" asks of every change to a league's configuration: the
-        service's audit entry, ``ATTENDANCE_CONFIG_SET``, holding *column* from and to, saved
-        with the value, and a log line with the new value and the one it replaced.
+        service's audit entry, ``ATTENDANCE_CONFIG_SET``, holding *column* from and to, and a
+        log line with the new value and the one it replaced. The line, either outcome's, is
+        formed here and saved by the service with the value and the entry, so a stop between
+        them cannot lose it; it is sent once the reply has gone, and one the log channel will
+        not take is left to the retry loop, the member told, as `OutputRouter.deliver_queued`
+        does for every line saved so.
         """
         command = _command(interaction)
+
+        def line(change: SettingChange) -> str:
+            if not change.changed:
+                return _line(interaction, command, "Nothing changed", (f"{name}: {shown(value)}",))
+            return _line(
+                interaction, command, "Success",
+                (f"{name}: {shown(value)} (was {shown(change.old)})",),
+            )
+
         # Deferred first: the save can wait on the database for longer than Discord gives an
         # interaction to be answered, and the reply must not be lost after the change stood.
         await interaction.response.defer(ephemeral=True)
@@ -204,18 +219,18 @@ class AttendanceCog(commands.Cog):
             actor_id=interaction.user.id,
             actor_name=str(interaction.user),
             now=datetime.now(timezone.utc),
+            router=self.bot.output_router,
+            line=line,
         )
         if not change.changed:
             await interaction.followup.send(
                 f"ℹ️ Nothing changed: the {name} is already **{shown(value)}**.",
                 ephemeral=True,
             )
-            await _record(self.bot, interaction, command, "Nothing changed", f"{name}: {shown(value)}")
-            return
-
-        await interaction.followup.send(reply, ephemeral=True)
-        await _record(
-            self.bot, interaction, command, "Success", f"{name}: {shown(value)} (was {shown(change.old)})"
+        else:
+            await interaction.followup.send(reply, ephemeral=True)
+        await self.bot.output_router.deliver_queued(
+            [] if change.line_id is None else [change.line_id], interaction=interaction
         )
 
     # ── /attendance config rsvp-notice ────────────────────────────────────

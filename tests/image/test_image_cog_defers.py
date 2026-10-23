@@ -18,17 +18,24 @@ template marks the slot it was given.
 Deferring buys fifteen minutes. What these pin is that it happens *before* the reading,
 and that every reply thereafter goes through `_reply`, which follows up when the
 interaction is already deferred rather than opening a second response.
+
+These commands run on the change queue (#439, slice 7): what the member is told once the
+command has deferred is the queue's acknowledgement, sent as the follow-up, and its update, an
+edit of that follow-up; a refusal at the ask is the one follow-up. The bodies are driven on a
+league built by the migrations, with the real image services and the real queue, which the test
+runs.
 """
 from __future__ import annotations
 
 import inspect
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
 
 import pytest
 
+from leaguebot.core.db.database import get_connection
 from leaguebot.image.cogs.image_cog import ImageCog
-from tests.support.undecorate import undecorate
+from tests.support import saves
+from tests.support.change_queue import run_queue
 from tests.support.image_cog_doubles import (
     assert_one_line,
     assert_one_refusal,
@@ -36,8 +43,12 @@ from tests.support.image_cog_doubles import (
     log_bot,
     said,
 )
+from tests.support.settings_league import record_followups, settings_league
+from tests.support.undecorate import undecorate
 
 TOGGLE = "images config toggle"
+#: Whether the calendar output is switched on.
+CALENDAR_SWITCH = "SELECT enabled FROM image_aspect_toggles WHERE aspect = 'calendar'"
 
 #: The commands that read a template from disk before they can answer.
 READS_TEMPLATES = [
@@ -130,93 +141,101 @@ def test_reply_follows_up_when_the_interaction_is_already_deferred():
 # ── Switching an aspect on verifies its drawings first ────────────────────
 
 
-class _Toggled:
-    """The smallest cog the toggle body needs, recording what it stored."""
+@pytest.fixture(autouse=True)
+def _rasteriser_present(monkeypatch):
+    """The rasteriser taken as present wherever a check asks for it: no test here draws, and
+    switching an output on is refused on a host without it."""
+    import leaguebot.image.services.image_render_service as render
 
-    def __init__(self, *, enabled: bool, blocking: list[str]):
-        from unittest.mock import AsyncMock, MagicMock
-
-        self._enabled = enabled
-        self._blocking = blocking
-        self.stored: list[tuple[str, bool]] = []
-
-        self._config_service = MagicMock()
-        self._config_service.is_aspect_enabled = AsyncMock(return_value=enabled)
-
-        async def _set(aspect, value):
-            self.stored.append((aspect, value))
-
-        self._config_service.set_aspect = AsyncMock(side_effect=_set)
-        self._module_gate = AsyncMock(return_value=True)
-        # The real `_reply`, so a refusal and a success are read off the interaction alike.
-        self._reply = ImageCog._reply
-        self.bot = log_bot()
-
-    async def _aspect_blocking_reasons_if_enabled(self, aspect):
-        return self._blocking
+    monkeypatch.setattr(render, "converter_available", lambda: True)
+    try:
+        import leaguebot.image.services.image_settings as image_settings
+    except ImportError:
+        return
+    monkeypatch.setattr(image_settings, "converter_available", lambda: True, raising=False)
 
 
-def _toggle_interaction(cog):
-    return _image_interaction(TOGGLE, bot=cog.bot)
+async def _league(tmp_path, *, modules=("images",)) -> Any:
+    """A league with *modules* on and the image configuration's defaults; its bot is
+    `log_bot`'s real-queue form."""
+    league = await settings_league(tmp_path, modules=modules)
+    log_bot(league)
+    return league
 
 
-async def _toggle(cog, aspect="verdicts"):
-    """The command body, past its tier guard.
+async def _break_the_calendar_drawing(league) -> None:
+    """Point the calendar template at a file that is not there."""
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE image_config SET calendar_template = 'missing.svg'")
+        await db.commit()
 
-    Both guards have their own cover, and neither is what these are about — a stub cog
-    carries no `bot`, and the interaction's user is not a `discord.Member`.
-    """
+
+async def _calendar_switch(league) -> int:
+    async with get_connection(league.db_path) as db:
+        return (await (await db.execute(CALENDAR_SWITCH)).fetchone())[0]
+
+
+async def _toggle(league, aspect="calendar"):
+    """`/images config toggle` for *aspect*, past its tier guard, then the queue; returns the
+    interaction, which holds every reply."""
     from discord import app_commands
-
-    from leaguebot.image.cogs.image_cog import ImageCog
 
     body = undecorate(ImageCog.config_toggle)
     choice = app_commands.Choice(name=aspect, value=aspect)
-    interaction = _toggle_interaction(cog)
-    await body(cog, interaction, choice)
+    interaction = _image_interaction(TOGGLE, bot=league.bot)
+    await body(ImageCog(league.bot), interaction, choice)
+    await run_queue(league.bot)
     return interaction
 
 
-@pytest.mark.asyncio
-async def test_switching_on_is_refused_while_the_drawing_is_broken():
-    """The aspect stays off: storing it would arm an output that posts nothing. The refusal
-    is recorded as one "⛔" line naming the command, with what blocks it."""
-    cog = _Toggled(enabled=False, blocking=["the verdicts drawing is not there."])
+async def test_switching_on_is_refused_while_the_drawing_is_broken(tmp_path):
+    """The aspect stays off: storing it would arm an output that posts nothing. Refused at
+    once, nothing queued, and recorded as one "⛔" line naming the command, with what blocks
+    it."""
+    league = await _league(tmp_path)
+    await _break_the_calendar_drawing(league)
 
-    interaction = await _toggle(cog)
+    interaction = await _toggle(league)
 
-    assert cog.stored == [], "the aspect was switched on despite a broken drawing"
+    assert await _calendar_switch(league) == 0, "switched on despite a broken drawing"
     reply = said(interaction)
+    assert not reply.startswith("⏳ "), reply
     assert "not** switched on" in reply
-    assert "the verdicts drawing is not there." in reply
-    line = assert_one_refusal(cog.bot, f"`/{TOGGLE}`")
-    assert "the verdicts drawing is not there." in line
+    assert "Calendar: the drawing file can't be found" in reply
+    line = assert_one_refusal(league.bot, f"`/{TOGGLE}`")
+    assert "Calendar: the drawing file can't be found" in line
 
 
-@pytest.mark.asyncio
-async def test_switching_on_succeeds_when_the_drawing_is_sound():
-    cog = _Toggled(enabled=False, blocking=[])
+async def test_switching_on_succeeds_when_the_drawing_is_sound(tmp_path):
+    """Acknowledged at once; once run, the calendar is on, the reply says so, and one success
+    line names the command."""
+    league = await _league(tmp_path)
 
-    await _toggle(cog)
+    interaction = await _toggle(league)
 
-    assert cog.stored == [("verdicts", True)]
-    assert_one_line(cog.bot, TOGGLE)
+    assert interaction.said[0].startswith("⏳ Switching **Calendar** image output on. ")
+    assert "✅ **Calendar** image output **enabled**." in interaction.said[-1]
+    assert await _calendar_switch(league) == 1
+    assert "Calendar image output: enabled" in assert_one_line(league.bot, TOGGLE)
 
 
-@pytest.mark.asyncio
-async def test_switching_off_is_never_refused():
+async def test_switching_off_is_never_refused(tmp_path):
     """Off posts as text and draws nothing, so no drawing can stand in the way.
 
     A broken template must not trap an aspect in the on position — that would leave a
-    league unable to retreat to text, which is the very thing the switch is for.
+    league unable to retreat to text, which is the very thing the switch is for. The calendar
+    on with its drawing broken: acknowledged at once; once run, it is off and said so.
     """
-    cog = _Toggled(enabled=True, blocking=["the verdicts drawing is not there."])
+    league = await _league(tmp_path)
+    await saves.set_aspect(league.db_path, "calendar", True)
+    await _break_the_calendar_drawing(league)
 
-    interaction = await _toggle(cog)
+    interaction = await _toggle(league)
 
-    assert cog.stored == [("verdicts", False)]
-    assert "disabled" in said(interaction)
-    assert_one_line(cog.bot, TOGGLE)
+    assert interaction.said[0].startswith("⏳ Switching **Calendar** image output off. ")
+    assert "disabled" in interaction.said[-1]
+    assert await _calendar_switch(league) == 0
+    assert "Calendar image output: disabled" in assert_one_line(league.bot, TOGGLE)
 
 
 # ── Every reply after the defer lands on the followup ─────────────────────
@@ -224,124 +243,97 @@ async def test_switching_off_is_never_refused():
 # The source checks above say the defer comes first and that the body never names
 # `response.send_message`. These drive each body down every path it can answer on — the
 # refusals included, which are the ones most easily left on the old response — and assert
-# the answer arrived on the followup of a deferred interaction.
+# the answer arrived on the followup of a deferred interaction: a refusal at the ask as the
+# one follow-up, a change asked as the acknowledgement's follow-up, its update an edit of it.
+
+FASTEST_LAP = "images config fastest-lap-colour"
+PER_TIER = "images config per-tier-colour-toggle"
+SET_COLOUR = "images config per-tier-set-colour"
 
 
-class _Interaction:
-    """Records how it was answered, rather than trusting the source to say so."""
-
-    def __init__(self) -> None:
-        self.deferred = False
-        self.responses: list[str] = []
-        self.followups: list[str] = []
-        self.response = SimpleNamespace(
-            defer=self._defer,
-            is_done=lambda: self.deferred,
-            send_message=self._send_message,
-        )
-        self.followup = SimpleNamespace(send=self._follow_up)
-        self.user = SimpleNamespace(display_name="Manager", id=1)
-
-    async def _defer(self, **_kwargs) -> None:
-        self.deferred = True
-
-    async def _send_message(self, content, **_kwargs) -> None:
-        self.responses.append(content)
-
-    async def _follow_up(self, content, **_kwargs) -> None:
-        self.followups.append(content)
-
-
-def _stub_cog(*, images_enabled: bool = True):
-    """A real `ImageCog`, so its own `_reply` and module guard are the ones exercised."""
-    config_service = MagicMock()
-    # Each setter reports a change, so the stored paths are the ones taken.
-    config_service.set_field = AsyncMock(return_value=True)
-    config_service.set_flag = AsyncMock(return_value=True)
-    config_service.set_tier_colour = AsyncMock(return_value=True)
-    config_service.get_config = AsyncMock(
-        return_value=MagicMock(per_tier_colour_enabled=True)
-    )
-    config_service.season_division_names = AsyncMock(return_value=[])
-
-    validity_service = MagicMock()
-    validity_service.template_reports = AsyncMock(return_value={})
-    validity_service.colour_shortfall = AsyncMock(return_value={})
-
-    module_service = MagicMock()
-    module_service.is_images_enabled = AsyncMock(return_value=images_enabled)
-
-    cog = ImageCog.__new__(ImageCog)
-    cog.bot = SimpleNamespace(
-        module_service=module_service,
-        image_config_service=config_service,
-        image_validity_service=validity_service,
-        output_router=SimpleNamespace(post_log=AsyncMock()),
-    )
-    return cog
-
-
-async def _fastest_lap(cog, interaction, colour="#A020F0"):
+async def _fastest_lap(cog, interaction, colour="#00FF00"):
+    """`/images config fastest-lap-colour` given *colour*: by default one the league does not
+    hold, the packaged colour being `#A020F0`."""
     await undecorate(ImageCog.config_fastest_lap_colour)(cog, interaction, colour)
 
 
-#: (images enabled, how to drive the body, a phrase the answer must carry)
+async def _per_tier_on(league) -> None:
+    await saves.set_flag(league.db_path, "per_tier_colour_enabled", True)
+
+
+#: (images enabled, a seed, the command, how to drive the body, a phrase the answer must
+#: carry, whether a change is asked rather than refused at once)
 REPLY_PATHS = {
-    "fastest-lap-colour, module off": (False, _fastest_lap, "not enabled"),
+    "fastest-lap-colour, module off": (False, None, FASTEST_LAP, _fastest_lap, "not enabled",
+                                       False),
     "fastest-lap-colour, malformed colour": (
-        True,
+        True, None, FASTEST_LAP,
         lambda cog, i: _fastest_lap(cog, i, "purple"),
-        "stored colour is unchanged",
+        "stored colour is unchanged", False,
     ),
-    "fastest-lap-colour, stored": (True, _fastest_lap, "Fastest-lap colour set"),
+    "fastest-lap-colour, stored": (True, None, FASTEST_LAP, _fastest_lap,
+                                   "Fastest-lap colour set", True),
     "per-tier-colour-toggle, module off": (
-        False,
+        False, None, PER_TIER,
         lambda cog, i: ImageCog._set_per_tier_colours(cog, i, True),
-        "not enabled",
+        "not enabled", False,
     ),
     "per-tier-colour-toggle, on": (
-        True,
+        True, None, PER_TIER,
         lambda cog, i: ImageCog._set_per_tier_colours(cog, i, True),
-        "now **on**",
+        "now **on**", True,
     ),
     "per-tier-colour-toggle, off": (
-        True,
+        True, _per_tier_on, PER_TIER,
         lambda cog, i: ImageCog._set_per_tier_colours(cog, i, False),
-        "now **off**",
+        "now **off**", True,
     ),
     "per-tier-set-colour, module off": (
-        False,
+        False, None, SET_COLOUR,
         lambda cog, i: ImageCog._set_tier_colour(cog, i, "Division 1", "accent", "#A78BFA"),
-        "not enabled",
+        "not enabled", False,
     ),
     "per-tier-set-colour, bad slot": (
-        True,
+        True, None, SET_COLOUR,
         lambda cog, i: ImageCog._set_tier_colour(cog, i, "Division 1", "no good!", "#A78BFA"),
-        "Nothing was stored",
+        "Nothing was stored", False,
     ),
     "per-tier-set-colour, bad colour": (
-        True,
+        True, None, SET_COLOUR,
         lambda cog, i: ImageCog._set_tier_colour(cog, i, "Division 1", "accent", "violet"),
-        "Nothing was stored",
+        "Nothing was stored", False,
     ),
     "per-tier-set-colour, stored": (
-        True,
+        True, None, SET_COLOUR,
         lambda cog, i: ImageCog._set_tier_colour(cog, i, "Division 1", "accent", "#A78BFA"),
-        "set to `#A78BFA`",
+        "set to `#A78BFA`", True,
     ),
 }
 
 
-@pytest.mark.parametrize("path", sorted(REPLY_PATHS), ids=sorted(REPLY_PATHS))
-async def test_every_reply_after_the_defer_goes_to_the_followup(path):
-    images_enabled, drive, phrase = REPLY_PATHS[path]
-    interaction = _Interaction()
+@pytest.mark.parametrize("path", sorted(REPLY_PATHS))
+async def test_every_reply_after_the_defer_goes_to_the_followup(path, tmp_path):
+    images_enabled, seed, command, drive, phrase, asked = REPLY_PATHS[path]
+    league = await _league(tmp_path, modules=("images",) if images_enabled else ())
+    if seed is not None:
+        await seed(league)
+    interaction = record_followups(_image_interaction(command, bot=league.bot))
 
-    await drive(_stub_cog(images_enabled=images_enabled), interaction)
+    await drive(ImageCog(league.bot), interaction)
+    await run_queue(league.bot)
 
-    assert interaction.deferred, f"{path}: the command never deferred"
-    assert interaction.responses == [], (
+    assert interaction.response.defer.await_count, f"{path}: the command never deferred"
+    assert interaction.response.send_message.await_count == 0, (
         f"{path}: answered on the original response after deferring"
     )
-    assert len(interaction.followups) == 1
-    assert phrase in interaction.followups[0]
+    assert interaction.edit_original_response.await_count == 0, (
+        f"{path}: answered by editing the original response rather than the follow-up"
+    )
+    [message] = interaction.followup_messages
+    if asked:
+        assert str(message.content).startswith("⏳ "), message.content
+        assert message.edits, f"{path}: the acknowledgement was never updated"
+        assert phrase in message.edits[-1]
+    else:
+        assert phrase in str(message.content)
+        assert message.edits == []

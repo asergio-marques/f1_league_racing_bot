@@ -480,6 +480,11 @@ def register_change_types(bot: LeagueBot) -> None:
         discard_render,
     )
     from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
+    from leaguebot.core.services.setting_change import setting_change
+    from leaguebot.image.services.image_settings import image_settings
+    from leaguebot.results.services.amendment_settings import amendment_settings
+    from leaguebot.results.services.points_settings import points_settings
+    from leaguebot.weather.services.weather_settings import deadline_setting
     from leaguebot.weather.services.forecast_changes import (
         forecast_change,
         forecast_clean_up_change,
@@ -863,6 +868,22 @@ def register_change_types(bot: LeagueBot) -> None:
             scheduler=bot.scheduler_service, discard=discard_render,
         )
     )
+    bot.change_queue.register(
+        setting_change(deadline_setting(modules=bot.module_service, seasons=bot.season_service))
+    )
+    for setting in (
+        *points_settings(modules=bot.module_service, seasons=bot.season_service),
+        *amendment_settings(modules=bot.module_service, seasons=bot.season_service),
+        *image_settings(
+            modules=bot.module_service,
+            config=bot.image_config_service,
+            validity=bot.image_validity_service,
+            render=bot.image_render_service,
+            seasons=bot.season_service,
+            scheduler=bot.scheduler_service,
+        ),
+    ):
+        bot.change_queue.register(setting_change(setting))
     bot.change_queue.register(channel_tell_change())
     bot.change_queue.register(clean_change())
     bot.change_queue.register(

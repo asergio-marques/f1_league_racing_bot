@@ -1102,3 +1102,34 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
 
     assert not [event for event in events if event[0] == "delete"]
     assert await _stored() == stored
+
+
+async def test_the_public_reserves_reader_defaults_to_shown(tmp_path):
+    """The public reserves reader, on a database built by the migrations, reads a division with
+    no results configuration as showing its reserves, and one whose reserves are hidden as not."""
+    import os
+
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.results.services.results_post_service import reserves_in_standings
+
+    db_path = os.path.join(str(tmp_path), "reserves.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, season_number, start_date, status, stage) "
+            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 'ONGOING')"
+        )
+        for division_id, name in ((11, "Pro"), (12, "Am")):
+            await db.execute(
+                "INSERT INTO divisions (id, season_id, name, tier, status, mention_role_id) "
+                "VALUES (?, 1, ?, 1, 'ACTIVE', 555)",
+                (division_id, name),
+            )
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, reserves_in_standings) "
+            "VALUES (12, 0)"
+        )
+        await db.commit()
+
+    assert await reserves_in_standings(db_path, 11) is True
+    assert await reserves_in_standings(db_path, 12) is False

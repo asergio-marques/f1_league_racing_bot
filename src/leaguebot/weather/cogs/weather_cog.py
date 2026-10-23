@@ -20,57 +20,9 @@ from leaguebot.core.utils.channel_guard import league_manager_only, changes_noth
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import refuse
-from leaguebot.core.utils.member_names import interaction_member
-from leaguebot.weather.models.weather_config import WeatherPipelineConfig
+from leaguebot.weather.services.weather_settings import DEADLINE
 
 log = logging.getLogger(__name__)
-
-
-def _command(interaction: discord.Interaction) -> str:
-    """The slash command *interaction* ran, as a success line names it: "/weather config view"."""
-    return describe(interaction).strip("`")
-
-
-def _deadlines(config: WeatherPipelineConfig) -> tuple[str, str, str]:
-    """The three deadlines in force, one detail apiece, as a success line lists them."""
-    return (
-        f"Phase 1: {config.phase_1_days} day(s)",
-        f"Phase 2: {config.phase_2_days} day(s)",
-        f"Phase 3: {config.phase_3_hours} hour(s)",
-    )
-
-
-async def _record(
-    bot: LeagueBot,
-    interaction: discord.Interaction,
-    what: str,
-    outcome: str,
-    *details: str,
-) -> None:
-    """Write one line in the success form, "Name (<@id>) | *what* | *outcome*", *details* beneath.
-
-    For a success and for nothing changed. The post is bare: a line reporting that nothing went
-    wrong is no place for a catch-all, so a post that raises reaches the command's error
-    handling. A refusal, a cancel, a lapse and a fault have lines of their own
-    (`core/utils/log_lines.py`, `report_failure`).
-    """
-    await bot.output_router.post_log(
-        f"{interaction_member(interaction)} | {what} | {outcome}"
-        + "".join(f"\n  {detail}" for detail in details)
-    )
-
-
-async def _nothing_changed(
-    bot: LeagueBot, interaction: discord.Interaction, phase: str, shown: str
-) -> None:
-    """Answer a deadline given the value it already holds, and record that nothing changed.
-
-    *phase* is "Phase 1", and *shown* the value in its unit, "6 day(s)".
-    """
-    await _record(bot, interaction, _command(interaction), "Nothing changed", f"{phase}: {shown}")
-    await interaction.followup.send(
-        f"ℹ️ Nothing changed: the {phase} deadline is already **{shown}**.", ephemeral=True
-    )
 
 
 class WeatherCog(commands.Cog):
@@ -107,17 +59,19 @@ class WeatherCog(commands.Cog):
             await interaction.response.send_message(reply, ephemeral=True)
         return False
 
-    async def _active_season_gate(self, interaction: discord.Interaction) -> bool:
-        """Return True (and refuse, recording it) if a season's placements are confirmed."""
-        season = await self.bot.season_service.get_confirmed_season()
-        if season is not None:
-            await refuse(
-                interaction,
-                "❌ Phase deadline configuration cannot be changed once a season's placements are confirmed.",
-                what=describe(interaction),
-            )
-            return True
-        return False
+    async def _ask_deadline(self, interaction: discord.Interaction, column: str, value: int) -> None:
+        """Ask the change that sets the deadline *column* to *value*.
+
+        Not deferred: the change's check judges the module, the season, the range and the
+        ordering in that order, at the ask and again as it runs (`weather_settings`), and the
+        queue answers (core specification, "How a change is carried out").
+        """
+        await self.bot.change_queue.ask(
+            DEADLINE,
+            {"column": column, "value": value},
+            interaction=interaction,
+            what=describe(interaction),
+        )
 
     # ------------------------------------------------------------------
     # /weather config phase-1-deadline
@@ -130,34 +84,7 @@ class WeatherCog(commands.Cog):
     @app_commands.describe(days="Number of days before the round (positive integer)")
     @league_manager_only
     async def phase_1_deadline(self, interaction: discord.Interaction, days: int) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if await self._active_season_gate(interaction):
-            return
-        if days < 1:
-            await refuse(
-                interaction, "❌ Phase 1 deadline must be at least 1 day.", what=describe(interaction)
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.weather.services.weather_config_service import set_phase_1_days
-        result = await set_phase_1_days(self.bot.db_path, days)
-
-        if isinstance(result, str):
-            await refuse(interaction, f"❌ {result}", what=describe(interaction))
-            return
-        if result is None:
-            await _nothing_changed(self.bot, interaction, "Phase 1", f"{days} day(s)")
-            return
-
-        await _record(self.bot, interaction, _command(interaction), "Success", *_deadlines(result))
-        await interaction.followup.send(
-            f"✅ Phase 1 deadline set to **{days} day(s)** before round. "
-            f"(Phase 2: {result.phase_2_days}d, Phase 3: {result.phase_3_hours}h)",
-            ephemeral=True,
-        )
+        await self._ask_deadline(interaction, "phase_1_days", days)
 
     # ------------------------------------------------------------------
     # /weather config phase-2-deadline
@@ -170,34 +97,7 @@ class WeatherCog(commands.Cog):
     @app_commands.describe(days="Number of days before the round (positive integer)")
     @league_manager_only
     async def phase_2_deadline(self, interaction: discord.Interaction, days: int) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if await self._active_season_gate(interaction):
-            return
-        if days < 1:
-            await refuse(
-                interaction, "❌ Phase 2 deadline must be at least 1 day.", what=describe(interaction)
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.weather.services.weather_config_service import set_phase_2_days
-        result = await set_phase_2_days(self.bot.db_path, days)
-
-        if isinstance(result, str):
-            await refuse(interaction, f"❌ {result}", what=describe(interaction))
-            return
-        if result is None:
-            await _nothing_changed(self.bot, interaction, "Phase 2", f"{days} day(s)")
-            return
-
-        await _record(self.bot, interaction, _command(interaction), "Success", *_deadlines(result))
-        await interaction.followup.send(
-            f"✅ Phase 2 deadline set to **{days} day(s)** before round. "
-            f"(Phase 1: {result.phase_1_days}d, Phase 3: {result.phase_3_hours}h)",
-            ephemeral=True,
-        )
+        await self._ask_deadline(interaction, "phase_2_days", days)
 
     # ------------------------------------------------------------------
     # /weather config phase-3-deadline
@@ -210,34 +110,7 @@ class WeatherCog(commands.Cog):
     @app_commands.describe(hours="Number of hours before the round (positive integer)")
     @league_manager_only
     async def phase_3_deadline(self, interaction: discord.Interaction, hours: int) -> None:
-        if not await self._module_gate(interaction):
-            return
-        if await self._active_season_gate(interaction):
-            return
-        if hours < 1:
-            await refuse(
-                interaction, "❌ Phase 3 deadline must be at least 1 hour.", what=describe(interaction)
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.weather.services.weather_config_service import set_phase_3_hours
-        result = await set_phase_3_hours(self.bot.db_path, hours)
-
-        if isinstance(result, str):
-            await refuse(interaction, f"❌ {result}", what=describe(interaction))
-            return
-        if result is None:
-            await _nothing_changed(self.bot, interaction, "Phase 3", f"{hours} hour(s)")
-            return
-
-        await _record(self.bot, interaction, _command(interaction), "Success", *_deadlines(result))
-        await interaction.followup.send(
-            f"✅ Phase 3 deadline set to **{hours} hour(s)** before round. "
-            f"(Phase 1: {result.phase_1_days}d, Phase 2: {result.phase_2_days}d)",
-            ephemeral=True,
-        )
+        await self._ask_deadline(interaction, "phase_3_hours", hours)
 
     # ------------------------------------------------------------------
     # /weather config view

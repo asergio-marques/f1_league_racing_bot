@@ -12,88 +12,99 @@ Covers:
      that ever produced such warnings (047 FR-024).
   3. An unsound template is refused and nothing is stored.
   4. Nothing in the command path references the withdrawn keyed machinery.
+
+Each command runs on the change queue (#439, slice 7): it is driven past its permission guard on
+a league built by the migrations, with the real image services, the templates the bot ships and
+the real queue, which the test runs; the reply read is the acknowledgement's update.
 """
 from __future__ import annotations
 
 import inspect
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
 
 import pytest
 
+from leaguebot.core.db.database import get_connection
 from leaguebot.image.cogs.image_cog import ImageCog
+from leaguebot.image.models.image_constants import TEMPLATE_COLUMNS, TEMPLATE_COMMAND_NAMES
+from tests.support.change_queue import run_queue
 from tests.support.image_cog_doubles import interaction as _interaction, log_bot
+from tests.support.settings_league import settings_league
+from tests.support.undecorate import undecorate
+
+#: A filename the shipped template folder does not hold.
+MISSING = "nothing-here.svg"
 
 
-def _cog(monkeypatch, *, problem=None):
-    cog = MagicMock(spec=ImageCog)
-    cog._config_service = MagicMock()
-    cog._config_service.candidate_config = AsyncMock(return_value=MagicMock())
-    # A store reporting each filename as a change, so the success path is the one taken.
-    cog._config_service.set_field = AsyncMock(return_value=True)
-    cog._module_gate = AsyncMock(return_value=True)
-    cog._reject = AsyncMock()
-    cog._reply = AsyncMock()
-    cog.bot = log_bot()
-
-    import leaguebot.image.services.image_validity_service as validity
-
-    monkeypatch.setattr(validity, "check_template", lambda proposed, column: problem)
-    return cog
+async def _league(tmp_path, column) -> Any:
+    """A league with images on, *column* pointing at a file that is not there, so that setting
+    the shipped one changes it; its bot is `log_bot`'s real-queue form."""
+    league = await settings_league(tmp_path, modules=("images",))
+    async with get_connection(league.db_path) as db:
+        await db.execute(f"UPDATE image_config SET {column} = ?", ("old.svg",))
+        await db.commit()
+    log_bot(league)
+    return league
 
 
-async def _run(cog, column, filename="lineup_template.svg"):
-    command = "images template " + column.removesuffix("_template").replace("_", "-")
-    await ImageCog._set_template_filename(
-        cog, _interaction(command, bot=cog.bot), column, filename
+async def _stored(league, column) -> str:
+    async with get_connection(league.db_path) as db:
+        return (await (await db.execute(f"SELECT {column} FROM image_config")).fetchone())[0]
+
+
+async def _run(league, column, filename=None):
+    """`/images template <kind>` for *column* given *filename* (the shipped one by default),
+    then the queue; returns the interaction."""
+    name = TEMPLATE_COMMAND_NAMES[column]
+    interaction = _interaction(f"images template {name}", bot=league.bot)
+    method = getattr(ImageCog, f"config_{name.replace('-', '_')}_template")
+    await undecorate(method)(
+        ImageCog(league.bot), interaction, filename=filename or TEMPLATE_COLUMNS[column]
     )
+    await run_queue(league.bot)
+    return interaction
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "column",
     ["lineup_template", "calendar_template", "verdicts_template"],
 )
-async def test_a_sound_template_is_stored_and_reported_without_warnings(
-    monkeypatch, column
-):
-    cog = _cog(monkeypatch)
+async def test_a_sound_template_is_stored_and_reported_without_warnings(tmp_path, column):
+    """Acknowledged at once; once run, the shipped file is stored and the reply says it is
+    valid, with no warning and no stand-in note."""
+    league = await _league(tmp_path, column)
 
-    await _run(cog, column)
+    interaction = await _run(league, column)
 
-    cog._config_service.set_field.assert_awaited_once()
-    cog._reject.assert_not_awaited()
-
-    reply = cog._reply.await_args.args[1]
+    assert interaction.said[0].startswith("⏳ "), interaction.said
+    assert await _stored(league, column) == TEMPLATE_COLUMNS[column]
+    reply = interaction.said[-1]
     assert "✅ Valid." in reply
     assert "⚠️" not in reply
     assert "Checked against the teams configured today" not in reply
 
 
-@pytest.mark.asyncio
-async def test_the_lineup_reply_matches_every_other_kind(monkeypatch):
-    """It was the one type that ever produced a stand-in warning. Now it produces none."""
-    lineup = _cog(monkeypatch)
-    await _run(lineup, "lineup_template")
+async def test_the_lineup_reply_matches_every_other_kind(tmp_path):
+    """It was the one type that ever produced a stand-in warning. Now it produces none: its
+    reply, once the change has run, has as many lines as the calendar's."""
+    (tmp_path / "lineup").mkdir()
+    (tmp_path / "calendar").mkdir()
+    lineup = await _run(await _league(tmp_path / "lineup", "lineup_template"), "lineup_template")
+    calendar = await _run(
+        await _league(tmp_path / "calendar", "calendar_template"), "calendar_template"
+    )
 
-    calendar = _cog(monkeypatch)
-    await _run(calendar, "calendar_template", "calendar_template.svg")
-
-    lineup_shape = lineup._reply.await_args.args[1].splitlines()
-    calendar_shape = calendar._reply.await_args.args[1].splitlines()
-
-    assert len(lineup_shape) == len(calendar_shape)
+    assert len(lineup.said[-1].splitlines()) == len(calendar.said[-1].splitlines())
 
 
-@pytest.mark.asyncio
-async def test_an_unsound_template_is_refused_and_nothing_is_stored(monkeypatch):
-    problem = MagicMock()
-    problem.message.return_value = "it declares no `division_name`"
-    cog = _cog(monkeypatch, problem=problem)
+async def test_an_unsound_template_is_refused_and_nothing_is_stored(tmp_path):
+    """A filename the template folder does not hold: refused, and the stored one is kept."""
+    league = await _league(tmp_path, "lineup_template")
 
-    await _run(cog, "lineup_template")
+    interaction = await _run(league, "lineup_template", MISSING)
 
-    cog._reject.assert_awaited_once()
-    cog._config_service.set_field.assert_not_awaited()
+    assert "✅" not in interaction.said[-1], interaction.said
+    assert await _stored(league, "lineup_template") == "old.svg"
 
 
 def test_the_command_path_references_no_withdrawn_machinery():

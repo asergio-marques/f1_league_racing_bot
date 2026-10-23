@@ -22,26 +22,34 @@ scoring away silently.
 it does rather than "Confirm", and both buttons refuse anybody else — a second admin pressing
 another's confirmation would destroy a configuration they had not been asked about.
 
-**One code path does the removal.** `_apply_config_remove` is shared by the straight path and
-the confirmation button so the two cannot come to differ about what removing one does or about
-what the log records; both routes are tested through to the same log line.
+**One change does the removal** (#439, slice 7). The straight path and the confirmation button
+ask the same settings change on the change queue, so the two cannot come to differ about what
+removing one does or about what the log records; both routes are tested through to the same log
+line.
+
+**Adding and removing are changes on the queue.** Where the state when asked refuses it, the
+refusal is given at once and nothing is queued; otherwise the member is acknowledged at once, and
+the reply is updated with today's once the change has run, its line written with it. A
+configuration removed by somebody else between a confirmation and its run is refused when it
+runs. The tests drive the real commands and buttons past their tier guards, on a league built by
+the migrations with the real services and queue, and run the queue.
 """
 from __future__ import annotations
 
-from contextlib import ExitStack, contextmanager
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from leaguebot.core.db.database import get_connection
 from leaguebot.results.cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView
-from leaguebot.results.services.points_config_service import (
-    ConfigAlreadyExistsError,
-    ConfigNotFoundError,
-)
+from tests.support import saves
+from tests.support.change_queue import MEMBER_ID, change_rows, member, run_queue
+from tests.support.settings_league import interaction, last_said, log_lines, said, settings_league
 from tests.support.undecorate import undecorate
 
-SERVER_ID = 10208
-ACTOR_ID = 77
+#: The member as a log line names them, the mention wrapped so it notifies nobody.
+NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 OTHER_ADMIN = 88
 CONFIG = "100%"
 
@@ -64,65 +72,66 @@ def _make_cog(*, results_enabled: bool = True) -> ResultsCog:
     return cog
 
 
-def _interaction(user_id: int = ACTOR_ID):
-    interaction = MagicMock()
-    interaction.guild_id = SERVER_ID
-    interaction.user = MagicMock()
-    interaction.user.id = user_id
-    interaction.user.display_name = "Admin"
-    interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
+async def _league(tmp_path: Any, *, results: bool = True, config: bool = True,
+                  standing: int | None = None) -> Any:
+    """A league with results on (*results*), holding the configuration CONFIG where *config*
+    says so, and, where *standing* names a season number, that season in setup attached to it."""
+    league = await settings_league(tmp_path, modules=("results",) if results else ())
+    if config:
+        await saves.create_config(league.db_path, CONFIG)
+    if standing is not None:
+        async with get_connection(league.db_path) as db:
+            await db.execute(
+                "INSERT INTO seasons (id, season_number, start_date, status, stage) "
+                "VALUES (1, ?, '2026-01-01', 'SETUP', 'CONFIGURATION')",
+                (standing,),
+            )
+            await db.execute(
+                "INSERT INTO season_points_links (season_id, config_name) VALUES (1, ?)",
+                (CONFIG,),
+            )
+            await db.commit()
+    return league
 
 
-def _replied(interaction) -> str:
-    return "\n".join(
-        str(call.args[0])
-        for call in interaction.response.send_message.await_args_list
-        + interaction.followup.send.await_args_list
-        if call.args
-    )
+async def _held(db_path: str) -> list[str]:
+    """The names of the points configurations the league holds."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT config_name FROM points_config_store ORDER BY config_name")
+        return [row["config_name"] for row in await cursor.fetchall()]
 
 
-def _view_of(interaction):
-    for call in interaction.followup.send.await_args_list:
-        if "view" in call.kwargs:
+async def _add(league: Any, name: str = CONFIG) -> Any:
+    """Run `/results config add <name>` as Admin; the queue is not run."""
+    asked = interaction(league.bot, "results config add")
+    await undecorate(ResultsCog.config_add)(ResultsCog(league.bot), asked, name)
+    return asked
+
+
+async def _remove(league: Any, name: str = CONFIG) -> Any:
+    """Run `/results config remove <name>` as Admin; the queue is not run."""
+    asked = interaction(league.bot, "results config remove")
+    await undecorate(ResultsCog.config_remove)(ResultsCog(league.bot), asked, name)
+    return asked
+
+
+def _view_of(asked: Any) -> Any:
+    """The view the member was answered with, where one was."""
+    calls = asked.response.send_message.await_args_list + asked.followup.send.await_args_list
+    for call in calls:
+        if call.kwargs.get("view") is not None:
             return call.kwargs["view"]
     return None
 
 
-@contextmanager
-def _service(**overrides):
-    """Patch the points config service, with every call succeeding by default.
-
-    Yields the mocks by name so a test can assert on them. `patch.multiple` only hands
-    them back when its replacements are `DEFAULT` sentinels, which would lose the return
-    values these need, so the patches are stacked explicitly.
-    """
-    mocks = {
-        "create_config": AsyncMock(return_value=None),
-        "config_exists": AsyncMock(return_value=True),
-        "setup_seasons_linking": AsyncMock(return_value=[]),
-        "remove_config": AsyncMock(return_value=None),
-    }
-    mocks.update(overrides)
-    with ExitStack() as stack:
-        for name, mock in mocks.items():
-            stack.enter_context(
-                patch(f"leaguebot.results.services.points_config_service.{name}", new=mock)
-            )
-        yield mocks
-
-
-async def _add(cog, interaction, name: str = CONFIG):
-    await undecorate(ResultsCog.config_add)(cog, interaction, name)
-
-
-async def _remove(cog, interaction, name: str = CONFIG):
-    await undecorate(ResultsCog.config_remove)(cog, interaction, name)
+async def _press(league: Any, button: str, *, user: Any = None, view: Any = None) -> Any:
+    """Press *button* ("confirm" or "cancel") of the removal's confirmation of CONFIG, which Admin
+    opened, as *user* (Admin by default); the queue is not run."""
+    view = view or _ConfirmRemoveConfigView(ResultsCog(league.bot), MEMBER_ID, CONFIG)
+    pressed = interaction(league.bot, user=user)
+    label = {"confirm": "\u2705 Remove it anyway", "cancel": "\u274c Cancel"}[button]
+    await getattr(type(view), button)(view, pressed, type("Button", (), {"label": label})())
+    return pressed
 
 
 # ---------------------------------------------------------------------------
@@ -130,27 +139,26 @@ async def _remove(cog, interaction, name: str = CONFIG):
 # ---------------------------------------------------------------------------
 
 
-async def test_adding_is_refused_while_the_module_is_disabled():
-    """A points configuration is meaningless without the module that scores by it."""
-    cog = _make_cog(results_enabled=False)
-    interaction = _interaction()
+async def test_adding_is_refused_while_the_module_is_disabled(tmp_path):
+    """A points configuration is meaningless without the module that scores by it: refused at
+    once, nothing queued, nothing created."""
+    league = await _league(tmp_path, results=False, config=False)
 
-    with _service() as svc:
-        await _add(cog, interaction)
+    asked = await _add(league)
 
-    assert "not enabled" in _replied(interaction)
-    svc["create_config"].assert_not_awaited()
+    assert "not enabled" in " ".join(said(asked))
+    assert await change_rows(league.db_path) == []
+    assert await _held(league.db_path) == []
 
 
-async def test_removing_is_refused_while_the_module_is_disabled():
-    cog = _make_cog(results_enabled=False)
-    interaction = _interaction()
+async def test_removing_is_refused_while_the_module_is_disabled(tmp_path):
+    league = await _league(tmp_path, results=False)
 
-    with _service() as svc:
-        await _remove(cog, interaction)
+    asked = await _remove(league)
 
-    assert "not enabled" in _replied(interaction)
-    svc["remove_config"].assert_not_awaited()
+    assert "not enabled" in " ".join(said(asked))
+    assert await change_rows(league.db_path) == []
+    assert await _held(league.db_path) == [CONFIG]
 
 
 # ---------------------------------------------------------------------------
@@ -158,65 +166,64 @@ async def test_removing_is_refused_while_the_module_is_disabled():
 # ---------------------------------------------------------------------------
 
 
-async def test_a_configuration_is_created():
-    cog = _make_cog()
-    interaction = _interaction()
+async def test_a_configuration_is_created(tmp_path):
+    """Admin adds 100%: acknowledged at once, nothing created until the change runs; then the
+    configuration stands and the reply names it."""
+    league = await _league(tmp_path, config=False)
 
-    with _service() as svc:
-        await _add(cog, interaction)
+    asked = await _add(league)
 
-    svc["create_config"].assert_awaited_once()
-    assert CONFIG in _replied(interaction)
+    assert said(asked)[0].startswith("⏳ ")
+    assert await _held(league.db_path) == []
+    await run_queue(league.bot)
+    assert await _held(league.db_path) == [CONFIG]
+    assert CONFIG in last_said(asked)
 
 
-async def test_a_new_configuration_says_its_positions_start_at_zero():
+async def test_a_new_configuration_says_its_positions_start_at_zero(tmp_path):
     """A manager who did not know would think the command had half-worked, and would go
     looking for the points it had invented."""
-    cog = _make_cog()
-    interaction = _interaction()
+    league = await _league(tmp_path, config=False)
 
-    with _service():
-        await _add(cog, interaction)
+    asked = await _add(league)
+    await run_queue(league.bot)
 
-    assert "default to 0" in _replied(interaction)
-
-
-async def test_a_duplicate_name_is_refused():
-    cog = _make_cog()
-    interaction = _interaction()
-
-    with _service(create_config=AsyncMock(side_effect=ConfigAlreadyExistsError(CONFIG))):
-        await _add(cog, interaction)
-
-    assert "already exists" in _replied(interaction)
+    assert last_said(asked) == f"✅ Config **{CONFIG}** created. All positions default to 0 points."
 
 
-async def test_a_refused_creation_is_recorded_as_a_refusal():
+async def test_a_duplicate_name_is_refused(tmp_path):
+    """100% already exists: refused at once, nothing queued."""
+    league = await _league(tmp_path)
+
+    asked = await _add(league)
+
+    assert said(asked) == [f"❌ A config named **{CONFIG}** already exists on this server."]
+    assert await change_rows(league.db_path) == []
+
+
+async def test_a_refused_creation_is_recorded_as_a_refusal(tmp_path):
     """Nothing changed, so the log records the refusal and its reason, never a creation."""
-    cog = _make_cog()
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "results config add"
+    league = await _league(tmp_path)
 
-    with _service(create_config=AsyncMock(side_effect=ConfigAlreadyExistsError(CONFIG))):
-        await _add(cog, interaction)
+    await _add(league)
+    await run_queue(league.bot)
 
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        f"⛔ `/results config add` refused for Admin (<@{ACTOR_ID}>) — "
+    assert await log_lines(league) == [
+        f"⛔ `/results config add` refused for {NAMED} — "
         f"A config named **{CONFIG}** already exists on this server."
-    )
+    ]
 
 
-async def test_a_created_configuration_is_logged_by_name():
-    cog = _make_cog()
-    interaction = _interaction()
+async def test_a_created_configuration_is_logged_by_name(tmp_path):
+    """Nothing is recorded when Admin asks; once the change has run, one line names the command
+    and the configuration."""
+    league = await _league(tmp_path, config=False)
 
-    with _service():
-        await _add(cog, interaction)
+    await _add(league)
+    assert await log_lines(league) == []
+    await run_queue(league.bot)
 
-    logged = cog.bot.output_router.post_log.await_args.args[0]
-    assert "config add" in logged
-    assert CONFIG in logged
+    assert await log_lines(league) == [f"{NAMED} | /results config add | Success\n  config: {CONFIG}"]
 
 
 # ---------------------------------------------------------------------------
@@ -224,79 +231,78 @@ async def test_a_created_configuration_is_logged_by_name():
 # ---------------------------------------------------------------------------
 
 
-async def test_removing_a_configuration_that_does_not_exist_says_so():
-    cog = _make_cog()
-    interaction = _interaction()
+async def test_removing_a_configuration_that_does_not_exist_says_so(tmp_path):
+    league = await _league(tmp_path, config=False)
 
-    with _service(config_exists=AsyncMock(return_value=False)) as svc:
-        await _remove(cog, interaction)
+    asked = await _remove(league)
 
-    assert "not found" in _replied(interaction)
-    svc["remove_config"].assert_not_awaited()
+    assert said(asked) == [f"❌ Config **{CONFIG}** not found."]
+    assert await change_rows(league.db_path) == []
 
 
-async def test_a_configuration_nothing_depends_on_is_removed_without_asking():
+async def test_a_configuration_nothing_depends_on_is_removed_without_asking(tmp_path):
     """With nothing attached there is nothing to lose, and nagging on every removal is how
-    a confirmation stops being read."""
-    cog = _make_cog()
-    interaction = _interaction()
+    a confirmation stops being read: acknowledged at once, no question, and removed when the
+    change runs."""
+    league = await _league(tmp_path)
 
-    with _service(setup_seasons_linking=AsyncMock(return_value=[])) as svc:
-        await _remove(cog, interaction)
+    asked = await _remove(league)
 
-    svc["remove_config"].assert_awaited_once()
-    assert _view_of(interaction) is None
-    assert "removed" in _replied(interaction)
+    assert _view_of(asked) is None
+    assert said(asked)[0].startswith("⏳ ")
+    assert await _held(league.db_path) == [CONFIG]
+    await run_queue(league.bot)
+    assert await _held(league.db_path) == []
+    assert last_said(asked) == f"✅ Config **{CONFIG}** removed."
 
 
-async def test_a_configuration_a_season_is_built_on_asks_first():
+async def test_a_configuration_a_season_is_built_on_asks_first(tmp_path):
     """Issue #132. The removal detaches it, so the season quietly stops being the season
-    the manager built and is refused at approval."""
-    cog = _make_cog()
-    interaction = _interaction()
+    the manager built and is refused at approval: Admin is asked, nothing is queued."""
+    league = await _league(tmp_path, standing=3)
 
-    with _service(setup_seasons_linking=AsyncMock(return_value=[(1, 3)])) as svc:
-        await _remove(cog, interaction)
+    asked = await _remove(league)
+    await run_queue(league.bot)
 
-    svc["remove_config"].assert_not_awaited()
-    assert _view_of(interaction) is not None
+    assert _view_of(asked) is not None
+    assert await change_rows(league.db_path) == []
+    assert await _held(league.db_path) == [CONFIG]
 
 
-async def test_the_question_names_the_season_at_risk():
+async def test_the_question_names_the_season_at_risk(tmp_path):
     """Naming it is the difference between a deliberate teardown and a surprise found at
     the next `/season placements-review`."""
-    cog = _make_cog()
-    interaction = _interaction()
+    league = await _league(tmp_path, standing=3)
 
-    with _service(setup_seasons_linking=AsyncMock(return_value=[(1, 3)])):
-        await _remove(cog, interaction)
+    asked = await _remove(league)
 
-    assert "Season #3" in _replied(interaction)
+    assert "Season #3" in " ".join(said(asked))
 
 
-async def test_the_question_names_every_season_at_risk():
-    """More than one season can be in setup across a server's history of attachments."""
-    cog = _make_cog()
-    interaction = _interaction()
+async def test_the_question_names_every_season_at_risk(tmp_path):
+    """More than one season can be in setup across a server's history of attachments; a league
+    holds one live season at a time, so the second is given by the reader."""
+    league = await _league(tmp_path)
 
-    with _service(setup_seasons_linking=AsyncMock(return_value=[(1, 3), (2, 4)])):
-        await _remove(cog, interaction)
+    with patch(
+        "leaguebot.results.services.points_config_service.setup_seasons_linking",
+        AsyncMock(return_value=[(1, 3), (2, 4)]),
+    ):
+        asked = await _remove(league)
 
-    replied = _replied(interaction)
+    replied = " ".join(said(asked))
     assert "Season #3" in replied
     assert "Season #4" in replied
 
 
-async def test_the_question_says_what_removing_costs():
+async def test_the_question_says_what_removing_costs(tmp_path):
     """Every position of every session type, with no undo — a manager cannot weigh the
     decision without being told the price."""
-    cog = _make_cog()
-    interaction = _interaction()
+    league = await _league(tmp_path, standing=3)
 
-    with _service(setup_seasons_linking=AsyncMock(return_value=[(1, 3)])):
-        await _remove(cog, interaction)
+    asked = await _remove(league)
 
-    replied = _replied(interaction)
+    replied = " ".join(said(asked))
     assert "no undo" in replied
     assert "refused for approval" in replied
 
@@ -306,16 +312,18 @@ async def test_the_question_says_what_removing_costs():
 # ---------------------------------------------------------------------------
 
 
-async def test_confirming_removes_the_configuration():
-    cog = _make_cog()
-    view = _ConfirmRemoveConfigView(cog, ACTOR_ID, CONFIG)
-    interaction = _interaction()
+async def test_confirming_removes_the_configuration(tmp_path):
+    """Season #3, in setup, stands on 100%; Admin was asked and presses "Remove it anyway": the
+    press is acknowledged at once, and the configuration is removed when the change runs."""
+    league = await _league(tmp_path, standing=3)
 
-    with _service() as svc:
-        await type(view).confirm(view, interaction, MagicMock())
+    pressed = await _press(league, "confirm")
 
-    svc["remove_config"].assert_awaited_once()
-    assert "removed" in _replied(interaction)
+    assert said(pressed)[0].startswith("⏳ ")
+    assert await _held(league.db_path) == [CONFIG]
+    await run_queue(league.bot)
+    assert await _held(league.db_path) == []
+    assert last_said(pressed) == f"✅ Config **{CONFIG}** removed."
 
 
 #: What a cancelled or lapsed removal says beneath its line: what became of the change and what
@@ -334,64 +342,59 @@ def _assert_removal_abandoned(line: str, ending: str) -> None:
     assert " ".join(text.strip() for text in detail) == _NOTHING_REMOVED, line
 
 
-async def test_cancelling_leaves_the_configuration_alone():
-    """Admin (id 77) asked to remove the configuration "100%", which a season in setup is built
-    on, and was asked to confirm. Admin presses Cancel. Nothing is removed, Admin is told it is
-    untouched, and exactly one cancel line records it, naming the command and Admin, with
+async def test_cancelling_leaves_the_configuration_alone(tmp_path):
+    """Admin asked to remove the configuration "100%", which Season #3, in setup, is built on,
+    and was asked to confirm. Admin presses Cancel. Nothing is removed or queued, Admin is told
+    it is untouched, and exactly one cancel line records it, naming the command and Admin, with
     "Nothing was removed; 100% is still attached. Run /results config remove again to remove
     it." beneath it."""
-    cog = _make_cog()
-    view = _ConfirmRemoveConfigView(cog, ACTOR_ID, CONFIG)
-    interaction = _interaction()
-    interaction.client = cog.bot
+    league = await _league(tmp_path, standing=3)
 
-    with _service() as svc:
-        await type(view).cancel(view, interaction, MagicMock())
+    pressed = await _press(league, "cancel")
+    await run_queue(league.bot)
 
-    svc["remove_config"].assert_not_awaited()
-    assert "untouched" in _replied(interaction)
-    (line,) = [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
-    _assert_removal_abandoned(line, "cancelled by Admin (<@77>)")
+    assert "untouched" in " ".join(said(pressed))
+    assert await change_rows(league.db_path) == []
+    assert await _held(league.db_path) == [CONFIG]
+    (line,) = await log_lines(league)
+    _assert_removal_abandoned(line, f"cancelled by {NAMED}")
 
 
-async def test_a_removal_left_to_lapse_is_recorded():
-    """Admin (id 77) asks to remove the configuration "100%", which a season in setup is
-    built on, and is asked to confirm, then answers nothing until the question lapses. Nothing
-    is removed, the buttons are taken down through the command's own reply, and exactly one
+async def test_a_removal_left_to_lapse_is_recorded(tmp_path):
+    """Admin asks to remove the configuration "100%", which Season #3, in setup, is built on,
+    and is asked to confirm, then answers nothing until the question lapses. Nothing is removed
+    or queued, the buttons are taken down through the command's own reply, and exactly one
     lapse line records it, naming the command and Admin as the one who started it, with
     "Nothing was removed; 100% is still attached. Run /results config remove again to remove
     it." beneath it."""
-    cog = _make_cog()
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.edit_original_response = AsyncMock()
+    league = await _league(tmp_path, standing=3)
 
-    with _service(setup_seasons_linking=AsyncMock(return_value=[(1, 3)])) as svc:
-        await _remove(cog, interaction)
-        asked = _view_of(interaction)
-        cog.bot.output_router.post_log.reset_mock()
-        await asked.on_timeout()
+    asked = await _remove(league)
+    question = _view_of(asked)
+    asked.edit_original_response.reset_mock()
+    await question.on_timeout()
+    await run_queue(league.bot)
 
-    svc["remove_config"].assert_not_awaited()
-    interaction.edit_original_response.assert_awaited_once()
-    (line,) = [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
+    assert await _held(league.db_path) == [CONFIG]
+    assert await change_rows(league.db_path) == []
+    asked.edit_original_response.assert_awaited_once()
+    (line,) = await log_lines(league)
     assert line.startswith("⌛ "), line
-    _assert_removal_abandoned(line, "lapsed unconfirmed (started by Admin (<@77>))")
+    _assert_removal_abandoned(line, f"lapsed unconfirmed (started by {NAMED})")
 
 
 @pytest.mark.parametrize("button", ["confirm", "cancel"], ids=["confirm", "cancel"])
-async def test_only_the_admin_who_asked_may_answer(button):
+async def test_only_the_admin_who_asked_may_answer(tmp_path, button):
     """A second admin pressing another's confirmation would destroy a configuration they
-    had not been asked about."""
-    cog = _make_cog()
-    view = _ConfirmRemoveConfigView(cog, ACTOR_ID, CONFIG)
-    interaction = _interaction(user_id=OTHER_ADMIN)
+    had not been asked about: refused, nothing queued or removed."""
+    league = await _league(tmp_path, standing=3)
 
-    with _service() as svc:
-        await getattr(type(view), button)(view, interaction, MagicMock())
+    pressed = await _press(league, button, user=member(OTHER_ADMIN, "Sam", "Sam#0001"))
+    await run_queue(league.bot)
 
-    assert "Not your action" in _replied(interaction)
-    svc["remove_config"].assert_not_awaited()
+    assert "Not your action" in " ".join(said(pressed))
+    assert await change_rows(league.db_path) == []
+    assert await _held(league.db_path) == [CONFIG]
 
 
 async def test_the_confirmation_button_says_what_it_does():
@@ -400,53 +403,51 @@ async def test_the_confirmation_button_says_what_it_does():
     import discord
 
     cog = _make_cog()
-    view = _ConfirmRemoveConfigView(cog, ACTOR_ID, CONFIG)
+    view = _ConfirmRemoveConfigView(cog, MEMBER_ID, CONFIG)
 
     confirm = next(c for c in view.children if "Remove" in (c.label or ""))
     assert confirm.style is discord.ButtonStyle.danger
 
 
 # ---------------------------------------------------------------------------
-# One code path for the removal
+# One change for the removal
 # ---------------------------------------------------------------------------
 
 
-async def test_both_routes_log_the_removal_identically():
-    """`_apply_config_remove` is shared so the two cannot come to differ about what the
-    log records — the league's account of a destroyed configuration must not depend on
-    whether a confirmation happened to be shown."""
-    straight_cog = _make_cog()
-    straight = _interaction()
-    with _service(setup_seasons_linking=AsyncMock(return_value=[])):
-        await _remove(straight_cog, straight)
+async def test_both_routes_log_the_removal_identically(tmp_path):
+    """The straight path and the confirmation ask the same change, so the two cannot come to
+    differ about what the log records — the league's account of a destroyed configuration must
+    not depend on whether a confirmation happened to be shown."""
+    (tmp_path / "straight").mkdir()
+    (tmp_path / "confirmed").mkdir()
+    straight = await _league(tmp_path / "straight")
+    await _remove(straight)
+    await run_queue(straight.bot)
 
-    confirmed_cog = _make_cog()
-    view = _ConfirmRemoveConfigView(confirmed_cog, ACTOR_ID, CONFIG)
-    confirmed = _interaction()
-    with _service():
-        await type(view).confirm(view, confirmed, MagicMock())
+    confirmed = await _league(tmp_path / "confirmed", standing=3)
+    await _press(confirmed, "confirm")
+    await run_queue(confirmed.bot)
 
-    assert (
-        straight_cog.bot.output_router.post_log.await_args.args[0]
-        == confirmed_cog.bot.output_router.post_log.await_args.args[0]
-    )
+    assert await log_lines(straight) == await log_lines(confirmed)
+    assert len(await log_lines(straight)) == 1
 
 
-async def test_a_removal_that_finds_nothing_is_reported_not_raised():
-    """The configuration can go between the existence check and the removal — another
-    admin removing it in the meantime must not raise at this one, and the removal is
-    recorded as refused, not as done."""
-    cog = _make_cog()
-    interaction = _interaction()
+async def test_a_removal_that_finds_nothing_is_reported_not_raised(tmp_path):
+    """The configuration can go between the confirmation and the change's run — another admin
+    removing it in the meantime must not raise at this one: Admin's press is acknowledged, and
+    when it runs the removal is refused as not found, recorded as refused, not as done."""
+    league = await _league(tmp_path, standing=3)
 
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "results config remove"
+    pressed = await _press(league, "confirm")
+    async with get_connection(league.db_path) as db:
+        await db.execute("DELETE FROM season_points_links WHERE config_name = ?", (CONFIG,))
+        await db.execute("DELETE FROM points_config_store WHERE config_name = ?", (CONFIG,))
+        await db.commit()
+    await run_queue(league.bot)
 
-    with _service(remove_config=AsyncMock(side_effect=ConfigNotFoundError(CONFIG))):
-        await _remove(cog, interaction)
-
-    assert "not found" in _replied(interaction)
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        f"⛔ `/results config remove` refused for Admin (<@{ACTOR_ID}>) — "
-        f"Config **{CONFIG}** not found."
-    )
+    assert said(pressed)[0].startswith("⏳ ")
+    assert last_said(pressed) == f"❌ Config **{CONFIG}** not found."
+    (line,) = await log_lines(league)
+    assert line.startswith("⛔ "), line
+    assert "`/results config remove`" in line, line
+    assert line.endswith(f"refused for {NAMED} — Config **{CONFIG}** not found."), line

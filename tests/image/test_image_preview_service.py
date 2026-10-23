@@ -33,6 +33,7 @@ from leaguebot.image.services.image_preview_service import (
     resolve_context,
 )
 from leaguebot.core.services.season_service import SeasonService
+from tests.support.saves import set_field
 
 SERVER_ID = 4242
 
@@ -481,8 +482,8 @@ class TestAssetDirectories:
         directory is pointed at another real folder inside the project root — a league
         cannot point outside it, which the containment test below covers.
         """
-        await bot.image_config_service.set_field(
-            "flag_directory", "resources/defaults/teams"
+        await set_field(
+            bot.image_config_service, "flag_directory", "resources/defaults/teams"
         )
 
         directories, faults = await resolve_asset_directories(bot)
@@ -492,8 +493,8 @@ class TestAssetDirectories:
 
     async def test_a_path_escaping_the_project_root_is_reported_with_its_reason(self, bot):
         """FR-038 — not silently omitted and then called an unconfigured class."""
-        await bot.image_config_service.set_field(
-            "flag_directory", "../../elsewhere"
+        await set_field(
+            bot.image_config_service, "flag_directory", "../../elsewhere"
         )
 
         directories, faults = await resolve_asset_directories(bot)
@@ -506,8 +507,8 @@ class TestAssetDirectories:
     async def test_a_directory_that_does_not_exist_is_reported_but_still_passed_on(
         self, bot
     ):
-        await bot.image_config_service.set_field(
-            "flag_directory", "resources/not_a_real_directory"
+        await set_field(
+            bot.image_config_service, "flag_directory", "resources/not_a_real_directory"
         )
 
         directories, faults = await resolve_asset_directories(bot)

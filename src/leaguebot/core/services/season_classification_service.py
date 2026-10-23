@@ -162,8 +162,8 @@ async def post_opening_standings(
     from leaguebot.image.services.image_results_post import _driver_names
     from leaguebot.results.services import standings_service
     from leaguebot.results.services.results_post_service import (
-        _get_show_reserves,
         produce_standings,
+        reserves_in_standings,
     )
 
     opener = await _opening_round(db_path, division_id)
@@ -212,7 +212,7 @@ async def post_opening_standings(
                 driver_snaps,
                 team_snaps,
                 guild,
-                await _get_show_reserves(db_path, division_id),
+                await reserves_in_standings(db_path, division_id),
                 "",
                 bot=None if as_text else bot,
                 occasion=ClassificationOccasion.SEASON_OPENING,
@@ -304,9 +304,9 @@ async def post_final_standings(
     from leaguebot.core.models.change import StepFailedOnDiscord
     from leaguebot.results.services import standings_service
     from leaguebot.results.services.results_post_service import (
-        _get_show_reserves,
         driver_standings_for_display,
         produce_standings,
+        reserves_in_standings,
     )
 
     last = await _final_round(db_path, division_id, round_id)
@@ -352,7 +352,7 @@ async def post_final_standings(
                 driver_snaps,
                 team_snaps,
                 guild,
-                await _get_show_reserves(db_path, division_id),
+                await reserves_in_standings(db_path, division_id),
                 "",
                 bot=None if as_text else bot,
                 occasion=ClassificationOccasion.SEASON_FINAL,

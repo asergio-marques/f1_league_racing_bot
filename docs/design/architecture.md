@@ -222,8 +222,8 @@ audit record, which is how some settings came to have none.
   confirmation uses it to tell the review's channel of a refusal its member can no longer be told
   of. It may likewise ask one where a league admin discards a member's change stopped at its check
   before any job of it started (`ChangeType.on_discarded`), saved with the Discard. A refusal hook
-  that raises stops its lane at the change's first job, as a check that raises does, and the
-  change is checked again at each try; a discard hook that raises is logged on the host and the
+  that raises stops its lane at the change's first job, as a check that raises does (save in a
+  member's settings change, described below), and the change is checked again at each try; a discard hook that raises is logged on the host and the
   Discard goes ahead without it, Discard being the queue's last way past a stop. *Rejected:*
   planning a step on the refused change, which would leave a refused change with jobs to run.
   A change a timer, an event, or a handler or start step the sweep calls asked for is dropped once
@@ -232,8 +232,10 @@ audit record, which is how some settings came to have none.
   no longer due (a channel unset, the bot's permission lost), it has nobody to refuse, so it stops
   its lane like a job that fails (below), at its first job and with the check's reason, and is
   checked again at each try. So does any change, a member's included, whose check raises as it
-  starts; meanwhile the log channel records what failed, as the core
-  specification's "Setting the bot up" has it do. This `steward_module.md` §4 designs for a cycle's close, made bot-wide.
+  starts, save a member's settings change: a change type that gives `ChangeType.on_check_fault`
+  has such a change ended in one save as a failure and the lane goes on (see "A job that fails
+  stops its lane"), while a bot's change of the same type still stops its lane. Meanwhile the log
+  channel records what failed, as the core specification's "Setting the bot up" has it do. This `steward_module.md` §4 designs for a cycle's close, made bot-wide.
 
   A check that must refuse a press while the same approval is already in hand reads the queue
   (`unfinished`, or `in_hand` where the refusal names the job it waits on), which give the changes
@@ -348,7 +350,7 @@ audit record, which is how some settings came to have none.
 - **A job that fails stops its lane.** A lane is a list of jobs carried out in order, one at a
   time, and a job that fails, whether from Discord or from the bot (a post refused, a fault in the
   bot's own code, a check that raises as a change starts), stops that lane there until the job is
-  cleared. Nothing behind it on the lane runs: a change that makes the stopped job's work no longer due
+  cleared, save for the exception to this rule below. Nothing behind it on the lane runs: a change that makes the stopped job's work no longer due
   cannot overtake it either. The other lanes carry on, a stop in one holding only that one. The change keeps its state and the stop is the job's own record
   (when it first failed, how often it has been tried, when it is next due), so it survives a
   restart. What the job's earlier steps saved stays saved, which is why anything that must be all
@@ -356,6 +358,28 @@ audit record, which is how some settings came to have none.
   afresh. Every job of a round's review is such a job, one a module cannot step over (the results
   and attendance specifications say which, and what each stop leaves). A new change asked for meanwhile is
   acknowledged as usual, joins the back of its lane and says that the lane is stopped.
+
+  **One exception: a league's settings.** A change to one of a league's settings is one atomic
+  save of its value and its audit record (its line with them, or after the arming of the daily
+  portrait job; see "The record is the queue's"), and the work after it that the setting does not
+  need (checking it against the templates, arming or removing a timed job) is work nothing later
+  depends on. A fault in either leaves nothing half-done, nothing behind it on the lane waits on
+  it, and the member can simply ask again. So such a step carries `Step.on_fault`: where it raises,
+  the queue does not stop the lane but marks the job done with what `on_fault` returns, in a save
+  of its own with its lines, and the change carries on to its next step or finishes. A save that
+  faults has been rolled back whole, so nothing is saved but the mark and the failure line; a step
+  after the save leaves the setting saved. A change type may likewise give
+  `ChangeType.on_check_fault` for a check that raises as a **member's** change starts: the change
+  is ended as REFUSED in one save, with the failure line in place of a refusal's, and the reply it
+  returns. What the member is told and what the log channel records of either is the core
+  specification's "How a change is carried out"; the full detail goes to the host's log. A step that is `undiscardable` may not carry
+  `on_fault`, since it is a step a stop must hold. Every other job, and a bot's own change whose
+  check raises, keeps the rule. `core/services/setting_change.py` builds both hooks for every
+  settings command once. *Rejected:* a step that catches its own fault, which would leave its
+  partial writes on the save's connection and could not catch what fails after it returns, the
+  queue's own audit and line writes and the commit; and stopping the lane for a setting, which
+  would hold every other change for a fault the member can cure by asking again.
+
   Nothing overtakes the stopped job, so whatever runs outside the queue leaves alone what a change
   is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core
   specification, "How a change is carried out"). Discord answering that a message is already
@@ -412,7 +436,9 @@ audit record, which is how some settings came to have none.
   second rule beside "every failure stops its lane", which is the rule the core specification's
   "How a change is carried out" records. The lanes are not a job stepping aside: within each lane
   nothing overtakes, and a conversation runs apart only because its work is its own and what it
-  hands the league goes to the league lane's back. *Rejected:* a queue for each module, which
+  hands the league goes to the league lane's back. The exception for a league's settings
+  (above) is not a job stepping aside either: the job is ended, not stopped, and nothing it
+  leaves undone is waited on. *Rejected:* a queue for each module, which
   leaves the conversations of one module waiting on each other and the league's work split across
   queues with no one order; and the league dropping a stopped conversation's job when it ends the conversation, which would let a
   change overtake a stop. Also rejected: an automatic try after a restart, which
@@ -431,6 +457,15 @@ audit record, which is how some settings came to have none.
   under the lock the retry loop shares, so the queue and the retry loop never both send it. The
   queue is handed the router and writes through it, not through the bot, since a service does not
   use the bot to look up other services (above).
+
+  A league's settings share the mechanism rather than each forming its own: a command declares a
+  `Setting` (its check, its save on a connection, its reply and the tables it writes) and
+  `setting_change` builds the change type, so that the line, whether an audit record is written, the
+  answer for a value already held and the answer for a fault are decided in one place. A setting's value, its
+  audit record and its line are one save, save where a step after it arms the daily portrait job:
+  there the value and the audit record share the save and the line follows in the arming job's
+  save, so that an arming that failed records no success. *Rejected:* a bespoke change type for
+  each command, which forms the line, the audit and the fault answer a score of ways.
 
 ---
 
@@ -475,7 +510,9 @@ SQLite authoriser (`_confine` in `core/services/change_queue.py`) that refuses a
 delete on any table but those. The queue's own tables are always allowed (`QUEUE_TABLES`: the job's
 mark, its audit records, its log lines and the changes it asks for), so the mark, the lines and a
 follow-on pass, and an empty `writes` allows those alone. A write the authoriser refuses raises in
-the step, rolls its save back whole and stops the lane at that job, so it never lands. A change
+the step, rolls its save back whole and stops the lane at that job, so it never lands; in a
+league's setting, whose steps end on a fault (see "A job that fails stops its lane"), it ends the
+job instead and the lane goes on. A change
 type whose `writes` is `None`, the default, is not restricted; most league change types leave it
 so, and a league change type may declare the tables it writes and be confined to them likewise, as
 replacing a round's results with its resubmission drafts does. What a conversation hands the league, it asks of the league lane (see "How a change
@@ -825,7 +862,11 @@ to it would switch off the one failure path for every command.
    for each lane) puts the error in the host's log, that lane's worker pauses and looks again, and
    the job runs again, so that its failure is recorded then; beside it, the dispatcher's own
    catch-all (`ChangeQueue._work`) puts a fault in starting the lanes in the host's log and pauses
-   before it looks again. The hook a change type may give for a Discard of a change before it
+   before it looks again. The queue's catch of a step that raises is a failure path as well: it
+   stops the lane, or, for a step of a league's setting that gives `Step.on_fault`, and for a
+   check that raises as a member's change of a type that gives `ChangeType.on_check_fault`, ends
+   the job instead and the lane goes on (see "A job that fails stops its lane"). Either way the
+   fault is logged on the host and recorded in the log channel as a failure, once. The hook a change type may give for a Discard of a change before it
    started (`ChangeQueue._discard_follow_ons`) is not a failure path but a stated exception: its
    catch-all puts the error in the host's log alone, with no line to the log channel, and asks no
    follow-on, because a Discard is the queue's last way past a stop and a hook that raises must
@@ -850,7 +891,7 @@ to it would switch off the one failure path for every command.
 In every case it keeps the full error details for the host's log. Beyond the first place's own
 catch-all, a command catches only the errors it expects by name, and only to turn them into a
 refusal the member can act on, or to hand them to `report_failure` itself with context or an
-outcome, as the XML import does with a database fault, naming the configuration it was writing.
+outcome, as `/test-mode backup save` does with a backup fault, saying that the previous backup is unchanged.
 
 ---
 

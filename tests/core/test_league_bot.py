@@ -159,6 +159,38 @@ def test_the_season_s_end_is_registered():
         "season.complete", "season.cancel", "season.abort", "season.wind_down")
 
 
+#: The settings commands of results, weather and images as the builder registers them (#439,
+#: slice 7): one change type per setting, every one built by `setting_change`.
+SETTING_KINDS = (
+    "weather.setting.deadline",
+    *(f"results.setting.{name}" for name in (
+        "config_add", "config_remove", "config_points", "config_fastest_lap", "config_import",
+        "config_attach", "config_detach", "reserves", "amend_mode", "amend_revert",
+        "amend_points", "amend_fastest_lap",
+    )),
+    *(f"image.setting.{name}" for name in (
+        "directory", "template_directory", "template", "aspect", "presentation",
+        "fastest_lap_colour", "per_tier", "tier_colours", "tier_import", "portraits",
+        "daily_portraits",
+    )),
+)
+
+
+def test_the_settings_changes_are_registered():
+    """The builder registers the twenty-four settings changes of results, weather and images,
+    once each, and no other kind carrying ".setting." (#439, slice 7): the attendance settings
+    stay off the queue until attendance's design pass."""
+    from leaguebot.__main__ import register_change_types
+
+    bot = MagicMock()
+    register_change_types(bot)
+
+    kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
+    settings = sorted(kind for kind in kinds if ".setting." in kind)
+    assert settings == sorted(SETTING_KINDS)
+    assert len(SETTING_KINDS) == 24
+
+
 def test_only_the_armings_and_a_submission_s_channel_are_undiscardable():
     """Over every change type the builder registers, the jobs marked as never to be discarded
     are exactly three: the arming of an approved season's timed work ("season.approve", its

@@ -103,6 +103,8 @@ Turn a missing module on with `/module enable <name>`. Set each channel per divi
 
 Four settings, none of which need any artwork, so they are easy to get out of the way.
 
+**Every command in this guide that sets something is acknowledged first and answered after:** you are told at once that the change is under way, and that message is updated with the reply, advice included. A request the bot can refuse on the spot is refused as before. If the save fails, nothing is saved, the reply says so and tells you to run the command again, and the queue goes on. Advice that follows a saved setting, such as a colour checked against your templates, can fail without undoing it: the reply then says the setting is saved and was not checked, and `/images config view` shows how it stands. The same holds for the daily portrait job: if it cannot be scheduled the setting is stored and the job is scheduled when the bot next starts, and if it cannot be removed the reply says it does nothing while the setting is off.
+
 | Command | What it sets | Starts as |
 |---|---|---|
 | `/images config time-zone` | The time zone shown on pictures. Start typing and it suggests names | `UTC` |
@@ -297,7 +299,7 @@ Three filenames are spoken for: `fallback.svg`; `mystery.svg`, in **both** the t
 
 ## Step 5 — The drawing files
 
-Fifteen of them, one per kind of picture, and they all come with the bot. You can leave every one alone to begin with and restyle them later.
+Sixteen of them, one per kind of picture, and they all come with the bot. You can leave every one alone to begin with and restyle them later.
 
 That folder is `resources/defaults/templates`, and `/images config template-directory` moves it. **It does not behave like the artwork folders in step 4, and the order matters:**
 
@@ -455,8 +457,8 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 > **If you have re-laid any of those three, rename the slot before your next season.** Give the text
 > the id `classification_label`, delete the `ROUND` lettering next to it, and give it room for a
 > phrase rather than a two-digit number. It is required on all three, and `round_number` is no
-> longer read on any of them — `/images config template-directory` checks all sixteen at once and
-> refuses the whole change while one still declares the old slot, so you find out then rather than
+> longer read on any of them — `/images config template-directory` checks every drawing your switched-on outputs
+> need at once and refuses the whole change while one still declares the old slot, so you find out then rather than
 > at season approval. Every other drawing keeps `round_number` unchanged; those are always about
 > one round.
 >
@@ -599,7 +601,7 @@ It changes nothing by itself. It prints commands; you run the ones you want.
 
 Nine switches. `aspect` is a dropdown, so you pick rather than type; its nine entries are **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts**, **Verdicts** and **Verdict banner** — the same names `/images config view` and `/season placements-review` use for them. All start off. Each one swaps that output between a picture and the text the bot has always posted.
 
-It is a **toggle**, not an on/off setting: run it on something that is off and it comes on, run it again and it goes back to text.
+It is a **toggle**, not an on/off setting: run it on something that is off and it comes on, run it again and it goes back to text. The bot reads the output's state when you run the command and asks for the opposite one, so two presses made before the first was carried out ask for the same thing: the second is refused as a repeat while the first waits, and answers that nothing changed if it still got through.
 
 **Switching one on checks its drawings first, and refuses if they are not right.** You are told what is wrong and the output stays off. That is on purpose: an output switched on over a broken drawing posts *nothing* where your drivers would otherwise have read text, and it holds up your season's approval as well. Switching one **off** is never refused — text needs no drawing, so you can always go back to it.
 

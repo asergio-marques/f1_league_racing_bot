@@ -80,7 +80,7 @@ later polish phase.
   code probes the conventional install locations, and the `INKSCAPE` environment variable
   overrides.
 - `resources/` splits in two. `resources/defaults/` is **tracked** and holds what ships: the
-  fifteen default templates, one `fallback.svg` per asset directory, and the closed-set files
+  sixteen default templates, one `fallback.svg` per asset directory, and the closed-set files
   (marker directions, weather icons, `mystery.svg`). No league-specific artwork ships.
   `resources/league/` is where a league puts its own — a folder per class, kept by `.gitkeep`
   and otherwise **gitignored**, so an update to the bot cannot overwrite it and its contents

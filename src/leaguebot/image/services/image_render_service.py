@@ -698,6 +698,9 @@ class ImageRenderService:
             )
 
         try:
+            # Parsed on the event loop, unlike the other template reads: the tree is filled
+            # here, on the loop, and a tree parsed in a worker thread must never leave it
+            # (`load_svg`).
             root = load_svg(report.resolved_path)
         except SvgError as exc:
             return RenderOutcome(

@@ -21,7 +21,7 @@ from leaguebot.image.models.image_constants import (
 )
 from leaguebot.image.services.image_config_service import ImageConfigService
 from leaguebot.core.services.module_service import ModuleService
-from tests.support import KIND_TEMPLATES
+from tests.support import KIND_TEMPLATES, saves
 from tests.support.change_queue import in_a_job
 
 SERVER_ID = 4242
@@ -81,7 +81,7 @@ async def test_enable_creates_defaults(module_service, config_service):
 
 async def test_enable_is_idempotent_across_repeat_calls(module_service, config_service):
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "resources/mine")
+    await saves.set_field(config_service, "template_directory", "resources/mine")
     await _enable(module_service, config_service)
 
     cfg = await config_service.get_config()
@@ -95,12 +95,12 @@ async def test_disable_retains_configuration(module_service, config_service):
     await _enable(module_service, config_service)
 
     # Customise something from every group of settable values.
-    await config_service.set_field("template_directory", "resources/my_templates")
-    await config_service.set_field("calendar_template", "my_calendar.svg")
-    await config_service.set_field("flag_directory", "resources/my_flags")
-    await config_service.set_field("fastest_lap_colour", "#00FF88")
-    await config_service.set_field("time_zone", "Europe/Lisbon")
-    await config_service.set_aspect("standings", True)
+    await saves.set_field(config_service, "template_directory", "resources/my_templates")
+    await saves.set_field(config_service, "calendar_template", "my_calendar.svg")
+    await saves.set_field(config_service, "flag_directory", "resources/my_flags")
+    await saves.set_field(config_service, "fastest_lap_colour", "#00FF88")
+    await saves.set_field(config_service, "time_zone", "Europe/Lisbon")
+    await saves.set_aspect(config_service, "standings", True)
 
     before = await config_service.get_config()
     toggles_before = await config_service.get_toggles()
@@ -127,9 +127,9 @@ async def test_disable_preserves_every_settable_column(module_service, config_se
     probes = {}
     for column in ("template_directory", *TEMPLATE_COLUMNS, *ASSET_DIRECTORIES):
         probes[column] = f"custom_{column}"
-        await config_service.set_field(column, probes[column])
+        await saves.set_field(config_service, column, probes[column])
     for aspect in ASPECTS:
-        await config_service.set_aspect(aspect, True)
+        await saves.set_aspect(config_service, aspect, True)
 
     await module_service.set_images_enabled(False)
     await _enable(module_service, config_service)
@@ -426,14 +426,14 @@ async def test_template_relocation(module_service, config_service, template_dir)
     from leaguebot.image.services.image_validity_service import evaluate_all_templates
 
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
+    await saves.set_field(config_service, "template_directory", "templates")
 
     config = await config_service.get_config()
     reports = evaluate_all_templates(config, root=template_dir)
     assert all(r.valid for r in reports.values()), "baseline: all sixteen resolve"
 
     # Point one template at a file that is not there.
-    await config_service.set_field("standings_drivers_template", "gone.svg")
+    await saves.set_field(config_service, "standings_drivers_template", "gone.svg")
     config = await config_service.get_config()
     reports = evaluate_all_templates(config, root=template_dir)
 
@@ -460,9 +460,9 @@ async def test_season_review_and_config_view_agree(
     monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
 
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
-    await config_service.set_field("weather_p3_sprint_template", "gone.svg")
-    await config_service.set_aspect("weather", True)
+    await saves.set_field(config_service, "template_directory", "templates")
+    await saves.set_field(config_service, "weather_p3_sprint_template", "gone.svg")
+    await saves.set_aspect(config_service, "weather", True)
 
     monkeypatch.setattr(
         "leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False
@@ -569,7 +569,7 @@ def test_live_and_pending_aspects_partition_the_eight():
 
 def test_toggle_reply_for_a_live_aspect_makes_no_not_yet_claim():
     """An aspect that posts must not tell a manager it does nothing (the 035 wording)."""
-    from leaguebot.image.cogs.image_cog import toggle_enabled_lines
+    from leaguebot.image.services.image_setting_advice import toggle_enabled_lines
     from leaguebot.image.models.image_constants import ASPECT_LABELS, LIVE_POSTING_ASPECTS
 
     for aspect in sorted(LIVE_POSTING_ASPECTS):
@@ -581,7 +581,7 @@ def test_toggle_reply_for_a_live_aspect_makes_no_not_yet_claim():
 
 def test_toggle_reply_for_a_pending_aspect_says_so():
     """An aspect with no posting path still warns, or the manager thinks it broken."""
-    from leaguebot.image.cogs.image_cog import toggle_enabled_lines
+    from leaguebot.image.services.image_setting_advice import toggle_enabled_lines
     from leaguebot.image.models.image_constants import ASPECT_LABELS, PENDING_POSTING_ASPECTS
 
     for aspect in PENDING_POSTING_ASPECTS:
@@ -593,7 +593,7 @@ def test_toggle_reply_for_a_pending_aspect_says_so():
 
 def test_toggle_reply_keeps_blocking_reasons():
     """The not-yet notice must not have displaced the invalid-configuration warning."""
-    from leaguebot.image.cogs.image_cog import toggle_enabled_lines
+    from leaguebot.image.services.image_setting_advice import toggle_enabled_lines
 
     lines = toggle_enabled_lines("calendar", "Calendar", ["the template is missing"])
     text = "\n".join(lines)
@@ -711,7 +711,7 @@ async def test_render_without_season(
 
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
+    await saves.set_field(config_service, "template_directory", "templates")
 
     for key, filename in TEMPLATE_COLUMNS.items():
         # The results (039), standings (040), attendance (041) and weather (042) templates
@@ -814,7 +814,7 @@ async def test_absent_converter_is_reported_and_no_render_attempted(
 
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
+    await saves.set_field(config_service, "template_directory", "templates")
 
     monkeypatch.setattr(render_module, "converter_available", lambda **_: False)
 
@@ -860,8 +860,8 @@ async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
     monkeypatch.setattr(render_module, "converter_available", lambda **_: False)
 
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
-    await config_service.set_aspect("calendar", True)
+    await saves.set_field(config_service, "template_directory", "templates")
+    await saves.set_aspect(config_service, "calendar", True)
 
     validity = ImageValidityService(config_service, module_service)
     statuses = {s.aspect: s for s in await validity.aspect_statuses()}
@@ -888,7 +888,7 @@ async def test_render_raises_notices_without_failing(
     """A substituted font and a truncated field are notices, not problems (XIV.4)."""
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
+    await saves.set_field(config_service, "template_directory", "templates")
     (template_dir / "templates" / "verdicts_template.svg").write_bytes(RICH_TEMPLATE)
 
     from tests.support.image_sample_data import build_spec
@@ -921,8 +921,8 @@ async def test_render_problem_yields_no_image(
     """png_paths is empty whenever problem is set — never a partial image."""
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
-    await config_service.set_field("calendar_template", "absent.svg")
+    await saves.set_field(config_service, "template_directory", "templates")
+    await saves.set_field(config_service, "calendar_template", "absent.svg")
 
     service = _render_service(config_service, module_service)
     outcome = await service.render(
@@ -950,7 +950,7 @@ async def test_render_is_off_the_event_loop(
 
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
+    await saves.set_field(config_service, "template_directory", "templates")
     (template_dir / "templates" / "calendar_template.svg").write_bytes(RICH_TEMPLATE)
 
     main_thread = threading.get_ident()
@@ -981,31 +981,24 @@ async def test_render_is_off_the_event_loop(
 # ── T049/T050 — the fastest-lap contrast path (FR-026, FR-026a, FR-027) ───
 
 
-def _image_cog(config_service, module_service):
-    from leaguebot.image.cogs.image_cog import ImageCog
+async def _measure(config_service, module_service, colour):
+    """The fastest-lap contrast of *colour*, as the colour setting's advice measures it once the
+    colour is saved: handed the real validity and render services, not a stand-in, since the
+    per-tier contrast paints each division through the render's palette step, and a stub would
+    test a copy of that step."""
+    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.image.services.image_render_service import ImageRenderService
+    from leaguebot.image.services.image_setting_advice import measure_fastest_lap_contrast
     from leaguebot.image.services.image_validity_service import ImageValidityService
 
-    class _Bot:
-        pass
-
-    from unittest.mock import AsyncMock
-
-    from leaguebot.image.services.image_render_service import ImageRenderService
-
-    bot = _Bot()
-    bot.image_config_service = config_service
-    bot.module_service = module_service
-    bot.image_validity_service = ImageValidityService(config_service, module_service)
-    # The real render service, not a stand-in: the per-tier contrast paints each division
-    # through its palette step, and a stub would test a copy of that step.
-    bot.image_render_service = ImageRenderService(
-        config_service, bot.image_validity_service
+    validity = ImageValidityService(config_service, module_service)
+    return await measure_fastest_lap_contrast(
+        colour,
+        config=config_service,
+        render=ImageRenderService(config_service, validity),
+        validity=validity,
+        seasons=SeasonService(config_service._db_path),
     )
-    bot.output_router = SimpleNamespace(post_log=AsyncMock())
-
-    cog = ImageCog.__new__(ImageCog)
-    cog.bot = bot
-    return cog
 
 
 def _race_template(background_markup: str) -> bytes:
@@ -1043,14 +1036,13 @@ async def test_contrast_is_measured_against_the_declared_background(
 ):
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
+    await saves.set_field(config_service, "template_directory", "templates")
 
     (template_dir / "templates" / "results_race_template.svg").write_bytes(
         _race_template('<rect id="fastest_lap_background" fill="#FFFFFF"/>')
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#000000")
+    reading = await _measure(config_service, module_service, "#000000")
 
     assert reading.problem is None
     assert reading.background == "#FFFFFF"
@@ -1062,7 +1054,7 @@ async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
 ):
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
+    await saves.set_field(config_service, "template_directory", "templates")
 
     # The stylesheet wins over the presentation attribute, so the measured background
     # must be the black the template actually paints, not the white attribute.
@@ -1073,8 +1065,7 @@ async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
         )
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+    reading = await _measure(config_service, module_service, "#FFFFFF")
 
     assert reading.problem is None
     assert reading.background == "#000000"
@@ -1086,11 +1077,10 @@ async def test_contrast_unmeasurable_when_template_is_invalid(
 ):
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
-    await config_service.set_field("results_race_template", "gone.svg")
+    await saves.set_field(config_service, "template_directory", "templates")
+    await saves.set_field(config_service, "results_race_template", "gone.svg")
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#A020F0")
+    reading = await _measure(config_service, module_service, "#A020F0")
 
     assert reading.ratio is None and reading.background is None
     assert "invalid" in reading.problem.lower()
@@ -1101,14 +1091,13 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
 ):
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
+    await saves.set_field(config_service, "template_directory", "templates")
 
     (template_dir / "templates" / "results_race_template.svg").write_bytes(
         _race_template('<rect id="something_else" fill="#FFFFFF"/>')
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#A020F0")
+    reading = await _measure(config_service, module_service, "#A020F0")
 
     assert reading.ratio is None and reading.background is None
     assert "fastest_lap_background" in reading.problem
@@ -1125,14 +1114,13 @@ async def test_contrast_unmeasurable_when_fill_is_a_gradient(
 ):
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
+    await saves.set_field(config_service, "template_directory", "templates")
 
     (template_dir / "templates" / "results_race_template.svg").write_bytes(
         _race_template('<rect id="fastest_lap_background" fill="url(#grad)"/>')
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#A020F0")
+    reading = await _measure(config_service, module_service, "#A020F0")
 
     assert reading.ratio is None and reading.background is None
     assert "not" in reading.problem.lower() and "plain colour" in reading.problem.lower()
@@ -1151,14 +1139,13 @@ async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
     """
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
+    await saves.set_field(config_service, "template_directory", "templates")
 
     (template_dir / "templates" / "results_race_template.svg").write_bytes(
         _race_template('<rect id="fastest_lap_background"/>')
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#A020F0")
+    reading = await _measure(config_service, module_service, "#A020F0")
 
     assert reading.ratio is None and reading.background is None
     assert "None" not in reading.problem
@@ -1168,27 +1155,8 @@ async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
 # ── #165 — the contrast is measured in every tier's colours ───────────────
 
 
-class _Interaction:
-    """Answers the way a deferred Discord interaction does, and keeps what it was told."""
-
-    def __init__(self) -> None:
-        self.deferred = False
-        self.said: list[str] = []
-        self.response = SimpleNamespace(
-            defer=self._defer, is_done=lambda: self.deferred, send_message=self._say
-        )
-        self.followup = SimpleNamespace(send=self._say)
-        self.user = SimpleNamespace(display_name="Manager", id=1)
-
-    async def _defer(self, **_kwargs) -> None:
-        self.deferred = True
-
-    async def _say(self, content, **_kwargs) -> None:
-        self.said.append(content)
-
-
 def _lines(reading) -> list[str]:
-    from leaguebot.image.cogs.image_cog import fastest_lap_contrast_lines
+    from leaguebot.image.services.image_setting_advice import fastest_lap_contrast_lines
 
     return fastest_lap_contrast_lines(reading)
 
@@ -1221,41 +1189,46 @@ def _slotted_plate(authored: str) -> bytes:
 async def _per_tier(config_service, template_dir, monkeypatch, markup: bytes, palettes):
     """Configure per-tier colours on, *markup* as the race template, and *palettes*."""
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
-    await config_service.set_field("template_directory", "templates")
+    await saves.set_field(config_service, "template_directory", "templates")
     (template_dir / "templates" / "results_race_template.svg").write_bytes(markup)
-    await config_service.set_flag("per_tier_colour_enabled", True)
+    await saves.set_flag(config_service, "per_tier_colour_enabled", True)
     for division, colours in palettes.items():
-        await config_service.set_tier_colours(division, colours)
+        await saves.set_tier_colours(config_service, division, colours)
 
 
 async def test_fastest_lap_colour_warns_on_the_tier_hardest_to_read(
-    db_path, module_service, config_service, template_dir, monkeypatch
+    tmp_path, template_dir, monkeypatch
 ):
     """The defect of #165, as a league met it.
 
     The plate is authored black, and against black white passes easily — so the reply
     used to say 21:1 and warn of nothing, while Division 2 draws the plate in a grey
-    against which the same white is below the threshold.
+    against which the same white is below the threshold. The colour is acknowledged at once,
+    and the warning is the update once the colour is saved and measured.
     """
     from leaguebot.image.cogs.image_cog import ImageCog
+    from tests.support.change_queue import run_queue
+    from tests.support.image_cog_doubles import interaction, log_bot
+    from tests.support.settings_league import settings_league
     from tests.support.undecorate import undecorate
 
-    await _enable(module_service, config_service)
-    await _seed_season(db_path, ["Division 1", "Division 2"])
+    league = await settings_league(tmp_path, modules=("images",))
+    log_bot(league)
+    await _seed_season(league.db_path, ["Division 1", "Division 2"])
     await _per_tier(
-        config_service,
+        league.bot.image_config_service,
         template_dir,
         monkeypatch,
         _slotted_plate("#000000"),
         {"Division 1": {"plate": "#000000"}, "Division 2": {"plate": "#777777"}},
     )
 
-    interaction = _Interaction()
-    await undecorate(ImageCog.config_fastest_lap_colour)(
-        _image_cog(config_service, module_service), interaction, "#FFFFFF"
-    )
+    asked = interaction("images config fastest-lap-colour", bot=league.bot)
+    await undecorate(ImageCog.config_fastest_lap_colour)(ImageCog(league.bot), asked, "#FFFFFF")
+    await run_queue(league.bot)
 
-    reply = interaction.said[-1]
+    assert asked.said[0].startswith("⏳ "), asked.said
+    reply = asked.said[-1]
     assert "lowest for **Division 2** (`#777777`): **4.48:1**" in reply
     assert "⚠️" in reply
     assert "Division 1" not in reply
@@ -1274,8 +1247,7 @@ async def test_contrast_with_per_tier_colours_is_the_lowest_tier(
         {"Division 1": {"plate": "#000000"}, "Division 2": {"plate": "#777777"}},
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+    reading = await _measure(config_service, module_service, "#FFFFFF")
 
     assert reading.problem is None
     assert reading.background == "#777777"
@@ -1296,10 +1268,9 @@ async def test_contrast_with_per_tier_colours_off_ignores_stored_palettes(
         _slotted_plate("#000000"),
         {"Division 1": {"plate": "#000000"}, "Division 2": {"plate": "#777777"}},
     )
-    await config_service.set_flag("per_tier_colour_enabled", False)
+    await saves.set_flag(config_service, "per_tier_colour_enabled", False)
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+    reading = await _measure(config_service, module_service, "#FFFFFF")
 
     assert reading.background == "#000000"
     assert reading.ratio == pytest.approx(21.0, abs=0.01)
@@ -1324,8 +1295,7 @@ async def test_each_tier_is_measured_on_its_own_copy_of_the_template(
         {"Division 1": {"plate": "#FFFFFF"}, "Division 2": {"accent": "#A78BFA"}},
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#000000")
+    reading = await _measure(config_service, module_service, "#000000")
 
     assert reading.divisions == ("Division 2",)
     assert reading.background == "#333333"
@@ -1349,8 +1319,7 @@ async def test_contrast_reads_a_slot_declared_on_the_plates_group(
         {"Division 1": {"plate": "#777777"}},
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+    reading = await _measure(config_service, module_service, "#FFFFFF")
 
     assert reading.background == "#777777"
     assert reading.divisions == ("Division 1",)
@@ -1381,8 +1350,7 @@ async def test_contrast_reads_the_tiers_colour_whichever_order_the_plates_classe
         {"Division 1": {"plate": "#777777"}},
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+    reading = await _measure(config_service, module_service, "#FFFFFF")
 
     assert reading.background == "#777777"
     assert reading.divisions == ("Division 1",)
@@ -1418,8 +1386,7 @@ async def test_the_contrast_check_paints_each_tier_through_the_render_path(
 
     monkeypatch.setattr(ImageRenderService, "apply_tier_palette", _spy)
 
-    cog = _image_cog(config_service, module_service)
-    await cog._measure_fastest_lap_contrast("#FFFFFF")
+    await _measure(config_service, module_service, "#FFFFFF")
 
     assert painted == ["Division 1", "Division 2", "Division 3"]
 
@@ -1444,8 +1411,7 @@ async def test_no_season_under_way_measures_as_authored_and_says_so(
         {"Division 1": {"plate": "#777777"}},
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+    reading = await _measure(config_service, module_service, "#FFFFFF")
 
     assert reading.background == "#000000"
     assert reading.divisions == ()
@@ -1465,10 +1431,9 @@ async def test_per_tier_colours_off_say_nothing_of_a_season(
     await _per_tier(
         config_service, template_dir, monkeypatch, _slotted_plate("#000000"), {}
     )
-    await config_service.set_flag("per_tier_colour_enabled", False)
+    await saves.set_flag(config_service, "per_tier_colour_enabled", False)
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+    reading = await _measure(config_service, module_service, "#FFFFFF")
 
     assert reading.no_season is False
     assert len(_lines(reading)) == 1
@@ -1492,8 +1457,7 @@ async def test_contrast_names_every_tier_sharing_the_lowest(
         },
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+    reading = await _measure(config_service, module_service, "#FFFFFF")
 
     assert reading.divisions == ("Division 1", "Division 3")
     assert reading.every_division is False
@@ -1517,8 +1481,7 @@ async def test_contrast_says_it_is_the_same_for_every_division(
         {"Division 1": {"accent": "#A78BFA"}, "Division 2": {"accent": "#3DD6F5"}},
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+    reading = await _measure(config_service, module_service, "#FFFFFF")
 
     assert reading.every_division is True
     assert _lines(reading) == [
@@ -1528,7 +1491,7 @@ async def test_contrast_says_it_is_the_same_for_every_division(
 
 
 def test_three_tiers_sharing_the_lowest_are_listed_as_a_sentence():
-    from leaguebot.image.cogs.image_cog import FastestLapContrast
+    from leaguebot.image.services.image_setting_advice import FastestLapContrast
 
     reading = FastestLapContrast(
         ratio=4.478, background="#777777", divisions=("A", "B", "C")
@@ -1542,7 +1505,7 @@ def test_three_tiers_sharing_the_lowest_are_listed_as_a_sentence():
 
 def test_tiers_tied_on_different_colours_are_named_without_one():
     """Two plates can differ and still read at the same figure; neither colour is *the* one."""
-    from leaguebot.image.cogs.image_cog import FastestLapContrast
+    from leaguebot.image.services.image_setting_advice import FastestLapContrast
 
     reading = FastestLapContrast(ratio=21.0, background=None, divisions=("A", "B"))
 
@@ -1571,8 +1534,7 @@ async def test_a_tier_whose_plate_cannot_be_measured_is_named_with_the_reason(
         {"Division 1": {"plate": "#777777"}},
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+    reading = await _measure(config_service, module_service, "#FFFFFF")
 
     why = "the `fastest_lap_background` element's fill (`url(#grad)`) is not a plain colour."
     assert reading.divisions == ("Division 1",)
@@ -1587,7 +1549,7 @@ async def test_a_tier_whose_plate_cannot_be_measured_is_named_with_the_reason(
 
 
 def test_unmeasured_tiers_with_different_reasons_share_one_line():
-    from leaguebot.image.cogs.image_cog import FastestLapContrast
+    from leaguebot.image.services.image_setting_advice import FastestLapContrast
 
     reading = FastestLapContrast(
         ratio=21.0,
@@ -1614,8 +1576,7 @@ async def test_every_tier_unmeasurable_is_reported_once(
         {"Division 1": {"accent": "#A78BFA"}},
     )
 
-    cog = _image_cog(config_service, module_service)
-    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+    reading = await _measure(config_service, module_service, "#FFFFFF")
 
     assert reading.ratio is None
     assert "plain colour" in reading.problem
@@ -1623,7 +1584,7 @@ async def test_every_tier_unmeasurable_is_reported_once(
 
 
 def test_the_reply_warns_below_the_legibility_threshold():
-    from leaguebot.image.cogs.image_cog import FastestLapContrast, fastest_lap_contrast_lines
+    from leaguebot.image.services.image_setting_advice import FastestLapContrast, fastest_lap_contrast_lines
 
     lines = fastest_lap_contrast_lines(FastestLapContrast(ratio=3.0, background="#777777"))
 
@@ -1632,7 +1593,7 @@ def test_the_reply_warns_below_the_legibility_threshold():
 
 
 def test_the_reply_says_why_nothing_was_measured():
-    from leaguebot.image.cogs.image_cog import FastestLapContrast, fastest_lap_contrast_lines
+    from leaguebot.image.services.image_setting_advice import FastestLapContrast, fastest_lap_contrast_lines
 
     lines = fastest_lap_contrast_lines(FastestLapContrast(problem="no plate."))
 
@@ -1657,7 +1618,7 @@ async def test_asset_directory_independence(module_service, config_service, tmp_
     assert all(r.valid for r in reports.values()), "baseline: every class resolves"
 
     for column in ASSET_DIRECTORIES:
-        await config_service.set_field(column, "resources/absent")
+        await saves.set_field(config_service, column, "resources/absent")
         config = await config_service.get_config()
         reports = evaluate_directories(config, root=tmp_path)
 
@@ -1670,7 +1631,7 @@ async def test_asset_directory_independence(module_service, config_service, tmp_
         assert "not found" in reports[column].reason.lower()
         assert str(reports[column].resolved_path).endswith("absent")
 
-        await config_service.set_field(column, ASSET_DIRECTORIES[column][1])
+        await saves.set_field(config_service, column, ASSET_DIRECTORIES[column][1])
 
 
 async def test_asset_directory_escaping_root_is_reported(
@@ -1680,7 +1641,7 @@ async def test_asset_directory_escaping_root_is_reported(
 
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("flag_directory", "../../elsewhere")
+    await saves.set_field(config_service, "flag_directory", "../../elsewhere")
 
     config = await config_service.get_config()
     reports = evaluate_directories(config, root=tmp_path)
@@ -1709,7 +1670,7 @@ async def test_only_wired_aspects_read_their_toggle(
 
     await _enable(module_service, config_service)
     for aspect in ASPECTS:
-        await config_service.set_aspect(aspect, True)
+        await saves.set_aspect(config_service, aspect, True)
     assert all((await config_service.get_toggles()).values())
 
     src = pathlib.Path(__file__).resolve().parents[2] / "src"
@@ -1785,8 +1746,8 @@ async def test_aspect_enabled_while_source_module_disabled(
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
 
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
-    await config_service.set_aspect("standings", True)
+    await saves.set_field(config_service, "template_directory", "templates")
+    await saves.set_aspect(config_service, "standings", True)
 
     # The results module backs the standings aspect and is disabled on this server.
     assert await module_service.is_results_enabled() is False
@@ -1804,8 +1765,8 @@ async def test_toggle_state_survives_into_the_wiring_increment(
 ):
     """A toggle set now is still set later — the league does not re-enter it."""
     await _enable(module_service, config_service)
-    await config_service.set_aspect("weather", True)
-    await config_service.set_aspect("verdicts", True)
+    await saves.set_aspect(config_service, "weather", True)
+    await saves.set_aspect(config_service, "verdicts", True)
 
     toggles = await config_service.get_toggles()
     assert toggles["weather"] is True
@@ -1819,10 +1780,10 @@ async def test_every_template_is_independently_relocatable(
     from leaguebot.image.services.image_validity_service import evaluate_all_templates
 
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
+    await saves.set_field(config_service, "template_directory", "templates")
 
     for column in TEMPLATE_COLUMNS:
-        await config_service.set_field(column, "absent.svg")
+        await saves.set_field(config_service, column, "absent.svg")
         config = await config_service.get_config()
         reports = evaluate_all_templates(config, root=template_dir)
 
@@ -1831,7 +1792,7 @@ async def test_every_template_is_independently_relocatable(
             f"relocating {column} disturbed another template"
         )
 
-        await config_service.set_field(column, TEMPLATE_COLUMNS[column])
+        await saves.set_field(config_service, column, TEMPLATE_COLUMNS[column])
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -1863,7 +1824,8 @@ def catalogue_slot():
 
 
 async def _store_if_valid(config_service, column, filename, root):
-    """The exact sequence `_set_template_filename` runs: candidate → check → maybe write.
+    """The template setting's check and save: the candidate configuration checked, and the
+    filename written only where the check passes.
 
     Driven at the service layer rather than through Discord, so the assertion is about
     what reaches the database, not about how a reply is worded.
@@ -1871,7 +1833,7 @@ async def _store_if_valid(config_service, column, filename, root):
     proposed = await config_service.candidate_config(column, filename)
     problem = check_template(proposed, column, root=root)
     if problem is None:
-        await config_service.set_field(column, filename)
+        await saves.set_field(config_service, column, filename)
     return problem
 
 
@@ -1886,8 +1848,8 @@ async def configured(module_service, config_service, tmp_path):
         (directory / filename).write_bytes(sound_bytes(key))
     (directory / "known_good.svg").write_bytes(_GOOD_SVG)
 
-    await config_service.set_field("template_directory", "templates")
-    await config_service.set_field("calendar_template", "known_good.svg")
+    await saves.set_field(config_service, "template_directory", "templates")
+    await saves.set_field(config_service, "calendar_template", "known_good.svg")
     return tmp_path
 
 
@@ -2072,7 +2034,7 @@ async def test_missing_template_directory_reports_once_not_sixteen_times(
     """Existing 035 behaviour, retained: one shared reason, still one report each."""
     from leaguebot.image.services.image_validity_service import PLAIN_DIRECTORY_MISSING
 
-    await config_service.set_field("template_directory", "no_such_dir")
+    await saves.set_field(config_service, "template_directory", "no_such_dir")
 
     lines = await _problem_lines(config_service, configured)
 
@@ -2208,7 +2170,7 @@ async def test_a_clean_render_posts_the_image(
 
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
+    await saves.set_field(config_service, "template_directory", "templates")
 
     service = _render_service(config_service, module_service)
     # `output_dir` so the render lands under pytest's own directory. Without it this test
@@ -2380,8 +2342,8 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
 
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field("template_directory", "templates")
-    await config_service.set_aspect("verdicts", True)
+    await saves.set_field(config_service, "template_directory", "templates")
+    await saves.set_aspect(config_service, "verdicts", True)
 
     # The packaged template, so the render is against the file a league actually gets.
     packaged = (
@@ -2457,7 +2419,7 @@ async def test_the_verdict_toggle_off_posts_the_textual_announcement(
 
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_aspect("verdicts", False)
+    await saves.set_aspect(config_service, "verdicts", False)
 
     bot = type(
         "_Bot",

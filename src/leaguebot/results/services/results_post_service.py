@@ -16,7 +16,9 @@ from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import current_account_map_for_division
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
+from leaguebot.core.models.change import AuditRecord
 from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.setting_change import Saved
 from leaguebot.results.models.session_result import (
     DriverSessionResult,
     OutcomeModifier,
@@ -1542,18 +1544,64 @@ async def results_sync_hint(db_path: str, division_id: int) -> str:
     )
 
 
-async def _get_show_reserves(db_path: str, division_id: int) -> bool:
-    """Return the reserves_in_standings flag for a division (default True)."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT reserves_in_standings FROM division_results_config WHERE division_id = ?",
-            (division_id,),
-        )
-        row = await cursor.fetchone()
+async def reserves_in_standings_on(db: aiosqlite.Connection, division_id: int) -> bool:
+    """Whether *division_id* shows its reserves in the standings, read on *db* (default True:
+    a division with no results configuration, or none set, shows them)."""
+    cursor = await db.execute(
+        "SELECT reserves_in_standings FROM division_results_config WHERE division_id = ?",
+        (division_id,),
+    )
+    row = await cursor.fetchone()
     if row is None:
         return True
     val = row["reserves_in_standings"]
     return bool(val) if val is not None else True
+
+
+async def reserves_in_standings(db_path: str, division_id: int) -> bool:
+    """Whether *division_id* shows its reserves in the standings (default True).
+
+    The public reader of the flag, for the modules and the commands that read it from outside
+    this file; `reserves_in_standings_on` reads it on a connection already open.
+    """
+    async with get_connection(db_path) as db:
+        return await reserves_in_standings_on(db, division_id)
+
+
+async def set_reserves_in_standings_on(
+    db: aiosqlite.Connection, division_id: int, shown: bool
+) -> Saved:
+    """Set whether *division_id* shows its reserves in the standings, on *db*, committing nothing.
+
+    A division already in that state writes nothing and comes back unchanged. Otherwise the flag
+    is upserted (the division's results configuration row is made if it has none), and one
+    `RESERVES_IN_STANDINGS_SET` entry records the flag from its old value to the new, against the
+    division. The new state is in the result as `shown`.
+    """
+    current = await reserves_in_standings_on(db, division_id)
+    if current == shown:
+        return Saved(changed=False, result={"shown": shown})
+    await db.execute(
+        """
+        INSERT INTO division_results_config (division_id, reserves_in_standings)
+        VALUES (?, ?)
+        ON CONFLICT (division_id) DO UPDATE
+            SET reserves_in_standings = excluded.reserves_in_standings
+        """,
+        (division_id, 1 if shown else 0),
+    )
+    return Saved(
+        changed=True,
+        audits=(
+            AuditRecord(
+                "RESERVES_IN_STANDINGS_SET",
+                {"reserves_in_standings": current},
+                {"reserves_in_standings": shown},
+                division_id=division_id,
+            ),
+        ),
+        result={"shown": shown},
+    )
 
 
 async def division_repost_status(

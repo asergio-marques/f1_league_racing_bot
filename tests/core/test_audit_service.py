@@ -123,8 +123,7 @@ async def test_record_change_on_writes_on_the_connection_it_is_given(tmp_path):
 
 async def _writer_db(tmp_path) -> str:
     """A server with a points configuration, and a season in amendment mode."""
-    from leaguebot.core.services.amendment_service import enable_amendment_mode
-    from leaguebot.results.services.points_config_service import create_config
+    from tests.support.saves import create_config, enable_amendment_mode
 
     db_path = str(tmp_path / "audit_writers.db")
     await run_migrations(db_path)
@@ -179,37 +178,55 @@ async def _written(db_path: str) -> dict[str, int]:
 async def test_a_fault_after_the_audit_write_undoes_both_the_entries_and_the_points(
     tmp_path, writer
 ):
-    """The change and its record are one transaction. A fault after the first record is
-    written takes the whole paste or import back: no points, and no record of points that
-    were never saved."""
+    """The change and its record are one transaction. A bulk paste of two positions into
+    "Standard", an XML import of two positions and a fastest lap, or a staged amendment of two
+    positions is written on one connection, as a settings change's save writes it, its audit
+    entries written after it on that connection; the second audit entry faults. Nothing is
+    left: no points, and no record of points that were never saved."""
     import sqlite3
 
-    from leaguebot.core.services.amendment_service import modify_session_points
+    from leaguebot.core.services.audit_service import record_change_on
     from leaguebot.results.models.points_config import SessionType
-    from leaguebot.results.services.points_config_service import (
-        set_session_points_many,
-        xml_import_config,
-    )
-    from leaguebot.results.utils.xml_import import XmlImportPayload
 
     db_path = await _writer_db(tmp_path)
-    actor = dict(actor_id=77, actor_name="Manager#0001", now=NOW)
     before = await _written(db_path)
 
     with pytest.raises(sqlite3.Error):
-        if writer == "bulk config":
-            await set_session_points_many(
-                db_path, "Standard", SessionType.FEATURE_RACE, [(1, 25), (2, 18)], **actor
-            )
-        elif writer == "xml import":
-            payload = XmlImportPayload(
-                positions={SessionType.FEATURE_RACE: {1: 25, 2: 18}},
-                fastest_laps={SessionType.FEATURE_RACE: (2, 10)},
-            )
-            await xml_import_config(db_path, "Standard", payload, **actor)
-        else:
-            await modify_session_points(
-                db_path, 1, "Standard", "FEATURE_RACE", [(1, 30), (2, 18)], **actor
-            )
+        async with get_connection(db_path) as db:
+            if writer == "bulk config":
+                from leaguebot.results.services.points_config_service import config_points_on
+
+                saved = await config_points_on(
+                    db, "Standard", SessionType.FEATURE_RACE, [(1, 25), (2, 18)]
+                )
+            elif writer == "xml import":
+                from leaguebot.results.services.points_config_service import (
+                    xml_import_config_on,
+                )
+
+                saved = await xml_import_config_on(
+                    db,
+                    "Standard",
+                    {SessionType.FEATURE_RACE: {1: 25, 2: 18}},
+                    {SessionType.FEATURE_RACE: (2, 10)},
+                )
+            else:
+                from leaguebot.results.services.amendment_mode_service import stage_points_on
+
+                saved = await stage_points_on(
+                    db, 1, "Standard", "FEATURE_RACE", [(1, 30), (2, 18)]
+                )
+            for audit in saved.audits:
+                await record_change_on(
+                    db,
+                    actor_id=77,
+                    actor_name="Manager#0001",
+                    change_type=audit.change_type,
+                    old_value=audit.old_value,
+                    new_value=audit.new_value,
+                    now=NOW,
+                    division_id=audit.division_id,
+                )
+            await db.commit()
 
     assert await _written(db_path) == before

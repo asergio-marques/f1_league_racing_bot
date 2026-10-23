@@ -18,7 +18,8 @@ unless *images*.
 
 `press_approve` runs `/results amend review` and presses ✅ Approve on its panel through an
 interaction of its own; `open_panel` draws a panel and leaves it open for a later press;
-`run_staging` runs one of the commands that stage points changes. Every import of the change type
+`run_staging` runs one of the commands that stage points changes and then the queue, reading
+every word the member saw. The season is seeded through `tests/support/saves.py`. Every import of the change type
 is made inside a function, so a test file using this module still collects while it is unbuilt.
 """
 from __future__ import annotations
@@ -40,10 +41,12 @@ from tests.support.change_queue import (
     http_error,
     league_double,
     member_interaction,
+    run_queue,
     seed_server,
     tier_member,
 )
 from tests.support.review_league import AttendanceDouble, channel
+from tests.support.settings_league import record_followups, said
 from tests.support.teams import seed_team_instances
 from tests.support.undecorate import undecorate
 
@@ -204,10 +207,7 @@ class PointsLeague:
 async def make_db(tmp_path: Any, *, attendance: bool, staged: dict[int, int],
                   divisions: tuple[int, ...], cancelled_division: bool) -> str:
     """The season of the module docstring, on a database built by the migrations."""
-    from leaguebot.core.services.amendment_service import (
-        enable_amendment_mode,
-        modify_session_points,
-    )
+    from tests.support.saves import enable_amendment_mode, modify_session_points
 
     db_path = os.path.join(str(tmp_path), "points_amendment.db")
     await run_migrations(db_path)
@@ -441,17 +441,13 @@ class Staged:
 
 
 def _reply_of(interaction: Any) -> str:
-    def _content(call: Any) -> str:
-        return str(call.args[0]) if call.args else str(call.kwargs.get("content", ""))
-
-    parts = [_content(c) for c in interaction.response.send_message.await_args_list]
-    parts += [_content(c) for c in interaction.followup.send.await_args_list]
-    parts += [_content(c) for c in interaction.edit_original_response.await_args_list]
-    return "\n".join(part for part in parts if part)
+    """Every word the member saw, in order (`settings_league.said`), joined."""
+    return "\n".join(said(interaction))
 
 
 async def run_staging(league: PointsLeague, command: str, **args: Any) -> Staged:
-    """Run one of the commands that stage points changes, as Admin (user 77).
+    """Run one of the commands that stage points changes, as Admin (user 77), then run the queue,
+    so that a change the command asked for has run and its reply is updated.
 
     *command* is `toggle`, `revert`, `session`, `fl`, `fl-plimit`, `bulk-session` (the command,
     which shows its form) or `bulk-session-form` (the form, submitted with *entries*, by default
@@ -462,14 +458,15 @@ async def run_staging(league: PointsLeague, command: str, **args: Any) -> Staged
 
     cog = ResultsCog(league.bot)
     form = command == "bulk-session-form"
-    interaction = admin_interaction(
+    interaction = record_followups(admin_interaction(
         league, f"results amend {'bulk-session' if form else command}" if not form else None
-    )
+    ))
     common = {"name": args.pop("name", CONFIG), "session": args.pop("session", FEATURE_RACE)}
     if form:
         modal = BulkAmendSessionModal(common["name"], common["session"], league.db_path)
         modal.entries._value = args.pop("entries", "1, 27")  # type: ignore[attr-defined]
         await _run_recording(league, modal.on_submit(interaction))
+        await _run_recording(league, run_queue(league.bot))
         return Staged(interaction, _reply_of(interaction), None)
     method = {
         "toggle": ResultsCog.amend_toggle,
@@ -481,6 +478,7 @@ async def run_staging(league: PointsLeague, command: str, **args: Any) -> Staged
     }[command]
     call_args = {} if command in ("toggle", "revert") else {**common, **args}
     await _run_recording(league, undecorate(method)(cog, interaction, **call_args))
+    await _run_recording(league, run_queue(league.bot))
     shown = interaction.response.send_modal.await_args_list
     return Staged(interaction, _reply_of(interaction), shown[0].args[0] if shown else None)
 

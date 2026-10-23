@@ -20,8 +20,9 @@ Do not relax the `spec=` to make a future test easier to write.
 
 `set_setting` is the one method set on the double by hand, because it answers from the
 configuration the test gives (#482): it reports a value already held as unchanged and any
-other as a change from the value held, as the real service does. Its calls are held to the
-real method's signature by `test_every_config_command_calls_a_method_the_service_defines`.
+other as a change from the value held, and writes the log line the command forms through the
+router it is handed, as the real service does. Its calls are held to the real method's
+signature by `test_every_config_command_calls_a_method_the_service_defines`.
 
 The coverage is deliberately wider than the one broken command: all eight setters are driven,
 so the next rename that stops halfway is caught on whichever command it lands.
@@ -30,14 +31,13 @@ from __future__ import annotations
 
 import inspect
 from datetime import datetime
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.attendance.models.attendance import AttendanceConfig
-from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services.attendance_service import AttendanceService, SettingChange
 
 SERVER_ID = 9119
 
@@ -68,11 +68,14 @@ def _holding(cfg: AttendanceConfig):
     """`set_setting` as the service answers it for a server holding *cfg*.
 
     A value the setting already holds is reported unchanged; any other as a change from the
-    value held.
+    value held. Either way the line the command forms is written through the router it hands
+    in, as the real service writes it in the save.
     """
-    async def set_setting(column, value, **_kwargs):
+    async def set_setting(column, value, *, router, line, **_kwargs):
         held = getattr(cfg, column)
-        return SimpleNamespace(changed=held != value, old=held)
+        change = SettingChange(changed=held != value, old=held)
+        line_id = await router.queue_log_on(None, line(change))
+        return SettingChange(changed=change.changed, old=held, line_id=line_id)
 
     return set_setting
 
@@ -96,6 +99,8 @@ def _make_cog(*, cfg: AttendanceConfig | None = None) -> AttendanceCog:
     bot.db_path = "unused.db"
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.output_router.queue_log_on = AsyncMock(return_value=1)
+    bot.output_router.deliver_queued = AsyncMock(return_value=None)
     return AttendanceCog(bot)
 
 
@@ -155,8 +160,11 @@ def _set_setting_call(cog: AttendanceCog):
 
 
 def _lines(cog: AttendanceCog) -> list[str]:
-    """Every line the command wrote to the log channel."""
-    return [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    """Every line the command wrote to the log channel: posted, or saved with its change."""
+    router = cog.bot.output_router
+    return [str(c.args[0]) for c in router.post_log.await_args_list] + [
+        str(c.args[1]) for c in router.queue_log_on.await_args_list
+    ]
 
 
 #: Every `/attendance config` setter: the command, the value to pass, the column the cog must
@@ -715,21 +723,24 @@ async def test_a_value_already_held_records_that_nothing_changed(
     ]
 
 
-@pytest.mark.parametrize(
-    "start,outcome",
-    [({}, "Success"), ({"no_show_penalty": 4}, "Nothing changed")],
-    ids=["success", "nothing-changed"],
-)
-async def test_a_line_that_cannot_be_posted_is_not_swallowed(start, outcome):
-    """P2: a success or nothing-changed line is posted bare, so a post that raises reaches the
-    command's error handling rather than vanishing. Only the four catch-alls the architecture
-    allows may swallow, and a line reporting that nothing went wrong is none of them."""
-    cog = _make_cog(cfg=_config(**start))
-    cog.bot.output_router.post_log = AsyncMock(side_effect=RuntimeError("log channel down"))
+async def test_a_save_that_raises_is_not_swallowed():
+    """P2: the cog lets the service's error propagate. The setting's log line is written bare,
+    in the setting's save, so a save that raises (its line among the writes) reaches the
+    command's error handling rather than vanishing, with no reply claiming the change and no
+    line sent. Only the four catch-alls the architecture allows may swallow, and a line
+    reporting that nothing went wrong is none of them. That the real save commits nothing when
+    its line cannot be written is `test_attendance_config_record.py`'s to pin."""
+    cog = _make_cog()
+    cog.bot.attendance_service.set_setting = AsyncMock(
+        side_effect=RuntimeError("log channel down")
+    )
     interaction = _interaction()
 
     with pytest.raises(RuntimeError, match="log channel down"):
         await _invoke(AttendanceCog.config_no_show_penalty, cog, interaction, 4)
+
+    interaction.followup.send.assert_not_awaited()
+    cog.bot.output_router.deliver_queued.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

@@ -1,4 +1,4 @@
-"""Every `/weather config` deadline command holds its guards and reaches its service.
+"""Every `/weather config` deadline command holds its guards and saves through the change queue.
 
 Issue #161: nothing under `tests/` referenced `WeatherCog` at all. The service end of the
 weather configuration was untested (closed by `test_weather_config_service.py`) and the cog
@@ -12,65 +12,132 @@ be written to the log channel."
 
 On the active-season rule: there is no separate `APPROVED` status — `SeasonStatus` is
 SETUP / ACTIVE / COMPLETED / CANCELLED and approval moves a season to ACTIVE — so the
-specification's "approved/active" is `get_confirmed_season`, which is what the cog reads.
+specification's "approved/active" is `get_confirmed_season`.
 
-**`spec=` is load-bearing here**, as it is in `test_attendance_config_commands.py`, whose
-shape this file follows. The bot's services are spec-bound doubles, so a cog calling a method
-the real service does not define raises `AttributeError` rather than being silently recorded.
-Issue #119 was exactly that failure on the attendance cog — a setter left behind by a rename,
-acknowledged and then raising on every invocation, with a green suite throughout. Since #228
-the type check catches the same mistake in `src/` too, but `spec=` is the suite's own guard
-and does not lean on it. Do not relax the `spec=` to make a future test easier.
+**Since #439 (slice 7) each deadline is a settings change on the change queue:** refused at
+once in today's words and order where it cannot be carried out, nothing queued; otherwise
+acknowledged at once naming what is being set, and updated with today's reply once the change
+has run, its value, its `WEATHER_CONFIG_SET` audit entry and its log line saved together. A value
+already held is no refusal: it is judged when the change runs and answered "Nothing changed".
+The deadline tests drive the real command past its tier guard, on a database built by the
+migrations, with the real services and the real queue, and run the queue; the change's own rules
+are pinned in `test_weather_settings.py`.
 
 The coverage is deliberately driven across all three commands rather than one, so a change
 that stops halfway is caught on whichever command it lands on.
 
 `/weather config view` is covered at the end (issue #118). It shares the setters' module gate
 and must not share their season gate: the deadlines were once readable only in the two season
-reviews, each tied to one stage of one season.
+reviews, each tied to one stage of one season. It reads at once and is not a change, so its
+tests keep their spec-bound doubles: **`spec=` is load-bearing there**, as it is in
+`test_attendance_config_commands.py` — a cog calling a method the real service does not define
+raises `AttributeError` rather than being silently recorded (#119). Do not relax it.
 
 **Every outcome is recorded in the log channel** (#482; the core specification's "The record
 of what changed"): a refusal as one "⛔" line naming the command, a success as one line naming
 the command with the three deadlines beneath, and a value the deadline already holds as one
-"Nothing changed" line, after a reply saying so. Whether a value is already held is the
-service's to say: a setter returns ``None`` for it, having written nothing.
+"Nothing changed" line.
 """
 from __future__ import annotations
 
-import contextlib
+import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.weather.cogs.weather_cog import WeatherCog
+from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.season import Season, SeasonStatus
-from leaguebot.weather.models.weather_config import WeatherPipelineConfig
 from leaguebot.core.services.season_service import SeasonService
+from leaguebot.weather.cogs.weather_cog import WeatherCog
+from leaguebot.weather.models.weather_config import WeatherPipelineConfig
+from tests.support.change_queue import MEMBER_ID, acknowledgement, change_rows, run_queue
+from tests.support.saves import set_deadline
+from tests.support.settings_league import (
+    audit_rows,
+    interaction,
+    last_said,
+    log_lines,
+    said,
+    settings_league,
+    switch,
+)
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 7161
-DB_PATH = "/nonexistent/weather.db"  # never opened: every service call is patched
+DB_PATH = "/nonexistent/weather.db"  # the view tests' doubles never open it
 
-#: Each command under test: its callback, the `weather_config_service` function it must
-#: reach, a legal value to pass, and the deadline it sets, as its replies name it with that
-#: value in its unit.
-COMMANDS = [
-    (WeatherCog.phase_1_deadline, "set_phase_1_days", 10, ("Phase 1", "10 day(s)")),
-    (WeatherCog.phase_2_deadline, "set_phase_2_days", 3, ("Phase 2", "3 day(s)")),
-    (WeatherCog.phase_3_deadline, "set_phase_3_hours", 6, ("Phase 3", "6 hour(s)")),
-]
+#: The member as a log line names them, the mention wrapped so it notifies nobody.
+NAMED = f"Admin (`<@{MEMBER_ID}>`)"
+MODULE_OFF = "❌ The Weather module is not enabled."
+CONFIRMED = (
+    "❌ Phase deadline configuration cannot be changed once a season's placements are confirmed."
+)
+#: The defaults a league starts from: Phase 1 5 days, Phase 2 2 days, Phase 3 2 hours.
+DEFAULTS = {"phase_1_days": 5, "phase_2_days": 2, "phase_3_hours": 2}
 
-#: The member every interaction here belongs to, as the log channel names them.
-MEMBER = "Race Control (<@4242>)"
-
+#: Each command: its method, its argument, its column, a legal value from the defaults, the
+#: deadline as its replies name it with that value, and its refusal below one.
+COMMANDS = {
+    1: ("phase_1_deadline", "days", "phase_1_days", 10, ("Phase 1", "10 day(s)"),
+        "❌ Phase 1 deadline must be at least 1 day."),
+    2: ("phase_2_deadline", "days", "phase_2_days", 3, ("Phase 2", "3 day(s)"),
+        "❌ Phase 2 deadline must be at least 1 day."),
+    3: ("phase_3_deadline", "hours", "phase_3_hours", 6, ("Phase 3", "6 hour(s)"),
+        "❌ Phase 3 deadline must be at least 1 hour."),
+}
+PHASES = [1, 2, 3]
 COMMAND_IDS = ["phase_1", "phase_2", "phase_3"]
-
-#: The three setters, for the tests that must prove *none* of them was reached.
-ALL_SETTERS = [entry[1] for entry in COMMANDS]
 
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
+
+
+async def _ask(league: Any, phase: int, value: int) -> Any:
+    """Run `/weather config phase-<phase>-deadline <value>` as Admin; the queue is not run."""
+    method, argument = COMMANDS[phase][:2]
+    asked = interaction(league.bot, f"weather config phase-{phase}-deadline")
+    await undecorate(getattr(WeatherCog, method))(WeatherCog(league.bot), asked, **{argument: value})
+    return asked
+
+
+async def _deadlines(db_path: str) -> dict[str, int]:
+    """The three deadlines the league holds, the defaults where it has saved none."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT phase_1_days, phase_2_days, phase_3_hours FROM weather_pipeline_config"
+        )
+        row = await cursor.fetchone()
+    return dict(row) if row is not None else dict(DEFAULTS)
+
+
+async def _confirm_a_season(db_path: str) -> None:
+    """A season whose placements are confirmed: active, under way."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, season_number, start_date, status, stage) "
+            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 'ONGOING')"
+        )
+        await db.commit()
+
+
+def _refused(reply: str, phase: int) -> str:
+    """The "⛔" line recording *reply* as the refusal of the Phase *phase* command."""
+    return (
+        f"⛔ `/weather config phase-{phase}-deadline` refused for {NAMED} — "
+        f"{reply.removeprefix('❌ ')}"
+    )
+
+
+async def _assert_refused_at_once(league: Any, asked: Any, reply: str, phase: int) -> None:
+    """*reply* was the member's whole answer, nothing was queued or saved, and one "⛔" line
+    records it."""
+    assert said(asked) == [reply]
+    assert await change_rows(league.db_path) == []
+    assert await _deadlines(league.db_path) == DEFAULTS
+    assert await log_lines(league) == [_refused(reply, phase)]
 
 
 def _config(**overrides) -> WeatherPipelineConfig:
@@ -133,44 +200,6 @@ def _interaction() -> MagicMock:
     return interaction
 
 
-async def _invoke(command, cog: WeatherCog, interaction, value) -> None:
-    """Call a slash command's body, stepping past the `@league_manager_only` guard.
-
-    `_tier_guard` wraps with `functools.wraps`, so `__wrapped__` is the undecorated function.
-    Permission is covered by the channel-guard tests; these tests are about what the body does.
-    The interaction carries the command and the bot, as a real one does, so a line in the log
-    channel names the command and reaches the bot's router.
-    """
-    interaction.command = command
-    interaction.client = cog.bot
-    await command.callback.__wrapped__(cog, interaction, value)
-
-
-@contextlib.contextmanager
-def _patched_setters(return_value=None, *, held: bool = False):
-    """Patch all three `weather_config_service` setters, yielding them by name.
-
-    *held* has each return ``None``, the service's answer for a value already held.
-
-    The cog imports each setter *inside* the command body, so the patch has to land on the
-    service module rather than on a name bound into the cog at import time.
-
-    `patch.multiple` is deliberately not used: given an explicit `new=`, it does not return
-    the replacement in its dictionary, which leaves a test with no handle to assert on.
-    """
-    value = None if held else _config() if return_value is None else return_value
-    with contextlib.ExitStack() as stack:
-        yield {
-            name: stack.enter_context(
-                patch(
-                    f"leaguebot.weather.services.weather_config_service.{name}",
-                    new=AsyncMock(return_value=value),
-                )
-            )
-            for name in ALL_SETTERS
-        }
-
-
 def _sent_text(interaction) -> str:
     """Everything the command said to the user, across both response and followup."""
     parts = []
@@ -181,48 +210,24 @@ def _sent_text(interaction) -> str:
     return "\n".join(parts)
 
 
-def _reason(reply: str) -> str:
-    """A reply's first line without the mark it opens with: the reason a refusal records."""
-    first = reply.strip().splitlines()[0].strip()
-    for mark in ("❌", "ℹ️"):
-        first = first.removeprefix(mark)
-    return first.strip()
-
-
-def _assert_one_refusal_line(cog: WeatherCog, interaction, command) -> None:
-    """One "⛔" line was recorded, naming *command*, the member and the reply's reason."""
-    cog.bot.output_router.post_log.assert_awaited_once()
-    (line,) = cog.bot.output_router.post_log.await_args.args
-    assert line == (
-        f"⛔ `/{command.qualified_name}` refused for {MEMBER} — {_reason(_sent_text(interaction))}"
-    )
-
 
 # ---------------------------------------------------------------------------
 # The module gate
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
-async def test_command_is_refused_while_the_weather_module_is_disabled(
-    command, setter, value, _log
-):
-    """"All three commands shall be rejected while the weather module is disabled." The
-    refusal is recorded in the log channel, as every refusal of a command is, and names the
-    module as `/weather channel` and the other modules do: "The Weather module"."""
-    cog = _make_cog(weather_enabled=False)
-    interaction = _interaction()
+@pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
+async def test_command_is_refused_while_the_weather_module_is_disabled(tmp_path, phase):
+    """"All three commands shall be rejected while the weather module is disabled." With weather
+    off, the command is refused at once in the module's words, as `/weather channel` and the other
+    modules name it ("The Weather module"), nothing is queued or saved, and the refusal is recorded
+    as one "⛔" line naming the command."""
+    league = await settings_league(tmp_path)
+    await switch(league.bot, ("weather",), on=False)
 
-    with _patched_setters() as mocks:
-        await _invoke(command, cog, interaction, value)
+    asked = await _ask(league, phase, COMMANDS[phase][3])
 
-        # Nothing was written for a module that is switched off.
-        for name in ALL_SETTERS:
-            mocks[name].assert_not_awaited()
-
-    interaction.response.send_message.assert_awaited_once()
-    assert _sent_text(interaction) == "❌ The Weather module is not enabled."
-    _assert_one_refusal_line(cog, interaction, command)
+    await _assert_refused_at_once(league, asked, MODULE_OFF, phase)
 
 
 # ---------------------------------------------------------------------------
@@ -230,26 +235,21 @@ async def test_command_is_refused_while_the_weather_module_is_disabled(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
-async def test_command_is_refused_while_a_season_is_active(command, setter, value, _log):
+@pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
+async def test_command_is_refused_while_a_season_is_active(tmp_path, phase):
     """"If there is an ongoing season ... all three commands must be rejected."
 
     The deadlines in force for a season are those stored when it was approved, so letting a
     change through mid-season would silently disagree with the horizons its rounds were
-    armed at.
+    armed at. With a season's placements confirmed, the command is refused at once, nothing
+    queued or saved, one "⛔" line recording it.
     """
-    cog = _make_cog(season=_season())
-    interaction = _interaction()
+    league = await settings_league(tmp_path)
+    await _confirm_a_season(league.db_path)
 
-    with _patched_setters() as mocks:
-        await _invoke(command, cog, interaction, value)
+    asked = await _ask(league, phase, COMMANDS[phase][3])
 
-        for name in ALL_SETTERS:
-            mocks[name].assert_not_awaited()
-
-    interaction.response.send_message.assert_awaited_once()
-    assert "placements are confirmed" in _sent_text(interaction)
-    _assert_one_refusal_line(cog, interaction, command)
+    await _assert_refused_at_once(league, asked, CONFIRMED, phase)
 
 
 # ---------------------------------------------------------------------------
@@ -257,35 +257,46 @@ async def test_command_is_refused_while_a_season_is_active(command, setter, valu
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("command, setter, _value, _log", COMMANDS, ids=COMMAND_IDS)
+@pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
 @pytest.mark.parametrize("bad_value", [0, -1, -100], ids=["zero", "negative", "very_negative"])
-async def test_command_rejects_a_value_below_one(command, setter, _value, _log, bad_value):
-    """"All three commands shall reject any value below 1." """
-    cog = _make_cog()
-    interaction = _interaction()
+async def test_command_rejects_a_value_below_one(tmp_path, phase, bad_value):
+    """"All three commands shall reject any value below 1." Refused at once, nothing queued or
+    saved, one "⛔" line recording it."""
+    league = await settings_league(tmp_path)
 
-    with _patched_setters() as mocks:
-        await _invoke(command, cog, interaction, bad_value)
+    asked = await _ask(league, phase, bad_value)
 
-        for name in ALL_SETTERS:
-            mocks[name].assert_not_awaited()
-
-    interaction.response.send_message.assert_awaited_once()
-    assert "at least 1" in _sent_text(interaction)
-    _assert_one_refusal_line(cog, interaction, command)
+    await _assert_refused_at_once(league, asked, COMMANDS[phase][5], phase)
 
 
-@pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
-async def test_one_is_accepted(command, setter, value, _log):
-    """1 is the smallest legal value — the boundary the rule above sits on."""
-    cog = _make_cog()
-    interaction = _interaction()
+@pytest.mark.parametrize(
+    "phase",
+    [
+        1,
+        pytest.param(2),
+        pytest.param(3),
+    ],
+    ids=COMMAND_IDS,
+)
+async def test_one_is_accepted(tmp_path, phase):
+    """1 is the smallest legal value — the boundary the rule above sits on. Phase 2 at 1 day and
+    Phase 3 at 1 hour pass every rule and are asked as a change carrying the column and the
+    value 1. Phase 1 at 1 day passes the minimum and meets the ordering rule instead, since no
+    Phase 2 can sit under one day: its refusal is the ordering's, never "at least 1"."""
+    league = await settings_league(tmp_path)
+    column = COMMANDS[phase][2]
 
-    with _patched_setters() as mocks:
-        await _invoke(command, cog, interaction, 1)
+    asked = await _ask(league, phase, 1)
 
-        mocks[setter].assert_awaited_once()
-        assert mocks[setter].await_args.args == (DB_PATH, 1)
+    if phase == 1:
+        assert said(asked) == [
+            "❌ Phase 1 deadline (1d = 24h) must be strictly greater than "
+            "Phase 2 deadline (2d = 48h)."
+        ]
+        return
+    (row,) = await change_rows(league.db_path)
+    assert row["kind"] == "weather.setting.deadline"
+    assert json.loads(row["payload"]) == {"column": column, "value": 1}
 
 
 # ---------------------------------------------------------------------------
@@ -293,24 +304,31 @@ async def test_one_is_accepted(command, setter, value, _log):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
-async def test_service_rejection_reaches_the_user_unchanged(command, setter, value, _log):
-    """The service returns an error string on a violation; the command must relay it.
+@pytest.mark.parametrize(
+    ("phase", "value", "refusal"),
+    [
+        (1, 2, "Phase 1 deadline (2d = 48h) must be strictly greater than "
+               "Phase 2 deadline (2d = 48h)."),
+        (2, 6, "Phase 1 deadline (5d = 120h) must be strictly greater than "
+               "Phase 2 deadline (6d = 144h)."),
+        (3, 48, "Phase 2 deadline (2d = 48h) must be strictly greater than "
+                "Phase 3 deadline (48h)."),
+    ],
+    ids=COMMAND_IDS,
+)
+async def test_service_rejection_reaches_the_user_unchanged(tmp_path, phase, value, refusal):
+    """A value out of order with the deadlines held is refused at once with the ordering rule's
+    own sentence, both offending values in hours, nothing queued or saved.
 
-    The specification requires the rejection to state both offending values in hours, and
-    the service composes that sentence. A command that swallowed it, or replaced it with a
-    generic refusal, would leave the league unable to see which pair collided.
+    The specification requires the rejection to state both offending values in hours. A command
+    that swallowed it, or replaced it with a generic refusal, would leave the league unable to
+    see which pair collided. The refusal is recorded too, with that sentence as its reason.
     """
-    refusal = "Phase 2 deadline (2d = 48h) must be strictly greater than Phase 3 deadline (48h)."
-    cog = _make_cog()
-    interaction = _interaction()
+    league = await settings_league(tmp_path)
 
-    with _patched_setters(refusal):
-        await _invoke(command, cog, interaction, value)
+    asked = await _ask(league, phase, value)
 
-    assert _sent_text(interaction) == f"❌ {refusal}"
-    # A refusal is recorded too, with the service's sentence as its reason.
-    _assert_one_refusal_line(cog, interaction, command)
+    await _assert_refused_at_once(league, asked, f"❌ {refusal}", phase)
 
 
 # ---------------------------------------------------------------------------
@@ -318,84 +336,84 @@ async def test_service_rejection_reaches_the_user_unchanged(command, setter, val
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
-async def test_success_reaches_the_service_with_the_value(command, setter, value, _log):
-    cog = _make_cog()
-    interaction = _interaction()
+@pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
+async def test_success_reaches_the_service_with_the_value(tmp_path, phase):
+    """The command asks one deadline change carrying its column and the value typed, and once it
+    has run that column holds the value and the other two are as they were."""
+    league = await settings_league(tmp_path)
+    _method, _argument, column, value, _shown, _below = COMMANDS[phase]
 
-    with _patched_setters() as mocks:
-        await _invoke(command, cog, interaction, value)
+    await _ask(league, phase, value)
+    (row,) = await change_rows(league.db_path)
+    assert row["kind"] == "weather.setting.deadline"
+    assert json.loads(row["payload"]) == {"column": column, "value": value}
+    await run_queue(league.bot)
 
-        mocks[setter].assert_awaited_once()
-        assert mocks[setter].await_args.args == (DB_PATH, value)
-        # Only the command's own setter runs.
-        for name in ALL_SETTERS:
-            if name != setter:
-                mocks[name].assert_not_awaited()
+    assert await _deadlines(league.db_path) == {**DEFAULTS, column: value}
 
 
-@pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
-async def test_success_reports_all_three_deadlines(command, setter, value, _log):
+@pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
+async def test_success_reports_all_three_deadlines(tmp_path, phase):
     """"Each successful command shall report the resulting values of all three deadlines."
 
-    The reply must name the other two as well as the one just changed, so the league can see
-    the whole ordering it now has without running `/weather config view` after it.
+    With the league holding Phase 1 9 days, Phase 2 4 days and Phase 3 8 hours, the command is
+    acknowledged at once, and once its change has run the reply names the other two as well as
+    the one just changed, so the league can see the whole ordering it now has without running
+    `/weather config view` after it.
     """
-    resulting = _config(phase_1_days=9, phase_2_days=4, phase_3_hours=8)
-    cog = _make_cog()
-    interaction = _interaction()
+    league = await settings_league(tmp_path)
+    for column, held in (("phase_1_days", 9), ("phase_2_days", 4), ("phase_3_hours", 8)):
+        await set_deadline(league.db_path, column, held)
 
-    with _patched_setters(resulting):
-        await _invoke(command, cog, interaction, value)
+    asked = await _ask(league, phase, COMMANDS[phase][3])
+    assert acknowledgement(asked).startswith("⏳ ")
+    await run_queue(league.bot)
 
-    text = _sent_text(interaction)
-    # Whichever command ran, the two it did not change are named from the returned config.
-    others = {
-        "set_phase_1_days": ["4d", "8h"],
-        "set_phase_2_days": ["9d", "8h"],
-        "set_phase_3_hours": ["9d", "4d"],
-    }[setter]
+    text = last_said(asked)
+    others = {1: ["4d", "8h"], 2: ["9d", "8h"], 3: ["9d", "4d"]}[phase]
     for token in others:
         assert token in text, f"{token!r} missing from {text!r}"
 
 
-@pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
-async def test_success_is_written_to_the_log_channel(command, setter, value, _log):
-    """"... and shall be written to the log channel." In the standard form: the member, the
-    command a league types and the outcome, with the three deadlines now in force beneath."""
-    resulting = _config(phase_1_days=9, phase_2_days=4, phase_3_hours=8)
-    cog = _make_cog()
-    interaction = _interaction()
+@pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
+async def test_success_is_written_to_the_log_channel(tmp_path, phase):
+    """"... and shall be written to the log channel." Nothing is recorded when the command is
+    asked; once its change has run, one line in the standard form — the member, the command a
+    league types and the outcome, with the three deadlines now in force beneath."""
+    league = await settings_league(tmp_path)
+    for column, held in (("phase_1_days", 9), ("phase_2_days", 4), ("phase_3_hours", 8)):
+        await set_deadline(league.db_path, column, held)
+    column, value = COMMANDS[phase][2], COMMANDS[phase][3]
+    now = {"phase_1_days": 9, "phase_2_days": 4, "phase_3_hours": 8, column: value}
 
-    with _patched_setters(resulting):
-        await _invoke(command, cog, interaction, value)
+    await _ask(league, phase, value)
+    assert await log_lines(league) == []
+    await run_queue(league.bot)
 
-    cog.bot.output_router.post_log.assert_awaited_once()
-    (logged_text,) = cog.bot.output_router.post_log.await_args.args
-    assert logged_text.splitlines() == [
-        f"{MEMBER} | /{command.qualified_name} | Success",
-        "  Phase 1: 9 day(s)",
-        "  Phase 2: 4 day(s)",
-        "  Phase 3: 8 hour(s)",
+    assert await log_lines(league) == [
+        f"{NAMED} | /weather config phase-{phase}-deadline | Success\n"
+        f"  Phase 1: {now['phase_1_days']} day(s)\n"
+        f"  Phase 2: {now['phase_2_days']} day(s)\n"
+        f"  Phase 3: {now['phase_3_hours']} hour(s)"
     ]
 
 
-@pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
-async def test_success_defers_before_touching_the_database(command, setter, value, _log):
-    """The reply is deferred first, so a slow write cannot overrun Discord's budget.
+@pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
+async def test_success_is_acknowledged_before_the_save(tmp_path, phase):
+    """The command answers at once, without deferring, that the deadline is being set, and saves
+    nothing until its change runs: the answer is then updated with the success."""
+    league = await settings_league(tmp_path)
+    _method, _argument, column, value, (deadline, shown), _below = COMMANDS[phase]
 
-    Both gates answer with `response.send_message`, which means the deferral must come after
-    them — deferring first would leave those refusals trying to respond twice.
-    """
-    cog = _make_cog()
-    interaction = _interaction()
+    asked = await _ask(league, phase, value)
 
-    with _patched_setters():
-        await _invoke(command, cog, interaction, value)
-
-    interaction.response.defer.assert_awaited_once()
-    interaction.response.send_message.assert_not_awaited()
-    interaction.followup.send.assert_awaited_once()
+    asked.response.defer.assert_not_awaited()
+    assert said(asked) == [acknowledgement(asked)]
+    assert acknowledgement(asked).startswith(f"⏳ Setting the {deadline} deadline to {shown}. ")
+    assert await _deadlines(league.db_path) == DEFAULTS
+    await run_queue(league.bot)
+    assert last_said(asked).startswith(f"✅ {deadline} deadline set to **{shown}** before round.")
+    assert (await _deadlines(league.db_path))[column] == value
 
 
 # ---------------------------------------------------------------------------
@@ -403,47 +421,40 @@ async def test_success_defers_before_touching_the_database(command, setter, valu
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("command, setter, value, deadline", COMMANDS, ids=COMMAND_IDS)
-async def test_a_held_value_changes_nothing(command, setter, value, deadline):
-    """A deadline given the value it already holds is not a change: the reply says so, and the
-    log channel records one "Nothing changed" line, as the results and attendance setters do.
-    The service decides it is held, and writes nothing (`test_weather_config_service.py`)."""
-    phase, shown = deadline
-    cog = _make_cog()
-    interaction = _interaction()
+@pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
+async def test_a_held_value_changes_nothing(tmp_path, phase):
+    """A deadline given the value it already holds is not a change, and no refusal: it is
+    acknowledged, and once its change has run the reply says nothing changed, the log channel
+    records one "Nothing changed" line naming the value, and no audit entry is written."""
+    league = await settings_league(tmp_path)
+    column = COMMANDS[phase][2]
+    deadline = COMMANDS[phase][4][0]
+    held = DEFAULTS[column]
+    shown = f"{held} hour(s)" if phase == 3 else f"{held} day(s)"
 
-    with _patched_setters(held=True) as mocks:
-        await _invoke(command, cog, interaction, value)
+    asked = await _ask(league, phase, held)
+    assert acknowledgement(asked).startswith("⏳ ")
+    await run_queue(league.bot)
 
-        mocks[setter].assert_awaited_once_with(DB_PATH, value)
-
-    assert _sent_text(interaction) == (
-        f"ℹ️ Nothing changed: the {phase} deadline is already **{shown}**."
-    )
-    cog.bot.output_router.post_log.assert_awaited_once()
-    (logged_text,) = cog.bot.output_router.post_log.await_args.args
-    first, *details = logged_text.splitlines()
-    assert first == f"{MEMBER} | /{command.qualified_name} | Nothing changed"
-    assert any(shown in detail for detail in details), logged_text
+    assert last_said(asked) == f"ℹ️ Nothing changed: the {deadline} deadline is already **{shown}**."
+    (line,) = await log_lines(league)
+    first, *details = line.splitlines()
+    assert first == f"{NAMED} | /weather config phase-{phase}-deadline | Nothing changed"
+    assert any(shown in detail for detail in details), line
+    assert await audit_rows(league.db_path) == []
 
 
-@pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
-async def test_a_held_value_is_still_refused_while_a_season_is_active(
-    command, setter, value, _log
-):
+@pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
+async def test_a_held_value_is_still_refused_while_a_season_is_active(tmp_path, phase):
     """Every refusal comes first: a value already held, sent while a season's placements are
-    confirmed, is refused as any other value is, never answered as "Nothing changed"."""
-    cog = _make_cog(season=_season())
-    interaction = _interaction()
+    confirmed, is refused at once as any other value is, never answered as "Nothing changed",
+    and nothing is queued."""
+    league = await settings_league(tmp_path)
+    await _confirm_a_season(league.db_path)
 
-    with _patched_setters(held=True) as mocks:
-        await _invoke(command, cog, interaction, value)
+    asked = await _ask(league, phase, DEFAULTS[COMMANDS[phase][2]])
 
-        mocks[setter].assert_not_awaited()
-
-    assert "placements are confirmed" in _sent_text(interaction)
-    assert "Nothing changed" not in _sent_text(interaction)
-    _assert_one_refusal_line(cog, interaction, command)
+    await _assert_refused_at_once(league, asked, CONFIRMED, phase)
 
 
 # ---------------------------------------------------------------------------

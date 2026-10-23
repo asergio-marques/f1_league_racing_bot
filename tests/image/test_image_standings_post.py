@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from tests.support.change_queue import in_a_job
+from tests.support.saves import set_field
 
 
 pytestmark = pytest.mark.asyncio
@@ -1360,7 +1361,7 @@ async def _highlighted_svg(tmp_path):
     config_service = ImageConfigService(db_path)
     await config_service.create_with_defaults()
     # See the docstring: the default points into the league's own gitignored folder.
-    await config_service.set_field("marker_directory", packaged_directory_for("marker"))
+    await set_field(config_service, "marker_directory", packaged_directory_for("marker"))
     bot.image_config_service = config_service
 
     drawings = await build_drawings(

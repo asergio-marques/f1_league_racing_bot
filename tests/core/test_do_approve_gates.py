@@ -704,14 +704,14 @@ def _cog_with_results(db_path, **overrides):
 async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> None:
     """Build a server-level config holding *points* and attach it to the season."""
     from leaguebot.results.models.points_config import SessionType
-    from leaguebot.results.services import points_config_service, season_points_service
+    from tests.support import saves
 
-    await points_config_service.create_config(db_path, config_name)
+    await saves.create_config(db_path, config_name)
     for position, pts in points:
-        await points_config_service.set_session_points(
+        await saves.set_session_points(
             db_path, config_name, SessionType.FEATURE_RACE, position, pts
         )
-    await season_points_service.attach_config(
+    await saves.attach_config(
         db_path, SEASON_ID, config_name, "SETUP"
     )
 

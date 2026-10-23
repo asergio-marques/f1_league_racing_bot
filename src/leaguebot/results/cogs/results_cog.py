@@ -7,9 +7,7 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 from datetime import datetime, timezone
-from typing import Any
 
 import discord
 from discord import app_commands
@@ -18,15 +16,24 @@ from discord.ext import commands
 from leaguebot.core.models.season import Season
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import points_config_service, season_points_service
-from leaguebot.results.services.points_config_service import (
-    ConfigAlreadyExistsError,
-    ConfigNotFoundError,
-    InvalidSessionTypeError,
+from leaguebot.results.services.amendment_settings import (
+    AMEND_FASTEST_LAP,
+    AMEND_MODE,
+    AMEND_POINTS,
+    AMEND_REVERT,
 )
-from leaguebot.results.services.season_points_service import (
-    ConfigNotAttachedError,
-    SeasonNotInSetupError,
+from leaguebot.results.services.points_settings import (
+    CONFIG_ADD,
+    CONFIG_ATTACH,
+    CONFIG_DETACH,
+    CONFIG_FASTEST_LAP,
+    CONFIG_IMPORT,
+    CONFIG_POINTS,
+    CONFIG_REMOVE,
+    RESERVES,
 )
+from leaguebot.results.services.points_config_service import ConfigNotFoundError
+from leaguebot.results.services.results_post_service import reserves_in_standings
 from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import channel_refusal
 from leaguebot.core.utils.channel_guard import (
@@ -35,7 +42,7 @@ from leaguebot.core.utils.channel_guard import (
     changes_nothing,
 )
 from leaguebot.core.utils.input_validator import NAME
-from leaguebot.core.utils.interaction_errors import describe, report_failure
+from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import (
     CallbackButton,
@@ -47,7 +54,6 @@ from leaguebot.core.utils.league_server import (
 )
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
-from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.season_gate import season_for_command
 
 log = logging.getLogger(__name__)
@@ -78,49 +84,6 @@ _RACE_SESSION_CHOICES = [
     app_commands.Choice(name="Sprint Race", value="SPRINT_RACE"),
     app_commands.Choice(name="Feature Race", value="FEATURE_RACE"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# Ordering notice
-# ---------------------------------------------------------------------------
-
-#: What a manager loses by leaving a table out of order, at each of the two ends. The
-#: rule is one rule; only the moment it is enforced differs, so only this clause does.
-BLOCKS_APPROVAL = "The change has been saved, but a season cannot be approved on this table."
-BLOCKS_AMENDMENT = (
-    "The change has been staged, but this amendment cannot be approved on this table."
-)
-#: The same two clauses for a request that changed nothing (#482): there is no change to say
-#: was saved or staged, only who will refuse the table as it stands.
-STANDS_BLOCKS_APPROVAL = "A season cannot be approved on this table."
-STANDS_BLOCKS_AMENDMENT = "This amendment cannot be approved on this table."
-
-
-def _ordering_notice(
-    config_name: str,
-    session_label: str,
-    violations: list[str],
-    consequence: str = BLOCKS_APPROVAL,
-) -> str:
-    """The block appended to a points edit that has left a table out of order.
-
-    Empty string when there is nothing wrong, so a caller can concatenate it
-    unconditionally.
-
-    The edit itself has already been applied by the time this is written — a points
-    edit warns rather than refuses (decided 2026-09-14). The notice therefore has one
-    job beyond naming the fault: saying who *will* refuse, so a manager knows this is
-    something to fix rather than a note they can read past. *consequence* is which of
-    the two refusals is coming, the season's approval or the amendment's.
-    """
-    if not violations:
-        return ""
-    bullets = "\n".join(f"  • {v}" for v in violations)
-    return (
-        f"\n\u26a0\ufe0f **{config_name}**'s {session_label} table is now out of order:\n"
-        f"{bullets}\n"
-        f"A lower position cannot be worth as much as the one above it. {consequence}"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -187,8 +150,6 @@ def _parse_bulk_lines(
 # Bulk modal classes (T013 / T014)
 # ---------------------------------------------------------------------------
 
-#: What a bulk paste that could not be written tells its member: nothing was saved, and how to retry.
-_PASTE_NOT_SAVED = "Nothing from the paste was saved. Paste it again to retry."
 #: What a Reject, and the amend review panel's lapse, leave beneath their line in the log channel.
 _NOTHING_APPROVED = (
     "Nothing has been approved. The staged changes and amendment mode remain. "
@@ -243,17 +204,6 @@ async def _approval_holds_staging(
     return True
 
 
-def _bulk_values(valid: list[tuple[int, int]]) -> str:
-    """The values a paste set, one per line, for its log line."""
-    return "".join(f"\n  P{position} \u2192 {points} pts" for position, points in valid)
-
-
-async def _send_in_parts(interaction: discord.Interaction, text: str) -> None:
-    """Follow up with *text*, in as many messages as it needs."""
-    for part in chunk_message(text):
-        await interaction.followup.send(part, ephemeral=True)
-
-
 class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
     """Modal for bulk-setting session points in a named config.
 
@@ -302,53 +252,19 @@ class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
             reply, reason = _bulk_refusal(errors)
             await refuse(interaction, reply, what=what, reason=reason)
             return
-        not_found = f"\u274c Config **{self._config_name}** not found."
-        if not await points_config_service.config_exists(self._db_path, self._config_name):
-            await refuse(interaction, not_found, what=what)
-            return
 
-        try:
-            await points_config_service.set_session_points_many(
-                self._db_path,
-                self._config_name,
-                session_type,
-                valid,
-                actor_id=interaction.user.id,
-                actor_name=str(interaction.user),
-                now=datetime.now(timezone.utc),
-            )
-        except ConfigNotFoundError:
-            await refuse(interaction, not_found, what=what)
-            return
-        except Exception as exc:  # noqa: BLE001 — reported here, to say nothing was saved
-            await report_failure(interaction, exc, what=what, outcome=_PASTE_NOT_SAVED)
-            return
-
-        lines = [
-            f"\u2705 Applied to config **{self._config_name}** ({self._session.name}):\n"
-            + "\n".join(f"  P{position} \u2192 {points} pts" for position, points in valid)
-        ]
-        if overrides:
-            lines.append("\u26a0\ufe0f Notes:\n" + "\n".join(f"  • {o}" for o in overrides))
-        # The ordering is judged once, on the table the whole paste has left behind,
-        # rather than line by line. A bulk paste is one act of authorship, and a
-        # complaint per line would bury the reply under restatements of one fault.
-        notice = _ordering_notice(
-            self._config_name,
-            self._session.name,
-            await points_config_service.ordering_warnings(
-                self._db_path, self._config_name, session_type
-            ),
-        )
-        if notice:
-            lines.append(notice.lstrip("\n"))
-        await _send_in_parts(interaction, "\n".join(lines))
-
-        await bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-            f"| /results config bulk-session | {len(valid)} change(s)\n"
-            f"  config: {self._config_name}, session: {self._session.name}"
-            + _bulk_values(valid),
+        # The configuration is judged by the change's check, at the ask and as it starts.
+        await bot.change_queue.ask(
+            CONFIG_POINTS,
+            {
+                "config": self._config_name,
+                "session": session_type.value,
+                "pairs": [[position, points] for position, points in valid],
+                "bulk": True,
+                "notes": overrides,
+            },
+            interaction=interaction,
+            what=what,
         )
 
 
@@ -380,12 +296,6 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         self._db_path = db_path
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        from leaguebot.core.services.amendment_service import (
-            AmendmentNotActiveError,
-            modification_ordering_warnings,
-            modify_session_points,
-        )
-
         await interaction.response.defer(ephemeral=True)
         bot = bot_of(interaction)
         what = "`/results amend bulk-session`"
@@ -396,13 +306,11 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
 
         # Gated here as well as on the command that opened it (issue #224). A modal can be
         # submitted long after it was shown, and the season can reach Pending completion in
-        # between — a window that writes to the store is exactly the one worth closing twice.
+        # between; the change's check judges it again as it starts.
         season = await season_for_command(
             interaction, bot.season_service, "results amend bulk-session"
         )
         if season is None:
-            return
-        if await _approval_holds_staging(interaction, self._db_path, season, what=what):
             return
 
         valid, errors, overrides = _parse_bulk_lines(self.entries.value)
@@ -414,50 +322,19 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
             await refuse(interaction, reply, what=what, reason=reason)
             return
 
-        try:
-            await modify_session_points(
-                self._db_path,
-                season.id,
-                self._config_name,
-                self._session.value,
-                valid,
-                actor_id=interaction.user.id,
-                actor_name=str(interaction.user),
-                now=datetime.now(timezone.utc),
-            )
-        except AmendmentNotActiveError:
-            await refuse(interaction, "\u274c Amendment mode is not active.", what=what)
-            return
-        except Exception as exc:  # noqa: BLE001 — reported here, to say nothing was saved
-            await report_failure(interaction, exc, what=what, outcome=_PASTE_NOT_SAVED)
-            return
-
-        lines = [
-            f"\u2705 Amended in modification store for config **{self._config_name}** "
-            f"({self._session.name}):\n"
-            + "\n".join(f"  P{position} \u2192 {points} pts" for position, points in valid)
-        ]
-        if overrides:
-            lines.append("\u26a0\ufe0f Notes:\n" + "\n".join(f"  • {o}" for o in overrides))
-        # Judged once, on the table the whole paste has left staged — as the config
-        # modal above does, and for the same reason.
-        notice = _ordering_notice(
-            self._config_name,
-            self._session.name,
-            await modification_ordering_warnings(
-                self._db_path, season.id, self._config_name, self._session.value
-            ),
-            BLOCKS_AMENDMENT,
-        )
-        if notice:
-            lines.append(notice.lstrip("\n"))
-        await _send_in_parts(interaction, "\n".join(lines))
-
-        await bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-            f"| /results amend bulk-session | {len(valid)} change(s)\n"
-            f"  config: {self._config_name}, session: {self._session.name}"
-            + _bulk_values(valid),
+        # The mode, the configuration and any approval in hand are the change's to judge.
+        await bot.change_queue.ask(
+            AMEND_POINTS,
+            {
+                "season_id": season.id,
+                "config": self._config_name,
+                "session": self._session.value,
+                "pairs": [[position, points] for position, points in valid],
+                "bulk": True,
+                "notes": overrides,
+            },
+            interaction=interaction,
+            what=what,
         )
 
 
@@ -483,12 +360,7 @@ class XmlImportModal(LeagueModal, title="XML Points Config Import"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        await _run_xml_import(
-            interaction,
-            self.xml_payload.value,
-            self._config_name,
-            self._db_path,
-        )
+        await _run_xml_import(interaction, self.xml_payload.value, self._config_name)
 
 
 def xml_import_named(config_name: str) -> str:
@@ -500,22 +372,15 @@ async def _run_xml_import(
     interaction: discord.Interaction,
     xml_text: str,
     config_name: str,
-    db_path: str,
 ) -> None:
     """Shared logic for modal and file-attachment XML import paths.
 
-    Parses, validates, persists, and replies with an ephemeral summary. Every outcome is
-    recorded in the log channel: a success with the values it set, a refusal (a payload that
-    does not parse, points out of order, a configuration that does not exist) in the standard
-    refusal form with its detail as the reason, and a failure in the standard failure form.
-
-    **A database fault is caught by name and reported here**, through `report_failure`, rather
-    than left to the form's or the command's failure path, so that its one line names the
-    configuration the import was writing, and its reply says that nothing from the import was
-    saved: the import is one transaction, so a fault leaves the configuration as it was. Any
-    other error propagates to the failure path.
+    Parses and validates the payload, then asks the import as a change. What cannot be read, or
+    is out of order, is refused here at once, in the standard refusal form with its detail as the
+    reason; the configuration and the module are judged by the change's check, at the ask and as
+    it starts. The change writes the values, records them and replies; a fault in its save is the
+    setting's, saves nothing and says to run the import again.
     """
-    from leaguebot.results.services.points_config_service import ConfigNotFoundError, xml_import_config
     from leaguebot.results.utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
 
     what = xml_import_named(config_name)
@@ -545,66 +410,23 @@ async def _run_xml_import(
         )
         return
 
-    # --- persist ----------------------------------------------------------
-    try:
-        await xml_import_config(
-            db_path,
-            config_name,
-            payload,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-            now=datetime.now(timezone.utc),
-        )
-    except ConfigNotFoundError:
-        await refuse(interaction, f"❌ Config **{config_name}** not found.", what=what)
-        return
-    except sqlite3.Error as exc:
-        await report_failure(
-            interaction,
-            exc,
-            what=what,
-            outcome="Nothing from the import was saved. Run the import again to retry.",
-        )
-        return
-
-    # --- success reply ----------------------------------------------------
-    lines: list[str] = []
-    for session_type, pos_dict in payload.positions.items():
-        lines.append(f"  **{session_type.label()}**: {len(pos_dict)} position(s) updated")
-    for session_type, (fl_pts, fl_limit) in payload.fastest_laps.items():
-        limit_text = f", limit P{fl_limit}" if fl_limit is not None else ""
-        lines.append(f"  **{session_type.label()}** FL: {fl_pts} pts{limit_text}")
-    if warnings:
-        lines.append("⚠️ Warnings:")
-        lines.extend(f"  • {w}" for w in warnings)
-
-    summary = "\n".join(lines) or "No changes."
-    await interaction.followup.send(
-        f"✅ Config **{config_name}** updated:\n{summary}", ephemeral=True
-    )
-    if not payload.positions and not payload.fastest_laps:
-        # A file naming no session wrote nothing: recorded as that, never as a success.
-        await bot_of(interaction).output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-            "| /results config xml-import | Nothing changed\n"
-            f"  config: {config_name}\n"
-            "  reason: the import named no session",
-        )
-        return
-    # The values set, beneath the line, as "The record of what changed" asks.
-    values: list[str] = []
-    for session_type, pos_dict in payload.positions.items():
-        values.append(
-            f"  {session_type.label()}: "
-            + ", ".join(f"P{position} {points}" for position, points in sorted(pos_dict.items()))
-        )
-    for session_type, (fl_pts, fl_limit) in payload.fastest_laps.items():
-        limit_text = f", limit P{fl_limit}" if fl_limit is not None else ""
-        values.append(f"  {session_type.label()} fastest lap: {fl_pts} pts{limit_text}")
-    await bot_of(interaction).output_router.post_log(
-        f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-        "| /results config xml-import | Success\n"
-        f"  config: {config_name}" + "".join(f"\n{line}" for line in values),
+    # --- ask --------------------------------------------------------------
+    await bot_of(interaction).change_queue.ask(
+        CONFIG_IMPORT,
+        {
+            "config": config_name,
+            "positions": {
+                session.value: [[position, points] for position, points in pairs.items()]
+                for session, pairs in payload.positions.items()
+            },
+            "fastest_laps": {
+                session.value: [points, limit]
+                for session, (points, limit) in payload.fastest_laps.items()
+            },
+            "warnings": list(warnings),
+        },
+        interaction=interaction,
+        what=what,
     )
 
 
@@ -689,9 +511,12 @@ class _ConfirmRemoveConfigView(LeagueView):
             await refuse(interaction, "\u26d4 Not your action.", what=self._what(interaction, button))
             return
         self.stop()
-        await interaction.response.defer(ephemeral=True)
-        await self._cog._apply_config_remove(
-            interaction, self._config_name, what=self._what(interaction, button)
+        await self._cog.bot.change_queue.ask(
+            CONFIG_REMOVE,
+            {"config": self._config_name, "confirmed": True},
+            interaction=interaction,
+            what="`/results config remove`",
+            refusal_what=self._what(interaction, button),
         )
 
     @discord.ui.button(label="\u274c Cancel", style=discord.ButtonStyle.secondary)
@@ -908,28 +733,14 @@ class ResultsCog(commands.Cog):
     async def config_add(self, interaction: discord.Interaction, name: str) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
         # A configuration's name is shown in replies and reviews, and held to the rules every
-        # name a league types is held to (#362).
+        # name a league types is held to (#362). Judged at once, before the change is asked.
         refusal = NAME.check("configuration name", name).refusal
         if refusal is not None:
             await refuse(interaction, f"\u274c {refusal}", what=describe(interaction))
             return
-        try:
-            await points_config_service.create_config(self.bot.db_path, name)
-        except ConfigAlreadyExistsError:
-            await refuse(
-                interaction,
-                f"\u274c A config named **{name}** already exists on this server.",
-                what=describe(interaction),
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Config **{name}** created. All positions default to 0 points.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config add | Success\n"
-            f"  config: {name}",
+        await self.bot.change_queue.ask(
+            CONFIG_ADD, {"config": name}, interaction=interaction, what=describe(interaction)
         )
 
     @config_group.command(name="remove", description="Remove a named points configuration.")
@@ -948,7 +759,7 @@ class ResultsCog(commands.Cog):
 
         **It asks first where a season in setup stands on the configuration** (decided
         2026-09-15, issue #132). The removal takes the attachment with it — see
-        `points_config_service.remove_config` for why that is the season's only link to the
+        `points_config_service.remove_config_on` for why that is the season's only link to the
         points, and why an approved season's is left alone — so the season quietly stops
         being the season the manager built. Naming the season and waiting is the difference
         between a deliberate teardown and a surprise found at the next `/season placements-review`.
@@ -957,25 +768,19 @@ class ResultsCog(commands.Cog):
         """
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
 
-        if not await points_config_service.config_exists(
-            self.bot.db_path, name
-        ):
-            await refuse(
-                interaction, f"\u274c Config **{name}** not found.", what=describe(interaction)
+        standing = await points_config_service.setup_seasons_linking(self.bot.db_path, name)
+        if not standing:
+            await self.bot.change_queue.ask(
+                CONFIG_REMOVE,
+                {"config": name, "confirmed": False},
+                interaction=interaction,
+                what=describe(interaction),
             )
             return
 
-        standing = await points_config_service.setup_seasons_linking(
-            self.bot.db_path, name
-        )
-        if not standing:
-            await self._apply_config_remove(interaction, name, what=describe(interaction))
-            return
-
         seasons = ", ".join(f"**Season #{number}**" for _, number in standing)
-        await interaction.followup.send(
+        await interaction.response.send_message(
             f"\u26a0\ufe0f **{name}** is attached to {seasons}, which is still being set up.\n"
             f"Removing it deletes the configuration outright — every position of every "
             f"session type, with no undo — and detaches it from that season, which will then "
@@ -983,27 +788,6 @@ class ResultsCog(commands.Cog):
             f"Remove it anyway?",
             view=_ConfirmRemoveConfigView(self, interaction.user.id, name, posted=interaction),
             ephemeral=True,
-        )
-
-    async def _apply_config_remove(
-        self, interaction: discord.Interaction, name: str, *, what: str
-    ) -> None:
-        """Remove the configuration and report it.
-
-        Shared by the straight path and the confirmation button, so the two cannot come to
-        differ about what removing one does or about what the log records. *what* names the
-        command or the button that asked, for the refusal where the configuration has gone in
-        the meantime.
-        """
-        try:
-            await points_config_service.remove_config(self.bot.db_path, name)
-        except ConfigNotFoundError:
-            await refuse(interaction, f"\u274c Config **{name}** not found.", what=what)
-            return
-        await interaction.followup.send(f"\u2705 Config **{name}** removed.", ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config remove | Success\n"
-            f"  config: {name}",
         )
 
     @config_group.command(name="session", description="Set points for a finishing position in a session type.")
@@ -1025,55 +809,16 @@ class ResultsCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-        stands = False
-        try:
-            # The refusal first: a configuration that is not there is refused whatever was
-            # asked, and only a request that could have been carried out can change nothing.
-            stands = points_config_service.values_stand(
-                await points_config_service.held_position_points(
-                    self.bot.db_path, name, SessionType(session.value), position
-                ),
-                {"points": points},
-            )
-            if not stands:
-                await points_config_service.set_session_points(
-                    self.bot.db_path,
-                    name,
-                    SessionType(session.value),
-                    position,
-                    points,
-                )
-        except ConfigNotFoundError:
-            await refuse(interaction, f"\u274c Config **{name}** not found.", what=describe(interaction))
-            return
-        notice = _ordering_notice(
-            name,
-            session.name,
-            await points_config_service.ordering_warnings(
-                self.bot.db_path, name, SessionType(session.value)
-            ),
-            STANDS_BLOCKS_APPROVAL if stands else BLOCKS_APPROVAL,
-        )
-        if stands:
-            await self._answer_nothing_changed(
-                interaction,
-                "results config session",
-                f"Nothing changed: **{session.name}** position {position} already awards "
-                f"{points} pts in config **{name}**." + notice,
-                f"config: {name}",
-                f"session: {session.name}, position: {position}, points: {points}",
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Set **{session.name}** position {position} \u2192 {points} pts in config **{name}**."
-            + notice,
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config session | Success\n"
-            f"  config: {name}\n"
-            f"  session: {session.name}, position: {position}, points: {points}",
+        await self.bot.change_queue.ask(
+            CONFIG_POINTS,
+            {
+                "config": name,
+                "session": session.value,
+                "pairs": [[position, points]],
+                "bulk": False,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @config_group.command(name="fl", description="Set the fastest-lap bonus for a race session type.")
@@ -1093,45 +838,11 @@ class ResultsCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-        try:
-            if points_config_service.values_stand(
-                await points_config_service.held_fastest_lap(
-                    self.bot.db_path, name, SessionType(session.value)
-                ),
-                {"fl_points": points},
-            ):
-                await self._answer_nothing_changed(
-                    interaction,
-                    "results config fl",
-                    f"Nothing changed: the fastest-lap bonus for **{session.name}** is already "
-                    f"{points} pts "
-                    f"in config **{name}**.",
-                    f"config: {name}",
-                    f"session: {session.name}, fl_bonus: {points}",
-                )
-                return
-            await points_config_service.set_fl_bonus(
-                self.bot.db_path, name, SessionType(session.value), points
-            )
-        except ConfigNotFoundError:
-            await refuse(interaction, f"\u274c Config **{name}** not found.", what=describe(interaction))
-            return
-        except InvalidSessionTypeError:
-            await refuse(
-                interaction,
-                "\u274c Fastest-lap bonus cannot be set for qualifying sessions.",
-                what=describe(interaction),
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Set fastest-lap bonus for **{session.name}** \u2192 {points} pts in config **{name}**.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config fl | Success\n"
-            f"  config: {name}\n"
-            f"  session: {session.name}, fl_bonus: {points}",
+        await self.bot.change_queue.ask(
+            CONFIG_FASTEST_LAP,
+            {"config": name, "session": session.value, "fl_points": points},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @config_group.command(name="fl-plimit", description="Set the position eligibility limit for fastest-lap bonus.")
@@ -1151,44 +862,11 @@ class ResultsCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-        try:
-            if points_config_service.values_stand(
-                await points_config_service.held_fastest_lap(
-                    self.bot.db_path, name, SessionType(session.value)
-                ),
-                {"fl_position_limit": limit},
-            ):
-                await self._answer_nothing_changed(
-                    interaction,
-                    "results config fl-plimit",
-                    f"Nothing changed: the fastest-lap position limit for **{session.name}** is already "
-                    f"top {limit} in config **{name}**.",
-                    f"config: {name}",
-                    f"session: {session.name}, fl_position_limit: {limit}",
-                )
-                return
-            await points_config_service.set_fl_position_limit(
-                self.bot.db_path, name, SessionType(session.value), limit
-            )
-        except ConfigNotFoundError:
-            await refuse(interaction, f"\u274c Config **{name}** not found.", what=describe(interaction))
-            return
-        except InvalidSessionTypeError:
-            await refuse(
-                interaction,
-                "\u274c Position limit cannot be set for qualifying sessions.",
-                what=describe(interaction),
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Set fastest-lap position limit for **{session.name}** \u2192 top {limit} eligible in config **{name}**.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config fl-plimit | Success\n"
-            f"  config: {name}\n"
-            f"  session: {session.name}, fl_position_limit: {limit}",
+        await self.bot.change_queue.ask(
+            CONFIG_FASTEST_LAP,
+            {"config": name, "session": session.value, "fl_position_limit": limit},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @config_group.command(name="append", description="Attach a server config to the current season in SETUP.")
@@ -1197,36 +875,17 @@ class ResultsCog(commands.Cog):
     async def config_append(self, interaction: discord.Interaction, name: str) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
         season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await refuse(interaction, "\u274c No season found for this server.", what=describe(interaction))
             return
-        try:
-            await season_points_service.attach_config(
-                self.bot.db_path, season.id, name, season.status,
-            )
-        except SeasonNotInSetupError:
-            await refuse(
-                interaction,
-                "\u274c Config attachment is only allowed for seasons in SETUP.",
-                what=describe(interaction),
-            )
-            return
-        except ConfigNotFoundError:
-            await refuse(
-                interaction,
-                f"\u274c Config **{name}** does not exist on this server, so nothing was "
-                f"attached. Check the spelling, or create it with `/results config add`.",
-                what=describe(interaction),
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Config **{name}** attached to the current season.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config append | Success\n"
-            f"  config: {name}",
+        # Whether the season is in setup, and the configuration exists, are the change's to judge,
+        # at the ask and again as it starts.
+        await self.bot.change_queue.ask(
+            CONFIG_ATTACH,
+            {"season_id": season.id, "config": name},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @config_group.command(name="detach", description="Detach a config from the current season in SETUP.")
@@ -1235,37 +894,17 @@ class ResultsCog(commands.Cog):
     async def config_detach(self, interaction: discord.Interaction, name: str) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
         season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await refuse(interaction, "\u274c No season found for this server.", what=describe(interaction))
             return
-        try:
-            await season_points_service.detach_config(
-                self.bot.db_path, season.id, name, season.status
-            )
-        except SeasonNotInSetupError:
-            await refuse(
-                interaction,
-                "\u274c Config detachment is only allowed for seasons in SETUP.",
-                what=describe(interaction),
-            )
-            return
-        except ConfigNotAttachedError:
-            await self._answer_nothing_changed(
-                interaction,
-                "results config detach",
-                f"Config **{name}** is not attached to this season.",
-                f"config: {name}",
-                "reason: it was not attached",
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Config **{name}** detached from the current season.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config detach | Success\n"
-            f"  config: {name}",
+        # Whether the season is in setup is the change's to judge, at the ask and
+        # again as it starts.
+        await self.bot.change_queue.ask(
+            CONFIG_DETACH,
+            {"season_id": season.id, "config": name},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ------------------------------------------------------------------
@@ -1493,9 +1132,7 @@ class ResultsCog(commands.Cog):
                 await refuse(interaction, "❌ File could not be decoded as UTF-8.", what=what)
                 return
 
-            await _run_xml_import(
-                interaction, xml_text, name, self.bot.db_path
-            )
+            await _run_xml_import(interaction, xml_text, name)
 
     # ------------------------------------------------------------------
     # /results amend group — T025
@@ -1528,12 +1165,8 @@ class ResultsCog(commands.Cog):
     async def amend_toggle(self, interaction: discord.Interaction) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
 
-        from leaguebot.core.services.amendment_service import (
-            AmendmentModifiedError,
-            disable_amendment_mode,
-            enable_amendment_mode,
+        from leaguebot.results.services.amendment_mode_service import (
             get_amendment_state,
         )
 
@@ -1542,84 +1175,36 @@ class ResultsCog(commands.Cog):
         )
         if season is None:
             return
-        if await _approval_holds_staging(
-            interaction, self.bot.db_path, season, what=describe(interaction)
-        ):
-            return
 
+        # The flip is resolved here, from the state the member saw: a second press while the first
+        # waits asks the same thing, and is refused as a repeat. The approval in hand, and whether
+        # staged changes forbid turning it off, are the change's to judge.
         state = await get_amendment_state(self.bot.db_path, season.id)
         currently_on = state is not None and state.amendment_active
-
-        if not currently_on:
-            await enable_amendment_mode(self.bot.db_path, season.id)
-            await interaction.followup.send(
-                "\u2705 Amendment mode enabled. Modification store initialised.", ephemeral=True
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend toggle | Success\n"
-                f"  amendment_mode: enabled",
-            )
-        else:
-            try:
-                await disable_amendment_mode(self.bot.db_path, season.id)
-                await interaction.followup.send("\u2705 Amendment mode disabled.", ephemeral=True)
-                await self.bot.output_router.post_log(
-                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend toggle | Success\n"
-                    f"  amendment_mode: disabled",
-                )
-            except AmendmentModifiedError:
-                await refuse(
-                    interaction,
-                    "\u274c Cannot disable amendment mode \u2014 uncommitted changes exist. "
-                    "Use `/results amend revert` to discard or `/results amend review` to apply.",
-                    what=describe(interaction),
-                )
+        await self.bot.change_queue.ask(
+            AMEND_MODE,
+            {"season_id": season.id, "active": not currently_on},
+            interaction=interaction,
+            what=describe(interaction),
+        )
 
     @amend_group.command(name="revert", description="Revert all modification store changes to the season points.")
     @league_manager_only
     async def amend_revert(self, interaction: discord.Interaction) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.core.services.amendment_service import (
-            AmendmentNotActiveError,
-            get_amendment_state,
-            revert_modification_store,
-        )
 
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend revert"
         )
         if season is None:
             return
-        if await _approval_holds_staging(
-            interaction, self.bot.db_path, season, what=describe(interaction)
-        ):
-            return
-
-        state = await get_amendment_state(self.bot.db_path, season.id)
-        if state is None or not state.amendment_active:
-            await refuse(
-                interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
-            )
-            return
-
-        if not state.modified_flag:
-            await self._answer_nothing_changed(
-                interaction,
-                "results amend revert",
-                "Nothing changed: nothing is staged, so the modification store already "
-                "matches the season's points.",
-            )
-            return
-
-        await revert_modification_store(self.bot.db_path, season.id)
-        await interaction.followup.send(
-            "\u2705 Modification store reverted to current season points.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend revert | Success",
+        # The mode being on, and the approval in hand, are the change's to judge.
+        await self.bot.change_queue.ask(
+            AMEND_REVERT,
+            {"season_id": season.id},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @amend_group.command(name="session", description="Set points in the modification store for a session position.")
@@ -1641,78 +1226,23 @@ class ResultsCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.core.services.amendment_service import (
-            AmendmentNotActiveError,
-            modification_ordering_warnings,
-            modify_session_points,
-            staged_position_points,
-        )
-
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend session"
         )
         if season is None:
             return
-        if await _approval_holds_staging(
-            interaction, self.bot.db_path, season, what=describe(interaction)
-        ):
-            return
-
-        stands = False
-        try:
-            # A store that is not in amendment mode holds nothing, so a request made outside
-            # the mode never stands: it reaches the store's own refusal, which comes first.
-            stands = points_config_service.values_stand(
-                await staged_position_points(
-                    self.bot.db_path, season.id, name, session.value, position
-                ),
-                {"points": points},
-            )
-            if not stands:
-                await modify_session_points(
-                    self.bot.db_path,
-                    season.id,
-                    name,
-                    session.value,
-                    [(position, points)],
-                    actor_id=interaction.user.id,
-                    actor_name=str(interaction.user),
-                    now=datetime.now(timezone.utc),
-                )
-        except AmendmentNotActiveError:
-            await refuse(
-                interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
-            )
-            return
-        notice = _ordering_notice(
-            name,
-            session.name,
-            await modification_ordering_warnings(
-                self.bot.db_path, season.id, name, session.value
-            ),
-            STANDS_BLOCKS_AMENDMENT if stands else BLOCKS_AMENDMENT,
-        )
-        if stands:
-            await self._answer_nothing_changed(
-                interaction,
-                "results amend session",
-                f"Nothing changed: **{name}** {session.name} P{position} already stands at "
-                f"{points} pts in the modification store." + notice,
-                f"config: {name}",
-                f"session: {session.name}, position: {position}, points: {points}",
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Updated in modification store: **{name}** {session.name} P{position} \u2192 {points} pts."
-            + notice,
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend session | Success\n"
-            f"  config: {name}\n"
-            f"  session: {session.name}, position: {position}, points: {points}",
+        # The mode, the configuration and any approval in hand are the change's to judge.
+        await self.bot.change_queue.ask(
+            AMEND_POINTS,
+            {
+                "season_id": season.id,
+                "config": name,
+                "session": session.value,
+                "pairs": [[position, points]],
+                "bulk": False,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @amend_group.command(name="fl", description="Set fastest-lap bonus in the modification store.")
@@ -1732,52 +1262,21 @@ class ResultsCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.core.services.amendment_service import (
-            AmendmentNotActiveError,
-            modify_fl_bonus,
-            staged_fastest_lap,
-        )
-
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend fl"
         )
         if season is None:
             return
-        if await _approval_holds_staging(
-            interaction, self.bot.db_path, season, what=describe(interaction)
-        ):
-            return
-
-        try:
-            if points_config_service.values_stand(
-                await staged_fastest_lap(self.bot.db_path, season.id, name, session.value),
-                {"fl_points": points},
-            ):
-                await self._answer_nothing_changed(
-                    interaction,
-                    "results amend fl",
-                    f"Nothing changed: **{name}** {session.name} FL bonus already stands at "
-                    f"{points} pts in the modification store.",
-                    f"config: {name}",
-                    f"session: {session.name}, fl_bonus: {points}",
-                )
-                return
-            await modify_fl_bonus(self.bot.db_path, season.id, name, session.value, points)
-        except AmendmentNotActiveError:
-            await refuse(
-                interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Updated in modification store: **{name}** {session.name} FL bonus \u2192 {points} pts.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend fl | Success\n"
-            f"  config: {name}\n"
-            f"  session: {session.name}, fl_bonus: {points}",
+        await self.bot.change_queue.ask(
+            AMEND_FASTEST_LAP,
+            {
+                "season_id": season.id,
+                "config": name,
+                "session": session.value,
+                "fl_points": points,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @amend_group.command(name="fl-plimit", description="Set fastest-lap position limit in the modification store.")
@@ -1797,52 +1296,21 @@ class ResultsCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.core.services.amendment_service import (
-            AmendmentNotActiveError,
-            modify_fl_position_limit,
-            staged_fastest_lap,
-        )
-
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend fl-plimit"
         )
         if season is None:
             return
-        if await _approval_holds_staging(
-            interaction, self.bot.db_path, season, what=describe(interaction)
-        ):
-            return
-
-        try:
-            if points_config_service.values_stand(
-                await staged_fastest_lap(self.bot.db_path, season.id, name, session.value),
-                {"fl_position_limit": limit},
-            ):
-                await self._answer_nothing_changed(
-                    interaction,
-                    "results amend fl-plimit",
-                    f"Nothing changed: **{name}** {session.name} FL position limit already "
-                    f"stands at top {limit} in the modification store.",
-                    f"config: {name}",
-                    f"session: {session.name}, fl_position_limit: {limit}",
-                )
-                return
-            await modify_fl_position_limit(self.bot.db_path, season.id, name, session.value, limit)
-        except AmendmentNotActiveError:
-            await refuse(
-                interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Updated in modification store: **{name}** {session.name} FL position limit \u2192 top {limit}.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend fl-plimit | Success\n"
-            f"  config: {name}\n"
-            f"  session: {session.name}, fl_position_limit: {limit}",
+        await self.bot.change_queue.ask(
+            AMEND_FASTEST_LAP,
+            {
+                "season_id": season.id,
+                "config": name,
+                "session": session.value,
+                "fl_position_limit": limit,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @amend_group.command(
@@ -1861,7 +1329,8 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
         # Before the modal, not after: showing one and refusing its submission would have a
-        # manager type a screenful of positions to no purpose.
+        # manager type a screenful of positions to no purpose. The submission asks the change,
+        # whose check judges it again.
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend bulk-session"
         )
@@ -1898,9 +1367,11 @@ class ResultsCog(commands.Cog):
 
         from leaguebot.core.services.amendment_service import (
             approval_faults,
-            get_amendment_state,
             get_modification_store_diff,
             validate_modification_ordering,
+        )
+        from leaguebot.results.services.amendment_mode_service import (
+            get_amendment_state,
         )
 
         season = await season_for_command(
@@ -2060,8 +1531,6 @@ class ResultsCog(commands.Cog):
     async def reserves_toggle(self, interaction: discord.Interaction, division: str) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-
         season = await season_for_command(
             interaction, self.bot.season_service, "results reserves toggle"
         )
@@ -2076,41 +1545,14 @@ class ResultsCog(commands.Cog):
             )
             return
 
-        from leaguebot.core.db.database import get_connection
-        async with get_connection(self.bot.db_path) as db:
-            cursor = await db.execute(
-                "SELECT reserves_in_standings FROM division_results_config WHERE division_id = ?",
-                (div.id,),
-            )
-            row = await cursor.fetchone()
-
-        current = (
-            bool(row["reserves_in_standings"])
-            if row and row["reserves_in_standings"] is not None
-            else True
-        )
-        new_value = not current
-
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO division_results_config (division_id, reserves_in_standings)
-                VALUES (?, ?)
-                ON CONFLICT (division_id) DO UPDATE
-                    SET reserves_in_standings = excluded.reserves_in_standings
-                """,
-                (div.id, 1 if new_value else 0),
-            )
-            await db.commit()
-
-        state_str = "visible" if new_value else "hidden"
-        await interaction.followup.send(
-            f"\u2705 Reserve visibility for **{division}** set to **{state_str}**.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results reserves toggle | Success\n"
-            f"  division: {division}\n"
-            f"  reserves_in_standings: {state_str}",
+        # The flip is resolved here, from the state the member saw: a second press while the first
+        # waits asks the same thing, and is refused as a repeat.
+        shown = not await reserves_in_standings(self.bot.db_path, div.id)
+        await self.bot.change_queue.ask(
+            RESERVES,
+            {"division_id": div.id, "division": division, "shown": shown},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ------------------------------------------------------------------

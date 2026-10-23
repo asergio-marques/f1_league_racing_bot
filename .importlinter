@@ -147,7 +147,6 @@ ignore_imports =
     leaguebot.core.services.retry_service -> leaguebot.weather.utils.message_builder
     # #284: the points amendment in the amendment service is results' code, to move there.
     leaguebot.core.services.amendment_service -> leaguebot.attendance.services.attendance_service
-    leaguebot.core.services.amendment_service -> leaguebot.results.models.amendment_state
     leaguebot.core.services.amendment_service -> leaguebot.results.services.results_post_service
     leaguebot.core.services.amendment_service -> leaguebot.results.utils.points_ordering
 

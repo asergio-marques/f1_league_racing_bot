@@ -67,6 +67,7 @@ from leaguebot.image.utils.svg_document import (
     SvgParseError,
     canvas_of,
     load_svg,
+    off_the_loop,
 )
 from leaguebot.image.utils.svg_palette import colour_slots
 
@@ -938,6 +939,9 @@ def check_template(
 
     *check_extension* is False at season approval, where a stored filename was already
     validated when it was stored (FR-001 cannot fail there).
+
+    The template setting's check runs it in a worker thread, so it must stay pure, as
+    `evaluate_all_templates` must.
     """
     label = TEMPLATE_LABELS.get(template_key, template_key)
     filename = getattr(config, template_key, "")
@@ -1146,6 +1150,10 @@ def evaluate_all_templates(
 ) -> dict[str, ValidityReport]:
     """Evaluate all sixteen templates.
 
+    It is run in a worker thread (`ImageValidityService.template_reports`, and the template
+    directory's check through `blocking_template_problems`), so it must stay pure: it reads
+    *config* and the files, and touches no database connection and no Discord object.
+
     When the template directory itself does not resolve, every template is reported
     invalid against that one shared reason rather than producing sixteen near-identical
     file-not-found lines. Each template still receives its own report, so the caller's
@@ -1207,7 +1215,11 @@ def _template_directory_problem(config: ImageConfig, root: Path | None) -> str |
 def evaluate_directories(
     config: ImageConfig, *, root: Path | None = None
 ) -> dict[str, DirectoryReport]:
-    """Validity of the seven asset directories, on the same terms (FR-029)."""
+    """Validity of the seven asset directories, on the same terms (FR-029).
+
+    It is run in a worker thread (`ImageValidityService.directory_reports`), so it must stay
+    pure, as `evaluate_all_templates` must.
+    """
     reports: dict[str, DirectoryReport] = {}
     for column in ASSET_DIRECTORIES:
         value = getattr(config, column)
@@ -1376,6 +1388,9 @@ def blocking_template_problems(
     which is right for the question "does this folder hold every drawing?" and wrong for
     "may this season run?".
 
+    The template directory's check runs it in a worker thread, as it sweeps all sixteen
+    templates: it must stay pure, as `evaluate_all_templates` must.
+
     A fault under a *disabled* aspect is not silently dropped. It is reported as a
     warning by the surfaces that report, because a manager switching that aspect on
     later wants to have known; it simply withholds no approval in the meantime.
@@ -1501,23 +1516,36 @@ def _aspect_problems(
 
 
 class ImageValidityService:
-    """Async facade the cogs use. The evaluation itself is pure and synchronous."""
+    """Async facade the cogs use. The evaluation itself is pure and synchronous, and is run in a
+    worker thread, off the event loop."""
 
     def __init__(self, config_service, module_service) -> None:
         self._config_service = config_service
         self._module_service = module_service
 
     async def template_reports(self) -> dict[str, ValidityReport]:
+        """Every template's report, the sweep run off the event loop.
+
+        `evaluate_all_templates` parses all sixteen templates, which takes seconds on the
+        Raspberry Pi, and on the loop the bot would answer nothing until it finished. It runs
+        in a worker thread instead, which is safe because it is pure: it reads the
+        configuration read here, on the loop, and the template files, and touches no database
+        connection and no Discord object. Through `off_the_loop`, only the reports come back,
+        and a fault as its class and message: no tree it parsed leaves the thread.
+        """
         config = await self._config_service.get_config()
         if config is None:
             return {}
-        return evaluate_all_templates(config)
+        return await off_the_loop(evaluate_all_templates, config)
 
     async def directory_reports(self) -> dict[str, DirectoryReport]:
+        """Every asset directory's report, run off the event loop as `template_reports` is,
+        and safe there for the same reason: `evaluate_directories` reads the configuration it
+        is handed and the file system, and nothing else."""
         config = await self._config_service.get_config()
         if config is None:
             return {}
-        return evaluate_directories(config)
+        return await off_the_loop(evaluate_directories, config)
 
     async def disabled_source_modules(self) -> set[str]:
         disabled: set[str] = set()

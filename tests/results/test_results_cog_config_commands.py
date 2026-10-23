@@ -8,154 +8,112 @@ not there, and the approval that then read it said nothing whatever.
 These drive the callbacks rather than the services beneath them, because what the two fixes
 change is what a manager is *told*: the refusal has to name the configuration, and the
 removal has to ask before it costs a season its points.
+
+Since #439 (slice 7) each command asks a settings change on the change queue: a refusal the
+state when asked gives is answered at once, nothing queued; anything else is saved when the
+change runs. The tests drive the real commands past their tier guards, on a league built by the
+migrations with the real services and queue, and run the queue before reading what was saved.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import discord
 import pytest
 
+from leaguebot.core.db.database import get_connection
 from leaguebot.results.cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView
-from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.results.services import points_config_service, season_points_service
+from tests.support import saves
+from tests.support.change_queue import MEMBER_ID, change_rows, member, run_queue
+from tests.support.settings_league import interaction, last_said, said, settings_league
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 7700
 SEASON_ID = 21
-USER_ID = 88
-CHANNEL_ID = 2
-ADMIN_ROLE = 444
 
 
 @pytest.fixture
-async def db_path(tmp_path):
-    path = str(tmp_path / "results_cog.db")
-    await run_migrations(path)
-    async with get_connection(path) as db:
+async def league(tmp_path):
+    """A league, results alone on, with Season #4 (id 21) in setup and no configuration."""
+    league = await settings_league(tmp_path, modules=("results",))
+    async with get_connection(league.db_path) as db:
         await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 1, 2, 3)",
-            (SERVER_ID,),
-        )
-        await db.execute(
-            "INSERT INTO seasons (id, start_date, status, season_number) "
-            "VALUES (?, '2026-03-01', 'SETUP', 4)",
+            "INSERT INTO seasons (id, start_date, status, stage, season_number) "
+            "VALUES (?, '2026-03-01', 'SETUP', 'CONFIGURATION', 4)",
             (SEASON_ID,),
         )
         await db.commit()
-    return path
+    return league
 
 
-def _server_config() -> ServerConfig:
-    return ServerConfig(
-        server_id=SERVER_ID,
-        interaction_role_id=222,
-        league_admin_role_id=ADMIN_ROLE,
-        interaction_channel_id=CHANNEL_ID,
-        log_channel_id=3,
-    )
+async def _run(league: Any, method: str, *args: Any, user: Any = None) -> Any:
+    """Run `/results config <method>` with *args* as Admin (or *user*), then the queue."""
+    asked = interaction(league.bot, f"results config {method.removeprefix('config_')}", user=user)
+    await undecorate(getattr(ResultsCog, method))(ResultsCog(league.bot), asked, *args)
+    await run_queue(league.bot)
+    return asked
 
 
-def _cog(db_path):
-    cog = ResultsCog.__new__(ResultsCog)
-    # ``MagicMock`` with each awaited member named (issue #240). Under a whole-bot
-    # ``AsyncMock`` every reader these callbacks reach answers truthily whether or not a
-    # test asked it to, so a command could take a branch on the stub alone.
-    cog.bot = MagicMock()
-    cog.bot.db_path = db_path
-    cog.bot.output_router.post_log = AsyncMock()
-    cog.bot.season_service.get_season_for_server = AsyncMock(
-        return_value=SimpleNamespace(id=SEASON_ID, status="SETUP")
-    )
-    # The channel-and-role guard wraps both callbacks. Satisfied rather than bypassed, so
-    # these run the command the way a manager reaches it; the guard has its own tests.
-    cog.bot.config_service.get_server_config = AsyncMock(return_value=_server_config())
-    # The module gate is not what these are about; it has its own tests.
-    cog._module_gate = AsyncMock(return_value=True)
-    return cog
+def _replies(asked) -> str:
+    return "\n".join(said(asked))
 
 
-def _interaction():
-    role = MagicMock()
-    role.id = ADMIN_ROLE
-    role.name = "League Admin"
-
-    interaction = MagicMock()
-    interaction.guild_id = SERVER_ID
-    interaction.channel_id = CHANNEL_ID
-    interaction.user = MagicMock(spec=discord.Member)
-    interaction.user.id = USER_ID
-    interaction.user.display_name = "Manager"
-    interaction.user.roles = [role]
-    interaction.guild.get_role = lambda role_id: role if role_id == ADMIN_ROLE else None
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
+def _views(asked) -> list:
+    calls = asked.response.send_message.await_args_list + asked.followup.send.await_args_list
+    return [call.kwargs["view"] for call in calls if call.kwargs.get("view") is not None]
 
 
-def _replies(interaction) -> str:
-    return "\n".join(
-        str(call.args[0]) for call in interaction.followup.send.await_args_list if call.args
-    )
-
-
-def _views(interaction) -> list:
-    return [
-        call.kwargs["view"]
-        for call in interaction.followup.send.await_args_list
-        if call.kwargs.get("view") is not None
-    ]
+async def _press(league: Any, button: str, name: str, *, user: Any = None) -> Any:
+    """Press *button* of the removal's confirmation of *name*, which Admin opened, as *user*
+    (Admin by default), then run the queue."""
+    view = _ConfirmRemoveConfigView(ResultsCog(league.bot), MEMBER_ID, name)
+    pressed = interaction(league.bot, user=user)
+    await getattr(view, button).callback(pressed)
+    await run_queue(league.bot)
+    return pressed
 
 
 async def _make_config(db_path, name: str) -> None:
-    await points_config_service.create_config(db_path, name)
-    await points_config_service.set_session_points(
-        db_path, name, SessionType.FEATURE_RACE, 1, 25
-    )
+    await saves.create_config(db_path, name)
+    await saves.set_session_points(db_path, name, SessionType.FEATURE_RACE, 1, 25)
 
 
 # ── /results config append ────────────────────────────────────────────────
 
 
-async def test_config_append_refuses_an_unknown_name(db_path):
-    """The typo #132 opens with. It used to report success and attach a phantom."""
-    cog = _cog(db_path)
-    interaction = _interaction()
-    await _make_config(db_path, "Standard")
+async def test_config_append_refuses_an_unknown_name(league):
+    """The typo #132 opens with. It used to report success and attach a phantom: refused at
+    once, nothing queued or attached."""
+    await _make_config(league.db_path, "Standard")
 
-    await ResultsCog.config_append.callback(cog, interaction, "Standrad")
+    asked = await _run(league, "config_append", "Standrad")
 
-    replies = _replies(interaction)
+    replies = _replies(asked)
     assert "Standrad" in replies
     assert "does not exist" in replies
-    assert await season_points_service.get_attached_config_names(db_path, SEASON_ID) == []
+    assert await change_rows(league.db_path) == []
+    assert await season_points_service.get_attached_config_names(league.db_path, SEASON_ID) == []
 
 
-async def test_config_append_does_not_claim_success_for_a_typo(db_path):
+async def test_config_append_does_not_claim_success_for_a_typo(league):
     """Said separately: the reported fault was being *told it worked*."""
-    cog = _cog(db_path)
-    interaction = _interaction()
+    asked = await _run(league, "config_append", "Standrad")
 
-    await ResultsCog.config_append.callback(cog, interaction, "Standrad")
-
-    assert "attached to the current season" not in _replies(interaction)
+    assert "attached to the current season" not in _replies(asked)
 
 
-async def test_config_append_still_attaches_a_real_name(db_path):
-    """A gate that refuses everything is no better than one that refuses nothing."""
-    cog = _cog(db_path)
-    interaction = _interaction()
-    await _make_config(db_path, "Standard")
+async def test_config_append_still_attaches_a_real_name(league):
+    """A gate that refuses everything is no better than one that refuses nothing: acknowledged
+    at once, and attached when the change runs."""
+    await _make_config(league.db_path, "Standard")
 
-    await ResultsCog.config_append.callback(cog, interaction, "Standard")
+    asked = await _run(league, "config_append", "Standard")
 
-    assert "Standard" in _replies(interaction)
-    assert await season_points_service.get_attached_config_names(db_path, SEASON_ID) == [
+    assert said(asked)[0].startswith("⏳ ")
+    assert "Standard" in last_said(asked)
+    assert await season_points_service.get_attached_config_names(league.db_path, SEASON_ID) == [
         "Standard"
     ]
 
@@ -163,129 +121,106 @@ async def test_config_append_still_attaches_a_real_name(db_path):
 # ── /results config remove ────────────────────────────────────────────────
 
 
-async def test_config_remove_goes_straight_through_with_no_links(db_path):
-    """Nothing is at stake, so nothing is asked — the command behaves as it always did."""
-    cog = _cog(db_path)
-    interaction = _interaction()
-    await _make_config(db_path, "Spare")
+async def test_config_remove_goes_straight_through_with_no_links(league):
+    """Nothing is at stake, so nothing is asked — the configuration is gone once the change has
+    run."""
+    await _make_config(league.db_path, "Spare")
 
-    await ResultsCog.config_remove.callback(cog, interaction, "Spare")
+    asked = await _run(league, "config_remove", "Spare")
 
-    assert "removed" in _replies(interaction)
-    assert _views(interaction) == []
-    assert await points_config_service.config_exists(db_path, "Spare") is False
+    assert "removed" in last_said(asked)
+    assert _views(asked) == []
+    assert await points_config_service.config_exists(league.db_path, "Spare") is False
 
 
-async def test_config_remove_asks_before_clearing_a_setup_link(db_path):
-    """The confirmation, and that it names the season the manager would be changing."""
-    cog = _cog(db_path)
-    interaction = _interaction()
-    await _make_config(db_path, "Standard")
-    await season_points_service.attach_config(
-        db_path, SEASON_ID, "Standard", "SETUP"
-    )
+async def test_config_remove_asks_before_clearing_a_setup_link(league):
+    """The confirmation, and that it names the season the manager would be changing; nothing
+    is queued or deleted before the manager answers."""
+    await _make_config(league.db_path, "Standard")
+    await saves.attach_config(league.db_path, SEASON_ID, "Standard", "SETUP")
 
-    await ResultsCog.config_remove.callback(cog, interaction, "Standard")
+    asked = await _run(league, "config_remove", "Standard")
 
-    replies = _replies(interaction)
-    assert "Season #4" in replies, "the prompt must name the season that is affected"
-    assert len(_views(interaction)) == 1
-    assert await points_config_service.config_exists(db_path, "Standard") is True, (
+    assert "Season #4" in _replies(asked), "the prompt must name the season that is affected"
+    assert len(_views(asked)) == 1
+    assert await change_rows(league.db_path) == []
+    assert await points_config_service.config_exists(league.db_path, "Standard") is True, (
         "nothing may be deleted before the manager answers"
     )
 
 
-async def test_config_remove_reports_a_name_that_is_not_there(db_path):
-    cog = _cog(db_path)
-    interaction = _interaction()
+async def test_config_remove_reports_a_name_that_is_not_there(league):
+    asked = await _run(league, "config_remove", "Ghost")
 
-    await ResultsCog.config_remove.callback(cog, interaction, "Ghost")
-
-    assert "not found" in _replies(interaction)
-    assert _views(interaction) == []
+    assert "not found" in _replies(asked)
+    assert _views(asked) == []
+    assert await change_rows(league.db_path) == []
 
 
-async def test_confirming_the_removal_deletes_it_and_clears_the_link(db_path):
+async def test_confirming_the_removal_deletes_it_and_clears_the_link(league):
     """`async def` throughout this file: apt's discord.py 2.5.0 wants a running loop in
-    `View.__init__`, and a sync test building one passes on CI and fails on the Pi."""
-    cog = _cog(db_path)
-    await _make_config(db_path, "Standard")
-    await season_points_service.attach_config(
-        db_path, SEASON_ID, "Standard", "SETUP"
-    )
-    view = _ConfirmRemoveConfigView(cog, USER_ID, "Standard")
-    interaction = _interaction()
+    `View.__init__`, and a sync test building one passes on CI and fails on the Pi. Once the
+    confirmation's change has run, the configuration and its link are gone."""
+    await _make_config(league.db_path, "Standard")
+    await saves.attach_config(league.db_path, SEASON_ID, "Standard", "SETUP")
 
-    await view.confirm.callback(interaction)
+    await _press(league, "confirm", "Standard")
 
-    assert await points_config_service.config_exists(db_path, "Standard") is False
-    assert await season_points_service.get_attached_config_names(db_path, SEASON_ID) == []
+    assert await points_config_service.config_exists(league.db_path, "Standard") is False
+    assert await season_points_service.get_attached_config_names(league.db_path, SEASON_ID) == []
 
 
-async def test_cancelling_the_removal_leaves_everything_alone(db_path):
-    cog = _cog(db_path)
-    await _make_config(db_path, "Standard")
-    await season_points_service.attach_config(
-        db_path, SEASON_ID, "Standard", "SETUP"
-    )
-    view = _ConfirmRemoveConfigView(cog, USER_ID, "Standard")
-    interaction = _interaction()
+async def test_cancelling_the_removal_leaves_everything_alone(league):
+    await _make_config(league.db_path, "Standard")
+    await saves.attach_config(league.db_path, SEASON_ID, "Standard", "SETUP")
 
-    await view.cancel.callback(interaction)
+    await _press(league, "cancel", "Standard")
 
-    assert await points_config_service.config_exists(db_path, "Standard") is True
-    assert await season_points_service.get_attached_config_names(db_path, SEASON_ID) == [
+    assert await change_rows(league.db_path) == []
+    assert await points_config_service.config_exists(league.db_path, "Standard") is True
+    assert await season_points_service.get_attached_config_names(league.db_path, SEASON_ID) == [
         "Standard"
     ]
 
 
-async def test_only_the_manager_who_asked_may_answer(db_path):
+async def test_only_the_manager_who_asked_may_answer(league):
     """An admin's irreversible delete is not something a bystander gets to confirm."""
-    cog = _cog(db_path)
-    await _make_config(db_path, "Standard")
-    view = _ConfirmRemoveConfigView(cog, USER_ID, "Standard")
-    interaction = _interaction()
-    interaction.user.id = USER_ID + 1
+    await _make_config(league.db_path, "Standard")
 
-    await view.confirm.callback(interaction)
+    await _press(league, "confirm", "Standard", user=member(MEMBER_ID + 1, "Sam", "Sam#0001"))
 
-    assert await points_config_service.config_exists(db_path, "Standard") is True
+    assert await change_rows(league.db_path) == []
+    assert await points_config_service.config_exists(league.db_path, "Standard") is True
 
 
 # ── /results config add ───────────────────────────────────────────────────
 
 
-async def test_a_points_configuration_name_with_everyone_is_refused(db_path):
-    """Held to the rules every name a league types is held to (#362)."""
-    cog = _cog(db_path)
-    interaction = _interaction()
+async def test_a_points_configuration_name_with_everyone_is_refused(league):
+    """Held to the rules every name a league types is held to (#362): refused at once."""
+    asked = await _run(league, "config_add", "@everyone 100%")
 
-    await ResultsCog.config_add.callback(cog, interaction, "@everyone 100%")
-
-    assert "configuration name" in _replies(interaction)
-    assert not await points_config_service.config_exists(db_path, "@everyone 100%")
+    assert "configuration name" in _replies(asked)
+    assert await change_rows(league.db_path) == []
+    assert not await points_config_service.config_exists(league.db_path, "@everyone 100%")
 
 
-async def test_a_points_configuration_name_with_a_member_mention_is_refused(db_path):
+async def test_a_points_configuration_name_with_a_member_mention_is_refused(league):
     """A configuration's name is shown in every review that lists it (#388)."""
-    cog = _cog(db_path)
-    interaction = _interaction()
+    asked = await _run(league, "config_add", "<@123456789012345678> 100%")
 
-    await ResultsCog.config_add.callback(cog, interaction, "<@123456789012345678> 100%")
+    assert "configuration name" in _replies(asked)
+    assert "member" in _replies(asked)
+    assert await change_rows(league.db_path) == []
+    assert not await points_config_service.config_exists(
+        league.db_path, "<@123456789012345678> 100%"
+    )
 
-    assert "configuration name" in _replies(interaction)
-    assert "member" in _replies(interaction)
-    assert not await points_config_service.config_exists(db_path, "<@123456789012345678> 100%")
 
+async def test_a_plain_points_configuration_name_is_still_created(league):
+    await _run(league, "config_add", "100%")
 
-async def test_a_plain_points_configuration_name_is_still_created(db_path):
-    cog = _cog(db_path)
-    interaction = _interaction()
-
-    await ResultsCog.config_add.callback(cog, interaction, "100%")
-
-    assert await points_config_service.config_exists(db_path, "100%")
-
+    assert await points_config_service.config_exists(league.db_path, "100%")
 
 
 # ---------------------------------------------------------------------------

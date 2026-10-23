@@ -7,24 +7,14 @@ from itertools import groupby
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import AuditRecord
+from leaguebot.core.services.setting_change import Saved
 from leaguebot.results.models.points_changed import PointsChanged, ValueChange
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.services import points_config_service
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
 log = logging.getLogger(__name__)
-
-
-class SeasonNotInSetupError(Exception):
-    pass
-
-
-class ConfigAlreadyAttachedError(Exception):
-    pass
-
-
-class ConfigNotAttachedError(Exception):
-    pass
 
 
 class StagedPointsNotApprovable(Exception):
@@ -40,55 +30,56 @@ class StagedPointsNotApprovable(Exception):
         self.reason = reason
 
 
-async def attach_config(
-    db_path: str,
-    season_id: int,
-    config_name: str,
-    season_status: str,
-) -> None:
-    """Attach one of the league's points configurations to a season in setup.
+def _link_value(season_id: int, config_name: str, attached: bool) -> dict[str, object]:
+    """A season's link to a configuration as an audit entry records it."""
+    return {"season_id": season_id, "config": config_name, "attached": attached}
 
-    Raises :class:`points_config_service.ConfigNotFoundError` for a name the server's store
-    does not hold. **The check is here because nothing below it can make one** (#132):
-    ``season_points_links.config_name`` is bare ``TEXT`` with no foreign key, so a mistyped
-    name inserts as happily as a real one and is reported as attached by `/season placements-review`.
-    The first thing that ever noticed was the snapshot at approval, which raised in the
-    middle of a deferred command — and with no error handler on the tree, said nothing at
-    all. Refusing at the moment the name is typed is the only place the manager still knows
-    what they meant.
+
+async def attach_config_on(db: aiosqlite.Connection, season_id: int, config_name: str) -> Saved:
+    """Attach the configuration *config_name* to the season *season_id* on *db*, committing nothing.
+
+    One `POINTS_CONFIG_ATTACH` entry, from not attached to attached. A configuration the season
+    already holds writes nothing and comes back unchanged. That the season is in setup and that
+    the name is one the store holds are the setting's check to judge (#132), not this write's.
     """
-    if season_status != "SETUP":
-        raise SeasonNotInSetupError(
-            f"Config attachment is only allowed for seasons in SETUP (status: {season_status})"
-        )
-    if not await points_config_service.config_exists(db_path, config_name):
-        raise points_config_service.ConfigNotFoundError(config_name)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO season_points_links (season_id, config_name) VALUES (?, ?)",
-            (season_id, config_name),
-        )
-        await db.commit()
+    cursor = await db.execute(
+        "INSERT OR IGNORE INTO season_points_links (season_id, config_name) VALUES (?, ?)",
+        (season_id, config_name),
+    )
+    if cursor.rowcount == 0:
+        return Saved(changed=False)
+    return Saved(
+        changed=True,
+        audits=(AuditRecord(
+            "POINTS_CONFIG_ATTACH",
+            _link_value(season_id, config_name, False),
+            _link_value(season_id, config_name, True),
+        ),),
+    )
 
 
-async def detach_config(
-    db_path: str,
-    season_id: int,
-    config_name: str,
-    season_status: str,
-) -> None:
-    if season_status != "SETUP":
-        raise SeasonNotInSetupError(
-            f"Config detachment is only allowed for seasons in SETUP (status: {season_status})"
-        )
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "DELETE FROM season_points_links WHERE season_id = ? AND config_name = ?",
-            (season_id, config_name),
-        )
-        await db.commit()
-        if cursor.rowcount == 0:
-            raise ConfigNotAttachedError(config_name)
+async def detach_config_on(db: aiosqlite.Connection, season_id: int, config_name: str) -> Saved:
+    """Detach the configuration *config_name* from the season *season_id* on *db*, committing
+    nothing.
+
+    One `POINTS_CONFIG_DETACH` entry, from attached to not attached. A name the season did not
+    hold writes nothing and comes back unchanged. That the season is in setup is the setting's
+    check to judge.
+    """
+    cursor = await db.execute(
+        "DELETE FROM season_points_links WHERE season_id = ? AND config_name = ?",
+        (season_id, config_name),
+    )
+    if cursor.rowcount == 0:
+        return Saved(changed=False)
+    return Saved(
+        changed=True,
+        audits=(AuditRecord(
+            "POINTS_CONFIG_DETACH",
+            _link_value(season_id, config_name, True),
+            _link_value(season_id, config_name, False),
+        ),),
+    )
 
 
 async def get_attached_config_names(db_path: str, season_id: int) -> list[str]:
@@ -107,7 +98,7 @@ async def missing_attached_configs(
 ) -> list[str]:
     """Every name this season is linked to that the server's points store does not hold.
 
-    `attach_config` refuses to make such a link, but two doors are still open to one: a
+    the attach setting's check refuses to make such a link, but two doors are still open to one: a
     database written before that refusal existed, and `/results config remove`, which takes
     the configuration out from under any season that is not in setup. So the approval gate
     reads this rather than trusting the attachment to have been checked.

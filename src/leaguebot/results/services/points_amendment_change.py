@@ -62,7 +62,6 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services.amendment_service import (
     approval_faults,
-    get_amendment_state,
     validate_modification_ordering,
 )
 from leaguebot.core.services.change_queue import (
@@ -77,6 +76,7 @@ from leaguebot.core.services.season_service import live_season
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services import review_posting, review_verdicts
+from leaguebot.results.services.amendment_mode_service import get_amendment_state
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.result_submission_service import (
     amendment_wait_text,

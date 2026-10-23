@@ -95,10 +95,14 @@ async def _restart(league: SeasonLeague, *, run: bool = True) -> None:
     """The bot restarts: a fresh queue on the same database, the start-up's recovery of the
     submission channels left open, and then, where *run*, the queue run. The submission job the
     results module has today, where it still has one, is stubbed, so that what it would open
-    off the queue does not run behind the test."""
+    off the queue does not run behind the test. Where the queue is not to run, its worker is
+    stopped before it ever runs: left running, it would carry out what the test means to find
+    still in hand, as soon as the recovery waits on the database, on a slow host."""
     import leaguebot.__main__ as bot_module
 
-    await restart_queue(league.bot)
+    queue = await restart_queue(league.bot)
+    if not run:
+        await queue.stop()
     stub = AsyncMock(name="run_result_submission_job")
     had = hasattr(result_submission_service, "run_result_submission_job")
     if had:
@@ -197,10 +201,16 @@ async def test_a_round_whose_closing_is_stopped_is_not_taken_for_a_first_paste_a
     from leaguebot.results.services.submission_changes import CLOSE_KIND
 
     league = await _league(tmp_path)
+    league.channel(SUBMISSION_CHANNEL).delete_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Permissions"
+    )
     await league.bot.change_queue.ask(
         CLOSE_KIND, {"round_id": ROUND_3, "channel_id": SUBMISSION_CHANNEL},
         origin=ChangeOrigin.BOT, what="closing round 3's submission channel",
     )
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "delete_channel"
 
     await _restart(league, run=False)
 
