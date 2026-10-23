@@ -474,22 +474,6 @@ def group_sessions_by_config(rows) -> list[tuple[str, list[SessionType]]]:
     ]
 
 
-def values_stand(current: Mapping[str, int | None], requested: Mapping[str, int]) -> bool:
-    """Whether a request to set values changes nothing (#482).
-
-    *current* holds the values the caller has already read, ``None`` for one not held at all;
-    *requested* the values asked for. The request changes nothing only where every value asked
-    for is already held: a value never filled in is not the same as one worth nothing, so a
-    ``None`` never stands, and a name *current* does not carry does not either. Only what is
-    asked is compared, so a fastest-lap limit set to the limit it holds stands whatever the
-    bonus is.
-
-    Pure. The saves now judge "nothing changed" on the connection that writes, so nothing in
-    ``src/`` calls this; it stays only for the tests that pin the rule.
-    """
-    return all(name in current and current[name] == value for name, value in requested.items())
-
-
 async def _position_points(
     db: aiosqlite.Connection, config_id: int, session_type: SessionType, position: int
 ) -> int | None:
