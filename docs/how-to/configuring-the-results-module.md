@@ -95,13 +95,15 @@ All three are set **per division**, so a league with three divisions sets nine c
 
 Keep the name plain: it cannot hold an emoji, Discord formatting, a role mention, a mention of a member, `@everyone` or `@here`.
 
+**Every command in Steps 3 to 5 is acknowledged first and answered after.** You are told at once that the change is under way, and that message is updated with the reply the command gives; a request the bot can refuse on the spot is refused as ever. If a save fails, nothing from it is saved, the reply says so and tells you to run the command again, and the queue goes on: a change to a setting never holds it up.
+
 A configuration starts with **every position in every session worth nothing**. Filling it in is the whole of this step, and the commands that do it are listed in full under [Points Config Management](../../README.md#points-config-management):
 
 | Command | Use it for |
 |---|---|
-| `/results config session` | One position in one session type. Fine for a correction, tedious for a whole table |
-| `/results config bulk-session` | A whole session's table pasted into a box, one `position, points` per line. All or nothing: one bad line and nothing is applied, every bad line listed back for you to correct and paste again |
-| `/results config xml-import` | Several sessions at once, as pasted text or an attached file |
+| `/results config session` | One position in one session type. Fine for a correction, tedious for a whole table. A position below 1 or negative points are refused at once |
+| `/results config bulk-session` | A whole session's table pasted into a box, one `position, points` per line. All or nothing: one bad line and nothing is applied, every bad line listed back for you to correct and paste again. A paste whose every position already holds the value pasted changes nothing and says so |
+| `/results config xml-import` | Several sessions at once, as pasted text or an attached file. An import of values the configuration already holds changes nothing and says so |
 | `/results config fl` and `/results config fl-plimit` | The fastest-lap bonus, and how far down the order it can be won |
 
 **There are four session types** — Sprint Qualifying, Sprint Race, Feature Qualifying and Feature Race — and each carries its own table, so a league that awards points for qualifying simply fills in the qualifying tables and one that does not leaves them at nothing. A normal weekend uses the two Feature tables; a sprint weekend uses all four.
@@ -134,7 +136,7 @@ A configuration starts with **every position in every session worth nothing**. F
 
 Building a table does **not** put it in your season. Attaching it does, and it can only be done before the season's placements are confirmed — once approved, both `append` and `detach` are refused.
 
-**Attach as many as you will need.** On race day the bot offers you the attached configurations as buttons and you pick one **per session**, which is how a race stopped at half distance gets scored differently from the qualifying session that preceded it. Attach one only, and the bot picks it for you without asking.
+**Attach as many as you will need.** On race day the bot offers you the attached configurations as buttons and you pick one **per session**, which is how a race stopped at half distance gets scored differently from the qualifying session that preceded it. Attach one only, and the bot picks it for you without asking. Attaching a configuration that is already attached changes nothing, and the bot says so.
 
 **A season cannot be approved with nothing attached**, nor with an attached name that no longer exists, nor with a table that is out of order. Those are the three things this module adds to approval beyond the channels, and all are checked against the configurations as they stand when you press Approve — not against the season's copy, which is taken only once the approval has passed every gate.
 
@@ -153,6 +155,8 @@ Building a table does **not** put it in your season. Attaching it does, and it c
 Reserves are **shown by default**, and this is set per division. Hiding them is a presentation choice and nothing more: a hidden reserve still scores exactly as they did, their points still count towards the team whose car they drove, and unhiding them puts them back in the table with everything they earned.
 
 Every driver seated in a **team** appears in the drivers' table from the start of the season, on nothing, whether or not they have raced yet, and every team appears in the constructors' table on the same terms. A driver sitting in Reserve appears only once they have driven, which is the other half of why this toggle exists.
+
+> **Pressing it twice quickly is safe.** The toggle flips from the state it read when you pressed it, so a second press made before the first was carried out asks for the same state; the bot answers that nothing changed.
 
 > **Decide before the last round.** The toggle is refused once every division of the season is done — with the racing over, the display is settled and the final classification is drawn next. It is refused on a completed or cancelled season too.
 
@@ -378,7 +382,7 @@ Changing what a win is worth halfway through a championship is a bigger thing th
 /results amend review
 ```
 
-`toggle` opens a working copy of the season's tables. Every `session`, `fl`, `fl-plimit` and `bulk-session` change is staged into that copy and **changes nothing anybody can see**. `review` shows you the differences and asks you to approve or reject; approving overwrites the season's tables, **rescores every round of every division from the start of the season** and switches amendment mode back off, all in one save, then reposts each of those rounds in the division's results and standings channels. Approving is acknowledged at once with the number of its first job and the reply is updated when it is done: it is a change on the queue, the saving first and the reposts after it. Once you press Approve, that panel's buttons no longer answer; an Approve on another `review` panel while it is waiting, running or stopped is refused, naming its job. Rejecting leaves the working copy alone so you can keep editing, and is written to the log channel. The panel stays open for **five minutes**: left longer, its buttons come down, the bot tells you nothing was approved, and the log channel records that it lapsed. Your staged changes and amendment mode remain, so run `review` again. Staging a value the working copy already holds changes nothing, says so, and does not count as a staged change: it never stops you switching amendment mode off.
+`toggle` opens a working copy of the season's tables, and is refused while the season is still being set up: until its placements are confirmed it takes its points from the configurations attached to it, which you change with `/results config`. Each of these commands is acknowledged first and answered after, as in Steps 3 to 5; `session`, `fl`, `fl-plimit` and `bulk-session` also refuse a configuration that is not one of the season's, a position below 1, negative points or a limit below 1, at once. Every `session`, `fl`, `fl-plimit` and `bulk-session` change is staged into that copy and **changes nothing anybody can see**. `review` shows you the differences and asks you to approve or reject; approving overwrites the season's tables, **rescores every round of every division from the start of the season** and switches amendment mode back off, all in one save, then reposts each of those rounds in the division's results and standings channels. Approving is acknowledged at once with the number of its first job and the reply is updated when it is done: it is a change on the queue, the saving first and the reposts after it. Once you press Approve, that panel's buttons no longer answer; an Approve on another `review` panel while it is waiting, running or stopped is refused, naming its job. Rejecting leaves the working copy alone so you can keep editing, and is written to the log channel. The panel stays open for **five minutes**: left longer, its buttons come down, the bot tells you nothing was approved, and the log channel records that it lapsed. Your staged changes and amendment mode remain, so run `review` again. Staging a value the working copy already holds, in a paste too, changes nothing, says so, and does not count as a staged change: it never stops you switching amendment mode off.
 
 While a points approval of the season is waiting, running or stopped on the queue, `toggle`, `revert`, `session`, `fl`, `fl-plimit` and `bulk-session` are refused, naming its job. Let it finish, or press **Retry** or **Discard** on its notice if it has stopped, then try again.
 

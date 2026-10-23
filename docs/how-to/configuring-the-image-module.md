@@ -103,6 +103,8 @@ Turn a missing module on with `/module enable <name>`. Set each channel per divi
 
 Four settings, none of which need any artwork, so they are easy to get out of the way.
 
+**Every command in this guide that sets something is acknowledged first and answered after:** you are told at once that the change is under way, and that message is updated with the reply, advice included. A request the bot can refuse on the spot is refused as before. If the save fails, nothing is saved, the reply says so and tells you to run the command again, and the queue goes on. Advice that follows a saved setting, such as a colour checked against your templates, can fail without undoing it: the reply then says the setting is saved and was not checked, and `/images config view` shows how it stands. The same holds for the daily portrait job: if it cannot be scheduled the setting is stored and the job is scheduled when the bot next starts, and if it cannot be removed the reply says it does nothing while the setting is off.
+
 | Command | What it sets | Starts as |
 |---|---|---|
 | `/images config time-zone` | The time zone shown on pictures. Start typing and it suggests names | `UTC` |
@@ -599,7 +601,7 @@ It changes nothing by itself. It prints commands; you run the ones you want.
 
 Nine switches. `aspect` is a dropdown, so you pick rather than type; its nine entries are **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts**, **Verdicts** and **Verdict banner** — the same names `/images config view` and `/season placements-review` use for them. All start off. Each one swaps that output between a picture and the text the bot has always posted.
 
-It is a **toggle**, not an on/off setting: run it on something that is off and it comes on, run it again and it goes back to text.
+It is a **toggle**, not an on/off setting: run it on something that is off and it comes on, run it again and it goes back to text. The bot reads the output's state when you run the command and asks for the opposite one, so two presses made before the first was carried out ask for the same thing: the second is refused as a repeat while the first waits, and answers that nothing changed if it still got through.
 
 **Switching one on checks its drawings first, and refuses if they are not right.** You are told what is wrong and the output stays off. That is on purpose: an output switched on over a broken drawing posts *nothing* where your drivers would otherwise have read text, and it holds up your season's approval as well. Switching one **off** is never refused — text needs no drawing, so you can always go back to it.
 
