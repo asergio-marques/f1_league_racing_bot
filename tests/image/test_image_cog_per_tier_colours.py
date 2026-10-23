@@ -32,17 +32,16 @@ from leaguebot.image.services.image_config_service import ImageConfigService
 from tests.support import saves
 from tests.support.change_queue import run_queue
 from tests.support.image_cog_doubles import (
+    QUEUED_MEMBER,
     assert_one_line,
     assert_one_refusal,
     interaction as _image_interaction,
     log_bot,
+    logged,
     said,
 )
 from tests.support.settings_league import audit_rows, settings_league, switch
 from tests.support.undecorate import undecorate
-
-#: Why a test here fails until the per-tier colour settings run on the change queue.
-UNBUILT = "#439: the per-tier colour settings do not run on the change queue yet"
 
 TOGGLE = "images config per-tier-colour-toggle"
 SET_COLOUR = "images config per-tier-set-colour"
@@ -652,10 +651,11 @@ async def test_the_import_form_stores_nothing_once_the_module_is_switched_off(tm
 # ── A reply too long for one message (F4) ────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_long_bulk_reply_arrives_in_parts_and_is_recorded(tmp_path):
     """A hundred slots make a reply past Discord's 2,000 characters: once the change has run it
-    is sent whole, in parts each within the limit, and the success line is recorded."""
+    is sent whole, in parts each within the limit, and the success line is recorded — itself
+    past the limit, so the log channel takes it in parts too, which read in order are the one
+    line naming the tier and every slot."""
     slots = [f"slot{i:03d}" for i in range(100)]
     league = await _league(tmp_path, declared=set(slots))
 
@@ -666,7 +666,14 @@ async def test_a_long_bulk_reply_arrives_in_parts_and_is_recorded(tmp_path):
     assert len(parts) > 1
     assert all(len(part) <= 2000 for part in parts)
     assert all(slot in "\n".join(parts) for slot in slots)
-    assert_one_line(league.bot, BULK)
+    line_parts = logged(league.bot)
+    assert len(line_parts) > 1, line_parts
+    assert all(len(part) <= 2000 for part in line_parts)
+    head, *details = "\n".join(line_parts).splitlines()
+    assert head == f"{QUEUED_MEMBER} | /{BULK} | Success", head
+    details = [detail.strip() for detail in details]
+    assert "Tier colours: Division 2" in details
+    assert all(f"{slot} = #A78BFA" in details for slot in slots)
 
 
 # ── An attached palette too large to be one (F6) ─────────────────────────
