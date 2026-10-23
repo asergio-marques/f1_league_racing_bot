@@ -102,6 +102,11 @@ def load_svg(path: Path | str) -> etree._Element:
 
     A `str` is accepted as readily as a `Path`; several callers hold the template path as
     one and the annotation used to say otherwise.
+
+    A parse takes long enough on the Raspberry Pi that the bot would answer nothing while it
+    ran, so every caller on the event loop runs it in a worker thread (`asyncio.to_thread`).
+    It must therefore stay pure: it reads the file alone, and touches no database connection
+    and no Discord object.
     """
     # A directory is named as unreadable here rather than left to lxml, because which
     # fault lxml reports for one depends on the libxml2 it was linked against. libxml2

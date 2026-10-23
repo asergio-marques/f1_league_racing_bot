@@ -1,6 +1,7 @@
 """PlacementService — driver placement, role management, and seeded listing."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Mapping
@@ -832,7 +833,11 @@ class PlacementService:
                     )
                 ).fetchone()
             seated = (row["seated"] if row else 0) or 0
-            problem = reserve_capacity_problem(load_svg(report.resolved_path), seated + adding)
+            # The template is parsed and measured off the event loop: both are pure.
+            path = report.resolved_path
+            problem = await asyncio.to_thread(
+                lambda: reserve_capacity_problem(load_svg(path), seated + adding)
+            )
         except Exception as exc:  # noqa: BLE001
             log.error("reserve capacity guard could not run: %s", exc, exc_info=True)
             return
@@ -894,8 +899,10 @@ class PlacementService:
                     )
                 ).fetchone()
             seated = (row["seated"] if row else 0) or 0
-            problem = row_capacity_problem(
-                "attendance_template", load_svg(report.resolved_path), seated + adding
+            # The template is parsed and measured off the event loop: both are pure.
+            path = report.resolved_path
+            problem = await asyncio.to_thread(
+                lambda: row_capacity_problem("attendance_template", load_svg(path), seated + adding)
             )
         except Exception as exc:  # noqa: BLE001
             log.error("attendance sheet capacity guard could not run: %s", exc, exc_info=True)
@@ -968,8 +975,10 @@ class PlacementService:
                     )
                 ).fetchone()
             seated = (row["seated"] if row else 0) or 0
-            problem = row_capacity_problem(
-                DRIVERS_TEMPLATE_KEY, load_svg(report.resolved_path), seated + adding
+            # The template is parsed and measured off the event loop: both are pure.
+            path = report.resolved_path
+            problem = await asyncio.to_thread(
+                lambda: row_capacity_problem(DRIVERS_TEMPLATE_KEY, load_svg(path), seated + adding)
             )
         except Exception as exc:  # noqa: BLE001
             log.error("standings capacity guard could not run: %s", exc, exc_info=True)

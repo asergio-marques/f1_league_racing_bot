@@ -369,7 +369,8 @@ def _template(modules: "ModuleService", config: "ImageConfigService") -> Setting
         proposed = await config.candidate_config(column, str(ctx.payload["value"]))
         if proposed is None:
             return _template_refusal(label, NO_CONFIGURATION)
-        problem = check_template(proposed, column)
+        # One template's parse, run off the event loop as the folder's survey is.
+        problem = await asyncio.to_thread(check_template, proposed, column)
         if problem is not None:
             return _template_refusal(label, problem.message())
         return Verdict.go()

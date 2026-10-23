@@ -939,6 +939,9 @@ def check_template(
 
     *check_extension* is False at season approval, where a stored filename was already
     validated when it was stored (FR-001 cannot fail there).
+
+    The template setting's check runs it in a worker thread, so it must stay pure, as
+    `evaluate_all_templates` must.
     """
     label = TEMPLATE_LABELS.get(template_key, template_key)
     filename = getattr(config, template_key, "")

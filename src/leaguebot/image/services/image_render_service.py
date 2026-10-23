@@ -698,7 +698,8 @@ class ImageRenderService:
             )
 
         try:
-            root = load_svg(report.resolved_path)
+            # Parsed off the event loop, as every template parse is (`load_svg`).
+            root = await asyncio.to_thread(load_svg, report.resolved_path)
         except SvgError as exc:
             return RenderOutcome(
                 problem=Problem(

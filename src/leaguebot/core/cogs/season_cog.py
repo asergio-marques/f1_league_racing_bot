@@ -23,6 +23,7 @@ Commands:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import sqlite3
@@ -922,7 +923,8 @@ class SeasonCog(commands.Cog):
             from leaguebot.image.models.image_catalogues import catalogue_for
             from leaguebot.image.utils.svg_document import FieldIndex, load_svg
 
-            root = load_svg(report.resolved_path)
+            # Parsed off the event loop, as every template parse is (`load_svg`).
+            root = await asyncio.to_thread(load_svg, report.resolved_path)
             catalogue = catalogue_for("lineup_template")
             blocks = catalogue.capacity(root) or 0
             nest = catalogue.rows.nested if catalogue.rows is not None else None
@@ -994,7 +996,7 @@ class SeasonCog(commands.Cog):
             from leaguebot.image.utils.svg_document import load_svg
 
             capacity = catalogue_for("calendar_template").capacity(
-                load_svg(report.resolved_path)
+                await asyncio.to_thread(load_svg, report.resolved_path)
             )
         except Exception as exc:  # noqa: BLE001
             log.error("round add: calendar capacity guard could not run: %s", exc, exc_info=True)
@@ -1037,7 +1039,7 @@ class SeasonCog(commands.Cog):
             from leaguebot.image.utils.svg_document import load_svg
 
             capacity = catalogue_for("calendar_template").capacity(
-                load_svg(report.resolved_path)
+                await asyncio.to_thread(load_svg, report.resolved_path)
             )
             if not capacity:
                 return []
@@ -1098,7 +1100,7 @@ class SeasonCog(commands.Cog):
                 report = reports.get("attendance_template")
                 if report is not None and report.valid and report.resolved_path:
                     declared = catalogue_for("attendance_template").column_capacity(
-                        load_svg(report.resolved_path)
+                        await asyncio.to_thread(load_svg, report.resolved_path)
                     )
                     # Nought means the template draws no grid at all, which is a legitimate
                     # choice (XIV.3) and never a divergence.
@@ -1137,7 +1139,7 @@ class SeasonCog(commands.Cog):
                 report = reports.get("rsvp_template")
                 if report is not None and report.valid and report.resolved_path:
                     declared = catalogue_for("rsvp_template").capacity(
-                        load_svg(report.resolved_path)
+                        await asyncio.to_thread(load_svg, report.resolved_path)
                     )
                     if declared:
                         async with get_connection(self.bot.db_path) as db:
@@ -1219,7 +1221,7 @@ class SeasonCog(commands.Cog):
             # Read through the same two counters ``build_fill_spec`` reads, so what the
             # review promises and what the render does cannot disagree (XIV.10).
             try:
-                root = load_svg(report.resolved_path)
+                root = await asyncio.to_thread(load_svg, report.resolved_path)
                 declared_rows = catalogue.capacity(root) or 0
                 declared_rounds = catalogue.column_capacity(root) or 0
             except CapacityError:

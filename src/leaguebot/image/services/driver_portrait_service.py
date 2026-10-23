@@ -142,6 +142,9 @@ def portrait_aspect(config) -> float:
     A portrait is never worth an exception: this runs on the way to drawing a graphic, and a
     lineup template too broken to read is a fault the render itself will report in terms a
     manager can act on. Reporting it twice, from here, in worse terms, would help nobody.
+
+    The refreshes run it in a worker thread, as it parses the template, so it must stay pure:
+    it reads *config* and the file, and touches no database connection and no Discord object.
     """
     try:
         from leaguebot.image.services.image_validity_service import class_aspect_of
@@ -385,7 +388,7 @@ async def run_daily_refresh(bot: LeagueBot, *, now: datetime | None = None) -> i
             bot.db_path,
             members,
             directory,
-            aspect=portrait_aspect(config),
+            aspect=await asyncio.to_thread(portrait_aspect, config),
             budget_seconds=None,
             now=now,
         )
@@ -477,7 +480,7 @@ async def refresh_before_render(
             bot.db_path,
             members,
             directory,
-            aspect=portrait_aspect(config),
+            aspect=await asyncio.to_thread(portrait_aspect, config),
             now=now,
         )
     except Exception:  # noqa: BLE001 -- a portrait never fails a render
