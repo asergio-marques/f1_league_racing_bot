@@ -187,7 +187,7 @@
 - <NEW COMMAND> A "results config append" command will intake the string that IDs the points configuration to be applied to the current season. The command is only valid if there is a season whose placements are yet to be first confirmed; if there is no season, or once the season's placements have been confirmed, this command fails.
     - The command shall fail if no configuration of that name exists in the league points schema store, and shall say so. A name that was mistyped shall never be reported as attached.
     - There may be multiple points configurations attached to one season.
-    - If the configuration input in "results config append" already exists in the current season, then the current season's configuration changes nothing, and the command shall say so.
+    - Where the configuration named is already attached to the current season, the command shall change nothing, and shall say so.
 - <NEW COMMAND> A "results config detach" command will intake the string that IDs the points configuration to be removed from the current season. The command is only valid if there is a season whose placements are yet to be first confirmed; if there is no season, or once the season's placements have been confirmed, this command fails.
 
 #### Confirming placements and points configs
