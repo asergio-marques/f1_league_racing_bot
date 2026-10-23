@@ -3,8 +3,7 @@
 Results owns the mode's tables (`season_amendment_state`, `season_modification_entries`,
 `season_modification_fl`), so it holds the readers of them here. A season in the mode edits a
 modification store rather than the configurations it scores on. The readers say whether the
-mode is on and whether it is modified, what the store holds for one position or one session's
-fastest lap, and whether a staged table reads out of order. The writers (`set_amendment_mode_on`,
+mode is on and whether it is modified, and whether a staged table reads out of order. The writers (`set_amendment_mode_on`,
 `revert_on`, `stage_points_on`, `stage_fastest_lap_on`) write on the connection a settings change
 hands them, commit nothing, and answer what they did as a `Saved`: whether anything changed and
 the audit entries the queue saves with it. A request for what the store already holds changes
