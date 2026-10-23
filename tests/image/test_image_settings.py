@@ -54,9 +54,6 @@ from tests.support.settings_league import (
 )
 from tests.support.undecorate import undecorate
 
-#: Why the tests here fail until the image settings run on the queue.
-UNBUILT = "#439: the image settings do not run on the change queue yet"
-
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 #: What a daily job that cannot be armed says became of the change, as today (image :132).
@@ -571,7 +568,6 @@ async def test_a_pasted_palette_saves_each_colour_changed_with_its_audit_entry_a
     await _saves_with_record(tmp_path, CASES["tier-palette"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_colour_import_saves_every_tier_in_one_save_with_its_audit_entries(tmp_path):
     """A colour import attached as a file naming Division 1 and Division 2, whose save faults
     on the second tier's audit entry: neither tier is saved, the member is told nothing from
@@ -583,6 +579,7 @@ async def test_a_colour_import_saves_every_tier_in_one_save_with_its_audit_entri
     second_fails = AsyncMock(side_effect=[None, sqlite3.OperationalError("database or disk is full")])
     with patch("leaguebot.core.services.change_queue.record_change_on", second_fails):
         await run_queue(league.bot, steps=1)
+    await run_queue(league.bot)
 
     assert last_said(asked) == failure_reply("`/images config colour-xml-import`", IMPORT_NOT_SAVED)
     assert await _rows(league.db_path, TIER_COLOURS) == []
