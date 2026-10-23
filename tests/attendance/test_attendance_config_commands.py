@@ -723,22 +723,24 @@ async def test_a_value_already_held_records_that_nothing_changed(
     ]
 
 
-@pytest.mark.parametrize(
-    "start,outcome",
-    [({}, "Success"), ({"no_show_penalty": 4}, "Nothing changed")],
-    ids=["success", "nothing-changed"],
-)
-async def test_a_line_that_cannot_be_written_is_not_swallowed(start, outcome):
-    """P2: a success or nothing-changed line is written bare, in the setting's save, so a write
-    that raises reaches the command's error handling rather than vanishing. Only the four
-    catch-alls the architecture allows may swallow, and a line reporting that nothing went
-    wrong is none of them."""
-    cog = _make_cog(cfg=_config(**start))
-    cog.bot.output_router.queue_log_on = AsyncMock(side_effect=RuntimeError("log channel down"))
+async def test_a_save_that_raises_is_not_swallowed():
+    """P2: the cog lets the service's error propagate. The setting's log line is written bare,
+    in the setting's save, so a save that raises (its line among the writes) reaches the
+    command's error handling rather than vanishing, with no reply claiming the change and no
+    line sent. Only the four catch-alls the architecture allows may swallow, and a line
+    reporting that nothing went wrong is none of them. That the real save commits nothing when
+    its line cannot be written is `test_attendance_config_record.py`'s to pin."""
+    cog = _make_cog()
+    cog.bot.attendance_service.set_setting = AsyncMock(
+        side_effect=RuntimeError("log channel down")
+    )
     interaction = _interaction()
 
     with pytest.raises(RuntimeError, match="log channel down"):
         await _invoke(AttendanceCog.config_no_show_penalty, cog, interaction, 4)
+
+    interaction.followup.send.assert_not_awaited()
+    cog.bot.output_router.deliver_queued.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

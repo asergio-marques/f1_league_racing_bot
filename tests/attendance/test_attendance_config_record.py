@@ -88,12 +88,16 @@ async def test_each_attendance_settings_command_records_its_audit_entry(
     assert waiting == []
 
 
-@pytest.mark.parametrize("fault", ["audit entry", "log line"])
+@pytest.mark.parametrize("fault,value", [
+    ("audit entry", 7), ("log line", 7), ("log line", 5),
+], ids=["audit-entry", "log-line", "log-line-value-held"])
 async def test_a_fault_in_the_save_leaves_neither_value_entry_nor_line(
-    tmp_path, monkeypatch, fault
+    tmp_path, monkeypatch, fault, value
 ):
     """The value, its audit entry and its log line are one save: a write of the entry or of the
-    line that fails leaves none of the three, and nothing is sent to the log channel."""
+    line that fails leaves none of the three, and nothing is sent to the log channel. A value
+    already held (5, the default) writes its "Nothing changed" line alone, and a failure to
+    write it raises as well and commits nothing."""
     db_path = str(tmp_path / "attendance.db")
     cog = await _league(db_path)
     broken = AsyncMock(side_effect=RuntimeError(f"{fault} refused"))
@@ -103,8 +107,9 @@ async def test_a_fault_in_the_save_leaves_neither_value_entry_nor_line(
         monkeypatch.setattr(cog.bot.output_router, "queue_log_on", broken)
 
     with pytest.raises(RuntimeError, match=f"{fault} refused"):
-        await _invoke(AttendanceCog.config_rsvp_notice, cog, _interaction(), 7)
+        await _invoke(AttendanceCog.config_rsvp_notice, cog, _interaction(), value)
 
+    broken.assert_awaited_once()
     assert await _saved(db_path, "rsvp_notice_days") == (5, [], [])
     assert cog.bot.log_channel.sent == []
 
