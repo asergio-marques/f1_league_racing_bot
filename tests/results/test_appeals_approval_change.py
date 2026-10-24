@@ -341,18 +341,13 @@ async def test_a_discarded_appeals_apply_reopens_the_appeals_review(tmp_path):
     assert "Nothing was changed" in updated_reply(interaction)
 
 
-APPROVAL_CLOSE_UNDISCARDABLE = "#439: the appeals approval's closing job may still be discarded"
-
-
 @pytest.mark.parametrize("case, follows", [
     pytest.param(
         "approved", "the approval of round 3 in **Pro** would go unrecorded", id="approved",
-        marks=pytest.mark.xfail(strict=True, reason=APPROVAL_CLOSE_UNDISCARDABLE),
     ),
     pytest.param(
         "apply discarded", "round 3 in **Pro**'s appeals review could be left with no prompt, "
         "never final, until the bot restarts", id="apply discarded",
-        marks=pytest.mark.xfail(strict=True, reason=APPROVAL_CLOSE_UNDISCARDABLE),
     ),
 ])
 async def test_the_approval_s_closing_job_cannot_be_discarded(tmp_path, case, follows):

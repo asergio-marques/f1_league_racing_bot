@@ -32,6 +32,9 @@ saves and resumes:
    `results.review.prompt` (stage `appeals`): the submission channel is the conversation's, so the
    lane takes the review's prompt and approval message down and posts the appeals prompt, saving
    its id, and a prompt Discord refuses stops that lane alone (C44b).
+   **It cannot be discarded**, however the approval went (#439, slice 8): dropped, it would leave
+   the round in its penalty review, or waiting for its appeals, with no prompt and never final
+   until the bot restarts, so a Discard on it is refused, saying which, and only a Retry moves it.
 
 **The check** is the one every control of the review asks (`review_stage_refusal`: the round awaits
 its report verdicts, no resubmission is collecting, the prompt is the current one), that no
@@ -71,7 +74,7 @@ from leaguebot.core.services.change_queue import (
     StepContext,
     unfinished,
 )
-from leaguebot.core.services.season_service import set_round_status_on
+from leaguebot.core.services.season_service import round_called, set_round_status_on
 from leaguebot.results.services import review_posting, review_verdicts
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.penalty_service import StagedPenalty, apply_penalties_on
@@ -320,6 +323,21 @@ def report_approval_change(
             what="the appeals review prompt, with the penalty review taken down",
         )
 
+    async def would_have_no_prompt(ctx: StepContext) -> str:
+        """What dropping `close` would leave: the next prompt unasked, whichever way the approval
+        went, so the job can only be retried."""
+        called = await round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        applied = next((view for view in ctx.steps if view.name == _APPLY), None)
+        if applied is None or _discarded(applied.result) or (applied.result or {}).get("dropped"):
+            return (
+                f"{called} could be left in its penalty review with no prompt, never final, "
+                "until the bot restarts"
+            )
+        return (
+            f"{called} could be left waiting for its appeals with no prompt, never final, "
+            "until the bot restarts"
+        )
+
     async def describe_apply(_ctx: StepContext) -> str:
         return "approving the round's reports"
 
@@ -356,7 +374,10 @@ def report_approval_change(
         _APPLY: Step(
             _APPLY, StepKind.SAVE, apply, still_due=names_not_discarded, describe=describe_apply,
         ),
-        _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
+        _CLOSE: Step(
+            _CLOSE, StepKind.SAVE, close, describe=describe_close,
+            undiscardable=would_have_no_prompt,
+        ),
     }
     def doing(payload: dict[str, Any]) -> str:
         if payload.get("round_number") is None:

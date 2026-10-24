@@ -29,6 +29,10 @@ of jobs the queue saves and resumes:
 6. **`close`**, **an opening job**, so that it runs last whatever was discarded before it. It
    writes `APPEALS_REVIEW_APPROVED | Success`, or `| Incomplete` naming every job a league admin
    discarded.
+   **It cannot be discarded** (#439, slice 8): dropped after the approval, it would leave the
+   approval unrecorded, and after a discarded approval it would leave the appeals review with no
+   prompt and the round never final until the bot restarts, so a Discard on it is refused and only
+   a Retry moves it.
 
 **The check** is that no other approval of the round's appeals is in hand (`unfinished`, a stopped
 one included), refused with the wording the review's controls use, that the round still awaits its
@@ -275,6 +279,18 @@ def appeals_approval_change(
         )
         return StepResult(result={"closed": True}, lines=(line,))
 
+    async def would_go_unrecorded(ctx: StepContext) -> str:
+        """What dropping `close` would leave: the approval unrecorded where it went through, the
+        review with no prompt where it was dropped, so the job can only be retried."""
+        called = await season_service.round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        applied = next((view for view in ctx.steps if view.name == _APPLY), None)
+        if applied is None or _discarded(applied.result) or (applied.result or {}).get("dropped"):
+            return (
+                f"{called}'s appeals review could be left with no prompt, never final, "
+                "until the bot restarts"
+            )
+        return f"the approval of {called} would go unrecorded"
+
     async def describe_apply(_ctx: StepContext) -> str:
         return "approving the round's appeals"
 
@@ -310,7 +326,10 @@ def appeals_approval_change(
         _APPLY: Step(
             _APPLY, StepKind.SAVE, apply, still_due=names_not_discarded, describe=describe_apply,
         ),
-        _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
+        _CLOSE: Step(
+            _CLOSE, StepKind.SAVE, close, describe=describe_close,
+            undiscardable=would_go_unrecorded,
+        ),
     }
 
     def doing(payload: dict[str, Any]) -> str:
