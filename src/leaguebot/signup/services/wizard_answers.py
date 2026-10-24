@@ -499,9 +499,12 @@ async def _signup_channel_or_gone(
     return fetched if isinstance(fetched, discord.TextChannel) else None
 
 
-async def channel_gone_ending(ctx: StepContext, user_id: str, channel_id: int) -> StepResult:
-    """The result of a job that found the driver's signup channel gone: nothing is posted in it,
-    and `signup.end` is asked of the league's queue in the job's own save (#439, slice 8)."""
+async def channel_gone_ending(
+    ctx: StepContext, user_id: str, channel_id: int | None,
+) -> StepResult:
+    """The result of a job that found the driver's signup channel gone, or found that the wizard
+    names none (*channel_id* None): nothing is posted, and `signup.end` is asked of the league's
+    queue in the job's own save (#439, slice 8)."""
     named = await name_of_member(ctx.bot, int(user_id))
     return StepResult(
         result={"no_channel": True, "ended": True},

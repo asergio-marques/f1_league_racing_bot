@@ -970,13 +970,16 @@ def lapse_change(
     async def post_panel(ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
         channel_id = lapse_result(ctx).get("channel_id")
-        if channel_id is None:
-            return StepResult(result={"panel": False}, lines=(lapse_line(ctx, False),))
-        channel = await _signup_channel_or_gone(ctx, int(channel_id))
+        channel = None if channel_id is None else await _signup_channel_or_gone(
+            ctx, int(channel_id)
+        )
         if channel is None:
-            # The channel is gone: the signup ends as it does for a driver who leaves, since
-            # nothing else would ever settle a driver awaiting a review that cannot be posted.
-            ended = await channel_gone_ending(ctx, user_id, int(channel_id))
+            # The channel is gone, or the wizard names none: the signup ends as it does for a
+            # driver who leaves, since nothing else would ever settle a driver awaiting a review
+            # that cannot be posted.
+            ended = await channel_gone_ending(
+                ctx, user_id, None if channel_id is None else int(channel_id),
+            )
             return StepResult(
                 result={"panel": False, "channel_gone": True},
                 lines=(lapse_line(ctx, False, gone=True),),

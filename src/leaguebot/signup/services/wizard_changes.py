@@ -499,7 +499,8 @@ def end_change(
     ``reason_message_id`` (the message it was typed in)), `EXPIRED` (their 24 hours ran out,
     asked by the timer or at a restart, with the signup channel's id as ``channel_id``), or
     `CHANNEL_GONE` (their signup channel was gone where their review panel was due: the payload
-    carries ``channel_id`` and ``named``, the driver's name, found by the panel's job). Its job
+    carries ``channel_id``, None where the wizard names none, and ``named``, the driver's name, found
+    by the panel's job). Its job
     `end` is a save, after `name_driver` (which `CHANNEL_GONE` does without, having its name), which finds the driver's name for the line (the lookup
     uses a connection of its own, which a save must not wait on): the driver is moved to Not
     Signed Up and the wizard ended in the same save, the timers taken
@@ -573,12 +574,14 @@ def end_change(
                     "SELECT signup_channel_id FROM signup_wizard_records "
                     "WHERE discord_user_id = ?", (user_id,),
                 )).fetchone()
+            asked = ctx.payload.get("channel_id")
+            held = None if named_channel is None else named_channel["signup_channel_id"]
             if (
                 profile is None
                 or profile.current_state != DriverState.PENDING_ADMIN_APPROVAL
-                or named_channel is None
-                or named_channel["signup_channel_id"] is None
-                or int(named_channel["signup_channel_id"]) != int(ctx.payload["channel_id"])
+                # A payload naming no channel is for a wizard that names none either.
+                or (held is None) != (asked is None)
+                or (held is not None and asked is not None and int(held) != int(asked))
             ):
                 return Verdict.not_due("the signup has ended or moved to another channel")
             return Verdict.go()
@@ -635,8 +638,11 @@ def end_change(
                 named = str((view.result or {}).get("named") or named)
         if ctx.step_payload["reason"] == CHANNEL_GONE:
             payload = ctx.step_payload
+            where = (
+                "" if payload["channel_id"] is None else f"  channel: <#{payload['channel_id']}>\n"
+            )
             return StepResult(result={}, lines=(
-                f"{payload['named']} | Signup | Ended\n  channel: <#{payload['channel_id']}>\n"
+                f"{payload['named']} | Signup | Ended\n{where}"
                 "  Their signup channel was gone when their review panel was due, so their "
                 "signup ended. They may press Sign Up again while signups are open.",
             ))
