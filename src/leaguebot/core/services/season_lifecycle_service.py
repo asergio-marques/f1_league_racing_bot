@@ -37,6 +37,7 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.season_service import commit_placements_on
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
@@ -911,6 +912,29 @@ async def advance_to_pending_completion_on(db: aiosqlite.Connection, season_id: 
         return False
     log.info("season %s is pending completion", season_id)
     return True
+
+
+@dataclass(frozen=True)
+class PlacementsConfirmed:
+    """What :func:`confirm_placements_on` did: how many placements it committed."""
+
+    committed: int
+
+
+async def confirm_placements_on(db: aiosqlite.Connection, season_id: int) -> PlacementsConfirmed:
+    """Commit a season's uncommitted placements and return it to Ongoing, on *db*, committing nothing.
+
+    The mid-season confirmation's one save holds this (issue #439): the placements and the
+    season's return from Ongoing, placements to Ongoing are saved together or not at all. The
+    stage is moved first, conditioned on the season still being in Ongoing, placements, so
+    that a season in any other stage raises :class:`InvalidStageTransition` with nothing
+    written. It never moves the season on to Pending completion: a season whose every
+    division is done is refused before the confirmation is carried out, and the wind-down
+    that moves it on discards the placements not yet committed (core specification, Pending
+    completion).
+    """
+    await _move_on(db, season_id, SeasonStage.ONGOING_PLACEMENTS, SeasonStage.ONGOING)
+    return PlacementsConfirmed(committed=await commit_placements_on(db, season_id))
 
 
 async def advance_to_pending_completion(db_path: str, season_id: int) -> bool:

@@ -42,7 +42,6 @@ async def _uncommitted(db) -> int:
 # ── confirm_placements_on ──────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_confirming_on_commits_the_placements_and_returns_the_season_to_ongoing(db_path):
     from leaguebot.core.services.season_lifecycle_service import confirm_placements_on
 
@@ -54,7 +53,6 @@ async def test_confirming_on_commits_the_placements_and_returns_the_season_to_on
         assert await _stage(db) == "ONGOING"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_confirming_on_commits_nothing_itself(db_path):
     from leaguebot.core.services.season_lifecycle_service import confirm_placements_on
 
@@ -67,7 +65,6 @@ async def test_confirming_on_commits_nothing_itself(db_path):
         assert await _stage(db) == "ONGOING_PLACEMENTS"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_confirming_on_from_another_stage_raises_and_writes_nothing(db_path):
     from leaguebot.core.models.season import InvalidStageTransition
     from leaguebot.core.services.season_lifecycle_service import confirm_placements_on
@@ -83,7 +80,6 @@ async def test_confirming_on_from_another_stage_raises_and_writes_nothing(db_pat
         assert await _stage(db) == "ONGOING"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_confirming_on_never_moves_the_season_on_to_pending_completion(db_path):
     """Pro is finished: the confirmation is refused before it gets here (owner, check 1), and
     `confirm_placements_on` itself returns the season to Ongoing only, saying nothing of a move
