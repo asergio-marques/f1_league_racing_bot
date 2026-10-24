@@ -257,6 +257,53 @@ async def test_a_round_whose_every_session_is_cancelled_ends_cancelled_with_its_
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_a_resubmission_entering_every_session_cancelled_ends_the_round_cancelled(
+    tmp_path, monkeypatch,
+):
+    """Round 3 of Pro is in its penalty review, awaiting its report verdicts. Alex, a league
+    manager, presses Resubmit and types CANCELLED for its qualifying and then for its race. When
+    the queue runs, `results.submission.all_cancelled` reads the drivers' names and then runs
+    `end_round` (the round holding standings to withdraw), round 3 is
+    CANCELLED and marked as not held, and one `round.status` audit records it moving from
+    AWAITING_REPORT_VERDICTS to CANCELLED; the review is not asked again (core :232-234)."""
+    from leaguebot.core.db.database import get_connection
+    from tests.results.test_resubmission_changes import (
+        REVIEW_OPEN,
+        ROUND_ID as REVIEWED_ROUND,
+        _changes,
+        _press_resubmit,
+        _reviewing,
+        _type,
+    )
+
+    league = await _reviewing(tmp_path, monkeypatch)
+    await _press_resubmit(league)
+    asked_before = len(await _changes(league, REVIEW_OPEN))
+
+    await _type(league, "CANCELLED")
+    await _type(league, "CANCELLED")
+
+    assert await stopped_job(league.db_path) is None
+    [handed] = await _changes(league, ALL_CANCELLED_KIND)
+    names = [row["name"] for row in await step_rows(league.db_path, handed["id"])]
+    assert names[:2] == ["names", "end_round"]
+    async with get_connection(league.db_path) as db:
+        [row] = await (await db.execute(
+            "SELECT status, not_held, division_id FROM rounds WHERE id = ?", (REVIEWED_ROUND,)
+        )).fetchall()
+        audits = await (await db.execute(
+            "SELECT old_value, new_value FROM audit_entries "
+            "WHERE change_type = 'round.status' AND division_id = ? ORDER BY id",
+            (row["division_id"],),
+        )).fetchall()
+    assert (row["status"], row["not_held"]) == ("CANCELLED", 1)
+    assert [(audit["old_value"], audit["new_value"]) for audit in audits] == [
+        ("AWAITING_REPORT_VERDICTS", "CANCELLED")
+    ]
+    assert len(await _changes(league, REVIEW_OPEN)) == asked_before
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_the_last_round_ending_cancelled_finishes_the_division_and_winds_the_season_down(
     tmp_path,
 ):
