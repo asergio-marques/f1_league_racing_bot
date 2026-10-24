@@ -1353,6 +1353,62 @@ async def cancel_round_on(
     return previous
 
 
+async def end_round_not_held_on(
+    db: aiosqlite.Connection,
+    round_id: int,
+    *,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
+) -> str | None:
+    """End a round CANCELLED because every session was entered as not held, committing nothing.
+
+    A round whose every session is entered as CANCELLED takes no results and no review, so it
+    never becomes final; ending it cancelled is what lets its division finish and its season be
+    completed (issue #439, slice 8). It is not a round called off: ``rounds.not_held`` is set,
+    and is the one thing that tells the two apart, for the check-in call and the forecasts of
+    such a round come down a day after its start as any raced round's do, where a round called
+    off keeps them (attendance and weather read the column; this is the only writer of it).
+
+    Only a round awaiting its results (a first submission) or its report verdicts (a
+    resubmission) is moved; the write is guarded on that status, so a round that moved on since
+    the caller looked is left alone. The ``round.status`` audit and the division's refresh, the
+    season moved on where this was the last round it waited on, are `cancel_round_on`'s, all
+    written on *db* in the caller's save.
+
+    Returns the status the round ended from, or ``None`` where nothing was moved.
+    """
+    cursor = await db.execute(
+        "SELECT r.division_id, r.status FROM rounds r WHERE r.id = ?", (round_id,)
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return None
+    previous: str = row["status"]
+    division_id: int = row["division_id"]
+    cursor = await db.execute(
+        "UPDATE rounds SET status = 'CANCELLED', not_held = 1 WHERE id = ? "
+        "AND status IN ('AWAITING_RESULTS', 'AWAITING_REPORT_VERDICTS')",
+        (round_id,),
+    )
+    if cursor.rowcount == 0:
+        return None
+    await db.execute(
+        """
+        INSERT INTO audit_entries
+            (actor_id, actor_name, division_id, change_type,
+             old_value, new_value, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            actor_id, actor_name, division_id,
+            "round.status", previous, "CANCELLED", now.isoformat(),
+        ),
+    )
+    await refresh_division_status_on(db, division_id)
+    return previous
+
+
 async def cancel_division_on(
     db: aiosqlite.Connection,
     division_id: int,
@@ -1443,9 +1499,9 @@ async def refresh_division_status_on(db: aiosqlite.Connection, division_id: int)
     Division status is stored rather than derived, so that cancelling a division can record the
     fact and `/season cancel` can tell the running divisions apart from the called-off ones.
     Stored state can drift from the rounds it summarises, so this is called from every place a
-    round's outcome settles — the appeals approval in result_submission_service and
-    `cancel_round_on` below — and again from the completion's first save, which cannot afford to
-    strand a league on a stale row a second time (issue #154).
+    round's outcome settles — the appeals approval in result_submission_service,
+    `cancel_round_on` and `end_round_not_held_on` — and again from the completion's first save,
+    which cannot afford to strand a league on a stale row a second time (issue #154).
 
     The `status = 'ACTIVE'` guard is what makes it safe to call anywhere: a division still in
     SETUP has not started, and a CANCELLED one was called off deliberately. Neither is a division

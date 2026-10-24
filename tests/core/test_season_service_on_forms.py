@@ -683,13 +683,6 @@ async def test_a_season_is_deleted_on_the_save_handed_and_nothing_committed(tmp_
 
 # A round whose every session was entered as not held (#439, slice 8, Part E) -------------------
 
-#: Why each test of the ending below fails until the build.
-NOT_HELD_UNBUILT = (
-    "#439: core has no end_round_not_held_on, and rounds has no not_held column, so a round "
-    "whose every session was entered as cancelled is never ended"
-)
-
-
 async def _not_held(db) -> list[int]:
     cursor = await db.execute(
         "SELECT not_held FROM rounds WHERE division_id = ? ORDER BY round_number", (DIVISION_ID,)
@@ -697,7 +690,6 @@ async def _not_held(db) -> list[int]:
     return [row["not_held"] for row in await cursor.fetchall()]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_end_round_not_held_on_cancels_and_marks_the_round_with_its_audit(tmp_path):
     """Pro's round 1 is final, round 2 waits for its results and round 3 is not run. Ending round 2
     as not held on a connection answers the status it ended from, AWAITING_RESULTS; it reads
@@ -715,7 +707,6 @@ async def test_end_round_not_held_on_cancels_and_marks_the_round_with_its_audit(
         assert await _division_status(db) == "ACTIVE"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 @pytest.mark.parametrize(
     "status,moves",
     [
@@ -752,7 +743,6 @@ async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_repo
             assert await _round_audits(db) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_end_round_not_held_on_commits_nothing(tmp_path):
     """Pro, the season's only division, has round 1 final and round 2 awaiting its report verdicts.
     Ending round 2 as not held on a connection finishes Pro and moves the season to Pending
