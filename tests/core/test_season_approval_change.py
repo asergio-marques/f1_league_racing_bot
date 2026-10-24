@@ -769,6 +769,24 @@ async def test_a_test_driver_is_granted_nothing(tmp_path, monkeypatch):
     assert [job["name"] for job in await _jobs(league)].count("grant_roles") == 3
 
 
+async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path, monkeypatch):
+    """McLaren has no team role configured: Charles, seated there in Am, is granted Am's role
+    alone, and the queue runs on."""
+    from tests.support.season_league import MCLAREN
+
+    league = await _league_for(tmp_path, monkeypatch)
+    await league.write(
+        "DELETE FROM team_role_configs WHERE team_name = "
+        "(SELECT name FROM team_instances WHERE id = ?)", MCLAREN,
+    )
+    await _pressed(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert league.granted[CHARLES] == [AM_ROLE]
+
+
 @pytest.mark.parametrize(
     ("modules", "armed"),
     [
