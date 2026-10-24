@@ -58,6 +58,7 @@ from tests.support.review_league import (
     stopped_at,
     verdict_headings,
 )
+from tests.results.test_review_open_change import _refuse_the_job
 
 KIND = "results.appeals.approve"
 APPEALS_PROMPT = 8902
@@ -294,6 +295,64 @@ async def test_a_discarded_appeals_apply_reopens_the_appeals_review(tmp_path):
     ) == prompts[0]
     assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
     assert "Nothing was changed" in updated_reply(interaction)
+
+
+APPROVAL_CLOSE_UNDISCARDABLE = "#439: the appeals approval's closing job may still be discarded"
+
+
+@pytest.mark.parametrize("case, follows", [
+    pytest.param(
+        "approved", "the approval of round 3 in **Pro** would go unrecorded", id="approved",
+        marks=pytest.mark.xfail(strict=True, reason=APPROVAL_CLOSE_UNDISCARDABLE),
+    ),
+    pytest.param(
+        "apply discarded", "round 3 in **Pro**'s appeals review could be left with no prompt, "
+        "never final, until the bot restarts", id="apply discarded",
+        marks=pytest.mark.xfail(strict=True, reason=APPROVAL_CLOSE_UNDISCARDABLE),
+    ),
+])
+async def test_the_approval_s_closing_job_cannot_be_discarded(tmp_path, case, follows):
+    """Alex approves round 3's appeals in Pro, one upheld appeal taking Lewis's 5 seconds back.
+    Either the approval goes through, or its save fails and a league admin discards it. Then the
+    save of the approval's last job fails and stops the queue at `close`. A league admin's Discard
+    on it is refused, saying, where the approval went through, that the approval of round 3 in Pro
+    would go unrecorded, and, where it was discarded, that round 3's appeals review could be left
+    with no prompt, never final, until the bot restarts. The queue stays stopped there. Once the
+    fault is lifted, a Retry finishes it: the approval is logged, or the appeals review is opened
+    again with a fresh prompt."""
+    league = await _league(tmp_path)
+    await _refuse_the_job(league.db_path, KIND, True)
+    if case == "approved":
+        await _approve(league)
+        await run_queue(league.bot)
+    else:
+        with points_fail():
+            await _approve(league)
+            await run_queue(league.bot)
+        assert await stopped_at(league) == "apply"
+        await discard_job(league.bot)
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "close"
+
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it {follows}. Fix what stopped it and press "
+        "**Retry**."
+    )
+    assert (await stopped_job(league.db_path, "league"))["id"] == stopped["id"]
+    assert "APPEALS_REVIEW_APPROVED" not in league.log()
+    assert await changes_of(league.db_path, "results.appeals.open") == []
+
+    await _refuse_the_job(league.db_path, KIND, False)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    if case == "approved":
+        assert "APPEALS_REVIEW_APPROVED | Success" in league.log()
+    else:
+        assert len(await changes_of(league.db_path, "results.appeals.open")) == 1
+        assert len(appeals_prompts(league)) == 1
 
 
 # ---------------------------------------------------------------------------
