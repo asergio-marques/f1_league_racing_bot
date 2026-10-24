@@ -156,13 +156,6 @@ async def _flags(db_path: str) -> tuple[int, int, int]:
         return tuple(await cursor.fetchone())
 
 
-#: Why the carrying of the earlier tables' ids fails until Part E, E5 is built.
-IDS_CARRIED_UNBUILT = (
-    "#439: replacing a round's results drops the ids of the tables posted for the old sessions"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=IDS_CARRIED_UNBUILT)
 async def test_the_new_results_replace_the_old_in_one_go(tmp_path):
     """The round's Feature Race was posted as message 8800. Its results are replaced by a
     resubmission's qualifying and race: both new sessions stand, scored, and the new race carries

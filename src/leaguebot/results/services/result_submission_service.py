@@ -2944,7 +2944,7 @@ async def replace_round_results_on(
     division_id: int,
     season_id: int,
     collected: list[CollectedSession],
-) -> None:
+) -> list[int]:
     """Replace every session of a round with a resubmission's on the connection handed, committing
     nothing: the resubmission's swap does it in a save of its own (#439).
 
@@ -2953,7 +2953,20 @@ async def replace_round_results_on(
     results, the insert of the new, their points and the clearing of the channel's `resubmitting`
     flag land together or not at all. `results_posted` is cleared with them: the round is still in
     penalty review, so the new results go out then. Raises `SeasonImmutableError` for an archived
-    season, with the old results untouched."""
+    season, with the old results untouched.
+
+    The table posted for an old session is carried onto the new session of the same type, as the
+    message it replaces: the posting then takes the old table down once the new one stands, so an
+    amended table replaces the original rather than standing beside it (results spec :412). The
+    message ids of an old session whose type the resubmission does not enter are returned, for the
+    caller to take down; they are otherwise lost with the old row."""
+    earlier = {
+        each["session_type"]: each
+        for each in await (await db.execute(
+            "SELECT session_type, results_message_id, results_message_ids FROM session_results "
+            "WHERE round_id = ? AND results_message_id IS NOT NULL", (round_id,),
+        )).fetchall()
+    }
     await db.execute("DELETE FROM session_results WHERE round_id = ?", (round_id,))
     for session in collected:
         session_result_id = await _save_session_result_in_tx(
@@ -2966,11 +2979,37 @@ async def replace_round_results_on(
                 db, session_result_id, season_id, session.config_name,
                 session.session_type,
             )
+        carried = earlier.pop(session.session_type.value, None)
+        if carried is not None:
+            await db.execute(
+                "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
+                "WHERE id = ?",
+                (carried["results_message_id"], carried["results_message_ids"], session_result_id),
+            )
     await db.execute(
         "UPDATE round_submission_channels SET resubmitting = 0, results_posted = 0, "
         "resubmit_prompt_message_id = NULL WHERE round_id = ?",
         (round_id,),
     )
+    unplaced: list[int] = []
+    for each in earlier.values():
+        ids = _stored_message_ids(each["results_message_ids"]) or [int(each["results_message_id"])]
+        unplaced.extend(ids)
+    return unplaced
+
+
+def _stored_message_ids(raw: str | None) -> list[int]:
+    """The message ids a session's `results_message_ids` records; none where it holds nothing a
+    list of ids can be read from."""
+    if not raw:
+        return []
+    try:
+        ids = _json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+        return []
+    return ids
 
 
 async def resubmission_drafts_on(
