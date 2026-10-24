@@ -130,6 +130,16 @@ CANNOT_DISCARD = (
     "timed work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
 )
 SAVE_UNDISCARDABLE = "#439: a cancellation's save may still be discarded"
+CALENDAR_UNPOSTABLE_UNBUILT = (
+    "#439: a discarded calendar repost after a season cancel still names "
+    "`/division calendar-sync`, which a cancelled season refuses"
+)
+#: How a discarded calendar repost is named once the season is cancelled (W1).
+CALENDAR_DISCARDED = (
+    "**Pro** — calendar: the calendar could not be posted, and a league admin discarded it; no "
+    "command posts it again now the season is cancelled; the earlier calendar stands, to delete "
+    "by hand if it should not"
+)
 END_DISCARDED = (
     "Season 3's divisions and rounds are cancelled, but the season itself is not: the save that "
     "records its end was discarded. Run `/season cancel` again to finish it; if the season has "
@@ -618,6 +628,28 @@ async def test_a_calendar_discord_refuses_stops_the_queue_and_puts_nothing_on_th
     await retry_job(league.bot)
     assert len(league.texts(PRO_CH.calendar)) == 1
     assert CANCELLED in reply(interaction)
+
+
+@pytest.mark.xfail(strict=True, reason=CALENDAR_UNPOSTABLE_UNBUILT)
+async def test_a_discarded_calendar_repost_says_no_command_posts_it_again_once_the_season_is_cancelled(
+    tmp_path,
+):
+    """Discord refuses Pro's calendar repost during a season cancel, and a league admin discards
+    it. The season ends cancelled, so `/division calendar-sync` would be refused: the reply and
+    the success line say no command posts it again and the earlier calendar stands."""
+    league = await ongoing_league(tmp_path)
+    league.channel(PRO_CH.calendar).send_fails = _forbidden()
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == ("post_calendar", PRO)
+    await discard_job(league.bot)
+
+    assert CANCELLED in reply(interaction)
+    assert CALENDAR_DISCARDED in _not_notified(reply(interaction))
+    [line] = _success_lines(league)
+    assert f"\n  not notified: {CALENDAR_DISCARDED}" in line
+    assert await _status(league) == "CANCELLED"
 
 
 async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(

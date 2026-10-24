@@ -87,6 +87,15 @@ CANNOT_DISCARD = (
     "work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
 )
 SAVE_UNDISCARDABLE = "#439: a cancellation's save may still be discarded"
+CALENDAR_SYNC_UNBUILT = (
+    "#439: a discarded calendar repost still names `/division calendar-sync` without saying it "
+    "works only while the season is still being raced"
+)
+#: How a discarded calendar repost is named, in the reply and beneath the success line (W1).
+CALENDAR_DISCARDED = (
+    "**Pro** — calendar: the calendar could not be posted, and a league admin discarded it; run "
+    "`/division calendar-sync` while the season is still being raced"
+)
 CHECKIN_R3 = (
     "\n  check-in, Pro, Round 3 (Silverstone):"
     "\n    accepted: `<@101>`"
@@ -612,6 +621,26 @@ async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     assert await _round_audits(league) == []
     assert _success_lines(league) == []
     assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
+
+
+@pytest.mark.xfail(strict=True, reason=CALENDAR_SYNC_UNBUILT)
+async def test_a_discarded_calendar_repost_names_calendar_sync_while_the_season_is_raced(tmp_path):
+    """Discord refuses Pro's calendar repost after the division is cancelled, and a league admin
+    discards it. The reply and the success line name it with the fix that works: run
+    `/division calendar-sync`, which is refused once the season is no longer being raced."""
+    league = await ongoing_league(tmp_path)
+    league.channel(PRO_CH.calendar).send_fails = http_error(discord.Forbidden, status=403,
+                                                            text="Missing Access")
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "post_calendar"
+    await discard_job(league.bot)
+
+    assert CANCELLED in reply(interaction)
+    assert CALENDAR_DISCARDED in reply(interaction)
+    [line] = _success_lines(league)
+    assert f"\n  not notified: {CALENDAR_DISCARDED}" in line
 
 
 async def test_a_round_s_cancellation_queued_first_runs_first_and_the_division_s_then_calls_off_the_rest(

@@ -96,6 +96,15 @@ CANNOT_DISCARD = (
     "work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
 )
 SAVE_UNDISCARDABLE = "#439: a cancellation's save may still be discarded"
+CALENDAR_SYNC_UNBUILT = (
+    "#439: a discarded calendar repost still names `/division calendar-sync` without saying it "
+    "works only while the season is still being raced"
+)
+#: How a discarded calendar repost is named, in the reply and beneath the success line (W1).
+CALENDAR_DISCARDED = (
+    "**Pro** — calendar: the calendar could not be posted, and a league admin discarded it; run "
+    "`/division calendar-sync` while the season is still being raced"
+)
 RACED_CLEANUPS_UNBUILT = (
     "#439: a cancellation refused because results were entered does not arm its clean-ups again"
 )
@@ -1057,6 +1066,24 @@ async def test_a_calendar_that_falls_back_to_text_is_named(tmp_path, monkeypatch
     assert f"\n  not notified: {named}" in _success_lines(league)[0]
     result = (await _job(league, "post_calendar"))["result"]
     assert result["fell_back"] and result["problem"] == "the template has no rows"
+
+
+@pytest.mark.xfail(strict=True, reason=CALENDAR_SYNC_UNBUILT)
+async def test_a_discarded_calendar_repost_names_calendar_sync_while_the_season_is_raced(tmp_path):
+    """Discord refuses Pro's calendar repost after round 3 is cancelled, and a league admin
+    discards it. The reply and the success line name it with the fix that works: run
+    `/division calendar-sync`, which is refused once the season is no longer being raced."""
+    league = await ongoing_league(tmp_path)
+    _refused(league, PRO_CH.calendar)
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "post_calendar"
+    await discard_job(league.bot)
+
+    assert CANCELLED in reply(interaction)
+    assert CALENDAR_DISCARDED in _not_notified(reply(interaction))
+    assert f"\n  not notified: {CALENDAR_DISCARDED}" in _success_lines(league)[0]
 
 
 @pytest.mark.xfail(strict=True, reason=SAVE_UNDISCARDABLE)
