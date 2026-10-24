@@ -1191,10 +1191,8 @@ def _queue_reached_through_the_bot_among(nodes) -> Counter[tuple[str, str]]:
 
 #: Each callback of a view or form listed under results' pass reads the queue once and hands it
 #: on, binding it to a local where it asks twice (the penalty clear's staging and its approval
-#: message). Every read the slice adds is listed now, beside the commit that adds it, since the
-#: build may only delete or lower a line: the approve buttons (C9), the configuration picker
-#: (C48), Resubmit (C51), the two forms (C54), the Remove, clear-confirm and Make Changes buttons
-#: (C55) and No Penalties (C56).
+#: message). They are the approve buttons, the configuration picker, Resubmit, the two forms, the
+#: Remove, clear-confirm and Make Changes buttons, and No Penalties.
 KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "AddPenaltyModal.on_submit"): (1, PASS["results"]),
