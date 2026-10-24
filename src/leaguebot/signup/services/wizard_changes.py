@@ -82,6 +82,7 @@ from leaguebot.core.utils.member_names import member_named
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     ARM_DELETION,
+    CHANNEL_GONE,
     CLOSE_SIGNUP,
     DELETE_KIND,
     END,
@@ -150,7 +151,7 @@ CATEGORY_LIMIT = 50
 
 __all__ = [
     "ANSWER", "Accepted", "Refused", "judge_answer",
-    "ARM_INACTIVITY", "CREATE_CHANNEL", "DELETE_CHANNEL", "DELETE_KIND", "DELETE_OLD_CHANNEL", "END",
+    "ARM_INACTIVITY", "CHANNEL_GONE", "CREATE_CHANNEL", "DELETE_CHANNEL", "DELETE_KIND", "DELETE_OLD_CHANNEL", "END",
     "END_JOB", "EXPIRED", "INACTIVITY", "NAME_JOB",
     "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
     "WITHDRAWN_NOTICE",
@@ -495,9 +496,11 @@ def end_change(
     The payload is ``user_id`` (the driver's account, as text) and ``reason``: `WITHDRAWN` (the
     driver pressed Cancel Signup), `REJECTED` (a manager pressed Reject and typed the reason: the
     payload then carries ``actor_id`` and ``actor_name`` (the manager), ``text`` (the reason) and
-    ``reason_message_id`` (the message it was typed in)), or `EXPIRED` (their 24 hours ran out,
-    asked by the timer or at a restart, with the signup channel's id as ``channel_id``). Its job
-    `end` is a save, after `name_driver`, which finds the driver's name for the line (the lookup
+    ``reason_message_id`` (the message it was typed in)), `EXPIRED` (their 24 hours ran out,
+    asked by the timer or at a restart, with the signup channel's id as ``channel_id``), or
+    `CHANNEL_GONE` (their signup channel was gone where their review panel was due: the payload
+    carries ``channel_id`` and ``named``, the driver's name, found by the panel's job). Its job
+    `end` is a save, after `name_driver` (which `CHANNEL_GONE` does without, having its name), which finds the driver's name for the line (the lookup
     uses a connection of its own, which a save must not wait on): the driver is moved to Not
     Signed Up and the wizard ended in the same save, the timers taken
     away and the line written ("Withdrawn", "Rejected" with the manager and the reason, or the
@@ -514,7 +517,9 @@ def end_change(
     whole (a timer is a command's, decision 31): the change carries those three jobs itself, after
     `end`. It is not due, and is dropped, where the driver's wizard is parked or they are not
     mid-signup any longer, and where an answer typed before the 24 hours ran out is still waiting
-    on the driver's lane (the time typed counts, Q22). *cancel_timers* takes away a driver's
+    on the driver's lane (the time typed counts, Q22). A gone channel's ending is due only while
+    the driver awaits approval and their wizard still names that channel: it posts, locks and
+    deletes nothing, the channel being gone, and writes the one line. *cancel_timers* takes away a driver's
     timers, and *now* and
     *arm_once* are the queue's clock and the scheduler service's one-off timer, for the deletion.
     """
@@ -562,6 +567,21 @@ def end_change(
             if last is not None and last + INACTIVITY > now():
                 return Verdict.not_due("the driver has answered within the last 24 hours")
             return Verdict.go()
+        if ctx.payload.get("reason") == CHANNEL_GONE:
+            async with get_connection(ctx.db_path) as db:
+                named_channel = await (await db.execute(
+                    "SELECT signup_channel_id FROM signup_wizard_records "
+                    "WHERE discord_user_id = ?", (user_id,),
+                )).fetchone()
+            if (
+                profile is None
+                or profile.current_state != DriverState.PENDING_ADMIN_APPROVAL
+                or named_channel is None
+                or named_channel["signup_channel_id"] is None
+                or int(named_channel["signup_channel_id"]) != int(ctx.payload["channel_id"])
+            ):
+                return Verdict.not_due("the signup has ended or moved to another channel")
+            return Verdict.go()
         if ctx.payload.get("reason") == REJECTED:
             # A signup that has moved on since the press: approved by another manager, withdrawn,
             # or already sent back for a correction (#492). The reason is too late to act on.
@@ -579,6 +599,10 @@ def end_change(
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         user_id = str(payload["user_id"])
         shared_end = {"user_id": user_id, "reason": payload["reason"]}
+        if payload["reason"] == CHANNEL_GONE:
+            # The panel's job found the name; the channel is gone, so nothing follows `end`.
+            shared_end.update({key: payload[key] for key in ("channel_id", "named")})
+            return (PlannedStep(END_JOB, shared_end),)
         if payload["reason"] == REJECTED:
             shared_end.update({
                 key: payload[key]
@@ -609,6 +633,13 @@ def end_change(
         for view in ctx.steps:
             if view.name == NAME_JOB and view.done:
                 named = str((view.result or {}).get("named") or named)
+        if ctx.step_payload["reason"] == CHANNEL_GONE:
+            payload = ctx.step_payload
+            return StepResult(result={}, lines=(
+                f"{payload['named']} | Signup | Ended\n  channel: <#{payload['channel_id']}>\n"
+                "  Their signup channel was gone when their review panel was due, so their "
+                "signup ended. They may press Sign Up again while signups are open.",
+            ))
         if ctx.step_payload["reason"] == EXPIRED:
             # The lapse is the whole of the expiry's line: its notice, lock and deletion are the
             # change's own jobs after this one.
@@ -667,6 +698,12 @@ def end_change(
         return f"ending the signup of <@{ctx.step_payload['user_id']}>"
 
     async def would_never_end(ctx: StepContext) -> str:
+        if ctx.step_payload["reason"] == CHANNEL_GONE:
+            return (
+                f"<@{ctx.step_payload['user_id']}> would be left awaiting approval with no "
+                "signup channel and no review panel, and the season's placements could not be "
+                "confirmed"
+            )
         return (
             f"<@{ctx.step_payload['user_id']}>'s signup would never end, and the season's "
             "placements could not be confirmed until the bot restarts"
@@ -678,6 +715,8 @@ def end_change(
         rejected = ctx.payload.get("reason") == REJECTED
         if rejected:
             return "✅ Signup rejected."
+        if ctx.payload.get("reason") == CHANNEL_GONE:
+            return "✅ The signup has ended: its signup channel was gone."
         if expired:
             left = [name for name in (SIGNUP_NOTICE, CLOSE_SIGNUP, ARM_DELETION)
                     if name in views and "discarded" in (views[name].result or {})]
@@ -701,7 +740,7 @@ def end_change(
         check=check,
         key=lambda payload: f"{END}:{payload['user_id']}",
         doing=lambda payload: (
-            "Ending a signup" if payload.get("reason") == EXPIRED
+            "Ending a signup" if payload.get("reason") in (EXPIRED, CHANNEL_GONE)
             else "Rejecting a signup" if payload.get("reason") == REJECTED
             else "Withdrawing a signup"
         ),

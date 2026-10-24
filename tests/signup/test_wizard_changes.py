@@ -885,7 +885,8 @@ async def test_ending_a_signup_cannot_be_discarded(tmp_path):
 # A signup whose channel is gone when its review panel is due (#439, slice 8, F1)
 # ---------------------------------------------------------------------------
 
-#: The ending of a signup whose channel is gone is not yet built (#439, slice 8, F1).
+#: The ending's log line is not yet the one the test expects (#439, slice 8, F1): see the build's
+#: proposal on KIMI_NAMED.
 CHANNEL_GONE_UNBUILT = "#439: a signup whose channel is gone is not yet ended"
 #: Kimi as the panel's job names him, carried in the ending's payload.
 KIMI_NAMED = f"Kimi (`<@{SIGNING_UP}>`)"
@@ -941,7 +942,6 @@ async def _signed_up_again(league: SeasonLeague) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=CHANNEL_GONE_UNBUILT)
 @pytest.mark.parametrize(
     ("moved_on", "state"),
     [(_withdrew, "NOT_SIGNED_UP"), (_left, "NOT_SIGNED_UP"),
@@ -1011,7 +1011,6 @@ async def test_ending_a_signup_whose_channel_is_gone_cannot_be_discarded(tmp_pat
     assert league.log().count(CHANNEL_GONE_LINE) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=CHANNEL_GONE_UNBUILT)
 async def test_a_driver_whose_signup_ended_for_a_gone_channel_may_sign_up_again(tmp_path):
     """Kimi's signup ended because his signup channel 6405 was gone when his review panel was due;
     his wizard still names 6405. He presses Sign Up and the queue runs: the old channel is found
