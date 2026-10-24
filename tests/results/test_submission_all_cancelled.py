@@ -24,6 +24,8 @@ cancelled, it writes nothing, and the channel still closes.
 """
 from __future__ import annotations
 
+import importlib
+from contextlib import ExitStack
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -625,6 +627,50 @@ async def test_a_round_ending_cancelled_writes_its_check_in_record_beneath_its_l
     )
     assert record in line
     assert line.index("reason: every session was entered as not held") < line.index(record)
+
+
+#: How a discarded read of round 3's check-in is named beneath the round's line (owner, check 2).
+CHECK_IN_DISCARDED = "the check-in record of round 3 in **Pro** was not written"
+
+
+def _check_in_read_failing() -> ExitStack:
+    """Core's `checkin_record` raises, as a fault of the database would: in its own module, and
+    in each module that holds its own reference to it."""
+    stack = ExitStack()
+    failing = AsyncMock(side_effect=RuntimeError("disk I/O error"))
+    for module_name in ("leaguebot.core.services.cancellation_notice_service",
+                        "leaguebot.core.services.cancellation_changes",
+                        "leaguebot.results.services.submission_changes"):
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        if hasattr(module, "checkin_record"):
+            stack.enter_context(patch.object(module, "checkin_record", failing))
+    return stack
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_a_discarded_check_in_record_is_named_and_the_round_still_ends_cancelled(tmp_path):
+    """Attendance is on and round 3's check-in call was posted. Round 3 ends cancelled when the
+    admin types CANCELLED for its race, but reading its check-in fails on a fault of the
+    database, and the queue stops at `read_check_in`. A league admin discards it. Round 3 is
+    CANCELLED, the queue runs on with nothing left stopped, and the round's one
+    `ROUND_CANCELLED` line carries no check-in record and names the record, under what was not
+    done, as not written (attendance :130; owner, check 2, "Write the record")."""
+    league = await _league(tmp_path, attendance=True)
+
+    with _check_in_read_failing():
+        await _cancel_the_race(league)
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "read_check_in"
+        await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _round(league) == ("CANCELLED", 1)
+    [line] = _ended_lines(league)
+    assert f"\n  not done: {CHECK_IN_DISCARDED}" in line
+    assert RECORD_HEADING not in line
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
