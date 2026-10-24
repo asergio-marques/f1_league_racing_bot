@@ -1265,10 +1265,16 @@ async def test_a_discarded_role_change_names_the_roles_to_change_by_hand_and_the
     league.attendance.roles_fails = {LEWIS_PROFILE: refused, MAX_PROFILE: refused}
     interaction = await _approve(league)
     await run_queue(league.bot)
+    stops = []
     for _ in range(2):
         assert await stopped_at(league) == "sanction_roles"
+        stops.append([line for line in league.bot.log_channel.sent
+                      if "The queue is stopped at job #" in line][-1])
         await discard_job(league.bot)
 
+    assert any(f"taking back <@{LEWIS}>'s roles for their autosack" in stop for stop in stops), (
+        "the stop on Lewis's role job does not name it"
+    )
     assert await stopped_at(league) is None
     assert sorted(league.attendance._calls("announce_sanction")) == [
         ("announce_sanction", LEWIS_PROFILE), ("announce_sanction", MAX_PROFILE),
