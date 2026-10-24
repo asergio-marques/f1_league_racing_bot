@@ -657,3 +657,242 @@ async def test_no_check_in_record_is_written_while_attendance_is_off(tmp_path):
     assert await stopped_job(league.db_path) is None
     [line] = _ended_lines(league)
     assert "check-in, Pro" not in line
+
+
+# ---------------------------------------------------------------------------
+# Its standings, withdrawn after a resubmission (Part E, E5; owner, check 1, "Fold all three in")
+# ---------------------------------------------------------------------------
+
+#: Round 4 of the reviewed division, final, and round 2 before it, in the resubmission's league.
+LATER_ROUND, EARLIER_ROUND = 22, 20
+#: Round 4's standings post, standing in the standings channel before the resubmission.
+LATER_STANDINGS = 9001
+
+
+async def _resubmitting(tmp_path: Any, monkeypatch: Any) -> Any:
+    """`test_resubmission_changes.py`'s league: Pro (division 11) of season 1, its round 3 at
+    Silverstone in its penalty review, Lewis (101) first and Max (102) second in its Feature Race,
+    its provisional results table and standings posted. Alex, a league manager, has pressed
+    Resubmit, and the queue has run."""
+    from tests.results.test_resubmission_changes import _press_resubmit, _reviewing
+
+    league = await _reviewing(tmp_path, monkeypatch)
+    await _press_resubmit(league)
+    return league
+
+
+async def _seed_later_round(league: Any) -> None:
+    """Round 4 of Pro at Spa, final, won by Max alone for 25 points; its standings post
+    `LATER_STANDINGS` stands, Max first on 43 points (18 + 25) and Lewis second on 25."""
+    from leaguebot.core.db.database import get_connection
+    from tests.results.test_review_open_change import DIVISION_ID, STANDINGS_CHANNEL
+    from tests.support.review_league import LEWIS, MAX, MAX_PROFILE
+
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
+            "track_name, status) VALUES (?, ?, 4, '2026-02-08T18:00:00+00:00', 'NORMAL', "
+            "'Spa', 'FINAL')", (LATER_ROUND, DIVISION_ID),
+        )
+        session = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')", (LATER_ROUND, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+            "team_instance_id, finishing_position, outcome, base_time_ms, points_awarded, "
+            "driver_profile_id) VALUES (?, ?, 3001, 1, 'CLASSIFIED', 3601000, 25, ?)",
+            (session.lastrowid, MAX, MAX_PROFILE),
+        )
+        for driver, position, points, message_id in (
+            (MAX, 1, 43, LATER_STANDINGS), (LEWIS, 2, 25, None),
+        ):
+            await db.execute(
+                "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
+                "standing_position, total_points, standings_message_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (LATER_ROUND, DIVISION_ID, driver, position, points, message_id),
+            )
+        await db.commit()
+    league.channel(STANDINGS_CHANNEL).seed(LATER_STANDINGS, "round 4 standings")
+
+
+async def _snapshot_rounds(league: Any, round_id: int) -> tuple[int, int]:
+    """How many driver and team standings rows *round_id* holds."""
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(league.db_path) as db:
+        counts = []
+        for table in ("driver_standings_snapshots", "team_standings_snapshots"):
+            [row] = await (await db.execute(
+                f"SELECT COUNT(*) AS n FROM {table} WHERE round_id = ?", (round_id,)
+            )).fetchall()
+            counts.append(row["n"])
+    return counts[0], counts[1]
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_a_resubmission_entering_every_session_cancelled_withdraws_the_round_s_standings(
+    tmp_path, monkeypatch,
+):
+    """Round 3's provisional standings were posted when its review opened. Alex resubmits and
+    types CANCELLED for its qualifying and then for its race. When the queue runs, round 3 holds
+    no driver or team standings rows any more, and each of its standings posts is deleted, by a
+    job of `results.submission.all_cancelled` run after both sessions' "This session was
+    cancelled." lines are posted (owner, check 1)."""
+    from tests.results.test_resubmission_changes import ROUND_ID as REVIEWED_ROUND, _changes, _type
+    from tests.results.test_review_open_change import RESULTS_CHANNEL, STANDINGS_CHANNEL
+
+    league = await _resubmitting(tmp_path, monkeypatch)
+    standings = league.sent_to(STANDINGS_CHANNEL)
+    assert standings and (await _snapshot_rounds(league, REVIEWED_ROUND))[0]
+
+    await _type(league, "CANCELLED")
+    await _type(league, "CANCELLED")
+
+    assert await stopped_job(league.db_path) is None
+    assert await _snapshot_rounds(league, REVIEWED_ROUND) == (0, 0)
+    assert set(standings) <= set(league.deleted_in(STANDINGS_CHANNEL))
+    [handed] = await _changes(league, ALL_CANCELLED_KIND)
+    names = [row["name"] for row in await step_rows(league.db_path, handed["id"])]
+    assert names.count("delete_message") >= len(standings)
+    lines = [index for index, event in enumerate(league.events)
+             if event[0] == "send" and event[1] == RESULTS_CHANNEL
+             and "This session was cancelled"
+             in str(league.channel(RESULTS_CHANNEL).messages[event[2]].content)]
+    assert len(lines) == 2
+    deleted_at = [league.events.index(("delete", STANDINGS_CHANNEL, mid)) for mid in standings]
+    assert min(deleted_at) > max(lines)
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_the_earlier_provisional_tables_come_down_after_each_session_s_note_stands(
+    tmp_path, monkeypatch,
+):
+    """Round 3's provisional Feature Race table was posted in Pro's results channel when its
+    review opened. Alex resubmits and types CANCELLED for both sessions. When the queue runs, the
+    race's "This session was cancelled." line is posted and recorded as the race's results
+    message, and only then is the earlier table deleted: no table of the first submission is
+    left standing beside the notes (owner, check 1; results :412)."""
+    from tests.results.test_resubmission_changes import ROUND_ID as REVIEWED_ROUND, _rows, _type
+    from tests.results.test_review_open_change import RESULTS_CHANNEL
+
+    league = await _resubmitting(tmp_path, monkeypatch)
+    earlier = league.sent_to(RESULTS_CHANNEL)
+    assert earlier
+
+    await _type(league, "CANCELLED")
+    await _type(league, "CANCELLED")
+
+    assert await stopped_job(league.db_path) is None
+    [race] = await _rows(
+        league, "SELECT results_message_id FROM session_results "
+        "WHERE round_id = ? AND session_type = 'FEATURE_RACE'", REVIEWED_ROUND,
+    )
+    note = race["results_message_id"]
+    assert note not in earlier
+    assert "This session was cancelled" in str(league.channel(RESULTS_CHANNEL).messages[note].content)
+    for message_id in earlier:
+        assert message_id not in league.channel(RESULTS_CHANNEL).messages
+        assert (league.events.index(("delete", RESULTS_CHANNEL, message_id))
+                > league.events.index(("send", RESULTS_CHANNEL, note)))
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_a_later_round_s_standings_are_recomputed_without_the_round_and_posted_again(
+    tmp_path, monkeypatch,
+):
+    """Round 4 of Pro, after round 3, is final, Max having won it for 25 points; its standings
+    were posted with Max on 43 points, counting his 18 from round 3. Alex resubmits round 3 and
+    types CANCELLED for both its sessions. When the queue runs, round 4's standings are worked
+    out again without round 3, Max on 25 points, and posted again by the one standings job the
+    change plans, a new post in the standings channel (owner, check 1)."""
+    from tests.results.test_resubmission_changes import _changes, _rows, _type
+    from tests.results.test_review_open_change import STANDINGS_CHANNEL
+    from tests.support.review_league import MAX
+
+    league = await _resubmitting(tmp_path, monkeypatch)
+    await _seed_later_round(league)
+    posted_before = set(league.sent_to(STANDINGS_CHANNEL))
+
+    await _type(league, "CANCELLED")
+    await _type(league, "CANCELLED")
+
+    assert await stopped_job(league.db_path) is None
+    [row] = await _rows(
+        league, "SELECT total_points FROM driver_standings_snapshots "
+        "WHERE round_id = ? AND driver_user_id = ?", LATER_ROUND, MAX,
+    )
+    assert row["total_points"] == 25
+    [handed] = await _changes(league, ALL_CANCELLED_KIND)
+    names = [step["name"] for step in await step_rows(league.db_path, handed["id"])]
+    assert names.count("post_standings") == 1
+    assert set(league.sent_to(STANDINGS_CHANNEL)) - posted_before
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_the_next_round_s_movement_is_measured_against_the_round_before(
+    tmp_path, monkeypatch,
+):
+    """Pro's round 2 is final and holds standings, and so do round 3, in its review, and round 4,
+    final. Round 4's movement is measured against round 3. Alex resubmits round 3 and types
+    CANCELLED for both its sessions. When the queue runs, round 4's movement is measured against
+    round 2 instead, round 3 holding no standings any more (owner, check 1)."""
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.results.services.standings_service import reference_round_id
+    from tests.results.test_resubmission_changes import ROUND_ID as REVIEWED_ROUND, _type
+    from tests.results.test_review_open_change import DIVISION_ID
+    from tests.support.review_league import LEWIS
+
+    league = await _resubmitting(tmp_path, monkeypatch)
+    await _seed_later_round(league)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
+            "track_name, status) VALUES (?, ?, 2, '2026-01-25T18:00:00+00:00', 'NORMAL', "
+            "'Monza', 'FINAL')", (EARLIER_ROUND, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
+            "standing_position, total_points) VALUES (?, ?, ?, 1, 0)",
+            (EARLIER_ROUND, DIVISION_ID, LEWIS),
+        )
+        await db.commit()
+    assert await reference_round_id(league.db_path, DIVISION_ID, LATER_ROUND) == REVIEWED_ROUND
+
+    await _type(league, "CANCELLED")
+    await _type(league, "CANCELLED")
+
+    assert await stopped_job(league.db_path) is None
+    assert await reference_round_id(league.db_path, DIVISION_ID, LATER_ROUND) == EARLIER_ROUND
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_a_discarded_standings_deletion_is_named_for_deletion_by_hand(
+    tmp_path, monkeypatch,
+):
+    """Round 3's provisional standings post stands, and Discord refuses to delete it. Alex
+    resubmits round 3 and types CANCELLED for both its sessions. The queue stops at the post's
+    deletion; a league admin discards it. Round 3 still ends cancelled, the post still stands,
+    and the round's `ROUND_CANCELLED` line names it as an earlier message that could not be
+    deleted, to delete by hand."""
+    from tests.results.test_resubmission_changes import ROUND_ID as REVIEWED_ROUND, _rows, _type
+    from tests.results.test_review_open_change import STANDINGS_CHANNEL
+
+    league = await _resubmitting(tmp_path, monkeypatch)
+    [standing] = league.sent_to(STANDINGS_CHANNEL)
+    league.channel(STANDINGS_CHANNEL).messages[standing].delete = AsyncMock(
+        side_effect=http_error(status=403, text="Missing Permissions")
+    )
+
+    await _type(league, "CANCELLED")
+    await _type(league, "CANCELLED")
+    assert await _stopped_at(league) == "delete_message"
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [row] = await _rows(league, "SELECT status FROM rounds WHERE id = ?", REVIEWED_ROUND)
+    assert row["status"] == "CANCELLED"
+    assert standing in league.channel(STANDINGS_CHANNEL).messages
+    [line] = _ended_lines(league)
+    assert "could not be deleted" in line and "delete it by hand" in line
