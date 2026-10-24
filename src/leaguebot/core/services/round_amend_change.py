@@ -14,6 +14,13 @@ cancellation queued behind it must not make the amendment refuse itself. Two req
 same instant can both pass; the queue then runs them in order and the second reads what the first
 wrote, a renumbering included.
 
+**The same steps arm a round again after a refused cancellation** (`round_rearm_change`, #439): a
+cancellation refused at its save has already removed the timed work of its rounds, and asks one
+`season.round.rearm` for each round that is still to be run or awaiting its results, which judges
+the round as it stands when it runs and arms it as an amended round is armed, catching up what fell
+due meanwhile. For a round already raced it arms the next-day clean-ups alone (the payload's
+`cleanups_only`). Neither of its two jobs can be discarded.
+
 `amendment_in_hand` reads the queue for an amendment of a division, so that a cancellation is
 refused while one is waiting, running or stopped. It is read from the queue, never from memory
 (architecture.md, "How a change is carried out").
@@ -40,7 +47,13 @@ from leaguebot.core.models.change import (
     Verdict,
     forecasts_named,
 )
-from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundFormat, RoundStatus
+from leaguebot.core.models.round import (
+    ROUND_CANCELLABLE,
+    ROUND_RACED_AWAITING_VERDICTS,
+    Round,
+    RoundFormat,
+    RoundStatus,
+)
 from leaguebot.core.services.amendment_rules_service import (
     AmendmentVerdict,
     judge_amendment,
@@ -48,7 +61,7 @@ from leaguebot.core.services.amendment_rules_service import (
 )
 from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
 from leaguebot.core.services import cancellation_notice_service as notices
-from leaguebot.core.services.cancellation_changes import cancellation_holding_amendment
+from leaguebot.core.services.cancellation_changes import ROUND_REARM, cancellation_holding_amendment
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -59,7 +72,7 @@ from leaguebot.core.services.change_queue import (
     in_hand,
 )
 from leaguebot.core.services.scheduler_service import POST_RACE_CLEANUP_DELAY
-from leaguebot.core.services.season_service import renumber_rounds_on
+from leaguebot.core.services.season_service import renumber_rounds_on, round_called
 from leaguebot.core.utils.batch_notice import send_notice
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
@@ -75,6 +88,7 @@ __all__ = [
     "amendment_in_hand",
     "payload_changes",
     "round_amend_change",
+    "round_rearm_change",
 ]
 
 ROUND_AMEND = "season.round.amend"
@@ -235,6 +249,79 @@ def round_amend_change(
     The builder hands in the *modules* (each post's `still_due`), the *seasons* service, the
     *scheduler*, the *hooks* of the other modules and the queue's clock *now*.
     """
+    return _round_change(
+        rearm=False, modules=modules, seasons=seasons, scheduler=scheduler, hooks=hooks, now=now
+    )
+
+
+def round_rearm_change(
+    *,
+    modules: "ModuleService",
+    seasons: "SeasonService",
+    scheduler: "SchedulerService",
+    hooks: AmendHooks,
+    now: Callable[[], datetime],
+) -> ChangeType:
+    """The change that arms a round's timed work again after a refused cancellation; see the module.
+
+    The payload is ``{"round_id", "round_number", "division_id", "division_name", "command"}``,
+    *command* naming the cancellation that was refused, and ``"cleanups_only": True`` for a round
+    already raced, whose next-day clean-ups alone are armed. It opens with the amendment's own
+    judging and arming, unchanged but for when they are due and that neither can be discarded.
+    The bot asks it, on the league's lane, one for each round.
+    """
+    return _round_change(
+        rearm=True, modules=modules, seasons=seasons, scheduler=scheduler, hooks=hooks, now=now
+    )
+
+
+def _round_change(
+    *,
+    rearm: bool,
+    modules: "ModuleService",
+    seasons: "SeasonService",
+    scheduler: "SchedulerService",
+    hooks: AmendHooks,
+    now: Callable[[], datetime],
+) -> ChangeType:
+    """The steps of `round_amend_change`, and with *rearm* the change that arms a round again.
+
+    Only the check, the due-ness of the judging and the arming, their refusal to be discarded, the
+    change's kind, key and words differ between the two; every other step is the amendment's.
+    """
+
+    async def rearm_check(ctx: CheckContext) -> Verdict:
+        """A re-arming is due while the round can still be cancelled, or, for its clean-ups alone,
+        while it is raced and they are still owed; a round gone or past that is dropped."""
+        if await rearm_due(ctx):
+            return Verdict.go()
+        return Verdict.not_due("the round can no longer be armed again")
+
+    async def rearm_due(ctx: StepContext | CheckContext) -> bool:
+        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
+        if rnd is None:
+            return False
+        if not ctx.payload.get("cleanups_only"):
+            return rnd.status in ROUND_CANCELLABLE
+        if rnd.status not in ROUND_RACED_AWAITING_VERDICTS and rnd.status != RoundStatus.FINAL.value:
+            return False
+        return await cleanups_owed(ctx.db_path, rnd)
+
+    async def cleanups_owed(db_path: str, rnd: Round) -> bool:
+        """Whether a raced round still owes its clean-ups: the day after it not yet come, or a
+        forecast or a check-in call still standing that they would take down."""
+        if moment_of(rnd) + POST_RACE_CLEANUP_DELAY > now():
+            return True
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT EXISTS (SELECT 1 FROM forecast_messages f WHERE f.round_id = r.id "
+                "AND f.phase_number IN (1, 2, 3)) AS forecast, "
+                "(r.checkin_cleared = 0 AND EXISTS (SELECT 1 FROM rsvp_embed_messages m "
+                "WHERE m.round_id = r.id)) AS call FROM rounds r WHERE r.id = ?",
+                (rnd.id,),
+            )
+            found = await cursor.fetchone()
+        return found is not None and bool(found["forecast"] or found["call"])
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
@@ -549,6 +636,22 @@ def round_amend_change(
         season_number, tier = int(found["season_number"]), int(found["tier"])
         weather = judgement["windows"]["weather"]
         weather_on = await modules.is_weather_enabled()
+        if rearm and ctx.payload.get("cleanups_only"):
+            # A round already raced: only the clean-ups of a day after it are owed, armed through
+            # the scheduler and, where the day has come, run as the restart's catch-up runs them.
+            check_in_on = (
+                judgement["windows"]["attendance"] is not None
+                and await modules.is_attendance_enabled()
+            )
+            if weather_on or check_in_on:
+                scheduler.schedule_round_cleanups(
+                    rnd, season_number=season_number, division_tier=tier,
+                    forecast=weather_on, check_in=check_in_on,
+                )
+            return StepResult(
+                result={"armed": True, "round_number": rnd.round_number},
+                then=clean_ups_due(rnd, standing=dict(found), call_left=bool(found["called"])),
+            )
         draw = phases_due(rnd, weather) if weather_on else []
         if weather_on and (
             rnd.format != RoundFormat.MYSTERY or first_horizon_ahead(rnd, weather)
@@ -588,7 +691,25 @@ def round_amend_change(
                 rnd, season_number=season_number, division_tier=tier
             )
         planned = posts(ctx, rnd, judgement, standing=dict(found), draw=draw)
-        return StepResult(result={"armed": True}, then=planned)
+        return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
+
+    def clean_ups_due(
+        rnd: Round, *, standing: Mapping[str, Any], call_left: bool
+    ) -> tuple[PlannedStep, ...]:
+        """The clean-ups a day after the round, planned where that day has come: the forecast
+        (whichever of Phases 1 to 3 still stands) and the standing check-in call."""
+        planned: list[PlannedStep] = []
+        if moment_of(rnd) + POST_RACE_CLEANUP_DELAY <= now():
+            if standing["forecast_posted"]:
+                phases = sorted(
+                    {int(n) for n in str(standing["forecast_phases"] or "").split(",") if n}
+                )
+                planned.append(PlannedStep(
+                    CLEAN_UP_FORECAST, {"phases": [1, 2, 3], "clean_up": True, "standing": phases}
+                ))
+            if call_left:
+                planned.append(PlannedStep(CLEAN_UP_CHECK_IN))
+        return tuple(planned)
 
     def posts(
         ctx: StepContext, rnd: Round, judgement: dict[str, Any], *,
@@ -635,22 +756,36 @@ def round_amend_change(
         if posted:
             planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": after["track"]}))
         planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
-        if moment_of(rnd) + POST_RACE_CLEANUP_DELAY <= now():
-            if standing["forecast_posted"]:
-                phases = sorted(
-                    {int(n) for n in str(standing["forecast_phases"] or "").split(",") if n}
-                )
-                planned.append(PlannedStep(
-                    CLEAN_UP_FORECAST, {"phases": [1, 2, 3], "clean_up": True, "standing": phases}
-                ))
-            if call_left:
-                planned.append(PlannedStep(CLEAN_UP_CHECK_IN))
+        planned += clean_ups_due(rnd, standing=standing, call_left=call_left)
         return tuple(planned)
 
     async def never_runs(ctx: StepContext) -> str:
         return (
             f"round {await round_number_now(ctx)} in **{ctx.payload['division_name']}** "
             "would never run"
+        )
+
+    async def would_be_left_unarmed(ctx: StepContext) -> str:
+        """What dropping a re-arming's judging or arming would leave: the timed work removed for
+        a cancellation that was refused, and nothing to run the round (or, for a round already
+        raced, to take its call and forecasts down), so it is retried, never discarded."""
+        called = await round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        if ctx.payload.get("cleanups_only"):
+            return f"the call and forecasts of {called} would never be taken down"
+        return f"{called} would be left with no timed work, never run"
+
+    def armed_again(ctx: OutcomeContext) -> tuple[str, ...]:
+        """The one line a re-arming writes to the log channel once its arming has run, with what
+        a league admin discarded of its catch-up beneath it; none where it was dropped."""
+        result = view(ctx, ARM).result
+        if not result or not result.get("armed"):
+            return ()
+        called = f"round {result['round_number']} in **{ctx.payload['division_name']}**"
+        command = str(ctx.payload.get("command", "/round cancel"))
+        what = "next-day clean-ups" if ctx.payload.get("cleanups_only") else "timed work"
+        return (
+            f"⏱️ The {what} of {called} is armed again, `{command}` having been refused"
+            + not_done(ctx),
         )
 
     async def attendance_on(_ctx: StepContext) -> bool:
@@ -1122,6 +1257,29 @@ def round_amend_change(
             describe=named("listing the rounds of **{division}** for the reply"),
         ),
     }
+    if rearm:
+        for gone in (UNARM, APPLY, CLOSE):
+            del steps[gone]
+        steps[JUDGE] = dataclasses.replace(
+            steps[JUDGE], still_due=rearm_due, undiscardable=would_be_left_unarmed,
+            describe=named("judging whether the timed work of round {number} in **{division}** can be armed again"),
+        )
+        steps[ARM] = dataclasses.replace(
+            steps[ARM], still_due=rearm_due, undiscardable=would_be_left_unarmed,
+        )
+        return ChangeType(
+            kind=ROUND_REARM,
+            opening=(PlannedStep(JUDGE), PlannedStep(ARM)),
+            steps=steps,
+            check=rearm_check,
+            key=lambda payload: f"{ROUND_REARM}:{payload['round_id']}",
+            doing=lambda payload: (
+                f"Arming the timed work of round {payload['round_number']} in "
+                f"**{payload['division_name']}** again"
+            ),
+            outcome=lambda _ctx: "",
+            finished_lines=armed_again,
+        )
     return ChangeType(
         kind=ROUND_AMEND,
         opening=tuple(PlannedStep(name) for name in (JUDGE, UNARM, APPLY, ARM, CLOSE)),

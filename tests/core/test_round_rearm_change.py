@@ -41,7 +41,6 @@ PRO_CH = DIVISIONS[PRO][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
 HORIZONS = (5, 2, 2)
 REARM_KIND = "season.round.rearm"
-UNBUILT = "#439: no change arms a round's timed work again after a refused cancellation yet"
 ARMED_AGAIN = (
     "⏱️ The timed work of round 3 in **Pro** is armed again, `/round cancel` having been refused"
 )
@@ -121,7 +120,6 @@ def phases(monkeypatch):
 # ── A round still to be run ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_re_arming_arms_the_round_as_it_stands_and_catches_up_the_phases_and_the_call_that_fell_due(
     tmp_path, phases, monkeypatch,
 ):
@@ -147,7 +145,6 @@ async def test_a_re_arming_arms_the_round_as_it_stands_and_catches_up_the_phases
     assert await _calls_posted(league) == [R3]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_re_arming_of_a_round_whose_moment_passed_runs_its_results_submission_at_once(
     tmp_path,
 ):
@@ -166,7 +163,6 @@ async def test_a_re_arming_of_a_round_whose_moment_passed_runs_its_results_submi
     assert [call.args[0].id for call in opened.call_args_list] == [R3]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_re_arming_under_test_mode_runs_no_results_submission_at_once(tmp_path):
     """Under test mode, Pro's round 3, still to be run, was due ten minutes ago. Its re-arming
     arms its results submission but does not run it at once: `/test-mode advance` runs a test
@@ -184,9 +180,9 @@ async def test_a_re_arming_under_test_mode_runs_no_results_submission_at_once(tm
 
 
 @pytest.mark.parametrize("case", [
-    pytest.param("cancelled", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-    pytest.param("results entered", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-    pytest.param("gone", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+    pytest.param("cancelled"),
+    pytest.param("results entered"),
+    pytest.param("gone"),
 ])
 async def test_a_re_arming_whose_round_can_no_longer_be_cancelled_is_dropped(tmp_path, case):
     """Pro's round 4's re-arming is asked; before it runs, (cancelled) a later cancellation
@@ -213,8 +209,8 @@ async def test_a_re_arming_whose_round_can_no_longer_be_cancelled_is_dropped(tmp
 
 
 @pytest.mark.parametrize("job", [
-    pytest.param("judge", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-    pytest.param("arm", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+    pytest.param("judge"),
+    pytest.param("arm"),
 ])
 async def test_the_re_arming_cannot_be_discarded(tmp_path, job):
     """Pro's round 3's re-arming stops the queue: (judge) the windows it is judged by cannot be
@@ -250,7 +246,6 @@ async def test_the_re_arming_cannot_be_discarded(tmp_path, job):
     assert league.armed == [("results", [R3])]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_re_arming_stopped_at_its_check_cannot_be_discarded_whole(tmp_path):
     """Pro's round 3's re-arming is asked; when it comes up, the rounds cannot be read, so its
     check fails and the queue stops on it before any job has run. A league admin's Discard, which
@@ -279,7 +274,6 @@ async def test_a_re_arming_stopped_at_its_check_cannot_be_discarded_whole(tmp_pa
     assert league.armed == [("results", [R3])]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_discarded_catch_up_of_a_re_arming_is_named_in_the_log(tmp_path, phases):
     """Weather on (horizons 5 days, 2 days, 2 hours). Pro's round 3 is three days out, its Phase 1
     never drawn, so its re-arming draws Phase 1 at once; the draw fails on a fault of the bot's
@@ -305,7 +299,6 @@ async def test_a_discarded_catch_up_of_a_re_arming_is_named_in_the_log(tmp_path,
 # ── A round already raced ───────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     """Weather and attendance on. Pro's round 3 was raced two hours ago and awaits its report
     verdicts, its timed work removed. Its re-arming, asked for its clean-ups alone, arms the
@@ -324,7 +317,6 @@ async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     league.bot.scheduler_service.run_result_submission_now.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_raced_round_s_clean_ups_already_due_run_at_once(tmp_path):
     """Weather and attendance on. Pro's round 3 was raced a day and an hour ago and awaits its
     report verdicts, its Phase 3 forecast (message 8003) posted and its check-in call standing

@@ -165,6 +165,7 @@ if TYPE_CHECKING:
 __all__ = [
     "DIVISION_CANCEL",
     "ROUND_CANCEL",
+    "ROUND_REARM",
     "SEASON_CANCEL",
     "cancellation_holding_amendment",
     "cancellation_in_hand",
@@ -175,6 +176,10 @@ __all__ = [
 
 ROUND_CANCEL = "season.round.cancel"
 DIVISION_CANCEL = "season.division.cancel"
+#: The change a refused cancellation asks, for each round whose timed work it removed, to arm it
+#: again (`round_amend_change.round_rearm_change`). Named here because the amendment's module
+#: imports this one, so this one cannot import it.
+ROUND_REARM = "season.round.rearm"
 
 _COMMAND = "`/round cancel`"
 NOT_ONGOING = f"❌ {_COMMAND} is available only while the season is ongoing."

@@ -1481,7 +1481,6 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_save_and_its
     assert len([line for line in _log_lines(league) if ARMED_AGAIN in line]) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=REARM_UNBUILT)
 async def test_a_re_arming_queued_behind_a_cancellation_that_then_calls_the_round_off_is_dropped(
     tmp_path,
 ):
