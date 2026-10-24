@@ -681,6 +681,56 @@ async def test_messages_left_standing_are_listed_in_the_reply_and_the_closing_li
     assert "left standing" not in switch_off
 
 
+#: A channel left standing is not yet named with its link (#439, slice 8, B9).
+CHANNEL_LINK_UNBUILT = "#439: a discarded channel take-down is not yet named with its <#link>"
+
+
+@pytest.mark.xfail(strict=True, reason=CHANNEL_LINK_UNBUILT)
+async def test_a_discarded_channel_take_down_names_the_channel_with_its_link(tmp_path):
+    """Division 1's round 1 is final, its submission channel 8000 still open and an amendment open
+    in channel 9100; Discord refuses to delete either. Each removal stops the queue, naming the
+    channel by its link; once a league admin discards both, the admin's reply and the closing line
+    list both channels, by link, for deletion by hand (results spec :16)."""
+    seeded = await _seed(tmp_path, rounds=("FINAL",))
+    await _set(
+        seeded.db_path,
+        "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+        "pre_amendment_state, expires_at) VALUES (?, ?, '[\"FEATURE_RACE\"]', "
+        "'2026-01-01T00:00:00', '{}', '2026-01-01T00:30:00')",
+        (seeded.round_ids[0], AMEND_CHANNEL_ID),
+    )
+    bot = _league(seeded.db_path)
+    for channel_id in (8000, AMEND_CHANNEL_ID):
+        bot.channels[channel_id].delete = AsyncMock(side_effect=http_error(discord.Forbidden,
+                                                                           status=403))
+    interaction = await _confirm(bot)
+
+    await run_queue(bot)
+    removals = {
+        "removing the submission channel <#8000>",
+        f"removing the amendment channel <#{AMEND_CHANNEL_ID}>",
+    }
+    seen: set[str] = set()
+    for _ in range(2):
+        job = await stopped_job(seeded.db_path)
+        assert job is not None and job["name"] == "take_down"
+        [removal] = [r for r in removals if r in (await _stop_lines(bot))[-1]]
+        await discard_job(bot)
+        assert f"not done: {removal} for {WHAT}" in await _discard_line(bot, job["id"])
+        seen.add(removal)
+
+    assert seen == removals
+    assert await stopped_job(seeded.db_path) is None
+    channels = {"<#8000>", f"<#{AMEND_CHANNEL_ID}>"}
+    reply = updated_reply(interaction)
+    head = "⚠️ 2 channel(s) could not be removed — delete them by hand:\n"
+    assert head in reply
+    assert set(reply.split(head, 1)[1].splitlines()[:2]) == channels
+    closing = await _line_starting(bot, f"{NAMED} | /module disable results | Messages removed")
+    tail = closing.split("channels left standing, to delete by hand:", 1)[1]
+    assert all(channel in tail for channel in channels)
+
+
 async def test_the_closing_line_counts_what_was_removed(tmp_path):
     seeded = await _seed(tmp_path)
     await _announce_verdicts(seeded.db_path)
@@ -1079,12 +1129,13 @@ async def test_an_outcome_after_a_restart_is_left_to_the_log_channel(tmp_path):
     await _line_starting(bot, f"{NAMED} | /module disable results | Messages removed")
 
 
+@pytest.mark.xfail(strict=True, reason=CHANNEL_LINK_UNBUILT)
 async def test_a_server_out_of_cache_erases_the_rows_and_names_every_message_left_standing(
     tmp_path,
 ):
     """With the league's server out of the cache, each of the four removals (three messages and the
     round's submission channel) stops the queue; once a league admin discards each, the rows are
-    erased and all three messages are linked."""
+    erased, all three messages are linked, and the submission channel is named by its link."""
     seeded = await _seed(tmp_path)
     bot = _league(seeded.db_path, guild=False)
     interaction = await _confirm(bot)
@@ -1108,8 +1159,10 @@ async def test_a_server_out_of_cache_erases_the_rows_and_names_every_message_lef
         _link(STANDINGS_CHANNEL_ID, 2000),
         _link(STANDINGS_CHANNEL_ID, 3000),
     }
+    assert "⚠️ 1 channel(s) could not be removed — delete them by hand:\n<#8000>" in reply
     closing = await _line_starting(bot, f"{NAMED} | /module disable results | Messages removed")
     assert "left standing, to delete by hand: 3" in closing
+    assert "<#8000>" in closing.split("channels left standing, to delete by hand:", 1)[1]
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
 
 
