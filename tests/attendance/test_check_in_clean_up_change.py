@@ -115,10 +115,6 @@ async def test_the_timer_asks_for_the_clean_up_and_the_queue_deletes_each_messag
     assert "ask_check_in_clean_up(" in inspect.getsource(bot_module.main)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: rounds has no not_held column, and the check-in clean-up refuses every cancelled "
-    "round, so a round whose every session was entered as not held keeps its call"
-))
 async def test_the_day_after_takes_down_the_call_of_a_round_whose_every_session_was_not_held(
     tmp_path,
 ):

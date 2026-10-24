@@ -94,7 +94,7 @@ def _occasion(phase: int) -> str:
 async def _round_row(db: aiosqlite.Connection, round_id: int) -> aiosqlite.Row | None:
     cursor = await db.execute(
         "SELECT r.id, r.round_number, r.format, r.scheduled_at, r.phase1_done, r.phase2_done, "
-        "       r.phase3_done, r.division_id, r.status AS round_status, "
+        "       r.phase3_done, r.division_id, r.status AS round_status, r.not_held, "
         "       d.status AS division_status, d.name AS division_name, "
         "       d.forecast_channel_id, d.mention_role_id "
         "FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
@@ -519,7 +519,10 @@ def _clean_up_doing(payload: dict[str, Any]) -> str:
 def forecast_clean_up_change(*, now: Callable[[], datetime]) -> ChangeType:
     """`weather.forecast.clean_up`: the bot's change that deletes a round's forecast a day after its
     race, whichever of Phases 1 to 3 still stands (a Phase 3 never posted leaves Phase 2 standing),
-    one `delete_forecast` job for each, planned by `plan_forecast_deletes`.
+    one `delete_forecast` job for each, planned by `plan_forecast_deletes`. A round called off, or
+    of a division called off, is owed none; a round that ended cancelled because every session was
+    entered as not held (`rounds.not_held`) is owed it as any round is, its forecasts having
+    stood until then.
 
     Not repeatable: a second request for a round still waiting is dropped by the queue's own
     rule, and one after the forecast is deleted finds nothing recorded and is not due.
@@ -535,8 +538,9 @@ def forecast_clean_up_change(*, now: Callable[[], datetime]) -> ChangeType:
             ])
         if row is None:
             return Verdict.not_due("the round is gone")
-        if row["round_status"] == RoundStatus.CANCELLED.value or row[
-                "division_status"] == "CANCELLED":
+        if (
+            row["round_status"] == RoundStatus.CANCELLED.value and not row["not_held"]
+        ) or row["division_status"] == "CANCELLED":
             return Verdict.not_due("the round or its division is cancelled")
         if not weather_on:
             return Verdict.not_due("the weather module is off")

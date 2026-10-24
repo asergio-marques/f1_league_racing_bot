@@ -182,7 +182,7 @@ async def edit_check_in_message(
 async def _call_row(db: aiosqlite.Connection, round_id: int) -> aiosqlite.Row | None:
     cursor = await db.execute(
         "SELECT r.id, r.division_id, r.round_number, r.format, r.track_name, r.scheduled_at, "
-        "       r.status AS round_status, r.checkin_cleared, "
+        "       r.status AS round_status, r.not_held, r.checkin_cleared, "
         "       d.status AS division_status, d.name AS division_name, d.tier AS division_tier, "
         "       d.mention_role_id, s.season_number, "
         "       t.gp_name AS track_gp_name, t.country AS track_country, "
@@ -987,10 +987,12 @@ async def _forget_message(db: aiosqlite.Connection, payload: dict[str, Any]) -> 
 
 def _not_cleaned(row: aiosqlite.Row | None) -> str | None:
     """Why the round is owed no clean-up, else None: unlike a call, a clean-up is owed a round
-    whose results are in and whose check-in is over."""
+    whose results are in and whose check-in is over, and so is one that ended cancelled because
+    every session was entered as not held (its call stands until the day after, as any round's);
+    only a round called off is owed none."""
     if row is None:
         return "the round is gone"
-    if row["round_status"] == "CANCELLED":
+    if row["round_status"] == "CANCELLED" and not row["not_held"]:
         return "the round is cancelled"
     if row["division_status"] == "CANCELLED":
         return "the division is cancelled"

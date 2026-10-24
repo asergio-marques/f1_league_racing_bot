@@ -1337,14 +1337,6 @@ async def test_an_advanced_deadline_places_the_reserves_on_every_answer_held(tmp
 # A round whose every session was entered as not held (#439, slice 8, Part E)
 # ---------------------------------------------------------------------------
 
-#: Why the test below fails until Part E is built.
-NOT_HELD_UNBUILT = (
-    "#439: rounds has no not_held column, and advance passes over every cancelled round, so a "
-    "round whose every session was entered as not held never has its clean-ups offered"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_advance_offers_only_the_clean_ups_of_a_round_whose_every_session_was_not_held(
     tmp_path,
 ):

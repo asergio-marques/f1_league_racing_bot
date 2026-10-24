@@ -255,6 +255,10 @@ async def get_next_pending_phase(
     the check of earlier rounds made before each scheduler job, and in the fallback once
     the job store is exhausted.
 
+    A round that ended cancelled because every session was entered as not held (`rounds.not_held`)
+    is read for its clean-ups alone, a day after its start as any round's: it offers no other step.
+    A round called off is not read at all.
+
     A weather step of a round whose race has been run by *now* (the present, where not given) is
     passed over, since the change queue drops a forecast for a race already run as not due
     (A25). Rehearsing weather in test mode needs rounds dated in the future (owner, 2026-10-12).
@@ -306,7 +310,7 @@ async def get_next_pending_phase(
             JOIN seasons   s ON s.id  = d.season_id
             WHERE s.status    = 'ACTIVE'
               AND d.status   != 'CANCELLED'
-              AND r.status   != 'CANCELLED'
+              AND (r.status != 'CANCELLED' OR r.not_held = 1)
             ORDER BY r.scheduled_at ASC, d.id ASC
             """,
         )
@@ -344,8 +348,8 @@ async def get_next_pending_phase(
     # first incomplete phase (1, 2, or 3) based on the phase flag columns.
     if scheduler_service is None:
         for row in rows:
-            if row["round_id"] in raced:
-                continue  # its race has been run: no forecast of it is due
+            if row["round_id"] in raced or row["status"] == "CANCELLED":
+                continue  # its race has been run, or it ended not held: no forecast is due
             # The first weather step still owed and not in hand on the queue: a mystery round's
             # notice, or the first of Phases 1 to 3.
             undone = _weather_steps_undone(row, forecasts_in_hand)
@@ -473,7 +477,9 @@ async def get_next_pending_phase(
 
         # Skip rounds that are fully done or already in results processing.
         # A round that has ended, or whose appeals are being judged, offers no more phases.
-        if row["status"] in ("FINAL", "AWAITING_APPEAL_VERDICTS"):
+        # A round that ended cancelled because every session was entered as not held is in the
+        # query for its clean-ups alone, and offers nothing else.
+        if row["status"] in ("FINAL", "AWAITING_APPEAL_VERDICTS", "CANCELLED"):
             return None
 
         def _make(phase: int) -> PhaseEntry:

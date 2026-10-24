@@ -1678,9 +1678,11 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     scheduler's misfire grace rather than run late, and nothing else would take those messages
     down: a forecast whose cleanup was missed used to stay for good.
 
-    A cancelled round or division is left alone. Its cancellation removed both jobs, and the
-    weather module keeps the forecasts of a round called off. The season's status is not asked,
-    since the live jobs fire after a season completes as well. Each module's own gate applies:
+    A round called off, or of a division called off, is left alone. Its cancellation removed both
+    jobs, and the weather module keeps the forecasts of a round called off. A round that ended
+    cancelled because every session was entered as not held (`rounds.not_held`) is not left alone:
+    its jobs were never removed, and its call and forecasts are owed their clean-up as any round's. The season's status is not
+    asked, since the live jobs fire after a season completes as well. Each module's own gate applies:
     weather's here, and attendance's inside its clean-up change's check.
 
     Running a cleanup a second time finds nothing left to take down, so a job the scheduler
@@ -1715,7 +1717,7 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
                   JOIN rounds r ON r.id = fm.round_id
                   JOIN divisions d ON d.id = r.division_id
                  WHERE fm.phase_number IN (1, 2, 3)
-                   AND r.status != 'CANCELLED'
+                   AND (r.status != 'CANCELLED' OR r.not_held = 1)
                    AND d.status != 'CANCELLED'
                  ORDER BY r.scheduled_at, fm.round_id, fm.phase_number
                 """
@@ -1731,7 +1733,7 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
                   FROM rsvp_embed_messages rem
                   JOIN rounds r ON r.id = rem.round_id
                   JOIN divisions d ON d.id = r.division_id
-                 WHERE r.status != 'CANCELLED'
+                 WHERE (r.status != 'CANCELLED' OR r.not_held = 1)
                    AND d.status != 'CANCELLED'
                  ORDER BY r.scheduled_at, rem.round_id
                 """

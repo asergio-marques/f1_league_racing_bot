@@ -1038,10 +1038,6 @@ async def test_a_clean_up_no_longer_due_when_its_turn_comes_is_dropped(tmp_path,
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: rounds has no not_held column, and the forecast clean-up drops every cancelled "
-    "round, so a round whose every session was entered as not held keeps its forecast"
-))
 async def test_a_clean_up_deletes_the_forecast_of_a_round_whose_every_session_was_not_held(
     tmp_path,
 ):

@@ -252,10 +252,6 @@ async def test_a_cancelled_round_is_left_alone(tmp_path, kwargs):
     assert await _recover(_bot(db_path)) == ([], [])
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: rounds has no not_held column, and the catch-up passes over every cancelled round, so "
-    "a round whose every session was entered as not held keeps its call and forecast"
-))
 async def test_a_round_whose_every_session_was_not_held_has_its_cleanups_caught_up(tmp_path):
     """Round 21 started 25 hours ago, its Phase 3 forecast and its call standing, and ended
     cancelled because every session of it was entered as not held. The bot starts again: the
