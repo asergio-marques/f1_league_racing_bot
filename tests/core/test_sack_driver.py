@@ -644,9 +644,6 @@ async def test_a_role_discord_refuses_is_logged_and_the_sack_still_saved(tmp_pat
     ) == 1
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: the placement service cannot sack a driver on the caller's save"
-)
 async def test_sack_on_reads_the_roles_before_it_frees_the_seats(tmp_path):
     """A sanction's save sacks the driver on the save it is handed and names the roles to take
     back, for a job of its own to take them: the driver of Pro, holding its role and the driver

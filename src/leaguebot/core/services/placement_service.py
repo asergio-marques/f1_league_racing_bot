@@ -51,6 +51,22 @@ class PlacementsCommitted:
 
 
 @dataclass
+class SackSaved:
+    """A sack written on the caller's save, and what is left for a job of its own to do (#439).
+
+    *divisions* are those the driver left, whose lineups the caller asks for. *revoke_role_ids*
+    are every role the driver's placements entitled them to, read before the placements were
+    removed (the driver role included), for the job that takes them back; empty for a test
+    driver, who holds none. *user_id* is the driver's Discord account.
+    """
+
+    divisions: list[int]
+    revoke_role_ids: list[int]
+    user_id: int
+    is_test_driver: bool
+
+
+@dataclass
 class LineupPosted:
     """A lineup posted: the message sent and the one it replaces, for the jobs after the post.
 
@@ -1206,6 +1222,184 @@ class PlacementService:
         )
         return cursor.lastrowid, is_reserve
 
+    async def move_on(
+        self,
+        db,
+        *,
+        driver_profile_id: int,
+        season_id: int,
+        from_division_id: int,
+        to_division_id: int,
+        team_name: str,
+        acting_user_id: int,
+        acting_user_name: str,
+    ) -> dict:
+        """Move a committed driver from their seat to a team of the same or another division, on *db*.
+
+        Everything `move_driver` writes, written on the connection handed and committed by no
+        one here, so a sanction's save carries the move with the rest of its writes (#439). It
+        awaits nothing but *db*: no member is fetched, no role asked of Discord, no lineup
+        posted, no capacity guarded (`guard_move`, an ACT's, reads templates off the loop).
+
+        Refused (ValueError) where the driver holds no committed placement in the division
+        left, where they already hold a seat in a different division moved into, where the team
+        is the one they already sit in, and where the team has no seat free.
+
+        Returns the summary (from_division, to_division, from_team, to_team, lineups) and what
+        is left for the roles: *revoke* and *grant*, the role ids to take back and give, empty
+        for a test driver, and *is_test_driver*.
+        """
+        cursor = await db.execute(
+            "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
+            (driver_profile_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise ValueError("Driver profile not found.")
+        is_test_driver = bool(row["is_test_driver"])
+
+        cursor = await db.execute(
+            """
+            SELECT dsa.id, dsa.team_seat_id, dsa.committed, ti.name AS team_name,
+                   ti.full_name AS team_full_name
+            FROM driver_season_assignments dsa
+            LEFT JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
+            WHERE dsa.driver_profile_id = ? AND dsa.season_id = ? AND dsa.division_id = ?
+            """,
+            (driver_profile_id, season_id, from_division_id),
+        )
+        source = await cursor.fetchone()
+        if source is None:
+            raise ValueError("Driver holds no seat in the division they are moved from.")
+        if not source["committed"]:
+            raise ValueError(
+                "That placement is not yet confirmed. Change it with `/driver unassign` "
+                "and `/driver assign`."
+            )
+        if from_division_id == to_division_id and source["team_name"] == team_name:
+            raise ValueError(f"Driver already sits in **{team_name}** in this division.")
+        if from_division_id != to_division_id:
+            cursor = await db.execute(
+                "SELECT 1 FROM driver_season_assignments "
+                "WHERE driver_profile_id = ? AND season_id = ? AND division_id = ?",
+                (driver_profile_id, season_id, to_division_id),
+            )
+            if await cursor.fetchone() is not None:
+                raise ValueError(
+                    "Driver already holds a seat in the division they would move into."
+                )
+
+        new_seat_id, _ = await self._free_seat(db, to_division_id, team_name)
+        to_team_full_name = await self._team_full_name(db, to_division_id, team_name)
+
+        cursor = await db.execute(
+            "SELECT id, name, mention_role_id FROM divisions WHERE id IN (?, ?)",
+            (from_division_id, to_division_id),
+        )
+        divisions = {r["id"]: r for r in await cursor.fetchall()}
+
+        await db.execute(
+            "UPDATE team_seats SET driver_profile_id = NULL WHERE id = ?",
+            (source["team_seat_id"],),
+        )
+        await db.execute(
+            "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
+            (driver_profile_id, new_seat_id),
+        )
+        if from_division_id == to_division_id:
+            await db.execute(
+                "UPDATE driver_season_assignments SET team_seat_id = ? WHERE id = ?",
+                (new_seat_id, source["id"]),
+            )
+        else:
+            # A placement in the division left goes with the seat; the points already
+            # scored there stay in that division's results, which is where they count.
+            await db.execute(
+                "UPDATE driver_season_assignments "
+                "SET division_id = ?, team_seat_id = ?, current_position = 0, "
+                "    current_points = 0, points_gap_to_first = 0 "
+                "WHERE id = ?",
+                (to_division_id, new_seat_id, source["id"]),
+            )
+        await db.execute(
+            "INSERT INTO audit_entries "
+            "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+            "VALUES (?, ?, ?, 'DRIVER_MOVE', ?, ?, ?)",
+            (
+                acting_user_id, acting_user_name, to_division_id,
+                json.dumps({"division": divisions[from_division_id]["name"],
+                            "team": source["team_name"]}),
+                json.dumps({"division": divisions[to_division_id]["name"],
+                            "team": team_name}),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+
+        revoke: list[int] = []
+        grant: list[int] = []
+        if not is_test_driver:
+            # Which team roles the driver still holds a seat for, now the move is written.
+            cursor = await db.execute(
+                """
+                SELECT DISTINCT ti.name FROM driver_season_assignments dsa
+                JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                JOIN team_instances ti ON ti.id = ts.team_instance_id
+                WHERE dsa.driver_profile_id = ? AND dsa.season_id = ?
+                """,
+                (driver_profile_id, season_id),
+            )
+            teams_held = {r["name"] for r in await cursor.fetchall()}
+            old_role = (
+                await self._team_role_on(db, source["team_name"])
+                if source["team_name"] else None
+            )
+            new_role = await self._team_role_on(db, team_name)
+            held_role_ids = set()
+            for held in teams_held:
+                held_role = await self._team_role_on(db, held)
+                if held_role is not None:
+                    held_role_ids.add(held_role)
+            if from_division_id != to_division_id:
+                revoke.append(divisions[from_division_id]["mention_role_id"])
+            if old_role is not None and old_role not in held_role_ids:
+                revoke.append(old_role)
+            grant.append(divisions[to_division_id]["mention_role_id"])
+            if new_role is not None:
+                grant.append(new_role)
+
+        return {
+            "from_division": divisions[from_division_id]["name"],
+            "to_division": divisions[to_division_id]["name"],
+            "from_team": source["team_full_name"] or source["team_name"],
+            "to_team": to_team_full_name,
+            # The lineups the move touched, for the caller to ask the change queue for (#439).
+            "lineups": list(dict.fromkeys((from_division_id, to_division_id))),
+            "revoke": revoke,
+            "grant": grant,
+            "is_test_driver": is_test_driver,
+        }
+
+    @staticmethod
+    async def _team_role_on(db, team_name: str) -> int | None:
+        """The role the server's list maps the team *team_name* to, read on *db*, or None."""
+        row = await (
+            await db.execute(
+                "SELECT role_id FROM team_role_configs WHERE team_name = ?", (team_name,)
+            )
+        ).fetchone()
+        return int(row["role_id"]) if row else None
+
+    async def guard_move(self, to_division_id: int, season_id: int, team_name: str) -> None:
+        """Refuse a move into *team_name* of *to_division_id* that would outgrow a template.
+
+        The capacity guards `move_driver` makes before it writes: the reserve block, the
+        attendance sheet's rows, the driver standings' and an image template's. Public so that
+        a sanction's check, a job of its own, can ask them before the move is saved, since they
+        read templates off the loop and cannot run inside a save (#439). Raises ValueError.
+        """
+        await self._guard_image_capacity(to_division_id, season_id, team_name)
+
     async def move_driver(
         self,
         driver_profile_id: int,
@@ -1221,121 +1415,29 @@ class PlacementService:
         """Move a committed driver from their seat in one division to a team of the same or another.
 
         One change (issue #220): the old seat freed and the new one taken in a single
-        transaction, the roles of the seat left revoked where no other seat of the driver maps
-        to them, the roles of the seat taken granted, and the lineup of each division touched
-        posted once. A driver moved to another division leaves the points they scored in the
-        division they left, those being counted per division.
+        transaction (`move_on`), the roles of the seat left revoked where no other seat of the
+        driver maps to them, the roles of the seat taken granted, and the lineup of each
+        division touched posted once. A driver moved to another division leaves the points they
+        scored in the division they left, those being counted per division. The roles are
+        changed swallowing Discord's refusals: this is the `/driver` command's, which keeps
+        that until core's design pass; a sanction's own role change raises instead.
 
-        Refused where the driver holds no committed placement in the division left, where
-        they already hold a seat in a different division moved into, where the team is the
-        one they already sit in, and where the team has no seat free.
+        Refused as `move_on` and `guard_move` refuse.
 
-        Returns a summary dict: from_division, to_division, from_team, to_team.
+        Returns a summary dict: from_division, to_division, from_team, to_team, lineups.
         """
-        await self._guard_image_capacity(to_division_id, season_id, team_name)
+        await self.guard_move(to_division_id, season_id, team_name)
 
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
-                (driver_profile_id,),
-            )
-            row = await cursor.fetchone()
-            if row is None:
-                raise ValueError("Driver profile not found.")
-            is_test_driver = bool(row["is_test_driver"])
-
-            cursor = await db.execute(
-                """
-                SELECT dsa.id, dsa.team_seat_id, dsa.committed, ti.name AS team_name,
-                       ti.full_name AS team_full_name
-                FROM driver_season_assignments dsa
-                LEFT JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
-                WHERE dsa.driver_profile_id = ? AND dsa.season_id = ? AND dsa.division_id = ?
-                """,
-                (driver_profile_id, season_id, from_division_id),
-            )
-            source = await cursor.fetchone()
-            if source is None:
-                raise ValueError("Driver holds no seat in the division they are moved from.")
-            if not source["committed"]:
-                raise ValueError(
-                    "That placement is not yet confirmed. Change it with `/driver unassign` "
-                    "and `/driver assign`."
-                )
-            if from_division_id == to_division_id and source["team_name"] == team_name:
-                raise ValueError(f"Driver already sits in **{team_name}** in this division.")
-            if from_division_id != to_division_id:
-                cursor = await db.execute(
-                    "SELECT 1 FROM driver_season_assignments "
-                    "WHERE driver_profile_id = ? AND season_id = ? AND division_id = ?",
-                    (driver_profile_id, season_id, to_division_id),
-                )
-                if await cursor.fetchone() is not None:
-                    raise ValueError(
-                        "Driver already holds a seat in the division they would move into."
-                    )
-
-            new_seat_id, _ = await self._free_seat(db, to_division_id, team_name)
-            to_team_full_name = await self._team_full_name(db, to_division_id, team_name)
-
-            cursor = await db.execute(
-                "SELECT id, name, mention_role_id FROM divisions WHERE id IN (?, ?)",
-                (from_division_id, to_division_id),
-            )
-            divisions = {r["id"]: r for r in await cursor.fetchall()}
-
-            await db.execute(
-                "UPDATE team_seats SET driver_profile_id = NULL WHERE id = ?",
-                (source["team_seat_id"],),
-            )
-            await db.execute(
-                "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
-                (driver_profile_id, new_seat_id),
-            )
-            if from_division_id == to_division_id:
-                await db.execute(
-                    "UPDATE driver_season_assignments SET team_seat_id = ? WHERE id = ?",
-                    (new_seat_id, source["id"]),
-                )
-            else:
-                # A placement in the division left goes with the seat; the points already
-                # scored there stay in that division's results, which is where they count.
-                await db.execute(
-                    "UPDATE driver_season_assignments "
-                    "SET division_id = ?, team_seat_id = ?, current_position = 0, "
-                    "    current_points = 0, points_gap_to_first = 0 "
-                    "WHERE id = ?",
-                    (to_division_id, new_seat_id, source["id"]),
-                )
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, 'DRIVER_MOVE', ?, ?, ?)",
-                (
-                    acting_user_id, acting_user_name, to_division_id,
-                    json.dumps({"division": divisions[from_division_id]["name"],
-                                "team": source["team_name"]}),
-                    json.dumps({"division": divisions[to_division_id]["name"],
-                                "team": team_name}),
-                    datetime.now(timezone.utc).isoformat(),
-                ),
+            summary = await self.move_on(
+                db, driver_profile_id=driver_profile_id, season_id=season_id,
+                from_division_id=from_division_id, to_division_id=to_division_id,
+                team_name=team_name, acting_user_id=acting_user_id,
+                acting_user_name=acting_user_name,
             )
             await db.commit()
 
-            # Which team roles the driver still holds a seat for, now the move is written.
-            cursor = await db.execute(
-                """
-                SELECT DISTINCT ti.name FROM driver_season_assignments dsa
-                JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                JOIN team_instances ti ON ti.id = ts.team_instance_id
-                WHERE dsa.driver_profile_id = ? AND dsa.season_id = ?
-                """,
-                (driver_profile_id, season_id),
-            )
-            teams_held = {r["name"] for r in await cursor.fetchall()}
-
-        if guild is not None and not is_test_driver:
+        if guild is not None and not summary["is_test_driver"]:
             member = guild.get_member(int(discord_user_id))
             if member is None:
                 try:
@@ -1343,35 +1445,13 @@ class PlacementService:
                 except discord.HTTPException:
                     member = None
             if member is not None:
-                old_cfg = (
-                    await self.get_team_role_config(source["team_name"])
-                    if source["team_name"] else None
-                )
-                new_cfg = await self.get_team_role_config(team_name)
-                held_role_ids = set()
-                for held in teams_held:
-                    cfg = await self.get_team_role_config(held)
-                    if cfg is not None:
-                        held_role_ids.add(cfg.role_id)
-                revoke: list[int] = []
-                if from_division_id != to_division_id:
-                    revoke.append(divisions[from_division_id]["mention_role_id"])
-                if old_cfg is not None and old_cfg.role_id not in held_role_ids:
-                    revoke.append(old_cfg.role_id)
-                if revoke:
-                    await self._revoke_roles(member, *revoke)
-                grant = [divisions[to_division_id]["mention_role_id"]]
-                if new_cfg is not None:
-                    grant.append(new_cfg.role_id)
-                await self._grant_roles(member, *grant)
+                if summary["revoke"]:
+                    await self._revoke_roles(member, *summary["revoke"])
+                await self._grant_roles(member, *summary["grant"])
 
         return {
-            "from_division": divisions[from_division_id]["name"],
-            "to_division": divisions[to_division_id]["name"],
-            "from_team": source["team_full_name"] or source["team_name"],
-            "to_team": to_team_full_name,
-            # The lineups the move touched, for the caller to ask the change queue for (#439).
-            "lineups": list(dict.fromkeys((from_division_id, to_division_id))),
+            key: summary[key]
+            for key in ("from_division", "to_division", "from_team", "to_team", "lineups")
         }
 
     async def assign_driver(
@@ -1805,38 +1885,40 @@ class PlacementService:
             return
 
         async with get_connection(self._db_path) as db:
-            # Division role IDs
-            cursor = await db.execute(
-                """
-                SELECT DISTINCT d.mention_role_id
-                FROM driver_season_assignments dsa
-                JOIN divisions d ON d.id = dsa.division_id
-                WHERE dsa.driver_profile_id = ? AND dsa.season_id = ?
-                """,
-                (driver_profile_id, season_id),
-            )
-            div_role_rows = await cursor.fetchall()
-
-            # Team role IDs (via team_role_configs keyed on team name)
-            cursor = await db.execute(
-                """
-                SELECT DISTINCT trc.role_id
-                FROM driver_season_assignments dsa
-                JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                JOIN team_instances ti ON ti.id = ts.team_instance_id
-                JOIN team_role_configs trc
-                    ON trc.team_name = ti.name
-                WHERE dsa.driver_profile_id = ? AND dsa.season_id = ?
-                """,
-                (driver_profile_id, season_id),
-            )
-            team_role_rows = await cursor.fetchall()
-
-        all_role_ids = {r["mention_role_id"] for r in div_role_rows} | {
-            r["role_id"] for r in team_role_rows
-        }
+            all_role_ids = await self._placement_role_ids_on(db, driver_profile_id, season_id)
         if all_role_ids:
             await self._revoke_roles(member, *all_role_ids)
+
+    @staticmethod
+    async def _placement_role_ids_on(db, driver_profile_id: int, season_id: int) -> set[int]:
+        """The division and team roles of the driver's placements in the season, read on *db*."""
+        cursor = await db.execute(
+            """
+            SELECT DISTINCT d.mention_role_id
+            FROM driver_season_assignments dsa
+            JOIN divisions d ON d.id = dsa.division_id
+            WHERE dsa.driver_profile_id = ? AND dsa.season_id = ?
+            """,
+            (driver_profile_id, season_id),
+        )
+        div_role_rows = await cursor.fetchall()
+        # Team role IDs (via team_role_configs keyed on team name)
+        cursor = await db.execute(
+            """
+            SELECT DISTINCT trc.role_id
+            FROM driver_season_assignments dsa
+            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN team_role_configs trc
+                ON trc.team_name = ti.name
+            WHERE dsa.driver_profile_id = ? AND dsa.season_id = ?
+            """,
+            (driver_profile_id, season_id),
+        )
+        team_role_rows = await cursor.fetchall()
+        return {r["mention_role_id"] for r in div_role_rows} | {
+            r["role_id"] for r in team_role_rows
+        }
 
     # ------------------------------------------------------------------
     # A driver's roles follow their current account (issue #243)
@@ -1944,6 +2026,103 @@ class PlacementService:
     # Sack driver (T015)
     # ------------------------------------------------------------------
 
+    async def sack_on(
+        self,
+        db,
+        *,
+        driver_profile_id: int,
+        season_id: int,
+        acting_user_id: int,
+        acting_user_name: str,
+    ) -> SackSaved:
+        """Sack a committed driver on *db*: free every seat, return to Not Signed Up, audit it.
+
+        Everything `sack_driver` writes, written on the connection handed and committed by no
+        one here, so a sanction's save carries the sack with the rest of its writes (#439). It
+        awaits nothing but *db*: no member is fetched and no role asked of Discord. The roles to
+        take back are read **before** the placements go, since the placements are what they are
+        computed from, and handed back in the result for a job of its own to take.
+
+        Raises ValueError where the profile is not found, is neither Unassigned nor Assigned, or
+        holds no confirmed placement in the season.
+        """
+        cursor = await db.execute(
+            "SELECT discord_user_id, current_state, former_driver, is_test_driver "
+            "FROM driver_profiles WHERE id = ?",
+            (driver_profile_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise ValueError("Driver profile not found.")
+        current_state = DriverState(row["current_state"])
+        former_driver = bool(row["former_driver"])
+        is_test_driver: bool = bool(row["is_test_driver"])
+        if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
+            raise ValueError(
+                f"Driver must be Unassigned or Assigned to be sacked "
+                f"(current state: {current_state.value})."
+            )
+
+        cursor = await db.execute(
+            "SELECT division_id, committed FROM driver_season_assignments "
+            "WHERE driver_profile_id = ? AND season_id = ?",
+            (driver_profile_id, season_id),
+        )
+        asgn_rows = await cursor.fetchall()
+        if not any(r["committed"] for r in asgn_rows):
+            raise ValueError(
+                "Only a driver whose placement is confirmed can be sacked. Remove an "
+                "unconfirmed placement with `/driver unassign`, and turn down an "
+                "Unassigned driver with `/driver reject`."
+            )
+        division_ids = [r["division_id"] for r in asgn_rows]
+
+        revoke: set[int] = set()
+        if not is_test_driver:
+            revoke = await self._placement_role_ids_on(db, driver_profile_id, season_id)
+            # The driver role granted at approval is not a placement role.
+            cur = await db.execute("SELECT driver_role_id FROM server_configs")
+            cfg_row = await cur.fetchone()
+            if cfg_row and cfg_row["driver_role_id"]:
+                revoke.add(int(cfg_row["driver_role_id"]))
+
+        # The seats of this season alone: a former driver's seats in a completed season
+        # are the archive, which a sack never changes.
+        await db.execute(
+            "UPDATE team_seats SET driver_profile_id = NULL "
+            "WHERE driver_profile_id = ? AND team_instance_id IN ("
+            "    SELECT ti.id FROM team_instances ti "
+            "    JOIN divisions d ON d.id = ti.division_id WHERE d.season_id = ?)",
+            (driver_profile_id, season_id),
+        )
+        await db.execute(
+            "DELETE FROM driver_season_assignments "
+            "WHERE driver_profile_id = ? AND season_id = ?",
+            (driver_profile_id, season_id),
+        )
+        await write_transition(db, driver_profile_id, current_state, DriverState.NOT_SIGNED_UP)
+        await db.execute(
+            "INSERT INTO audit_entries "
+            "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+            "VALUES (?, ?, NULL, 'DRIVER_SACK', ?, ?, ?)",
+            (
+                acting_user_id,
+                acting_user_name,
+                json.dumps({"state": current_state.value, "divisions": division_ids}),
+                json.dumps({
+                    "new_state": DriverState.NOT_SIGNED_UP.value,
+                    "former_driver": former_driver,
+                }),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        return SackSaved(
+            divisions=list(division_ids),
+            revoke_role_ids=sorted(revoke),
+            user_id=int(row["discord_user_id"]),
+            is_test_driver=is_test_driver,
+        )
+
     async def sack_driver(
         self,
         driver_profile_id: int,
@@ -1965,20 +2144,20 @@ class PlacementService:
         deleted by the driver pass that ends the season. Their attendance, results and
         standings rows are therefore kept, and so is every signup they made.
 
-        The season's placements are removed, so the driver holds no seat and gains no history
-        entry for the season. Raises ValueError for blocking conditions.
+        The season's placements are removed (`sack_on`), so the driver holds no seat and gains
+        no history entry for the season. The roles are revoked first, swallowing Discord's
+        refusals: this is the `/driver` command's, which keeps that until core's design pass;
+        a sanction's own role change raises instead. Raises ValueError for blocking conditions.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT current_state, former_driver, is_test_driver FROM driver_profiles "
-                "WHERE id = ?",
+                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
                 (driver_profile_id,),
             )
             row = await cursor.fetchone()
             if row is None:
                 raise ValueError("Driver profile not found.")
             current_state = DriverState(row["current_state"])
-            former_driver = bool(row["former_driver"])
             is_test_driver: bool = bool(row["is_test_driver"])
             if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
                 raise ValueError(
@@ -1987,19 +2166,16 @@ class PlacementService:
                 )
 
             cursor = await db.execute(
-                "SELECT division_id, committed FROM driver_season_assignments "
+                "SELECT committed FROM driver_season_assignments "
                 "WHERE driver_profile_id = ? AND season_id = ?",
                 (driver_profile_id, season_id),
             )
-            asgn_rows = await cursor.fetchall()
-            if not any(r["committed"] for r in asgn_rows):
+            if not any(r["committed"] for r in await cursor.fetchall()):
                 raise ValueError(
                     "Only a driver whose placement is confirmed can be sacked. Remove an "
                     "unconfirmed placement with `/driver unassign`, and turn down an "
                     "Unassigned driver with `/driver reject`."
                 )
-            division_ids = [r["division_id"] for r in asgn_rows]
-            now = datetime.now(timezone.utc).isoformat()
 
         # Revoke all roles before DB mutation: the placements are what they are computed from.
         member = guild.get_member(int(discord_user_id))
@@ -2021,41 +2197,13 @@ class PlacementService:
                     await self._revoke_roles(member, driver_role.id)
 
         async with get_connection(self._db_path) as db:
-            # The seats of this season alone: a former driver's seats in a completed season
-            # are the archive, which a sack never changes.
-            await db.execute(
-                "UPDATE team_seats SET driver_profile_id = NULL "
-                "WHERE driver_profile_id = ? AND team_instance_id IN ("
-                "    SELECT ti.id FROM team_instances ti "
-                "    JOIN divisions d ON d.id = ti.division_id WHERE d.season_id = ?)",
-                (driver_profile_id, season_id),
-            )
-            await db.execute(
-                "DELETE FROM driver_season_assignments "
-                "WHERE driver_profile_id = ? AND season_id = ?",
-                (driver_profile_id, season_id),
-            )
-            await write_transition(
-                db, driver_profile_id, current_state, DriverState.NOT_SIGNED_UP
-            )
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'DRIVER_SACK', ?, ?, ?)",
-                (
-                    acting_user_id,
-                    acting_user_name,
-                    json.dumps({"state": current_state.value, "divisions": division_ids}),
-                    json.dumps({
-                        "new_state": DriverState.NOT_SIGNED_UP.value,
-                        "former_driver": former_driver,
-                    }),
-                    now,
-                ),
+            saved = await self.sack_on(
+                db, driver_profile_id=driver_profile_id, season_id=season_id,
+                acting_user_id=acting_user_id, acting_user_name=acting_user_name,
             )
             await db.commit()
 
-        return list(division_ids)
+        return saved.divisions
 
     # ------------------------------------------------------------------
     # Division resolution helper (used by cogs)
