@@ -854,6 +854,42 @@ async def test_the_season_s_arming_cannot_be_discarded_and_once_retried_arms_eve
     assert "timed work was not armed" not in reply(press)
 
 
+#: The refusal of a Discard on letting go of the setup held in memory.
+CANNOT_DISCARD_FORGET = (
+    "⛔ This job can't be discarded: without it the bot would go on holding season 3's setup, and "
+    "`/round amend` would refuse its rounds until the bot restarts. Fix what stopped it and press "
+    "**Retry**."
+)
+FORGET_UNDISCARDABLE = "#439: letting go of an approved season's setup may still be discarded"
+
+
+@pytest.mark.xfail(strict=True, reason=FORGET_UNDISCARDABLE)
+async def test_letting_go_of_the_setup_cannot_be_discarded(tmp_path, monkeypatch):
+    """Letting go of the setup the bot holds in memory fails once season 3 is saved and stops the
+    queue. A league admin's Discard on it is refused, saying the bot would go on holding season
+    3's setup and `/round amend` would refuse its rounds until it restarts; the queue stays
+    stopped there. Once the fault is lifted, Retry lets the setup go and the approval goes on."""
+    league = await _league_for(tmp_path, monkeypatch, results=True)
+    press = await _pressed(league)
+    await _fail_forget(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "forget_setup"
+
+    discarding = await discard_job(league.bot)
+
+    assert CANNOT_DISCARD_FORGET in _said_to(discarding)
+    assert await _stopped_at(league) == "forget_setup"
+    assert league.cog._get_pending() is not None
+
+    del league.cog.clear_pending
+    await retry_job(league.bot)
+
+    assert league.cog._get_pending() is None
+    assert await stopped_job(league.db_path) is None
+    assert APPROVED in reply(press)
+    assert "could not be let go of" not in reply(press)
+
+
 async def test_the_setup_held_in_memory_is_let_go_of_once_the_season_is_saved(
     tmp_path, monkeypatch,
 ):
@@ -1455,11 +1491,10 @@ async def _fail_sheet(league: Any) -> None:
     _refused(league, PRO_CH.attendance)
 
 
-#: Each job after the save, made to fail; the line naming it once discarded. The arming is not
-#: among them: it cannot be discarded (#439, slice 4b, amendment A).
+#: Each job after the save, made to fail; the line naming it once discarded. Neither the arming
+#: nor the letting go of the setup is among them: neither can be discarded (#439, slice 4b,
+#: amendment A; slice 8).
 _DISCARDED = {
-    "forget_setup": (_fail_forget, "The setup the bot held in memory could not be let go of: "
-                     "`/round amend` may refuse this season until the bot restarts."),
     "grant_roles": (_fail_grant, f"<@{LEWIS}> — their roles could not be granted. Give them "
                     "their division's and team's roles by hand."),
     "post_batch_notice": (_fail_the_notice_post, "The notice that the season's posts were being "
