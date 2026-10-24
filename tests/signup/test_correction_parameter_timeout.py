@@ -514,3 +514,83 @@ async def test_the_lapse_itself_cannot_be_discarded(tmp_path):
     assert await _state(league) == "PENDING_ADMIN_APPROVAL"
     assert len(_review_panels_standing(league)) == 1
     assert CORRECTION_LAPSE in league.log(), league.log()
+
+
+# ── A lapse whose signup channel is gone (#439, slice 8, F1) ───────────────
+
+#: The lapse does not yet end a signup whose channel is gone, nor stop where the server is not
+#: in the cache (#439, slice 8, F1).
+LAPSE_CHANNEL_GONE_UNBUILT = "#439: a lapse whose signup channel is gone still passes it over"
+#: The line the ending writes in the log channel, naming Kimi and his gone channel.
+CHANNEL_GONE_LINE = (
+    f"Kimi (`<@{SIGNING_UP}>`) | Signup | Ended\n  channel: <#{KIMI_CHANNEL}>\n  Their signup "
+    "channel was gone when their review panel was due, so their signup ended. They may press "
+    "Sign Up again while signups are open."
+)
+#: What the lapse's own record says of a gone channel.
+LAPSE_CHANNEL_GONE = (
+    "Kimi's signup channel was gone, so no fresh review panel could be posted and their signup "
+    "is ended."
+)
+
+
+@pytest.mark.xfail(strict=True, reason=LAPSE_CHANNEL_GONE_UNBUILT)
+async def test_a_lapse_whose_channel_is_gone_ends_the_signup(tmp_path):
+    """Manager 77 asked for a correction of Kimi's signup, and Kimi's signup channel 6405 is then
+    deleted. The five minutes run out and the queue runs: the lapse returns Kimi to the approval
+    queue, finds his channel gone, posts nothing and asks the ending of his signup, so he is Not
+    Signed Up, his wizard Unengaged. The lapse's record in the log channel says his signup
+    channel was gone, so no fresh review panel could be posted and his signup is ended, and the
+    ending is written once, naming Kimi and the channel. The queue is not stopped."""
+    league = await _league(tmp_path)
+    gone = league.channel(KIMI_CHANNEL)
+    league.remove_channel(KIMI_CHANNEL)
+
+    await _fire_the_timer(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _state(league) == "NOT_SIGNED_UP"
+    [wizard] = await league.rows(
+        "SELECT wizard_state FROM signup_wizard_records WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    assert wizard["wizard_state"] == "UNENGAGED"
+    gone.send.assert_not_awaited()
+    log = league.log()
+    assert LAPSE_CHANNEL_GONE in log, log
+    assert "a fresh review panel is in their channel" not in log
+    assert log.count(CHANNEL_GONE_LINE) == 1, log
+
+
+@pytest.mark.xfail(strict=True, reason=LAPSE_CHANNEL_GONE_UNBUILT)
+async def test_a_lapse_whose_server_is_out_of_cache_stops_rather_than_passing_the_driver_over(
+    tmp_path,
+):
+    """Kimi's correction lapses and the lapse returns him to the approval queue, but when its
+    notice is due the league's server is missing from the bot's cache, so his channel cannot be
+    looked for. The queue stops at `post_lapse`: Kimi awaits approval, his signup is not ended,
+    nothing is posted in his channel and no lapse is recorded yet. Once the server is back, a
+    Retry tells his channel the correction lapsed, posts one review panel, and records the lapse
+    naming manager 77 and saying a fresh review panel is in his channel."""
+    league = await _league(tmp_path)
+
+    await _fire_the_timer(league)
+    await run_queue(league.bot, steps=2)
+    league.bot.get_guild.return_value = None
+    await run_queue(league.bot)
+
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "post_lapse"
+    assert await _state(league) == "PENDING_ADMIN_APPROVAL"
+    assert not [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
+    assert _posted(league) == ""
+    assert "lapsed" not in league.log()
+
+    league.bot.get_guild.return_value = league.guild
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert f"<@{REVIEWER}>" in _posted(league)
+    assert len(_review_panels_standing(league)) == 1
+    assert CORRECTION_LAPSE in league.log(), league.log()
