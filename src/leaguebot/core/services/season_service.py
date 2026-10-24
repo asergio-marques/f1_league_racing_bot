@@ -1648,6 +1648,24 @@ async def live_season(db_path: str) -> Season | None:
     return _row_to_season(row)
 
 
+async def round_called(db_path: str, round_id: int) -> str:
+    """How a league reads *round_id*: "round 3 in **Pro**", or "a round no longer there".
+
+    For the refusal of a Discard, which names the round whose job would be dropped. It reads the
+    round at the press, and a round deleted meanwhile is named so rather than failing the refusal.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.round_number, d.name FROM rounds r "
+            "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return "a round no longer there"
+    return f"round {row['round_number']} in **{row['name']}**"
+
+
 # ------------------------------------------------------------------
 # Row mappers
 # ------------------------------------------------------------------

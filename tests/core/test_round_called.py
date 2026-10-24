@@ -12,8 +12,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
-UNBUILT = "#439: season_service has no round_called yet"
-
 SEASON_ID = 7
 DIVISION_ID = 11
 ROUND_ID = 21
@@ -43,7 +41,6 @@ async def _make_db(tmp_path) -> str:
     return db_path
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_round_is_called_by_its_number_and_its_division(tmp_path):
     """Round 3 of Pro is named "round 3 in **Pro**"."""
     from leaguebot.core.services.season_service import round_called
@@ -53,7 +50,6 @@ async def test_a_round_is_called_by_its_number_and_its_division(tmp_path):
     assert await round_called(db_path, ROUND_ID) == "round 3 in **Pro**"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_round_no_longer_there_is_called_so(tmp_path):
     """A round id the database no longer holds is named "a round no longer there"."""
     from leaguebot.core.services.season_service import round_called
