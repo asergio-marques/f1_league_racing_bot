@@ -81,16 +81,6 @@ class AttendanceAfterReview(Protocol):
         A driver already sanctioned is not listed, so a sanction tried again applies only what
         is owed."""
 
-    async def apply_sanction(
-        self, round_id: int, division_id: int, candidate: dict[str, Any],
-        actor: discord.abc.User | None,
-    ) -> str | None:
-        """Apply one candidate's sanction as *actor* (None is the bot), and return its log line,
-        which it does not post: the job carries it, so the queue writes it with the job's mark.
-        None where attendance is off, and only there, so None tells the job nothing was applied.
-        Raises where it does not apply: a division with no Reserve team, or a role change Discord
-        refuses."""
-
     async def check_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any]
     ) -> None:

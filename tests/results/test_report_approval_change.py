@@ -83,10 +83,6 @@ from tests.results.test_review_open_change import _refuse_the_job
 KIND = "results.reports.approve"
 
 #: What is not yet true of a sanction's jobs (#439, Part C).
-SANCTION_SAVE_UNBUILT = (
-    "#439: a sanction is applied in an ACT through the hook's apply_sanction, which commits on its "
-    "own connection, rather than in a SAVE on the queue's connection"
-)
 SANCTION_ROLE_JOBS_UNBUILT = (
     "#439: a sanction's roles are changed inside its apply, swallowing Discord's refusal, with no "
     "check of an autoreserve ahead of it and no role job of its own"
@@ -668,7 +664,6 @@ async def test_a_discarded_batch_notice_is_named_and_the_republication_goes_ahea
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_ROLE_JOBS_UNBUILT)
 async def test_each_driver_over_a_threshold_is_sanctioned_and_announced_in_jobs_of_their_own(
     tmp_path,
 ):
@@ -988,7 +983,6 @@ def _apply_ctx(league: ReviewLeague) -> Any:
     return ctx
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_SAVE_UNBUILT)
 @pytest.mark.parametrize("applied, then", [
     (None, []),
     ({"line": "ATTENDANCE_AUTORESERVE | x",
@@ -1018,7 +1012,6 @@ async def test_a_sanction_the_hook_did_not_apply_plans_no_heading(tmp_path, appl
     assert [planned.name for planned in result.then] == then
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_SAVE_UNBUILT)
 async def test_a_fault_working_out_the_cards_heading_rolls_the_sanction_back(
     tmp_path, monkeypatch,
 ):
@@ -1186,7 +1179,6 @@ async def test_a_retried_sanction_run_applies_only_what_is_owed(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_ROLE_JOBS_UNBUILT)
 async def test_a_sanction_s_roles_are_a_job_of_their_own_between_its_save_and_its_card(tmp_path):
     """Max is owed an autoreserve in Pro. Alex approves round 3's reports: Max's sanction is saved
     by one job, his roles are changed by the next (his team's role taken, the Reserve team's
@@ -1280,7 +1272,6 @@ async def test_a_discarded_role_change_names_the_roles_to_change_by_hand_and_the
         assert line in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_ROLE_JOBS_UNBUILT)
 async def test_an_autoreserve_is_checked_before_it_is_saved(tmp_path):
     """Lewis is owed an autosack and Max an autoreserve in Pro. Alex approves round 3's reports:
     Max's move to the Reserve team is checked by a job of its own ahead of the job that saves it;
@@ -1329,7 +1320,6 @@ async def test_a_discarded_check_leaves_the_autoreserve_unapplied_and_named_with
     assert f"The autoreserve of <@{MAX}> was not applied" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_ROLE_JOBS_UNBUILT)
 async def test_a_test_driver_s_sanction_plans_no_role_job(tmp_path):
     """Max, a test driver with no roles to change, is owed an autoreserve in Pro. Alex approves
     round 3's reports: his sanction is saved and his card posted, and no role job is planned."""
@@ -1347,7 +1337,6 @@ async def test_a_test_driver_s_sanction_plans_no_role_job(tmp_path):
     assert league.attendance._calls("announce_sanction") == [("announce_sanction", MAX_PROFILE)]
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_ROLE_JOBS_UNBUILT)
 async def test_a_restart_between_a_sanction_s_save_and_its_roles_changes_the_roles_from_the_job(
     tmp_path,
 ):
@@ -1595,7 +1584,7 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
 
 
 @pytest.mark.parametrize("case", [
-    pytest.param("applied", marks=pytest.mark.xfail(strict=True, reason=SANCTION_ROLE_JOBS_UNBUILT)),
+    "applied",
     "discarded",
 ])
 async def test_an_autosack_s_other_division_has_its_lineup_posted_as_a_job(tmp_path, case):

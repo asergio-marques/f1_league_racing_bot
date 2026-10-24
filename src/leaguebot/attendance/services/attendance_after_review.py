@@ -128,21 +128,6 @@ class AttendanceAfterReview:
         owed, _signed_off = await _att.owed_sanctions(self._db_path, round_id, division_id)
         return owed
 
-    async def apply_sanction(
-        self, round_id: int, division_id: int, candidate: dict[str, Any],
-        actor: discord.abc.User | None,
-    ) -> str | None:
-        if not await self.enabled():
-            return None
-        try:
-            return await _att.apply_sanction(
-                self._bot, await self._guild(), self._db_path, self._placement, round_id,
-                division_id, candidate, actor=actor, post_line=False,
-            )
-        except _att.SanctionNotApplicable as error:
-            # Worded as a failure the queue stops on, so its notice names what to repair.
-            raise StepFailedOnDiscord(str(error)) from None
-
     async def check_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any]
     ) -> None:

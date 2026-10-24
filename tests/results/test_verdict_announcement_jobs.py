@@ -580,21 +580,13 @@ async def _no_reserve_team(league: ReviewLeague) -> None:
     league.channels[ATTENDANCE_CHANNEL] = channel(ATTENDANCE_CHANNEL, league.events)
 
 
-#: What is not yet true of a sanction's check (#439, Part C).
-SANCTION_CHECK_UNBUILT = (
-    "#439: an autoreserve has no check of its own ahead of its save, so the queue stops at "
-    "apply_sanction"
-)
-
-
 @pytest.mark.parametrize(
     "seed, job, reason, fault",
     [
         pytest.param(_no_attendance_channel, "attendance_sheet", "is not in the server",
                      "StepFailedOnDiscord", id="sheet"),
         pytest.param(_no_reserve_team, "check_sanction", "the division has no Reserve team",
-                     "SanctionNotApplicable", id="sanction",
-                     marks=pytest.mark.xfail(strict=True, reason=SANCTION_CHECK_UNBUILT)),
+                     "SanctionNotApplicable", id="sanction"),
     ],
 )
 async def test_a_sheet_or_sanction_stop_names_what_to_repair(tmp_path, seed, job, reason, fault):
