@@ -789,8 +789,10 @@ class SchedulerService:
         else:
             log.info("Skipping %s — fire time %s is in the past", cleanup_job_id, cleanup_fire_at.isoformat())
 
-    def cancel_round(self, round_id: int, *, only: frozenset[str] | None = None) -> None:
-        """Remove scheduler jobs belonging to *round_id*.
+    def cancel_round(self, round_id: int, *, only: frozenset[str] | None = None) -> list[str]:
+        """Remove scheduler jobs belonging to *round_id*, and give the ids of those that went.
+
+        The ids let a cancellation refused afterwards know what it took and arm it again (#439).
 
         Iterates the live jobstore and removes every job whose ``round_id``
         kwarg matches.  This is format-agnostic and works with both the
@@ -806,6 +808,7 @@ class SchedulerService:
                 A job whose ID does not carry the round suffix is left alone
                 while *only* is in force, since its owner cannot be read.
         """
+        removed: list[str] = []
         for job in self._scheduler.get_jobs():
             if job.kwargs.get("round_id") != round_id:
                 continue
@@ -815,9 +818,14 @@ class SchedulerService:
                     continue
             if self._remove_job(job.id):
                 log.info("Removed job %s", job.id)
+                removed.append(job.id)
+        return removed
 
-    def cancel_rounds(self, round_ids: Iterable[int], *, season_end: bool = False) -> None:
+    def cancel_rounds(self, round_ids: Iterable[int], *, season_end: bool = False) -> dict[int, list[str]]:
         """Remove the scheduler jobs of every round in *round_ids* in one pass.
+
+        Gives the ids of the jobs removed, by round; a round that had none is left out, and so
+        is a ``season_end*`` job taken with *season_end*.
 
         The store is listed once, before anything is removed, and that listing is the only call
         that can raise: a store that cannot be read removes nothing, so a division's or a
@@ -826,11 +834,16 @@ class SchedulerService:
         any stale ``season_end*`` job the store still carries goes in the same pass.
         """
         wanted = set(round_ids)
+        removed: dict[int, list[str]] = {}
         jobs = list(self._scheduler.get_jobs())
         for job in jobs:
-            if job.kwargs.get("round_id") in wanted or (season_end and job.id.startswith("season_end")):
+            round_id = job.kwargs.get("round_id")
+            if round_id in wanted or (season_end and job.id.startswith("season_end")):
                 if self._remove_job(job.id):
                     log.info("Removed job %s", job.id)
+                    if round_id in wanted:
+                        removed.setdefault(round_id, []).append(job.id)
+        return removed
 
     async def cancel_all_weather(self) -> None:
         """Cancel the weather module's jobs for every round in active/setup seasons.

@@ -150,11 +150,6 @@ def test_cancel_rounds_takes_the_season_end_job_in_the_same_pass():
     assert service._scheduler.get_jobs.call_count == 1
 
 
-#: The cancels do not yet give the jobs they removed (#439, slice 8, F2).
-REMOVED_IDS_UNBUILT = "#439: cancel_round and cancel_rounds do not yet give the jobs they removed"
-
-
-@pytest.mark.xfail(strict=True, reason=REMOVED_IDS_UNBUILT)
 def test_cancel_round_gives_the_jobs_it_removed():
     """Round 5 carries its results submission and its clean-up, and round 6 its results
     submission. Cancelling round 5 gives the two jobs it removed, so that a refused cancellation
@@ -167,7 +162,6 @@ def test_cancel_round_gives_the_jobs_it_removed():
     assert sorted(removed) == ["cleanup_r5", "results_r5"]
 
 
-@pytest.mark.xfail(strict=True, reason=REMOVED_IDS_UNBUILT)
 def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_the_season_end():
     """Rounds 5 and 6 each carry two jobs, round 7 one, and a stale season-end job stands. A
     season's cancellation of rounds 5 and 6, the season-end job with them, gives the jobs it
