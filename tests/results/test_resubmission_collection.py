@@ -58,6 +58,7 @@ from tests.support.change_queue import (
     MEMBER_ID,
     acknowledgement,
     member_interaction,
+    queued_log_lines,
     retry_job,
     run_queue,
     tier_member,
@@ -318,6 +319,29 @@ async def test_a_resubmitted_paste_is_refused_while_another_round_is_amended(
     await _type(league, QUALI_PASTE)
 
     assert await _drafts(league) == [(QUALIFYING_TYPE.value, "ACTIVE")]
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439: a resubmitted paste held by an amendment writes no line to the log",
+)
+async def test_a_resubmitted_paste_held_by_an_amendment_is_logged(tmp_path, monkeypatch):
+    """Round 2 of Pro is being amended when Alex types Qualifying for round 3's resubmission:
+    the paste is refused, and one `RESULT_SUBMISSION_REJECTED` line is logged naming season 1,
+    Pro, round 3 and the qualifying, the amendment as the reason, and the paste as typed
+    (results :261)."""
+    league = await _reviewing(tmp_path, monkeypatch)
+    await _press_resubmit(league)
+    await _open_amendment(league)
+
+    await _type(league, QUALI_PASTE)
+
+    logged = [*await queued_log_lines(league.db_path), *league.bot.log_channel.sent]
+    [line] = [line.replace("`<@", "<@").replace(">`", ">") for line in logged
+              if "RESULT_SUBMISSION_REJECTED" in line]
+    assert "season: 1, division: 'Pro'" in line, line
+    assert f"round: 3, session: {QUALIFYING_TYPE.value}" in line, line
+    assert "reason:" in line and "is being amended" in line, line
+    assert QUALI_PASTE in line, line
 
 
 async def test_the_last_paste_refused_leaves_the_earlier_results_standing(tmp_path, monkeypatch):

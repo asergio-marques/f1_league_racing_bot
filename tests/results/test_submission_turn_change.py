@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.services import result_submission_service
 from leaguebot.results.services.result_submission_service import (
     DivisionValidationData,
@@ -47,6 +48,7 @@ from tests.support.season_league import (
     DIVISIONS,
     LEWIS,
     PRO,
+    SEASON_NUMBER,
     SUBMISSION_CHANNEL,
     SeasonLeague,
     accept_session,
@@ -145,12 +147,35 @@ async def test_a_paste_is_marked_at_once_and_saved_with_the_next_prompt_when_its
     assert MARK not in paste.marks
 
 
+REFUSED_UNLOGGED = "#439: a results paste refused at its turn writes no line to the log channel"
+TURN_AWAY_SEASON_UNBUILT = "#439: the turn-away line does not name the season"
+
+
+async def _refused_lines(league: SeasonLeague) -> list[str]:
+    """Every `RESULT_SUBMISSION_REJECTED` line written to the log channel, queued or posted, its
+    mentions read without the backticks the log channel posts them in."""
+    lines = [*await queued_log_lines(league.db_path), *league.bot.log_channel.sent]
+    return [line.replace("`<@", "<@").replace(">`", ">") for line in lines
+            if "RESULT_SUBMISSION_REJECTED" in line]
+
+
+def _names_the_paste(line: str, *, reason: str, content: str,
+                     session: str = "FEATURE_QUALIFYING") -> None:
+    """*line* names season 3, Pro, round 3 and *session*, gives *reason* on a `reason:` line,
+    and quotes the paste *content* as typed."""
+    assert f"season: {SEASON_NUMBER}, division: 'Pro'" in line, line
+    assert f"round: 3, session: {session}" in line, line
+    assert "reason:" in line and reason in line, line
+    assert content in line, line
+
+
+@pytest.mark.xfail(strict=True, reason=TURN_AWAY_SEASON_UNBUILT)
 async def test_a_paste_while_its_turn_waits_is_turned_away_with_a_note(tmp_path, monkeypatch):
     """The admin pastes the qualifying, then the race before the queue has reached the first.
     The second is deleted at once and a note in the channel says the earlier message is still
-    waiting its turn; the refusal is logged, one ⛔ line naming the admin, round 3 and the
-    qualifying still waited on (results :257); only one turn is asked, and only the qualifying is
-    saved when it runs."""
+    waiting its turn; the refusal is logged, one ⛔ line naming the admin, season 3, round 3 and
+    the qualifying still waited on (results :257; README :1781); only one turn is asked, and only
+    the qualifying is saved when it runs."""
     league = await _league(tmp_path, monkeypatch)
 
     await _type(league, QUALI_PASTE)
@@ -162,6 +187,7 @@ async def test_a_paste_while_its_turn_waits_is_turned_away_with_a_note(tmp_path,
     assert logged.count("⛔") == 1, logged
     line = logged[logged.index("⛔"):]
     assert f"<@{ADMIN_ID}>" in line and "Round 3" in line and QUALIFYING in line, line
+    assert f"season {SEASON_NUMBER}" in line.lower(), line
     assert len(await _turns(league)) == 1
     await run_queue(league.bot)
     assert await _sessions(league) == [("FEATURE_QUALIFYING", "ACTIVE")]
@@ -267,13 +293,20 @@ async def test_a_refused_prompt_stops_the_queue_with_the_session_saved(tmp_path,
     assert await stopped_job(league.db_path, "league") is None
 
 
-@pytest.mark.parametrize("why", ["closed by a cancellation", "held by an amendment"])
+@pytest.mark.parametrize("why", [
+    pytest.param("closed by a cancellation",
+                 marks=pytest.mark.xfail(strict=True, reason=REFUSED_UNLOGGED)),
+    pytest.param("held by an amendment",
+                 marks=pytest.mark.xfail(strict=True, reason=REFUSED_UNLOGGED)),
+])
 async def test_a_paste_in_a_channel_held_by_an_amendment_or_closed_by_a_cancellation_is_refused_when_it_runs(
     tmp_path, monkeypatch, why,
 ):
     """The admin pastes the qualifying; before its turn comes, round 3's submission is closed by
     a cancellation, or round 2 of Pro is opened for amendment. When the turn runs nothing is
-    saved and no prompt is posted."""
+    saved and no prompt is posted, and one `RESULT_SUBMISSION_REJECTED` line is logged naming
+    season 3, Pro, round 3 and the qualifying, the reason the channel was given, and the paste
+    (results :261)."""
     league = await _league(tmp_path, monkeypatch)
 
     await _type(league, QUALI_PASTE)
@@ -291,6 +324,73 @@ async def test_a_paste_in_a_channel_held_by_an_amendment_or_closed_by_a_cancella
 
     assert await _sessions(league) == []
     assert "📋 Submit" not in _said(league)
+    [line] = await _refused_lines(league)
+    _names_the_paste(
+        line, content=QUALI_PASTE,
+        reason=("Round 3's results submission has been closed" if why == "closed by a cancellation"
+                else "Round 2 of this division is being amended"),
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=REFUSED_UNLOGGED)
+async def test_a_paste_whose_round_is_cancelled_before_its_turn_is_logged(tmp_path, monkeypatch):
+    """The admin pastes round 3's qualifying; before its turn comes, round 3 is cancelled. When
+    the turn runs nothing is saved, the channel is told the round has been cancelled, and one
+    `RESULT_SUBMISSION_REJECTED` line is logged naming season 3, Pro, round 3 and the qualifying,
+    with that reason and the paste (results :261)."""
+    league = await _league(tmp_path, monkeypatch)
+
+    await _type(league, QUALI_PASTE)
+    await league.write("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", ROUND_3)
+    await run_queue(league.bot)
+
+    assert await _sessions(league) == []
+    assert "Round 3 has been cancelled" in _said(league)
+    [line] = await _refused_lines(league)
+    _names_the_paste(line, content=QUALI_PASTE, reason="Round 3 has been cancelled")
+
+
+@pytest.mark.xfail(strict=True, reason=REFUSED_UNLOGGED)
+async def test_a_fastest_lap_override_refused_is_logged(tmp_path, monkeypatch):
+    """The qualifying is saved; the admin pastes the race with "FL: <@103>", Charles, who is not
+    among its finishers. When its turn comes nothing is saved, the channel is told the override is
+    not in the submitted results, and one `RESULT_SUBMISSION_REJECTED` line is logged naming
+    season 3, Pro, round 3 and the race, with the reason "FL override <@103> is not in the
+    submitted results" and the paste (results :261; owner Q-G3a)."""
+    league = await _league(tmp_path, monkeypatch)
+    await accept_session(league, ROUND_3, session="FEATURE_QUALIFYING")
+    paste = f"FL: <@103>\n{RACE_PASTE}"
+
+    await _type(league, paste)
+    await run_queue(league.bot)
+
+    assert ("FEATURE_RACE", "ACTIVE") not in await _sessions(league)
+    assert "FL override <@103> is not in the submitted results" in _said(league)
+    [line] = await _refused_lines(league)
+    _names_the_paste(
+        line, content=paste, session="FEATURE_RACE",
+        reason="FL override <@103> is not in the submitted results",
+    )
+
+
+async def test_the_validation_refusal_s_line_is_unchanged(tmp_path, monkeypatch):
+    """The admin pastes a qualifying naming Charles, who races in Am. The one
+    `RESULT_SUBMISSION_REJECTED` line logged when its turn comes reads as before: the admin, then
+    season 3 and 'Pro', round 3 and the qualifying, then the paste quoted, with no `reason:` line
+    (results :257)."""
+    league = await _league(tmp_path, monkeypatch)
+
+    await _type(league, OUTSIDER_PASTE)
+    await run_queue(league.bot)
+
+    [line] = await _refused_lines(league)
+    assert (
+        f"{member_named('Admin', ADMIN_ID)} | RESULT_SUBMISSION_REJECTED | \n"
+        f"  season: {SEASON_NUMBER}, division: 'Pro'\n"
+        "  round: 3, session: FEATURE_QUALIFYING\n"
+        f"  input:\n```\n{OUTSIDER_PASTE}\n```"
+    ) in line, line
+    assert "reason:" not in line, line
 
 
 
@@ -326,6 +426,38 @@ async def test_a_cancellation_saved_between_the_settling_and_the_save_saves_no_s
             "saved.") in _said(league)
     assert "📋 Submit" not in _said(league)
     assert await stopped_job(league.db_path) is None
+
+
+SAVE_REFUSAL_UNLOGGED = (
+    "#439: a session's save neither reads again whether its round was cancelled nor logs the "
+    "refusal"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=SAVE_REFUSAL_UNLOGGED)
+async def test_a_session_refused_at_its_save_for_a_cancellation_is_logged(tmp_path, monkeypatch):
+    """As above: round 3's qualifying is judged and settled, then a cancellation's save records
+    round 3 cancelled before the session's save runs. The save saves nothing, and one
+    `RESULT_SUBMISSION_REJECTED` line is logged naming season 3, Pro, round 3 and the qualifying,
+    with the reason that round 3 has been cancelled and the paste (results :261)."""
+    league = await _league(tmp_path, monkeypatch)
+
+    await _type(league, QUALI_PASTE)
+    for _ in range(50):
+        turns = await _turns(league)
+        if turns and any(job["name"] == "settle" and job["done_at"]
+                         for job in await step_rows(league.db_path, turns[0]["id"])):
+            break
+        await run_queue(league.bot, steps=1)
+    else:
+        raise AssertionError("the turn was never settled")
+    await league.write("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", ROUND_3)
+
+    await run_queue(league.bot)
+
+    assert await _sessions(league) == []
+    [line] = await _refused_lines(league)
+    _names_the_paste(line, content=QUALI_PASTE, reason="Round 3 has been cancelled")
 
 
 async def test_a_message_by_someone_other_than_a_league_manager_is_ignored(tmp_path, monkeypatch):
@@ -500,11 +632,12 @@ def _picker(league: SeasonLeague) -> Any:
     return picker
 
 
-def _choice(league: SeasonLeague, picker: Any) -> Any:
-    """The admin's press of "Heavy" on *picker*: its response, edits and follow-ups recorded;
-    the acknowledgement, where it is a follow-up, is a message whose edits are recorded."""
+def _choice(league: SeasonLeague, picker: Any, *, by: int = ADMIN_ID) -> Any:
+    """The press of "Heavy" on *picker* by *by*, the admin unless another is given: its
+    response, edits and follow-ups recorded; the acknowledgement, where it is a follow-up, is a
+    message whose edits are recorded."""
     press = member_interaction(
-        league.bot, user=league._member(ADMIN_ID), created_at=league.clock.now,
+        league.bot, user=league._member(by), created_at=league.clock.now,
     )
     press.guild = league.guild
     press.channel_id = SUBMISSION_CHANNEL
@@ -523,11 +656,12 @@ def _choice(league: SeasonLeague, picker: Any) -> Any:
     return press
 
 
-async def _press_heavy(league: SeasonLeague) -> Any:
-    """The admin presses "Heavy" on the configuration picker; gives the press."""
+async def _press_heavy(league: SeasonLeague, *, by: int = ADMIN_ID) -> Any:
+    """*by*, the admin unless another is given, presses "Heavy" on the configuration picker;
+    gives the press."""
     picker = _picker(league)
     [button] = [item for item in picker.view.children if getattr(item, "label", None) == HEAVY]
-    press = _choice(league, picker)
+    press = _choice(league, picker, by=by)
     await button.callback(press)
     return press
 
@@ -568,6 +702,42 @@ async def test_a_configuration_choice_saves_the_session_and_moves_on(tmp_path, m
     assert await stopped_job(league.db_path) is None
     assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", HEAVY)]
     assert f"📋 Submit **{RACE}** results" in _said(league)
+
+
+#: A second league manager, who presses the picker the admin's paste posted.
+PRESSER = 78
+
+
+@pytest.mark.xfail(strict=True, reason=REFUSED_UNLOGGED)
+async def test_a_paste_held_once_its_configuration_is_chosen_is_logged_naming_the_presser(
+    tmp_path, monkeypatch,
+):
+    """The season has two points configurations attached. The admin pastes round 3's
+    qualifying and its turn offers the configurations; round 2 of Pro is then opened for
+    amendment, and a second league manager (78) presses "Heavy". When the choice runs nothing is
+    saved, and one `RESULT_SUBMISSION_REJECTED` line is logged naming the presser, not the admin,
+    with season 3, Pro, round 3 and the qualifying, the amendment as the reason, and the paste
+    (results :261)."""
+    league = await _league(tmp_path, monkeypatch)
+    league.roles_held[PRESSER] = {MANAGER_ROLE_ID}
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    await league.write(
+        "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at) "
+        "VALUES (?, 7700, '[\"FEATURE_RACE\"]', ?)",
+        round_id(PRO, 2), league.clock.now.isoformat(),
+    )
+
+    await _press_heavy(league, by=PRESSER)
+    await run_queue(league.bot)
+
+    assert await _configs(league) == []
+    [line] = await _refused_lines(league)
+    assert f"<@{PRESSER}>" in line.split(" | ")[0], line
+    assert f"<@{ADMIN_ID}>" not in line, line
+    _names_the_paste(line, content=QUALI_PASTE,
+                     reason="Round 2 of this division is being amended")
 
 
 async def test_the_picker_is_edited_by_the_press_s_own_response(tmp_path, monkeypatch):
