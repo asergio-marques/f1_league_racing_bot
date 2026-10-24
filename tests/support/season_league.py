@@ -389,7 +389,7 @@ class SeasonLeague:
 
     async def switch(self, module: str, on: bool) -> None:
         """Turn *module* (weather, results, attendance, images or signup) on or off."""
-        await getattr(self.bot.module_service, f"set_{module}_enabled")(on)
+        await set_module_flag(self.db_path, self.bot.module_service, module, on)
         if module == "images":
             self.images_on = on
 
@@ -602,7 +602,7 @@ async def season_league(
     modules = ModuleService(db_path)
     for name, on in (("weather", weather), ("results", results), ("attendance", attendance),
                      ("images", images)):
-        await getattr(modules, f"set_{name}_enabled")(on)
+        await set_module_flag(db_path, modules, name, on)
     league = SeasonLeague(db_path, now, images=images)
     holder["league"] = league
     await league.set_test_mode(test_mode)
@@ -698,6 +698,25 @@ async def approval_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     from leaguebot.core.services.season_approval_change import KIND
 
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
+
+
+async def set_module_flag(db_path: str, modules: Any, name: str, on: bool) -> None:
+    """Turn module *name* on or off as `/module enable|disable` leaves its flag. Results' and
+    attendance's flags are written here, their change's own save being what writes them in the
+    bot (the module service holds no setter for either); weather's, images' and signup's through
+    *modules*, the module service."""
+    if name not in ("results", "attendance"):
+        await getattr(modules, f"set_{name}_enabled")(on)
+        return
+    async with get_connection(db_path) as db:
+        if name == "results":
+            await db.execute(
+                "INSERT OR REPLACE INTO results_module_config (id, module_enabled) "
+                "VALUES (1, ?)", (int(on),),
+            )
+        else:
+            await db.execute("UPDATE attendance_config SET module_enabled = ?", (int(on),))
+        await db.commit()
 
 
 #: The kind of a season's mid-season placements confirmation on the change queue (slice 8).
