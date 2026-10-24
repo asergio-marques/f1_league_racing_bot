@@ -822,6 +822,79 @@ async def test_a_division_that_finishes_after_its_check_is_refused_by_the_save_o
     assert [row for row in await change_rows(league.db_path) if row["kind"] == WIND_DOWN] == []
 
 
+
+# ── A refused save arms the rounds again (#439 slice 8, F2) ─────────────────────────
+
+REARM_KIND = "season.round.rearm"
+REARM_UNBUILT = "#439: a cancellation refused at its save does not arm its rounds again yet"
+REARMING_ROUNDS = (
+    "The timed work of its rounds still to be run, removed for the cancellation, is being armed "
+    "again as it stood: round 3 in **Pro**, round 4 in **Pro**."
+)
+
+
+async def _rearmings(league: Any) -> list[dict[str, Any]]:
+    """Every re-arming of a round's timed work asked of the queue, in the order asked."""
+    return [row for row in await change_rows(league.db_path) if row["kind"] == REARM_KIND]
+
+
+@pytest.mark.xfail(strict=True, reason=REARM_UNBUILT)
+async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_again_only_the_rounds_still_to_be_run(
+    tmp_path,
+):
+    """Weather and attendance on. Pro's round 1 is final and round 2 awaits its report verdicts,
+    both raced; round 3 awaits its results, its submission open with nothing accepted; round 4,
+    still to be run, was due ten minutes ago. `/division cancel Pro` passes its check, but removing
+    the timed work fails and stops the queue; meanwhile round 3's submission accepts a session.
+    Retried, the removal goes through and the save refuses, naming round 3. Rounds 3 and 4 are
+    armed again, each by a change of its own, the reply naming the two; round 4, its moment past,
+    has its results submission run at once. Rounds 1 and 2, already raced, have their next-day
+    clean-ups armed again alone."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True)
+    await _awaiting_results(league, R3)
+    await open_submission(league, R3)
+    await league.write(
+        "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+        (league.clock.now - timedelta(minutes=10)).replace(tzinfo=None).isoformat(), R4,
+    )
+    interaction = await _asked(league)
+    scheduler = league.bot.scheduler_service
+    unarming = (scheduler.cancel_round, scheduler.cancel_rounds)
+    scheduler.cancel_round = MagicMock(side_effect=RuntimeError("the job store is locked"))
+    scheduler.cancel_rounds = MagicMock(side_effect=RuntimeError("the job store is locked"))
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "unarm"
+    await accept_session(league, R3)
+    before = await _statuses(league)
+
+    scheduler.cancel_round, scheduler.cancel_rounds = unarming
+    await retry_job(league.bot)
+
+    r1, r2 = round_id(PRO, 1), round_id(PRO, 2)
+    assert _accepted(3) in reply(interaction)
+    assert REARMING_ROUNDS in reply(interaction)
+    assert CANCELLED not in reply(interaction)
+    assert await _division(league) == "ACTIVE"
+    assert await _statuses(league) == before
+    [refusal] = _refusal_lines(league)
+    assert "\n  timed work being armed again: round 3 in Pro, round 4 in Pro" in refusal
+    rearmings = await _rearmings(league)
+    assert [row["state"] for row in rearmings] == ["DONE"] * 4
+    payloads = {json.loads(row["payload"])["round_id"]: json.loads(row["payload"])
+                for row in rearmings}
+    assert sorted(payloads) == sorted([r1, r2, R3, R4])
+    assert sorted(rid for rid, payload in payloads.items()
+                  if payload.get("cleanups_only")) == [r1, r2]
+    assert ("cleanups", [r1]) in league.armed
+    assert ("cleanups", [r2]) in league.armed
+    armed_whole = {rid for which, ids in league.armed if which != "cleanups" for rid in ids}
+    assert armed_whole == {R3, R4}
+    assert not {rid for which, ids in league.armed if which == "cleanups" for rid in ids} & {
+        R3, R4}
+    opened = scheduler.run_result_submission_now
+    assert [call.args[0].id for call in opened.call_args_list] == [R4]
+
+
 # ── An open submission (#439 slice 4b, amendment A, A2) ─────────────────────────────
 
 #: A second submission channel, for round 4.

@@ -717,19 +717,40 @@ async def test_the_history_the_driver_pass_test_mode_and_the_season_s_cancellati
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)
+REARM_KIND = "season.round.rearm"
+REARM_UNBUILT = "#439: a cancellation refused at its save does not arm its rounds again yet"
+REARMING_ROUNDS = (
+    "The timed work of its rounds still to be run, removed for the cancellation, is being armed "
+    "again as it stood: round 3 in **Pro**, round 4 in **Pro**, round 1 in **Am**, round 2 in "
+    "**Am**, round 3 in **Am**, round 4 in **Am**."
+)
+
+
+@pytest.mark.xfail(strict=True, reason=REARM_UNBUILT)
 async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_writing_nothing(
     tmp_path,
 ):
+    """Attendance on. Pro's round 1 is final and round 2 awaits its report verdicts; round 3 awaits
+    its results, its submission open with nothing accepted; Pro's round 4 and Am's four rounds are
+    still to be run. `/season cancel` passes its check, but removing the timed work fails and stops
+    the queue; meanwhile round 3's submission accepts a session. Retried, the removal goes through
+    and the first save refuses, naming round 3, and writes nothing. Each round still to
+    be run or awaiting its results is armed again by a change of its own, the reply naming each in
+    order of tier and round; Pro's rounds 1 and 2 have their clean-ups armed again alone; no
+    season-end job is armed."""
     league = await ongoing_league(tmp_path, attendance=True)
     await _empty_submission(league)
     interaction = await _asked(league)
+    scheduler = league.bot.scheduler_service
+    unarming_one = scheduler.cancel_round
+    scheduler.cancel_round = MagicMock(side_effect=RuntimeError("the job store is locked"))
     _unarming_fails(league)
     await run_queue(league.bot)
     assert await _stopped_at(league) == ("unarm", None)
     await accept_session(league, R3)
     before = await _rounds(league)
 
+    scheduler.cancel_round = unarming_one
     _unarming_works(league)
     await retry_job(league.bot)
 
@@ -743,6 +764,22 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_w
     assert [cid for kind, cid, _ in league.events if kind == "delete_channel"] == []
     assert _posted(league) == [[]] * len(_POSTS)
     assert await _status(league) == "ACTIVE"
+    assert REARMING_ROUNDS in reply(interaction)
+    assert "\n  timed work being armed again: round 3 in Pro, round 4 in Pro, round 1 in Am" in (
+        _refusal_lines(league)[0])
+    rearmings = [row for row in await change_rows(league.db_path) if row["kind"] == REARM_KIND]
+    assert [row["state"] for row in rearmings] == ["DONE"] * len(rearmings)
+    payloads = [json.loads(row["payload"]) for row in rearmings]
+    still_to_run = [round_id(PRO, 3), round_id(PRO, 4)] + [round_id(AM, n) for n in range(1, 5)]
+    raced = [round_id(PRO, 1), round_id(PRO, 2)]
+    assert sorted(p["round_id"] for p in payloads if not p.get("cleanups_only")) == sorted(
+        still_to_run)
+    assert sorted(p["round_id"] for p in payloads if p.get("cleanups_only")) == sorted(raced)
+    armed_whole = {rid for which, ids in league.armed if which != "cleanups" for rid in ids}
+    assert armed_whole == set(still_to_run)
+    assert {rid for which, ids in league.armed if which == "cleanups" for rid in ids} == set(raced)
+    assert not [call for call in league.bot.scheduler_service.method_calls
+                if call[0].startswith("schedule") and "season_end" in call[0]]
 
 
 @pytest.mark.parametrize("how", [
