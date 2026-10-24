@@ -39,6 +39,7 @@ from leaguebot.results.services.result_submission_service import (
 )
 from leaguebot.results.utils import results_formatter
 from tests.results.test_review_open_change import (
+    RESULTS_CHANNEL,
     SUBMISSION_CHANNEL,
     _league,
     _open,
@@ -477,3 +478,40 @@ async def test_the_last_resubmitted_paste_hands_the_swap_to_the_league(tmp_path,
 
     assert (await _row(league))["resubmitting"] == 0
     assert MARK not in message.marks
+
+
+#: Why an amended resubmission's tables stand beside the originals until Part E, E5 is built.
+TABLES_REPLACED_UNBUILT = (
+    "#439: a resubmission's amended tables are posted beside the earlier ones, whose ids the swap "
+    "drops"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=TABLES_REPLACED_UNBUILT)
+async def test_an_amended_resubmission_replaces_the_earlier_tables(tmp_path, monkeypatch):
+    """Round 3's provisional Feature Race table was posted in Pro's results channel when its
+    review opened. Alex resubmits, types CANCELLED for Qualifying and then Max ahead of Lewis for
+    the Feature Race. When the queue runs, the review opens again and posts the amended race
+    table, recorded as the race's results message, and only then is the earlier table deleted:
+    the amended table replaces the original rather than standing beside it (results :412; owner
+    Q-E6)."""
+    league = await _reviewing(tmp_path, monkeypatch)
+    earlier = league.sent_to(RESULTS_CHANNEL)
+    assert earlier
+    await _press_resubmit(league)
+
+    await _type(league, "CANCELLED")
+    await _type(league, RACE_PASTE)
+
+    assert await stopped_job(league.db_path) is None
+    [race] = await _rows(
+        league, "SELECT results_message_id FROM session_results "
+        "WHERE round_id = ? AND session_type = ?", ROUND_ID, RACE_TYPE.value,
+    )
+    amended = race["results_message_id"]
+    assert amended is not None and amended not in earlier
+    assert "(amended)" in str(league.channel(RESULTS_CHANNEL).messages[amended].content)
+    for message_id in earlier:
+        assert message_id not in league.channel(RESULTS_CHANNEL).messages
+        assert (league.events.index(("delete", RESULTS_CHANNEL, message_id))
+                > league.events.index(("send", RESULTS_CHANNEL, amended)))
