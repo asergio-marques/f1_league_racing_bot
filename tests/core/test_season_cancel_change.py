@@ -368,9 +368,6 @@ def _flush_failing(monkeypatch: Any, failing: dict[str, bool]) -> None:
             monkeypatch.setattr(module, "forecast_deletes", raising)
 
 
-ONE_PASS_UNBUILT = "#439: the season's unarming still removes each round's timed work on its own"
-
-
 def _raising_while(failing: dict[str, bool], reading: Any) -> Any:
     """*reading*, raising as a fault of the database would while *failing* says so."""
 
@@ -854,8 +851,7 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_w
 
 @pytest.mark.parametrize("how", [
     pytest.param("waiting", id="waiting behind a stopped job"),
-    pytest.param("stopped", id="stopped at its own job",
-                 marks=pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)),
+    pytest.param("stopped", id="stopped at its own job"),
 ])
 async def test_a_second_cancellation_is_refused_at_once_naming_the_job(tmp_path, how):
     league = await ongoing_league(tmp_path)
@@ -1027,7 +1023,6 @@ async def test_the_jobs_run_in_order(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)
 async def test_every_round_of_every_division_loses_its_timed_work_first(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)
@@ -1046,7 +1041,6 @@ async def test_every_round_of_every_division_loses_its_timed_work_first(tmp_path
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)
 async def test_the_unarming_reads_every_division_s_rounds_before_removing_any(tmp_path):
     """Pro's and Am's rounds are all read before any timed work is removed, and then removed in
     one call to the scheduler with the season-end job, so a read that fails part-way removes
@@ -1296,7 +1290,6 @@ async def test_the_roles_are_taken_back_after_the_notices(tmp_path):
         assert set(league.revoked[user_id]) == roles
 
 
-@pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     _unarming_fails(league)

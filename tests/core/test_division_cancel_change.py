@@ -66,8 +66,6 @@ from tests.support.season_league import (
 )
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
-ONE_PASS_UNBUILT = "#439: the division's unarming still removes each round's timed work on its own"
-
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
 CANCELLED = "✅ Division **Pro** cancelled."
 SUCCESS = "Admin (`<@77>`) | /division cancel | Success"
@@ -538,7 +536,6 @@ async def test_every_round_of_the_division_loses_its_timed_work(tmp_path):
     assert (await _jobs(league))[0]["name"] == "unarm"
 
 
-@pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)
 async def test_the_unarming_removes_the_division_s_rounds_in_one_pass(tmp_path):
     """Pro's four rounds lose their timed work in one call to the scheduler, handed every round
     of the division, read before anything is removed; no round is removed on its own and the
@@ -598,7 +595,6 @@ async def test_a_discarded_save_cancels_nothing(tmp_path):
     assert len(_success_lines(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     league.bot.scheduler_service.cancel_rounds = MagicMock(

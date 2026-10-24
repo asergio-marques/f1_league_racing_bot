@@ -1004,8 +1004,10 @@ def division_cancel_change(
     async def unarm(ctx: StepContext) -> StepResult:
         """Remove the timed work of every round of the division, read as the job runs: a round
         whose results are in loses its jobs too, as the division it belongs to is called off."""
-        for each in await seasons.get_division_rounds(int(ctx.payload["division_id"])):
-            scheduler.cancel_round(each.id)
+        round_ids = [
+            each.id for each in await seasons.get_division_rounds(int(ctx.payload["division_id"]))
+        ]
+        scheduler.cancel_rounds(round_ids)
         return StepResult(result={"unarmed": True})
 
     async def unarmed(ctx: StepContext) -> bool:
@@ -1261,10 +1263,12 @@ def season_cancel_change(
     async def unarm(ctx: StepContext) -> StepResult:
         """Remove the timed work of every round of every division, read as the job runs, and the
         job that would end the season on its own."""
-        for division in await seasons.get_divisions(int(ctx.payload["season_id"])):
-            for each in await seasons.get_division_rounds(division.id):
-                scheduler.cancel_round(each.id)
-        scheduler.cancel_season_end()
+        round_ids = [
+            each.id
+            for division in await seasons.get_divisions(int(ctx.payload["season_id"]))
+            for each in await seasons.get_division_rounds(division.id)
+        ]
+        scheduler.cancel_rounds(round_ids, season_end=True)
         return StepResult(result={"unarmed": True})
 
     async def unarmed(ctx: StepContext) -> bool:
