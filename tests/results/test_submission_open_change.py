@@ -22,7 +22,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
-import pytest
 
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.results.services.result_submission_service import get_sessions_for_format
@@ -286,10 +285,8 @@ CANNOT_DISCARD_START = (
     "⛔ This job can't be discarded: without it round 3 in **Pro** would never open for results, "
     "and its season could never be completed. Fix what stopped it and press **Retry**."
 )
-START_UNDISCARDABLE = "#439: starting a round's results submission may still be discarded"
 
 
-@pytest.mark.xfail(strict=True, reason=START_UNDISCARDABLE)
 async def test_starting_the_round_cannot_be_discarded(tmp_path):
     """Round 3 starts, and the save that moves it off NOT_RUN fails, stopping the queue at
     `start_round`. A league admin presses Discard: it is refused, saying round 3 in Pro would never

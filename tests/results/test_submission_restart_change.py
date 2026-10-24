@@ -369,10 +369,8 @@ CANNOT_DISCARD_CLEAR = (
     "⛔ This job can't be discarded: without it round 3 in **Pro** would take no results until "
     "the bot next restarts. Fix what stopped it and press **Retry**."
 )
-CLEAR_UNDISCARDABLE = "#439: clearing a submission a restart cut short may still be discarded"
 
 
-@pytest.mark.xfail(strict=True, reason=CLEAR_UNDISCARDABLE)
 async def test_the_restart_s_clearing_cannot_be_discarded(tmp_path):
     """At the restart the save clearing round 3's cut-short submission fails (the database refuses
     to delete its sessions), stopping the queue at `clear`. A league admin presses Discard: it is

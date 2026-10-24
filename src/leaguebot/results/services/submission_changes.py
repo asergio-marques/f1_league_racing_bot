@@ -7,9 +7,12 @@ row itself), create the round's submission channel beside the interaction channe
 the first session's prompt. Where results are off, the round has nothing to wait for: it ends
 FINAL and the change asks the season's wind-down, creating no channel.
 
-**The channel's creation cannot be discarded.** Without it the round would never have its results
-submitted, so Discard on that job is refused and only Retry clears it (core spec :130). The channel's
-posts are planned by the creation itself, which knows the channel they go in.
+**The round's start and the channel's creation cannot be discarded.** Without the start the round
+would never open for results and its season could never be completed; without the creation it would
+never have its results submitted. Discard on either is refused and only Retry clears it (core spec
+:137). A start dropped by Retry, because its round was cancelled meanwhile, leaves nothing owed
+(`still_due`). The channel's posts are planned by the creation itself, which knows the channel they
+go in.
 
 **A round whose start falls while the queue is stopped** is asked for all the same and waits its
 turn: it stays NOT_RUN, and so cancellable, until the queue reaches the opening (Q17). A round
@@ -27,7 +30,9 @@ The change runs on the league lane, whatever asked: a timer, the restart or test
 cleared (`clear`: the round's sessions and its submission row, which ends the old conversation), its
 channel deleted (`delete_channel`, whose refusal stops the league lane, the lane that asked) and
 `results.submission.open` asked afresh as a follow-on, whose channel creation cannot be discarded.
-The log line telling the league to re-submit is written in the clearing's save.
+The log line telling the league to re-submit is written in the clearing's save. The clearing cannot
+be discarded either: without it the round would take no results until the bot next restarts. It
+completes, doing nothing, where its round's row is gone.
 
 **`results.submission.all_cancelled`** is what a submission whose every session was entered as
 cancelled hands the league (results spec :363, :379): there are no Provisional Results to carry
@@ -296,6 +301,10 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
             f"**{payload['division_name']}**"
         )
 
+    async def would_never_open(ctx: StepContext) -> str:
+        called = await season_service.round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        return f"{called} would never open for results, and its season could never be completed"
+
     async def describe_start(_ctx: StepContext) -> str:
         return "starting the round"
 
@@ -308,7 +317,7 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
         steps={
             START_ROUND: Step(
                 START_ROUND, StepKind.SAVE, start_round, still_due=not_cancelled,
-                describe=describe_start,
+                describe=describe_start, undiscardable=would_never_open,
             ),
             CREATE_CHANNEL: dataclasses.replace(
                 shared_create, run=create, still_due=not_cancelled, describe=describe_create,
@@ -408,6 +417,10 @@ def submission_restart_change() -> ChangeType:
     async def describe_clear(_ctx: StepContext) -> str:
         return "clearing the results submission a restart cut short"
 
+    async def would_take_no_results(ctx: StepContext) -> str:
+        called = await season_service.round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        return f"{called} would take no results until the bot next restarts"
+
     def cleared(_ctx: OutcomeContext) -> str:
         return ""
 
@@ -415,7 +428,10 @@ def submission_restart_change() -> ChangeType:
         kind=RESTART_KIND,
         opening=(PlannedStep(CLEAR),),
         steps={
-            CLEAR: Step(CLEAR, StepKind.SAVE, clear, describe=describe_clear),
+            CLEAR: Step(
+                CLEAR, StepKind.SAVE, clear, describe=describe_clear,
+                undiscardable=would_take_no_results,
+            ),
             DELETE_CHANNEL: posting_steps()[DELETE_CHANNEL],
         },
         check=check,
