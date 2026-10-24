@@ -524,6 +524,24 @@ async def stopped_job(db_path: str, lane: str | None = None) -> dict[str, Any] |
     return stopped[0] if stopped else None
 
 
+async def refuse_the_job(db_path: str, kind: str, job: str, refusing: bool) -> None:
+    """While *refusing*, a fault of the database refuses to save the job *job* of any change of
+    *kind* as done, so that its save fails and is rolled back and the queue stops at it; otherwise
+    the fault is lifted. A league admin's Discard of the job is still saved."""
+    async with get_connection(db_path) as db:
+        if refusing:
+            await db.execute(
+                "CREATE TRIGGER refuse_the_job BEFORE UPDATE OF done_at ON queued_change_steps "
+                f"WHEN NEW.name = '{job}' AND NEW.done_at IS NOT NULL "
+                "AND COALESCE(NEW.result, '') NOT LIKE '%\"discarded\"%' AND (SELECT kind FROM "
+                f"queued_changes WHERE id = NEW.change_id) = '{kind}' "
+                "BEGIN SELECT RAISE(ABORT, 'disk fault'); END"
+            )
+        else:
+            await db.execute("DROP TRIGGER refuse_the_job")
+        await db.commit()
+
+
 async def _press(bot: Any, action: str, user: Any, run: bool, lane: str | None = None) -> Any:
     job = await stopped_job(bot.db_path, lane)
     assert job is not None, f"no job stops the queue for {action} to act on"

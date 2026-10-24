@@ -37,6 +37,7 @@ from leaguebot.core.db.database import get_connection
 from tests.support.change_queue import (
     discard_job,
     http_error,
+    refuse_the_job,
     retry_job,
     run_queue,
     step_rows,
@@ -1279,6 +1280,43 @@ async def _distribution_recorded(league: Any) -> Any:
     [row] = await league.rows(
         "SELECT distribution_msg_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
     return row["distribution_msg_id"]
+
+
+LATE_PLACEMENT_UNDISCARDABLE = "#439: an amendment's late reserve placement may still be discarded"
+
+
+@pytest.mark.xfail(strict=True, reason=LATE_PLACEMENT_UNDISCARDABLE)
+async def test_an_amendment_s_late_reserve_placement_cannot_be_discarded(tmp_path, reposts):
+    """Attendance on. Pro's round 3 is two hours and five minutes out, its call standing (7001)
+    and its reserves not yet distributed. It is moved a day later; the save stops, and ten
+    minutes on, past the old deadline, a league admin discards it, so the round is armed again
+    as it stood and its deadline, gone by, is run at once. The save of that job, which places the
+    reserves, fails and stops the queue at `distribute`. A league admin's Discard on it is
+    refused, saying the reserves of round 3 in Pro would never be placed; the queue stays stopped
+    there and nothing is announced. Once the fault is lifted, a Retry places them, takes the
+    call's buttons off and posts one notice of the placements, recorded."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _deadline_not_yet_run(league)
+    await refuse_the_job(league.db_path, "season.round.amend", "distribute", True)
+    await _place_and_discard_past_the_deadline(league)
+    assert await _stopped_at(league) == "distribute"
+
+    discarding = await discard_job(league.bot)
+
+    assert (
+        "⛔ This job can't be discarded: without it the reserves of round 3 in **Pro** would "
+        "never be placed. Fix what stopped it and press **Retry**."
+    ) in _said_to(discarding)
+    assert await _stopped_at(league) == "distribute"
+    assert _sent_in_check_in(league) == []
+
+    await refuse_the_job(league.db_path, "season.round.amend", "distribute", False)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert ("edit", PRO_CH.checkin, CALL_MESSAGES[0]) in league.events
+    [announced] = _sent_in_check_in(league)
+    assert await _distribution_recorded(league) == str(announced)
 
 
 async def test_an_amendment_s_deadline_whose_announcement_is_refused_stops_the_queue(

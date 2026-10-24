@@ -25,9 +25,11 @@ import pytest
 
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
+    acknowledgement,
     attach_queue,
     change_rows,
     discard_job,
+    refuse_the_job,
     retry_job,
     run_queue,
     step_rows,
@@ -176,6 +178,41 @@ async def test_the_round_is_marked_cleared_after_its_deletes(tmp_path):
 
     assert await stopped_job(league.db_path) is None
     assert all(mid not in league.channel(CHECK_IN).messages for mid in CALL_MESSAGES)
+    assert await _cleared(league)
+
+
+MARK_CLEARED_UNDISCARDABLE = "#439: marking a round's check-in over may still be discarded"
+
+
+@pytest.mark.xfail(strict=True, reason=MARK_CLEARED_UNDISCARDABLE)
+async def test_marking_the_check_in_over_cannot_be_discarded(tmp_path):
+    """Round 3's clean-up in Pro deletes its call (7001), last notice (7002) and announcement
+    (7003), then the save of its last job, which marks the round's check-in over, fails and stops
+    the queue at `mark_cleared`. A league admin's Discard on it is refused, saying the check-in of
+    round 3 in Pro would never be marked over, and the next restart would delete every attendance
+    answer of the round; the queue stays stopped there and the round is not marked. Once the fault
+    is lifted, a Retry marks it over."""
+    league = await _league(tmp_path)
+    await refuse_the_job(league.db_path, KIND, "mark_cleared", True)
+    await _ask(league)
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "mark_cleared"
+
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == (
+        "⛔ This job can't be discarded: without it the check-in of round 3 in **Pro** would never "
+        "be marked over, and the next restart would delete every attendance answer of the round. "
+        "Fix what stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path))["id"] == stopped["id"]
+    assert not await _cleared(league)
+
+    await refuse_the_job(league.db_path, KIND, "mark_cleared", False)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
     assert await _cleared(league)
 
 

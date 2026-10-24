@@ -204,8 +204,9 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     approved or aborted, the forgetting of a review taken down, and the start of a round's
     results submission and the clearing of one a restart cut short, and the last job of a penalty
     review's opening and of its prompt's posting, both jobs of an appeals review's reopening, and
-    the last job of a reports approval and of an appeals approval, and the marking of a round's
-    resubmission. Every other job a league admin may discard."""
+    the last job of a reports approval and of an appeals approval, the marking of a round's
+    resubmission, and the placing of a round's reserves and the marking of its check-in over,
+    an amended round's included. Every other job a league admin may discard."""
     from leaguebot.__main__ import register_change_types
 
     bot = MagicMock()
@@ -218,6 +219,8 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
         if getattr(step, "undiscardable", None) is not None
     )
     assert marked == [
+        ("attendance.check_in.clean_up", "mark_cleared"),
+        ("attendance.check_in.deadline", "distribute"),
         ("results.appeals.approve", "close"),
         ("results.appeals.open", "close"),
         ("results.appeals.open", "open"),
@@ -235,5 +238,7 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
         ("season.division.cancel", "apply"),
         ("season.review.take_down", "forget"),
         ("season.round.amend", "arm"),
+        ("season.round.amend", "distribute"),
+        ("season.round.amend", "mark_cleared"),
         ("season.round.cancel", "apply"),
     ]
