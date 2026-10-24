@@ -101,9 +101,6 @@ CALENDAR_DISCARDED = (
     "**Pro** — calendar: the calendar could not be posted, and a league admin discarded it; run "
     "`/division calendar-sync` while the season is still being raced"
 )
-RACED_CLEANUPS_UNBUILT = (
-    "#439: a cancellation refused because results were entered does not arm its clean-ups again"
-)
 ALL_JOBS = ["unarm", "apply", "notify_checkin", "take_down_call", "notify_forecast",
             "notify_results", "post_calendar", "delete_replaced", "close"]
 WIND_DOWN = "season.wind_down"
@@ -816,7 +813,6 @@ async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_i
     assert "Round 3" not in lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=RACED_CLEANUPS_UNBUILT)
 async def test_the_save_refuses_writing_nothing_where_the_round_moved_on_after_the_check(
     tmp_path,
 ):
@@ -1433,7 +1429,6 @@ ARMED_AGAIN = (
     "⏱️ The timed work of round 3 in **Pro** is armed again, `/round cancel` having been refused"
 )
 REARM_KIND = "season.round.rearm"
-REARM_UNBUILT = "#439: a cancellation refused at its save does not arm its rounds again yet"
 
 
 async def _rearmings(league: Any) -> list[dict[str, Any]]:
@@ -1441,7 +1436,6 @@ async def _rearmings(league: Any) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == REARM_KIND]
 
 
-@pytest.mark.xfail(strict=True, reason=REARM_UNBUILT)
 async def test_a_session_accepted_after_the_check_is_refused_by_the_save_and_its_timed_work_armed_again(
     tmp_path,
 ):
@@ -1550,7 +1544,6 @@ async def test_a_round_cancellation_ends_its_submission_s_conversation(tmp_path)
     assert await stopped_job(league.db_path, f"channel:{SUBMISSION_CHANNEL}") is None
 
 
-@pytest.mark.xfail(strict=True, reason=REARM_UNBUILT)
 async def test_a_cancellation_s_save_finds_a_paste_saved_after_its_check(tmp_path):
     """Round 3 of Pro waits for its results, its submission open in channel 690 with nothing
     accepted, and the admin runs `/round cancel Pro 3`. The cancellation's check passes when it

@@ -292,7 +292,7 @@ def _round_change(
 
     async def rearm_check(ctx: CheckContext) -> Verdict:
         """A re-arming is due while the round can still be cancelled, or, for its clean-ups alone,
-        while it is raced and they are still owed; a round gone or past that is dropped."""
+        while it is raced; a round gone or past that is dropped."""
         if await rearm_due(ctx):
             return Verdict.go()
         return Verdict.not_due("the round can no longer be armed again")
@@ -303,25 +303,7 @@ def _round_change(
             return False
         if not ctx.payload.get("cleanups_only"):
             return rnd.status in ROUND_CANCELLABLE
-        if rnd.status not in ROUND_RACED_AWAITING_VERDICTS and rnd.status != RoundStatus.FINAL.value:
-            return False
-        return await cleanups_owed(ctx.db_path, rnd)
-
-    async def cleanups_owed(db_path: str, rnd: Round) -> bool:
-        """Whether a raced round still owes its clean-ups: the day after it not yet come, or a
-        forecast or a check-in call still standing that they would take down."""
-        if moment_of(rnd) + POST_RACE_CLEANUP_DELAY > now():
-            return True
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT EXISTS (SELECT 1 FROM forecast_messages f WHERE f.round_id = r.id "
-                "AND f.phase_number IN (1, 2, 3)) AS forecast, "
-                "(r.checkin_cleared = 0 AND EXISTS (SELECT 1 FROM rsvp_embed_messages m "
-                "WHERE m.round_id = r.id)) AS call FROM rounds r WHERE r.id = ?",
-                (rnd.id,),
-            )
-            found = await cursor.fetchone()
-        return found is not None and bool(found["forecast"] or found["call"])
+        return rnd.status in ROUND_RACED_AWAITING_VERDICTS or rnd.status == RoundStatus.FINAL.value
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload

@@ -23,7 +23,14 @@ command did it, because a cancelled round whose weather jobs stood would have it
 posted; a stop there means the scheduler itself failed, and the removal of a division's or a
 season's rounds lists every round before it takes any, so that a stopped removal has taken none.
 **The save cannot be discarded** (owner, 2026-10-23): with the timed work off, dropping it would
-leave the rounds neither cancelled nor ever run, so a stopped save can only be retried. **Everything
+leave the rounds neither cancelled nor ever run, so a stopped save can only be retried. **A save
+that refuses arms the timed work again** (owner, 2026-10-23): the check lies before the removal and
+the save after it, so a session accepted on a round's submission between them, or a round that
+moved on, refuses the save with the timed work already off. The refusal then asks, in its own save,
+one `season.round.rearm` (`round_amend_change`) for each round the removal took jobs from: the
+whole of its timed work for a round still to be run or awaiting its results, as it stood, and only
+the next-day clean-ups for one already raced. The reply and the refusal's log line name the rounds
+being armed again. A refusal at the check lies before the removal and owes none. **Everything
 else follows the save as a job of its own**, each of which stops the queue where it fails: each
 enabled module's notice, the check-in call's take-down, the calendar's repost, and a closing job
 that writes the one line. The wind-down is a change of its own, asked in the save where the
@@ -94,7 +101,12 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundStatus
+from leaguebot.core.models.round import (
+    ROUND_CANCELLABLE,
+    ROUND_RACED_AWAITING_VERDICTS,
+    Round,
+    RoundStatus,
+)
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.services import approval_checks
@@ -182,6 +194,7 @@ DIVISION_CANCEL = "season.division.cancel"
 ROUND_REARM = "season.round.rearm"
 
 _COMMAND = "`/round cancel`"
+_ROUND_REARM_COMMAND = "/round cancel"
 NOT_ONGOING = f"❌ {_COMMAND} is available only while the season is ongoing."
 ARCHIVED = "❌ This season is archived (COMPLETED) and cannot be modified."
 DIVISION_COMMAND = "`/division cancel`"
@@ -439,6 +452,100 @@ def _discarded(view: StepView) -> bool:
 def _refusal_of(ctx: OutcomeContext) -> str | None:
     """What the save refused with as it ran, or None."""
     return (_view(ctx, APPLY).result or {}).get("refused")
+
+
+#: What a refused round's cancellation adds to its reply once its timed work is being armed again.
+_REARMING = "Its timed work, removed for the cancellation, is being armed again as it stood."
+_REARMING_ROUNDS = (
+    "The timed work of its rounds still to be run, removed for the cancellation, is being armed "
+    "again as it stood: {rounds}."
+)
+
+
+def _removed_by(ctx: OutcomeContext) -> dict[int, list[str]]:
+    """The jobs the unarming removed, by round id, as it recorded them; none where it was
+    discarded or removed nothing."""
+    recorded = (_view(ctx, UNARM).result or {}).get("removed") or {}
+    return {int(round_id): list(jobs) for round_id, jobs in recorded.items() if jobs}
+
+
+async def _rearm_on(
+    db: aiosqlite.Connection, ctx: OutcomeContext, command: str
+) -> tuple[tuple[FollowOn, ...], list[str]]:
+    """The re-armings a refused cancellation asks, and the rounds it names as armed again.
+
+    A cancellation's check lies before its first job, which removes timed work, and its save lies
+    after, so a save that refuses (a session accepted since, the round moved on) leaves rounds
+    with their timed work gone and nothing cancelled. One ``season.round.rearm`` is asked for each
+    round the unarming removed jobs from, in this save, so the refusal is never recorded without
+    it: a round still to be run or awaiting its results has all its timed work armed again, and
+    one already raced (final, or awaiting verdicts) only its next-day clean-ups. A round the save
+    finds cancelled, or gone, is left alone. Returns the follow-ons and, as the reply names them,
+    the rounds armed in full ("round 3 in **Pro**"), by tier then round number.
+    """
+    removed = _removed_by(ctx)
+    if not removed:
+        return (), []
+    marks = ",".join("?" * len(removed))
+    cursor = await db.execute(
+        "SELECT r.id, r.round_number, r.status, d.id AS division_id, d.name AS division_name "
+        f"FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id IN ({marks}) "  # noqa: S608
+        "ORDER BY d.tier, r.round_number",
+        list(removed),
+    )
+    follow_ons: list[FollowOn] = []
+    names: list[str] = []
+    for row in await cursor.fetchall():
+        cleanups_only = row["status"] in ROUND_RACED_AWAITING_VERDICTS or (
+            row["status"] == RoundStatus.FINAL.value
+        )
+        if not cleanups_only and row["status"] not in ROUND_CANCELLABLE:
+            continue
+        called = f"round {row['round_number']} in **{row['division_name']}**"
+        payload: dict[str, Any] = {
+            "round_id": int(row["id"]),
+            "round_number": int(row["round_number"]),
+            "division_id": int(row["division_id"]),
+            "division_name": str(row["division_name"]),
+            "command": command,
+        }
+        if cleanups_only:
+            payload["cleanups_only"] = True
+            what = f"arming the next-day clean-ups of {called} again"
+        else:
+            names.append(called)
+            what = f"arming the timed work of {called} again"
+        follow_ons.append(FollowOn(ROUND_REARM, payload, what))
+    return tuple(follow_ons), names
+
+
+async def _refused_rearming(
+    db: aiosqlite.Connection, ctx: OutcomeContext, text: str, command: str
+) -> StepResult:
+    """A save's refusal, with the re-armings it asks (see `_rearm_on`) and the rounds it names."""
+    follow_ons, names = await _rearm_on(db, ctx, command)
+    return StepResult(result={"refused": text, "rearmed": names}, follow_ons=follow_ons)
+
+
+def _rearmed(ctx: OutcomeContext) -> list[str]:
+    """The rounds the refusing save named as armed again, as the reply writes them."""
+    return list((_view(ctx, APPLY).result or {}).get("rearmed") or [])
+
+
+def _rearming_detail(ctx: OutcomeContext) -> str | None:
+    """The line the log channel's refusal gains beneath it, naming the rounds armed again."""
+    names = _rearmed(ctx)
+    if not names:
+        return None
+    return "  timed work being armed again: " + ", ".join(name.replace("**", "") for name in names)
+
+
+def _rearming_sentence(ctx: OutcomeContext, *, one: bool = False) -> str:
+    """What a refusal's reply adds of the timed work being armed again; nothing where none is."""
+    names = _rearmed(ctx)
+    if not names:
+        return ""
+    return "\n" + (_REARMING if one else _REARMING_ROUNDS.format(rounds=", ".join(names)))
 
 
 def _saved_number(ctx: OutcomeContext) -> Any:
@@ -722,8 +829,11 @@ def round_cancel_change(
         # The number is read first, so that nothing after the removal can stop this job: a
         # removal stopped and discarded would be named as nothing done.
         number = await _round_number_now(ctx)
-        scheduler.cancel_round(int(ctx.payload["round_id"]))
-        return StepResult(result={"unarmed": True, "round_number": number})
+        round_id = int(ctx.payload["round_id"])
+        removed = scheduler.cancel_round(round_id)
+        return StepResult(
+            result={"unarmed": True, "round_number": number, "removed": {str(round_id): removed}}
+        )
 
     async def unarmed(ctx: StepContext) -> bool:
         """The save is due only where the timed work was removed, not where that job was
@@ -768,19 +878,21 @@ def round_cancel_change(
         previous = None
         if division is not None:
             # A backstop for the check: `unarm` lies between them, and a session may have been
-            # accepted since. Nothing is written then.
+            # accepted since. Nothing is written then, and the timed work `unarm` took is armed again.
             for each in await submissions.open_submissions_on(db, [round_id]):
                 if each.accepted:
-                    return StepResult(result={"refused": _accepted(
+                    return await _refused_rearming(db, ctx, _accepted(
                         {**ctx.payload, "round_number": division["round_number"]},
                         each.channel_id,
-                    )})
+                    ), _ROUND_REARM_COMMAND)
             previous = await cancel_round_on(
                 db, round_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
             )
         if division is None or previous is None:
             # A backstop: the check passed, and something wrote the database after it.
-            return StepResult(result={"refused": await refusal_in_save(db, ctx.payload)})
+            return await _refused_rearming(
+                db, ctx, await refusal_in_save(db, ctx.payload), _ROUND_REARM_COMMAND
+            )
 
         cursor = await db.execute("SELECT status FROM divisions WHERE id = ?", (division["id"],))
         after = await cursor.fetchone()
@@ -855,7 +967,9 @@ def round_cancel_change(
         if refused:
             return StepResult(
                 result={"closed": True},
-                lines=(refusal_line(ctx.named, _COMMAND, reply_reason(refused)),),
+                lines=(refusal_line(
+                    ctx.named, _COMMAND, reply_reason(refused), detail=_rearming_detail(ctx)
+                ),),
             )
         line = (
             f"{ctx.named} | /round cancel | Success\n"
@@ -874,7 +988,7 @@ def round_cancel_change(
             return UNARM_DISCARDED.format(**words)
         refused = _refusal_of(ctx)
         if refused:
-            return refused
+            return refused + _rearming_sentence(ctx, one=True)
         return (
             f"✅ Round **{words['number']}** in **{words['division']}** cancelled."
             + notices.failure_lines(not_notified(ctx))
@@ -1057,7 +1171,7 @@ def division_cancel_change(
         )
         numbers = {int(each["id"]): int(each["round_number"]) for each in await cursor.fetchall()}
         # A backstop for the check: `unarm` lies between them, and a session may have been
-        # accepted since. Nothing is written then.
+        # accepted since. Nothing is written then, and the timed work `unarm` took is armed again.
         found = await accepted_in(
             list(numbers.items()), lambda ids: submissions.open_submissions_on(db, ids)
         )
@@ -1319,7 +1433,7 @@ def season_cancel_change(
             for row in await cursor.fetchall()
         }
         # A backstop for the check: `unarm` lies between them, and a session may have been
-        # accepted since. Nothing is written then.
+        # accepted since. Nothing is written then, and the timed work `unarm` took is armed again.
         refusal = _first_accepted(standing, await submissions.open_submissions_on(db, list(standing)))
         if refusal is not None:
             return StepResult(result={"refused": refusal})
