@@ -206,6 +206,59 @@ async def test_a_penalty_approval_posts_one_banner_across_its_verdicts_and_its_s
     ) == str(sent[0])
 
 
+async def test_a_restart_between_the_attendance_sheet_and_the_sanctions_posts_one_sheet_and_sanctions_each_once(
+    tmp_path,
+):
+    """Lewis and Max are each over the autoreserve threshold in Pro. The approval stops just
+    after Pro's attendance sheet is posted, before either sanction, and the bot restarts. Once
+    the queue runs, the sheet before the sanctions is not posted again: Pro's sheet is posted
+    twice in all, once before the sanctions and once after them, and each driver is sanctioned
+    and announced once."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(LEWIS_PROFILE, LEWIS),
+                                    candidate(MAX_PROFILE, MAX)]
+    await _approve(league)
+    await run_until_done(league, "attendance_sheet")
+    assert league.attendance._calls("apply_sanction") == []
+
+    await restart_queue(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert [call[1] for call in league.attendance._calls("post_sheet")] == [
+        DIVISION_ID, DIVISION_ID,
+    ]
+    assert league.attendance._calls("apply_sanction") == [
+        ("apply_sanction", LEWIS_PROFILE), ("apply_sanction", MAX_PROFILE),
+    ]
+    assert sorted(league.attendance._calls("announce_sanction")) == [
+        ("announce_sanction", LEWIS_PROFILE), ("announce_sanction", MAX_PROFILE),
+    ]
+
+
+async def test_a_restart_between_two_sanctions_applies_each_once(tmp_path):
+    """Lewis and Max are each over the autoreserve threshold in Pro. The approval stops just
+    after Lewis's sanction is applied, before Max's, and the bot restarts. Once the queue runs,
+    Lewis is not sanctioned again, Max is sanctioned once, and each is announced once."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(LEWIS_PROFILE, LEWIS),
+                                    candidate(MAX_PROFILE, MAX)]
+    await _approve(league)
+    await run_until_done(league, "apply_sanction")
+    assert league.attendance._calls("apply_sanction") == [("apply_sanction", LEWIS_PROFILE)]
+
+    await restart_queue(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert league.attendance._calls("apply_sanction") == [
+        ("apply_sanction", LEWIS_PROFILE), ("apply_sanction", MAX_PROFILE),
+    ]
+    assert sorted(league.attendance._calls("announce_sanction")) == [
+        ("announce_sanction", LEWIS_PROFILE), ("announce_sanction", MAX_PROFILE),
+    ]
+
+
 async def test_an_approval_announcing_no_verdict_posts_no_heading(tmp_path):
     """Image spec, the verdict banner: a heading is posted only where a verdict follows it."""
     league = await review_league(tmp_path)
