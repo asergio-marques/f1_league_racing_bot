@@ -230,10 +230,6 @@ async def test_a_typed_answer_is_marked_and_saved_with_the_next_question_when_it
     assert MARK not in message.marks
 
 
-REARM_UNDISCARDABLE = "#439: re-arming a signup's 24 hours may still be discarded"
-
-
-@pytest.mark.xfail(strict=True, reason=REARM_UNDISCARDABLE)
 async def test_rearming_the_24_hours_cannot_be_discarded(tmp_path):
     """Kimi types "British" at the nationality question. His answer is saved, but the scheduler
     refuses to arm his 24 hours of inactivity again, so his channel's lane stops at

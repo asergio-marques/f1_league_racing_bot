@@ -618,10 +618,6 @@ async def test_a_button_answer_that_ends_a_correction_writes_only_correction_sub
     assert "Platform: EA" not in lines[0]
 
 
-COMMIT_UNDISCARDABLE = "#439: committing a signup may still be discarded"
-
-
-@pytest.mark.xfail(strict=True, reason=COMMIT_UNDISCARDABLE)
 async def test_a_correction_s_commit_cannot_be_discarded(tmp_path):
     """A league manager asked Kimi to correct his nationality, and he types "German". The save
     that commits his signup on the league lane fails, so the queue stops at `commit`. A league

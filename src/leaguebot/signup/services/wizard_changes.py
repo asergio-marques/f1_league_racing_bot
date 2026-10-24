@@ -24,7 +24,10 @@ Cancel Signup asks `signup.end`, a change of the league lane too: its check refu
 has already ended, and its one job `end` (a save) returns the driver to Not Signed Up, ends the
 wizard, takes away the timers, writes the "Withdrawn" line and asks back `signup.closing` (signup's
 closing jobs, `closing_steps`) on the driver's own lane, so that a closing notice Discord refuses
-stops that lane alone and the league's change is done.
+stops that lane alone and the league's change is done. `end` cannot be discarded (#439, slice 8),
+whatever ended the signup: dropped, a driver correcting their signup would stay in Pending Driver
+Correction, an unsettled signup that refuses the season's placements, so a Discard on it is refused
+and only a Retry moves it.
 
 A held channel's deletion asks `signup.channel.delete` (`channel_delete_change`): the hold's
 24-hour timer's own, on the driver's lane, and `/driver reassign`'s for the replaced account's channel, on
@@ -41,7 +44,6 @@ A job that fails stops the queue (core specification, "How a change is carried o
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import logging
 from collections.abc import Callable
@@ -658,32 +660,22 @@ def end_change(
             "named": await name_of_member(ctx.bot, int(ctx.step_payload["user_id"]))
         })
 
-    async def ended(ctx: StepContext) -> bool:
-        """Whether the signup was ended, for the notice, lock and deletion that follow `end`: not
-        where an admin discarded `end`, which leaves the driver still part-way through signing up
-        (Discard drops that one job and the later ones check they are still due, core spec)."""
-        return not any(
-            view.name == END_JOB and "discarded" in (view.result or {}) for view in ctx.steps
-        )
-
     async def describe_name(ctx: StepContext) -> str:
         return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"
 
     async def describe_end(ctx: StepContext) -> str:
         return f"ending the signup of <@{ctx.step_payload['user_id']}>"
 
+    async def would_never_end(ctx: StepContext) -> str:
+        return (
+            f"<@{ctx.step_payload['user_id']}>'s signup would never end, and the season's "
+            "placements could not be confirmed until the bot restarts"
+        )
+
     def outcome(ctx: OutcomeContext) -> str:
         views = {view.name: view for view in ctx.steps}
-        ended = views.get(END_JOB)
         expired = ctx.payload.get("reason") == EXPIRED
         rejected = ctx.payload.get("reason") == REJECTED
-        if ended is not None and "discarded" in (ended.result or {}):
-            if rejected:
-                return "⚠️ The signup was not rejected: the job was discarded."
-            return (
-                "⚠️ The signup was not ended: the job was discarded." if expired
-                else "⚠️ Your signup was not withdrawn: the job was discarded."
-            )
         if rejected:
             return "✅ Signup rejected."
         if expired:
@@ -700,14 +692,11 @@ def end_change(
         plan=plan,
         steps={
             NAME_JOB: Step(NAME_JOB, StepKind.ACT, name_driver, describe=describe_name),
-            END_JOB: Step(END_JOB, StepKind.SAVE, end, describe=describe_end),
-            **{
-                name: (
-                    dataclasses.replace(step, still_due=ended)
-                    if name in (SIGNUP_NOTICE, CLOSE_SIGNUP, ARM_DELETION) else step
-                )
-                for name, step in closing_steps(now=now, arm_once=arm_once).items()
-            },
+            END_JOB: Step(
+                END_JOB, StepKind.SAVE, end, describe=describe_end,
+                undiscardable=would_never_end,
+            ),
+            **closing_steps(now=now, arm_once=arm_once),
         },
         check=check,
         key=lambda payload: f"{END}:{payload['user_id']}",

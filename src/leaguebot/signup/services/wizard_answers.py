@@ -23,7 +23,10 @@ own (a save waits on no second connection) and their timers taken away after. Th
 `signup.panel` on the driver's lane, which locks typing, posts the review panel and takes the ⏳
 off, so the mark outlives the whole hand-over (R10). The panel's post cannot be discarded (#439,
 slice 8): dropped, the driver would wait for approval with no panel, an unsettled signup that
-refuses the season's placements, so a Discard on it is refused and only a Retry moves it. A driver whose signup a close of the window
+refuses the season's placements, so a Discard on it is refused and only a Retry moves it. Nor can
+`arm_inactivity` or a correction's `commit` (#439, slice 8): dropped, a signup would never time
+out, or a correction would never be submitted, while the driver corrects it, either an unsettled
+signup that refuses the season's placements. A driver whose signup a close of the window
 ended meanwhile is no longer due: the submit is dropped, nothing saved.
 
 **Rejected:** keeping the draft in memory until the last answer, which a restart would lose; one
@@ -645,6 +648,13 @@ def answer_change(
     async def describe_arm(_ctx: StepContext) -> str:
         return "arming the signup's 24 hours again"
 
+    async def would_never_time_out(ctx: StepContext) -> str:
+        return (
+            f"<@{ctx.step_payload['user_id']}>'s signup would never time out if they stopped "
+            "answering, and while they correct it the season's placements could not be "
+            "confirmed until the bot restarts"
+        )
+
     async def describe_show(ctx: StepContext) -> str:
         return f"asking the next question in <#{ctx.step_payload['channel_id']}>"
 
@@ -659,7 +669,8 @@ def answer_change(
         REFUSE: Step(REFUSE, StepKind.ACT, refuse, describe=describe_refuse),
         SAVE_ANSWER: Step(SAVE_ANSWER, StepKind.SAVE, save_answer, describe=describe_save),
         ARM_INACTIVITY: Step(
-            ARM_INACTIVITY, StepKind.ACT, arm_inactivity, still_due=_saved_due, describe=describe_arm
+            ARM_INACTIVITY, StepKind.ACT, arm_inactivity, still_due=_saved_due,
+            describe=describe_arm, undiscardable=would_never_time_out,
         ),
         SHOW_NEXT: Step(
             SHOW_NEXT, StepKind.ACT, show_next, still_due=_saved_due, describe=describe_show
@@ -805,12 +816,21 @@ def submit_change(
     async def describe_disarm(_ctx: StepContext) -> str:
         return "taking the signup's 24 hours away"
 
+    async def would_never_be_submitted(ctx: StepContext) -> str:
+        return (
+            f"<@{ctx.payload['user_id']}>'s signup would never be submitted, and while they "
+            "correct it the season's placements could not be confirmed until the bot restarts"
+        )
+
     return ChangeType(
         kind=SUBMIT,
         opening=(PlannedStep(NAME_DRIVER), PlannedStep(COMMIT), PlannedStep(DISARM)),
         steps={
             NAME_DRIVER: Step(NAME_DRIVER, StepKind.ACT, name_driver, describe=describe_name),
-            COMMIT: Step(COMMIT, StepKind.SAVE, commit, describe=describe_commit),
+            COMMIT: Step(
+                COMMIT, StepKind.SAVE, commit, describe=describe_commit,
+                undiscardable=would_never_be_submitted,
+            ),
             DISARM: Step(DISARM, StepKind.ACT, disarm, describe=describe_disarm),
         },
         check=check,

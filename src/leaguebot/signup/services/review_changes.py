@@ -34,7 +34,9 @@ typed, `post_choices` posts the correction choices and **its record saves the ti
 posted** (`correction_offered_at`), and `arm_lapse`, a job of its own after them, arms the five
 minutes from that time, so the manager's five minutes start when the buttons appear and not when
 the reason was typed, however long the queue held it. A choices change whose conversation has
-ended is dropped.
+ended is dropped. `arm_lapse` cannot be discarded (#439, slice 8): dropped, nothing would end the
+correction request and the driver would stay awaiting a choice, an unsettled signup that refuses
+the season's placements; a Discard on it is refused and only a Retry moves it.
 
 **The choice of what to correct** asks `signup.correction.choose` (C86) when a manager presses one of
 the correction choices, acknowledged privately and updated. Its check refuses a request that has
@@ -45,7 +47,10 @@ time counts though the queue reaches it later, and a choice pressed late is refu
 lapse has not yet run. Its jobs are `name_driver`, `choose` (a save: Pending Driver Correction, the
 wizard moved to the step that re-collects the answer, the line written) and `arm_inactivity`, a
 job of its own after it, which takes the five minutes away and arms the driver's 24 hours from
-when it ran. The choice asks back `signup.recollect` on the driver's own lane for the permission
+when it ran. `choose` and `arm_inactivity` cannot be discarded
+(#439, slice 8): dropped, the driver would be left awaiting a choice nobody can make, or a
+correction that never times out, either an unsettled signup that refuses the season's placements;
+a Discard on either is refused and only a Retry moves it. The choice asks back `signup.recollect` on the driver's own lane for the permission
 and the prompt to re-submit, so that a channel Discord refuses stops that driver's lane alone.
 
 **The correction's lapse** asks `signup.correction.lapse` (C87), on the league lane, when the five
@@ -521,6 +526,13 @@ def choices_change(
     async def describe_reason(ctx: StepContext) -> str:
         return f"deleting the reason typed in <#{ctx.step_payload['channel_id']}>"
 
+    async def would_never_lapse(ctx: StepContext) -> str:
+        return (
+            f"nothing would end <@{ctx.step_payload['user_id']}>'s correction request once its "
+            "five minutes ran out, and the season's placements could not be confirmed until the "
+            "bot restarts"
+        )
+
     return ChangeType(
         kind=CHOICES,
         opening=(),
@@ -532,7 +544,10 @@ def choices_change(
             POST_CHOICES: Step(
                 POST_CHOICES, StepKind.ACT, post_choices, describe=describe_post, record=offered
             ),
-            ARM_LAPSE: Step(ARM_LAPSE, StepKind.ACT, arm_lapse, describe=describe_arm),
+            ARM_LAPSE: Step(
+                ARM_LAPSE, StepKind.ACT, arm_lapse, describe=describe_arm,
+                undiscardable=would_never_lapse,
+            ),
         },
         check=standing,
         key=lambda payload: f"{CHOICES}:{payload['user_id']}",
@@ -647,7 +662,6 @@ def choose_change(
     async def chosen(ctx: StepContext) -> bool:
         return any(
             view.name == CHOOSE_JOB and view.done and not (view.result or {}).get("ended")
-            and "discarded" not in (view.result or {})
             for view in ctx.steps
         )
 
@@ -666,11 +680,16 @@ def choose_change(
     async def describe_arm(ctx: StepContext) -> str:
         return f"arming the 24 hours of <@{ctx.step_payload['user_id']}>'s correction"
 
+    async def would_never_time_out(ctx: StepContext) -> str:
+        return (
+            f"<@{ctx.step_payload['user_id']}>'s signup would never time out if they stopped "
+            "answering, and while they correct it the season's placements could not be "
+            "confirmed until the bot restarts"
+        )
+
     def outcome(ctx: OutcomeContext) -> str:
         views = {view.name: view for view in ctx.steps}
         chose = views.get(CHOOSE_JOB)
-        if chose is not None and "discarded" in (chose.result or {}):
-            return "⚠️ No answer was sent back: the job was discarded."
         if chose is not None and (chose.result or {}).get("ended"):
             return f"⛔ {CORRECTION_ENDED}"
         return f"✅ Re-collecting **{str(ctx.payload['parameter']).replace('_', ' ')}**."
@@ -681,10 +700,13 @@ def choose_change(
         plan=plan,
         steps={
             NAME_DRIVER: Step(NAME_DRIVER, StepKind.ACT, name_driver, describe=describe_name),
-            CHOOSE_JOB: Step(CHOOSE_JOB, StepKind.SAVE, choose, describe=describe_choose),
+            CHOOSE_JOB: Step(
+                CHOOSE_JOB, StepKind.SAVE, choose, describe=describe_choose,
+                undiscardable=would_await_a_choice_nobody_can_make,
+            ),
             ARM_INACTIVITY: Step(
                 ARM_INACTIVITY, StepKind.ACT, arm_inactivity, still_due=chosen,
-                describe=describe_arm,
+                describe=describe_arm, undiscardable=would_never_time_out,
             ),
         },
         check=check,
@@ -806,6 +828,15 @@ async def ask_lapse(queue: "ChangeQueue", user_id: str, *, restart: bool = False
         {"user_id": user_id, "restart": restart},
         what=f"returning <@{user_id}> to the approval queue, no correction having been chosen",
         origin=ChangeOrigin.BOT,
+    )
+
+
+async def would_await_a_choice_nobody_can_make(ctx: StepContext) -> str:
+    """What a Discard of a job that moves a driver out of Awaiting Correction Parameter would
+    leave: the driver stuck there, an unsettled signup that refuses the season's placements."""
+    return (
+        f"<@{ctx.step_payload['user_id']}> would be left awaiting a correction nobody can "
+        "choose, and the season's placements could not be confirmed until the bot restarts"
     )
 
 
@@ -982,12 +1013,6 @@ def lapse_change(
 
     async def describe_panel(ctx: StepContext) -> str:
         return f"posting <@{ctx.step_payload['user_id']}>'s review panel again"
-
-    async def would_await_a_choice_nobody_can_make(ctx: StepContext) -> str:
-        return (
-            f"<@{ctx.step_payload['user_id']}> would be left awaiting a correction nobody can "
-            "choose, and the season's placements could not be confirmed until the bot restarts"
-        )
 
     async def would_wait_unreviewed(ctx: StepContext) -> str:
         return (

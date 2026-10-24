@@ -80,7 +80,6 @@ KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 KIMI_LANE = f"channel:{KIMI_CHANNEL}"
 
 
-
 async def _league(tmp_path: Any, *, manage_channels: bool = True,
                   category_size: int = 3) -> SeasonLeague:
     """`setup_league` at Signups with the window open; the signup channel in the category
@@ -836,10 +835,6 @@ async def test_an_expiry_asked_by_its_timer_ends_the_signup(tmp_path):
     assert "lapsed" in league.log().lower()
 
 
-END_UNDISCARDABLE = "#439: ending a signup may still be discarded"
-
-
-@pytest.mark.xfail(strict=True, reason=END_UNDISCARDABLE)
 async def test_ending_a_signup_cannot_be_discarded(tmp_path):
     """Kimi is correcting his signup (Pending Driver Correction), last active 24 hours and a
     minute ago. His 24-hour timer fires, but the save ending his signup fails, so the league lane
@@ -1352,7 +1347,6 @@ async def test_driver_reassign_asks_the_held_channel_s_deletion(tmp_path):
 MEMBER_LEFT_KIND = "signup.member_left"
 #: A change of the test's own on Kimi's lane, standing for one of his turns.
 KIMI_TURN = "test.kimi_turn"
-
 
 
 async def _leave(league: SeasonLeague, user_id: int = SIGNING_UP) -> None:

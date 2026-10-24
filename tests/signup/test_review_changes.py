@@ -417,10 +417,6 @@ async def test_the_correction_timer_is_armed_by_a_job_of_its_own_after_the_choic
     ]
 
 
-ARM_LAPSE_UNDISCARDABLE = "#439: arming the correction's five minutes may still be discarded"
-CHOOSE_UNDISCARDABLE = "#439: the choice and its 24 hours may still be discarded"
-
-
 def _refusing_to_arm(timer: str) -> Any:
     """A one-off timer that the scheduler refuses to arm for *timer*, and arms for any other."""
     def arm(name: str, *_args: Any, **_kwargs: Any) -> None:
@@ -429,7 +425,6 @@ def _refusing_to_arm(timer: str) -> Any:
     return arm
 
 
-@pytest.mark.xfail(strict=True, reason=ARM_LAPSE_UNDISCARDABLE)
 async def test_arming_the_five_minutes_cannot_be_discarded(tmp_path):
     """Manager 77 types the reason after Request Changes and the correction choices are posted
     in Kimi's channel, but the scheduler refuses to arm the five minutes, so Kimi's lane stops at
@@ -464,7 +459,6 @@ async def test_arming_the_five_minutes_cannot_be_discarded(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=CHOOSE_UNDISCARDABLE)
 @pytest.mark.parametrize("job", ["choose", "arm_inactivity"])
 async def test_the_choice_and_its_24_hours_cannot_be_discarded(tmp_path, job):
     """Kimi awaits a correction parameter, the choices posted a minute ago, and manager 77
