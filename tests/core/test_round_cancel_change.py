@@ -92,7 +92,6 @@ CANNOT_DISCARD = (
     "⛔ This job can't be discarded: without it round 3 in **Pro** would be left with no timed "
     "work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
 )
-SAVE_UNDISCARDABLE = "#439: a cancellation's save may still be discarded"
 CALENDAR_SYNC_UNBUILT = (
     "#439: a discarded calendar repost still names `/division calendar-sync` without saying it "
     "works only while the season is still being raced"
@@ -766,8 +765,7 @@ def _outcome(interaction: Any) -> str:
 @pytest.mark.parametrize("case", [
     pytest.param("cancelled", id="cancelled"),
     pytest.param("submission", id="refused, its submission has accepted a session"),
-    pytest.param("retried", id="its save retried, renumbered while it stood stopped",
-                 marks=pytest.mark.xfail(strict=True, reason=SAVE_UNDISCARDABLE)),
+    pytest.param("retried", id="its save retried, renumbered while it stood stopped"),
 ])
 async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_its_number_when_it_runs(
     tmp_path, case,
@@ -1101,7 +1099,6 @@ async def test_a_discarded_calendar_repost_names_calendar_sync_while_the_season_
     assert f"\n  not notified: {CALENDAR_DISCARDED}" in _success_lines(league)[0]
 
 
-@pytest.mark.xfail(strict=True, reason=SAVE_UNDISCARDABLE)
 async def test_the_save_cannot_be_discarded_once_the_timed_work_is_removed(tmp_path):
     """The save stops on a fault after round 3's timed work came off. A league admin's Discard
     is refused, saying the round would be left with no timed work; the queue stays stopped at the

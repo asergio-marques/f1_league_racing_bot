@@ -20,7 +20,10 @@ channel is where a manager pastes.
 status it was cancelled from, its division finished and the season moved on where that was the
 last it waited on, reading nothing but the connection it is handed. The removal goes first, as the
 command did it, because a cancelled round whose weather jobs stood would have its forecasts
-posted; removing never raises, so a stop there means the scheduler itself failed. **Everything
+posted; a stop there means the scheduler itself failed, and the removal of a division's or a
+season's rounds lists every round before it takes any, so that a stopped removal has taken none.
+**The save cannot be discarded** (owner, 2026-10-23): with the timed work off, dropping it would
+leave the rounds neither cancelled nor ever run, so a stopped save can only be retried. **Everything
 else follows the save as a job of its own**, each of which stops the queue where it fails: each
 enabled module's notice, the check-in call's take-down, the calendar's repost, and a closing job
 that writes the one line. The wind-down is a change of its own, asked in the save where the
@@ -142,6 +145,7 @@ from leaguebot.core.services.season_lifecycle_service import (
 from leaguebot.core.services.season_service import (
     SeasonImmutableError,
     SeasonService,
+    round_called,
     cancel_division_on,
     cancel_round_on,
     cancel_season_divisions_on,
@@ -386,16 +390,8 @@ UNARM_DISCARDED = (
     "Nothing was cancelled: round {number} in **{division}** stands as it was. Run "
     "`/round cancel` again."
 )
-SAVE_DISCARDED = (
-    "Nothing was cancelled, but round {number} in **{division}** no longer has its timed work: "
-    "run `/round cancel` again."
-)
 DIVISION_UNARM_DISCARDED = (
     "Nothing was cancelled: **{division}** stands as it was. Run `/division cancel` again."
-)
-DIVISION_SAVE_DISCARDED = (
-    "Nothing was cancelled, but the rounds of **{division}** no longer have their timed work: "
-    "run `/division cancel` again."
 )
 _DISCARDED_NOTICE = "the notice could not be posted, and a league admin discarded it"
 _DISCARDED_CHANNEL = (
@@ -408,10 +404,6 @@ _DISCARDED_CALENDAR = (
 
 SEASON_UNARM_DISCARDED = (
     "Nothing was cancelled: season {number} stands as it was. Run `/season cancel` again."
-)
-SEASON_SAVE_DISCARDED = (
-    "Nothing was cancelled, but the rounds of season {number} no longer have their timed work: "
-    "run `/season cancel` again."
 )
 SEASON_END_DISCARDED = (
     "Season {number}'s divisions and rounds are cancelled, but the season itself is not: the "
@@ -445,9 +437,9 @@ def _refusal_of(ctx: OutcomeContext) -> str | None:
 
 
 def _saved_number(ctx: OutcomeContext) -> Any:
-    """The number of the round cancelled, as the closing job read it after a discarded save, else
-    as the save found it, else as the removal of its timed work did, else the press's: a
-    discarded save never read it, and the round may have been renumbered since each of them."""
+    """The number of the round cancelled, as the closing job read it after a discarded removal,
+    else as the save found it, else as the removal of its timed work did, else the press's: a
+    discarded removal never ran the save, and the round may have been renumbered since each."""
     for name in (CLOSE, APPLY, UNARM):
         number = (_view(ctx, name).result or {}).get("round_number")
         if number is not None:
@@ -733,6 +725,12 @@ def round_cancel_change(
         discarded."""
         return not _discarded(_view(ctx, UNARM))
 
+    async def would_be_left_unrun(ctx: StepContext) -> str:
+        """What dropping the save would leave: the timed work is off and nothing cancelled, so
+        the save is retried, never discarded."""
+        called = await round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        return f"{called} would be left with no timed work, neither cancelled nor ever run"
+
     async def refusal_in_save(db: aiosqlite.Connection, payload: dict[str, Any]) -> str:
         """Why the guarded save moved nothing: the same words the check refuses in."""
         cursor = await db.execute(
@@ -835,11 +833,11 @@ def round_cancel_change(
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """Write the one line that records the cancellation, or the refusal the save met.
 
-        Where the save was discarded, it never read the round's number: the round is read here,
-        the last job, so that the outcome names it by the number it bears now, which another
-        round's amended date may have changed while the save stood stopped."""
+        Where the removal was discarded, the save never ran and read no number: the round is read
+        here, the last job, so that the outcome names it by the number it bears now, which another
+        round's amended date may have changed while the removal stood stopped."""
         payload = ctx.payload
-        if _discarded(_view(ctx, UNARM)) or _discarded(_view(ctx, APPLY)):
+        if _discarded(_view(ctx, UNARM)):
             cursor = await db.execute(
                 "SELECT round_number FROM rounds WHERE id = ?", (int(payload["round_id"]),)
             )
@@ -872,8 +870,6 @@ def round_cancel_change(
         refused = _refusal_of(ctx)
         if refused:
             return refused
-        if _discarded(_view(ctx, APPLY)):
-            return SAVE_DISCARDED.format(**words)
         return (
             f"✅ Round **{words['number']}** in **{words['division']}** cancelled."
             + notices.failure_lines(not_notified(ctx))
@@ -896,6 +892,7 @@ def round_cancel_change(
             describe=_named(
                 "cancelling round {number} in **{division}**", number_now=True
             ),
+            undiscardable=would_be_left_unrun,
         ),
         CLOSE: Step(
             CLOSE, StepKind.SAVE, close,
@@ -1015,6 +1012,14 @@ def division_cancel_change(
         discarded."""
         return not _discarded(_view(ctx, UNARM))
 
+    async def would_be_left_unrun(ctx: StepContext) -> str:
+        """What dropping the save would leave: the timed work is off and nothing cancelled, so
+        the save is retried, never discarded."""
+        return (
+            f"the rounds of **{ctx.payload['division_name']}** would be left with no timed work, "
+            "neither cancelled nor ever run"
+        )
+
     async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """The one save: the division and every round of it that may still be cancelled, each
         round with the status it was cancelled from, and the season moved on where this was the
@@ -1109,7 +1114,7 @@ def division_cancel_change(
 
     async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """Write the one line that records the cancellation, or the refusal the save met."""
-        if _discarded(_view(ctx, UNARM)) or _discarded(_view(ctx, APPLY)):
+        if _discarded(_view(ctx, UNARM)):
             return StepResult(result={"closed": True})
         refused = _refusal_of(ctx)
         if refused:
@@ -1132,8 +1137,6 @@ def division_cancel_change(
         refused = _refusal_of(ctx)
         if refused:
             return refused
-        if _discarded(_view(ctx, APPLY)):
-            return DIVISION_SAVE_DISCARDED.format(division=name)
         return f"✅ Division **{name}** cancelled." + notices.failure_lines(not_notified(ctx))
 
     steps: dict[str, Step] = {
@@ -1149,6 +1152,7 @@ def division_cancel_change(
         APPLY: Step(
             APPLY, StepKind.SAVE, apply, still_due=unarmed,
             describe=_named("cancelling **{division}**"),
+            undiscardable=would_be_left_unrun,
         ),
         CLOSE: Step(
             CLOSE, StepKind.SAVE, close,
@@ -1275,6 +1279,14 @@ def season_cancel_change(
         """The save is due only where the timed work was removed, not where that job was
         discarded."""
         return not _discarded(_view(ctx, UNARM))
+
+    async def would_be_left_unrun(ctx: StepContext) -> str:
+        """What dropping the save would leave: the timed work is off and nothing cancelled, so
+        the save is retried, never discarded."""
+        return (
+            f"the rounds of season {ctx.payload['season_number']} would be left with no timed "
+            "work, neither cancelled nor ever run"
+        )
 
     async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """The first save: the cancellation recorded, the season itself left ongoing; see the
@@ -1462,7 +1474,7 @@ def season_cancel_change(
                     *untold_log(ctx.named, "/season cancel", untold),
                 ),
             )
-        if _discarded(_view(ctx, UNARM)) or _discarded(_view(ctx, APPLY)) or not _ended(ctx):
+        if _discarded(_view(ctx, UNARM)) or not _ended(ctx):
             return StepResult(result=result, lines=untold_log(ctx.named, "/season cancel", untold))
         line = (
             f"{ctx.named} | /season cancel | Success"
@@ -1476,7 +1488,6 @@ def season_cancel_change(
         text = _outcome(ctx)
         if (
             not _discarded(_view(ctx, UNARM))
-            and not _discarded(_view(ctx, APPLY))
             and _ended(ctx)
             and not _refused(ctx)
         ):
@@ -1490,8 +1501,6 @@ def season_cancel_change(
         refused = _refused(ctx)
         if refused:
             return refused
-        if _discarded(_view(ctx, APPLY)):
-            return SEASON_SAVE_DISCARDED.format(number=number)
         if not _ended(ctx):
             return SEASON_END_DISCARDED.format(number=number)
         return (
@@ -1522,6 +1531,7 @@ def season_cancel_change(
         APPLY: Step(
             APPLY, StepKind.SAVE, apply, still_due=unarmed,
             describe=describing("cancelling season {number}"),
+            undiscardable=would_be_left_unrun,
         ),
         END: Step(
             END, StepKind.SAVE, end,

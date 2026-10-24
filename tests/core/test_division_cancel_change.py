@@ -81,7 +81,6 @@ CANNOT_DISCARD = (
     "⛔ This job can't be discarded: without it the rounds of **Pro** would be left with no timed "
     "work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
 )
-SAVE_UNDISCARDABLE = "#439: a cancellation's save may still be discarded"
 CALENDAR_SYNC_UNBUILT = (
     "#439: a discarded calendar repost still names `/division calendar-sync` without saying it "
     "works only while the season is still being raced"
@@ -567,7 +566,6 @@ async def test_the_wind_down_follows_as_a_change_of_its_own(tmp_path):
     assert (await league.season())["stage"] == "PENDING_COMPLETION"
 
 
-@pytest.mark.xfail(strict=True, reason=SAVE_UNDISCARDABLE)
 async def test_a_discarded_save_cancels_nothing(tmp_path):
     """The save stops on a fault after Pro's timed work came off. A league admin's Discard is
     refused, saying Pro's rounds would be left with no timed work; the queue stays stopped at the

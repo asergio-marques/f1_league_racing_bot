@@ -127,7 +127,6 @@ CANNOT_DISCARD = (
     "⛔ This job can't be discarded: without it the rounds of season 3 would be left with no "
     "timed work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
 )
-SAVE_UNDISCARDABLE = "#439: a cancellation's save may still be discarded"
 CALENDAR_UNPOSTABLE_UNBUILT = (
     "#439: a discarded calendar repost after a season cancel still names "
     "`/division calendar-sync`, which a cancelled season refuses"
@@ -1309,7 +1308,6 @@ async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     assert await _status(league) == "ACTIVE"
 
 
-@pytest.mark.xfail(strict=True, reason=SAVE_UNDISCARDABLE)
 async def test_the_first_save_cannot_be_discarded_once_the_timed_work_is_removed(tmp_path):
     """The first save stops on a fault after every round's timed work came off. A league admin's
     Discard is refused, saying season 3's rounds would be left with no timed work; the queue stays
