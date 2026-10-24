@@ -1038,6 +1038,31 @@ async def test_a_clean_up_no_longer_due_when_its_turn_comes_is_dropped(tmp_path,
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: rounds has no not_held column, and the forecast clean-up drops every cancelled "
+    "round, so a round whose every session was entered as not held keeps its forecast"
+))
+async def test_a_clean_up_deletes_the_forecast_of_a_round_whose_every_session_was_not_held(
+    tmp_path,
+):
+    """Round 3's Phase 3 forecast (9303) stands, and the round then ended cancelled because every
+    session of it was entered as not held. Its clean-up, asked a day after the start, is not
+    dropped: the queue deletes the forecast and drops its record, as for any round raced
+    (weather :143). A round called off keeps its forecast, as the test above pins."""
+    league = await _league(tmp_path)
+    await posted_forecast(league, ROUND, 3, 9303)
+    await league.write("UPDATE rounds SET status = 'CANCELLED', not_held = 1 WHERE id = ?", ROUND)
+
+    await _clean_up(league)
+    await run_queue(league.bot)
+
+    assert await _states(league, CLEAN_UP_KIND) == ["DONE"]
+    assert ("delete", 9303) in _events(league)
+    assert 9303 not in league.channel(FORECAST).messages
+    assert await _forecasts(league) == {}
+    assert await stopped_job(league.db_path) is None
+
+
 async def test_a_clean_up_for_a_round_that_is_not_there_asks_nothing(tmp_path):
     """The clean-up's timer fires for a round no longer in the database: nothing is asked of the
     queue."""

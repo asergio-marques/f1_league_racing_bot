@@ -115,6 +115,33 @@ async def test_the_timer_asks_for_the_clean_up_and_the_queue_deletes_each_messag
     assert "ask_check_in_clean_up(" in inspect.getsource(bot_module.main)
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: rounds has no not_held column, and the check-in clean-up refuses every cancelled "
+    "round, so a round whose every session was entered as not held keeps its call"
+))
+async def test_the_day_after_takes_down_the_call_of_a_round_whose_every_session_was_not_held(
+    tmp_path,
+):
+    """Pro's round 3 was raced 25 hours ago, its call, last notice and announcement standing, and
+    then ended cancelled because every session of it was entered as not held. Its clean-up is
+    asked as its timer asks it a day after the start: the queue deletes all three from Pro's
+    check-in channel, drops the call's record and marks the round's check-in over, as for any
+    round raced (attendance :75). A round called off is left alone, as
+    `test_rsvp_call_cleanup.py::test_the_cleanup_leaves_a_cancelled_round_alone` pins."""
+    league = await _league(tmp_path)
+    await league.write("UPDATE rounds SET status = 'CANCELLED', not_held = 1 WHERE id = ?",
+                       ROUND_3)
+
+    await _ask(league)
+    await run_queue(league.bot)
+
+    assert sorted(_deleted(league)) == sorted(CALL_MESSAGES)
+    assert await _call_rows(league) == []
+    assert await _cleared(league)
+    assert [row["state"] for row in await _clean_up_changes(league)] == ["DONE"]
+    assert await stopped_job(league.db_path) is None
+
+
 async def test_a_refused_delete_stops_the_queue_and_a_discard_names_it_for_deletion_by_hand(
     tmp_path,
 ):
