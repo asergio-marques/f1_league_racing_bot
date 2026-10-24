@@ -364,3 +364,46 @@ async def test_a_restart_s_clearing_ends_the_old_conversation_and_its_refused_de
     await ResultsCog(league.bot).on_message(message)
 
     assert TURN_KIND not in await _kinds(league)
+
+
+CANNOT_DISCARD_CLEAR = (
+    "⛔ This job can't be discarded: without it round 3 in **Pro** would take no results until "
+    "the bot next restarts. Fix what stopped it and press **Retry**."
+)
+CLEAR_UNDISCARDABLE = "#439: clearing a submission a restart cut short may still be discarded"
+
+
+@pytest.mark.xfail(strict=True, reason=CLEAR_UNDISCARDABLE)
+async def test_the_restart_s_clearing_cannot_be_discarded(tmp_path):
+    """At the restart the save clearing round 3's cut-short submission fails (the database refuses
+    to delete its sessions), stopping the queue at `clear`. A league admin presses Discard: it is
+    refused, saying round 3 in Pro would take no results until the bot next restarts; the queue
+    stays stopped there, the accepted session and the submission row still stand and channel 690
+    is not deleted. Once the fault is lifted, a Retry clears them, deletes channel 690 and opens
+    round 3's submission afresh in a new channel."""
+    league = await _league(tmp_path)
+    await league.write(
+        "CREATE TRIGGER refuse_clearing BEFORE DELETE ON session_results "
+        "BEGIN SELECT RAISE(ABORT, 'the results are locked'); END"
+    )
+
+    await _restart(league)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "clear"
+
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == CANNOT_DISCARD_CLEAR
+    assert (await stopped_job(league.db_path))["id"] == stopped["id"]
+    assert await _sessions(league) == 1
+    assert await _submission(league) == [{"channel_id": SUBMISSION_CHANNEL, "closed": 0}]
+    assert not _deleted(league)
+
+    await league.write("DROP TRIGGER refuse_clearing")
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _sessions(league) == 0
+    assert _deleted(league)
+    [made] = league.created
+    assert await _submission(league) == [{"channel_id": made, "closed": 0}]

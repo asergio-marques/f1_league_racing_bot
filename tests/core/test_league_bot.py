@@ -201,7 +201,8 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     approved season's timed work and of an amended round's, the creation of a round's results
     submission channel, the save of a round's, a division's and a season's cancellation once
     their timed work is removed, and the letting go of a season's setup held in memory once it is
-    approved or aborted, and the forgetting of a review taken down. Every other job a league
+    approved or aborted, the forgetting of a review taken down, and the start of a round's
+    results submission and the clearing of one a restart cut short. Every other job a league
     admin may discard."""
     from leaguebot.__main__ import register_change_types
 
@@ -216,6 +217,8 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     )
     assert marked == [
         ("results.submission.open", "create_channel"),
+        ("results.submission.open", "start_round"),
+        ("results.submission.restart", "clear"),
         ("season.abort", "forget_setup"),
         ("season.approve", "arm"),
         ("season.approve", "forget_setup"),
