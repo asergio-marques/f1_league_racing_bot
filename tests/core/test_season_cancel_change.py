@@ -79,6 +79,7 @@ from tests.support.season_league import (
     ongoing_league,
     open_submission,
     profile_id,
+    removed_jobs,
     reply,
     round_id,
     season_end_changes,
@@ -380,9 +381,11 @@ def _unarming_fails(league: Any) -> None:
 
 
 def _unarming_works(league: Any) -> None:
-    league.bot.scheduler_service.cancel_rounds = MagicMock(
-        side_effect=lambda round_ids, **_: league.unarmed.extend(round_ids)
-    )
+    def _cancel_rounds(round_ids: Any, **_kwargs: Any) -> dict[int, list[str]]:
+        league.unarmed.extend(round_ids)
+        return {rid: removed_jobs(rid) for rid in round_ids}
+
+    league.bot.scheduler_service.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
 
 
 async def _formers(league: Any, *user_ids: int) -> None:
@@ -955,11 +958,11 @@ async def test_the_unarming_reads_every_division_s_rounds_before_removing_any(tm
     scheduler.cancel_round = MagicMock(
         side_effect=lambda round_id, **_: events.append(("remove", [round_id]))
     )
-    scheduler.cancel_rounds = MagicMock(
-        side_effect=lambda round_ids, **kwargs: events.append(
-            ("remove", sorted(round_ids), kwargs.get("season_end"))
-        )
-    )
+    def _cancel_rounds(round_ids: Any, **kwargs: Any) -> dict[int, list[str]]:
+        events.append(("remove", sorted(round_ids), kwargs.get("season_end")))
+        return {rid: removed_jobs(rid) for rid in round_ids}
+
+    scheduler.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
     await _asked(league)
     events.clear()
 
