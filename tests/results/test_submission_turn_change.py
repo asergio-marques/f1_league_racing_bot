@@ -293,6 +293,41 @@ async def test_a_paste_in_a_channel_held_by_an_amendment_or_closed_by_a_cancella
     assert "📋 Submit" not in _said(league)
 
 
+
+SAVE_RECHECK_UNBUILT = "#439: a session's save does not read again whether its round was cancelled"
+
+
+@pytest.mark.xfail(strict=True, reason=SAVE_RECHECK_UNBUILT)
+async def test_a_cancellation_saved_between_the_settling_and_the_save_saves_no_session(
+    tmp_path, monkeypatch,
+):
+    """The admin pastes round 3's qualifying. Its turn is judged and settled, finding the round
+    open, and its save is next; before the save runs, a cancellation's save records round 3
+    cancelled. The session's save then saves nothing and answers in the channel that round 3 has
+    been cancelled, so its results can no longer be entered, and no prompt for the race is
+    posted."""
+    league = await _league(tmp_path, monkeypatch)
+
+    await _type(league, QUALI_PASTE)
+    for _ in range(50):
+        turns = await _turns(league)
+        if turns and any(job["name"] == "settle" and job["done_at"]
+                         for job in await step_rows(league.db_path, turns[0]["id"])):
+            break
+        await run_queue(league.bot, steps=1)
+    else:
+        raise AssertionError("the turn was never settled")
+    await league.write("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", ROUND_3)
+
+    await run_queue(league.bot)
+
+    assert await _sessions(league) == []
+    assert ("⛔ Round 3 has been cancelled, so its results can no longer be entered. Nothing was "
+            "saved.") in _said(league)
+    assert "📋 Submit" not in _said(league)
+    assert await stopped_job(league.db_path) is None
+
+
 async def test_a_message_by_someone_other_than_a_league_manager_is_ignored(tmp_path, monkeypatch):
     """Lewis, a driver without the league managers' role, types in the submission channel. The
     message is not marked, no turn is asked and nothing is posted."""
