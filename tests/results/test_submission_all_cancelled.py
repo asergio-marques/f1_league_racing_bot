@@ -47,8 +47,10 @@ from tests.support.change_queue import (
 from tests.support.season_league import (
     ADMIN_ID,
     AM,
+    CALL_MESSAGES,
     DIVISIONS,
     PRO,
+    PRO_ROLE,
     SEASON_ID,
     SUBMISSION_CHANNEL,
     SeasonLeague,
@@ -84,15 +86,24 @@ CALENDAR_DISCARDED = (
 )
 #: The head of the line that records the round ending cancelled.
 ENDED_LINE = "| ROUND_CANCELLED | Success"
+CHECKIN = DIVISIONS[PRO][3].checkin
+FORECAST = DIVISIONS[PRO][3].forecast
+#: What sets each module's "round cancelled" notice apart, in `/round cancel`'s words (Q-E5).
+CHECKIN_NOTICE = "There is no check-in to answer for it, and nobody is charged for it."
+FORECAST_NOTE = "No weather forecast will be posted for it."
+RESULTS_NOTE = "No results will be posted for it."
+#: The heading every one of round 3's notices opens with.
+NOTICE_HEADING = "**Round 3 Cancelled: Pro**"
 
 QUALIFYING, RACE = (
     results_formatter.format_session_label(session, is_sprint=False)
     for session in get_sessions_for_format(RoundFormat.NORMAL)[:2]
 )
 
-async def _league(tmp_path: Any) -> SeasonLeague:
-    """The league of the module docstring, the race not yet entered."""
-    league = await ongoing_league(tmp_path)
+async def _league(tmp_path: Any, **modules: bool) -> SeasonLeague:
+    """The league of the module docstring, the race not yet entered; *modules* turn weather or
+    attendance on beside results."""
+    league = await ongoing_league(tmp_path, **modules)
     league.roles_held[ADMIN_ID] = {MANAGER_ROLE_ID}
     await league.write("UPDATE rounds SET status = 'AWAITING_RESULTS' WHERE id = ?", ROUND_3)
     await open_submission(league, ROUND_3)
@@ -167,7 +178,7 @@ async def test_every_session_cancelled_posts_each_line_recorded_before_the_chann
     the race, each recorded as its session's results message. Only after both are posted does
     `results.submission.close_channel`, on round 3's lane, say "⏭️" in the submission channel and
     delete it, closing the submission row. No penalty review is asked and the queue is not
-    stopped."""
+    stopped. The results channel's "round cancelled" note comes after both lines."""
     league = await _league(tmp_path)
 
     await _cancel_the_race(league)
@@ -199,6 +210,10 @@ async def test_every_session_cancelled_posts_each_line_recorded_before_the_chann
     assert deleted, "the submission channel was not deleted"
     posted_at = [league.events.index(event) for event in sent if event[2] in lines.values()]
     assert len(posted_at) == 2 and max(posted_at) < deleted[0]
+    texts = league.texts(RESULTS)
+    [note] = [index for index, text in enumerate(texts) if RESULTS_NOTE in text]
+    assert all(index < note for index, text in enumerate(texts)
+               if "This session was cancelled" in text)
     assert "⏭️" in "\n".join(league.texts(SUBMISSION_CHANNEL))
     assert await _closed(league)
 
@@ -474,3 +489,98 @@ async def test_a_first_pass_ending_cancelled_plans_no_names_and_no_standings_job
     names = [row["name"] for row in await step_rows(league.db_path, handed["id"])]
     assert names[0] == "end_round"
     assert not {"names", "post_standings", "delete_message"} & set(names)
+
+
+# ---------------------------------------------------------------------------
+# Its notices, and its call and forecast left until the day after (Part E, E3)
+# ---------------------------------------------------------------------------
+
+
+def _sends(league: SeasonLeague, channel_id: int, phrase: str) -> list[Any]:
+    """Each send to channel *channel_id* whose content carries *phrase*."""
+    from tests.support.season_league import _content
+
+    return [call for call in league.channel(channel_id).send.call_args_list
+            if phrase in _content(call)]
+
+
+@pytest.mark.parametrize("weather, attendance", [
+    pytest.param(True, True, id="every module on",
+                 marks=pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)),
+    pytest.param(False, False, id="weather and attendance off",
+                 marks=pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)),
+])
+async def test_a_round_ending_cancelled_posts_the_round_cancelled_notices_in_check_in_forecast_and_results(
+    tmp_path, weather, attendance,
+):
+    """Round 3 ends cancelled when the admin types CANCELLED for its race. Each module that is on
+    posts its "round cancelled" notice once, in `/round cancel`'s words: Pro's check-in channel a
+    notice opening with Pro's role and pinging it, Pro's forecast and results channels a silent
+    note. A module that is off posts nothing (owner, check 1, "Post the notices"; Q-E5)."""
+    league = await _league(tmp_path, weather=weather, attendance=attendance)
+
+    await _cancel_the_race(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [results] = _sends(league, RESULTS, RESULTS_NOTE)
+    assert NOTICE_HEADING in str(results.args[0]) and results.kwargs.get("silent") is True
+    forecasts = _sends(league, FORECAST, FORECAST_NOTE)
+    checkins = _sends(league, CHECKIN, CHECKIN_NOTICE)
+    if not weather:
+        assert forecasts == [] and checkins == []
+        return
+    [forecast] = forecasts
+    assert NOTICE_HEADING in str(forecast.args[0]) and forecast.kwargs.get("silent") is True
+    [checkin] = checkins
+    assert str(checkin.args[0]).startswith(f"<@&{PRO_ROLE}>")
+    assert NOTICE_HEADING in str(checkin.args[0])
+    assert not checkin.kwargs.get("silent")
+    assert checkin.kwargs["allowed_mentions"].roles is True
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_a_round_ending_cancelled_leaves_its_call_and_forecast_until_the_day_after(
+    tmp_path,
+):
+    """Weather and attendance are on, and round 3's check-in call, last notice and announcement
+    stand in Pro's check-in channel. Round 3 ends cancelled when the admin types CANCELLED for its
+    race: none of the three is deleted, the call's record stays, nothing is deleted in Pro's
+    forecast channel, and round 3's timed work, its clean-ups a day after the start among it, is
+    not removed (owner, check 1, "Day after, as usual"; attendance :75; weather :143)."""
+    league = await _league(tmp_path, weather=True, attendance=True)
+
+    await _cancel_the_race(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _round(league) == ("CANCELLED", 1)
+    assert all(message_id in league.channel(CHECKIN).messages for message_id in CALL_MESSAGES)
+    assert not [event for event in league.events
+                if event[0] == "delete" and event[1] in (CHECKIN, FORECAST)]
+    assert len(await league.rows(
+        "SELECT * FROM rsvp_embed_messages WHERE round_id = ?", ROUND_3
+    )) == 1
+    assert ROUND_3 not in league.unarmed
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_a_discarded_notice_is_named_in_the_round_s_log_line(tmp_path):
+    """Weather is on, and Discord refuses Pro's forecast note after round 3 ends cancelled. The
+    queue stops at the note; a league admin discards it. The results note is still posted, and
+    the round's one `ROUND_CANCELLED` line names the forecast channel as not notified, the notice
+    discarded (core, Announcing a cancellation :495)."""
+    league = await _league(tmp_path, weather=True)
+    league.channel(FORECAST).send_fails = http_error(discord.Forbidden, status=403,
+                                                     text="Missing Access")
+
+    await _cancel_the_race(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "notify_forecast"
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(_sends(league, RESULTS, RESULTS_NOTE)) == 1
+    [line] = _ended_lines(league)
+    assert ("\n  not notified: **Pro** — forecast channel: the notice could not be posted, and a "
+            "league admin discarded it") in line
