@@ -56,6 +56,7 @@ from tests.support.change_queue import (
     run_queue,
     seed_server,
     step_rows,
+    stopped_job,
     tier_member,
 )
 from tests.support.review_league import (
@@ -247,6 +248,24 @@ async def _fail_the_open_save(db_path: str, failing: bool) -> None:
             )
         else:
             await db.execute("DROP TRIGGER fail_open")
+        await db.commit()
+
+
+async def _refuse_the_close(db_path: str, kind: str, refusing: bool) -> None:
+    """While *refusing*, a fault of the database refuses to save the `close` job of any change of
+    *kind* as done, so that save fails and is rolled back and the queue stops at it. A league
+    admin's Discard of the job is still saved."""
+    async with get_connection(db_path) as db:
+        if refusing:
+            await db.execute(
+                "CREATE TRIGGER refuse_close BEFORE UPDATE OF done_at ON queued_change_steps "
+                "WHEN NEW.name = 'close' AND NEW.done_at IS NOT NULL "
+                "AND COALESCE(NEW.result, '') NOT LIKE '%\"discarded\"%' AND (SELECT kind FROM "
+                f"queued_changes WHERE id = NEW.change_id) = '{kind}' "
+                "BEGIN SELECT RAISE(ABORT, 'disk fault'); END"
+            )
+        else:
+            await db.execute("DROP TRIGGER refuse_close")
         await db.commit()
 
 
@@ -550,6 +569,42 @@ async def test_the_view_is_registered_for_persistent_routing(tmp_path):
 
     league.bot.add_view.assert_called_once()
     assert league.bot.add_view.call_args.kwargs["message_id"] == _prompts(league)[0]
+
+
+CANNOT_DISCARD_CLOSE = (
+    "⛔ This job can't be discarded: without it round 3 in **Pro** could be left in its penalty "
+    "review with no prompt, never final, until the bot restarts. Fix what stopped it and press "
+    "**Retry**."
+)
+CLOSE_UNDISCARDABLE = "#439: the review's closing job may still be discarded"
+
+
+@pytest.mark.xfail(strict=True, reason=CLOSE_UNDISCARDABLE)
+async def test_the_opening_s_closing_job_cannot_be_discarded(tmp_path):
+    """Round 3's last paste, by the league manager Alex, asks for its penalty review. The review
+    opens, but the save of its last job, which hands the prompt to round 3's lane, fails and stops
+    the league lane at `close`. A league admin's Discard on it is refused, saying round 3 in Pro
+    could be left in its penalty review with no prompt, never final, until the bot restarts; the
+    queue stays stopped there and no prompt is posted. Once the fault is lifted, a Retry hands the
+    prompt over and it is posted in the submission channel, its id saved."""
+    league = await _league(tmp_path, name="open_close_undiscardable")
+    await _refuse_the_close(league.db_path, KIND, True)
+    await _open(league)
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "close"
+
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == CANNOT_DISCARD_CLOSE
+    assert (await stopped_job(league.db_path, "league"))["id"] == stopped["id"]
+    assert _prompts(league) == []
+
+    await _refuse_the_close(league.db_path, KIND, False)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [prompt] = _prompts(league)
+    assert (await _channel_row(league.db_path))["prompt_message_id"] == prompt
 
 
 # ---------------------------------------------------------------------------
