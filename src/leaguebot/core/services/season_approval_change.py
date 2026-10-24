@@ -94,6 +94,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 __all__ = [
+    "GRANT_ROLES",
     "KIND",
     "STAGE_REFUSAL",
     "TELL_KIND",
@@ -101,6 +102,7 @@ __all__ = [
     "driver_roles_step",
     "season_approval_change",
     "season_approval_tell_change",
+    "tell_channel",
     "ungranted_line",
     "unposted_lineup_line",
 ]

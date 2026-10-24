@@ -471,6 +471,7 @@ def register_change_types(bot: LeagueBot) -> None:
         round_amend_change,
         round_rearm_change,
     )
+    from leaguebot.core.services.mid_season_confirm_change import mid_season_confirm_change
     from leaguebot.core.services.season_approval_change import (
         season_approval_change,
         season_approval_tell_change,
@@ -858,6 +859,9 @@ def register_change_types(bot: LeagueBot) -> None:
     # The season's approval is judged again as it runs: the clock is the queue's, the windows the
     # enabled modules', and the drawing program the host's, read through `converter_available`
     # when it is judged, so a test that patches it moves the judgement.
+    def rasteriser_fault() -> str | None:
+        return None if converter_available() else f"{CONVERTER_NAME} is not installed on this host."
+
     bot.change_queue.register(
         season_approval_change(
             modules=bot.module_service,
@@ -866,15 +870,22 @@ def register_change_types(bot: LeagueBot) -> None:
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
             windows=lambda: bot.approval_windows(),
-            rasteriser_fault=lambda: None
-            if converter_available()
-            else f"{CONVERTER_NAME} is not installed on this host.",
+            rasteriser_fault=rasteriser_fault,
             snapshot_points_on=snapshot_configs_to_season_on,
             forget_setup=lambda: _forget_setup(bot),
             now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(season_approval_tell_change())
+    # The mid-season confirmation of placements is judged again as it runs, the host's drawing
+    # program read when it is judged, as the approval's is.
+    bot.change_queue.register(
+        mid_season_confirm_change(
+            modules=bot.module_service,
+            placement=bot.placement_service,
+            rasteriser_fault=rasteriser_fault,
+        )
+    )
     bot.change_queue.register(season_review_take_down_change())
     bot.scheduler_service.register_timer(
         season_review_changes.TIMER,
