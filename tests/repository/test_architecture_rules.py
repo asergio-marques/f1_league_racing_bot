@@ -55,9 +55,6 @@ HANDLERS = "#441"
 #: provides for the start-up sweep (architecture.md, "Timed work and restarts"). The missed
 #: post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
 CLEANUPS = f"{PASS['weather']} and {PASS['attendance']}"
-#: The slices of #439, each moving a set of flows onto the change queue.
-SLICE: dict[int | str, str] = {n: f"#439 slice {n}" for n in range(2, 8)}
-SLICE["6b"] = "#439 slice 6b"
 
 
 # ── Reading the source ──────────────────────────────────────────────────────────────────────
@@ -1224,9 +1221,9 @@ def test_no_service_reaches_the_change_queue_through_the_bot():
     """A service or a helper is handed the change queue by whoever builds or calls it, and never
     looks it up on the bot (architecture.md, "How modules and core fit together": "Services stay
     attached to the bot, and are built in one place"; #439 slice 6b, fold-in 6). A cog may read it
-    there, as every command and press asks the queue on the bot. Today's reads are listed under
-    the slice that hands the queue, and the callbacks of the views and forms in results' services
-    files under results' pass, which moves them (decision 20)."""
+    there, as every command and press asks the queue on the bot. Today's reads are the callbacks
+    of the views and forms in results' services files, listed under results' pass, which moves
+    them (decision 20)."""
     _check(
         "no service reaches the change queue through the bot",
         _queue_reached_through_the_bot_among(_nodes()),
@@ -1462,7 +1459,7 @@ def test_no_service_looks_another_service_up_on_the_bot():
     one up on the bot (architecture.md, "How modules and core fit together": "Services stay
     attached to the bot, and are built in one place"; #439 slice 6b, folded in at Gate 1). A cog
     may look a service up there. Today's lookups are listed under the pass of the module whose
-    file makes them; a lookup a slice of #439 removes deletes its line in that commit."""
+    file makes them; a lookup a design pass removes deletes its line in that commit."""
     _check(
         "no service looks another service up on the bot",
         _service_lookups_among(_nodes()),
@@ -2025,11 +2022,6 @@ def _saves_outside_a_change() -> Counter[tuple[str, str]]:
 
 
 KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
-    # The penalty and appeals approvals
-    ("results/services/standings_service.py", "persist_snapshots"): (1, PASS["results"]),
-    ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
-    # The standing posts
     # Core's pass
     ("core/cogs/bot_cog.py", "_audit"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (1, PASS["core"]),
@@ -2100,12 +2092,15 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/test_roster_service.py", "clear_all_test_drivers"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "remove_test_driver"): (1, PASS["core"]),
     # Results' pass
+    ("results/services/standings_service.py", "persist_snapshots"): (1, PASS["results"]),
     # Attendance's pass
     ("attendance/services/attendance_service.py", "AttendanceService.delete_division_configs"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.get_or_create_config"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.set_attendance_channel"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.set_rsvp_channel"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.set_setting"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # Signup's pass
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
@@ -2124,7 +2119,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/signup_module_service.py", "SignupModuleService.set_close_at"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.snapshot_season_config"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.withdraw_approval"): (1, PASS["signup"]),
-    # Weather's pass
     # Image's pass
     ("image/services/driver_portrait_service.py", "_disown"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "_record"): (1, PASS["image"]),
@@ -2137,8 +2131,8 @@ def test_nothing_writes_to_the_database_outside_a_queued_change():
     """A change is carried out on the change queue, which saves each step with its mark, so a
     stop leaves nothing half-done that a restart cannot finish (architecture.md, "How a change is
     carried out"). Every commit and script outside it is counted per function, the saves allowed
-    for good excepted (`SAVES_ALLOWED`), and today's listed with the slice of #439 or the design
-    pass that moves its flow onto the queue."""
+    for good excepted (`SAVES_ALLOWED`), and today's listed under the design pass that moves its
+    flow onto the queue; a pass with none has no heading."""
     _check(
         "nothing writes to the database outside a queued change",
         _saves_outside_a_change(),
