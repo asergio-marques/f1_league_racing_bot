@@ -1331,3 +1331,74 @@ async def test_an_advanced_deadline_places_the_reserves_on_every_answer_held(tmp
 
     assert await _placement(league, RHEA) == (FERRARI, 0)
     assert await _placement(league, SAM) != (None, 0)
+
+
+# ---------------------------------------------------------------------------
+# A round whose every session was entered as not held (#439, slice 8, Part E)
+# ---------------------------------------------------------------------------
+
+#: Why the test below fails until Part E is built.
+NOT_HELD_UNBUILT = (
+    "#439: rounds has no not_held column, and advance passes over every cancelled round, so a "
+    "round whose every session was entered as not held never has its clean-ups offered"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_advance_offers_only_the_clean_ups_of_a_round_whose_every_session_was_not_held(
+    tmp_path,
+):
+    """Test mode on, weather, attendance and results on. Round 3 of Division 1 raced on 1 June and
+    ended cancelled because every session of it was entered as not held. Its Phase 3 forecast and
+    its check-in call still stand, the call's deadline never run, and the scheduler still holds
+    its deadline and both clean-ups. Advanced on 3 June, advance offers the forecast clean-up (8);
+    once the forecast is down, the check-in clean-up (9); once the call is down, nothing. Never
+    the deadline (7) nor the round's results submission (4): the round has ended (core :472,
+    :475)."""
+    from leaguebot.core.services.test_mode_service import get_next_pending_phase
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET weather_module_enabled = 1")
+        await db.execute("INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1)")
+        await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
+        await db.execute(
+            "UPDATE rounds SET format = 'NORMAL', status = 'CANCELLED', not_held = 1 WHERE id = ?",
+            (ROUND_ID,),
+        )
+        await db.execute(
+            "INSERT INTO forecast_messages "
+            "(round_id, division_id, phase_number, message_id, posted_at) "
+            "VALUES (?, ?, 3, 800, '2026-05-31T12:00:00')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, "
+            "posted_at) VALUES (?, ?, 'call', 'ch1', '2026-05-27T00:00:00')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.commit()
+    scheduler = MagicMock()
+    scheduler.get_pending_advance_jobs = MagicMock(return_value=[
+        {"job_id": f"{prefix}_r{ROUND_ID}", "round_id": ROUND_ID, "phase_number": phase,
+         "next_run_time": datetime(2026, 6, day, tzinfo=timezone.utc)}
+        for prefix, phase, day in (("rsvp_deadline", 7, 1), ("cleanup", 8, 2),
+                                   ("rsvp_cleanup", 9, 2))
+    ])
+    now = datetime(2026, 6, 3, tzinfo=timezone.utc)
+
+    entry = await get_next_pending_phase(db_path, scheduler, now=now)
+    assert entry is not None
+    assert (entry["round_id"], entry["phase_number"]) == (ROUND_ID, 8)
+
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM forecast_messages WHERE round_id = ?", (ROUND_ID,))
+        await db.commit()
+    entry = await get_next_pending_phase(db_path, scheduler, now=now)
+    assert entry is not None
+    assert (entry["round_id"], entry["phase_number"]) == (ROUND_ID, 9)
+
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM rsvp_embed_messages WHERE round_id = ?", (ROUND_ID,))
+        await db.commit()
+    assert await get_next_pending_phase(db_path, scheduler, now=now) is None
