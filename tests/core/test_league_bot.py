@@ -211,7 +211,8 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     choice of what to correct, the arming of a signup's 24 hours on each answer and on a
     correction's choice, the commit of a signup, and the ending of one, and the judging and the
     arming of a round's timed work again after a refused cancellation, its reserve placement and
-    the marking of its check-in over included. Every other job a league admin may discard."""
+    the marking of its check-in over included, and the ending of a round whose every session was
+    entered as not held. Every other job a league admin may discard."""
     from leaguebot.__main__ import register_change_types
 
     bot = MagicMock()
@@ -233,6 +234,7 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
         ("results.resubmission.start", "mark"),
         ("results.review.open", "close"),
         ("results.review.prompt", "close"),
+        ("results.submission.all_cancelled", "end_round"),
         ("results.submission.open", "create_channel"),
         ("results.submission.open", "start_round"),
         ("results.submission.restart", "clear"),
