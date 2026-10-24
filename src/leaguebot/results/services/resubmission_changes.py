@@ -9,6 +9,9 @@ own lane (``channel:<submission channel>``), the conversation it begins. Its job
    restart reads both), and writes the one line the log channel keeps of the press, naming the
    penalties and pardons the press discards: once they are gone it is the only record they were
    staged. The line is queued in the save, so a log channel that refuses it holds nothing up.
+   **It cannot be discarded** (#439, slice 8): dropped, the resubmission would run unrecorded, its
+   pastes refused and its review left with no prompt until the bot restarts, so a Discard on it is
+   refused (a change stopped at its check on it included) and only a Retry moves it.
 2. **`delete_prompt`** and **`delete_approval`** take the review's prompt and any approval message
    down, so that nobody can approve the results being replaced or start a second resubmission
    (#402); a message already gone completes the job.
@@ -49,6 +52,7 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
 )
+from leaguebot.core.services import season_service
 from leaguebot.results.services import result_submission_service as submissions
 from leaguebot.results.services import review_open_change
 from leaguebot.results.services.review_posting import DELETE_MESSAGE, posting_steps
@@ -202,6 +206,13 @@ def resubmission_start_change(*, queue: ChangeQueue) -> ChangeType:
     async def describe_first_prompt(_ctx: StepContext) -> str:
         return "working out the first session to ask for"
 
+    async def would_run_unrecorded(ctx: StepContext) -> str:
+        called = await season_service.round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        return (
+            f"{called}'s resubmission would run unrecorded: its pastes would be refused and its "
+            "review left with no prompt until the bot restarts"
+        )
+
     async def describe_mark(_ctx: StepContext) -> str:
         return "flagging the round's submission as being resubmitted"
 
@@ -243,7 +254,10 @@ def resubmission_start_change(*, queue: ChangeQueue) -> ChangeType:
         opening=(),
         plan=_plan,
         steps={
-            MARK: Step(MARK, StepKind.SAVE, mark, describe=describe_mark),
+            MARK: Step(
+                MARK, StepKind.SAVE, mark, describe=describe_mark,
+                undiscardable=would_run_unrecorded,
+            ),
             DELETE_PROMPT: dataclasses.replace(deletion, name=DELETE_PROMPT),
             DELETE_APPROVAL: dataclasses.replace(deletion, name=DELETE_APPROVAL),
             POST_ANNOUNCEMENT: announcement,

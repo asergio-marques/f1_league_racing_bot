@@ -226,10 +226,6 @@ async def test_the_announcement_s_id_is_saved_with_its_mark(tmp_path, monkeypatc
     assert posted["done_at"] is not None
 
 
-MARK_UNDISCARDABLE = "#439: marking the resubmission may still be discarded"
-
-
-@pytest.mark.xfail(strict=True, reason=MARK_UNDISCARDABLE)
 async def test_marking_the_resubmission_cannot_be_discarded(tmp_path, monkeypatch):
     """The manager Alex presses Resubmit on round 3's review prompt in Pro. The save of the
     change's first job, which flags the submission channel as resubmitting and records who
