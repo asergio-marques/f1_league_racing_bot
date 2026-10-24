@@ -4,8 +4,6 @@ Each change carries a lane: the league's (`"league"`, the queue as a league know
 conversation's, keyed by its channel (`"channel:<id>"`). Each lane runs in order and stops alone.
 These tests use dummy change types on a database built by the migrations, with "now" pinned, as
 `test_change_queue.py` does; every existing queue test runs on the league lane, the default.
-
-Everything of the queue is imported inside a test, so this file collects while lanes are unbuilt.
 """
 from __future__ import annotations
 

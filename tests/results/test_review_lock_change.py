@@ -11,11 +11,9 @@ lane (a conversation's own timer, R2(d)), whose job deletes the warning and the 
 gone it asks nothing. While the round's lane is stopped, typed messages stand until it clears
 (Q20).
 
-The league is `review_league`'s: round 3 of Pro in its report stage in submission channel 702,
-its scheduler service a double recording what is armed and registered. The timer's callback is
-found where the builder registers it, on `bot.scheduler_service.register_timer`. Everything of
-the change types is reached through the listener or the queue, so this file collects while they
-are unbuilt.
+The league is `review_league`'s: round 3 of Pro in its report stage in submission channel 702, its
+scheduler service a double recording what is armed and registered. The timer's callback is found
+where the builder registers it, on `bot.scheduler_service.register_timer`.
 """
 from __future__ import annotations
 

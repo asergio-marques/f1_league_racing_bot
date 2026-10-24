@@ -5,8 +5,6 @@ change queue, by the change type, which may import no cog. So the two reads both
 divisions' channels and the unsettled signups, live in `core/services/approval_checks.py`, and the
 cog's methods call them. The cog's own tests (`test_placements_confirmation.py`) still pin every
 case through the cog; these pin that the service gives the same answers on its own.
-
-The service is imported inside each test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

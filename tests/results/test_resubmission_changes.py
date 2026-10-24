@@ -18,10 +18,9 @@ drafts surviving until then; where the channel is gone the notice completes, pos
 the resubmission still ends (results spec :417).
 
 The league, its channels and its queue are `test_review_open_change.py`'s: round 3 of Pro, a Normal
-round, its Feature Race won by Lewis (101) ahead of Max (102), its review open in submission
-channel 702. The division's seats, as a paste's validation reads them, are Lewis and Max at team
-3001, shorthand FER. Everything of the change types is reached through the press, the cog and the
-queue, or imported inside a test, so this file collects while they are unbuilt.
+round, its Feature Race won by Lewis (101) ahead of Max (102), its review open in submission channel
+702. The division's seats, as a paste's validation reads them, are Lewis and Max at team 3001,
+shorthand FER.
 """
 from __future__ import annotations
 

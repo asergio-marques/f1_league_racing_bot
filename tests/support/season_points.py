@@ -6,9 +6,6 @@ and writes nothing while results is off (#439, slice 4a). A test that only wants
 store filled, whatever its modules, calls `snapshot_points`: it switches results on for the
 length of the save, copies, and puts the switch back as it was before it commits, so the test's
 modules read afterwards as the test set them.
-
-The function is imported inside the helper, so a test file using it still collects while it is
-unbuilt.
 """
 from __future__ import annotations
 

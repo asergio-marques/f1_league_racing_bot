@@ -25,9 +25,7 @@ paste typed in time waits on the amendment's lane (Q18), nor while the stage-two
 The league is `review_league`'s: round 3 of Pro, FINAL, its Feature Race won by Lewis (101) ahead of
 Max (102), its submission channel closed. The server creates the amendment channel as channel 705,
 the league's channel double; the division's seats, as a paste's validation reads them, are Lewis and
-Max at team 3001, shorthand FER. The manager is Alex (4242). Everything of the change types is
-reached through the command, the cog, the queue or the timer the builder registers, or imported
-inside a test, so this file collects while they are unbuilt.
+Max at team 3001, shorthand FER. The manager is Alex (4242).
 """
 from __future__ import annotations
 

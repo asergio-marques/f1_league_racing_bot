@@ -10,8 +10,6 @@ told. Each session is posted again, then the message it replaces deleted by a jo
 round order; a table Discord refuses stops the queue, and its next try posts the text. The sync's
 gates are checked again when it runs (core spec :125), so one waiting behind a stopped queue is
 refused as the command would be.
-
-Everything of the change is imported inside a test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

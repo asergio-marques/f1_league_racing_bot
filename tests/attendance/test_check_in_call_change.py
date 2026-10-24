@@ -14,8 +14,6 @@ by a job of its own; a call for a cancelled round, or with attendance off, is dr
 asks the queue for each call that fell due while the bot was down, before the queue starts, and
 leaves alone a call already in hand; under test mode it asks none (the #429 rule, attendance spec
 :222, kept: decision 15 of the slice).
-
-Everything of the change is imported inside a test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

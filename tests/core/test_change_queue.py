@@ -4,8 +4,6 @@
 change types on a database built by the migrations, with "now" pinned, and a real `OutputRouter`
 whose log channel records what it is sent. What Discord makes fail, and the retries, are in
 `test_change_queue_retries.py`.
-
-Everything of the queue is imported inside a test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

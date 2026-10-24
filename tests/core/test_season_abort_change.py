@@ -13,10 +13,8 @@ test-mode state is kept. Every failure stops the queue; a Discard is named in th
 beneath the closing line, which stays `| Success` with the drivers returned and deleted.
 
 Every test drives the real cog and the real queue through `tests/support/season_league.py`'s
-`setup_league`, with "now" pinned: season 3 (id 7) in Placements, Lewis, Max and Charles placed
-and not yet confirmed, the setup held in memory. Today `/season abort` aborts the season at the
-press, catching what fails, so every test of the queue is marked to fail until the build; the
-press's refusals in today's words pass as they stand.
+`setup_league`, with "now" pinned: season 3 (id 7) in Placements, Lewis, Max and Charles placed and
+not yet confirmed, the setup held in memory.
 """
 from __future__ import annotations
 

@@ -9,8 +9,7 @@ review again, as the prompt's discard did before. A review put back by the start
 work: it runs whole on the league lane, posting its prompt itself.
 
 The league, its channels and its queue are `test_review_open_change.py`'s, round 3 of Pro with its
-submission channel 702. Everything of the change types is reached through the queue, so this file
-collects while they are unbuilt.
+submission channel 702.
 """
 from __future__ import annotations
 

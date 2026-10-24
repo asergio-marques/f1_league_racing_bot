@@ -25,8 +25,7 @@ the queue"; decision 19):
 The factories are `season_review_take_down_change()` and `season_review_post_change(drawing=...,
 approve_view=..., scheduler=...)` in `leaguebot.core.services.season_review_changes`; the builder
 registers them with the image module's drawing, the season cog's view factory and the scheduler
-service, which `arm_expiry` arms its timer through (no step looks a service up on the bot). Everything of them is imported
-inside a test, so this file collects while it is unbuilt.
+service, which `arm_expiry` arms its timer through (no step looks a service up on the bot).
 
 The league: `league_double`'s, its review channel 700 found on the league's server, Alex (4242)
 the reviewer of season 1's placements.

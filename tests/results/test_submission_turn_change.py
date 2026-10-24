@@ -9,11 +9,10 @@ hands the penalty review to the league (`results.review.open`) and says it is be
 job number (results spec :382). A message typed while a turn still waits in the channel is turned
 away at once with a note and deleted. A message from anyone but a league manager is ignored.
 
-The league is `ongoing_league`'s, results on: Pro's round 3 awaits results, its submission open
-in channel `SUBMISSION_CHANNEL`; the admin (77) holds the league managers' role. The division's
-seats, as the paste's validation reads them, are Lewis (101) and Max (102) at Ferrari, shorthand
-FER; Charles (103) races in Am. Everything of the change is reached through the cog and the queue,
-or imported inside a test, so this file collects while it is unbuilt.
+The league is `ongoing_league`'s, results on: Pro's round 3 awaits results, its submission open in
+channel `SUBMISSION_CHANNEL`; the admin (77) holds the league managers' role. The division's seats,
+as the paste's validation reads them, are Lewis (101) and Max (102) at Ferrari, shorthand FER;
+Charles (103) races in Am.
 """
 from __future__ import annotations
 

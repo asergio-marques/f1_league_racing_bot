@@ -16,7 +16,6 @@ type of their own whose one opening job asks the module what to post:
 The Discord side is a fake channel per channel id, recording every send, edit and delete in one
 list of events, in order. Image generation is off unless a test turns it on.
 
-Everything of the module is imported inside a test, so this file collects while it is unbuilt.
 
 The tests of `delete_and_repost_final_results` and `repost_subsequent_standings`, which this
 module replaces, were deleted with them; what still holds of them is pinned here (a refusal leaving

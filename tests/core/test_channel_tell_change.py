@@ -8,7 +8,6 @@ restart notice use it. `channel_tell_change()` (`leaguebot.core.services.channel
 the factory the builder registers.
 
 These tests use the real change type on a database built by the migrations, with "now" pinned.
-It is imported inside each test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

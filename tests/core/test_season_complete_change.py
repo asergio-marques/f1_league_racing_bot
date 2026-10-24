@@ -15,10 +15,8 @@ deleted. Every failure stops the queue; a Discard is named in the reply and the 
 
 Every test drives the real cog and the real queue through `tests/support/season_league.py`'s
 `pending_completion_league`, with "now" pinned: every round final and both divisions finished,
-results accepted for Pro's rounds 1 and 2 and Am's round 1, the members holding their division,
-team and driver roles, Lewis a former driver. Today `/season complete` ends the season at the
-press, catching what fails, so every test of the queue is marked to fail until the build; the
-press's refusals in today's words pass as they stand.
+results accepted for Pro's rounds 1 and 2 and Am's round 1, the members holding their division, team
+and driver roles, Lewis a former driver.
 """
 from __future__ import annotations
 

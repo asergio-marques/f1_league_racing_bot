@@ -7,8 +7,6 @@ entered as not held. Results reports each open submission among the rounds it is
 whether it has accepted anything (`open_submissions`, and `open_submissions_on` on a save's
 connection), and closes them on the save a cancellation hands it (`close_submissions_on`),
 committing nothing.
-
-Each reader and writer is imported inside its test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

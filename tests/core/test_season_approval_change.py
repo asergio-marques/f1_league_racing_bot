@@ -10,8 +10,7 @@ hand, a second is refused without naming its job. Where the outcome can no longe
 the review's channel is told, a refusal as the approval comes up to run included.
 
 Every test drives the real cog and the real queue through `tests/support/season_league.py`, with
-"now" pinned. The change type is unbuilt until the build, so each is marked to fail until then:
-today the press approves on the spot, inside the button.
+"now" pinned.
 """
 from __future__ import annotations
 
@@ -2046,9 +2045,8 @@ async def test_a_retried_save_refused_after_the_reply_expired_tells_the_review_s
 #
 # The owner's answer r1-2 ("Tell the review's channel"): every outcome of a season approval that
 # cannot reach the member is told in the review's channel, a Discard of the approval stopped at
-# its own check included. The hook that asks it is unbuilt and named here by analogy with the
-# refusal hook of plan 2.1b (`ChangeType.on_refused`): `ChangeType.on_discarded`. The channel is
-# told `CHANNEL_NOT_APPROVED`, plan 2.1's "Not approved (`apply` discarded…)" notice: a Discard at
+# its own check included. The hook that asks it is `ChangeType.on_discarded`, beside the refusal
+# hook `ChangeType.on_refused`. The channel is told `CHANNEL_NOT_APPROVED`, plan 2.1's "Not approved (`apply` discarded…)" notice: a Discard at
 # the check leaves what a discarded `apply` leaves, nothing approved and no refusal to quote, and
 # the log channel has the Discard's line for why. 2.1b's `LATE_REFUSAL_HEAD` frames a refusal's own
 # reply, which a Discard does not have.

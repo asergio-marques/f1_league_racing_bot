@@ -12,10 +12,9 @@ at once, each a job of its own, and `close`, which reads the round list for the 
 Every test drives the real cog and the real queue through `tests/support/season_league.py`'s
 `ongoing_league`, with "now" pinned. Pro's round 3 (id 213) is NOT_RUN 90 days out, its check-in
 call standing; round 4 (id 214) 120 days out. The weather phases are recorded rather than run
-(`phases`), patched before the league is built so that the builder's
-hooks reach the recorder however they bind it; the call is posted as attendance posts it, and read
-from what its check-in channel was sent (`reposts`). The change type is unbuilt until the
-build, so each test is marked to fail until then: today Confirm amends on the spot.
+(`phases`), patched before the league is built so that the builder's hooks reach the recorder
+however they bind it; the call is posted as attendance posts it, and read from what its check-in
+channel was sent (`reposts`).
 """
 from __future__ import annotations
 

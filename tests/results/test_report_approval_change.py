@@ -15,7 +15,6 @@ the payload carrying the staged penalties and pardons as plain data (`to_payload
 
 The league, its fake channels and the attendance hook's double are `tests.support.review_league`'s.
 
-Everything of the change type is imported inside a test, so this file collects while it is unbuilt.
 What `test_repost_subsequent_standings.py::test_the_snapshots_are_recomputed_first` pinned is held
 here by `test_the_snapshots_of_this_round_and_every_later_one_are_saved_with_the_penalties`.
 """

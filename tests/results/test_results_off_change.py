@@ -12,10 +12,9 @@ A job that fails stops the queue until it is cleared (owner, 2026-10-02): the bo
 after 1, 5, 10, 15, 30 and 60 minutes, then only Retry moves it on, and a league admin's Discard
 drops it. A removal discarded is named to the league with its link and not counted.
 
-These run the real change types the builder registers, through the confirmation the league
-presses, on a database built by the migrations, with "now" pinned. Discord is a fake server whose
-channels record what was deleted from them. Everything of the queue is imported inside a test or
-a helper, so this file collects while it is unbuilt.
+These run the real change types the builder registers, through the confirmation the league presses,
+on a database built by the migrations, with "now" pinned. Discord is a fake server whose channels
+record what was deleted from them.
 """
 from __future__ import annotations
 

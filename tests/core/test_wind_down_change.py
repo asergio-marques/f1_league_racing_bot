@@ -8,11 +8,9 @@ before their channel is locked (`close_signup`), and an approved driver loses th
 (`take_driver_role`). A driver the window's close returns to Not Signed Up is told and locked
 the same way. Every failure stops the queue.
 
-Every test drives the real queue through `tests/support/season_league.py`, the season built by
-the migrations with "now" pinned: every round final and both divisions finished, the members
-holding their roles, Lewis's placement committed and Max's and Charles's not. Today the wind-down
-is one job running `wind_down_ongoing`, which catches what fails, so each test is marked to fail
-until the build.
+Every test drives the real queue through `tests/support/season_league.py`, the season built by the
+migrations with "now" pinned: every round final and both divisions finished, the members holding
+their roles, Lewis's placement committed and Max's and Charles's not.
 """
 from __future__ import annotations
 

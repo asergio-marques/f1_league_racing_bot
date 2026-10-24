@@ -7,8 +7,6 @@ These tests use dummy change types on a database built by the migrations, with "
 
 A function that posts carries `posts_in_a_job`, which refuses to run outside a job: it raises
 `PostedOutsideAJob`, naming the function, a fault in the bot and never Discord's.
-
-`in_a_job` is imported inside each test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

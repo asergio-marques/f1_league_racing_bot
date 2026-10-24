@@ -17,8 +17,6 @@ its redraw.
 
 `/attendance test rsvp`'s form asks one such change carrying every entry (C36): its jobs save
 them all (`save_answers`) and redraw the call once.
-
-Everything of the change is imported inside a test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

@@ -9,8 +9,6 @@ division's cancellation is one save in the same way, so each has its `_on` form 
 
 Each test writes, reads the write back on the same connection, and then rolls back: what it finds
 afterwards on a fresh connection is what a failure later in the save would leave, which is nothing.
-
-The functions are imported inside each test, so this file collects while they are unbuilt.
 """
 from __future__ import annotations
 

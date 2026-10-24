@@ -20,9 +20,7 @@ Discard is named in the reply and beneath the closing line, which stays `| Succe
 Every test drives the real cog and the real queue through `tests/support/season_league.py`'s
 `ongoing_league`, with "now" pinned: Pro's round 1 final, round 2 awaiting its verdicts, rounds 3
 and 4 not run, round 3's check-in call standing and Pro's calendar posted; Am's four rounds not run
-and its calendar never posted. Today `/season cancel` cancels the season at the press, catching
-what fails, so every test of the queue is marked to fail until the build; the press's refusals in
-today's words pass as they stand.
+and its calendar never posted.
 """
 from __future__ import annotations
 

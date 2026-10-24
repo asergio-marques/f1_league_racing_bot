@@ -10,10 +10,9 @@ its results submitted, so Discard on it is refused and only Retry clears it (cor
 decision 12 of the slice). A round whose start falls while the queue is stopped stays not run, and
 so cancellable, until the stop clears and the queue reaches it (Q17).
 
-The league is `ongoing_league`'s, results on: Pro's round 3 is NOT_RUN, its results channel 606;
-the league's interaction channel stands in a category of the server's; the server creates each text channel asked of it as a channel
-double of the league's. The change is asked as its timer asks it; everything of the change is
-reached through the queue or imported inside a test, so this file collects while it is unbuilt.
+The league is `ongoing_league`'s, results on: Pro's round 3 is NOT_RUN, its results channel 606; the
+league's interaction channel stands in a category of the server's; the server creates each text
+channel asked of it as a channel double of the league's. The change is asked as its timer asks it.
 """
 from __future__ import annotations
 

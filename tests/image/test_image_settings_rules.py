@@ -3,7 +3,7 @@
 `daily_portraits_refusal` and `aspect_blocking_reasons` move out of `ImageCog` into
 `image/services/image_settings.py` as plain functions handed the services they read, so that a
 settings change's check can ask them without reaching through the bot (architecture.md,
-"Composition"). Each is imported inside its test, the module not existing until the build.
+"Composition").
 """
 from __future__ import annotations
 

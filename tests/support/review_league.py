@@ -11,9 +11,6 @@ image generation is off. Attendance is reached
 through the hook the builder hands the change types, `bot.attendance_after_review`, here an
 `AttendanceDouble` that checks the switch as the real hook does, records each call, and writes its
 record on the save it is handed into a table of the test's own (`attendance_recorded`).
-
-Everything of the change types is imported inside a function, so a test file using this module
-still collects while they are unbuilt.
 """
 from __future__ import annotations
 

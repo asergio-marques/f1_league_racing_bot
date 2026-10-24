@@ -3,8 +3,6 @@
 The refusal of a Discard says what would follow from dropping the job, naming the round as a
 league reads it: "round 3 in **Pro**". `season_service.round_called` reads that name at the press;
 a round deleted meanwhile is named as no longer there rather than failing the refusal.
-
-The function is imported inside each test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

@@ -1,10 +1,9 @@
 """Weather's draws of a phase, recorded for the tests of a change that asks for them (#439).
 
-An amendment that brings a round forward draws each phase now due at once: its `draw_forecast`
-job makes the draw (`draw_phaseN_on`) and its `post_forecast` job posts it. `recorded_draws`
-records each draw, so that a test reads which phases were drawn. It imports weather's
-`forecast_changes` and reads each `draw_phaseN_on`, so until the build gives weather both it
-fails, and so does every test that takes it.
+An amendment that brings a round forward draws each phase now due at once: its `draw_forecast` job
+makes the draw (`draw_phaseN_on`) and its `post_forecast` job posts it. `recorded_draws` records
+each draw, so that a test reads which phases were drawn. It imports weather's `forecast_changes` and
+reads each `draw_phaseN_on`.
 """
 from __future__ import annotations
 

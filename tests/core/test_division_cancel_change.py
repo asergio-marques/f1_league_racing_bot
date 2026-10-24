@@ -12,10 +12,7 @@ of the division is refused at once, naming the job; so is one while its season's
 cancellation or abort is in hand (slice 5).
 
 Every test drives the real cog and the real queue through `tests/support/season_league.py`'s
-`ongoing_league`, with "now" pinned. The change type is unbuilt until the build, so each test that
-needs it is marked to fail until then: today the command cancels on the spot. The press's refusals,
-and a division cancelled with a round's submission open, are what today's command already does,
-and pass as they stand.
+`ongoing_league`, with "now" pinned.
 """
 from __future__ import annotations
 

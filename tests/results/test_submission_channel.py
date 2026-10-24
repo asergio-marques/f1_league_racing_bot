@@ -6,11 +6,10 @@ button of the penalty and appeals reviews then lives inside.
 
 **It is created by the queue** (#439, slice 6b, C45). At a round's start its timer asks the
 queue for `results.submission.open`, whose `create_channel` job creates the channel; the cases
-below drive that change on `ongoing_league`'s league, Pro's round 3 in season 3, and are
-imported or reached through the queue so the file collects while it is unbuilt. That the channel
+below drive that change on `ongoing_league`'s league, Pro's round 3 in season 3. That the channel
 admits both tiers of the league (issue #116) is pinned beside the opening's other tests, in
-`test_result_submission_wizard.py::test_the_channel_is_opened_to_both_league_roles`; that it
-stands in the interaction channel's category and is recorded against the round, in
+`test_result_submission_wizard.py::test_the_channel_is_opened_to_both_league_roles`; that it stands
+in the interaction channel's category and is recorded against the round, in
 `test_submission_open_change.py`.
 
 **`@everyone` is denied.** The channel carries unpublished results and staged penalties; a

@@ -11,8 +11,6 @@ Round 3 is moved to 25 hours ago, so its clean-up is due.
 A test asks the clean-up of the queue as its timer does, as the bot (`ask_check_in_clean_up`),
 and runs the queue. A refused deletion stops the queue; a Discard names the message for deletion
 by hand (Q9, as a cancellation's does); a message already gone completes its deletion.
-
-Everything of the change is imported inside a test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

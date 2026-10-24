@@ -15,8 +15,7 @@ corrections as plain data (`to_payload`) and the appeals prompt pressed on.
 
 The league, its fake channels and the attendance hook's double are `tests.support.review_league`'s:
 round 3 of division 11 (Pro) awaits its appeal verdicts, the appeals prompt open in its submission
-channel. Everything of the change type is imported inside a test, so this file collects while it
-is unbuilt.
+channel.
 """
 from __future__ import annotations
 

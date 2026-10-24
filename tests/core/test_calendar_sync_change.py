@@ -5,9 +5,8 @@ acknowledgement updated with the outcome.
 The league is `ongoing_league`'s: season 3 being raced, Pro's calendar standing as message 6001 in
 its calendar channel (601), images off unless a test turns them on. Admin 77 runs the command, the
 queue is run, and the test reads the channel, the database and what the admin was told. A calendar
-Discord refuses stops the queue rather than going to the old retry queue, and its next try posts
-the text. Everything of the change is imported inside a test, so this file collects while it is
-unbuilt.
+Discord refuses stops the queue rather than going to the old retry queue, and its next try posts the
+text.
 """
 from __future__ import annotations
 

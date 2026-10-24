@@ -11,8 +11,6 @@ over, declaring the channel as its `turn_channel`, is still in hand; a league st
 makes a channel wait. These tests use dummy change types on a database built by the migrations,
 with "now" pinned. `ask_turn` (`tests/support/change_queue.py`) does what a listener does; the
 turn's payload carries the message's `channel_id` and `message_id`, which `clear_mark_step` reads.
-
-Everything of the typed turns is imported inside a test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

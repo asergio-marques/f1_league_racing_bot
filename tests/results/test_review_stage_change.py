@@ -16,10 +16,8 @@ staged or redrawn until the change runs; a staging against a prompt since replac
 refused redraw or approval message stops only the round's lane; a staging pressed while that lane
 is stopped waits, and one pressed while the league is stopped is shown at once.
 
-The league is `review_league`'s: round 3 of Pro in its report stage, its prompt 8900 and an
-approval message 8901 standing in submission channel 702, Lewis (101) and Max (102) in its
-Feature Race. Everything of the change types is reached through the queue or imported inside a
-test, so this file collects while they are unbuilt.
+The league is `review_league`'s: round 3 of Pro in its report stage, its prompt 8900 and an approval
+message 8901 standing in submission channel 702, Lewis (101) and Max (102) in its Feature Race.
 """
 from __future__ import annotations
 

@@ -15,8 +15,7 @@ turn is still in hand on the queue is left alone.
 The league is `ongoing_league`'s, results on: Pro's round 3 awaits results, its submission open in
 channel `SUBMISSION_CHANNEL` (690) with its first session accepted; the admin (77) holds the league
 managers' role; the server creates each text channel asked of it as a channel double of the
-league's. Everything of the change is reached through the restart and the queue, or imported
-inside a test, so this file collects while it is unbuilt.
+league's.
 """
 from __future__ import annotations
 

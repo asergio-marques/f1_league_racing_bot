@@ -25,9 +25,6 @@ closed, with an amendment of its Feature Race open in its own channel: stage one
 snapshot taken) and the report stage's prompt and approval message standing. A stage is asked for
 as its Approve control asks it, `bot.change_queue.ask(kind, payload, ...)`, the staged reports,
 corrections and pardons carried as plain data (`to_payload`).
-
-Everything of the change types is imported inside a test, so this file collects while it is
-unbuilt.
 """
 
 from __future__ import annotations

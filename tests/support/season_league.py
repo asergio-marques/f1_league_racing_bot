@@ -32,8 +32,6 @@ runs, through the builder's reader of `converter_available`, which `season_leagu
 
 `post_review` posts a review's ✅ Approve prompt, with the season's fingerprint, in the review's
 channel; `press_approve` presses it, answering the backup question under test mode with *backup*.
-Every import of the change type is made inside a function, so a test file using this module still
-collects while it is unbuilt.
 
 `ongoing_league(tmp_path, ...)` builds the same season as ongoing, for the cancels of slice 4b:
 status ACTIVE, stage ONGOING, both divisions ACTIVE, every placement committed and no setup held

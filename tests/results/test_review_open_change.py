@@ -29,8 +29,7 @@ reopens the review"). **Restart recovery** asks the queue rather than reopening 
 and leaves alone a round whose review a change is still carrying out.
 
 The league, its fake channels and its queue are `tests.support.review_league`'s, on a database of
-this file's own. Everything of the change type is reached through the queue, so this file collects
-while it is unbuilt.
+this file's own.
 """
 from __future__ import annotations
 

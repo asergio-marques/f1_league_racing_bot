@@ -11,10 +11,9 @@ and, where it cannot be posted at all, a job like any other that stops the queue
 retried or discarded, a discarded heading letting the verdicts go out beneath none (decided with
 the owner at Gate 2, 2026-10-05, overruling a best-effort heading).
 
-The league is `tests.support.review_league`'s: round 3 of division 11 (Pro), Lewis (101) its
-Feature Race winner, image generation off unless `drawn` switches the verdict graphic on. The
-approvals are asked as the review's controls ask them, and the change types are imported by the
-builder, so this file collects while they are unbuilt.
+The league is `tests.support.review_league`'s: round 3 of division 11 (Pro), Lewis (101) its Feature
+Race winner, image generation off unless `drawn` switches the verdict graphic on. The approvals are
+asked as the review's controls ask them.
 """
 
 from __future__ import annotations

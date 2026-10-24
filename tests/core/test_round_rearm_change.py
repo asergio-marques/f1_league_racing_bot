@@ -10,8 +10,7 @@ judging nor its arming can be discarded.
 
 Every test drives the real queue through `tests/support/season_league.py`'s `ongoing_league`,
 with "now" pinned, and asks the re-arming directly as the refused cancellation asks it. Pro's
-round 3 (id 213) is NOT_RUN 90 days out unless a test moves it. The change type is unbuilt until
-the build, so each test is marked to fail until then.
+round 3 (id 213) is NOT_RUN 90 days out unless a test moves it.
 """
 from __future__ import annotations
 

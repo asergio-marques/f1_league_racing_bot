@@ -93,8 +93,7 @@ async def _seed_season_points(db_path: str, season_id: int) -> None:
 # round 3 (id 223), with no check-in call, is the round amended unless a test says otherwise;
 # Pro's round 3 (id 213) is used where its call must stand. Weather's phase runners are
 # recorded rather than run, patched before the league is built; a check-in call is posted by
-# attendance's own service and read from what its check-in channel was sent. Today Confirm amends on the spot, which every test here but one passes as written; the
-# one marked fails until the build, since today a fault after the save stops no queue.
+# attendance's own service and read from what its check-in channel was sent.
 
 BAHRAIN = "Bahrain International Circuit"
 SILVERSTONE = "Silverstone Circuit"

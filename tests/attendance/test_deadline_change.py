@@ -15,8 +15,6 @@ the announcement goes to the division's check-in channel as it stands when the j
 (attendance spec :106; decision 13 of the slice) and is recorded with that channel; a refused
 lock or announcement stops the queue, and a discarded announcement is named and not posted again
 (Q8).
-
-Everything of the change is imported inside a test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

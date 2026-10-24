@@ -1,8 +1,7 @@
 """A real change queue for a test, on the test's own database, with "now" pinned (#439).
 
-The queue is the one the bot builds (`leaguebot.core.services.change_queue.ChangeQueue`), handed
-the router the test gives it, or the bot's own. Every import of the queue is made inside a function,
-so a test file using this module still collects while the queue is unbuilt.
+The queue is the one the bot builds (`leaguebot.core.services.change_queue.ChangeQueue`), handed the
+router the test gives it, or the bot's own.
 
 `run_queue` runs the worker until nothing can run *now*: a change waiting on a retry that is not
 yet due is left waiting, and the test moves the clock on (`Clock.advance`, or setting `now`) and

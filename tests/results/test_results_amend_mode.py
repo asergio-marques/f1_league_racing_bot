@@ -46,7 +46,7 @@ SEASON_ID = 3
 CONFIG = "Standard"
 #: The member as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
-#: When a change is staged, for the writer that still takes it until the build.
+#: When a change is staged, for the writer that takes it.
 NOW = datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc)
 MODE = "SELECT amendment_active, modified_flag FROM season_amendment_state"
 STAGED = "SELECT position, points FROM season_modification_entries ORDER BY position"

@@ -12,8 +12,6 @@ so where Discord refuses it, only the round's lane stops (decision 25).
 The league is `ongoing_league`'s, results on: Pro's round 3 awaits results, its submission open in
 channel `SUBMISSION_CHANNEL`, its Feature Qualifying already entered as cancelled; the admin (77)
 holds the league managers' role and types CANCELLED for the Feature Race, the last session.
-Everything of the change is reached through the cog and the queue, so this file collects while it
-is unbuilt.
 """
 from __future__ import annotations
 
