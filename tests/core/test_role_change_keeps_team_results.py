@@ -32,7 +32,7 @@ from leaguebot.results.services.result_submission_service import (
     validate_submission_block,
 )
 from leaguebot.results.services.standings_service import (
-    compute_and_persist_round,
+    compute_and_persist_round_on,
     compute_team_standings,
     previous_standing_positions,
 )
@@ -164,13 +164,20 @@ async def _replace_ferrari_role(db_path: str) -> None:
     await PlacementService(db_path).set_team_role_config("Ferrari", NEW_ROLE)
 
 
+async def _persist_round(db_path: str, round_id: int) -> None:
+    """The round's standings computed and saved in one save, as a results save makes them."""
+    async with get_connection(db_path) as db:
+        await compute_and_persist_round_on(db, round_id, DIVISION_ID)
+        await db.commit()
+
+
 async def _season_raced_across_a_role_change(tmp_path):
     db_path, teams = await _league(tmp_path)
     first = await _record(db_path, ROUNDS[0], ferrari_wins=True)
-    await compute_and_persist_round(db_path, ROUNDS[0], DIVISION_ID)
+    await _persist_round(db_path, ROUNDS[0])
     await _replace_ferrari_role(db_path)
     second = await _record(db_path, ROUNDS[1], ferrari_wins=False)
-    await compute_and_persist_round(db_path, ROUNDS[1], DIVISION_ID)
+    await _persist_round(db_path, ROUNDS[1])
     return db_path, teams, (first, second)
 
 

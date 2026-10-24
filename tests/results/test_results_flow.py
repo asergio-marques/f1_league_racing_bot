@@ -2,7 +2,7 @@
 
 Sets up an in-memory SQLite DB, inserts season/division/round/points config,
 calls save_session_result to store driver results, and checks that
-compute_driver_standings + persist_snapshots produce correct totals.
+compute_driver_standings + persist_snapshots_on produce correct totals.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from tests.support.session_writes import save_session_result
 from leaguebot.results.services.standings_service import (
     compute_driver_standings,
     compute_points_for_session,
-    persist_snapshots,
+    persist_snapshots_on,
 )
 from tests.support.teams import seed_team_instances
 
@@ -198,7 +198,7 @@ async def test_compute_driver_standings_correct_totals(db_path):
 
 
 # ---------------------------------------------------------------------------
-# Test: persist_snapshots writes DriverStandingsSnapshot rows
+# Test: persist_snapshots_on writes DriverStandingsSnapshot rows
 # ---------------------------------------------------------------------------
 
 
@@ -232,7 +232,9 @@ async def test_persist_snapshots_writes_rows(db_path):
     )
 
     snapshots = await compute_driver_standings(db_path, division_id=division_id, up_to_round_id=round_id)
-    await persist_snapshots(db_path, snapshots, team_snaps=[])
+    async with get_connection(db_path) as db:
+        await persist_snapshots_on(db, snapshots, team_snaps=[])
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

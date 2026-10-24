@@ -7,6 +7,8 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier
 from leaguebot.results.services.standings_service import (
+    cascade_recompute_from_round_on,
+    compute_and_persist_round_on,
     compute_driver_standings,
     compute_points_for_session,
     compute_team_standings,
@@ -1306,18 +1308,23 @@ async def _stored_order(db_path, division_id, round_id) -> list[int]:
     return [int(r["driver_user_id"]) for r in rows]
 
 
+async def _persist_round(db_path, round_id, division_id, names=None) -> None:
+    """The round's standings computed and saved in one save, as a results save makes them."""
+    async with get_connection(db_path) as db:
+        await compute_and_persist_round_on(db, round_id, division_id, names)
+        await db.commit()
+
+
 @pytest.mark.asyncio
 async def test_the_persisted_snapshot_is_ordered_on_the_names_given(db_path):
     """A full tie is stored in the order it is posted in, not by user id."""
-    from leaguebot.results.services.standings_service import compute_and_persist_round
-
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=94)
         await _seat(db, div_id, "Alpha", [(1, "zulu"), (2, "alpha")])
         r1 = await _round(db, div_id, 1)
         await db.commit()
 
-    await compute_and_persist_round(db_path, r1, div_id, {1: "zulu", 2: "alpha"})
+    await _persist_round(db_path, r1, div_id, {1: "zulu", 2: "alpha"})
 
     assert await _stored_order(db_path, div_id, r1) == [2, 1]
 
@@ -1325,15 +1332,13 @@ async def test_the_persisted_snapshot_is_ordered_on_the_names_given(db_path):
 @pytest.mark.asyncio
 async def test_the_persisted_snapshot_falls_back_to_the_id_with_no_names(db_path):
     """Nothing to resolve a name from leaves the tie to the ascending user id."""
-    from leaguebot.results.services.standings_service import compute_and_persist_round
-
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=95)
         await _seat(db, div_id, "Alpha", [(1, "zulu"), (2, "alpha")])
         r1 = await _round(db, div_id, 1)
         await db.commit()
 
-    await compute_and_persist_round(db_path, r1, div_id)
+    await _persist_round(db_path, r1, div_id)
 
     assert await _stored_order(db_path, div_id, r1) == [1, 2]
 
@@ -1341,8 +1346,6 @@ async def test_the_persisted_snapshot_falls_back_to_the_id_with_no_names(db_path
 @pytest.mark.asyncio
 async def test_a_cascade_orders_every_round_it_rewrites_on_the_same_names(db_path):
     """One resolution covers the cascade, so no round of it reverts to the id."""
-    from leaguebot.results.services.standings_service import cascade_recompute_from_round
-
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=96)
         await _seat(db, div_id, "Alpha", [(1, "zulu"), (2, "alpha")])
@@ -1350,15 +1353,15 @@ async def test_a_cascade_orders_every_round_it_rewrites_on_the_same_names(db_pat
         r2 = await _round(db, div_id, 2)
         await db.commit()
 
-    await cascade_recompute_from_round(db_path, div_id, r1, {1: "zulu", 2: "alpha"})
+    async with get_connection(db_path) as db:
+        await cascade_recompute_from_round_on(db, div_id, r1, {1: "zulu", 2: "alpha"})
+        await db.commit()
 
     assert await _stored_order(db_path, div_id, r1) == [2, 1]
     assert await _stored_order(db_path, div_id, r2) == [2, 1]
 
 
 # ── A driver who changed account mid-season (issue #243) ─────────────────────────
-
-from leaguebot.results.services.standings_service import compute_and_persist_round  # noqa: E402
 
 PAST, NOW = 5101, 5102
 
@@ -1425,7 +1428,7 @@ async def test_a_recompute_leaves_no_row_under_the_past_account(db_path):
         r1 = await _round(db, div_id, 1)
         await _result(db, await _session(db, r1, div_id), PAST, pos=1, pts=25)
         await db.commit()
-    await compute_and_persist_round(db_path, r1, div_id)
+    await _persist_round(db_path, r1, div_id)
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE driver_standings_snapshots SET standings_message_id = 4444, "
@@ -1435,7 +1438,7 @@ async def test_a_recompute_leaves_no_row_under_the_past_account(db_path):
         await _driver_moved(db)
         await db.commit()
 
-    await compute_and_persist_round(db_path, r1, div_id)
+    await _persist_round(db_path, r1, div_id)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -1457,7 +1460,7 @@ async def test_the_postings_message_lists_move_with_the_top_row(db_path):
         r1 = await _round(db, div_id, 1)
         await _result(db, await _session(db, r1, div_id), PAST, pos=1, pts=25)
         await db.commit()
-    await compute_and_persist_round(db_path, r1, div_id)
+    await _persist_round(db_path, r1, div_id)
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE driver_standings_snapshots SET standings_message_id = 4444, "
@@ -1469,7 +1472,7 @@ async def test_the_postings_message_lists_move_with_the_top_row(db_path):
         await _driver_moved(db)
         await db.commit()
 
-    await compute_and_persist_round(db_path, r1, div_id)
+    await _persist_round(db_path, r1, div_id)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -1493,12 +1496,12 @@ async def test_a_recompute_leaves_a_row_it_no_longer_names_for_another_reason(db
         await _result(db, sr1, 111, pos=1, pts=25)
         await _result(db, sr1, 222, pos=2, pts=18)
         await db.commit()
-    await compute_and_persist_round(db_path, r1, div_id)
+    await _persist_round(db_path, r1, div_id)
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM race_session_results WHERE driver_user_id = 222")
         await db.commit()
 
-    await compute_and_persist_round(db_path, r1, div_id)
+    await _persist_round(db_path, r1, div_id)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

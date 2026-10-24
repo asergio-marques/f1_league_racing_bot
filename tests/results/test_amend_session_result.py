@@ -170,9 +170,9 @@ async def _amend(
 ):
     """Stage one of an amendment, with the points, the cascade and the posting of a round's
     results stubbed: "repost" is `produce_session_results`, the one funnel every posting of a
-    session's results reaches, which stage one must not reach. Each stub stands in for both forms
-    of its function, the committing one and the one taking a connection that #439 6b's stage one
-    runs in its save, so the test reads one stub whichever the bot has. *display_names* are the
+    session's results reaches, which stage one must not reach. The points' stub stands in for both
+    forms of its function, the committing one and the one taking a connection that stage one runs
+    in its save, and the cascade's for the one taking a connection. *display_names* are the
     standings names handed to the save (the committing form resolves its own through *bot*)."""
     bot = bot or _bot()
     apply_points, cascade = AsyncMock(), AsyncMock()
@@ -182,10 +182,10 @@ async def _amend(
                 f"leaguebot.results.services.result_submission_service.{name}",
                 new=apply_points, create=True,
             ))
-        for name in ("cascade_recompute_from_round", "cascade_recompute_from_round_on"):
-            stack.enter_context(patch(
-                f"leaguebot.results.services.standings_service.{name}", new=cascade, create=True,
-            ))
+        stack.enter_context(patch(
+            "leaguebot.results.services.standings_service.cascade_recompute_from_round_on",
+            new=cascade,
+        ))
         repost = stack.enter_context(patch(
             "leaguebot.results.services.results_post_service.produce_session_results",
             new=AsyncMock(),
@@ -209,13 +209,13 @@ async def _amend(
 
 
 def _standings_cascade_stubbed():
-    """The revert's standings cascade stood in for, in either form: the committing one today, and
-    the one taking a connection that #439 6b's lapse and cancel run in their save."""
+    """The revert's standings cascade stood in for: the one taking a connection, which the lapse
+    and the cancel run in their save."""
     stack = ExitStack()
-    for name in ("cascade_recompute_from_round", "cascade_recompute_from_round_on"):
-        stack.enter_context(patch(
-            f"leaguebot.results.services.standings_service.{name}", new=AsyncMock()
-        ))
+    stack.enter_context(patch(
+        "leaguebot.results.services.standings_service.cascade_recompute_from_round_on",
+        new=AsyncMock(),
+    ))
     return stack
 
 

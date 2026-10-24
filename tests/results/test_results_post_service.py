@@ -850,7 +850,9 @@ async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
     guild = _guild_naming({1: "zulu", 2: "alpha"})
 
     names = await standings_display_names(db_path, division_id, guild, bot)
-    await standings_service.cascade_recompute_from_round(db_path, division_id, round_id, names)
+    async with get_connection(db_path) as db:
+        await standings_service.cascade_recompute_from_round_on(db, division_id, round_id, names)
+        await db.commit()
     drawn = await driver_standings_for_display(db_path, division_id, round_id, guild, bot)
 
     async with get_connection(db_path) as db:
@@ -879,7 +881,9 @@ async def test_the_cascade_falls_back_to_the_id_with_no_guild(tmp_path):
 
     names = await standings_display_names(db_path, division_id, None, None)
     assert names is None
-    await standings_service.cascade_recompute_from_round(db_path, division_id, round_id, names)
+    async with get_connection(db_path) as db:
+        await standings_service.cascade_recompute_from_round_on(db, division_id, round_id, names)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         rows = await (
