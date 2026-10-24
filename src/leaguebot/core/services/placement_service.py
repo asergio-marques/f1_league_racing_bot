@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection, sole_row
@@ -124,6 +125,33 @@ def _compute_total_lap_ms(lap_times: dict[str, str]) -> int | None:
             return None
         total += ms
     return total if total > 0 else None
+
+
+async def uncommitted_placements_on(db: aiosqlite.Connection, season_id: int) -> list[dict]:
+    """Every placement of *season_id* not yet committed, ordered by division and team, read on
+    *db* so that a save sees the placements it has written and not yet committed.
+
+    Each row: driver_profile_id, discord_user_id, is_test_driver, test_display_name,
+    division_id, division_name, division_role_id, team_name (the shorthand, which keys the
+    role mapping) and team_full_name (what a review shows) — #381.
+    """
+    cursor = await db.execute(
+        """
+        SELECT dsa.driver_profile_id, dp.discord_user_id, dp.is_test_driver,
+               dp.test_display_name, d.id AS division_id, d.name AS division_name,
+               d.mention_role_id AS division_role_id, ti.name AS team_name,
+               ti.full_name AS team_full_name
+        FROM driver_season_assignments dsa
+        JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+        JOIN divisions d ON d.id = dsa.division_id
+        LEFT JOIN team_seats ts ON ts.id = dsa.team_seat_id
+        LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
+        WHERE dsa.season_id = ? AND dsa.committed = 0
+        ORDER BY d.tier, ti.is_reserve, ti.full_name, dp.discord_user_id
+        """,
+        (season_id,),
+    )
+    return [dict(row) for row in await cursor.fetchall()]
 
 
 class PlacementService:
@@ -542,30 +570,10 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def uncommitted_placements(self, season_id: int) -> list[dict]:
-        """Every placement of *season_id* not yet committed, ordered by division and team.
-
-        Each row: driver_profile_id, discord_user_id, is_test_driver, test_display_name,
-        division_id, division_name, division_role_id, team_name (the shorthand, which keys the
-        role mapping) and team_full_name (what a review shows) — #381.
-        """
+        """Every placement of *season_id* not yet committed (see
+        :func:`uncommitted_placements_on`), read on a connection of its own."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT dsa.driver_profile_id, dp.discord_user_id, dp.is_test_driver,
-                       dp.test_display_name, d.id AS division_id, d.name AS division_name,
-                       d.mention_role_id AS division_role_id, ti.name AS team_name,
-                       ti.full_name AS team_full_name
-                FROM driver_season_assignments dsa
-                JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-                JOIN divisions d ON d.id = dsa.division_id
-                LEFT JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
-                WHERE dsa.season_id = ? AND dsa.committed = 0
-                ORDER BY d.tier, ti.is_reserve, ti.full_name, dp.discord_user_id
-                """,
-                (season_id,),
-            )
-            return [dict(row) for row in await cursor.fetchall()]
+            return await uncommitted_placements_on(db, season_id)
 
     async def commit_mid_season_placements(
         self, season_id: int, guild: discord.Guild | None

@@ -103,7 +103,6 @@ async def test_confirming_on_never_moves_the_season_on_to_pending_completion(db_
 # ── uncommitted_placements_on ──────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_uncommitted_placements_are_read_on_the_connection_handed(db_path):
     """Driver 1003, seated at Alpha with no placement, is placed on the open connection and not
     yet saved: the read on that connection sees them beside 1002."""
