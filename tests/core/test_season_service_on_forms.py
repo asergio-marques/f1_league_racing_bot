@@ -679,3 +679,97 @@ async def test_a_season_is_deleted_on_the_save_handed_and_nothing_committed(tmp_
         assert [row[0] for row in await _left(db)] == [0, 0, 0]
         await db.rollback()
         assert [row[0] for row in await _left(db)] == [1, 1, len(round_ids)]
+
+
+# A round whose every session was entered as not held (#439, slice 8, Part E) -------------------
+
+#: Why each test of the ending below fails until the build.
+NOT_HELD_UNBUILT = (
+    "#439: core has no end_round_not_held_on, and rounds has no not_held column, so a round "
+    "whose every session was entered as cancelled is never ended"
+)
+
+
+async def _not_held(db) -> list[int]:
+    cursor = await db.execute(
+        "SELECT not_held FROM rounds WHERE division_id = ? ORDER BY round_number", (DIVISION_ID,)
+    )
+    return [row["not_held"] for row in await cursor.fetchall()]
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_end_round_not_held_on_cancels_and_marks_the_round_with_its_audit(tmp_path):
+    """Pro's round 1 is final, round 2 waits for its results and round 3 is not run. Ending round 2
+    as not held on a connection answers the status it ended from, AWAITING_RESULTS; it reads
+    CANCELLED there and marked not held, rounds 1 and 3 untouched and unmarked, with one
+    round.status audit from AWAITING_RESULTS to CANCELLED, and Pro stays active, round 3 being
+    still to run."""
+    from leaguebot.core.services.season_service import end_round_not_held_on
+
+    db_path = await _ongoing_db(tmp_path, ("FINAL", "AWAITING_RESULTS", "NOT_RUN"))
+    async with get_connection(db_path) as db:
+        assert await end_round_not_held_on(db, ROUND_ID + 1, **ACTOR) == "AWAITING_RESULTS"
+        assert await _round_statuses(db) == ["FINAL", "CANCELLED", "NOT_RUN"]
+        assert await _not_held(db) == [0, 1, 0]
+        assert await _round_audits(db) == [("AWAITING_RESULTS", "CANCELLED")]
+        assert await _division_status(db) == "ACTIVE"
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+@pytest.mark.parametrize(
+    "status,moves",
+    [
+        pytest.param("AWAITING_RESULTS", True, id="awaiting results"),
+        pytest.param("AWAITING_REPORT_VERDICTS", True, id="awaiting report verdicts"),
+        pytest.param("NOT_RUN", False, id="not run"),
+        pytest.param("AWAITING_APPEAL_VERDICTS", False, id="awaiting appeal verdicts"),
+        pytest.param("FINAL", False, id="final"),
+        pytest.param("CANCELLED", False, id="already cancelled"),
+    ],
+)
+async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_report_verdicts(
+    tmp_path, status, moves
+):
+    """Pro's round 1 stands in *status*, round 2 not run. Ending round 1 as not held moves it to
+    CANCELLED, marked not held and audited, only where it awaited its results (a first
+    submission) or its report verdicts (a resubmission), answering that status. From any other
+    status it answers None and writes nothing: the round keeps its status, unmarked, and no audit
+    is written."""
+    from leaguebot.core.services.season_service import end_round_not_held_on
+
+    db_path = await _ongoing_db(tmp_path, (status, "NOT_RUN"))
+    async with get_connection(db_path) as db:
+        answer = await end_round_not_held_on(db, ROUND_ID, **ACTOR)
+        if moves:
+            assert answer == status
+            assert await _round_statuses(db) == ["CANCELLED", "NOT_RUN"]
+            assert await _not_held(db) == [1, 0]
+            assert await _round_audits(db) == [(status, "CANCELLED")]
+        else:
+            assert answer is None
+            assert await _round_statuses(db) == [status, "NOT_RUN"]
+            assert await _not_held(db) == [0, 0]
+            assert await _round_audits(db) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_end_round_not_held_on_commits_nothing(tmp_path):
+    """Pro, the season's only division, has round 1 final and round 2 awaiting its report verdicts.
+    Ending round 2 as not held on a connection finishes Pro and moves the season to Pending
+    completion on that same connection; a rollback leaves round 2 awaiting its verdicts and
+    unmarked, no audit, Pro active and the season ongoing."""
+    from leaguebot.core.services.season_service import end_round_not_held_on
+
+    db_path = await _ongoing_db(tmp_path, ("FINAL", "AWAITING_REPORT_VERDICTS"))
+    async with get_connection(db_path) as db:
+        assert await end_round_not_held_on(db, ROUND_ID + 1, **ACTOR) == "AWAITING_REPORT_VERDICTS"
+        assert await _division_status(db) == "FINISHED"
+        assert await _season(db) == ("ACTIVE", "PENDING_COMPLETION")
+        await db.rollback()
+
+    async with get_connection(db_path) as db:
+        assert await _round_statuses(db) == ["FINAL", "AWAITING_REPORT_VERDICTS"]
+        assert await _not_held(db) == [0, 0]
+        assert await _round_audits(db) == []
+        assert await _division_status(db) == "ACTIVE"
+        assert await _season(db) == ("ACTIVE", "ONGOING")
