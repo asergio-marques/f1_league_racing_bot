@@ -485,10 +485,11 @@ def _jobs_with_a_lateness_limit() -> Counter[tuple[str, str]]:
 
 KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/scheduler_service.py", "SchedulerService.schedule_amendment_sweep"): (1, PASS["core"]),
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_attendance_round"): (4, PASS["core"]),
+    ("core/services/scheduler_service.py", "SchedulerService.schedule_attendance_round"): (3, PASS["core"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_portrait_refresh"): (1, PASS["core"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_result_submission_jobs"): (1, PASS["core"]),
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (3, PASS["core"]),
+    ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (2, PASS["core"]),
+    ("core/services/scheduler_service.py", "SchedulerService.schedule_round_cleanups"): (2, PASS["core"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_signup_close_timer"): (1, PASS["core"]),
 }
 

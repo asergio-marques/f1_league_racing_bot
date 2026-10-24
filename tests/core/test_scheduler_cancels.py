@@ -183,11 +183,6 @@ def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_th
     assert "season_end_3" in [call.args[0] for call in service._scheduler.remove_job.call_args_list]
 
 
-#: The scheduler service cannot yet arm a round's clean-ups alone (#439, slice 8, F2).
-CLEANUPS_UNBUILT = "#439: the scheduler service has no schedule_round_cleanups yet"
-
-
-@pytest.mark.xfail(strict=True, reason=CLEANUPS_UNBUILT)
 def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
     """Round 2 of division tier 1 in season 3, round id 5, starts on 1 June 2099 at 14:00. Arming
     its clean-ups alone adds two jobs and no other: the forecast's clean-up and the check-in's,
