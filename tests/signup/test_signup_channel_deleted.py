@@ -176,8 +176,8 @@ async def test_a_channel_deleted_mid_signup_ends_it(tmp_path, state, wizard_stat
 
 @pytest.mark.xfail(strict=True, reason=DELETED_UNBUILT)
 @pytest.mark.parametrize(
-    "state", ["NOT_SIGNED_UP", "UNASSIGNED", "NOT_SIGNED_UP"],
-    ids=["withdrawn", "approved", "rejected"],
+    "state", ["NOT_SIGNED_UP", "UNASSIGNED"],
+    ids=["withdrawn", "approved"],
 )
 async def test_a_channel_deleted_after_its_signup_ended_changes_nothing(tmp_path, state):
     """Kimi's signup has ended: he withdrew or was rejected (Not Signed Up) or was approved
