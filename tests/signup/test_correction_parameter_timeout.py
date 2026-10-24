@@ -34,12 +34,18 @@ from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
+    acknowledgement,
     change_rows,
     discard_job,
     member_interaction,
+    refuse_the_job,
+    retry_job,
     run_queue,
+    stopped_job,
     tier_member,
     typed_message,
 )
@@ -429,19 +435,82 @@ async def test_a_close_leaves_a_driver_awaiting_a_correction_parameter_alone(tmp
     assert await _state(league) == AWAITING
 
 
-async def test_a_lapse_whose_panel_is_discarded_is_still_recorded(tmp_path):
-    """Kimi's correction lapses and Discord refuses the fresh review panel in his channel; an
-    admin discards that job. Kimi is back awaiting approval, and the log channel records the
-    lapse all the same, naming manager 77 and Kimi and saying he is back in the approval queue,
-    without saying a panel is in his channel."""
+LAPSE_PANEL_UNDISCARDABLE = "#439: the lapse's review panel may still be discarded"
+LAPSE_UNDISCARDABLE = "#439: the lapse itself may still be discarded"
+
+
+def _review_panels_standing(league: SeasonLeague) -> list[Any]:
+    """The review panels standing in Kimi's channel, refused posts left out."""
+    return [message for message in league.channel(KIMI_CHANNEL).messages.values()
+            if type(message.view).__name__ == "AdminReviewView"]
+
+
+@pytest.mark.xfail(strict=True, reason=LAPSE_PANEL_UNDISCARDABLE)
+async def test_a_lapse_s_panel_cannot_be_discarded_and_a_retry_records_the_lapse(tmp_path):
+    """Kimi's correction lapses and Discord refuses the fresh review panel in his channel, so the
+    queue stops at `post_panel`. A league admin's Discard on it is refused, saying Kimi would
+    wait for approval with no review panel and the season's placements could not be confirmed.
+    Kimi is back awaiting approval, the queue stays stopped there and no lapse is recorded yet.
+    Once Discord takes posts again, a Retry posts one review panel, and the log channel records
+    the lapse naming manager 77 and Kimi and saying a fresh review panel is in his channel."""
     league = await _league(tmp_path)
     league.channel(KIMI_CHANNEL).fail_when = lambda _content, kwargs: kwargs.get("view") is not None
 
     await _fire_the_timer(league)
     await run_queue(league.bot)
-    await discard_job(league.bot)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "post_panel"
 
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}> would wait for approval with "
+        "no review panel, and the season's placements could not be confirmed. Fix what stopped "
+        "it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path))["id"] == stopped["id"]
     assert await _state(league) == "PENDING_ADMIN_APPROVAL"
-    lapse = CORRECTION_LAPSE.split("\n")[0]
-    assert lapse + "\n  Kimi is back in the approval queue." in league.log(), league.log()
-    assert "a fresh review panel is in their channel" not in league.log()
+    assert CORRECTION_LAPSE.split("\n")[0] not in league.log()
+
+    league.channel(KIMI_CHANNEL).fail_when = None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(_review_panels_standing(league)) == 1
+    assert CORRECTION_LAPSE in league.log(), league.log()
+
+
+@pytest.mark.xfail(strict=True, reason=LAPSE_UNDISCARDABLE)
+async def test_the_lapse_itself_cannot_be_discarded(tmp_path):
+    """Kimi's correction lapses, but the save returning him to the approval queue fails, so the
+    queue stops at `lapse`. A league admin's Discard on it is refused, saying Kimi would be left
+    awaiting a correction nobody can choose and the season's placements could not be confirmed
+    until the bot restarts. Kimi still awaits a correction parameter, nothing is posted in his
+    channel and the queue stays stopped there. Once the fault is lifted, a Retry returns him to
+    the approval queue, posts one review panel and records the lapse."""
+    league = await _league(tmp_path)
+    await refuse_the_job(league.db_path, LAPSE_KIND, "lapse", True)
+
+    await _fire_the_timer(league)
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "lapse"
+
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}> would be left awaiting a "
+        "correction nobody can choose, and the season's placements could not be confirmed until "
+        "the bot restarts. Fix what stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path))["id"] == stopped["id"]
+    assert await _state(league) == AWAITING
+    assert _posted(league) == ""
+
+    await refuse_the_job(league.db_path, LAPSE_KIND, "lapse", False)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _state(league) == "PENDING_ADMIN_APPROVAL"
+    assert len(_review_panels_standing(league)) == 1
+    assert CORRECTION_LAPSE in league.log(), league.log()

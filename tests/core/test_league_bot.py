@@ -206,7 +206,8 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     review's opening and of its prompt's posting, both jobs of an appeals review's reopening, and
     the last job of a reports approval and of an appeals approval, the marking of a round's
     resubmission, and the placing of a round's reserves and the marking of its check-in over,
-    an amended round's included. Every other job a league admin may discard."""
+    an amended round's included, and the posting of a driver's review panel, on submission and on
+    a correction's lapse, and the lapse itself. Every other job a league admin may discard."""
     from leaguebot.__main__ import register_change_types
 
     bot = MagicMock()
@@ -241,4 +242,7 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
         ("season.round.amend", "distribute"),
         ("season.round.amend", "mark_cleared"),
         ("season.round.cancel", "apply"),
+        ("signup.correction.lapse", "lapse"),
+        ("signup.correction.lapse", "post_panel"),
+        ("signup.panel", "post_panel"),
     ]

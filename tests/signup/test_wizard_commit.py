@@ -39,7 +39,16 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from tests.support.change_queue import change_rows, member_interaction, run_queue, typed_message
+from tests.support.change_queue import (
+    acknowledgement,
+    change_rows,
+    discard_job,
+    member_interaction,
+    retry_job,
+    run_queue,
+    stopped_job,
+    typed_message,
+)
 from tests.support.review_league import channel
 from tests.support.season_league import (
     SEASON_ID,
@@ -347,6 +356,43 @@ async def test_the_review_panel_notifies_no_group(tmp_path):
     [panel] = _panels(league)
     allowed = panel.kwargs["allowed_mentions"]
     assert (allowed.everyone, allowed.roles, allowed.users) == (False, False, True)
+
+
+PANEL_UNDISCARDABLE = "#439: posting the review panel may still be discarded"
+
+
+@pytest.mark.xfail(strict=True, reason=PANEL_UNDISCARDABLE)
+async def test_the_review_panel_s_post_cannot_be_discarded(tmp_path):
+    """Kimi types his notes and his signup is saved, but Discord refuses the review panel in his
+    channel, so the queue stops at `post_panel` on his channel's lane. A league admin's Discard on
+    it is refused, saying Kimi would wait for approval with no review panel and the season's
+    placements could not be confirmed. The lane stays stopped there and no panel is posted. Once
+    Discord takes posts again, a Retry posts the one review panel."""
+    league = await _league(tmp_path)
+    lane = f"channel:{KIMI_CHANNEL}"
+    league.channel(KIMI_CHANNEL).fail_when = lambda _content, kwargs: kwargs.get("view") is not None
+
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path, lane)
+    assert stopped is not None and stopped["name"] == "post_panel"
+
+    refused = await discard_job(league.bot, lane=lane)
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}> would wait for approval with "
+        "no review panel, and the season's placements could not be confirmed. Fix what stopped "
+        "it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path, lane))["id"] == stopped["id"]
+    posted = league.channel(KIMI_CHANNEL).messages.values
+    assert not [m for m in posted() if type(m.view).__name__ == "AdminReviewView"]
+
+    league.channel(KIMI_CHANNEL).fail_when = None
+    await retry_job(league.bot, lane=lane)
+
+    assert await stopped_job(league.db_path) is None
+    assert len([m for m in posted() if type(m.view).__name__ == "AdminReviewView"]) == 1
 
 
 async def test_a_missing_channel_still_commits_the_record(tmp_path):
