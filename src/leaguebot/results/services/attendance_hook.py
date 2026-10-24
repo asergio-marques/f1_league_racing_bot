@@ -6,8 +6,9 @@ imports nothing of attendance: the change types call these methods and attendanc
 `bot.attendance_after_review` and declared on `LeagueBot`.
 
 **Each method checks attendance's switch itself and does nothing while it is off**
-(architecture.md, "How modules and core fit together"); the writers read it on the connection they
-are handed. **The writers write on the save they are handed and commit nothing**, so the round's
+(architecture.md, "How modules and core fit together"), save `change_sanction_roles`, which acts
+whatever the switch says: a sanction already saved is owed its roles. The writers read the switch
+on the connection they are handed. **The writers write on the save they are handed and commit nothing**, so the round's
 attendance lands with the penalties and points or not at all. **The posting methods raise**
 `StepFailedOnDiscord` where they could not post, for the queue to stop on and try again.
 """
@@ -89,6 +90,38 @@ class AttendanceAfterReview(Protocol):
         None where attendance is off, and only there, so None tells the job nothing was applied.
         Raises where it does not apply: a division with no Reserve team, or a role change Discord
         refuses."""
+
+    async def check_sanction(
+        self, round_id: int, division_id: int, candidate: dict[str, Any]
+    ) -> None:
+        """Refuse a candidate's sanction that cannot be saved, before it is: an autoreserve in a
+        division with no Reserve team, or one the capacity guards refuse. Raises
+        `StepFailedOnDiscord` carrying the reason; does nothing for an autosack, and while
+        attendance is off."""
+
+    async def apply_sanction_on(
+        self, db: aiosqlite.Connection, round_id: int, division_id: int,
+        candidate: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Save one candidate's sanction on the save handed, committing nothing, as the bot.
+
+        Every read and write is on *db*, and nothing else is awaited: no role is changed and
+        nothing posted. Returns ``line``, the log line the job carries, and ``roles``, None for
+        a test driver, else the ``user_id`` and ``profile_id`` with the role ids to ``revoke``
+        and to ``grant`` for `change_sanction_roles`. None where attendance is off, and only
+        there, so None tells the job nothing was applied. Raises where the sanction does not
+        apply."""
+
+    async def change_sanction_roles(
+        self, user_id: int, profile_id: int, *, revoke: list[int], grant: list[int]
+    ) -> dict[str, Any]:
+        """Change the roles of a driver whose sanction was saved: take *revoke* and give *grant*,
+        less what the driver is entitled to as they stand now (so a retry after a manager
+        placed them again keeps the roles they hold). **Acts whatever attendance's switch says**,
+        the one method that does: a sanction already saved is owed its roles. Raises
+        `StepFailedOnDiscord` where Discord refuses, where the member cannot be fetched for any
+        reason but absence, or where a role to give is no longer on the server; returns
+        ``{"absent": True}`` for a member who left the server."""
 
     async def announce_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any], *, as_text: bool

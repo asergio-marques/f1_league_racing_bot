@@ -331,7 +331,6 @@ async def test_a_driver_signed_off_or_in_the_reserve_team_is_not_owed_a_sanction
     assert candidates == []
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_an_autoreserve_in_a_division_with_no_reserve_team_raises(tmp_path):
     """Attendance spec: "a failure of the autoreserve of each driver owed one, not a sanction
     silently passed over". Pro has no Reserve team and Max is owed an autoreserve: the check
@@ -355,7 +354,6 @@ async def test_an_autoreserve_in_a_division_with_no_reserve_team_raises(tmp_path
     assert await _state(db_path, MAX) == ("ASSIGNED", 1)
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_a_sanction_is_applied_through_the_placement_service_handed_in(tmp_path):
     """Plan 2.6: the hook uses the placement service it is handed, never `bot.placement_service`,
     and saves each sanction on the save it is handed. Lewis (over the autosack threshold) is
@@ -383,7 +381,6 @@ async def test_a_sanction_is_applied_through_the_placement_service_handed_in(tmp
     assert placement.move_on.await_args.kwargs["team_name"] == "Reserve"
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_the_hook_s_apply_sanction_returns_its_line_and_posts_nothing(tmp_path):
     """The queue writes a job's lines in the save that marks it done, so a stop between a line
     posted from the job and that mark would leave a line for a job tried again. Saving Lewis's
@@ -439,7 +436,6 @@ async def test_the_hook_s_apply_sanction_returns_its_line_and_posts_nothing(tmp_
     bot.output_router.post_log.assert_awaited_once_with(line)
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_apply_sanction_on_sacks_on_the_save_it_is_handed_and_commits_nothing(tmp_path):
     """Lewis is over the autosack threshold. Saving his autosack on the save handed takes him
     back to Not Signed Up with no placement on that save, and commits nothing: rolled back, he
@@ -465,7 +461,6 @@ async def test_apply_sanction_on_sacks_on_the_save_it_is_handed_and_commits_noth
     bot.output_router.post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_apply_sanction_on_moves_to_reserve_and_names_the_roles_to_swap(tmp_path):
     """Max is over the autoreserve threshold alone. Saving it on the save handed, then
     committing, moves him from Alpha to the Reserve team of Pro, still placed; the result names
@@ -496,7 +491,6 @@ async def test_apply_sanction_on_moves_to_reserve_and_names_the_roles_to_swap(tm
     guild.member.remove_roles.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_change_sanction_roles_raises_where_discord_refuses(tmp_path):
     """Lewis's autosack is saved and he still holds the roles of Pro and Alpha. Discord refuses
     to take them (Missing Permissions): the role change raises `StepFailedOnDiscord`, for the
@@ -513,7 +507,6 @@ async def test_change_sanction_roles_raises_where_discord_refuses(tmp_path):
         await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE], grant=[])
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_change_sanction_roles_passes_over_a_member_who_left(tmp_path):
     """Lewis's autosack is saved and he has since left the server (Discord answers Unknown
     Member): his roles went with him, so the change raises nothing, asks Discord for nothing,
@@ -533,7 +526,6 @@ async def test_change_sanction_roles_passes_over_a_member_who_left(tmp_path):
     guild.member.remove_roles.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_change_sanction_roles_stops_where_the_member_cannot_be_fetched(tmp_path):
     """Lewis's autosack is saved, and Discord fails to fetch him for a reason other than his
     absence (a server error): the change raises `StepFailedOnDiscord`, rather than passing his
@@ -549,7 +541,6 @@ async def test_change_sanction_roles_stops_where_the_member_cannot_be_fetched(tm
         await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE], grant=[])
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_change_sanction_roles_stops_where_a_role_to_grant_is_gone(tmp_path):
     """Max's autoreserve is saved, his seat now the Reserve team's, but the Reserve team's role
     has been deleted from the server: the change raises `StepFailedOnDiscord`, and Max is given
@@ -567,7 +558,6 @@ async def test_change_sanction_roles_stops_where_a_role_to_grant_is_gone(tmp_pat
     guild.member.add_roles.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_change_sanction_roles_leaves_a_role_the_driver_is_entitled_to_again(tmp_path):
     """Lewis's autosack named the roles of Pro and Alpha to take back, but before its role
     change ran a manager placed him in Alpha again. A retried role change takes neither: he is
@@ -586,7 +576,6 @@ async def test_change_sanction_roles_leaves_a_role_the_driver_is_entitled_to_aga
         assert RESERVE_ROLE not in _role_ids(call)
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_a_sanction_s_roles_are_changed_even_once_attendance_is_off(tmp_path):
     """Owner, check 1: "Change the roles anyway". Lewis's autosack was saved and attendance was
     then turned off before its role change ran. The hook still takes back his roles of Pro and
@@ -602,7 +591,6 @@ async def test_a_sanction_s_roles_are_changed_even_once_attendance_is_off(tmp_pa
     assert taken == {PRO_ROLE, ALPHA_ROLE}
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_check_sanction_refuses_a_full_reserve_block(tmp_path):
     """Max is owed an autoreserve, and the placement service's guard refuses the move to the
     Reserve team of Pro (its block in the lineup picture is full). The check made before the

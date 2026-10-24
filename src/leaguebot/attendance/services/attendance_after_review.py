@@ -7,7 +7,8 @@ channel, posting) and never looks another service up on it: the placement servic
 was handed, and attendance's switch is read from the database, on the connection a writer is
 handed.
 
-**Each method does nothing while attendance is off**, and `enabled` says whether it is, for the
+**Each method does nothing while attendance is off**, save `change_sanction_roles`, which acts
+whatever the switch says because a sanction already saved is owed its roles, and `enabled` says whether it is, for the
 one job of results' own that serves attendance alone (the heading over the sanction cards). A
 writer writes on the save it is handed and commits nothing, so a fault in the attendance fails
 the approval whole. An amendment's recalculation rebuilds the amended round's attended flags both
@@ -15,7 +16,10 @@ ways (FR-028); the first pass records upgrade-only (FR-003).
 
 **A sanction is one driver's**, and one that does not apply raises. The candidate carries the
 profile, the Discord user, the sanction and the divisions an autosack reaches; the thresholds
-and the driver's total are read again when the sanction is applied or announced.
+and the driver's total are read again when the sanction is applied or announced. It is checked
+(`check_sanction`, an autoreserve's capacity guards), saved on the caller's save
+(`apply_sanction_on`, naming the roles to change) and has its roles changed
+(`change_sanction_roles`) in three calls (#439, slice 8).
 
 **The league's server** is core's `league_guild`, the one route from a job to it; where none is
 claimed or it is not in the cache the method raises `GuildUnavailable`.
@@ -138,6 +142,56 @@ class AttendanceAfterReview:
         except _att.SanctionNotApplicable as error:
             # Worded as a failure the queue stops on, so its notice names what to repair.
             raise StepFailedOnDiscord(str(error)) from None
+
+    async def check_sanction(
+        self, round_id: int, division_id: int, candidate: dict[str, Any]
+    ) -> None:
+        if not await self.enabled():
+            return
+        try:
+            await _att.check_sanction(
+                self._db_path, self._placement, round_id, division_id, candidate
+            )
+        except (_att.SanctionNotApplicable, ValueError) as error:
+            # Worded as a failure the queue stops on, so its notice names what to repair.
+            raise StepFailedOnDiscord(str(error)) from None
+
+    async def apply_sanction_on(
+        self, db: aiosqlite.Connection, round_id: int, division_id: int,
+        candidate: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if not await self._enabled_on(db):
+            return None
+        bot_user = self._bot.user
+        # Sanctions are enforced by a bot that has logged in, which is when it has a user.
+        assert bot_user is not None, "sanctions enforced before the bot logged in"
+        try:
+            return await _att.apply_sanction_on(
+                db, self._placement, round_id, division_id, candidate,
+                actor_id=bot_user.id, actor_name=str(bot_user),
+            )
+        except _att.SanctionNotApplicable as error:
+            raise StepFailedOnDiscord(str(error)) from None
+
+    async def change_sanction_roles(
+        self, user_id: int, profile_id: int, *, revoke: list[int], grant: list[int]
+    ) -> dict[str, Any]:
+        # The one method that acts whatever attendance's switch says: a sanction already saved
+        # is owed its roles even once attendance is turned off (owner, #439 slice 8).
+        guild = await self._guild()
+        entitled = await self._placement.driver_role_ids(profile_id)
+        to_revoke = [role_id for role_id in revoke if role_id not in entitled]
+        to_grant = [role_id for role_id in grant if role_id in entitled]
+        present = True
+        if to_revoke:
+            present = await self._placement.revoke_roles(
+                guild, user_id, *to_revoke, reason="Attendance sanction"
+            )
+        if present and to_grant:
+            present = await self._placement.grant_roles(guild, user_id, *to_grant)
+        if not present:
+            return {"absent": True}
+        return {"revoked": to_revoke, "granted": to_grant}
 
     async def announce_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any], *, as_text: bool

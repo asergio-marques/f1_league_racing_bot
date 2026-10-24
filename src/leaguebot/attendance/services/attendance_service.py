@@ -1774,25 +1774,34 @@ class SanctionNotApplicable(Exception):
     team to move them to. A failure of the sanction, never one passed over in silence."""
 
 
-async def _thresholds(db_path: str) -> tuple[int | None, int | None]:
-    """The (autoreserve, autosack) thresholds, each None where unset or off (FR-027)."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT autoreserve_threshold, autosack_threshold FROM attendance_config"
-        )
-        row = await cursor.fetchone()
+async def _thresholds_on(db) -> tuple[int | None, int | None]:
+    """The (autoreserve, autosack) thresholds read on *db*, each None where unset or off."""
+    cursor = await db.execute(
+        "SELECT autoreserve_threshold, autosack_threshold FROM attendance_config"
+    )
+    row = await cursor.fetchone()
     if row is None:
         return None, None
     return row["autoreserve_threshold"] or None, row["autosack_threshold"] or None
 
 
+async def _thresholds(db_path: str) -> tuple[int | None, int | None]:
+    """The (autoreserve, autosack) thresholds, each None where unset or off (FR-027)."""
+    async with get_connection(db_path) as db:
+        return await _thresholds_on(db)
+
+
+async def _display_name_on(db, profile_id: int) -> str | None:
+    cursor = await db.execute(
+        "SELECT test_display_name FROM driver_profiles WHERE id = ?", (profile_id,)
+    )
+    row = await cursor.fetchone()
+    return None if row is None else row["test_display_name"]
+
+
 async def _display_name_of(db_path: str, profile_id: int) -> str | None:
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT test_display_name FROM driver_profiles WHERE id = ?", (profile_id,)
-        )
-        row = await cursor.fetchone()
-    return None if row is None else row["test_display_name"]
+        return await _display_name_on(db, profile_id)
 
 
 async def owed_sanctions(
@@ -1892,6 +1901,131 @@ async def owed_sanctions(
     return owed, signed_off
 
 
+def _sanction_line(
+    candidate: dict, driver: str, total: int, threshold: int | None,
+    reserve_team_name: str | None = None,
+) -> str:
+    """The log line of one driver's sanction: an autosack's, or an autoreserve's naming the
+    Reserve team the driver was moved to."""
+    profile_id = candidate["driver_profile_id"]
+    if candidate["sanction"] == "AUTOSACK":
+        return (
+            f"ATTENDANCE_AUTOSACK | {driver}"
+            f" | driver_profile_id={profile_id} | total={total} >= threshold={threshold}"
+        )
+    return (
+        f"ATTENDANCE_AUTORESERVE | {driver}"
+        f" | driver_profile_id={profile_id} | total={total} >= threshold={threshold}"
+        f" → moved to {reserve_team_name}"
+    )
+
+
+async def _sanction_facts_on(db, division_id: int, round_id: int, candidate: dict,
+                             season_id: int | None) -> tuple[int, int, str | None, str]:
+    """The season, the driver's total, the division's Reserve team (None where it has none) and
+    the driver as a line names them, read on *db*."""
+    if season_id is None:
+        row = await (
+            await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
+        ).fetchone()
+        if row is None:
+            raise SanctionNotApplicable(f"division {division_id} is not in a season")
+        season_id = int(row["season_id"])
+    profile_id = candidate["driver_profile_id"]
+    row = await (await db.execute(
+        "SELECT total_points_after FROM driver_round_attendance "
+        "WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?",
+        (round_id, division_id, profile_id),
+    )).fetchone()
+    total = (row["total_points_after"] if row else None) or 0
+    reserve_row = await (await db.execute(
+        "SELECT name FROM team_instances WHERE division_id = ? AND is_reserve = 1 LIMIT 1",
+        (division_id,),
+    )).fetchone()
+    driver = f"<@{candidate['driver_user_id']}>"
+    display_name = await _display_name_on(db, profile_id)
+    if display_name:
+        driver += f" ({display_name})"
+    return season_id, total, (reserve_row["name"] if reserve_row else None), driver
+
+
+async def check_sanction(
+    db_path: str, placement, round_id: int, division_id: int, candidate: dict,
+) -> None:
+    """Refuse a sanction that cannot be saved, before it is: an autoreserve in a division with no
+    Reserve team (`SanctionNotApplicable`), or one the placement service's capacity guards refuse
+    (ValueError). Reads templates off the loop, which a save cannot; an autosack needs no check.
+    """
+    if candidate["sanction"] != "AUTORESERVE":
+        return
+    async with get_connection(db_path) as db:
+        season_id, _total, reserve_team_name, _driver = await _sanction_facts_on(
+            db, division_id, round_id, candidate, None
+        )
+    if reserve_team_name is None:
+        raise SanctionNotApplicable("the division has no Reserve team")
+    await placement.guard_move(division_id, season_id, reserve_team_name)
+
+
+async def apply_sanction_on(
+    db,
+    placement,
+    round_id: int,
+    division_id: int,
+    candidate: dict,
+    *,
+    actor_id: int,
+    actor_name: str,
+) -> dict[str, Any]:
+    """Save one driver's sanction on *db* and return its line and the roles to change.
+
+    Every read and every write is on the connection handed, which this commits nothing on and
+    awaits nothing but: no role is changed, no member fetched, nothing posted and no capacity
+    guarded (`check_sanction`'s). The result holds the log line and ``roles``: ``None`` for a
+    test driver, who holds none, else the driver's ``user_id`` and ``profile_id`` with the
+    role ids to ``revoke`` and to ``grant``, which a job of its own changes (#439).
+    **Raises** `SanctionNotApplicable` for a division with no Reserve team, and what the
+    placement service raises where the driver can no longer be sanctioned.
+    """
+    profile_id = candidate["driver_profile_id"]
+    season_id, total, reserve_team_name, driver = await _sanction_facts_on(
+        db, division_id, round_id, candidate, None
+    )
+    autoreserve_threshold, autosack_threshold = await _thresholds_on(db)
+    user_id = int(candidate["driver_user_id"])
+
+    if candidate["sanction"] == "AUTOSACK":
+        saved = await placement.sack_on(
+            db, driver_profile_id=profile_id, season_id=season_id,
+            acting_user_id=actor_id, acting_user_name=actor_name,
+        )
+        roles = None if saved.is_test_driver else {
+            "user_id": user_id, "profile_id": profile_id,
+            "revoke": list(saved.revoke_role_ids), "grant": [],
+        }
+        return {
+            "line": _sanction_line(candidate, driver, total, autosack_threshold),
+            "roles": roles,
+        }
+
+    if reserve_team_name is None:
+        raise SanctionNotApplicable("the division has no Reserve team")
+    moved = await placement.move_on(
+        db, driver_profile_id=profile_id, season_id=season_id,
+        from_division_id=division_id, to_division_id=division_id,
+        team_name=reserve_team_name, acting_user_id=actor_id, acting_user_name=actor_name,
+    )
+    roles = None if moved["is_test_driver"] else {
+        "user_id": user_id, "profile_id": profile_id,
+        "revoke": list(moved["revoke"]), "grant": list(moved["grant"]),
+    }
+    return {
+        "line": _sanction_line(candidate, driver, total, autoreserve_threshold,
+                               reserve_team_name),
+        "roles": roles,
+    }
+
+
 async def apply_sanction(
     bot: LeagueBot,
     guild: discord.Guild,
@@ -1907,17 +2041,19 @@ async def apply_sanction(
 ) -> str:
     """Apply one driver's sanction, and return its line for the log channel.
 
-    The line is posted here unless *post_line* is false, which a queue job passes: the queue
-    writes a job's lines in the save that marks it done (`StepResult.lines`), so a stop between
-    a post made here and that mark cannot leave a line for a job that is tried again (#439).
+    What `/attendance sync` calls: the sanction and its role change in one go, the role change
+    swallowing Discord's refusals. A review's sanction is not applied here but through
+    `check_sanction`, `apply_sanction_on` and a role change of its own (#439, slice 8).
+
+    The line is posted here unless *post_line* is false.
 
     *placement* is the placement service, handed in rather than read off the bot (#439).
     *actor* is who the sanction is done as: ``None`` is the bot, which is what a run has always
     been. **Raises** where the sanction does not apply: `SanctionNotApplicable` for a division
     with no Reserve team (a failure of the autoreserve, not a sanction passed over), and
-    whatever the placement service raises where Discord refuses a role change. A sack revokes
-    roles through Discord before it writes, so nothing is undone here; the caller decides what a
-    failure means (the run records it and takes the next driver, a queue job stops).
+    whatever the placement service raises where the driver can no longer be sanctioned. A sack
+    revokes roles through Discord before it writes, so nothing is undone here; the caller
+    decides what a failure means (the run records it and takes the next driver).
     """
     acting = actor if actor is not None else bot.user
     # Sanctions are enforced by a bot that has logged in, which is when it has a user.
@@ -1926,27 +2062,9 @@ async def apply_sanction(
     discord_user_id = str(candidate["driver_user_id"])
     autoreserve_threshold, autosack_threshold = await _thresholds(db_path)
     async with get_connection(db_path) as db:
-        if season_id is None:
-            row = await (
-                await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
-            ).fetchone()
-            if row is None:
-                raise SanctionNotApplicable(f"division {division_id} is not in a season")
-            season_id = int(row["season_id"])
-        row = await (await db.execute(
-            "SELECT total_points_after FROM driver_round_attendance "
-            "WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?",
-            (round_id, division_id, profile_id),
-        )).fetchone()
-        total = (row["total_points_after"] if row else None) or 0
-        reserve_row = await (await db.execute(
-            "SELECT name FROM team_instances WHERE division_id = ? AND is_reserve = 1 LIMIT 1",
-            (division_id,),
-        )).fetchone()
-    driver = f"<@{discord_user_id}>"
-    display_name = await _display_name_of(db_path, profile_id)
-    if display_name:
-        driver += f" ({display_name})"
+        season_id, total, reserve_team_name, driver = await _sanction_facts_on(
+            db, division_id, round_id, candidate, season_id
+        )
 
     if candidate["sanction"] == "AUTOSACK":
         await placement.sack_driver(
@@ -1957,17 +2075,13 @@ async def apply_sanction(
             guild=guild,
             discord_user_id=discord_user_id,
         )
-        line = (
-            f"ATTENDANCE_AUTOSACK | {driver}"
-            f" | driver_profile_id={profile_id} | total={total} >= threshold={autosack_threshold}"
-        )
+        line = _sanction_line(candidate, driver, total, autosack_threshold)
         if post_line:
             await bot.output_router.post_log(line)
         return line
 
-    if reserve_row is None:
+    if reserve_team_name is None:
         raise SanctionNotApplicable("the division has no Reserve team")
-    reserve_team_name: str = reserve_row["name"]
     # One move rather than an unassign and an assign (issue #220): the driver keeps a seat
     # throughout, their roles are swapped once, and the lineup is posted once rather than twice.
     await placement.move_driver(
@@ -1981,11 +2095,7 @@ async def apply_sanction(
         guild=guild,
         discord_user_id=discord_user_id,
     )
-    line = (
-        f"ATTENDANCE_AUTORESERVE | {driver}"
-        f" | driver_profile_id={profile_id} | total={total} >= threshold={autoreserve_threshold}"
-        f" → moved to {reserve_team_name}"
-    )
+    line = _sanction_line(candidate, driver, total, autoreserve_threshold, reserve_team_name)
     if post_line:
         await bot.output_router.post_log(line)
     return line
