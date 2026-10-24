@@ -455,6 +455,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.attendance.services.sheet_posting import sheet_post_change
     from leaguebot.core.services.calendar_post_service import calendar_sync_change
     from leaguebot.core.services.cancellation_changes import (
+        check_in_record_steps,
         division_cancel_change,
         notice_steps,
         round_cancel_change,
@@ -582,9 +583,12 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         submission_all_cancelled_change(
             seasons=bot.season_service,
-            notices=notice_steps(
-                modules=bot.module_service, seasons=bot.season_service, scope=SCOPE_ROUND,
-            ),
+            notices={
+                **check_in_record_steps(modules=bot.module_service),
+                **notice_steps(
+                    modules=bot.module_service, seasons=bot.season_service, scope=SCOPE_ROUND,
+                ),
+            },
             now=lambda: bot.change_queue.now(),
         )
     )

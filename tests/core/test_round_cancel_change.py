@@ -981,11 +981,6 @@ async def test_the_check_in_is_written_beneath_the_success_line(tmp_path):
     assert entry == SUCCESS + "\n  division: Pro\n  round: 3" + CHECKIN_LOGGED
 
 
-#: Why the check-in record's public reader is not yet there to call.
-CHECKIN_RECORD_UNBUILT = "#439: core's check-in record of a round has no public reader yet"
-
-
-@pytest.mark.xfail(strict=True, reason=CHECKIN_RECORD_UNBUILT)
 async def test_checkin_record_gives_what_round_cancel_writes(tmp_path):
     """Round 3's check-in recorded Lewis as accepted and Max as giving no answer. Core's public
     `checkin_record`, read for Pro's round 3, gives the record `/round cancel` writes beneath its

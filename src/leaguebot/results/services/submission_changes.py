@@ -79,7 +79,11 @@ from leaguebot.core.services.change_queue import (
 )
 from leaguebot.core.services import season_service
 from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
-from leaguebot.core.services.cancellation_changes import not_notified
+from leaguebot.core.services.cancellation_changes import (
+    check_in_record,
+    check_in_record_not_written,
+    not_notified,
+)
 from leaguebot.core.services.cancellation_notice_service import failure_log_lines
 from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
 from leaguebot.core.services.season_service import set_round_status_on
@@ -621,7 +625,9 @@ def submission_all_cancelled_change(
             f"  division: {ended['division_name']}\n"
             f"  round: {ended['round_number']}\n"
             "  reason: every session was entered as not held"
+            + check_in_record(ctx)
             + failure_log_lines(not_notified(ctx))
+            + "".join(f"\n  {text}" for text in check_in_record_not_written(ctx))
             + "".join(f"\n  {text}" for text in review_posting.not_done(ctx))
         )
         return (line,)

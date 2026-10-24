@@ -212,15 +212,20 @@ _ANSWERS = (
 )
 
 
-async def _checkin_audit(bot: LeagueBot, division, round_id: int) -> str:
+async def checkin_record(db_path: str, division, round_id: int) -> str:
     """The log-channel record of *round_id*'s check-in in *division*, or "" where it had none.
+
+    *division* is anything with an `id` and a `name`. Public because a round that ends cancelled
+    (every session entered as not held) writes the same record beneath its line, through a job
+    core builds and hands the module that ends it; it reads on its own connection and writes
+    nothing.
 
     Every driver the check-in recorded, grouped by their answer, and — where the reserves had
     already been distributed — who was sent to which team and who stood by. A driver is named
     as the attendance module's own log lines name one: their mention, with the name a test
     driver goes by. A round whose call was never posted recorded nobody and is left out.
     """
-    async with get_connection(bot.db_path) as db:
+    async with get_connection(db_path) as db:
         round_row = await (await db.execute(
             "SELECT round_number, track_name FROM rounds WHERE id = ? AND division_id = ?",
             (round_id, division.id),
@@ -277,14 +282,14 @@ async def take_down_call(
     attendance: called with the round and the division, it gives True where a call stood. Its
     record is not forgotten here: the job's record does it, in the save that marks the job done.
 
-    Returns `{"audit", "taken_down"}`: the log-channel record of the check-in (`_checkin_audit`),
+    Returns `{"audit", "taken_down"}`: the log-channel record of the check-in (`checkin_record`),
     read **before** the call comes down, and whether a call stood. Where a message cannot be
     deleted it raises `StepFailedOnDiscord` whose `result` is `{"audit", "undeleted"}`, so the
     audit is kept on the job whether it goes through or is discarded, and the call's record
     stays for the next try, which reads the audit again. The raise is `from` the Discord failure
     that caused it, as *check_in_deletes* raises it.
     """
-    audit = await _checkin_audit(bot, division, round_id)
+    audit = await checkin_record(bot.db_path, division, round_id)
     try:
         taken_down = await check_in_deletes(round_id, division.id)
     except StepFailedOnDiscord as exc:

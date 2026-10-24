@@ -584,7 +584,6 @@ async def test_a_discarded_notice_is_named_in_the_round_s_log_line(tmp_path):
 RECORD_HEADING = "\n  check-in, Pro, Round 3 (Silverstone):"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_a_round_ending_cancelled_writes_its_check_in_record_beneath_its_line(tmp_path):
     """Attendance is on. Round 3's check-in recorded Lewis as accepted and Max as giving no
     answer, and the reserves were distributed, Lewis sent to Scuderia Ferrari. Round 3 ends
@@ -637,7 +636,6 @@ def _check_in_read_failing() -> ExitStack:
     return stack
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_a_discarded_check_in_record_is_named_and_the_round_still_ends_cancelled(tmp_path):
     """Attendance is on and round 3's check-in call was posted. Round 3 ends cancelled when the
     admin types CANCELLED for its race, but reading its check-in fails on a fault of the

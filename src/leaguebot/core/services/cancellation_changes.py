@@ -87,6 +87,7 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Awaitable, Callable, Iterable
 from datetime import datetime
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Protocol
 
 import aiosqlite
@@ -179,8 +180,12 @@ __all__ = [
     "ROUND_CANCEL",
     "ROUND_REARM",
     "SEASON_CANCEL",
+    "READ_CHECK_IN",
     "cancellation_holding_amendment",
     "cancellation_in_hand",
+    "check_in_record",
+    "check_in_record_not_written",
+    "check_in_record_steps",
     "division_cancel_change",
     "notice_steps",
     "not_notified",
@@ -405,6 +410,8 @@ NOTIFY_CHECKIN = "notify_checkin"
 TAKE_DOWN_CALL = "take_down_call"
 NOTIFY_FORECAST = "notify_forecast"
 NOTIFY_RESULTS = "notify_results"
+#: A round that ends cancelled reads its check-in for the log (`check_in_record_steps`).
+READ_CHECK_IN = "read_check_in"
 CLOSE = "close"
 DELETE_CHANNEL = "delete_channel"
 
@@ -621,6 +628,57 @@ def checkin_audit(ctx: OutcomeContext) -> str:
         for view in ctx.steps
         if view.name == TAKE_DOWN_CALL
     )
+
+
+def check_in_record_steps(*, modules: "ModuleService") -> dict[str, Step]:
+    """The job that reads a round's check-in for the log channel, for a round that ends cancelled
+    without a command (every session entered as not held) to plan beside the notices.
+
+    It is an ACT on its own connection with no save open, due while attendance is on, and its
+    result is `{"record": text}` (the same record `/round cancel` writes, `checkin_record`; empty
+    where the round's call was never posted). It reads the round named by `round_id` in its own
+    payload beside the notices' (`division_id`, `division_name`, `round_number`). The call itself
+    is not taken down: it comes down a day after the start, as any round's. A discard loses the
+    record alone, and `check_in_record_not_written` names that.
+    """
+
+    async def read(ctx: StepContext) -> StepResult:
+        payload = ctx.step_payload
+        record = await notices.checkin_record(
+            ctx.db_path,
+            SimpleNamespace(id=int(payload["division_id"]), name=str(payload["division_name"])),
+            int(payload["round_id"]),
+        )
+        return StepResult(result={"record": record})
+
+    async def attendance_on(_ctx: StepContext) -> bool:
+        return await modules.is_attendance_enabled()
+
+    return {
+        READ_CHECK_IN: Step(
+            READ_CHECK_IN, StepKind.ACT, read, still_due=attendance_on,
+            describe=_named("reading the check-in record of round {number} in **{name}**"),
+        ),
+    }
+
+
+def check_in_record(ctx: OutcomeContext) -> str:
+    """The check-in record a round ending cancelled read, to write beneath its line, or ""."""
+    return "".join(
+        str((view.result or {}).get("record", ""))
+        for view in ctx.steps
+        if view.name == READ_CHECK_IN
+    )
+
+
+def check_in_record_not_written(ctx: OutcomeContext) -> list[str]:
+    """One line for each check-in record a league admin discarded the reading of."""
+    return [
+        f"not done: the check-in record of round {view.payload.get('round_number')} in "
+        f"**{view.payload.get('division_name')}** was not written"
+        for view in ctx.steps
+        if view.name == READ_CHECK_IN and _discarded(view)
+    ]
 
 
 def _round_id(ctx: StepContext) -> int:
