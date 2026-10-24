@@ -285,7 +285,9 @@ def resubmission_swap_change() -> ChangeType:
     resubmission's flag), the drafts deleted, and the next request asked in the same save. With a
     session held the review is asked again, publishing the new results as "Provisional Results
     (amended)"; with every session cancelled the cancelled sessions are asked posted and the
-    channel closed (`results.submission.all_cancelled`).
+    channel closed (`results.submission.all_cancelled`), told that it follows a resubmission, so
+    that the round's standings are withdrawn with it, and the tables of the earlier sessions the
+    resubmission does not enter, which the new rows could not carry, are taken down.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -304,7 +306,7 @@ def resubmission_swap_change() -> ChangeType:
         payload = ctx.payload
         round_id = int(payload["round_id"])
         held = await submissions.resubmission_drafts_on(db, round_id)
-        await submissions.replace_round_results_on(
+        unplaced = await submissions.replace_round_results_on(
             db, round_id, int(payload["division_id"]), int(payload["season_id"]), held
         )
         await db.execute("DELETE FROM resubmission_drafts WHERE round_id = ?", (round_id,))
@@ -326,6 +328,7 @@ def resubmission_swap_change() -> ChangeType:
                 {
                     "round_id": round_id, "channel_id": int(payload["channel_id"]),
                     "round_number": number, "sessions": sessions,
+                    "resubmission": True, "old_tables": unplaced,
                 },
                 f"posting round {number}'s cancelled sessions",
             )

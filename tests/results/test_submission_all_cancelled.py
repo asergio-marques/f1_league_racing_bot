@@ -271,7 +271,6 @@ async def test_a_round_whose_every_session_is_cancelled_ends_cancelled_with_its_
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_a_resubmission_entering_every_session_cancelled_ends_the_round_cancelled(
     tmp_path, monkeypatch,
 ):
@@ -794,7 +793,6 @@ async def test_a_resubmission_entering_every_session_cancelled_withdraws_the_rou
     assert min(deleted_at) > max(lines)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_the_earlier_provisional_tables_come_down_after_each_session_s_note_stands(
     tmp_path, monkeypatch,
 ):
@@ -859,7 +857,6 @@ async def test_a_later_round_s_standings_are_recomputed_without_the_round_and_po
     assert set(league.sent_to(STANDINGS_CHANNEL)) - posted_before
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_the_next_round_s_movement_is_measured_against_the_round_before(
     tmp_path, monkeypatch,
 ):
@@ -896,7 +893,6 @@ async def test_the_next_round_s_movement_is_measured_against_the_round_before(
     assert await reference_round_id(league.db_path, DIVISION_ID, LATER_ROUND) == EARLIER_ROUND
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_a_discarded_standings_deletion_is_named_for_deletion_by_hand(
     tmp_path, monkeypatch,
 ):

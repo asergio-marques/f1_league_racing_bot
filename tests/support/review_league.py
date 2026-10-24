@@ -403,6 +403,10 @@ class ReviewLeague:
         # posted: this league posts none, so the division is not found and the job drops out.
         self.bot.season_service.get_divisions = AsyncMock(return_value=[])
         self.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+        # A round ending cancelled asks each module's notice, only where that module is on; the
+        # notices are not what this league's tests are about, so weather and results answer off.
+        self.bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+        self.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
         self.bot.module_service.is_attendance_enabled = AsyncMock(
             side_effect=lambda: self.attendance_on
         )

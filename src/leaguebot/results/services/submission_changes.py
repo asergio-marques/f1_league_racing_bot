@@ -91,14 +91,20 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.results.services import review_posting
 from leaguebot.results.services.review_posting import (
     DELETE_CHANNEL,
+    DELETE_MESSAGE,
+    NAMES,
     POST_SESSION_RESULTS,
+    POST_STANDINGS,
+    display_names,
     posting_steps,
+    withdraw_round_standings_on,
 )
 from leaguebot.results.services.result_submission_service import (
     _make_slug,
     expected_session_on,
     get_sessions_for_format,
 )
+from leaguebot.results.services.standings_service import cascade_recompute_from_round_on
 from leaguebot.results.services.submission_steps import (
     CREATE_CHANNEL,
     POST,
@@ -512,15 +518,19 @@ def submission_all_cancelled_change(
 
     The payload is the last turn's: ``round_id``, ``channel_id``, ``round_number`` and
     ``sessions``, each ``{"session_id", "session_type"}`` of the round's cancelled sessions in
-    running order. *seasons* posts the calendar and *now* is the queue's clock, read when the
-    round's ending is audited.
+    running order. A resubmission's adds ``resubmission`` and ``old_tables``, the ids of the
+    earlier results tables the new sessions could not carry. *seasons* posts the calendar and *now*
+    is the queue's clock, read when the round's ending is audited.
 
     Its first job, ``end_round`` (a save, **never to be discarded**: without it the round would
     never finish and its season could never be completed), ends the round CANCELLED through core's
     ``end_round_not_held_on``: the status and its audit, the division's refresh and the season's
-    move on, in one save. It then plans one posting job for each session (the line, in the results
-    channel, saved as the session's results message; a division with no results channel has none
-    to post) and the round's calendar again, struck through, where one stands; its follow-on is the
+    move on, in one save. A resubmission leaves the standings its first submission posted, so that
+    save withdraws them too: their rows are deleted and the later rounds' worked out again without
+    the round, on the names the ``names`` job resolved first. It then plans one posting job for each
+    session (the line, in the results channel, saved as the session's results message; a division
+    with no results channel has none to post), the deletion of the withdrawn standings' posts and of
+    the old tables, the later rounds' standings posted again, and the round's calendar again, struck through, where one stands; its follow-on is the
     season's wind-down. Where the save finds a session not cancelled after all, or the round past
     the point it can end from, it writes and plans nothing. ``ask_close`` asks the closing of the
     channel of the round's lane in its own save either way. A discarded line leaves the others and
@@ -552,11 +562,19 @@ def submission_all_cancelled_change(
             return StepResult(result={"ended": False})
         row = await (await db.execute(
             "SELECT r.division_id, r.round_number, r.track_name, d.name AS division_name, "
-            "d.season_id, s.season_number FROM rounds r JOIN divisions d ON d.id = r.division_id "
-            "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
+            "d.season_id, s.season_number, c.results_channel_id FROM rounds r "
+            "JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
+            "LEFT JOIN division_results_config c ON c.division_id = d.id WHERE r.id = ?",
             (round_id,),
         )).fetchone()
         assert row is not None
+        # A resubmission leaves the standings its first submission posted: they are withdrawn
+        # with the round, and the later rounds' worked out again without it.
+        held, standings_channel, standings_posts = await withdraw_round_standings_on(db, round_id)
+        if held:
+            await cascade_recompute_from_round_on(
+                db, int(row["division_id"]), round_id, display_names(ctx)
+            )
         posts = tuple(
             PlannedStep(POST_SESSION_RESULTS, {
                 "session_id": int(session["session_id"]), "round_id": round_id,
@@ -571,10 +589,28 @@ def submission_all_cancelled_change(
             "season_id": int(row["season_id"]), "season_number": int(row["season_number"]),
             "round_number": int(row["round_number"]), "track_name": row["track_name"],
         }
+        results_channel = row["results_channel_id"]
+        deletions = tuple(
+            PlannedStep(DELETE_MESSAGE, {
+                "channel_id": int(channel), "message_id": int(message_id), "what": what,
+            })
+            for channel, ids, what in (
+                (standings_channel, standings_posts, "standings post"),
+                (results_channel, payload.get("old_tables") or [], "results table"),
+            )
+            if channel
+            for message_id in ids
+        )
+        reposts = (
+            await review_posting.plan_posts(db, round_id, label="", later_rounds=True)
+            if held else []
+        )
         return StepResult(
             result={"ended": True, "previous": previous, **target},
             then=(
                 *posts,
+                *deletions,
+                *reposts,
                 PlannedStep(POST_CALENDAR, {**target, "round_ids": [round_id], "only_if_posted": True}),
                 *(PlannedStep(name, target) for name in notices),
             ),
@@ -596,7 +632,8 @@ def submission_all_cancelled_change(
         return f"{called} would never finish, and {season} could not be completed"
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
-        return (PlannedStep(END_ROUND), PlannedStep(ASK_CLOSE))
+        names = (PlannedStep(NAMES),) if payload.get("resubmission") else ()
+        return (*names, PlannedStep(END_ROUND), PlannedStep(ASK_CLOSE))
 
     async def ask_close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.payload
@@ -641,7 +678,10 @@ def submission_all_cancelled_change(
                 END_ROUND, StepKind.SAVE, end_round, describe=describe_end_round,
                 undiscardable=would_never_finish,
             ),
+            NAMES: posting_steps()[NAMES],
             POST_SESSION_RESULTS: posting_steps()[POST_SESSION_RESULTS],
+            POST_STANDINGS: posting_steps()[POST_STANDINGS],
+            DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
             **calendar_steps(seasons),
             **notices,
             ASK_CLOSE: Step(ASK_CLOSE, StepKind.SAVE, ask_close, describe=describe_ask_close),

@@ -83,7 +83,10 @@ from leaguebot.results.services.results_post_service import (
     _delete_posting,
     _label_from_status,
     _load_driver_rows,
+    _parse_ids,
     _sr_from_row,
+    _STANDINGS_ID_COLUMNS,
+    _STANDINGS_IDS_COLUMNS,
     delete_round_channel,
     driver_standings_for_display,
     produce_cancelled_session_line,
@@ -362,6 +365,54 @@ async def plan_division_posts(
         for step in planned:
             step.payload["division"] = division_name
     return planned
+
+
+async def withdraw_round_standings_on(
+    db: aiosqlite.Connection, round_id: int
+) -> tuple[bool, int | None, list[int]]:
+    """Delete the standings *round_id* holds on *db*, committing nothing, and say what was posted.
+
+    For a round that ends cancelled after a resubmission: its provisional standings no longer
+    stand for anything. Returns whether the round held any (a first submission holds none), the
+    division's standings channel (None where it has none) and the id of every message that
+    carried the round's standings, drivers' and constructors', for the caller to plan the
+    deletion of once the round's notes stand. The ids are read before the rows are deleted, as
+    they live on them.
+    """
+    row = await (await db.execute(
+        "SELECT r.division_id, c.standings_channel_id FROM rounds r "
+        "LEFT JOIN division_results_config c ON c.division_id = r.division_id WHERE r.id = ?",
+        (round_id,),
+    )).fetchone()
+    if row is None:
+        return False, None, []
+    held = False
+    ids: list[int] = []
+    for table in ("driver_standings_snapshots", "team_standings_snapshots"):
+        count = await (await db.execute(
+            f"SELECT COUNT(*) AS n FROM {table} WHERE round_id = ?", (round_id,)  # noqa: S608
+        )).fetchone()
+        held = held or bool(count and count["n"])
+    if not held:
+        return False, None, []
+    for championship, anchor_column in _STANDINGS_ID_COLUMNS.items():
+        found = await (await db.execute(
+            f"SELECT {anchor_column} AS anchor, {_STANDINGS_IDS_COLUMNS[championship]} AS chunks "  # noqa: S608
+            f"FROM driver_standings_snapshots WHERE round_id = ? AND {anchor_column} IS NOT NULL "
+            "ORDER BY standing_position LIMIT 1",
+            (round_id,),
+        )).fetchone()
+        if found is None or not found["anchor"]:
+            continue
+        anchor = int(found["anchor"])
+        posted = _parse_ids(found["chunks"]) or [anchor]
+        for message_id in (anchor, *posted):
+            if message_id not in ids:
+                ids.append(message_id)
+    await db.execute("DELETE FROM driver_standings_snapshots WHERE round_id = ?", (round_id,))
+    await db.execute("DELETE FROM team_standings_snapshots WHERE round_id = ?", (round_id,))
+    channel = row["standings_channel_id"]
+    return True, (int(channel) if channel else None), ids
 
 
 def _in_division(payload: dict[str, Any]) -> str:
