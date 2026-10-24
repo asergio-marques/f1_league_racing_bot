@@ -924,3 +924,81 @@ async def test_an_undiscardable_job_whose_reason_cannot_be_read_is_still_refused
     assert (await stopped_job(env.db_path))["id"] == job["id"]
     assert await _discard_audits(env) == []
     assert ran == ["first", "arm"]
+
+
+def _refused_at_its_check(env, mode: dict, steps: list) -> None:
+    """A dummy change type of *steps* whose check refuses while `mode["refuse"]` is set (the
+    forecast channel is missing), and a change type asked after it."""
+    api = _api()
+
+    async def _check(_ctx):
+        if mode["refuse"]:
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        return api.Verdict.go()
+
+    _queue(env, _type(steps=steps, check=_check),
+           _type("later", steps=[_act("later", mode["ran"])]))
+
+
+async def test_a_change_stopped_at_its_check_whose_first_job_is_undiscardable_cannot_be_discarded_whole(env):
+    """A bot change whose first job (arming the dummy) is undiscardable stops the queue at its
+    check, which refuses it. A league admin's Discard, which would drop the whole change, is
+    refused as a Discard of that first job is, saying what would follow: the change still stops
+    the queue and nothing of it, nor of the change behind it, has run. Once its check passes, a
+    Retry runs it and the change behind it."""
+    api = _api()
+    mode: dict[str, Any] = {"refuse": False, "ran": []}
+    ran = mode["ran"]
+    _refused_at_its_check(env, mode, [
+        _fails_while({}, "arm", ran=ran, describe=_described("arming the dummy"),
+                     undiscardable=_would_never_run),
+        _act("after", ran),
+    ])
+    await _ask(env, origin=api.ChangeOrigin.BOT)
+    await _ask(env, "later")
+    mode["refuse"] = True
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["name"] == "arm"
+
+    interaction = await discard_job(env.bot, user=_admin())
+
+    assert CANNOT_DISCARD in _private(interaction)
+    assert (await stopped_job(env.db_path))["id"] == job["id"]
+    assert await _discard_audits(env) == []
+    assert ran == []
+
+    mode["refuse"] = False
+    await retry_job(env.bot, user=_manager())
+
+    assert ran == ["arm", "after", "later"]
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+async def test_a_change_stopped_at_its_check_with_only_later_undiscardable_jobs_is_discarded_whole(env):
+    """A bot change whose first job may be discarded, and whose second (arming the dummy) may
+    not, stops the queue at its check, which refuses it. A league admin's Discard drops the whole
+    change, none of its jobs having run, the undiscardable one included, and the change behind
+    it runs."""
+    api = _api()
+    mode: dict[str, Any] = {"refuse": False, "ran": []}
+    ran = mode["ran"]
+    _refused_at_its_check(env, mode, [
+        _act("first", ran),
+        _fails_while({}, "arm", ran=ran, describe=_described("arming the dummy"),
+                     undiscardable=_would_never_run),
+        _act("after", ran),
+    ])
+    await _ask(env, origin=api.ChangeOrigin.BOT)
+    await _ask(env, "later")
+    mode["refuse"] = True
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["name"] == "first"
+
+    interaction = await discard_job(env.bot, user=_admin())
+
+    assert CANNOT_DISCARD not in _private(interaction)
+    assert await stopped_job(env.db_path) is None
+    assert ran == ["later"]
+    assert await _states(env) == ["DISCARDED", "DONE"]
