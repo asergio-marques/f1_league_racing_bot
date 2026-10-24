@@ -990,10 +990,6 @@ POSTS_OFF_THE_QUEUE: dict[tuple[str, str], str] = {
     ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset.report"): (
         "the factory reset's progress, the reply to the owner's own command"
     ),
-    ("core/services/output_router.py", "OutputRouter.turn_away"): (
-        "the turn-away's note and deletion, made at once while an earlier turn waits; a "
-        "refusal of either is lost, not retried"
-    ),
     ("core/services/retry_service.py", "attempt_delivery"): (
         "the retry of a log line the log channel refused: it carries log lines alone, which stay "
         "off the queue (decision 1)"
@@ -1056,13 +1052,14 @@ def _posts_outside_a_job_among(nodes) -> Counter[tuple[str, str]]:
 def test_no_post_is_made_outside_a_job_but_those_named_off_the_queue():
     """The job check, absolute (slice 6b, C102): every message the bot posts, edits or deletes,
     and every channel it makes or deletes, is a job of a change on the change queue, but a log
-    line, a reply to a member's command or press, the stop notice, and the posts named in
-    `POSTS_OFF_THE_QUEUE` (architecture.md, "How a change is carried out" and "Posting to
-    Discord"). A function that posts carries `posts_in_a_job`, which raises where it runs outside
-    a job, or is named in `POSTS_OFF_THE_QUEUE` with its reason; no function anywhere posts
-    outside a job, with no list of exceptions left to grow. The router is excepted as the posting
-    check excepts it (`POSTING_ALLOWED`): its log lines and stop notice stay off the queue, and
-    its forecast post carries the decorator."""
+    line, a reply to a member's command or press, the stop notice, the turn-away's note and
+    deletion (made at once while an earlier turn waits, a refusal of either lost, not retried),
+    and the posts named in `POSTS_OFF_THE_QUEUE` (architecture.md, "How a change is carried out"
+    and "Posting to Discord"). A function that posts carries `posts_in_a_job`, which raises where
+    it runs outside a job, or is named in `POSTS_OFF_THE_QUEUE` with its reason; no function
+    anywhere posts outside a job, with no list of exceptions left to grow. The router is excepted as the posting
+    check excepts it (`POSTING_ALLOWED`): its log lines, stop notice and turn-away stay off the
+    queue, and its forecast post carries the decorator."""
     found = _posts_outside_a_job_among(_nodes())
 
     assert not found, sorted(found)
