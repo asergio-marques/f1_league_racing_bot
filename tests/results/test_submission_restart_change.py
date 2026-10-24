@@ -410,10 +410,8 @@ CUT_SHORT_LEFT = (
     f"⚠️ The cut-short submission channel <#{SUBMISSION_CHANNEL}> of round 3 was not deleted, and "
     "no record of it is kept: delete it by hand."
 )
-CUT_SHORT_UNNAMED = "#439: a discarded deletion at a restart does not yet name the channel left"
 
 
-@pytest.mark.xfail(strict=True, reason=CUT_SHORT_UNNAMED)
 async def test_a_discarded_deletion_at_a_restart_names_the_channel_to_delete_by_hand(tmp_path):
     """Discord refuses to delete channel 690 at the restart, after round 3's cut-short submission
     was cleared, so the queue stops at the deletion. A league admin discards it. The log channel

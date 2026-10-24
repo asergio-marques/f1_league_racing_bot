@@ -358,7 +358,8 @@ def submission_restart_change() -> ChangeType:
     The payload is ``{"round_id": int, "channel_id": int}``, the channel the restart found the
     round's submission open in. It is due while the round's submission row stands open in that
     channel and in no review; a round cancelled, one whose row is gone and one whose submission
-    has since been opened in another channel are dropped.
+    has since been opened in another channel are dropped. A discarded deletion leaves the channel
+    standing with no row naming it, so the log channel is told, once, to delete it by hand.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -403,6 +404,8 @@ def submission_restart_change() -> ChangeType:
                         "round_id": round_id,
                         "channel_id": int(row["channel_id"]),
                         "reason": "Orphaned submission channel cleanup on restart",
+                        "what": "cut-short submission channel",
+                        "round_number": int(row["round_number"]),
                     },
                 ),
             ),
@@ -424,6 +427,19 @@ def submission_restart_change() -> ChangeType:
     def cleared(_ctx: OutcomeContext) -> str:
         return ""
 
+    def left_standing(ctx: OutcomeContext) -> tuple[str, ...]:
+        """One line for the channel a league admin discarded the deletion of: no row names it any
+        more, so the log channel is the only record of it."""
+        lines: list[str] = []
+        for view in ctx.steps:
+            if view.name == DELETE_CHANNEL and "discarded" in (view.result or {}):
+                lines.append(
+                    f"⚠️ The {view.payload['what']} <#{view.payload['channel_id']}> of round "
+                    f"{view.payload['round_number']} was not deleted, and no record of it is "
+                    "kept: delete it by hand."
+                )
+        return tuple(lines)
+
     return ChangeType(
         kind=RESTART_KIND,
         opening=(PlannedStep(CLEAR),),
@@ -438,6 +454,7 @@ def submission_restart_change() -> ChangeType:
         key=lambda payload: f"{RESTART_KIND}:{payload['round_id']}",
         doing=lambda _payload: "clearing a results submission a restart cut short",
         outcome=cleared,
+        finished_lines=left_standing,
     )
 
 
