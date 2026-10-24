@@ -577,7 +577,11 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(submission_open_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(submission_restart_change())
-    bot.change_queue.register(submission_all_cancelled_change())
+    bot.change_queue.register(
+        submission_all_cancelled_change(
+            seasons=bot.season_service, now=lambda: bot.change_queue.now(),
+        )
+    )
     bot.change_queue.register(submission_close_change())
     bot.change_queue.register(resubmission_start_change(queue=bot.change_queue))
     bot.change_queue.register(resubmission_swap_change())

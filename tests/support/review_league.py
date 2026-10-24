@@ -399,6 +399,9 @@ class ReviewLeague:
         self.bot.fetch_channel = AsyncMock(side_effect=_fetch)
         self.bot.get_guild = MagicMock(return_value=guild)
         self.bot.guilds = [guild]
+        # A round ending cancelled asks for its division's calendar again, only where one was
+        # posted: this league posts none, so the division is not found and the job drops out.
+        self.bot.season_service.get_divisions = AsyncMock(return_value=[])
         self.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
         self.bot.module_service.is_attendance_enabled = AsyncMock(
             side_effect=lambda: self.attendance_on

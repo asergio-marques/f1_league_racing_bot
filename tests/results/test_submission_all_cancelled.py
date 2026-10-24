@@ -248,7 +248,6 @@ async def test_a_refused_deletion_of_an_all_cancelled_channel_stops_only_the_rou
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_a_round_whose_every_session_is_cancelled_ends_cancelled_with_its_audit(tmp_path):
     """Round 3 awaits its results, its qualifying entered as cancelled; the admin types CANCELLED
     for the race. When the queue runs, round 3 is CANCELLED and marked as not held, and one
@@ -320,7 +319,6 @@ async def test_a_resubmission_entering_every_session_cancelled_ends_the_round_ca
     assert len(await _changes(league, REVIEW_OPEN)) == asked_before
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_the_last_round_ending_cancelled_finishes_the_division_and_winds_the_season_down(
     tmp_path,
 ):
@@ -354,7 +352,6 @@ async def test_the_last_round_ending_cancelled_finishes_the_division_and_winds_t
     assert "season.complete" in [row["kind"] for row in await change_rows(league.db_path)]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_the_round_ending_cancelled_is_struck_through_on_its_calendar_reposted(tmp_path):
     """Pro's calendar was posted. Round 3 ends cancelled when the admin types CANCELLED for its
     race: Pro's calendar is posted again, once, with round 3 shown as cancelled (core :427)."""
@@ -368,7 +365,6 @@ async def test_the_round_ending_cancelled_is_struck_through_on_its_calendar_repo
     assert len(calendar) == 1 and calendar[0].count("— Cancelled") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_no_calendar_is_posted_where_none_stood(tmp_path):
     """Pro's calendar was never posted. Round 3 ends cancelled when the admin types CANCELLED for
     its race, and no calendar is posted (core, Announcing a cancellation)."""
@@ -403,7 +399,6 @@ async def test_a_discarded_calendar_is_named_with_division_calendar_sync(tmp_pat
     assert f"\n  not notified: {CALENDAR_DISCARDED}" in line
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_the_round_s_ending_cannot_be_discarded(tmp_path):
     """The round's ending stops on a fault of the database. A league admin's Discard is refused,
     saying round 3 would never finish and season 3 could not be completed; the queue stays
@@ -431,7 +426,6 @@ async def test_the_round_s_ending_cannot_be_discarded(tmp_path):
     assert await _round(league) == ("CANCELLED", 1)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_the_round_s_ending_is_written_once_to_the_log_channel(tmp_path):
     """Round 3 ends cancelled when the admin types CANCELLED for its race. The log channel gets
     one line, naming the admin, `ROUND_CANCELLED | Success`, the division, the round and the
@@ -446,7 +440,6 @@ async def test_the_round_s_ending_is_written_once_to_the_log_channel(tmp_path):
     assert "\n  division: Pro\n  round: 3\n  reason: every session was entered as not held" in line
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_an_ending_that_finds_a_session_not_cancelled_writes_nothing_and_still_closes_the_channel(
     tmp_path,
 ):
@@ -476,7 +469,6 @@ async def test_an_ending_that_finds_a_session_not_cancelled_writes_nothing_and_s
     assert await _closed(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_a_first_pass_ending_cancelled_plans_no_names_and_no_standings_jobs(tmp_path):
     """A first submission of round 3 ends cancelled, so the round holds no standings. Its change
     opens with `end_round`, and plans no reading of names, no standings post and no deletion of
@@ -541,7 +533,6 @@ async def test_a_round_ending_cancelled_posts_the_round_cancelled_notices_in_che
     assert checkin.kwargs["allowed_mentions"].roles is True
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_a_round_ending_cancelled_leaves_its_call_and_forecast_until_the_day_after(
     tmp_path,
 ):
@@ -673,7 +664,6 @@ async def test_a_discarded_check_in_record_is_named_and_the_round_still_ends_can
     assert RECORD_HEADING not in line
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_no_check_in_record_is_written_where_no_call_was_posted(tmp_path):
     """Attendance is on, but round 3's check-in call was never posted, so it recorded nobody.
     Round 3 ends cancelled when the admin types CANCELLED for its race: its `ROUND_CANCELLED`
@@ -690,7 +680,6 @@ async def test_no_check_in_record_is_written_where_no_call_was_posted(tmp_path):
     assert "check-in, Pro" not in line
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_no_check_in_record_is_written_while_attendance_is_off(tmp_path):
     """Attendance is off, though round 3's check-in recorded Lewis and Max. Round 3 ends
     cancelled when the admin types CANCELLED for its race: its `ROUND_CANCELLED` line is written

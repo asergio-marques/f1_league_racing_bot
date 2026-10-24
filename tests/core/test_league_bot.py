@@ -21,9 +21,6 @@ from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "leaguebot"
 
-UNDISCARDABLE_UNBUILT = "#439: only the armings and a submission's channel are undiscardable yet"
-
-
 def _attached_in_bot_py() -> set[str]:
     """Every `bot.<name> = …` in `__main__.py`."""
     tree = ast.parse((SRC / "__main__.py").read_text(encoding="utf-8"))
@@ -193,7 +190,6 @@ def test_the_settings_changes_are_registered():
     assert len(SETTING_KINDS) == 24
 
 
-@pytest.mark.xfail(strict=True, reason=UNDISCARDABLE_UNBUILT)
 def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     """Over every change type the builder registers, the jobs marked as never to be discarded are
     exactly those whose loss could stop a season from being started or completed, or would leave

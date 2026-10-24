@@ -72,12 +72,6 @@ AMENDED_ROUND = 20
 AMEND_CHANNEL = 8200
 QUALI_PASTE = "1, <@102>, FER, Soft, 1:19.000, N/A\n2, <@101>, FER, Soft, 1:19.500, +0.500"
 
-#: Why the resubmission entering every session as cancelled fails until Part E is built.
-NOT_HELD_UNBUILT = (
-    "#439: a resubmission entering every session as cancelled leaves the round awaiting its "
-    "report verdicts, and rounds has no not_held column"
-)
-
 
 def _paste_for(session: Any) -> str:
     return QUALI_PASTE if "QUALIFYING" in session.value else RACE_PASTE
@@ -215,7 +209,6 @@ async def test_a_fastest_lap_override_naming_a_non_finisher_is_refused(tmp_path,
     assert await _drafts(league) == [(QUALIFYING_TYPE.value, "ACTIVE")]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_every_session_cancelled_closes_the_channel(tmp_path, monkeypatch):
     """Alex types CANCELLED for both sessions. The resubmission closes channel 702 rather than
     asking the review again, and round 3 ends CANCELLED from awaiting its report verdicts, marked

@@ -731,10 +731,6 @@ async def test_no_results_channel_line_is_posted_when_cancelled_is_typed(tmp_pat
     assert "was cancelled" not in "\n".join(league.texts(RESULTS_606))
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: a round whose every session is entered as cancelled is left awaiting its results, "
-    "and rounds has no not_held column"
-))
 async def test_every_session_cancelled_closes_the_channel_instead_of_reviewing(
     tmp_path, monkeypatch,
 ):

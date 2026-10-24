@@ -254,10 +254,6 @@ async def test_the_last_paste_asks_the_review_and_says_its_job_number(tmp_path, 
     assert f"⏳ The penalty review is being opened (job #{first})" in _said(league)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: a round whose every session is entered as cancelled is left awaiting its results, "
-    "and rounds has no not_held column"
-))
 async def test_every_session_cancelled_closes_the_channel_as_a_job(tmp_path, monkeypatch):
     """The qualifying was entered as cancelled; the admin types CANCELLED for the race too. When
     the queue runs, the channel says "⏭️", round 3's submission row is closed and its channel
