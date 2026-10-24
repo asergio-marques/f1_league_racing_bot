@@ -177,7 +177,8 @@ class SeasonLeague:
         self.events: list[tuple[str, int, int]] = []
         #: Every exception a press raised, as the bot's error handler would have caught it.
         self.errors: list[BaseException] = []
-        #: Each `schedule_*` call: (which, the round ids it was handed).
+        #: Each `schedule_*` call: (which, the round ids it was handed). `"cleanups"` is a raced
+        #: round's two clean-ups armed alone (`schedule_round_cleanups`).
         self.armed: list[tuple[str, list[int]]] = []
         #: The roles each member was granted, in order.
         self.granted: dict[int, list[int]] = {}
@@ -259,6 +260,7 @@ class SeasonLeague:
         scheduler.schedule_result_submission_jobs = MagicMock(side_effect=self._arm("results"))
         scheduler.schedule_attendance_round = MagicMock(side_effect=self._arm("attendance"))
         scheduler.schedule_round = MagicMock(side_effect=self._arm("weather"))
+        scheduler.schedule_round_cleanups = MagicMock(side_effect=self._arm("cleanups"))
         bot.scheduler_service = scheduler
         bot.approval_windows = lambda: _approval_windows(self)
         bot.amendment_windows = lambda: _amendment_windows(self)
