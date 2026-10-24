@@ -1201,9 +1201,6 @@ async def test_a_stage_approval_is_refused_while_a_staging_is_in_hand(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: the report stage's prompt is not handed the builder's hook",
-)
 async def test_the_report_stage_offers_the_pardons_the_builder_s_hook_gives(monkeypatch):
     """The amendment's change types are built with an attendance hook. When the job that puts
     round 3's report stage up runs, the review it opens is handed that same hook, so the hook

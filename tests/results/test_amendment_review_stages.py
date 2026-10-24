@@ -267,9 +267,6 @@ async def test_the_rounds_pardons_are_not_offered_with_attendance_off(tmp_path):
     assert not [c for c in view.children if "pardon_remove" in str(getattr(c, "custom_id", ""))]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: the amendment's review reads attendance's switch itself",
-)
 async def test_the_review_asks_the_hook_and_never_reads_attendance_s_switch(tmp_path):
     """Round 3 carries a NO_RSVP pardon. The amendment's review is handed an attendance hook
     that offers no pardon, and the bot's module service fails the test if asked whether

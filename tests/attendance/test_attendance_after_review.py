@@ -61,12 +61,6 @@ LEWIS, MAX, STAND_IN = 101, 103, 102
 BOT_USER_ID = 9999
 #: The roles of division Pro, of team Alpha and of the Reserve team.
 PRO_ROLE, ALPHA_ROLE, RESERVE_ROLE = 555, 700, 701
-#: Why the sanction tests fail until the build: the hook has no check of an autoreserve, no
-#: sanction saved on the caller's save, and no role change of its own.
-SANCTION_JOBS_UNBUILT = (
-    "#439: the hook cannot check a sanction, save it on the caller's save, or change its roles"
-)
-
 
 async def _db(tmp_path, *, attendance: bool = True, autoreserve: int | None = 10,
               autosack: int | None = 20, reserve_team: bool = True) -> str:
@@ -639,10 +633,6 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
     assert row["attendance_message_id"] == str(OLD_SHEET)
 
 
-PARDONS_HOOK_UNBUILT = "#439: the attendance hook cannot say which pardons an amendment's review may offer"
-
-
-@pytest.mark.xfail(strict=True, reason=PARDONS_HOOK_UNBUILT + "; " + SANCTION_JOBS_UNBUILT)
 async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     """Each method checks attendance's switch itself; the writers read it on the connection they
     are handed. With attendance off and Lewis over the autosack threshold: no driver is owed a
@@ -680,7 +670,6 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=PARDONS_HOOK_UNBUILT)
 async def test_an_amendment_s_review_is_offered_every_pardon_while_attendance_is_on(tmp_path):
     """Attendance is on. Handed the two pardons an amended round carries, the hook gives both
     back, in their order, for the amendment's review to offer."""
@@ -691,7 +680,6 @@ async def test_an_amendment_s_review_is_offered_every_pardon_while_attendance_is
     assert await hook.pardons_to_review(pardons) == pardons
 
 
-@pytest.mark.xfail(strict=True, reason=PARDONS_HOOK_UNBUILT)
 async def test_an_amendment_s_review_is_offered_no_pardon_while_attendance_is_off(tmp_path):
     """Attendance is off. Handed the two pardons an amended round carries, the hook gives none
     back, since the appeals stage would write no pardon back while the module is off."""

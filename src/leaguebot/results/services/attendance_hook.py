@@ -14,12 +14,14 @@ attendance lands with the penalties and points or not at all. **The posting meth
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
 import aiosqlite
 import discord
+
+_Pardon = TypeVar("_Pardon")
 
 
 class AttendanceAfterReview(Protocol):
@@ -37,6 +39,11 @@ class AttendanceAfterReview(Protocol):
         """Record who attended the round, write the staged *pardons* (stamped *now*, kept if
         already there) and award the round's points, carrying every later round's running
         total on from it."""
+
+    async def pardons_to_review(self, pardons: Sequence[_Pardon]) -> list[_Pardon]:
+        """The *pardons* an amendment's review may offer the manager: all of them while
+        attendance is on, none while it is off, where the approval would write none of them
+        back."""
 
     async def rewrite_pardons_on(
         self, db: aiosqlite.Connection, round_id: int, pardons: Any, now: datetime

@@ -40,6 +40,7 @@ from leaguebot.core.utils.member_names import interaction_member
 
 if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.results.services.attendance_hook import AttendanceAfterReview
     from leaguebot.results.services.penalty_wizard import PenaltyReviewState
 
 log = logging.getLogger(__name__)
@@ -1466,6 +1467,7 @@ async def run_amendment_review_stages(
     round_number: int,
     division_name: str,
     session_types: list[SessionType],
+    attendance: AttendanceAfterReview,
 ) -> "PenaltyReviewState":
     """Replay a settled round's report and appeal stages in the amendment channel (#345).
 
@@ -1486,6 +1488,9 @@ async def run_amendment_review_stages(
     ``AWAITING_APPEAL_VERDICTS`` then ``FINAL``, finishes the division, may wind the season down
     and publishes as it goes, none of which an amendment may do.
 
+    *attendance* is the hook the change type was built with: it says which of the round's pardons
+    the review may offer, so results reads nothing of attendance's switch itself.
+
     Returns the state the screens share. The approvals happen through the screens themselves.
     """
     from leaguebot.results.services.penalty_service import load_staged_from_records
@@ -1501,11 +1506,11 @@ async def run_amendment_review_stages(
     staged, staged_appeals, staged_pardons = await load_staged_from_records(
         db_path, round_id, session_types=session_types
     )
-    # **The pardons only while attendance is on.** The appeal stage writes them back only then,
-    # so offering them with the module off let a manager remove one, be told it was removed,
-    # and approve a round still carrying it.
-    if not await bot.module_service.is_attendance_enabled():
-        staged_pardons = []
+    # **The pardons only while attendance is on, as attendance's hook says.** The appeal stage
+    # writes them back only then, so offering them with the module off let a manager remove one,
+    # be told it was removed, and approve a round still carrying it. Results never reads
+    # attendance's switch itself (architecture.md, "Results reaches attendance through one hook").
+    staged_pardons = await attendance.pardons_to_review(staged_pardons)
 
     state = PenaltyReviewState(
         round_id=round_id,

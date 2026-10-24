@@ -8,7 +8,8 @@ was handed, and attendance's switch is read from the database, on the connection
 handed.
 
 **Each method does nothing while attendance is off**, save `change_sanction_roles`, which acts
-whatever the switch says because a sanction already saved is owed its roles, and `enabled` says whether it is, for the
+whatever the switch says because a sanction already saved is owed its roles, and `enabled` says
+whether it is, for the
 one job of results' own that serves attendance alone (the heading over the sanction cards). A
 writer writes on the save it is handed and commits nothing, so a fault in the attendance fails
 the approval whole. An amendment's recalculation rebuilds the amended round's attended flags both
@@ -26,9 +27,9 @@ claimed or it is not in the cache the method raises `GuildUnavailable`.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, TypeVar
 
 import aiosqlite
 import discord
@@ -40,6 +41,8 @@ from leaguebot.core.services import lineup_posting
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
+
+_Pardon = TypeVar("_Pardon")
 
 
 class AttendanceAfterReview:
@@ -86,6 +89,11 @@ class AttendanceAfterReview:
         await _att._recalculate_forward(
             self._db_path, round_id, division_id, recompute="none", db=db
         )
+
+    async def pardons_to_review(self, pardons: Sequence[_Pardon]) -> list[_Pardon]:
+        if not await self.enabled():
+            return []
+        return list(pardons)
 
     async def rewrite_pardons_on(
         self, db: aiosqlite.Connection, round_id: int, pardons: Any, now: datetime
