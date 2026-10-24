@@ -593,3 +593,83 @@ async def test_the_sack_names_the_divisions_whose_lineup_is_owed(tmp_path):
 
     assert await _sack(service, guild) == [DIVISION_ID]
     service._refresh_lineup_post.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# A refused role change: /driver sack keeps today's behaviour; the sanction's own save (#439)
+# ---------------------------------------------------------------------------
+
+
+def _refusing_guild():
+    """The league's server, whose member 4242 holds the division's role and the driver role,
+    and from whom Discord refuses to take any role (Missing Permissions)."""
+    guild = MagicMock()
+    roles = {}
+    for role_id in (999, DRIVER_ROLE):
+        role = MagicMock()
+        role.id = role_id
+        roles[role_id] = role
+    guild.get_role = MagicMock(side_effect=roles.get)
+    member = MagicMock()
+    member.id = int(DISCORD_USER_ID)
+    member.guild = guild
+    member.roles = list(roles.values())
+    member.remove_roles = AsyncMock(
+        side_effect=discord.Forbidden(MagicMock(status=403), "Missing Permissions")
+    )
+    guild.get_member = MagicMock(return_value=member)
+    guild.fetch_member = AsyncMock(return_value=member)
+    guild._member = member
+    return guild
+
+
+async def test_a_role_discord_refuses_is_logged_and_the_sack_still_saved(tmp_path, caplog):
+    """`/driver sack` keeps today's role behaviour until core's pass (#439 slice 8, Part C):
+    Discord refuses to take the driver's roles, the refusal is logged on the host, and the sack
+    is saved all the same: the driver is back at Not Signed Up with no placement."""
+    db_path = await _make_db(tmp_path, name="sack_refused_roles")
+    service = PlacementService(db_path)
+    service._refresh_lineup_post = AsyncMock(return_value=None)
+    guild = _refusing_guild()
+
+    with caplog.at_level("WARNING", logger="leaguebot.core.services.placement_service"):
+        await _sack(service, guild)
+
+    guild._member.remove_roles.assert_awaited()
+    assert any("failed to remove role" in r.getMessage() for r in caplog.records)
+    assert await _count(db_path, "SELECT COUNT(*) FROM driver_season_assignments") == 0
+    assert await _count(
+        db_path, "SELECT COUNT(*) FROM driver_profiles WHERE id = ? AND current_state = ?",
+        (PROFILE_ID, DriverState.NOT_SIGNED_UP.value),
+    ) == 1
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439: the placement service cannot sack a driver on the caller's save"
+)
+async def test_sack_on_reads_the_roles_before_it_frees_the_seats(tmp_path):
+    """A sanction's save sacks the driver on the save it is handed and names the roles to take
+    back, for a job of its own to take them: the driver of Pro, holding its role and the driver
+    role, is sacked on that save. The result names Pro, the driver's account and both roles,
+    read before the placement was removed; on that save the driver is placed nowhere, and since
+    it commits nothing, rolled back they are still placed. No role is asked of Discord."""
+    db_path = await _make_db(tmp_path, name="sack_on_roles")
+    service = PlacementService(db_path)
+
+    async with get_connection(db_path) as db:
+        saved = await service.sack_on(
+            db, driver_profile_id=PROFILE_ID, season_id=SEASON_ID, acting_user_id=ACTOR_ID,
+            acting_user_name="Manager#0001",
+        )
+        placed = await (await db.execute(
+            "SELECT COUNT(*) FROM driver_season_assignments WHERE driver_profile_id = ?",
+            (PROFILE_ID,),
+        )).fetchone()
+        assert placed[0] == 0
+        await db.rollback()
+
+    assert saved.divisions == [DIVISION_ID]
+    assert saved.user_id == int(DISCORD_USER_ID)
+    assert saved.is_test_driver is False
+    assert {999, DRIVER_ROLE} <= set(saved.revoke_role_ids)
+    assert await _count(db_path, "SELECT COUNT(*) FROM driver_season_assignments") == 1
