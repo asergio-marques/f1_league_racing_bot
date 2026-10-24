@@ -46,12 +46,14 @@ from tests.results.test_review_open_change import (
     _prompt_view,
     _prompts,
     _recover,
+    _refuse_the_job,
 )
 from tests.support.change_queue import (
     MARK,
     MEMBER_ID,
     acknowledgement,
     change_rows,
+    discard_job,
     http_error,
     member_interaction,
     restart_queue,
@@ -222,6 +224,45 @@ async def test_the_announcement_s_id_is_saved_with_its_mark(tmp_path, monkeypatc
     [posted] = [step for step in await step_rows(league.db_path, change["id"])
                 if step["name"] == "post_announcement"]
     assert posted["done_at"] is not None
+
+
+MARK_UNDISCARDABLE = "#439: marking the resubmission may still be discarded"
+
+
+@pytest.mark.xfail(strict=True, reason=MARK_UNDISCARDABLE)
+async def test_marking_the_resubmission_cannot_be_discarded(tmp_path, monkeypatch):
+    """The manager Alex presses Resubmit on round 3's review prompt in Pro. The save of the
+    change's first job, which flags the submission channel as resubmitting and records who
+    started it, fails and stops round 3's lane at `mark`. A league admin's Discard on it is
+    refused, saying round 3 in Pro's resubmission would run unrecorded: its pastes would be
+    refused and its review left with no prompt until the bot restarts. The lane stays stopped
+    there, the review prompt still stands and the channel is not resubmitting. Once the fault is
+    lifted, a Retry flags the channel, takes the prompt down and posts the announcement."""
+    league = await _reviewing(tmp_path, monkeypatch)
+    [prompt] = _prompts(league)
+    await _refuse_the_job(league.db_path, START_KIND, True, job="mark")
+    await _press_resubmit(league)
+    stopped = await stopped_job(league.db_path, LANE)
+    assert stopped is not None and stopped["name"] == "mark"
+
+    refused = await discard_job(league.bot, lane=LANE)
+
+    assert acknowledgement(refused) == (
+        "⛔ This job can't be discarded: without it round 3 in **Pro**'s resubmission would run "
+        "unrecorded: its pastes would be refused and its review left with no prompt until the bot "
+        "restarts. Fix what stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path, LANE))["id"] == stopped["id"]
+    assert _prompts(league) == [prompt]
+    assert (await _row(league))["resubmitting"] == 0
+
+    await _refuse_the_job(league.db_path, START_KIND, False, job="mark")
+    await retry_job(league.bot, lane=LANE)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _row(league))["resubmitting"] == 1
+    assert _prompts(league) == []
+    assert _announcement(league).view is not None
 
 
 async def test_each_resubmitted_paste_is_a_draft_saved_by_its_turn(tmp_path, monkeypatch):
