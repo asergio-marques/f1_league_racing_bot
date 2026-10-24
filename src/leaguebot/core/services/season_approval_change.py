@@ -98,6 +98,7 @@ __all__ = [
     "STAGE_REFUSAL",
     "TELL_KIND",
     "approval_in_hand",
+    "driver_roles_step",
     "season_approval_change",
     "season_approval_tell_change",
     "ungranted_line",
@@ -180,10 +181,10 @@ async def tell_channel(bot: Any, channel_id: int, text: str) -> None:
 
 
 def ungranted_line(user_ids: list[str]) -> str:
-    """The drivers a placements confirmation could not give their roles (#387).
+    """The drivers whose roles a league admin discarded the granting of (#387).
 
-    No command grants them again — at the mid-season confirmation, confirming again finds
-    nothing left to commit — so the manager grants them by hand.
+    The confirmation is saved by then and no command grants them again, so the manager grants
+    them by hand.
     """
     who = ", ".join(f"<@{user_id}>" for user_id in user_ids)
     return (
@@ -217,6 +218,47 @@ async def approval_in_hand(
         payload.get("season_id") == season_id
         for payload in await unfinished(db_path, [KIND], excluding=excluding)
     )
+
+
+def driver_roles_step(placement: Any, name: str = GRANT_ROLES) -> Step:
+    """The one job that gives a driver the roles of their division and their team.
+
+    The season's approval and the mid-season confirmation both plan it, one per driver, with the
+    payload ``{user_id, division_id, division_name, team_name}`` (issue #439). It raises where
+    Discord will not (:meth:`PlacementService.grant_roles`), so the queue stops, and passes over
+    a member Discord reports absent. A driver seated with no team, or whose team has no role
+    set, is given their division's role alone, and one with no role to give is given nothing:
+    Discord is not reached for it.
+    """
+
+    async def grant_roles(ctx: StepContext) -> StepResult:
+        guild = await _guild(ctx.bot)
+        each = ctx.step_payload
+        async with get_connection(ctx.db_path) as db:
+            cursor = await db.execute(
+                "SELECT mention_role_id FROM divisions WHERE id = ?", (each["division_id"],)
+            )
+            division = await cursor.fetchone()
+        role_ids = (
+            [int(division["mention_role_id"])]
+            if division is not None and division["mention_role_id"]
+            else []
+        )
+        if each.get("team_name") is not None:
+            team = await placement.get_team_role_config(str(each["team_name"]))
+            if team is not None:
+                role_ids.append(team.role_id)
+        if not role_ids:
+            return StepResult(result={"granted": False})
+        granted = await placement.grant_roles(guild, int(each["user_id"]), *role_ids)
+        return StepResult(result={"granted": granted})
+
+    async def describe_grant(ctx: StepContext) -> str:
+        each = ctx.step_payload
+        team = f" and {each['team_name']}" if each.get("team_name") is not None else ""
+        return f"granting <@{each['user_id']}> the roles of **{each['division_name']}**{team}"
+
+    return Step(name, StepKind.ACT, grant_roles, describe=describe_grant)
 
 
 def season_approval_change(
@@ -473,25 +515,6 @@ def season_approval_change(
                 )
         return StepResult(result={"rounds": len(rounds)})
 
-    async def grant_roles(ctx: StepContext) -> StepResult:
-        guild = await _guild(ctx.bot)
-        each = ctx.step_payload
-        async with get_connection(ctx.db_path) as db:
-            cursor = await db.execute(
-                "SELECT mention_role_id FROM divisions WHERE id = ?", (each["division_id"],)
-            )
-            division = await cursor.fetchone()
-        role_ids = (
-            [int(division["mention_role_id"])]
-            if division is not None and division["mention_role_id"]
-            else []
-        )
-        team = await placement.get_team_role_config(str(each["team_name"]))
-        if team is not None:
-            role_ids.append(team.role_id)
-        granted = await placement.grant_roles(guild, int(each["user_id"]), *role_ids)
-        return StepResult(result={"granted": granted})
-
     async def post_batch_notice(ctx: StepContext) -> StepResult:
         guild = await _guild(ctx.bot)
         channel_id = int(ctx.step_payload["channel_id"])
@@ -636,13 +659,6 @@ def season_approval_change(
     async def describe_arm(ctx: StepContext) -> str:
         return f"arming the timed work of season {ctx.payload['season_number']}"
 
-    async def describe_grant(ctx: StepContext) -> str:
-        each = ctx.step_payload
-        return (
-            f"granting <@{each['user_id']}> the roles of **{each['division_name']}** and "
-            f"{each['team_name']}"
-        )
-
     async def describe_notice_post(ctx: StepContext) -> str:
         return (
             "posting the notice that the season's posts are being made in "
@@ -743,7 +759,7 @@ def season_approval_change(
         ARM: Step(
             ARM, StepKind.ACT, arm, describe=describe_arm, undiscardable=never_runs
         ),
-        GRANT_ROLES: Step(GRANT_ROLES, StepKind.ACT, grant_roles, describe=describe_grant),
+        GRANT_ROLES: driver_roles_step(placement),
         POST_BATCH_NOTICE: Step(
             POST_BATCH_NOTICE, StepKind.ACT, post_batch_notice, describe=describe_notice_post
         ),

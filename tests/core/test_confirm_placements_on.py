@@ -24,8 +24,6 @@ from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     db_path,  # noqa: F401 — the fixture
 )
 
-UNBUILT = "#439: confirm_placements_on, uncommitted_placements_on and driver_roles_step are not built yet"
-
 
 async def _stage(db) -> str:
     cursor = await db.execute("SELECT stage FROM seasons WHERE id = 1")
@@ -142,7 +140,6 @@ async def _grant(db_path, placement, payload):
     return await step.run(ctx)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_driver_with_no_team_is_granted_their_division_s_role_alone(db_path, monkeypatch):
     """Driver 1002 is placed in Pro with no team seat read (the placements' LEFT JOIN gives no
     team): the step gives Pro's role (1) alone and looks no team role up."""
@@ -155,7 +152,6 @@ async def test_a_driver_with_no_team_is_granted_their_division_s_role_alone(db_p
     placement.grant_roles.assert_awaited_once_with(guild, 1002, 1)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_driver_with_no_role_to_give_is_granted_nothing(db_path, monkeypatch):
     """Pro has no role set (0) and driver 1002 no team: the step reaches Discord for nothing."""
     _guild, placement = _granting(monkeypatch)
