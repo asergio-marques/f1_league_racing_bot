@@ -577,10 +577,8 @@ CANNOT_DISCARD_CLOSE = (
     "review with no prompt, never final, until the bot restarts. Fix what stopped it and press "
     "**Retry**."
 )
-CLOSE_UNDISCARDABLE = "#439: the review's closing job may still be discarded"
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_UNDISCARDABLE)
 async def test_the_opening_s_closing_job_cannot_be_discarded(tmp_path):
     """Round 3's last paste, by the league manager Alex, asks for its penalty review. The review
     opens, but the save of its last job, which hands the prompt to round 3's lane, fails and stops

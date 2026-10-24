@@ -141,9 +141,6 @@ async def test_a_review_put_back_at_a_restart_posts_its_prompt_on_the_league_lan
     assert PROMPT not in league.channel(SUBMISSION_CHANNEL).messages
 
 
-PROMPT_CLOSE_UNDISCARDABLE = "#439: the review prompt's closing job may still be discarded"
-
-
 async def _put_up_the_appeals_prompt(league: Any) -> None:
     """Ask round 3's lane for the appeals stage's prompt, as the reports approval asks it in its
     last save, then run the queue."""
@@ -161,10 +158,8 @@ async def _put_up_the_appeals_prompt(league: Any) -> None:
 
 
 @pytest.mark.parametrize("stage, review", [
-    pytest.param("review", "penalty review", id="review",
-                 marks=pytest.mark.xfail(strict=True, reason=PROMPT_CLOSE_UNDISCARDABLE)),
-    pytest.param("appeals", "appeals review", id="appeals",
-                 marks=pytest.mark.xfail(strict=True, reason=PROMPT_CLOSE_UNDISCARDABLE)),
+    pytest.param("review", "penalty review", id="review"),
+    pytest.param("appeals", "appeals review", id="appeals"),
 ])
 async def test_the_prompt_s_closing_job_cannot_be_discarded(tmp_path, stage, review):
     """Round 3's prompt is put up on its lane: for the penalty review after Alex's last paste, or

@@ -29,7 +29,9 @@ It is now a list of jobs the queue saves and resumes:
    the review, and the prompt as being posted again (`_not_done`, as the approvals do); for a
    cancel, the cancel's line, now after the prompt is back, and none where the prompt was discarded, the review asked for
    again writing it once its own prompt stands; for a lapse or a failure, the line of the
-   resubmission that ended. **A Discard reopens the review** ("Discard reopens the review"):
+   resubmission that ended. **It cannot be discarded**, nor can the prompt change's: dropping it
+   could leave the round in its penalty review with no prompt, never final, until the bot restarts.
+   **A Discard reopens the review** ("Discard reopens the review"):
    where `open` or the prompt's post was discarded, `close` asks, in its own save, as the bot,
    for `results.review.open` again, with the dead prompt's id as ``old_prompt_id``, so that a fresh
    prompt replaces it. Where the interim results already stand it asks with ``publish`` unset,
@@ -107,6 +109,7 @@ from leaguebot.core.services.change_queue import (
     unfinished,
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services import season_service
 from leaguebot.core.services.season_service import set_round_status_on
 from leaguebot.core.services import typed_turns
 from leaguebot.core.utils.log_lines import abandoned_line
@@ -642,6 +645,13 @@ def review_open_change() -> ChangeType:
     async def describe_close(_ctx: StepContext) -> str:
         return "recording that the penalty review is open"
 
+    async def would_be_left_unreviewed(ctx: StepContext) -> str:
+        called = await season_service.round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        return (
+            f"{called} could be left in its penalty review with no prompt, never final, until "
+            "the bot restarts"
+        )
+
     def outcome(ctx: OutcomeContext) -> str:
         done = {view.name: view for view in ctx.steps}
         opened = done.get(_OPEN)
@@ -722,7 +732,10 @@ def review_open_change() -> ChangeType:
             _POST_CANCEL_LINE, StepKind.ACT, _post_cancel_line_job, still_due=_prompt_not_discarded,
             describe=_describe_cancel_line,
         ),
-        _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
+        _CLOSE: Step(
+            _CLOSE, StepKind.SAVE, close, describe=describe_close,
+            undiscardable=would_be_left_unreviewed,
+        ),
     }
     return ChangeType(
         kind=KIND,
@@ -841,6 +854,14 @@ def review_prompt_change() -> ChangeType:
     async def describe_close(_ctx: StepContext) -> str:
         return "recording that the penalty review is open"
 
+    async def would_be_left_unreviewed(ctx: StepContext) -> str:
+        called = await season_service.round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        review = "appeals" if ctx.payload.get("stage") == APPEALS_STAGE else "penalty"
+        return (
+            f"{called} could be left in its {review} review with no prompt, never final, until "
+            "the bot restarts"
+        )
+
     def outcome(ctx: OutcomeContext) -> str:
         if ctx.payload.get("stage") == APPEALS_STAGE:
             left = review_posting.not_done(ctx)
@@ -900,7 +921,10 @@ def review_prompt_change() -> ChangeType:
             _POST_CANCEL_LINE, StepKind.ACT, _post_cancel_line_job,
             still_due=_prompt_not_discarded, describe=_describe_cancel_line,
         ),
-        _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
+        _CLOSE: Step(
+            _CLOSE, StepKind.SAVE, close, describe=describe_close,
+            undiscardable=would_be_left_unreviewed,
+        ),
         typed_turns.CLEAR_MARK: typed_turns.clear_mark_step(),
     }
 
