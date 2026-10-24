@@ -395,11 +395,6 @@ async def test_the_review_panel_s_post_cannot_be_discarded(tmp_path):
     assert len([m for m in posted() if type(m.view).__name__ == "AdminReviewView"]) == 1
 
 
-#: The ending of a signup whose channel is gone when its panel is due is not yet built (#439,
-#: slice 8, F1).
-CHANNEL_GONE_UNBUILT = "#439: a signup whose channel is gone when its panel is due is not yet ended"
-#: The panel's job does not yet look past the cache for its channel (#439, slice 8, F1).
-PANEL_LOOKUP_UNBUILT = "#439: a review panel whose channel the cache does not hold is passed over"
 #: The line the ending writes in the log channel, naming Kimi and his gone channel.
 CHANNEL_GONE_LINE = (
     f"Kimi (`<@{SIGNING_UP}>`) | Signup | Ended\n  channel: <#{KIMI_CHANNEL}>\n  Their signup "
@@ -440,7 +435,6 @@ def _out_of_cache(league: SeasonLeague, *, refusal: BaseException | None = None)
     league.guild.fetch_channel.side_effect = _fetch
 
 
-@pytest.mark.xfail(strict=True, reason=CHANNEL_GONE_UNBUILT)
 async def test_a_channel_gone_when_the_panel_is_due_ends_the_signup_once_it_is_saved(tmp_path):
     """A channel deleted by hand must not cost the driver their signup record, nor leave them
     awaiting a review that can never be posted. Kimi types his notes, and his channel 6405 is
@@ -472,7 +466,6 @@ async def test_a_channel_gone_when_the_panel_is_due_ends_the_signup_once_it_is_s
     assert [job["name"] for job in await step_rows(league.db_path, ending["id"])] == ["end"]
 
 
-@pytest.mark.xfail(strict=True, reason=CHANNEL_GONE_UNBUILT)
 async def test_a_signup_ended_for_its_gone_channel_is_logged_naming_the_driver_and_the_channel(
     tmp_path,
 ):
@@ -489,7 +482,6 @@ async def test_a_signup_ended_for_its_gone_channel_is_logged_naming_the_driver_a
     assert league.log().count(CHANNEL_GONE_LINE) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=PANEL_LOOKUP_UNBUILT)
 async def test_a_server_out_of_cache_stops_the_panel_rather_than_passing_it_over(tmp_path):
     """Kimi types his notes, and when his panel is due the league's server is missing from the
     bot's cache, so his channel cannot be looked for at all. The queue stops at `post_panel` on
@@ -517,7 +509,6 @@ async def test_a_server_out_of_cache_stops_the_panel_rather_than_passing_it_over
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
-@pytest.mark.xfail(strict=True, reason=PANEL_LOOKUP_UNBUILT)
 @pytest.mark.parametrize(
     "refusal",
     [http_error(), http_error(discord.Forbidden, status=403, text="Missing Access")],
@@ -543,7 +534,6 @@ async def test_a_channel_the_lookup_cannot_confirm_gone_stops_the_panel(tmp_path
     assert not [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
 
 
-@pytest.mark.xfail(strict=True, reason=PANEL_LOOKUP_UNBUILT)
 async def test_a_channel_missing_from_the_cache_but_found_by_the_lookup_gets_its_panel(tmp_path):
     """Kimi types his notes, and when his panel is due his channel 6405 is missing from the bot's
     cache, but Discord's lookup finds it standing. Once the queue runs the one review panel is
