@@ -1281,10 +1281,6 @@ async def _distribution_recorded(league: Any) -> Any:
     return row["distribution_msg_id"]
 
 
-LATE_PLACEMENT_UNDISCARDABLE = "#439: an amendment's late reserve placement may still be discarded"
-
-
-@pytest.mark.xfail(strict=True, reason=LATE_PLACEMENT_UNDISCARDABLE)
 async def test_an_amendment_s_late_reserve_placement_cannot_be_discarded(tmp_path, reposts):
     """Attendance on. Pro's round 3 is two hours and five minutes out, its call standing (7001)
     and its reserves not yet distributed. It is moved a day later; the save stops, and ten

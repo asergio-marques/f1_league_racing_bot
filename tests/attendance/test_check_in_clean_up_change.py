@@ -206,10 +206,6 @@ async def test_the_round_is_marked_cleared_after_its_deletes(tmp_path):
     assert await _cleared(league)
 
 
-MARK_CLEARED_UNDISCARDABLE = "#439: marking a round's check-in over may still be discarded"
-
-
-@pytest.mark.xfail(strict=True, reason=MARK_CLEARED_UNDISCARDABLE)
 async def test_marking_the_check_in_over_cannot_be_discarded(tmp_path):
     """Round 3's clean-up in Pro deletes its call (7001), last notice (7002) and announcement
     (7003), then the save of its last job, which marks the round's check-in over, fails and stops

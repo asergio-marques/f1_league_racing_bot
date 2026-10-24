@@ -217,10 +217,6 @@ async def test_the_distribution_reads_the_answers_as_they_stood_at_the_deadline(
     assert await stopped_job(league.db_path) is None
 
 
-DISTRIBUTE_UNDISCARDABLE = "#439: placing a round's reserves may still be discarded"
-
-
-@pytest.mark.xfail(strict=True, reason=DISTRIBUTE_UNDISCARDABLE)
 async def test_placing_the_reserves_cannot_be_discarded(tmp_path):
     """Rhea accepted round 3's call half an hour before its deadline. The deadline is asked, and
     the save of its first job, which places the reserves, fails and stops the queue at
