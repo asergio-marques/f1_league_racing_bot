@@ -782,9 +782,12 @@ def _round_change(
             return ()
         called = f"round {result['round_number']} in **{ctx.payload['division_name']}**"
         command = str(ctx.payload.get("command", "/round cancel"))
-        what = "next-day clean-ups" if ctx.payload.get("cleanups_only") else "timed work"
+        what = (
+            "next-day clean-ups of {} are" if ctx.payload.get("cleanups_only")
+            else "timed work of {} is"
+        ).format(called)
         return (
-            f"⏱️ The {what} of {called} is armed again, `{command}` having been refused"
+            f"⏱️ The {what} armed again, `{command}` having been refused"
             + not_done(ctx),
         )
 
