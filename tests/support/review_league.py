@@ -176,7 +176,12 @@ class AttendanceDouble:
     """The attendance hook the builder hands the change types, as a double.
 
     Every method does nothing while the league's attendance is off, as the real hook does, and
-    `apply_sanction` returns its log line where it applied and None where attendance is off.
+    `apply_sanction_on` returns its log line and the roles to change where it applied, and None
+    where attendance is off; it records each call as ``("apply_sanction", profile)``, as the
+    `apply_sanction` it replaces did. `check_sanction` records each profile it checks in
+    `checks`, and `change_sanction_roles` each role change in `role_changes`, acting whatever
+    attendance's switch; `check_fails` and `roles_fails` (by profile) make them raise. The roles
+    named are `SANCTION_ROLES`' for the sanction, and none for a profile in `no_roles`.
     `candidates` are the drivers over a threshold; one whose profile is in `applied` is no longer
     owed. `record_fails`, `sheet_fails` (a list, one per failing try), `apply_fails` and
     `announce_fails` (by profile) and `lineup_fails` (a list, one per failing try) make a call
@@ -201,6 +206,11 @@ class AttendanceDouble:
         self.lineup_as_text: list[bool] = []
         self.recalculate_fails: Exception | None = None
         self.candidates_fail: Exception | None = None
+        self.checks: list[int] = []
+        self.check_fails: dict[int, Exception] = {}
+        self.role_changes: list[tuple[int, list[int], list[int]]] = []
+        self.roles_fails: dict[int, Exception] = {}
+        self.no_roles: set[int] = set()
 
     def _calls(self, name: str) -> list[tuple[Any, ...]]:
         return [call for call in self.calls if call[0] == name]
@@ -264,6 +274,41 @@ class AttendanceDouble:
         self.applied.add(profile)
         return f"ATTENDANCE_{candidate['sanction']} | driver_profile_id={profile}"
 
+    async def check_sanction(self, round_id: int, division_id: int,
+                             candidate: dict[str, Any]) -> None:
+        if not self.league.attendance_on:
+            return
+        profile = candidate["driver_profile_id"]
+        self.checks.append(profile)
+        failure = self.check_fails.pop(profile, None)
+        if failure is not None:
+            raise failure
+
+    async def apply_sanction_on(self, db: Any, round_id: int, division_id: int,
+                                candidate: dict[str, Any]) -> dict[str, Any] | None:
+        if not self.league.attendance_on:
+            return None
+        profile = candidate["driver_profile_id"]
+        self.calls.append(("apply_sanction", profile))
+        failure = self.apply_fails.pop(profile, None)
+        if failure is not None:
+            raise failure
+        self.applied.add(profile)
+        revoke, grant = SANCTION_ROLES[candidate["sanction"]]
+        roles = None if profile in self.no_roles else {
+            "user_id": candidate["driver_user_id"], "revoke": list(revoke), "grant": list(grant),
+        }
+        return {"line": f"ATTENDANCE_{candidate['sanction']} | driver_profile_id={profile}",
+                "roles": roles}
+
+    async def change_sanction_roles(self, user_id: int, profile_id: int, *, revoke: Any,
+                                    grant: Any) -> dict[str, Any]:
+        self.role_changes.append((profile_id, list(revoke), list(grant)))
+        failure = self.roles_fails.pop(profile_id, None)
+        if failure is not None:
+            raise failure
+        return {}
+
     async def announce_sanction(self, round_id: int, division_id: int, candidate: dict[str, Any],
                                 *, as_text: bool) -> None:
         if not self.league.attendance_on:
@@ -286,6 +331,14 @@ class AttendanceDouble:
         from leaguebot.attendance.services import attendance_service
 
         return await attendance_service.sync_hint(self.league.db_path, division_id, round_id)
+
+
+#: The roles a sanction names to take back and to give: an autosack the division's and the
+#: team's, an autoreserve the team's swapped for the Reserve team's.
+SANCTION_ROLES: dict[str, tuple[tuple[int, ...], tuple[int, ...]]] = {
+    "AUTOSACK": ((5501, 5502), ()),
+    "AUTORESERVE": ((5502,), (5503,)),
+}
 
 
 def candidate(profile: int, driver: int, sanction: str = "AUTORESERVE",

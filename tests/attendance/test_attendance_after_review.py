@@ -27,6 +27,12 @@ bot's.
 
 **A sheet Discord refuses raises**, for the queue to stop on and retry, rather than being put on
 the old retry queue (defect 4).
+
+**A sanction is checked, saved and has its roles changed in three calls** (#439 slice 8, Part C):
+an autoreserve's move is checked before it is saved; the save writes on the connection handed and
+names the roles to change; the role change raises where Discord refuses or cannot fetch the
+driver, passes over a driver who left, changes only what the driver is no longer or now entitled
+to, and acts even once attendance is off (owner, check 1).
 """
 from __future__ import annotations
 
@@ -53,13 +59,21 @@ OLD_SHEET = 7401
 #: is its own number.
 LEWIS, MAX, STAND_IN = 101, 103, 102
 BOT_USER_ID = 9999
+#: The roles of division Pro, of team Alpha and of the Reserve team.
+PRO_ROLE, ALPHA_ROLE, RESERVE_ROLE = 555, 700, 701
+#: Why the sanction tests fail until the build: the hook has no check of an autoreserve, no
+#: sanction saved on the caller's save, and no role change of its own.
+SANCTION_JOBS_UNBUILT = (
+    "#439: the hook cannot check a sanction, save it on the caller's save, or change its roles"
+)
 
 
 async def _db(tmp_path, *, attendance: bool = True, autoreserve: int | None = 10,
               autosack: int | None = 20, reserve_team: bool = True) -> str:
     """Season 51's division 61 (Pro): team Alpha seats Lewis and Max full-time, the Reserve team
     (where *reserve_team*) seats a stand-in. Rounds 3 and 7 are final; round 3's Feature Race
-    classified Max alone. The attendance channel holds the sheet posted earlier."""
+    classified Max alone. The attendance channel holds the sheet posted earlier. Every
+    placement is confirmed, and team Alpha and the Reserve team each have a role."""
     db_path = os.path.join(str(tmp_path), "after_review.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -118,8 +132,12 @@ async def _db(tmp_path, *, attendance: bool = True, autoreserve: int | None = 10
             )
             await db.execute(
                 "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-                "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
+                "division_id, team_seat_id, committed) VALUES (?, ?, ?, ?, 1)",
                 (profile, SEASON_ID, DIVISION_ID, seat_id),
+            )
+        for team, role in (("Alpha", ALPHA_ROLE), ("Reserve", RESERVE_ROLE)):
+            await db.execute(
+                "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)", (team, role)
             )
         session = await db.execute(
             "INSERT INTO session_results (round_id, division_id, session_type, status, "
@@ -156,11 +174,12 @@ def _sheet_channel() -> Any:
     return channel
 
 
-def _bot(db_path: str, *, attendance: bool = True, channel: Any = None) -> Any:
+def _bot(db_path: str, *, attendance: bool = True, channel: Any = None,
+         guild: Any = None) -> Any:
     """A bot double whose own placement service refuses every call: the hook is to use the one
-    it is handed. Every channel it reaches is *channel*."""
+    it is handed. Every channel it reaches is *channel*; the league's server is *guild*."""
     channel = channel or _sheet_channel()
-    guild = MagicMock()
+    guild = guild or MagicMock()
     guild.get_channel = MagicMock(return_value=channel)
     bot = MagicMock()
     bot.db_path = db_path
@@ -174,7 +193,8 @@ def _bot(db_path: str, *, attendance: bool = True, channel: Any = None) -> Any:
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
     bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     bot.placement_service = MagicMock(side_effect=AssertionError("the bot's placement service"))
-    for name in ("sack_driver", "move_driver", "refresh_lineup", "_refresh_lineup_post"):
+    for name in ("sack_driver", "move_driver", "refresh_lineup", "_refresh_lineup_post",
+                 "sack_on", "move_on", "guard_move", "grant_roles", "revoke_roles"):
         setattr(bot.placement_service, name,
                 AsyncMock(side_effect=AssertionError("the bot's placement service")))
     return bot
@@ -185,6 +205,86 @@ def _placement() -> Any:
     for name in ("sack_driver", "move_driver", "refresh_lineup"):
         setattr(placement, name, AsyncMock(return_value=None))
     return placement
+
+
+def _real_placement(db_path: str) -> Any:
+    """The placement service the entry point builds, on the test's database."""
+    from leaguebot.core.services.placement_service import PlacementService
+
+    return PlacementService(db_path)
+
+
+def _role_guild(held: tuple[int, ...] = (), *, gone: tuple[int, ...] = (),
+                fetch_fails: Exception | None = None, refuses: Exception | None = None) -> Any:
+    """The league's server, holding the roles of Pro, Alpha and the Reserve team save those
+    *gone*. Its one member holds the roles *held*; fetching them raises *fetch_fails*, and a
+    role change raises *refuses*, where given."""
+    roles = {}
+    for role_id in (PRO_ROLE, ALPHA_ROLE, RESERVE_ROLE):
+        if role_id not in gone:
+            role = MagicMock()
+            role.id = role_id
+            roles[role_id] = role
+    member = MagicMock()
+    member.roles = [roles[r] for r in held if r in roles]
+    member.add_roles = AsyncMock(side_effect=refuses)
+    member.remove_roles = AsyncMock(side_effect=refuses)
+    guild = MagicMock()
+    guild.id = 1
+    guild.get_role = MagicMock(side_effect=roles.get)
+    guild.get_member = MagicMock(return_value=None)
+    guild.fetch_member = AsyncMock(return_value=member, side_effect=fetch_fails)
+    guild.member = member
+    guild.roles_by_id = roles
+    return guild
+
+
+def _role_ids(call: Any) -> set[int]:
+    """The ids of the roles a role change was asked for."""
+    return {role.id for role in call.args}
+
+
+async def _sacked(db_path: str, profile: int) -> None:
+    """*profile*'s autosack, as saved: back to Not Signed Up, seat and placement gone."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET current_state = 'NOT_SIGNED_UP' WHERE id = ?", (profile,)
+        )
+        await db.execute("UPDATE team_seats SET driver_profile_id = NULL WHERE driver_profile_id = ?",
+                         (profile,))
+        await db.execute("DELETE FROM driver_season_assignments WHERE driver_profile_id = ?",
+                         (profile,))
+        await db.commit()
+
+
+async def _moved_to_reserve(db_path: str, profile: int) -> None:
+    """*profile*'s autoreserve, as saved: their Alpha seat freed, a Reserve seat taken."""
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE team_seats SET driver_profile_id = NULL WHERE driver_profile_id = ?",
+                         (profile,))
+        await db.execute(
+            "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (23, 11, 2, ?)",
+            (profile,),
+        )
+        await db.execute(
+            "UPDATE driver_season_assignments SET team_seat_id = 23 WHERE driver_profile_id = ?",
+            (profile,),
+        )
+        await db.commit()
+
+
+async def _state(db_path: str, profile: int) -> tuple[str, int]:
+    """*profile*'s state and the number of their placements, as committed."""
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT current_state FROM driver_profiles WHERE id = ?", (profile,)
+        )).fetchone()
+        placed = await (await db.execute(
+            "SELECT COUNT(*) FROM driver_season_assignments WHERE driver_profile_id = ?",
+            (profile,),
+        )).fetchone()
+    return row["current_state"], placed[0]
 
 
 def _hook(bot: Any, placement: Any) -> Any:
@@ -231,80 +331,98 @@ async def test_a_driver_signed_off_or_in_the_reserve_team_is_not_owed_a_sanction
     assert candidates == []
 
 
+@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_an_autoreserve_in_a_division_with_no_reserve_team_raises(tmp_path):
     """Attendance spec: "a failure of the autoreserve of each driver owed one, not a sanction
-    silently passed over". The driver is still owed it, and nothing is moved."""
+    silently passed over". Pro has no Reserve team and Max is owed an autoreserve: the check
+    made before the sanction is saved refuses it, for the queue to stop on, and the save
+    refuses it too should it be reached. The driver is still owed it, and nothing is moved."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
     db_path = await _db(tmp_path, autosack=None, reserve_team=False)
     await _totals(db_path, LATEST_ROUND, {MAX: 12})
-    placement = _placement()
-    hook = _hook(_bot(db_path), placement)
+    hook = _hook(_bot(db_path), _real_placement(db_path))
     [owed] = await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID)
 
-    with pytest.raises(Exception):
-        await hook.apply_sanction(LATEST_ROUND, DIVISION_ID, owed, None)
+    with pytest.raises(StepFailedOnDiscord, match="Reserve"):
+        await hook.check_sanction(LATEST_ROUND, DIVISION_ID, owed)
+    async with get_connection(db_path) as db:
+        with pytest.raises(Exception):
+            await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed)
+        await db.rollback()
 
     assert owed["sanction"] == "AUTORESERVE"
-    placement.move_driver.assert_not_awaited()
+    assert await _state(db_path, MAX) == ("ASSIGNED", 1)
 
 
+@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_a_sanction_is_applied_through_the_placement_service_handed_in(tmp_path):
-    """Plan 2.6: the extracted `apply_sanction` takes the placement service as a parameter rather
-    than reading `bot.placement_service`. Lewis is sacked; Max is moved to the Reserve team."""
+    """Plan 2.6: the hook uses the placement service it is handed, never `bot.placement_service`,
+    and saves each sanction on the save it is handed. Lewis (over the autosack threshold) is
+    sacked through its `sack_on`; Max (over the autoreserve threshold) is moved to the Reserve
+    team through its `move_on`, each on that save."""
     db_path = await _db(tmp_path)
     await _totals(db_path, LATEST_ROUND, {LEWIS: 25, MAX: 12})
-    placement = _placement()
+    placement = _real_placement(db_path)
+    placement.sack_on = AsyncMock(wraps=placement.sack_on)
+    placement.move_on = AsyncMock(wraps=placement.move_on)
     hook = _hook(_bot(db_path), placement)
 
-    for owed in sorted(await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID),
-                       key=lambda c: c["driver_profile_id"]):
-        await hook.apply_sanction(LATEST_ROUND, DIVISION_ID, owed, None)
+    async with get_connection(db_path) as db:
+        for owed in sorted(await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID),
+                           key=lambda c: c["driver_profile_id"]):
+            await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed)
+        await db.commit()
 
-    placement.sack_driver.assert_awaited_once()
-    assert placement.sack_driver.await_args.kwargs["driver_profile_id"] == LEWIS
-    placement.move_driver.assert_awaited_once()
-    assert placement.move_driver.await_args.kwargs["driver_profile_id"] == MAX
-    assert placement.move_driver.await_args.kwargs["team_name"] == "Reserve"
+    placement.sack_on.assert_awaited_once()
+    assert placement.sack_on.await_args.args[0] is db
+    assert placement.sack_on.await_args.kwargs["driver_profile_id"] == LEWIS
+    placement.move_on.assert_awaited_once()
+    assert placement.move_on.await_args.args[0] is db
+    assert placement.move_on.await_args.kwargs["driver_profile_id"] == MAX
+    assert placement.move_on.await_args.kwargs["team_name"] == "Reserve"
 
 
+@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
 async def test_the_hook_s_apply_sanction_returns_its_line_and_posts_nothing(tmp_path):
     """The queue writes a job's lines in the save that marks it done, so a stop between a line
-    posted from the job and that mark would leave a line for a job tried again. The hook applies
-    Lewis's autosack and Max's autoreserve and returns each line, posting none; the sanction job
-    carries the line its hook returns in its result. `/attendance sync` calls attendance's own
-    `apply_sanction` with its default, which still posts the line."""
+    posted from the job and that mark would leave a line for a job tried again. Saving Lewis's
+    autosack and Max's autoreserve on the save it is handed, the hook returns each line and the
+    roles to change, posting nothing and changing no role: Lewis's roles of Pro and Alpha to be
+    taken back, Max's Alpha role swapped for the Reserve team's. `/attendance sync` calls
+    attendance's own `apply_sanction` with its default, which still posts the line."""
     from leaguebot.attendance.services import attendance_service
-    from leaguebot.results.services import review_verdicts
 
     db_path = await _db(tmp_path)
     await _totals(db_path, LATEST_ROUND, {LEWIS: 25, MAX: 12})
-    bot = _bot(db_path)
-    hook = _hook(bot, _placement())
+    guild = _role_guild((PRO_ROLE, ALPHA_ROLE))
+    bot = _bot(db_path, guild=guild)
+    hook = _hook(bot, _real_placement(db_path))
     assert await hook.enabled() is True
-    lines = {}
-    for owed in sorted(await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID),
-                       key=lambda c: c["driver_profile_id"]):
-        lines[owed["driver_profile_id"]] = await hook.apply_sanction(
-            LATEST_ROUND, DIVISION_ID, owed, None
-        )
+    saved = {}
+    async with get_connection(db_path) as db:
+        for owed in sorted(await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID),
+                           key=lambda c: c["driver_profile_id"]):
+            saved[owed["driver_profile_id"]] = await hook.apply_sanction_on(
+                db, LATEST_ROUND, DIVISION_ID, owed
+            )
+        await db.commit()
 
-    assert lines[LEWIS].startswith("ATTENDANCE_AUTOSACK | ")
-    assert f"driver_profile_id={LEWIS}" in lines[LEWIS]
-    assert lines[MAX].startswith("ATTENDANCE_AUTORESERVE | ")
-    assert lines[MAX].endswith("→ moved to Reserve")
+    assert saved[LEWIS]["line"].startswith("ATTENDANCE_AUTOSACK | ")
+    assert f"driver_profile_id={LEWIS}" in saved[LEWIS]["line"]
+    assert saved[MAX]["line"].startswith("ATTENDANCE_AUTORESERVE | ")
+    assert saved[MAX]["line"].endswith("→ moved to Reserve")
+    assert saved[LEWIS]["roles"]["user_id"] == LEWIS
+    assert {PRO_ROLE, ALPHA_ROLE} <= set(saved[LEWIS]["roles"]["revoke"])
+    assert saved[LEWIS]["roles"]["grant"] == []
+    assert saved[MAX]["roles"]["user_id"] == MAX
+    assert ALPHA_ROLE in saved[MAX]["roles"]["revoke"]
+    assert RESERVE_ROLE in saved[MAX]["roles"]["grant"]
+    assert ALPHA_ROLE not in saved[MAX]["roles"]["grant"]
+    assert RESERVE_ROLE not in saved[MAX]["roles"]["revoke"]
     bot.output_router.post_log.assert_not_awaited()
-
-    double = MagicMock()
-    double.apply_sanction = AsyncMock(return_value=lines[LEWIS])
-    ctx = MagicMock()
-    ctx.step_payload = {"round_id": LATEST_ROUND, "division_id": DIVISION_ID,
-                        "candidate": {"driver_profile_id": LEWIS, "sanction": "AUTOSACK"}}
-    # The job reads the round's banners, to plan the cards' heading where none stands.
-    ctx.db_path = db_path
-    ctx.steps = ()
-
-    result = await review_verdicts._apply_sanction(ctx, double)
-
-    assert tuple(result.lines) == (lines[LEWIS],)
+    guild.member.add_roles.assert_not_awaited()
+    guild.member.remove_roles.assert_not_awaited()
 
     synced = tmp_path / "synced"
     synced.mkdir()
@@ -319,6 +437,191 @@ async def test_the_hook_s_apply_sanction_returns_its_line_and_posts_nothing(tmp_
 
     assert line.startswith("ATTENDANCE_AUTOSACK | ")
     bot.output_router.post_log.assert_awaited_once_with(line)
+
+
+@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
+async def test_apply_sanction_on_sacks_on_the_save_it_is_handed_and_commits_nothing(tmp_path):
+    """Lewis is over the autosack threshold. Saving his autosack on the save handed takes him
+    back to Not Signed Up with no placement on that save, and commits nothing: rolled back, he
+    is still seated in Alpha. No role is changed and nothing is posted."""
+    db_path = await _db(tmp_path, autoreserve=None)
+    await _totals(db_path, LATEST_ROUND, {LEWIS: 25})
+    guild = _role_guild((PRO_ROLE, ALPHA_ROLE))
+    bot = _bot(db_path, guild=guild)
+    hook = _hook(bot, _real_placement(db_path))
+    [owed] = await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID)
+
+    async with get_connection(db_path) as db:
+        saved = await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed)
+        row = await (await db.execute(
+            "SELECT current_state FROM driver_profiles WHERE id = ?", (LEWIS,)
+        )).fetchone()
+        assert row["current_state"] == "NOT_SIGNED_UP"
+        await db.rollback()
+
+    assert saved["line"].startswith("ATTENDANCE_AUTOSACK | ")
+    assert await _state(db_path, LEWIS) == ("ASSIGNED", 1)
+    guild.member.remove_roles.assert_not_awaited()
+    bot.output_router.post_log.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
+async def test_apply_sanction_on_moves_to_reserve_and_names_the_roles_to_swap(tmp_path):
+    """Max is over the autoreserve threshold alone. Saving it on the save handed, then
+    committing, moves him from Alpha to the Reserve team of Pro, still placed; the result names
+    Alpha's role to take back and the Reserve team's to give, and no role is changed yet."""
+    db_path = await _db(tmp_path, autosack=None)
+    await _totals(db_path, LATEST_ROUND, {MAX: 12})
+    guild = _role_guild((PRO_ROLE, ALPHA_ROLE))
+    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path))
+    [owed] = await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID)
+
+    async with get_connection(db_path) as db:
+        saved = await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed)
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT ti.name FROM driver_season_assignments dsa "
+            "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+            "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+            "WHERE dsa.driver_profile_id = ?",
+            (MAX,),
+        )).fetchone()
+    assert row["name"] == "Reserve"
+    assert saved["roles"]["user_id"] == MAX
+    assert ALPHA_ROLE in saved["roles"]["revoke"]
+    assert RESERVE_ROLE in saved["roles"]["grant"]
+    guild.member.add_roles.assert_not_awaited()
+    guild.member.remove_roles.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
+async def test_change_sanction_roles_raises_where_discord_refuses(tmp_path):
+    """Lewis's autosack is saved and he still holds the roles of Pro and Alpha. Discord refuses
+    to take them (Missing Permissions): the role change raises `StepFailedOnDiscord`, for the
+    queue to stop on."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    db_path = await _db(tmp_path)
+    await _sacked(db_path, LEWIS)
+    guild = _role_guild((PRO_ROLE, ALPHA_ROLE),
+                        refuses=http_error(status=403, text="Missing Permissions"))
+    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path))
+
+    with pytest.raises(StepFailedOnDiscord):
+        await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE], grant=[])
+
+
+@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
+async def test_change_sanction_roles_passes_over_a_member_who_left(tmp_path):
+    """Lewis's autosack is saved and he has since left the server (Discord answers Unknown
+    Member): his roles went with him, so the change raises nothing, asks Discord for nothing,
+    and says he was absent."""
+    import discord
+
+    db_path = await _db(tmp_path)
+    await _sacked(db_path, LEWIS)
+    guild = _role_guild(fetch_fails=http_error(discord.NotFound, status=404,
+                                               text="Unknown Member"))
+    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path))
+
+    changed = await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE],
+                                               grant=[])
+
+    assert changed == {"absent": True}
+    guild.member.remove_roles.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
+async def test_change_sanction_roles_stops_where_the_member_cannot_be_fetched(tmp_path):
+    """Lewis's autosack is saved, and Discord fails to fetch him for a reason other than his
+    absence (a server error): the change raises `StepFailedOnDiscord`, rather than passing his
+    roles over."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    db_path = await _db(tmp_path)
+    await _sacked(db_path, LEWIS)
+    guild = _role_guild(fetch_fails=http_error(status=500, text="Internal Server Error"))
+    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path))
+
+    with pytest.raises(StepFailedOnDiscord):
+        await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE], grant=[])
+
+
+@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
+async def test_change_sanction_roles_stops_where_a_role_to_grant_is_gone(tmp_path):
+    """Max's autoreserve is saved, his seat now the Reserve team's, but the Reserve team's role
+    has been deleted from the server: the change raises `StepFailedOnDiscord`, and Max is given
+    no role."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    db_path = await _db(tmp_path)
+    await _moved_to_reserve(db_path, MAX)
+    guild = _role_guild((PRO_ROLE, ALPHA_ROLE), gone=(RESERVE_ROLE,))
+    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path))
+
+    with pytest.raises(StepFailedOnDiscord):
+        await hook.change_sanction_roles(MAX, MAX, revoke=[ALPHA_ROLE], grant=[RESERVE_ROLE])
+
+    guild.member.add_roles.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
+async def test_change_sanction_roles_leaves_a_role_the_driver_is_entitled_to_again(tmp_path):
+    """Lewis's autosack named the roles of Pro and Alpha to take back, but before its role
+    change ran a manager placed him in Alpha again. A retried role change takes neither: he is
+    entitled to both. And the Reserve team's role, named to give Max for an autoreserve a
+    manager has since undone, is not given, Max being back in Alpha."""
+    db_path = await _db(tmp_path)
+    guild = _role_guild((PRO_ROLE, ALPHA_ROLE))
+    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path))
+
+    await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE], grant=[])
+    await hook.change_sanction_roles(MAX, MAX, revoke=[], grant=[RESERVE_ROLE])
+
+    for call in guild.member.remove_roles.await_args_list:
+        assert not _role_ids(call) & {PRO_ROLE, ALPHA_ROLE}
+    for call in guild.member.add_roles.await_args_list:
+        assert RESERVE_ROLE not in _role_ids(call)
+
+
+@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
+async def test_a_sanction_s_roles_are_changed_even_once_attendance_is_off(tmp_path):
+    """Owner, check 1: "Change the roles anyway". Lewis's autosack was saved and attendance was
+    then turned off before its role change ran. The hook still takes back his roles of Pro and
+    Alpha, the one method that acts whatever the switch."""
+    db_path = await _db(tmp_path, attendance=False)
+    await _sacked(db_path, LEWIS)
+    guild = _role_guild((PRO_ROLE, ALPHA_ROLE))
+    hook = _hook(_bot(db_path, attendance=False, guild=guild), _real_placement(db_path))
+
+    await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE], grant=[])
+
+    taken = set().union(*(_role_ids(c) for c in guild.member.remove_roles.await_args_list))
+    assert taken == {PRO_ROLE, ALPHA_ROLE}
+
+
+@pytest.mark.xfail(strict=True, reason=SANCTION_JOBS_UNBUILT)
+async def test_check_sanction_refuses_a_full_reserve_block(tmp_path):
+    """Max is owed an autoreserve, and the placement service's guard refuses the move to the
+    Reserve team of Pro (its block in the lineup picture is full). The check made before the
+    sanction is saved raises `StepFailedOnDiscord` carrying the guard's refusal, for the queue
+    to stop on, and nothing is moved."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    db_path = await _db(tmp_path, autosack=None)
+    await _totals(db_path, LATEST_ROUND, {MAX: 12})
+    placement = _real_placement(db_path)
+    placement.guard_move = AsyncMock(side_effect=ValueError("The Reserve block of Pro is full."))
+    hook = _hook(_bot(db_path), placement)
+    [owed] = await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID)
+
+    with pytest.raises(StepFailedOnDiscord, match="Reserve block of Pro is full"):
+        await hook.check_sanction(LATEST_ROUND, DIVISION_ID, owed)
+
+    placement.guard_move.assert_awaited_once()
+    assert await _state(db_path, MAX) == ("ASSIGNED", 1)
 
 
 async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(tmp_path):
@@ -351,12 +654,14 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
 PARDONS_HOOK_UNBUILT = "#439: the attendance hook cannot say which pardons an amendment's review may offer"
 
 
-@pytest.mark.xfail(strict=True, reason=PARDONS_HOOK_UNBUILT)
+@pytest.mark.xfail(strict=True, reason=PARDONS_HOOK_UNBUILT + "; " + SANCTION_JOBS_UNBUILT)
 async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     """Each method checks attendance's switch itself; the writers read it on the connection they
     are handed. With attendance off and Lewis over the autosack threshold: no driver is owed a
-    sanction, nothing is applied, posted or written, and an amendment's review is offered no
-    pardon."""
+    sanction, the check of his sanction refuses nothing, saving it writes nothing and gives
+    None, nothing is posted or written, and an amendment's review is offered no pardon. The one
+    method that acts whatever the switch, the change of a saved sanction's roles, is pinned by
+    its own test."""
     db_path = await _db(tmp_path, attendance=False)
     await _totals(db_path, AMENDED_ROUND, {LEWIS: 25, MAX: 0})
     await _totals(db_path, LATEST_ROUND, {LEWIS: 25})
@@ -368,9 +673,7 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
 
     assert await hook.enabled() is False
     assert await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID) == []
-    assert await hook.apply_sanction(LATEST_ROUND, DIVISION_ID, owed, None) is None, (
-        "None is how the job knows nothing was applied"
-    )
+    await hook.check_sanction(LATEST_ROUND, DIVISION_ID, owed)
     await hook.announce_sanction(LATEST_ROUND, DIVISION_ID, owed, as_text=False)
     await hook.post_sheet(LATEST_ROUND, DIVISION_ID, sanctioned={LEWIS}, as_text=False)
     await hook.refresh_lineup(DIVISION_ID, as_text=False)
@@ -379,6 +682,9 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
         await hook.record_on(db, AMENDED_ROUND, DIVISION_ID, [], NOW)
         await hook.rewrite_pardons_on(db, AMENDED_ROUND, [], NOW)
         await hook.recalculate_on(db, AMENDED_ROUND, DIVISION_ID)
+        assert await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed) is None, (
+            "None is how the job knows nothing was applied"
+        )
         assert db.total_changes == before
     assert await hook.pardons_to_review([object()]) == []
 
