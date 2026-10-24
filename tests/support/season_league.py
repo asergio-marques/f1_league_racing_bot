@@ -700,6 +700,57 @@ async def approval_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
+#: The kind of a season's mid-season placements confirmation on the change queue (slice 8).
+PLACEMENTS_CONFIRM_KIND = "season.placements.confirm"
+
+
+async def placing_league(
+    tmp_path: Any, *, results: bool = True, attendance: bool = False, images: bool = False,
+    extra_drivers: bool = False, monkeypatch: Any = None,
+) -> SeasonLeague:
+    """The season of the module docstring placing drivers mid-season (#439, slice 8, Part B).
+
+    Season 3 is ongoing, placements: its divisions active and their rounds not run. Lewis's
+    placement at Ferrari in Pro is committed; Max's beside him and Charles's at McLaren in Am were
+    made by a mid-season window and are not yet committed (with *extra_drivers*, the test driver's
+    at McLaren too). The cog holds no setup in memory, as after the season's approval."""
+    league = await season_league(tmp_path, results=results, attendance=attendance,
+                                 images=images, extra_drivers=extra_drivers,
+                                 monkeypatch=monkeypatch)
+    await league.write(
+        "UPDATE seasons SET status = 'ACTIVE', stage = 'ONGOING' WHERE id = ?", SEASON_ID
+    )
+    await league.write("UPDATE seasons SET stage = 'ONGOING_PLACEMENTS' WHERE id = ?", SEASON_ID)
+    await league.write("UPDATE divisions SET status = 'ACTIVE' WHERE season_id = ?", SEASON_ID)
+    await league.write("UPDATE rounds SET status = 'NOT_RUN'")
+    await league.write("UPDATE driver_season_assignments SET committed = 1 "
+                       "WHERE driver_profile_id = ?", profile_id(LEWIS))
+    league.cog._pending = {}
+    return league
+
+
+async def post_mid_season_review(league: SeasonLeague) -> Review:
+    """Post a mid-season `/season placements-review` report and its ✅ Confirm placements
+    prompt in channel 610, recorded as `post_review` records an approval's."""
+    from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
+    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    from tests.support.review_prompts import store_review_prompt
+
+    view = _ConfirmMidSeasonPlacementsView(league.cog, ADMIN_ID)
+    report = [await league.review_channel.send("📋 Season 3 mid-season placements review")]
+    prompt = await league.review_channel.send("Confirm these placements?", view=view)
+    evidence = (await take_fingerprint(league.bot, SEASON_ID)).areas
+    async with get_connection(league.db_path) as db:
+        await store_review_prompt(
+            db, season_id=SEASON_ID, channel_id=REVIEW_CHANNEL, message_id=prompt.id,
+            reviewer_id=ADMIN_ID, posted_at=datetime.now(timezone.utc).isoformat(),
+            report_message_ids=[message.id for message in report], evidence=evidence,
+            verb="confirmed",
+        )
+        await db.commit()
+    return Review(view=view, prompt=prompt, report=report)
+
+
 # ---------------------------------------------------------------------------
 # An ongoing season, and its cancels (slice 4b)
 # ---------------------------------------------------------------------------
