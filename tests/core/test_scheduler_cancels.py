@@ -11,6 +11,10 @@ teardown lists where one job that will not go must not stop the rest.
 `cancel_rounds` takes the timed work of several rounds, and the season-end job when asked, in one
 pass: it lists the store once, before it removes anything, so a store that cannot be listed
 removes nothing and a division's or a season's cancellation stands as it was (#439, slice 8).
+
+`schedule_round_cleanups` arms a raced round's two clean-ups alone, the forecast's and the
+check-in's, a day after its start: what a cancellation refused after its unarming gives back to a
+round already raced (#439, slice 8).
 """
 from __future__ import annotations
 
@@ -196,6 +200,39 @@ def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_th
         6: ["cleanup_r6", "results_r6"],
     }
     assert "season_end_3" in [call.args[0] for call in service._scheduler.remove_job.call_args_list]
+
+
+#: The scheduler service cannot yet arm a round's clean-ups alone (#439, slice 8, F2).
+CLEANUPS_UNBUILT = "#439: the scheduler service has no schedule_round_cleanups yet"
+
+
+@pytest.mark.xfail(strict=True, reason=CLEANUPS_UNBUILT)
+def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
+    """Round 2 of division tier 1 in season 3, round id 5, starts on 1 June 2099 at 14:00. Arming
+    its clean-ups alone adds two jobs and no other: the forecast's clean-up and the check-in's,
+    each named for the round, each firing a day after the start, and each carrying the round."""
+    from datetime import datetime, timezone
+
+    from leaguebot.core.models.round import Round, RoundFormat
+    from leaguebot.core.services.scheduler_service import POST_RACE_CLEANUP_DELAY
+
+    start = datetime(2099, 6, 1, 14, 0, tzinfo=timezone.utc)
+    rnd = Round(
+        id=5, division_id=1, round_number=2, format=RoundFormat.NORMAL,
+        track_name="Bahrain International Circuit", scheduled_at=start,
+    )
+    service = _service([])
+
+    service.schedule_round_cleanups(rnd, season_number=3, division_tier=1)
+
+    armed = {
+        call.kwargs["id"]: call for call in service._scheduler.add_job.call_args_list
+    }
+    assert sorted(armed) == ["cleanup_s3_d1_r2_id5", "rsvp_cleanup_s3_d1_r2_id5"]
+    for call in armed.values():
+        assert call.kwargs["trigger"].run_date == start + POST_RACE_CLEANUP_DELAY
+        assert call.kwargs["kwargs"] == {"round_id": 5}
+        assert call.kwargs["replace_existing"] is True
 
 
 async def test_a_job_stands_while_the_store_holds_it(tmp_path, monkeypatch):
