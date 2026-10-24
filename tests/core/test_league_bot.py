@@ -201,7 +201,8 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     approved season's timed work and of an amended round's, the creation of a round's results
     submission channel, the save of a round's, a division's and a season's cancellation once
     their timed work is removed, and the letting go of a season's setup held in memory once it is
-    approved or aborted. Every other job a league admin may discard."""
+    approved or aborted, and the forgetting of a review taken down. Every other job a league
+    admin may discard."""
     from leaguebot.__main__ import register_change_types
 
     bot = MagicMock()
@@ -220,6 +221,7 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
         ("season.approve", "forget_setup"),
         ("season.cancel", "apply"),
         ("season.division.cancel", "apply"),
+        ("season.review.take_down", "forget"),
         ("season.round.amend", "arm"),
         ("season.round.cancel", "apply"),
     ]
