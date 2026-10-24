@@ -96,6 +96,9 @@ CANNOT_DISCARD = (
     "work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
 )
 SAVE_UNDISCARDABLE = "#439: a cancellation's save may still be discarded"
+RACED_CLEANUPS_UNBUILT = (
+    "#439: a cancellation refused because results were entered does not arm its clean-ups again"
+)
 ALL_JOBS = ["unarm", "apply", "notify_checkin", "take_down_call", "notify_forecast",
             "notify_results", "post_calendar", "delete_replaced", "close"]
 WIND_DOWN = "season.wind_down"
@@ -809,10 +812,15 @@ async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_i
     assert "Round 3" not in lines[0]
 
 
+@pytest.mark.xfail(strict=True, reason=RACED_CLEANUPS_UNBUILT)
 async def test_the_save_refuses_writing_nothing_where_the_round_moved_on_after_the_check(
     tmp_path,
 ):
-    league = await ongoing_league(tmp_path)
+    """Weather and attendance on. `/round cancel Pro 3` removes round 3's timed work, and its
+    results are entered before the save, so the save refuses and writes nothing. The round, now
+    raced, is owed its next-day clean-ups: one re-arming of its clean-ups alone is asked and runs,
+    arming the forecast's and the check-in's clean-ups and nothing else."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True)
     interaction = await _asked(league)
     await _run_through(league, "unarm")
     await _results_entered(league)
@@ -826,9 +834,12 @@ async def test_the_save_refuses_writing_nothing_where_the_round_moved_on_after_t
     assert len(_refusal_lines(league)) == 1
     assert _success_lines(league) == []
     assert league.texts(PRO_CH.calendar) == []
-    assert [row for row in await change_rows(league.db_path)
-            if row["kind"] == "season.round.rearm"] == []
-    assert league.armed == []
+    rearmings = [row for row in await change_rows(league.db_path)
+                 if row["kind"] == "season.round.rearm"]
+    assert [row["state"] for row in rearmings] == ["DONE"]
+    payload = json.loads(rearmings[0]["payload"])
+    assert payload["round_id"] == R3 and payload.get("cleanups_only") is True
+    assert league.armed == [("cleanups", [R3])]
 
 
 # ── What it does ────────────────────────────────────────────────────────────────────
