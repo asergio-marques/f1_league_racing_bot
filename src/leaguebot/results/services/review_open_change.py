@@ -76,7 +76,10 @@ opened, and the flag still comes down and the lapse is still recorded (results s
 
 **Two more kinds put a review back after a restart, as the bot.** `results.appeals.open` posts a
 round's appeals prompt again, replacing the old one once the new one stands; its `close` asks for
-it again where a Discard dropped the post. `results.review.close_stale` closes a FINAL round whose
+it again where a Discard dropped the post. Neither of its jobs can be discarded, for the appeals
+review would have no prompt, and the round would not become final, until the bot restarts; its
+`open` is dropped on a Retry once the round no longer awaits its appeal verdicts or its channel is
+closed. `results.review.close_stale` closes a FINAL round whose
 submission row a run from before this change left open: its channel is deleted and its row marked
 closed with the deletion, and a line says so, in place of the dead review that used to be posted
 again at every restart. Both are dropped, not stopped, where they are no longer due.
@@ -1047,6 +1050,24 @@ def appeals_open_change() -> ChangeType:
             ),),
         )
 
+    async def still_awaiting_appeals(ctx: StepContext) -> bool:
+        """The reopening is owed while its round awaits its appeal verdicts with its submission
+        row open: a Retry after the round became final, or its channel closed, drops it."""
+        row = await _round_and_channel(ctx.db_path, int(ctx.payload["round_id"]))
+        return (
+            row is not None
+            and row["status"] == RoundStatus.AWAITING_APPEAL_VERDICTS.value
+            and row["channel_id"] is not None
+            and not row["closed"]
+        )
+
+    async def would_have_no_prompt(ctx: StepContext) -> str:
+        called = await season_service.round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        return (
+            f"{called}'s appeals review would have no prompt, and the round would not become "
+            "final, until the bot restarts"
+        )
+
     async def describe_plan(_ctx: StepContext) -> str:
         return "working out where the appeals review prompt goes"
 
@@ -1065,8 +1086,14 @@ def appeals_open_change() -> ChangeType:
     steps: dict[str, Step] = {
         **posting_steps(),
         review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(),
-        _OPEN: Step(_OPEN, StepKind.SAVE, plan, describe=describe_plan),
-        _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
+        _OPEN: Step(
+            _OPEN, StepKind.SAVE, plan, still_due=still_awaiting_appeals,
+            describe=describe_plan, undiscardable=would_have_no_prompt,
+        ),
+        _CLOSE: Step(
+            _CLOSE, StepKind.SAVE, close, describe=describe_close,
+            undiscardable=would_have_no_prompt,
+        ),
     }
     return ChangeType(
         kind=APPEALS_OPEN_KIND,

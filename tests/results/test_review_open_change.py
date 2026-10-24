@@ -1380,14 +1380,11 @@ async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_stopped(t
 
 
 APPEALS_OPEN = "results.appeals.open"
-APPEALS_REOPENING_UNDISCARDABLE = "#439: the appeals review's reopening may still be discarded"
 
 
 @pytest.mark.parametrize("job", [
-    pytest.param("open", id="open",
-                 marks=pytest.mark.xfail(strict=True, reason=APPEALS_REOPENING_UNDISCARDABLE)),
-    pytest.param("close", id="close",
-                 marks=pytest.mark.xfail(strict=True, reason=APPEALS_REOPENING_UNDISCARDABLE)),
+    pytest.param("open", id="open"),
+    pytest.param("close", id="close"),
 ])
 async def test_the_appeals_reopening_s_jobs_cannot_be_discarded(tmp_path, job):
     """Round 3 was awaiting its appeal verdicts, its appeals prompt 8950 standing, when the bot
@@ -1427,8 +1424,6 @@ async def test_the_appeals_reopening_s_jobs_cannot_be_discarded(tmp_path, job):
     assert change["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason="#439: an appeals reopening is still due once its round "
-                                       "has moved on")
 async def test_an_appeals_reopening_whose_round_moved_on_is_dropped_on_retry(tmp_path):
     """Round 3 was awaiting its appeal verdicts, its appeals prompt 8950 standing, when the bot
     stopped. At the restart the prompt is asked for again, and the save of the reopening's first
