@@ -35,18 +35,21 @@ from __future__ import annotations
 import json
 import os
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,
     discard_job,
+    http_error,
     member_interaction,
     refuse_the_job,
     retry_job,
     run_queue,
+    step_rows,
     stopped_job,
     typed_message,
 )
@@ -396,20 +399,169 @@ async def test_the_review_panel_s_post_cannot_be_discarded(tmp_path):
     assert len([m for m in posted() if type(m.view).__name__ == "AdminReviewView"]) == 1
 
 
-async def test_a_missing_channel_still_commits_the_record(tmp_path):
-    """A channel deleted by hand must not cost the driver their signup. Kimi types his notes,
-    and his channel is deleted before the turn's panel is posted. Once the queue runs his
-    signup is saved, and no panel is posted."""
+#: The ending of a signup whose channel is gone when its panel is due is not yet built (#439,
+#: slice 8, F1).
+CHANNEL_GONE_UNBUILT = "#439: a signup whose channel is gone when its panel is due is not yet ended"
+#: The panel's job does not yet look past the cache for its channel (#439, slice 8, F1).
+PANEL_LOOKUP_UNBUILT = "#439: a review panel whose channel the cache does not hold is passed over"
+#: The line the ending writes in the log channel, naming Kimi and his gone channel.
+CHANNEL_GONE_LINE = (
+    f"Kimi (`<@{SIGNING_UP}>`) | Signup | Ended\n  channel: <#{KIMI_CHANNEL}>\n  Their signup "
+    "channel was gone when their review panel was due, so their signup ended. They may press "
+    "Sign Up again while signups are open."
+)
+
+
+def _admin_panels(chan: Any) -> list[Any]:
+    """The review panels standing in *chan*."""
+    return [m for m in chan.messages.values() if type(m.view).__name__ == "AdminReviewView"]
+
+
+def _delete_channel(league: SeasonLeague) -> Any:
+    """Kimi's channel 6405 is deleted from the server: neither the cache nor Discord's lookup
+    finds it, and taking the ⏳ off a message in it finds the message gone. Gives the channel."""
+    gone = league.channels.pop(KIMI_CHANNEL)
+    message = MagicMock()
+    message.remove_reaction = AsyncMock(side_effect=http_error(discord.NotFound, status=404))
+    league.bot.get_partial_messageable.return_value.get_partial_message.return_value = message
+    return gone
+
+
+def _out_of_cache(league: SeasonLeague, *, refusal: BaseException | None = None) -> None:
+    """Kimi's channel 6405 is missing from the bot's cache of the server; Discord's lookup of it
+    finds it standing, or fails with *refusal* where one is given."""
+    cached = league.guild.get_channel.side_effect
+    fetched = league.guild.fetch_channel.side_effect
+    league.guild.get_channel.side_effect = (
+        lambda cid: None if int(cid) == KIMI_CHANNEL else cached(cid)
+    )
+
+    async def _fetch(cid: int) -> Any:
+        if int(cid) == KIMI_CHANNEL and refusal is not None:
+            raise refusal
+        return await fetched(cid)
+
+    league.guild.fetch_channel.side_effect = _fetch
+
+
+@pytest.mark.xfail(strict=True, reason=CHANNEL_GONE_UNBUILT)
+async def test_a_channel_gone_when_the_panel_is_due_ends_the_signup_once_it_is_saved(tmp_path):
+    """A channel deleted by hand must not cost the driver their signup record, nor leave them
+    awaiting a review that can never be posted. Kimi types his notes, and his channel 6405 is
+    deleted before the turn's panel is posted. Once the queue runs his signup record is saved,
+    but his signup has ended: he is Not Signed Up, his wizard Unengaged, and no 24-hour
+    inactivity timer is armed for him. Nothing is sent to the gone channel, the queue is not
+    stopped, and the ending is one `signup.end` change on the league lane, done, whose single job
+    is `end`."""
     league = await _league(tmp_path)
 
     await _type(league, "See you there")
-    gone = league.channels.pop(KIMI_CHANNEL)
+    gone = _delete_channel(league)
     await run_queue(league.bot)
 
+    assert await stopped_job(league.db_path) is None
     record = await _record(league)
     assert record is not None and record.platform == "Steam"
-    assert not any(type(call.kwargs.get("view")).__name__ == "AdminReviewView"
-                   for call in gone.send.call_args_list)
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    [wizard] = await league.rows(
+        "SELECT wizard_state FROM signup_wizard_records WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    assert wizard["wizard_state"] == "UNENGAGED"
+    assert not any(call.args[:2] == (INACTIVITY_TIMER, str(SIGNING_UP))
+                   for call in league.bot.scheduler_service.arm_once.call_args_list)
+    gone.send.assert_not_awaited()
+    [ending] = [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
+    assert (ending["state"], ending["lane"]) == ("DONE", "league")
+    assert [job["name"] for job in await step_rows(league.db_path, ending["id"])] == ["end"]
+
+
+@pytest.mark.xfail(strict=True, reason=CHANNEL_GONE_UNBUILT)
+async def test_a_signup_ended_for_its_gone_channel_is_logged_naming_the_driver_and_the_channel(
+    tmp_path,
+):
+    """Kimi types his notes, and his channel 6405 is deleted before the turn's panel is posted.
+    Once the queue runs the log channel is told once, naming Kimi and the channel, that his
+    signup channel was gone when his review panel was due, so his signup ended, and that he may
+    press Sign Up again while signups are open."""
+    league = await _league(tmp_path)
+
+    await _type(league, "See you there")
+    _delete_channel(league)
+    await run_queue(league.bot)
+
+    assert league.log().count(CHANNEL_GONE_LINE) == 1
+
+
+@pytest.mark.xfail(strict=True, reason=PANEL_LOOKUP_UNBUILT)
+async def test_a_server_out_of_cache_stops_the_panel_rather_than_passing_it_over(tmp_path):
+    """Kimi types his notes, and when his panel is due the league's server is missing from the
+    bot's cache, so his channel cannot be looked for at all. The queue stops at `post_panel` on
+    his channel's lane: his signup is saved, he still awaits approval, no panel is posted and his
+    signup is not ended. Once the server is back, a Retry posts the one review panel in his
+    channel."""
+    league = await _league(tmp_path)
+    lane = f"channel:{KIMI_CHANNEL}"
+
+    await _type(league, "See you there")
+    league.bot.get_guild.return_value = None
+    await run_queue(league.bot)
+
+    stopped = await stopped_job(league.db_path, lane)
+    assert stopped is not None and stopped["name"] == "post_panel"
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+    assert _admin_panels(league.channel(KIMI_CHANNEL)) == []
+    assert not [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
+
+    league.bot.get_guild.return_value = league.guild
+    await retry_job(league.bot, lane=lane)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(_admin_panels(league.channel(KIMI_CHANNEL))) == 1
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+
+
+@pytest.mark.xfail(strict=True, reason=PANEL_LOOKUP_UNBUILT)
+@pytest.mark.parametrize(
+    "refusal",
+    [http_error(), http_error(discord.Forbidden, status=403, text="Missing Access")],
+    ids=["server error", "forbidden"],
+)
+async def test_a_channel_the_lookup_cannot_confirm_gone_stops_the_panel(tmp_path, refusal):
+    """Kimi types his notes, and when his panel is due his channel 6405 is missing from the bot's
+    cache, and Discord's lookup of it fails with a server error, or is forbidden, so the bot
+    cannot tell whether it is gone. The queue stops at `post_panel` on his channel's lane: he
+    still awaits approval, nothing is posted and his signup is not ended."""
+    league = await _league(tmp_path)
+    lane = f"channel:{KIMI_CHANNEL}"
+    held = league.channel(KIMI_CHANNEL)
+    _out_of_cache(league, refusal=refusal)
+
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+
+    stopped = await stopped_job(league.db_path, lane)
+    assert stopped is not None and stopped["name"] == "post_panel"
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+    held.send.assert_not_awaited()
+    assert not [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
+
+
+@pytest.mark.xfail(strict=True, reason=PANEL_LOOKUP_UNBUILT)
+async def test_a_channel_missing_from_the_cache_but_found_by_the_lookup_gets_its_panel(tmp_path):
+    """Kimi types his notes, and when his panel is due his channel 6405 is missing from the bot's
+    cache, but Discord's lookup finds it standing. Once the queue runs the one review panel is
+    posted in it, he awaits approval, his signup is not ended and the queue is not stopped."""
+    league = await _league(tmp_path)
+    _out_of_cache(league)
+
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(_admin_panels(league.channel(KIMI_CHANNEL))) == 1
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+    assert not [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
 
 
 # ---------------------------------------------------------------------------
