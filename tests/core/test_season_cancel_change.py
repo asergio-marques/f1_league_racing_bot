@@ -124,10 +124,11 @@ def _accepted(number: int) -> str:
 
 
 UNARM_DISCARDED = "Nothing was cancelled: season 3 stands as it was. Run `/season cancel` again."
-SAVE_DISCARDED = (
-    "Nothing was cancelled, but the rounds of season 3 no longer have their timed work: run "
-    "`/season cancel` again."
+CANNOT_DISCARD = (
+    "⛔ This job can't be discarded: without it the rounds of season 3 would be left with no "
+    "timed work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
 )
+SAVE_UNDISCARDABLE = "#439: a cancellation's save may still be discarded"
 END_DISCARDED = (
     "Season 3's divisions and rounds are cancelled, but the season itself is not: the save that "
     "records its end was discarded. Run `/season cancel` again to finish it; if the season has "
@@ -1205,7 +1206,12 @@ async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     assert await _status(league) == "ACTIVE"
 
 
-async def test_a_discarded_first_save_cancels_nothing_and_says_the_timed_work_is_gone(tmp_path):
+@pytest.mark.xfail(strict=True, reason=SAVE_UNDISCARDABLE)
+async def test_the_first_save_cannot_be_discarded_once_the_timed_work_is_removed(tmp_path):
+    """The first save stops on a fault after every round's timed work came off. A league admin's
+    Discard is refused, saying season 3's rounds would be left with no timed work; the queue stays
+    stopped at the save, nothing is cancelled and nothing posted. Once the fault is lifted, Retry
+    cancels the season."""
     league = await ongoing_league(tmp_path, attendance=True)
     rounds = await _rounds(league)
     interaction = await _asked(league)
@@ -1213,16 +1219,23 @@ async def test_a_discarded_first_save_cancels_nothing_and_says_the_timed_work_is
     with _failing("cancel_season_divisions_on"):
         await run_queue(league.bot)
         assert await _stopped_at(league) == ("apply", None)
-        await discard_job(league.bot)
+        discarding = await discard_job(league.bot)
 
-    assert SAVE_DISCARDED in reply(interaction)
-    assert CANCELLED not in reply(interaction)
-    assert sorted(league.unarmed) == sorted(rounds)
-    assert await _divisions(league) == {PRO: "ACTIVE", AM: "ACTIVE"}
-    assert await _rounds(league) == rounds
-    assert _success_lines(league) == []
-    assert _posted(league) == [[]] * len(_POSTS)
-    assert await _status(league) == "ACTIVE"
+        assert CANNOT_DISCARD in reply(discarding)
+        assert await _stopped_at(league) == ("apply", None)
+        assert CANCELLED not in reply(interaction)
+        assert sorted(league.unarmed) == sorted(rounds)
+        assert await _divisions(league) == {PRO: "ACTIVE", AM: "ACTIVE"}
+        assert await _rounds(league) == rounds
+        assert _success_lines(league) == []
+        assert _posted(league) == [[]] * len(_POSTS)
+        assert await _status(league) == "ACTIVE"
+
+    await retry_job(league.bot)
+
+    assert CANCELLED in reply(interaction)
+    assert await _divisions(league) == {PRO: "CANCELLED", AM: "CANCELLED"}
+    assert await _status(league) == "CANCELLED"
 
 
 @pytest.mark.parametrize("then", ["run again", "wound down meanwhile"])

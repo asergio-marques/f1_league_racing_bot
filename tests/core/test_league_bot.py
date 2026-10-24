@@ -21,6 +21,8 @@ from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "leaguebot"
 
+UNDISCARDABLE_UNBUILT = "#439: only the armings and a submission's channel are undiscardable yet"
+
 
 def _attached_in_bot_py() -> set[str]:
     """Every `bot.<name> = …` in `__main__.py`."""
@@ -191,13 +193,14 @@ def test_the_settings_changes_are_registered():
     assert len(SETTING_KINDS) == 24
 
 
-def test_only_the_armings_and_a_submission_s_channel_are_undiscardable():
-    """Over every change type the builder registers, the jobs marked as never to be discarded
-    are exactly three: the arming of an approved season's timed work ("season.approve", its
-    "arm"), the arming of an amended round's ("season.round.amend", its "arm"), and the creation
-    of a round's results submission channel ("results.submission.open", its "create_channel").
-    Without any of them a round would never run or never have its results submitted; every other
-    job a league admin may discard (#439, slice 4b, amendment A; slice 6b, decision 12)."""
+@pytest.mark.xfail(strict=True, reason=UNDISCARDABLE_UNBUILT)
+def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
+    """Over every change type the builder registers, the jobs marked as never to be discarded are
+    exactly those whose loss could stop a season from being started or completed, or would leave
+    the league no way to put it right (#439, slice 8; owner, 2026-10-23): the arming of an
+    approved season's timed work and of an amended round's, the creation of a round's results
+    submission channel, and the save of a round's, a division's and a season's cancellation once
+    their timed work is removed. Every other job a league admin may discard."""
     from leaguebot.__main__ import register_change_types
 
     bot = MagicMock()
@@ -212,5 +215,8 @@ def test_only_the_armings_and_a_submission_s_channel_are_undiscardable():
     assert marked == [
         ("results.submission.open", "create_channel"),
         ("season.approve", "arm"),
+        ("season.cancel", "apply"),
+        ("season.division.cancel", "apply"),
         ("season.round.amend", "arm"),
+        ("season.round.cancel", "apply"),
     ]

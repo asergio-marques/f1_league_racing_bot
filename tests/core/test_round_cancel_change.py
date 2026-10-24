@@ -90,10 +90,11 @@ CHECKIN_LOGGED = CHECKIN_AUDIT.replace("<@101>", "`<@101>`").replace("<@102>", "
 UNARM_DISCARDED = (
     "Nothing was cancelled: round 3 in **Pro** stands as it was. Run `/round cancel` again."
 )
-SAVE_DISCARDED = (
-    "Nothing was cancelled, but round 3 in **Pro** no longer has its timed work: run "
-    "`/round cancel` again."
+CANNOT_DISCARD = (
+    "⛔ This job can't be discarded: without it round 3 in **Pro** would be left with no timed "
+    "work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
 )
+SAVE_UNDISCARDABLE = "#439: a cancellation's save may still be discarded"
 ALL_JOBS = ["unarm", "apply", "notify_checkin", "take_down_call", "notify_forecast",
             "notify_results", "post_calendar", "delete_replaced", "close"]
 WIND_DOWN = "season.wind_down"
@@ -755,26 +756,29 @@ def _outcome(interaction: Any) -> str:
 @pytest.mark.parametrize("case", [
     pytest.param("cancelled", id="cancelled"),
     pytest.param("submission", id="refused, its submission has accepted a session"),
-    pytest.param("discarded", id="its save discarded, renumbered while it stood stopped"),
+    pytest.param("retried", id="its save retried, renumbered while it stood stopped",
+                 marks=pytest.mark.xfail(strict=True, reason=SAVE_UNDISCARDABLE)),
 ])
 async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_its_number_when_it_runs(
     tmp_path, case,
 ):
     league = await ongoing_league(tmp_path, attendance=True)
-    if case == "discarded":
+    if case == "retried":
         # The save stops on a fault after the timed work came off; the round is renumbered
-        # while it stands stopped, and a league admin then discards it.
+        # while it stands stopped. A league admin's Discard is refused, naming the round by its
+        # new number; once the fault is lifted, Retry cancels it.
         interaction = await _asked(league)
         with _failing("cancel_round_on"):
             await run_queue(league.bot)
             assert await _stopped_at(league) == "apply"
             await _renumbered(league)
-            await discard_job(league.bot)
+            discarding = await discard_job(league.bot)
+        assert CANNOT_DISCARD.replace("round 3", "round 2") in reply(discarding)
+        await retry_job(league.bot)
         outcome = _outcome(interaction)
-        assert outcome == SAVE_DISCARDED.replace("round 3", "round 2")
+        assert outcome == "✅ Round **2** in **Pro** cancelled."
         assert "round 3" not in outcome
-        assert await _status(league) == "NOT_RUN"
-        assert _success_lines(league) == []
+        assert await _status(league) == "CANCELLED"
         return
 
     await _stopped_blocker(league)
@@ -1040,20 +1044,31 @@ async def test_a_calendar_that_falls_back_to_text_is_named(tmp_path, monkeypatch
     assert result["fell_back"] and result["problem"] == "the template has no rows"
 
 
-async def test_a_discarded_save_cancels_nothing_and_says_the_timed_work_is_gone(tmp_path):
+@pytest.mark.xfail(strict=True, reason=SAVE_UNDISCARDABLE)
+async def test_the_save_cannot_be_discarded_once_the_timed_work_is_removed(tmp_path):
+    """The save stops on a fault after round 3's timed work came off. A league admin's Discard
+    is refused, saying the round would be left with no timed work; the queue stays stopped at the
+    save and nothing is discarded. Once the fault is lifted, Retry cancels the round."""
     league = await ongoing_league(tmp_path, attendance=True)
     interaction = await _asked(league)
     with _failing("cancel_round_on"):
         await run_queue(league.bot)
         assert await _stopped_at(league) == "apply"
-        await discard_job(league.bot)
+        discarding = await discard_job(league.bot)
 
-    assert SAVE_DISCARDED in reply(interaction)
-    assert CANCELLED not in reply(interaction)
-    assert await _status(league) == "NOT_RUN"
+        assert CANNOT_DISCARD in reply(discarding)
+        assert await _stopped_at(league) == "apply"
+        assert await league.rows(
+            "SELECT * FROM audit_entries WHERE change_type = 'CHANGE_JOB_DISCARDED'"
+        ) == []
+        assert await _status(league) == "NOT_RUN"
     assert league.unarmed == [R3]
-    assert _success_lines(league) == []
-    assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
+
+    await retry_job(league.bot)
+
+    assert _outcome(interaction) == CANCELLED
+    assert await _status(league) == "CANCELLED"
+    assert len(_success_lines(league)) == 1
 
 
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):

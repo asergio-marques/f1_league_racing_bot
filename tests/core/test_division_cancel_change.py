@@ -82,10 +82,11 @@ ACK = (
 UNARM_DISCARDED = (
     "Nothing was cancelled: **Pro** stands as it was. Run `/division cancel` again."
 )
-SAVE_DISCARDED = (
-    "Nothing was cancelled, but the rounds of **Pro** no longer have their timed work: run "
-    "`/division cancel` again."
+CANNOT_DISCARD = (
+    "⛔ This job can't be discarded: without it the rounds of **Pro** would be left with no timed "
+    "work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
 )
+SAVE_UNDISCARDABLE = "#439: a cancellation's save may still be discarded"
 CHECKIN_R3 = (
     "\n  check-in, Pro, Round 3 (Silverstone):"
     "\n    accepted: `<@101>`"
@@ -563,20 +564,32 @@ async def test_the_wind_down_follows_as_a_change_of_its_own(tmp_path):
     assert (await league.season())["stage"] == "PENDING_COMPLETION"
 
 
+@pytest.mark.xfail(strict=True, reason=SAVE_UNDISCARDABLE)
 async def test_a_discarded_save_cancels_nothing(tmp_path):
+    """The save stops on a fault after Pro's timed work came off. A league admin's Discard is
+    refused, saying Pro's rounds would be left with no timed work; the queue stays stopped at the
+    save, nothing is cancelled and nothing posted. Once the fault is lifted, Retry cancels Pro."""
     league = await ongoing_league(tmp_path, attendance=True)
     interaction = await _asked(league)
     with _failing("cancel_division_on"):
         await run_queue(league.bot)
         assert await _stopped_at(league) == "apply"
-        await discard_job(league.bot)
+        discarding = await discard_job(league.bot)
 
-    assert SAVE_DISCARDED in reply(interaction)
-    assert CANCELLED not in reply(interaction)
-    assert await _division(league) == "ACTIVE"
-    assert (await _statuses(league))[R3] == "NOT_RUN"
-    assert _success_lines(league) == []
-    assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
+        assert CANNOT_DISCARD in reply(discarding)
+        assert await _stopped_at(league) == "apply"
+        assert CANCELLED not in reply(interaction)
+        assert await _division(league) == "ACTIVE"
+        assert (await _statuses(league))[R3] == "NOT_RUN"
+        assert _success_lines(league) == []
+        assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
+
+    await retry_job(league.bot)
+
+    assert CANCELLED in reply(interaction)
+    assert await _division(league) == "CANCELLED"
+    assert (await _statuses(league))[R3] == "CANCELLED"
+    assert len(_success_lines(league)) == 1
 
 
 @pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)
