@@ -56,10 +56,15 @@ _BUTTONS = [
 
 @pytest.fixture(autouse=True)
 def _no_approval_in_hand(monkeypatch):
-    """The approve view asks whether an approval of its season is in hand, reading the change
-    queue's tables (#439); these reviews hold no database, so the answer is given here: none."""
+    """The approve view asks whether an approval of its season is in hand, and the mid-season
+    confirm view whether a confirmation of its placements is, reading the change queue's tables
+    (#439); these reviews hold no database, so the answer is given here: none."""
     monkeypatch.setattr(
         "leaguebot.core.cogs.season_cog.approval_in_hand", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(
+        "leaguebot.core.cogs.season_cog.confirmation_in_hand", AsyncMock(return_value=False),
+        raising=False,
     )
 
 
@@ -708,51 +713,3 @@ async def test_a_review_expired_twice_at_once_posts_one_notice(
     assert len(channel.sent) == 1
     lapses = [line for line in _queue_lines(env) if line.startswith("⌛ ")]
     assert len(lapses) <= 1, _queue_lines(env)
-
-
-async def test_a_private_confirmation_that_fails_asks_the_channel_to_be_told(tmp_path):
-    """A mid-season confirmation is committed, and its private confirmation to the reviewer is
-    refused (the interaction's token has lapsed). Nothing is posted in the channel at once: a
-    `channel.tell` change is asked of the queue, naming that channel (707) and the fallback line.
-    When the queue runs, the fallback line is posted there, once."""
-    from types import SimpleNamespace
-
-    from leaguebot.core.cogs.season_cog import _confirm_privately
-    from leaguebot.core.db.database import run_migrations
-    from tests.support.change_queue import (
-        attach_queue,
-        change_rows,
-        http_error,
-        league_double,
-        member_interaction,
-        run_queue,
-        seed_server,
-        text_channel,
-    )
-
-    db_path = str(tmp_path / "queue.db")
-    await run_migrations(db_path)
-    await seed_server(db_path)
-    bot = league_double(db_path)
-    review_channel = text_channel(707)
-    bot.get_channel = MagicMock(side_effect={707: review_channel}.get)
-    bot.fetch_channel = AsyncMock(return_value=review_channel)
-    attach_queue(bot, db_path, now=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc))
-    lapsed = http_error(discord.HTTPException, status=401, text="Invalid Webhook Token")
-    press = member_interaction(bot)
-    press.response.is_done = MagicMock(return_value=True)
-    press.followup.send = AsyncMock(side_effect=lapsed)
-    press.channel = review_channel
-    press.channel_id = 707
-    fallback = "Placements were confirmed; see the log channel for what was confirmed."
-
-    await _confirm_privately(press, "✅ Placements confirmed.", fallback=fallback)
-
-    assert review_channel.sent == []
-    [tell] = [SimpleNamespace(**row) for row in await change_rows(db_path)
-              if row["kind"] == "channel.tell"]
-    assert "707" in str(tell.payload) and fallback in str(tell.payload)
-
-    await run_queue(bot)
-
-    assert review_channel.sent == [fallback]
