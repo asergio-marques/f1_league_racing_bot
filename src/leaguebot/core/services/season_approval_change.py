@@ -26,7 +26,8 @@ season in Placements with nothing written and the queue stops at it to retry. A 
 the approval again before it saves (`apply`, `judge`), the setup being open meanwhile.
 **Everything else
 follows the save as a job of its own**, each of which stops the queue where it fails: letting go of
-the setup held in memory, arming the timed work (after the save, so that a stop before it leaves
+the setup held in memory (it cannot be discarded either: the bot would go on holding the season's
+setup, and `/round amend` would refuse its rounds until it restarts), arming the timed work (after the save, so that a stop before it leaves
 no job armed against a season still in Placements; it cannot be discarded, since without it no
 round would ever run, and only Retry moves the queue on), each driver's roles, the notice that the
 season's posts are being made, each division's lineup, calendar, opening standings and opening
@@ -131,10 +132,6 @@ NOTICE_TEXT = "🎨 Posting lineups, calendars and opening classifications — o
 NOT_SAVED = (
     "Nothing has been approved: the season is still in placements. Run `/season "
     "placements-review` again."
-)
-NOT_FORGOTTEN = (
-    "The setup the bot held in memory could not be let go of: `/round amend` may refuse this "
-    "season until the bot restarts."
 )
 NOTICE_NOT_POSTED = "The notice that the season's posts were being made could not be posted."
 _NOTICE_NOT_DELETED = "The notice that the season's posts were being made could not be deleted"
@@ -627,6 +624,12 @@ def season_approval_change(
     async def never_runs(ctx: StepContext) -> str:
         return f"no round of season {ctx.payload['season_number']} would ever run"
 
+    async def keeps_the_setup(ctx: StepContext) -> str:
+        return (
+            f"the bot would go on holding season {ctx.payload['season_number']}'s setup, and "
+            "`/round amend` would refuse its rounds until the bot restarts"
+        )
+
     async def describe_forget(_ctx: StepContext) -> str:
         return "letting go of the setup the bot holds in memory"
 
@@ -733,7 +736,10 @@ def season_approval_change(
     steps: dict[str, Step] = {
         APPLY: Step(APPLY, StepKind.SAVE, apply, describe=describe_apply),
         JUDGE: Step(JUDGE, StepKind.ACT, judge, describe=describe_judge),
-        FORGET_SETUP: Step(FORGET_SETUP, StepKind.ACT, forget_the_setup, describe=describe_forget),
+        FORGET_SETUP: Step(
+            FORGET_SETUP, StepKind.ACT, forget_the_setup, describe=describe_forget,
+            undiscardable=keeps_the_setup,
+        ),
         ARM: Step(
             ARM, StepKind.ACT, arm, describe=describe_arm, undiscardable=never_runs
         ),
@@ -854,9 +860,7 @@ def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
         if not _discarded(view):
             continue
         each = view.payload
-        if view.name == FORGET_SETUP:
-            lines.append(NOT_FORGOTTEN)
-        elif view.name == GRANT_ROLES:
+        if view.name == GRANT_ROLES:
             if ungranted_at is None:
                 ungranted_at = len(lines)
                 lines.append("")

@@ -86,7 +86,6 @@ CANNOT_DISCARD_FORGET = (
     "setup, and no new season could be set up until the bot restarts. Fix what stopped it and "
     "press **Retry**."
 )
-FORGET_UNDISCARDABLE = "#439: letting go of an aborted season's setup may still be discarded"
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
 WINDOW_OPEN = (
     "The signup window could not be closed. Close it with `/signup close`. "
@@ -788,7 +787,6 @@ async def test_one_success_line_records_the_drivers_returned_and_deleted(tmp_pat
     assert jobs[-1]["name"] == "close" and all(job["done_at"] for job in jobs)
 
 
-@pytest.mark.xfail(strict=True, reason=FORGET_UNDISCARDABLE)
 async def test_letting_go_of_the_setup_cannot_be_discarded_on_an_abort(tmp_path):
     """Letting go of the setup the bot holds in memory fails once the season is deleted and stops
     the queue. A league admin's Discard on it is refused, saying the bot would go on holding the

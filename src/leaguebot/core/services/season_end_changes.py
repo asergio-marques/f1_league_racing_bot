@@ -45,7 +45,9 @@ test mode is on, then `end`, one save that runs the driver pass (no history is w
 having none), switches test mode off and deletes the season, **last**. After that save each driver
 the pass reaches has their signup channel's notice and lock or their driver role as jobs of their
 own, the portraits of the drivers deleted are discarded and the setup the bot holds in memory is
-let go of (`forget_setup`). The saved test-mode state is kept, a season aborted being one
+let go of (`forget_setup`, which a league admin cannot discard: without it the bot would go on
+holding the aborted season's setup and no new season could be set up until the bot restarts). The
+saved test-mode state is kept, a season aborted being one
 abandoned. The signup records are keyed by account and outlive the season, so a channel is still
 held after the save.
 """
@@ -109,7 +111,6 @@ from leaguebot.core.services.season_lifecycle_service import (
     wind_down_not_due_on,
     wind_down_steps,
 )
-from leaguebot.core.services.season_approval_change import NOT_FORGOTTEN
 from leaguebot.core.services.season_service import (
     SeasonService,
     complete_season_on,
@@ -932,12 +933,6 @@ def season_abort_change(
             return False
         return not (discarded(view) or (view.result or {}).get("refused"))
 
-    def _not_done_abort(ctx: OutcomeContext, untold: Sequence[str] | None = None) -> list[str]:
-        lines = shared_not_done(ctx, untold)
-        if discarded(view_of(ctx, FORGET_SETUP)):
-            lines.append(NOT_FORGOTTEN)
-        return lines
-
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         # The drivers a discarded window close returned and nobody told are named here and their
         # marks taken, whatever else this save finds.
@@ -959,7 +954,7 @@ def season_abort_change(
             f"{ctx.named} | /season abort | Success\n"
             f"  drivers returned to Not Signed Up: {counts.get('drivers_returned', 0)}\n"
             f"  drivers deleted: {counts.get('drivers_deleted', 0)}"
-            + "".join(f"\n  not done: {each}" for each in _not_done_abort(ctx, untold))
+            + "".join(f"\n  not done: {each}" for each in shared_not_done(ctx, untold))
         )
         return StepResult(result=result, lines=(line,))
 
@@ -972,7 +967,7 @@ def season_abort_change(
                 untold_lines(untold_of(ctx))
             )
         return ABORTED + not_done_reply(
-            _not_done_abort(ctx), discarded=anything_discarded(ctx, untold_of(ctx))
+            shared_not_done(ctx), discarded=anything_discarded(ctx, untold_of(ctx))
         )
 
     async def describe_window_close(_ctx: StepContext) -> str:
@@ -990,9 +985,17 @@ def season_abort_change(
         async with get_connection(ctx.db_path) as db:
             return await test_mode_on(db)
 
+    async def keeps_the_setup(_ctx: StepContext) -> str:
+        return (
+            "the bot would go on holding the aborted season's setup, and no new season could be "
+            "set up until the bot restarts"
+        )
+
     shared = season_end_steps(placement, hooks)
     steps: dict[str, Step] = {
         **shared,
+        # Only an abort holds a setup the bot must let go of, so the mark is not on the shared step.
+        FORGET_SETUP: replace(shared[FORGET_SETUP], undiscardable=keeps_the_setup),
         FLUSH_FORECASTS: replace(shared[FLUSH_FORECASTS], still_due=test_mode_still_on),
         CLOSE_WINDOW: replace(shared[CLOSE_WINDOW], describe=describe_window_close),
         END: Step(END, StepKind.SAVE, end, describe=describe_end),

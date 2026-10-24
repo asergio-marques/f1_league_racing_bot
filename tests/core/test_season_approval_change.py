@@ -934,10 +934,8 @@ CANNOT_DISCARD_FORGET = (
     "`/round amend` would refuse its rounds until the bot restarts. Fix what stopped it and press "
     "**Retry**."
 )
-FORGET_UNDISCARDABLE = "#439: letting go of an approved season's setup may still be discarded"
 
 
-@pytest.mark.xfail(strict=True, reason=FORGET_UNDISCARDABLE)
 async def test_letting_go_of_the_setup_cannot_be_discarded(tmp_path, monkeypatch):
     """Letting go of the setup the bot holds in memory fails once season 3 is saved and stops the
     queue. A league admin's Discard on it is refused, saying the bot would go on holding season
