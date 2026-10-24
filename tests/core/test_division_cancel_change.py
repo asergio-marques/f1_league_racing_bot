@@ -846,7 +846,6 @@ async def test_a_division_that_finishes_after_its_check_is_refused_by_the_save_o
 # ── A refused save arms the rounds again (#439 slice 8, F2) ─────────────────────────
 
 REARM_KIND = "season.round.rearm"
-REARM_UNBUILT = "#439: a cancellation refused at its save does not arm its rounds again yet"
 REARMING_ROUNDS = (
     "The timed work of its rounds still to be run, removed for the cancellation, is being armed "
     "again as it stood: round 3 in **Pro**, round 4 in **Pro**."
@@ -858,7 +857,6 @@ async def _rearmings(league: Any) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == REARM_KIND]
 
 
-@pytest.mark.xfail(strict=True, reason=REARM_UNBUILT)
 async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_again_only_the_rounds_still_to_be_run(
     tmp_path,
 ):

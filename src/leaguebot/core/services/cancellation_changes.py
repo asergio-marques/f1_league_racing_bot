@@ -198,6 +198,7 @@ _ROUND_REARM_COMMAND = "/round cancel"
 NOT_ONGOING = f"❌ {_COMMAND} is available only while the season is ongoing."
 ARCHIVED = "❌ This season is archived (COMPLETED) and cannot be modified."
 DIVISION_COMMAND = "`/division cancel`"
+_DIVISION_REARM_COMMAND = "/division cancel"
 DIVISION_NOT_ONGOING = f"❌ {DIVISION_COMMAND} is available only while the season is ongoing."
 SEASON_COMMAND = "`/season cancel`"
 SEASON_NO_SEASON = (
@@ -1123,8 +1124,10 @@ def division_cancel_change(
         round_ids = [
             each.id for each in await seasons.get_division_rounds(int(ctx.payload["division_id"]))
         ]
-        scheduler.cancel_rounds(round_ids)
-        return StepResult(result={"unarmed": True})
+        removed = scheduler.cancel_rounds(round_ids)
+        return StepResult(result={
+            "unarmed": True, "removed": {str(round_id): jobs for round_id, jobs in removed.items()},
+        })
 
     async def unarmed(ctx: StepContext) -> bool:
         """The save is due only where the timed work was removed, not where that job was
@@ -1164,7 +1167,7 @@ def division_cancel_change(
             refusal = ARCHIVED
         if refusal is not None or division is None:
             # A backstop: the check passed, and something wrote the database after it.
-            return StepResult(result={"refused": refusal})
+            return await _refused_rearming(db, ctx, refusal or "", _DIVISION_REARM_COMMAND)
 
         cursor = await db.execute(
             "SELECT id, round_number FROM rounds WHERE division_id = ?", (division_id,)
@@ -1176,7 +1179,9 @@ def division_cancel_change(
             list(numbers.items()), lambda ids: submissions.open_submissions_on(db, ids)
         )
         if found is not None:
-            return StepResult(result={"refused": _division_accepted(payload, *found)})
+            return await _refused_rearming(
+                db, ctx, _division_accepted(payload, *found), _DIVISION_REARM_COMMAND
+            )
 
         called_off = await cancel_division_on(
             db, division_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
@@ -1239,7 +1244,9 @@ def division_cancel_change(
         if refused:
             return StepResult(
                 result={"closed": True},
-                lines=(refusal_line(ctx.named, DIVISION_COMMAND, reply_reason(refused)),),
+                lines=(refusal_line(
+                    ctx.named, DIVISION_COMMAND, reply_reason(refused), detail=_rearming_detail(ctx)
+                ),),
             )
         line = (
             f"{ctx.named} | /division cancel | Success\n"
@@ -1255,7 +1262,7 @@ def division_cancel_change(
             return DIVISION_UNARM_DISCARDED.format(division=name)
         refused = _refusal_of(ctx)
         if refused:
-            return refused
+            return refused + _rearming_sentence(ctx)
         return f"✅ Division **{name}** cancelled." + notices.failure_lines(not_notified(ctx))
 
     steps: dict[str, Step] = {
