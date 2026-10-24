@@ -53,28 +53,6 @@ class TestIsAttendanceEnabledFalseByDefault:
         assert cfg.module_enabled is False
 
 
-class TestDisableDeletesDivisionConfigs:
-    async def test_disable_deletes_division_configs(self, db_path):
-        import aiosqlite as _aio
-        async with _aio.connect(db_path) as db:
-            db.row_factory = _aio.Row
-            await db.execute(
-                "INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (?, 1)",
-                (1,),
-            )
-            await db.execute(
-                "INSERT INTO attendance_division_config (division_id) VALUES (10)"
-            )
-            await db.commit()
-
-        from leaguebot.attendance.services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        await svc.delete_division_configs()
-
-        div_cfg = await svc.get_division_config(10)
-        assert div_cfg is None
-
-
 async def test_attendance_switches_off_on_a_handed_connection(db_path):
     """Its flag down and its per-division channels cleared, its settings row kept, all on the
     caller's connection and saved only when the caller commits; it says whether attendance was
