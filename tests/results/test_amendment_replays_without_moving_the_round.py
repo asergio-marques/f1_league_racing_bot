@@ -111,7 +111,9 @@ PUBLISHING_JOBS = [
     "announce_verdict",
     "attendance_sheet",
     "plan_sanctions",
+    "check_sanction",
     "apply_sanction",
+    "sanction_roles",
     "announce_sanction",
     "refresh_lineup",
 ]

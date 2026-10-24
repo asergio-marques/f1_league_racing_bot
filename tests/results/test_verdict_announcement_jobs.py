@@ -580,27 +580,37 @@ async def _no_reserve_team(league: ReviewLeague) -> None:
     league.channels[ATTENDANCE_CHANNEL] = channel(ATTENDANCE_CHANNEL, league.events)
 
 
+#: What is not yet true of a sanction's check (#439, Part C).
+SANCTION_CHECK_UNBUILT = (
+    "#439: an autoreserve has no check of its own ahead of its save, so the queue stops at "
+    "apply_sanction"
+)
+
+
 @pytest.mark.parametrize(
     "seed, job, reason, fault",
     [
         pytest.param(_no_attendance_channel, "attendance_sheet", "is not in the server",
                      "StepFailedOnDiscord", id="sheet"),
-        pytest.param(_no_reserve_team, "apply_sanction", "the division has no Reserve team",
-                     "SanctionNotApplicable", id="sanction"),
+        pytest.param(_no_reserve_team, "check_sanction", "the division has no Reserve team",
+                     "SanctionNotApplicable", id="sanction",
+                     marks=pytest.mark.xfail(strict=True, reason=SANCTION_CHECK_UNBUILT)),
     ],
 )
 async def test_a_sheet_or_sanction_stop_names_what_to_repair(tmp_path, seed, job, reason, fault):
     """Attendance is on and its real hook, `AttendanceAfterReview`, is the one the change types
     are handed. Division 11's attendance channel is gone from the server, or it has an
     autoreserve threshold Lewis reaches and no Reserve team to move him to. Alex approves round
-    3's reports: the queue stops at the sheet, or at Lewis's sanction, and the stop line's fault
+    3's reports: the queue stops at the sheet, or at the check of Lewis's sanction ahead of its
+    save, and the stop line's fault
     is the reason the hook gave, which says what to repair, never the name of an exception."""
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
 
     league = await review_league(tmp_path, attendance=True)
     await seed(league)
     placement = MagicMock()
-    for name in ("sack_driver", "move_driver", "refresh_lineup"):
+    for name in ("sack_driver", "move_driver", "refresh_lineup", "guard_move", "sack_on",
+                 "move_on"):
         setattr(placement, name, AsyncMock(return_value=None))
     league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
     attach_queue(league.bot, league.db_path, now=NOW)
@@ -629,7 +639,8 @@ def _real_attendance_hook(league: ReviewLeague) -> None:
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
 
     placement = MagicMock()
-    for name in ("sack_driver", "move_driver", "refresh_lineup"):
+    for name in ("sack_driver", "move_driver", "refresh_lineup", "guard_move", "sack_on",
+                 "move_on"):
         setattr(placement, name, AsyncMock(return_value=None))
     league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
     attach_queue(league.bot, league.db_path, now=NOW)
@@ -750,6 +761,8 @@ async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_comm
     placement = PlacementService(league.db_path, league.bot)
     placement._grant_roles = AsyncMock()
     placement._revoke_roles = AsyncMock()
+    placement.grant_roles = AsyncMock()
+    placement.revoke_roles = AsyncMock()
     league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
     attach_queue(league.bot, league.db_path, now=NOW)
 
@@ -758,3 +771,88 @@ async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_comm
 
     assert await stopped_at(league) == "refresh_lineup"
     assert "/division lineup-channel" in _sheet_stop(league)
+
+
+#: What is not yet true of a sanction's role change (#439, Part C).
+REFUSED_ROLES_UNBUILT = (
+    "#439: a sanction's roles are changed inside its apply through placement's swallowing role "
+    "helpers, so Discord's refusal never stops the queue"
+)
+#: Pro's team 3001's role, and its Reserve team's.
+TEAM_ROLE, RESERVE_ROLE = 5502, 5503
+
+
+@pytest.mark.xfail(strict=True, reason=REFUSED_ROLES_UNBUILT)
+async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_queue(tmp_path):
+    """Attendance is on, with its real hook and the real placement service. Pro sets an
+    autoreserve threshold of one point and has a Reserve team with a free seat; Lewis, placed in
+    Team 3001 and raced round 4 without an RSVP, is on the threshold. Team 3001 and the Reserve
+    team each have a role, and Discord refuses every role change for Lewis (Missing
+    Permissions). Alex approves round 3's reports: Lewis is moved to the Reserve team, and the
+    queue stops at the job changing his roles, its notice naming it, rather than the approval
+    going on as though his roles had been changed."""
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.core.services.placement_service import PlacementService
+
+    league = await review_league(tmp_path, attendance=True)
+    await _no_reserve_team(league)
+    async with get_connection(league.db_path) as db:
+        reserve = await db.execute(
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, 'Reserve', 'Reserve', 2, 1)",
+            (DIVISION_ID,),
+        )
+        await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 1)",
+            (reserve.lastrowid,),
+        )
+        await db.executemany(
+            "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+            [("Team 3001", TEAM_ROLE), ("Reserve", RESERVE_ROLE)],
+        )
+        await db.execute(
+            "UPDATE driver_season_assignments SET committed = 1 WHERE driver_profile_id = ?",
+            (LEWIS_PROFILE,),
+        )
+        await db.commit()
+    roles: dict[int, Any] = {}
+    for role_id in (555, TEAM_ROLE, RESERVE_ROLE):
+        role = MagicMock(spec=discord.Role)
+        role.id = role_id
+        roles[role_id] = role
+    league.guild.get_role = MagicMock(side_effect=roles.get)
+    refused = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    lewis = MagicMock(spec=discord.Member)
+    lewis.id = LEWIS
+    lewis.display_name = "Lewis"
+    lewis.mention = f"<@{LEWIS}>"
+    lewis.guild = league.guild
+    lewis.roles = [roles[555], roles[TEAM_ROLE]]
+    lewis.add_roles = AsyncMock(side_effect=refused)
+    lewis.remove_roles = AsyncMock(side_effect=refused)
+    member_of = league.guild.get_member.side_effect
+    league.guild.get_member = MagicMock(
+        side_effect=lambda uid: lewis if uid == LEWIS else member_of(uid)
+    )
+    league.guild.fetch_member = AsyncMock(
+        side_effect=lambda uid: lewis if uid == LEWIS else member_of(uid)
+    )
+    league.bot.user = MagicMock(id=9000)
+    league.bot.user.__str__.return_value = "LeagueBot"
+    placement = PlacementService(league.db_path, league.bot)
+    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
+    attach_queue(league.bot, league.db_path, now=NOW)
+
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) == "sanction_roles"
+    async with get_connection(league.db_path) as db:
+        row = await (await db.execute(
+            "SELECT ti.is_reserve FROM driver_season_assignments dsa "
+            "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+            "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+            "WHERE dsa.driver_profile_id = ?", (LEWIS_PROFILE,),
+        )).fetchone()
+    assert row["is_reserve"] == 1, "Lewis's autoreserve was not saved"
+    assert f"changing <@{LEWIS}>'s roles for their autoreserve in **Pro**" in _sheet_stop(league)

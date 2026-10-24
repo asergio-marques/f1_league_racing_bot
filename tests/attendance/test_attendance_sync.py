@@ -180,6 +180,72 @@ async def test_a_second_sync_applies_nothing_twice(tmp_path):
     assert len(asked) == 1, "the second sync asks for no announcement"
 
 
+async def test_sync_still_applies_a_sanction_whose_role_change_discord_refuses(tmp_path, caplog):
+    """`/attendance sync` keeps today's role behaviour (#439 slice 8, Part C): a driver over the
+    autosack threshold, placed in Alpha, is sacked, Discord refuses to take any of their roles (Missing
+    Permissions), the refusal is logged on the host, and the sack is applied all the same."""
+    import logging
+
+    import discord
+
+    from leaguebot.core.services.placement_service import PlacementService
+
+    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
+    await _add_rounds(db_path, {})
+    async with get_connection(db_path) as db:
+        # A real driver, not a test one, placed in Alpha: a sack takes their roles back.
+        await db.execute(
+            "UPDATE driver_profiles SET current_state = 'ASSIGNED', is_test_driver = 0 "
+            "WHERE id = ?",
+            (FULL_TIME_PROFILE,),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+            "team_seat_id, committed) VALUES (?, ?, ?, 20, 1)",
+            (FULL_TIME_PROFILE, SEASON_ID, DIVISION_ID),
+        )
+        await db.commit()
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
+    bot = _make_bot(db_path)
+    placement = PlacementService(db_path)
+    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    bot.placement_service = placement
+    guild = MagicMock()
+    guild.get_role = MagicMock(side_effect=lambda role_id: MagicMock(id=role_id))
+    member = MagicMock()
+    member.guild = guild
+    member.roles = MagicMock()
+    member.roles.__contains__ = MagicMock(return_value=True)  # holds every role asked of it
+    member.remove_roles = AsyncMock(
+        side_effect=discord.Forbidden(MagicMock(status=403), "Missing Permissions")
+    )
+    guild.get_member = MagicMock(return_value=member)
+    guild.fetch_member = AsyncMock(return_value=member)
+
+    with patch.object(
+        attendance_service,
+        "record_attendance_from_results_full_recompute",
+        new=AsyncMock(return_value=None),
+    ), patch.object(
+        attendance_service, "distribute_attendance_points", new=AsyncMock(return_value=None)
+    ), patch.object(
+        attendance_service, "post_attendance_sheet", new=AsyncMock(return_value=None)
+    ), _asking_for_sheets(), caplog.at_level(logging.WARNING):
+        outcome = await sync_attendance(
+            bot, guild, db_path, DIVISION_ID, ROUND_ID, SEASON_ID, queue=bot.change_queue,
+        )
+
+    assert [sanction for _, sanction in outcome.applied] == ["autosack"]
+    member.remove_roles.assert_awaited()
+    assert "failed to remove role" in caplog.text
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT COUNT(*) AS n FROM team_seats WHERE driver_profile_id = ?",
+            (FULL_TIME_PROFILE,),
+        )).fetchone()
+    assert row["n"] == 0, "the sack was not saved"
+
+
 async def test_sync_is_one_transaction(tmp_path, monkeypatch):
     """#187's rule holds for the sync as for an amendment: a failure part-way through the
     rounds writes nothing, rather than leaving the division scored to two rules."""
