@@ -201,6 +201,7 @@ DIVISION_COMMAND = "`/division cancel`"
 _DIVISION_REARM_COMMAND = "/division cancel"
 DIVISION_NOT_ONGOING = f"❌ {DIVISION_COMMAND} is available only while the season is ongoing."
 SEASON_COMMAND = "`/season cancel`"
+_SEASON_REARM_COMMAND = "/season cancel"
 SEASON_NO_SEASON = (
     "❌ No season is being raced, so there is none to cancel. A season whose placements are yet "
     "to be confirmed is abandoned with `/season abort`."
@@ -1398,8 +1399,10 @@ def season_cancel_change(
             for division in await seasons.get_divisions(int(ctx.payload["season_id"]))
             for each in await seasons.get_division_rounds(division.id)
         ]
-        scheduler.cancel_rounds(round_ids, season_end=True)
-        return StepResult(result={"unarmed": True})
+        removed = scheduler.cancel_rounds(round_ids, season_end=True)
+        return StepResult(result={
+            "unarmed": True, "removed": {str(round_id): jobs for round_id, jobs in removed.items()},
+        })
 
     async def unarmed(ctx: StepContext) -> bool:
         """The save is due only where the timed work was removed, not where that job was
@@ -1425,9 +1428,9 @@ def season_cancel_change(
         )
         season = await cursor.fetchone()
         if season is None or season["status"] != "ACTIVE":
-            return StepResult(result={"refused": SEASON_NO_SEASON})
+            return await _refused_rearming(db, ctx, SEASON_NO_SEASON, _SEASON_REARM_COMMAND)
         if SeasonStage(season["stage"]) not in ONGOING_STAGES:
-            return StepResult(result={"refused": SEASON_NOT_ONGOING})
+            return await _refused_rearming(db, ctx, SEASON_NOT_ONGOING, _SEASON_REARM_COMMAND)
 
         cursor = await db.execute(
             "SELECT d.name AS division_name, r.id AS round_id, r.round_number FROM rounds r "
@@ -1443,7 +1446,7 @@ def season_cancel_change(
         # accepted since. Nothing is written then, and the timed work `unarm` took is armed again.
         refusal = _first_accepted(standing, await submissions.open_submissions_on(db, list(standing)))
         if refusal is not None:
-            return StepResult(result={"refused": refusal})
+            return await _refused_rearming(db, ctx, refusal, _SEASON_REARM_COMMAND)
 
         # The empty open submissions are closed first, then the placements not yet confirmed
         # discarded so that they earn no history, then the rounds raced and awaiting verdicts made
@@ -1596,7 +1599,10 @@ def season_cancel_change(
             return StepResult(
                 result=result,
                 lines=(
-                    refusal_line(ctx.named, SEASON_COMMAND, reply_reason(refused)),
+                    refusal_line(
+                        ctx.named, SEASON_COMMAND, reply_reason(refused),
+                        detail=_rearming_detail(ctx),
+                    ),
                     *untold_log(ctx.named, "/season cancel", untold),
                 ),
             )
@@ -1626,7 +1632,7 @@ def season_cancel_change(
             return SEASON_UNARM_DISCARDED.format(number=number)
         refused = _refused(ctx)
         if refused:
-            return refused
+            return refused + _rearming_sentence(ctx)
         if not _ended(ctx):
             return SEASON_END_DISCARDED.format(number=number)
         return (

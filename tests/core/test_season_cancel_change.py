@@ -784,7 +784,6 @@ async def test_the_history_the_driver_pass_test_mode_and_the_season_s_cancellati
 
 
 REARM_KIND = "season.round.rearm"
-REARM_UNBUILT = "#439: a cancellation refused at its save does not arm its rounds again yet"
 REARMING_ROUNDS = (
     "The timed work of its rounds still to be run, removed for the cancellation, is being armed "
     "again as it stood: round 3 in **Pro**, round 4 in **Pro**, round 1 in **Am**, round 2 in "
@@ -792,7 +791,6 @@ REARMING_ROUNDS = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=REARM_UNBUILT)
 async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_writing_nothing(
     tmp_path,
 ):
