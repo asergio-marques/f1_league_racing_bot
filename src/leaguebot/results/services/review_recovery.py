@@ -19,6 +19,11 @@ no change in hand is put back by the stage it was left at:
 - its appeals stage: ``results.appeals.open`` with the old prompt's id;
 - a FINAL round with its channel still open, which only a run from before this change can leave:
   ``results.review.close_stale``, in place of a dead review posted again at every restart;
+- a round that ended cancelled, every session being entered as not held, with its channel still
+  open (the bot stopped, or the closing was discarded, before it was closed): only
+  ``results.submission.close_channel``, as a restart, deleting the channel. Its sessions stand and
+  its notes were posted, so it is never taken for a first paste cut short, whose results recovery
+  deletes, nor for a review, whatever the flag a resubmission left up;
 - a round whose last paste finished but whose review never opened, because its opening was
   discarded: ``results.review.open`` again. **The queue's own record is the durable mark that the
   last paste finished** (:func:`~leaguebot.core.services.change_queue.ever_asked`): the paste asks
@@ -130,11 +135,16 @@ async def recover_review(
 
 
 async def _stage(db_path: str, row: aiosqlite.Row) -> str | None:
-    """The stage a round with no change in hand was left at: ``"final"``, ``"appeals"``,
-    ``"report"`` or ``"opening"``, or ``None`` where it is a first paste cut short."""
+    """The stage a round with no change in hand was left at: ``"final"``, ``"cancelled"``,
+    ``"appeals"``, ``"report"`` or ``"opening"``, or ``None`` where it is a first paste cut short.
+
+    A round that ended cancelled is told before its review flag is read: a resubmission leaves the
+    flag at 1, and the round is no review but one whose channel is left to close."""
     status = row["status"] or ""
     if status == RoundStatus.FINAL.value:
         return "final"
+    if status == RoundStatus.CANCELLED.value:
+        return "cancelled"
     if row["in_penalty_review"]:
         return "appeals" if status == RoundStatus.AWAITING_APPEAL_VERDICTS.value else "report"
     round_id = int(row["round_id"])
@@ -178,6 +188,17 @@ async def _put_back(
             "Recovery: the league's server is not in the cache, cannot restore the review of "
             "round %s", round_id,
         )
+        return
+    if stage == "cancelled":
+        # Its sessions stand and its notes were posted: only the channel is left, whether it
+        # stands or has been deleted since (the closing then completes at once).
+        await queue.ask(
+            submission_changes.CLOSE_KIND,
+            {"round_id": round_id, "channel_id": channel_id, "round_number": int(row["round_number"]),
+             "restart": True},
+            origin=_BOT, what=f"closing the submission channel of {round_label}",
+        )
+        log.info("Recovery: asked the queue to close the channel of round %s, ended cancelled", round_id)
         return
     channel = as_text_channel(guild.get_channel(channel_id))
     if channel is None:

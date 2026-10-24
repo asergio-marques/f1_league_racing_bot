@@ -701,7 +701,10 @@ def submission_close_change() -> ChangeType:
 
     The payload is ``round_id`` and ``channel_id``. It says "⏭️" in the channel and deletes it;
     the deletion's record closes the round's row, so a channel that could not be deleted keeps it
-    for the retry. The conversation stands while the row names the channel.
+    for the retry. The conversation stands while the row names the channel. A restart that finds a
+    round ended cancelled with its channel still open asks it with ``restart``: the line was
+    said when the round ended, so it only deletes the channel, which a channel already gone
+    completes.
     """
 
     def lane(payload: dict[str, Any]) -> str:
@@ -718,15 +721,18 @@ def submission_close_change() -> ChangeType:
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         channel_id = int(payload["channel_id"])
+        delete = PlannedStep(DELETE_CHANNEL, {
+            "channel_id": channel_id, "round_id": int(payload["round_id"]),
+            "what": "submission channel", "reason": "Results submission complete",
+        })
+        if payload.get("restart"):
+            return (delete,)
         return (
             PlannedStep(POST, {
                 "channel_id": channel_id,
                 "text": "⏭️ All sessions for this round were cancelled — no penalty review required.",
             }),
-            PlannedStep(DELETE_CHANNEL, {
-                "channel_id": channel_id, "round_id": int(payload["round_id"]),
-                "what": "submission channel", "reason": "Results submission complete",
-            }),
+            delete,
         )
 
     async def record_closed(

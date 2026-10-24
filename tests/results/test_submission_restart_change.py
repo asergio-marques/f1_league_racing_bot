@@ -436,12 +436,6 @@ async def test_a_discarded_deletion_at_a_restart_names_the_channel_to_delete_by_
     assert await _submission(league) == [{"channel_id": made, "closed": 0}]
 
 
-ENDED_CANCELLED_UNRECOVERED = (
-    "#439: a restart takes a round that ended cancelled for a first paste cut short, or for a "
-    "review, and does not close its channel"
-)
-
-
 async def _ended_cancelled(league: SeasonLeague, *, in_review: bool = False) -> None:
     """Round 3's every session was entered as not held and the round ended cancelled, but the
     bot stopped before its submission channel 690 was closed: the round is CANCELLED, its one
@@ -462,7 +456,6 @@ async def _kinds_asked(league: SeasonLeague) -> list[str]:
     return [row["kind"] for row in await change_rows(league.db_path)]
 
 
-@pytest.mark.xfail(strict=True, reason=ENDED_CANCELLED_UNRECOVERED)
 async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_and_keeps_its_sessions(
     tmp_path,
 ):
@@ -491,7 +484,6 @@ async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_and_
     assert row["status"] == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=ENDED_CANCELLED_UNRECOVERED)
 async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_even_when_its_review_flag_stands(
     tmp_path,
 ):
@@ -514,7 +506,6 @@ async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_even
     assert await _sessions(league) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=ENDED_CANCELLED_UNRECOVERED)
 async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_whose_channel_is_gone(
     tmp_path,
 ):
