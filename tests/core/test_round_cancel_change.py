@@ -1590,3 +1590,54 @@ async def test_a_cancellation_s_save_finds_a_paste_saved_after_its_check(tmp_pat
     assert not _channel_deleted(league)
     assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
     assert ("results", [R3]) in league.armed
+
+
+# ── A round whose every session was entered cancelled (#439, slice 8, Part E) ─────────────────
+
+#: Why `/round cancel` cannot yet meet a round that ended so.
+NOT_HELD_UNBUILT = (
+    "#439: a round whose every session is entered as cancelled is left awaiting its results, "
+    "and rounds has no not_held column"
+)
+
+
+async def _every_session_entered_cancelled(league: Any) -> None:
+    """Round 3's open submission has accepted its qualifying and its race, each entered as not
+    held, and the round has not yet ended."""
+    await _submission_open(league)
+    for session in ("FEATURE_QUALIFYING", "FEATURE_RACE"):
+        await accept_session(league, R3, session=session, status="CANCELLED")
+
+
+async def _ended_not_held(league: Any) -> None:
+    """Round 3 has ended cancelled because every session of it was entered as not held."""
+    await _every_session_entered_cancelled(league)
+    await league.write("UPDATE rounds SET status = 'CANCELLED', not_held = 1 WHERE id = ?", R3)
+
+
+@pytest.mark.parametrize(("setup", "text"), [
+    pytest.param(_every_session_entered_cancelled, ACCEPTED,
+                 id="before the change is taken up"),
+    pytest.param(_ended_not_held, "❌ Round 3 in **Pro** is already cancelled.",
+                 id="after the change is taken up",
+                 marks=pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)),
+])
+async def test_round_cancel_refuses_a_round_whose_every_session_was_entered_cancelled(
+    tmp_path, setup, text,
+):
+    """Every session of round 3 in Pro was entered as not held. Before the round has ended,
+    `/round cancel` for it is refused as having accepted a session, naming its submission
+    channel; once it has ended cancelled, as already cancelled. Either way at once, with one ⛔
+    line, no cancellation asked, no timed work removed and its status unchanged (core :472)."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await setup(league)
+    before = await _status(league)
+
+    interaction = await _asked(league)
+
+    assert reply(interaction) == text
+    assert len(_refusal_lines(league)) == 1
+    assert await cancellation_changes(league) == []
+    await run_queue(league.bot)
+    assert R3 not in league.unarmed
+    assert await _status(league) == before
