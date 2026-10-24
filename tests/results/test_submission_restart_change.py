@@ -438,3 +438,104 @@ async def test_a_discarded_deletion_at_a_restart_names_the_channel_to_delete_by_
     assert not _deleted(league)
     [made] = league.created
     assert await _submission(league) == [{"channel_id": made, "closed": 0}]
+
+
+ENDED_CANCELLED_UNRECOVERED = (
+    "#439: a restart takes a round that ended cancelled for a first paste cut short, or for a "
+    "review, and does not close its channel"
+)
+
+
+async def _ended_cancelled(league: SeasonLeague, *, in_review: bool = False) -> None:
+    """Round 3's every session was entered as not held and the round ended cancelled, but the
+    bot stopped before its submission channel 690 was closed: the round is CANCELLED, its one
+    session cancelled, its submission row still open, and, where *in_review*, the row still
+    flagged in penalty review, as a resubmission leaves it."""
+    await league.write(
+        "UPDATE session_results SET status = 'CANCELLED' WHERE round_id = ?", ROUND_3
+    )
+    await league.write("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", ROUND_3)
+    if in_review:
+        await league.write(
+            "UPDATE round_submission_channels SET in_penalty_review = 1 WHERE round_id = ?",
+            ROUND_3,
+        )
+
+
+async def _kinds_asked(league: SeasonLeague) -> list[str]:
+    return [row["kind"] for row in await change_rows(league.db_path)]
+
+
+@pytest.mark.xfail(strict=True, reason=ENDED_CANCELLED_UNRECOVERED)
+async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_and_keeps_its_sessions(
+    tmp_path,
+):
+    """Round 3 ended cancelled, every session entered as not held, and the bot stopped before its
+    submission channel 690 was closed. At the restart the recovery asks the queue, as the bot,
+    only to close round 3's submission channel: no restart that would clear the cancelled
+    sessions and open the submission afresh. The queue then deletes channel 690, posting no
+    closing line in it, and closes the round's submission row; the cancelled session is kept, no
+    new channel is created, and the round stays cancelled."""
+    from leaguebot.results.services.submission_changes import CLOSE_KIND
+
+    league = await _league(tmp_path)
+    await _ended_cancelled(league)
+    before = list(league.texts(SUBMISSION_CHANNEL))
+
+    await _restart(league)
+
+    assert await _kinds_asked(league) == [CLOSE_KIND]
+    assert await stopped_job(league.db_path) is None
+    assert _deleted(league)
+    assert league.texts(SUBMISSION_CHANNEL) == before
+    assert await _submission(league) == [{"channel_id": SUBMISSION_CHANNEL, "closed": 1}]
+    assert await _sessions(league) == 1
+    assert league.created == []
+    [row] = await league.rows("SELECT status FROM rounds WHERE id = ?", ROUND_3)
+    assert row["status"] == "CANCELLED"
+
+
+@pytest.mark.xfail(strict=True, reason=ENDED_CANCELLED_UNRECOVERED)
+async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_even_when_its_review_flag_stands(
+    tmp_path,
+):
+    """Round 3 ended cancelled after a resubmission that entered every session as not held, so its
+    submission row still carries the penalty review's flag, and the bot stopped before channel
+    690 was closed. At the restart the recovery asks only the closing of the channel: no penalty
+    review is put back for a round that has ended. The queue deletes channel 690 and closes the
+    row; the cancelled session is kept."""
+    from leaguebot.results.services.submission_changes import CLOSE_KIND
+
+    league = await _league(tmp_path)
+    await _ended_cancelled(league, in_review=True)
+
+    await _restart(league)
+
+    assert await _kinds_asked(league) == [CLOSE_KIND]
+    assert await stopped_job(league.db_path) is None
+    assert _deleted(league)
+    assert await _submission(league) == [{"channel_id": SUBMISSION_CHANNEL, "closed": 1}]
+    assert await _sessions(league) == 1
+
+
+@pytest.mark.xfail(strict=True, reason=ENDED_CANCELLED_UNRECOVERED)
+async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_whose_channel_is_gone(
+    tmp_path,
+):
+    """Round 3 ended cancelled and its submission channel 690 was then deleted by hand while the
+    bot was stopped, its row still open. At the restart the recovery asks only the closing of the
+    channel; the queue finds the channel gone, completes without stopping, and closes the row. The
+    cancelled session is kept and no new channel is created."""
+    from leaguebot.results.services.submission_changes import CLOSE_KIND
+
+    league = await _league(tmp_path)
+    await _ended_cancelled(league)
+    del league.channels[SUBMISSION_CHANNEL]
+
+    await _restart(league)
+
+    assert await _kinds_asked(league) == [CLOSE_KIND]
+    assert await stopped_job(league.db_path) is None
+    assert await _submission(league) == [{"channel_id": SUBMISSION_CHANNEL, "closed": 1}]
+    assert await _sessions(league) == 1
+    assert league.created == []
