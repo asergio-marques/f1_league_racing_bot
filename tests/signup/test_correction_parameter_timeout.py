@@ -512,9 +512,6 @@ async def test_the_lapse_itself_cannot_be_discarded(tmp_path):
 
 # ── A lapse whose signup channel is gone (#439, slice 8, F1) ───────────────
 
-#: The lapse does not yet end a signup whose channel is gone, nor stop where the server is not
-#: in the cache (#439, slice 8, F1).
-LAPSE_CHANNEL_GONE_UNBUILT = "#439: a lapse whose signup channel is gone still passes it over"
 #: The line the ending writes in the log channel, naming Kimi and his gone channel.
 CHANNEL_GONE_LINE = (
     f"Kimi (`<@{SIGNING_UP}>`) | Signup | Ended\n  channel: <#{KIMI_CHANNEL}>\n  Their signup "
@@ -556,7 +553,6 @@ async def test_a_lapse_whose_channel_is_gone_ends_the_signup(tmp_path):
     assert log.count(CHANNEL_GONE_LINE) == 1, log
 
 
-@pytest.mark.xfail(strict=True, reason=LAPSE_CHANNEL_GONE_UNBUILT)
 async def test_a_lapse_whose_server_is_out_of_cache_stops_rather_than_passing_the_driver_over(
     tmp_path,
 ):

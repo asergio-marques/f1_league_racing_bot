@@ -885,8 +885,6 @@ async def test_ending_a_signup_cannot_be_discarded(tmp_path):
 # A signup whose channel is gone when its review panel is due (#439, slice 8, F1)
 # ---------------------------------------------------------------------------
 
-#: The ending of a signup whose channel is gone is not yet built (#439, slice 8, F1).
-CHANNEL_GONE_UNBUILT = "#439: a signup whose channel is gone is not yet ended"
 #: Kimi as the log channel shows him.
 KIMI_NAMED = f"Kimi (`<@{SIGNING_UP}>`)"
 #: Kimi as the panel's job names him, carried in the ending's payload; the log channel wraps the
@@ -973,7 +971,6 @@ async def test_a_driver_moved_on_before_their_gone_channel_is_found_is_not_ended
     assert "| Signup | Ended" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=CHANNEL_GONE_UNBUILT)
 async def test_ending_a_signup_whose_channel_is_gone_cannot_be_discarded(tmp_path):
     """Kimi awaits approval, his signup channel 6405 deleted, and the ending of his signup for
     the gone channel is asked with his name already found, so its one job is `end`. Its save
