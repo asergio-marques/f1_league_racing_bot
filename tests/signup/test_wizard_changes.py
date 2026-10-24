@@ -1040,6 +1040,49 @@ async def test_a_driver_whose_signup_ended_for_a_gone_channel_may_sign_up_again(
     assert (await _wizard(league))["signup_channel_id"] == NEW_CHANNEL
 
 
+#: A signup channel deleted while its signup is under way is not yet seen (#439, slice 8, G2).
+CHANNEL_DELETED_UNBUILT = "#439: a signup channel deleted by hand does not yet end its signup"
+
+
+@pytest.mark.xfail(strict=True, reason=CHANNEL_DELETED_UNBUILT)
+@pytest.mark.parametrize("state", ["NOT_SIGNED_UP", "UNASSIGNED"],
+                         ids=["not signed up", "unassigned"])
+async def test_a_channel_gone_ending_is_not_due_once_the_driver_is_no_longer_signing_up(
+    tmp_path, state,
+):
+    """Kimi's signup has ended: he is Not Signed Up (it expired) or Unassigned (he was approved),
+    his wizard ended but still naming his signup channel 6405, which is then deleted. The ending
+    of his signup for a deleted channel is asked, as the bot sees the channel go. It is not due:
+    no change is taken up, he stays where he is, his wizard is untouched and nothing is written
+    to the log channel."""
+    from leaguebot.signup.services.wizard_changes import DELETED, ask_channel_gone
+
+    league = await _league(tmp_path)
+    await signing_up(league, SIGNING_UP, state="PENDING_ADMIN_APPROVAL")
+    await league.write(
+        "UPDATE driver_profiles SET current_state = ? WHERE discord_user_id = ?",
+        state, str(SIGNING_UP),
+    )
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED' WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    league.remove_channel(KIMI_CHANNEL)
+    wizard = await _wizard(league)
+
+    asked = await ask_channel_gone(
+        league.bot.change_queue, user_id=str(SIGNING_UP), channel_id=KIMI_CHANNEL,
+        named=KIMI_NAMED, found=DELETED,
+    )
+    await run_queue(league.bot)
+
+    assert asked is None
+    assert await _changes_of(league, END_KIND) == []
+    assert await _driver_state(league) == state
+    assert await _wizard(league) == wizard
+    assert "| Signup | Ended" not in league.log()
+
+
 async def test_an_answer_typed_before_the_24_hours_counts_though_it_runs_after(tmp_path):
     """Kimi was last active 23 hours and 59 minutes ago. He types his nationality, which waits
     its turn on his lane; two minutes later, his 24 hours run out and the timer asks for his
