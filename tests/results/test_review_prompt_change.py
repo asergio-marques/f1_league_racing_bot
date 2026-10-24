@@ -29,7 +29,7 @@ from tests.results.test_review_open_change import (
     _open,
     _prompts,
     _recover,
-    _refuse_the_close,
+    _refuse_the_job,
 )
 from tests.support.change_queue import (
     acknowledgement,
@@ -178,11 +178,11 @@ async def test_the_prompt_s_closing_job_cannot_be_discarded(tmp_path, stage, rev
         league = await _league(tmp_path, name="appeals_close_undiscardable", in_review=True,
                                results_posted=True, prompt=PROMPT,
                                round_status=RoundStatus.AWAITING_APPEAL_VERDICTS.value)
-        await _refuse_the_close(league.db_path, PROMPT_KIND, True)
+        await _refuse_the_job(league.db_path, PROMPT_KIND, True)
         await _put_up_the_appeals_prompt(league)
     else:
         league = await _league(tmp_path, name="prompt_close_undiscardable")
-        await _refuse_the_close(league.db_path, PROMPT_KIND, True)
+        await _refuse_the_job(league.db_path, PROMPT_KIND, True)
         await _open(league)
     stopped = await stopped_job(league.db_path, ROUND_LANE)
     assert stopped is not None and stopped["name"] == "close"
@@ -196,7 +196,7 @@ async def test_the_prompt_s_closing_job_cannot_be_discarded(tmp_path, stage, rev
     )
     assert (await stopped_job(league.db_path, ROUND_LANE))["id"] == stopped["id"]
 
-    await _refuse_the_close(league.db_path, PROMPT_KIND, False)
+    await _refuse_the_job(league.db_path, PROMPT_KIND, False)
     await retry_job(league.bot, lane=ROUND_LANE)
 
     assert await stopped_job(league.db_path) is None

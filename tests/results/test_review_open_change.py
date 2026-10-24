@@ -251,21 +251,23 @@ async def _fail_the_open_save(db_path: str, failing: bool) -> None:
         await db.commit()
 
 
-async def _refuse_the_close(db_path: str, kind: str, refusing: bool) -> None:
-    """While *refusing*, a fault of the database refuses to save the `close` job of any change of
+async def _refuse_the_job(
+    db_path: str, kind: str, refusing: bool, *, job: str = "close",
+) -> None:
+    """While *refusing*, a fault of the database refuses to save the job *job* of any change of
     *kind* as done, so that save fails and is rolled back and the queue stops at it. A league
     admin's Discard of the job is still saved."""
     async with get_connection(db_path) as db:
         if refusing:
             await db.execute(
-                "CREATE TRIGGER refuse_close BEFORE UPDATE OF done_at ON queued_change_steps "
-                "WHEN NEW.name = 'close' AND NEW.done_at IS NOT NULL "
+                "CREATE TRIGGER refuse_job BEFORE UPDATE OF done_at ON queued_change_steps "
+                f"WHEN NEW.name = '{job}' AND NEW.done_at IS NOT NULL "
                 "AND COALESCE(NEW.result, '') NOT LIKE '%\"discarded\"%' AND (SELECT kind FROM "
                 f"queued_changes WHERE id = NEW.change_id) = '{kind}' "
                 "BEGIN SELECT RAISE(ABORT, 'disk fault'); END"
             )
         else:
-            await db.execute("DROP TRIGGER refuse_close")
+            await db.execute("DROP TRIGGER refuse_job")
         await db.commit()
 
 
@@ -588,7 +590,7 @@ async def test_the_opening_s_closing_job_cannot_be_discarded(tmp_path):
     queue stays stopped there and no prompt is posted. Once the fault is lifted, a Retry hands the
     prompt over and it is posted in the submission channel, its id saved."""
     league = await _league(tmp_path, name="open_close_undiscardable")
-    await _refuse_the_close(league.db_path, KIND, True)
+    await _refuse_the_job(league.db_path, KIND, True)
     await _open(league)
     stopped = await stopped_job(league.db_path, "league")
     assert stopped is not None and stopped["name"] == "close"
@@ -599,7 +601,7 @@ async def test_the_opening_s_closing_job_cannot_be_discarded(tmp_path):
     assert (await stopped_job(league.db_path, "league"))["id"] == stopped["id"]
     assert _prompts(league) == []
 
-    await _refuse_the_close(league.db_path, KIND, False)
+    await _refuse_the_job(league.db_path, KIND, False)
     await retry_job(league.bot)
 
     assert await stopped_job(league.db_path) is None
@@ -1322,6 +1324,88 @@ async def test_recovery_reposts_the_appeals_prompt_replacing_the_old_one(tmp_pat
     assert any(call.kwargs.get("message_id") == prompts[0]
                for call in league.bot.add_view.call_args_list)
     assert await changes_of(league.db_path, KIND) == []
+
+
+APPEALS_OPEN = "results.appeals.open"
+APPEALS_REOPENING_UNDISCARDABLE = "#439: the appeals review's reopening may still be discarded"
+
+
+@pytest.mark.parametrize("job", [
+    pytest.param("open", id="open",
+                 marks=pytest.mark.xfail(strict=True, reason=APPEALS_REOPENING_UNDISCARDABLE)),
+    pytest.param("close", id="close",
+                 marks=pytest.mark.xfail(strict=True, reason=APPEALS_REOPENING_UNDISCARDABLE)),
+])
+async def test_the_appeals_reopening_s_jobs_cannot_be_discarded(tmp_path, job):
+    """Round 3 was awaiting its appeal verdicts, its appeals prompt 8950 standing, when the bot
+    stopped. At the restart the prompt is asked for again, and the save of the reopening's first
+    job (`open`, which plans the prompt) or of its last (`close`) fails, stopping the queue there.
+    A league admin's Discard on it is refused, saying round 3 in Pro's appeals review would have no
+    prompt and the round would not become final until the bot restarts; the queue stays stopped
+    there. Once the fault is lifted, a Retry finishes the reopening: one appeals prompt stands, its
+    id saved on the round's row, and the old prompt 8950 is gone."""
+    league = await _league(tmp_path, name=f"appeals_reopen_{job}", in_review=True,
+                           results_posted=True, appeals_prompt=OLD_APPEALS_PROMPT,
+                           round_status=RoundStatus.AWAITING_APPEAL_VERDICTS.value)
+    league.channel(SUBMISSION_CHANNEL).seed(OLD_APPEALS_PROMPT, "appeals review")
+    await _refuse_the_job(league.db_path, APPEALS_OPEN, True, job=job)
+
+    await _recover(league)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == job
+
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == (
+        "⛔ This job can't be discarded: without it round 3 in **Pro**'s appeals review would "
+        "have no prompt, and the round would not become final, until the bot restarts. Fix what "
+        "stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path))["id"] == stopped["id"]
+
+    await _refuse_the_job(league.db_path, APPEALS_OPEN, False, job=job)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [prompt] = _prompts(league, "AppealsReviewView")
+    assert (await _channel_row(league.db_path))["appeals_prompt_message_id"] == prompt
+    assert OLD_APPEALS_PROMPT not in league.channel(SUBMISSION_CHANNEL).messages
+    [change] = await changes_of(league.db_path, APPEALS_OPEN)
+    assert change["state"] == "DONE"
+
+
+@pytest.mark.xfail(strict=True, reason="#439: an appeals reopening is still due once its round "
+                                       "has moved on")
+async def test_an_appeals_reopening_whose_round_moved_on_is_dropped_on_retry(tmp_path):
+    """Round 3 was awaiting its appeal verdicts, its appeals prompt 8950 standing, when the bot
+    stopped. At the restart the prompt is asked for again, and the save of the reopening's first
+    job fails, stopping the queue at `open`. While it stands stopped round 3 becomes final and its
+    submission channel's row is closed. Once the fault is lifted, a Retry finds the round no longer
+    awaiting its appeals and drops the job: the reopening finishes, nothing is left stopped, no
+    appeals prompt is posted and the old prompt 8950 is left as it stood."""
+    league = await _league(tmp_path, name="appeals_reopen_moved_on", in_review=True,
+                           results_posted=True, appeals_prompt=OLD_APPEALS_PROMPT,
+                           round_status=RoundStatus.AWAITING_APPEAL_VERDICTS.value)
+    league.channel(SUBMISSION_CHANNEL).seed(OLD_APPEALS_PROMPT, "appeals review")
+    await _refuse_the_job(league.db_path, APPEALS_OPEN, True, job="open")
+    await _recover(league)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "open"
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE rounds SET status = 'FINAL' WHERE id = ?", (ROUND_ID,))
+        await db.execute(
+            "UPDATE round_submission_channels SET closed = 1 WHERE round_id = ?", (ROUND_ID,)
+        )
+        await db.commit()
+    await _refuse_the_job(league.db_path, APPEALS_OPEN, False, job="open")
+
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert _prompts(league, "AppealsReviewView") == []
+    assert OLD_APPEALS_PROMPT in league.channel(SUBMISSION_CHANNEL).messages
+    [change] = await changes_of(league.db_path, APPEALS_OPEN)
+    assert change["state"] == "DONE"
 
 
 async def test_recovery_closes_a_final_round_left_with_an_open_channel(tmp_path):

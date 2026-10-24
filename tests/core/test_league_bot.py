@@ -203,7 +203,8 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     their timed work is removed, and the letting go of a season's setup held in memory once it is
     approved or aborted, the forgetting of a review taken down, and the start of a round's
     results submission and the clearing of one a restart cut short, and the last job of a penalty
-    review's opening and of its prompt's posting. Every other job a league admin may discard."""
+    review's opening and of its prompt's posting, and both jobs of an appeals review's reopening.
+    Every other job a league admin may discard."""
     from leaguebot.__main__ import register_change_types
 
     bot = MagicMock()
@@ -216,6 +217,8 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
         if getattr(step, "undiscardable", None) is not None
     )
     assert marked == [
+        ("results.appeals.open", "close"),
+        ("results.appeals.open", "open"),
         ("results.review.open", "close"),
         ("results.review.prompt", "close"),
         ("results.submission.open", "create_channel"),
