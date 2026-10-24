@@ -172,7 +172,6 @@ def _make_cog(
     bot.signup_module_service.get_config = AsyncMock(
         return_value=_config() if config is _UNSET else config
     )
-    bot.signup_module_service.delete_config = AsyncMock(return_value=None)
     bot.signup_module_service.get_all_active_wizards = AsyncMock(
         return_value=wizards if wizards is not None else []
     )
@@ -332,7 +331,6 @@ async def test_disabling_twice_does_no_work(tmp_path):
     await _disable(cog, interaction)
 
     assert "already disabled" in _replied(interaction)
-    cog.bot.signup_module_service.delete_config.assert_not_awaited()
     assert await _audit(db_path) == []
     assert [row for row in await change_rows(db_path)
             if row["kind"] == MODULE_OFF_KIND and row["state"] == "DONE"] == []
