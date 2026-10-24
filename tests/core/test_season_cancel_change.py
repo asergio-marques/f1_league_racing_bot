@@ -652,6 +652,46 @@ async def test_a_discarded_calendar_repost_says_no_command_posts_it_again_once_t
     assert await _status(league) == "CANCELLED"
 
 
+#: How a discarded calendar repost is named once the season's end was discarded as well: the
+#: season is not cancelled, so `/division calendar-sync` still posts it (W1; core :495).
+CALENDAR_DISCARDED_NOT_ENDED = (
+    "**Pro** — calendar: the calendar could not be posted, and a league admin discarded it; run "
+    "`/division calendar-sync` while the season is still being raced"
+)
+END_DISCARDED_UNNAMED = (
+    "#439: a season cancel whose end is discarded names no discarded announcement in its reply "
+    "or the log channel"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=END_DISCARDED_UNNAMED)
+async def test_a_discarded_calendar_repost_is_named_when_the_season_s_end_is_discarded_too(
+    tmp_path,
+):
+    """Discord refuses Pro's calendar repost during a season cancel, and a league admin discards
+    it; the save recording the season's end then fails, and the admin discards that too. Season 3
+    is not cancelled, and running `/season cancel` again tells no division twice, so the reply
+    and a line in the log channel both name the discarded calendar with `/division
+    calendar-sync`, which still works."""
+    league = await ongoing_league(tmp_path)
+    league.channel(PRO_CH.calendar).send_fails = _forbidden()
+    interaction = await _asked(league)
+
+    with _failing("cancel_season_on"):
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == ("post_calendar", PRO)
+        await discard_job(league.bot)
+        assert await _stopped_at(league) == ("end", None)
+        await discard_job(league.bot)
+
+    assert END_DISCARDED in reply(interaction)
+    assert CALENDAR_DISCARDED_NOT_ENDED in _not_notified(reply(interaction))
+    assert any(
+        f"\n  not notified: {CALENDAR_DISCARDED_NOT_ENDED}" in line for line in _log_lines(league)
+    ), _log_lines(league)
+    assert await _status(league) == "ACTIVE"
+
+
 async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
     tmp_path,
 ):
