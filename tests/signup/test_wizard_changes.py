@@ -885,11 +885,13 @@ async def test_ending_a_signup_cannot_be_discarded(tmp_path):
 # A signup whose channel is gone when its review panel is due (#439, slice 8, F1)
 # ---------------------------------------------------------------------------
 
-#: The ending's log line is not yet the one the test expects (#439, slice 8, F1): see the build's
-#: proposal on KIMI_NAMED.
+#: The ending of a signup whose channel is gone is not yet built (#439, slice 8, F1).
 CHANNEL_GONE_UNBUILT = "#439: a signup whose channel is gone is not yet ended"
-#: Kimi as the panel's job names him, carried in the ending's payload.
+#: Kimi as the log channel shows him.
 KIMI_NAMED = f"Kimi (`<@{SIGNING_UP}>`)"
+#: Kimi as the panel's job names him, carried in the ending's payload; the log channel wraps the
+#: mention when it writes the line.
+KIMI_NAMED_IN_PAYLOAD = f"Kimi (<@{SIGNING_UP}>)"
 #: The line the ending writes in the log channel.
 CHANNEL_GONE_LINE = (
     f"{KIMI_NAMED} | Signup | Ended\n  channel: <#{KIMI_CHANNEL}>\n  Their signup channel was "
@@ -908,7 +910,7 @@ async def _ask_channel_gone(league: SeasonLeague) -> int | None:
     return await league.bot.change_queue.ask(
         END_KIND,
         {"user_id": str(SIGNING_UP), "reason": CHANNEL_GONE, "channel_id": KIMI_CHANNEL,
-         "named": KIMI_NAMED},
+         "named": KIMI_NAMED_IN_PAYLOAD},
         what=f"ending <@{SIGNING_UP}>'s signup, their signup channel being gone",
         origin=ChangeOrigin.BOT,
     )
@@ -1066,7 +1068,7 @@ async def test_a_channel_gone_ending_is_not_due_once_the_driver_is_no_longer_sig
 
     asked = await ask_channel_gone(
         league.bot.change_queue, user_id=str(SIGNING_UP), channel_id=KIMI_CHANNEL,
-        named=KIMI_NAMED, found=DELETED,
+        named=KIMI_NAMED_IN_PAYLOAD, found=DELETED,
     )
     await run_queue(league.bot)
 
