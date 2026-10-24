@@ -416,6 +416,7 @@ def league_double(db_path: str) -> Any:
         setattr(hook, name, AsyncMock(return_value=None))
     hook.sanction_candidates = AsyncMock(return_value=[])
     hook.sync_hint = AsyncMock(return_value="Repair the cause, then run `/attendance sync`.")
+    hook.pardons_to_review = AsyncMock(side_effect=lambda pardons: list(pardons))
     bot.attendance_after_review = hook
     return bot
 

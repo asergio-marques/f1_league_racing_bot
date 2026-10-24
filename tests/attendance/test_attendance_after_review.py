@@ -348,10 +348,15 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
     assert row["attendance_message_id"] == str(OLD_SHEET)
 
 
+PARDONS_HOOK_UNBUILT = "#439: the attendance hook cannot say which pardons an amendment's review may offer"
+
+
+@pytest.mark.xfail(strict=True, reason=PARDONS_HOOK_UNBUILT)
 async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     """Each method checks attendance's switch itself; the writers read it on the connection they
     are handed. With attendance off and Lewis over the autosack threshold: no driver is owed a
-    sanction, nothing is applied, posted or written."""
+    sanction, nothing is applied, posted or written, and an amendment's review is offered no
+    pardon."""
     db_path = await _db(tmp_path, attendance=False)
     await _totals(db_path, AMENDED_ROUND, {LEWIS: 25, MAX: 0})
     await _totals(db_path, LATEST_ROUND, {LEWIS: 25})
@@ -375,9 +380,31 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
         await hook.rewrite_pardons_on(db, AMENDED_ROUND, [], NOW)
         await hook.recalculate_on(db, AMENDED_ROUND, DIVISION_ID)
         assert db.total_changes == before
+    assert await hook.pardons_to_review([object()]) == []
 
     assert placement.method_calls == []
     channel.send.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=PARDONS_HOOK_UNBUILT)
+async def test_an_amendment_s_review_is_offered_every_pardon_while_attendance_is_on(tmp_path):
+    """Attendance is on. Handed the two pardons an amended round carries, the hook gives both
+    back, in their order, for the amendment's review to offer."""
+    db_path = await _db(tmp_path, attendance=True)
+    hook = _hook(_bot(db_path, attendance=True), _placement())
+    pardons = [object(), object()]
+
+    assert await hook.pardons_to_review(pardons) == pardons
+
+
+@pytest.mark.xfail(strict=True, reason=PARDONS_HOOK_UNBUILT)
+async def test_an_amendment_s_review_is_offered_no_pardon_while_attendance_is_off(tmp_path):
+    """Attendance is off. Handed the two pardons an amended round carries, the hook gives none
+    back, since the appeals stage would write no pardon back while the module is off."""
+    db_path = await _db(tmp_path, attendance=False)
+    hook = _hook(_bot(db_path, attendance=False), _placement())
+
+    assert await hook.pardons_to_review([object(), object()]) == []
 
 
 async def test_the_amended_round_s_attendance_is_rebuilt_both_ways_on_the_save_it_is_handed(

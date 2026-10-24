@@ -208,6 +208,10 @@ class AttendanceDouble:
     def _calls(self, name: str) -> list[tuple[Any, ...]]:
         return [call for call in self.calls if call[0] == name]
 
+    async def pardons_to_review(self, pardons: Any) -> list[Any]:
+        """Every pardon while the league's attendance is on, none while it is off."""
+        return list(pardons) if self.league.attendance_on else []
+
     async def record_on(self, db: Any, round_id: int, division_id: int, pardons: Any,
                         now: Any) -> None:
         if not self.league.attendance_on:
