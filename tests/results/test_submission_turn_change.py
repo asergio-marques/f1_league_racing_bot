@@ -254,10 +254,15 @@ async def test_the_last_paste_asks_the_review_and_says_its_job_number(tmp_path, 
     assert f"⏳ The penalty review is being opened (job #{first})" in _said(league)
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: a round whose every session is entered as cancelled is left awaiting its results, "
+    "and rounds has no not_held column"
+))
 async def test_every_session_cancelled_closes_the_channel_as_a_job(tmp_path, monkeypatch):
     """The qualifying was entered as cancelled; the admin types CANCELLED for the race too. When
     the queue runs, the channel says "⏭️", round 3's submission row is closed and its channel
-    deleted by a job, and no penalty review is asked."""
+    deleted by a job, no penalty review is asked, and round 3 ends cancelled, marked as not
+    held."""
     league = await _league(tmp_path, monkeypatch)
     await accept_session(league, ROUND_3, session="FEATURE_QUALIFYING", status="CANCELLED")
 
@@ -273,6 +278,8 @@ async def test_every_session_cancelled_closes_the_channel_as_a_job(tmp_path, mon
     assert any(event[0] == "delete_channel" and event[1] == SUBMISSION_CHANNEL
                for event in league.events)
     assert not [row for row in await change_rows(league.db_path) if row["kind"] == REVIEW_OPEN]
+    [ended] = await league.rows("SELECT status, not_held FROM rounds WHERE id = ?", ROUND_3)
+    assert (ended["status"], ended["not_held"]) == ("CANCELLED", 1)
 
 
 async def test_a_refused_prompt_stops_the_queue_with_the_session_saved(tmp_path, monkeypatch):

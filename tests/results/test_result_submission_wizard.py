@@ -731,12 +731,16 @@ async def test_no_results_channel_line_is_posted_when_cancelled_is_typed(tmp_pat
     assert "was cancelled" not in "\n".join(league.texts(RESULTS_606))
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: a round whose every session is entered as cancelled is left awaiting its results, "
+    "and rounds has no not_held column"
+))
 async def test_every_session_cancelled_closes_the_channel_instead_of_reviewing(
     tmp_path, monkeypatch,
 ):
     """There is nothing for stewards to review. The admin types CANCELLED for both sessions:
-    no review is asked, the channel says no penalty review is required, and round 3's
-    submission is closed."""
+    no review is asked, the channel says no penalty review is required, round 3's
+    submission is closed, and round 3 ends cancelled, marked as not held."""
     league = await _paste_league(tmp_path, monkeypatch)
 
     await _paste(league, "CANCELLED", "CANCELLED")
@@ -747,6 +751,8 @@ async def test_every_session_cancelled_closes_the_channel_instead_of_reviewing(
         "SELECT closed FROM round_submission_channels WHERE round_id = ?", ROUND_3
     )
     assert row["closed"] == 1
+    [ended] = await league.rows("SELECT status, not_held FROM rounds WHERE id = ?", ROUND_3)
+    assert (ended["status"], ended["not_held"]) == ("CANCELLED", 1)
 
 
 # ---------------------------------------------------------------------------
