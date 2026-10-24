@@ -159,6 +159,45 @@ def test_cancel_rounds_takes_the_season_end_job_in_the_same_pass():
     assert service._scheduler.get_jobs.call_count == 1
 
 
+#: The cancels do not yet give the jobs they removed (#439, slice 8, F2).
+REMOVED_IDS_UNBUILT = "#439: cancel_round and cancel_rounds do not yet give the jobs they removed"
+
+
+@pytest.mark.xfail(strict=True, reason=REMOVED_IDS_UNBUILT)
+def test_cancel_round_gives_the_jobs_it_removed():
+    """Round 5 carries its results submission and its clean-up, and round 6 its results
+    submission. Cancelling round 5 gives the two jobs it removed, so that a refused cancellation
+    knows what to arm again, and nothing of round 6."""
+    jobs = [_round_job("results_r5", 5), _round_job("cleanup_r5", 5), _round_job("results_r6", 6)]
+    service = _service(jobs)
+
+    removed = service.cancel_round(5)
+
+    assert sorted(removed) == ["cleanup_r5", "results_r5"]
+
+
+@pytest.mark.xfail(strict=True, reason=REMOVED_IDS_UNBUILT)
+def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_the_season_end():
+    """Rounds 5 and 6 each carry two jobs, round 7 one, and a stale season-end job stands. A
+    season's cancellation of rounds 5 and 6, the season-end job with them, gives the jobs it
+    removed of each round, by round: round 5's two and round 6's two. The season-end job is
+    removed but left out of what it gives, and round 7 is not named."""
+    jobs = [
+        _round_job("results_r5", 5), _round_job("rsvp_cleanup_r5", 5),
+        _round_job("results_r6", 6), _round_job("cleanup_r6", 6),
+        _round_job("results_r7", 7), SimpleNamespace(id="season_end_3", kwargs={}),
+    ]
+    service = _service(jobs)
+
+    removed = service.cancel_rounds([5, 6], season_end=True)
+
+    assert {round_id: sorted(ids) for round_id, ids in removed.items()} == {
+        5: ["results_r5", "rsvp_cleanup_r5"],
+        6: ["cleanup_r6", "results_r6"],
+    }
+    assert "season_end_3" in [call.args[0] for call in service._scheduler.remove_job.call_args_list]
+
+
 async def test_a_job_stands_while_the_store_holds_it(tmp_path, monkeypatch):
     """`has_job` answers whether a job is armed and not yet fired, read of a real job store: the
     signup close timer, armed a day ahead, stands until it is cancelled, and a job never armed
