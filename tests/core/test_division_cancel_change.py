@@ -69,6 +69,8 @@ from tests.support.season_league import (
 )
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
+ONE_PASS_UNBUILT = "#439: the division's unarming still removes each round's timed work on its own"
+
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
 CANCELLED = "✅ Division **Pro** cancelled."
 SUCCESS = "Admin (`<@77>`) | /division cancel | Success"
@@ -529,6 +531,24 @@ async def test_every_round_of_the_division_loses_its_timed_work(tmp_path):
     assert (await _jobs(league))[0]["name"] == "unarm"
 
 
+@pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)
+async def test_the_unarming_removes_the_division_s_rounds_in_one_pass(tmp_path):
+    """Pro's four rounds lose their timed work in one call to the scheduler, handed every round
+    of the division, read before anything is removed; no round is removed on its own and the
+    season-end job is not asked for."""
+    league = await ongoing_league(tmp_path)
+    await _asked(league)
+
+    await _run_through(league, "unarm")
+
+    scheduler = league.bot.scheduler_service
+    scheduler.cancel_round.assert_not_called()
+    assert scheduler.cancel_rounds.call_count == 1
+    call = scheduler.cancel_rounds.call_args
+    assert sorted(call.args[0]) == [round_id(PRO, n) for n in range(1, 5)]
+    assert call.kwargs.get("season_end", False) is False
+
+
 async def test_the_wind_down_follows_as_a_change_of_its_own(tmp_path):
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE seasons SET stage = 'ONGOING_PLACEMENTS' WHERE id = ?", SEASON_ID)
@@ -559,9 +579,10 @@ async def test_a_discarded_save_cancels_nothing(tmp_path):
     assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
 
 
+@pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.scheduler_service.cancel_round = MagicMock(
+    league.bot.scheduler_service.cancel_rounds = MagicMock(
         side_effect=RuntimeError("the job store is locked")
     )
     interaction = await _asked(league)

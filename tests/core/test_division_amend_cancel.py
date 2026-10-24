@@ -637,6 +637,7 @@ async def test_cancelling_asks_the_queue_with_the_division(tmp_path):
     assert call.kwargs["interaction"] is interaction
     assert call.kwargs["what"] == "`/division cancel`"
     cog.bot.scheduler_service.cancel_round.assert_not_called()
+    cog.bot.scheduler_service.cancel_rounds.assert_not_called()
     cog.bot.season_service.cancel_division.assert_not_awaited()
 
 

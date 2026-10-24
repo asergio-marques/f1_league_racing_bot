@@ -358,6 +358,9 @@ def _flush_failing(monkeypatch: Any, failing: dict[str, bool]) -> None:
             monkeypatch.setattr(module, "forecast_deletes", raising)
 
 
+ONE_PASS_UNBUILT = "#439: the season's unarming still removes each round's timed work on its own"
+
+
 def _raising_while(failing: dict[str, bool], reading: Any) -> Any:
     """*reading*, raising as a fault of the database would while *failing* says so."""
 
@@ -370,13 +373,15 @@ def _raising_while(failing: dict[str, bool], reading: Any) -> Any:
 
 
 def _unarming_fails(league: Any) -> None:
-    league.bot.scheduler_service.cancel_round = MagicMock(
+    league.bot.scheduler_service.cancel_rounds = MagicMock(
         side_effect=RuntimeError("the job store is locked")
     )
 
 
 def _unarming_works(league: Any) -> None:
-    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=league.unarmed.append)
+    league.bot.scheduler_service.cancel_rounds = MagicMock(
+        side_effect=lambda round_ids, **_: league.unarmed.extend(round_ids)
+    )
 
 
 async def _formers(league: Any, *user_ids: int) -> None:
@@ -708,6 +713,7 @@ async def test_the_history_the_driver_pass_test_mode_and_the_season_s_cancellati
     assert await _status(league) == "CANCELLED"
 
 
+@pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)
 async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_writing_nothing(
     tmp_path,
 ):
@@ -737,7 +743,8 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_w
 
 @pytest.mark.parametrize("how", [
     pytest.param("waiting", id="waiting behind a stopped job"),
-    pytest.param("stopped", id="stopped at its own job"),
+    pytest.param("stopped", id="stopped at its own job",
+                 marks=pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)),
 ])
 async def test_a_second_cancellation_is_refused_at_once_naming_the_job(tmp_path, how):
     league = await ongoing_league(tmp_path)
@@ -909,18 +916,61 @@ async def test_the_jobs_run_in_order(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
+@pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)
 async def test_every_round_of_every_division_loses_its_timed_work_first(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)
 
     await _run_through(league, "unarm")
     assert sorted(league.unarmed) == sorted(await _rounds(league))
-    league.bot.scheduler_service.cancel_season_end.assert_called_once()
+    scheduler = league.bot.scheduler_service
+    assert scheduler.cancel_rounds.call_count == 1
+    assert scheduler.cancel_rounds.call_args.kwargs.get("season_end") is True
+    scheduler.cancel_round.assert_not_called()
+    scheduler.cancel_season_end.assert_not_called()
     assert await _divisions(league) == {PRO: "ACTIVE", AM: "ACTIVE"}
 
     await run_queue(league.bot)
     assert (await _jobs(league))[0]["name"] == "unarm"
     assert await _status(league) == "CANCELLED"
+
+
+@pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)
+async def test_the_unarming_reads_every_division_s_rounds_before_removing_any(tmp_path):
+    """Pro's and Am's rounds are all read before any timed work is removed, and then removed in
+    one call to the scheduler with the season-end job, so a read that fails part-way removes
+    nothing: no round is removed on its own and the season-end job is not removed apart."""
+    league = await ongoing_league(tmp_path)
+    events: list[tuple[str, Any]] = []
+    seasons = league.bot.season_service
+    reading = seasons.get_division_rounds
+
+    async def _read(division_id: int, *args: Any, **kwargs: Any) -> Any:
+        events.append(("read", division_id))
+        return await reading(division_id, *args, **kwargs)
+
+    seasons.get_division_rounds = _read
+    scheduler = league.bot.scheduler_service
+    scheduler.cancel_round = MagicMock(
+        side_effect=lambda round_id, **_: events.append(("remove", [round_id]))
+    )
+    scheduler.cancel_rounds = MagicMock(
+        side_effect=lambda round_ids, **kwargs: events.append(
+            ("remove", sorted(round_ids), kwargs.get("season_end"))
+        )
+    )
+    await _asked(league)
+    events.clear()
+
+    await _run_through(league, "unarm")
+
+    removals = [event for event in events if event[0] == "remove"]
+    assert removals == [("remove", sorted(await _rounds(league)), True)]
+    assert events.index(removals[0]) > max(
+        i for i, event in enumerate(events) if event[0] == "read"
+    )
+    assert {event[1] for event in events if event[0] == "read"} == {PRO, AM}
+    scheduler.cancel_season_end.assert_not_called()
 
 
 async def test_every_division_still_running_is_told_in_the_season_s_words(tmp_path):
@@ -1135,6 +1185,7 @@ async def test_the_roles_are_taken_back_after_the_notices(tmp_path):
         assert set(league.revoked[user_id]) == roles
 
 
+@pytest.mark.xfail(strict=True, reason=ONE_PASS_UNBUILT)
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     _unarming_fails(league)

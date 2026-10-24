@@ -41,7 +41,8 @@ in memory. Pro's round 1 is FINAL (raced 30 days ago), round 2 AWAITING_REPORT_V
 days ago), rounds 3 and 4 NOT_RUN; Am's four rounds are NOT_RUN. Round 3's check-in call stands
 in Pro's check-in channel (603) as messages 7001 to 7003 (`CALL_MESSAGES`, recorded in
 `rsvp_embed_messages`), Lewis having accepted and Max not answered; Pro's calendar was posted as message 6001 in 601
-(`CALENDAR_MESSAGE`). The scheduler double records each `cancel_round` in `league.unarmed`, and a
+(`CALENDAR_MESSAGE`). The scheduler double records each round `cancel_round` or `cancel_rounds` is
+handed in `league.unarmed`, and a
 message id in `league.undeletable` is one Discord refuses to delete. `open_submission` opens a
 results submission for a round, its channel standing on the server; `cancel_round` and
 `cancel_division` run `/round cancel` and `/division cancel` as admin 77 and give the interaction;
@@ -187,7 +188,8 @@ class SeasonLeague:
         self._role_doubles: dict[int, Any] = {}
         self.arming_fails: BaseException | None = None
         self.rasteriser_on = True
-        #: The round ids `scheduler.cancel_round` was handed (`ongoing_league`), in order.
+        #: The round ids `scheduler.cancel_round` and `scheduler.cancel_rounds` were handed
+        #: (`ongoing_league`), in order.
         self.unarmed: list[int] = []
         #: Message ids Discord refuses to delete (`ongoing_league`'s check-in call).
         self.undeletable: set[int] = set()
@@ -773,6 +775,9 @@ async def ongoing_league(
         league.db_path
     ).get_embed_message
     league.bot.scheduler_service.cancel_round = MagicMock(side_effect=league.unarmed.append)
+    league.bot.scheduler_service.cancel_rounds = MagicMock(
+        side_effect=lambda round_ids, **_: league.unarmed.extend(round_ids)
+    )
     # Set up and approved: the cog holds no setup in memory, as after a restart.
     league.cog._pending = {}
     league.channel(DIVISIONS[PRO][3].calendar).seed(CALENDAR_MESSAGE, "Pro's calendar")
