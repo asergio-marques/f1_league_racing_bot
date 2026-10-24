@@ -501,7 +501,7 @@ async def _submission_standing(ctx: CheckContext) -> Verdict:
 
 
 def submission_all_cancelled_change(
-    *, seasons: "SeasonService", now: Callable[[], datetime],
+    *, seasons: "SeasonService", notices: dict[str, Step], now: Callable[[], datetime],
 ) -> ChangeType:
     """The `results.submission.all_cancelled` change type, for the builder to register, on the
     league lane.
@@ -563,7 +563,7 @@ def submission_all_cancelled_change(
             for session in payload["sessions"]
         )
         target = {
-            "division_id": int(row["division_id"]), "division_name": str(row["division_name"]),
+            "round_id": round_id, "division_id": int(row["division_id"]), "division_name": str(row["division_name"]),
             "season_id": int(row["season_id"]), "season_number": int(row["season_number"]),
             "round_number": int(row["round_number"]), "track_name": row["track_name"],
         }
@@ -572,6 +572,7 @@ def submission_all_cancelled_change(
             then=(
                 *posts,
                 PlannedStep(POST_CALENDAR, {**target, "round_ids": [round_id], "only_if_posted": True}),
+                *(PlannedStep(name, target) for name in notices),
             ),
             follow_ons=(FollowOn(WIND_DOWN, {}, f"Winding the season down after {ctx.what}"),),
         )
@@ -636,6 +637,7 @@ def submission_all_cancelled_change(
             ),
             POST_SESSION_RESULTS: posting_steps()[POST_SESSION_RESULTS],
             **calendar_steps(seasons),
+            **notices,
             ASK_CLOSE: Step(ASK_CLOSE, StepKind.SAVE, ask_close, describe=describe_ask_close),
         },
         check=_submission_standing,

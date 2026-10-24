@@ -1583,12 +1583,6 @@ async def test_a_cancellation_s_save_finds_a_paste_saved_after_its_check(tmp_pat
 
 # ── A round whose every session was entered cancelled (#439, slice 8, Part E) ─────────────────
 
-#: Why `/round cancel` cannot yet meet a round that ended so.
-NOT_HELD_UNBUILT = (
-    "#439: a round whose every session is entered as cancelled is left awaiting its results, "
-    "and rounds has no not_held column"
-)
-
 
 async def _every_session_entered_cancelled(league: Any) -> None:
     """Round 3's open submission has accepted its qualifying and its race, each entered as not
@@ -1608,8 +1602,7 @@ async def _ended_not_held(league: Any) -> None:
     pytest.param(_every_session_entered_cancelled, ACCEPTED,
                  id="before the change is taken up"),
     pytest.param(_ended_not_held, "❌ Round 3 in **Pro** is already cancelled.",
-                 id="after the change is taken up",
-                 marks=pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)),
+                 id="after the change is taken up"),
 ])
 async def test_round_cancel_refuses_a_round_whose_every_session_was_entered_cancelled(
     tmp_path, setup, text,

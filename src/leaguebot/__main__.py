@@ -456,9 +456,11 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.calendar_post_service import calendar_sync_change
     from leaguebot.core.services.cancellation_changes import (
         division_cancel_change,
+        notice_steps,
         round_cancel_change,
         season_cancel_change,
     )
+    from leaguebot.core.services.cancellation_notice_service import SCOPE_ROUND
     from leaguebot.core.services.channel_tell_change import channel_tell_change
     from leaguebot.core.services.clean_change import clean_change
     from leaguebot.core.services.hub_service import hub_refresh_change
@@ -579,7 +581,11 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(submission_restart_change())
     bot.change_queue.register(
         submission_all_cancelled_change(
-            seasons=bot.season_service, now=lambda: bot.change_queue.now(),
+            seasons=bot.season_service,
+            notices=notice_steps(
+                modules=bot.module_service, seasons=bot.season_service, scope=SCOPE_ROUND,
+            ),
+            now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(submission_close_change())

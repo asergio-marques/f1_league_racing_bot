@@ -182,6 +182,8 @@ __all__ = [
     "cancellation_holding_amendment",
     "cancellation_in_hand",
     "division_cancel_change",
+    "notice_steps",
+    "not_notified",
     "round_cancel_change",
     "season_cancel_change",
 ]
@@ -661,26 +663,33 @@ def _named(
     return describe
 
 
-def _follow_steps(
-    *, modules: "ModuleService", seasons: SeasonService, scope: str, cancellation: CancellationHooks
-) -> dict[str, Step]:
-    """The jobs both cancellations carry out after the save: each module's notice, a check-in
-    call's take-down and the calendar's repost. *scope* is the notices' (`SCOPE_ROUND` or
-    `SCOPE_DIVISION`). A job reads its division from its own payload (`division_id`,
-    `division_name`, `season_id`), and a take-down its round from `round_id` there or, for a
-    round's cancellation, from the change's.
-    """
+async def _division_of(seasons: SeasonService, season_id: int, division_id: int) -> Division | None:
+    """The division a job is about, or None where it is no longer there."""
+    return next(
+        (each for each in await seasons.get_divisions(season_id) if each.id == division_id),
+        None,
+    )
 
-    async def division_of(season_id: int, division_id: int) -> Division | None:
-        return next(
-            (each for each in await seasons.get_divisions(season_id) if each.id == division_id),
-            None,
-        )
+
+def notice_steps(
+    *, modules: "ModuleService", seasons: SeasonService, scope: str
+) -> dict[str, Step]:
+    """Each module's "called off" notice as a job: the check-in channel's, the forecast channel's
+    and the results channel's, in the order they are posted. *scope* is the notices' (`SCOPE_ROUND`
+    or `SCOPE_DIVISION`).
+
+    Public so that a round that ends cancelled without a command, every session being entered as
+    not held, posts the notices `/round cancel` posts without the module that ends it importing a
+    kind of another module: the builder hands the steps over and the module plans each, whatever
+    it is called. A job reads its division from its own payload (`division_id`, `division_name`,
+    `season_id`, `round_number`, `track_name`) and drops itself, as it runs, where its module is
+    off.
+    """
 
     async def notify(ctx: StepContext, module: str) -> StepResult:
         guild = await _guild(ctx.bot)
-        division = await division_of(
-            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
+        division = await _division_of(
+            seasons, int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
         )
         if division is None:
             raise LookupError(f"division {ctx.step_payload['division_id']} is no longer there")
@@ -710,9 +719,38 @@ def _follow_steps(
     async def results_on(_ctx: StepContext) -> bool:
         return await modules.is_results_enabled()
 
+    return {
+        NOTIFY_CHECKIN: Step(
+            NOTIFY_CHECKIN, StepKind.ACT, notify_checkin, still_due=attendance_on,
+            describe=_named("posting the check-in notice for **{name}**"),
+        ),
+        NOTIFY_FORECAST: Step(
+            NOTIFY_FORECAST, StepKind.ACT, notify_forecast, still_due=weather_on,
+            describe=_named("posting the forecast note for **{name}**"),
+        ),
+        NOTIFY_RESULTS: Step(
+            NOTIFY_RESULTS, StepKind.ACT, notify_results, still_due=results_on,
+            describe=_named("posting the results note for **{name}**"),
+        ),
+    }
+
+
+def _follow_steps(
+    *, modules: "ModuleService", seasons: SeasonService, scope: str, cancellation: CancellationHooks
+) -> dict[str, Step]:
+    """The jobs both cancellations carry out after the save: each module's notice
+    (`notice_steps`), a check-in call's take-down and the calendar's repost. *scope* is the
+    notices' (`SCOPE_ROUND` or `SCOPE_DIVISION`). A job reads its division from its own payload
+    (`division_id`, `division_name`, `season_id`), and a take-down its round from `round_id` there
+    or, for a round's cancellation, from the change's.
+    """
+
+    async def attendance_on(_ctx: StepContext) -> bool:
+        return await modules.is_attendance_enabled()
+
     async def take_down(ctx: StepContext) -> StepResult:
-        division = await division_of(
-            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
+        division = await _division_of(
+            seasons, int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
         )
         if division is None:
             raise LookupError(f"division {ctx.step_payload['division_id']} is no longer there")
@@ -729,23 +767,15 @@ def _follow_steps(
                 db, _round_id(ctx), int(ctx.step_payload["division_id"])
             )
 
+    notifying = notice_steps(modules=modules, seasons=seasons, scope=scope)
     return {
-        NOTIFY_CHECKIN: Step(
-            NOTIFY_CHECKIN, StepKind.ACT, notify_checkin, still_due=attendance_on,
-            describe=_named("posting the check-in notice for **{name}**"),
-        ),
+        NOTIFY_CHECKIN: notifying[NOTIFY_CHECKIN],
         TAKE_DOWN_CALL: Step(
             TAKE_DOWN_CALL, StepKind.ACT, take_down, still_due=attendance_on, record=forget_call,
             describe=_named("taking down the check-in call of round {number} in **{name}**"),
         ),
-        NOTIFY_FORECAST: Step(
-            NOTIFY_FORECAST, StepKind.ACT, notify_forecast, still_due=weather_on,
-            describe=_named("posting the forecast note for **{name}**"),
-        ),
-        NOTIFY_RESULTS: Step(
-            NOTIFY_RESULTS, StepKind.ACT, notify_results, still_due=results_on,
-            describe=_named("posting the results note for **{name}**"),
-        ),
+        NOTIFY_FORECAST: notifying[NOTIFY_FORECAST],
+        NOTIFY_RESULTS: notifying[NOTIFY_RESULTS],
         **calendar_steps(seasons),
     }
 

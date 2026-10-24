@@ -169,7 +169,6 @@ async def _closed(league: SeasonLeague) -> bool:
     return bool(row["closed"])
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_every_session_cancelled_posts_each_line_recorded_before_the_channel_closes(
     tmp_path,
 ):
@@ -499,10 +498,8 @@ def _sends(league: SeasonLeague, channel_id: int, phrase: str) -> list[Any]:
 
 
 @pytest.mark.parametrize("weather, attendance", [
-    pytest.param(True, True, id="every module on",
-                 marks=pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)),
-    pytest.param(False, False, id="weather and attendance off",
-                 marks=pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)),
+    pytest.param(True, True, id="every module on"),
+    pytest.param(False, False, id="weather and attendance off"),
 ])
 async def test_a_round_ending_cancelled_posts_the_round_cancelled_notices_in_check_in_forecast_and_results(
     tmp_path, weather, attendance,
@@ -557,7 +554,6 @@ async def test_a_round_ending_cancelled_leaves_its_call_and_forecast_until_the_d
     assert ROUND_3 not in league.unarmed
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_a_discarded_notice_is_named_in_the_round_s_log_line(tmp_path):
     """Weather is on, and Discord refuses Pro's forecast note after round 3 ends cancelled. The
     queue stops at the note; a league admin discards it. The results note is still posted, and
