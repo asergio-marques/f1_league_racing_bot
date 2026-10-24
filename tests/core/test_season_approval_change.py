@@ -279,6 +279,63 @@ async def test_a_stop_after_the_season_is_saved_finishes_its_roles_lineups_calen
     assert len(_confirmed_lines(league)) == 1
 
 
+BATCH_NOTICE = "🎨 Posting lineups, calendars and opening classifications — one moment."
+
+
+def _posted_once(league: Any, cid: int) -> None:
+    """Channel *cid* was sent something, and nothing it was sent was sent twice."""
+    texts = league.texts(cid)
+    assert texts and len(texts) == len(set(texts)), (cid, texts)
+
+
+async def test_a_stop_after_the_season_is_saved_posts_the_opening_standings_and_the_batch_notice_once_on_restart(
+    tmp_path, monkeypatch,
+):
+    """Results and attendance on. Season 3's approval stops just after its save, before any
+    post, and the bot restarts. Once the queue runs, the "one moment" notice is posted once in
+    the review's channel and taken down, and Pro's and Am's opening standings and opening
+    attendance sheets are each posted, none of them twice."""
+    league = await _league_for(tmp_path, monkeypatch, results=True, attendance=True)
+    await _pressed(league)
+    await _run_through(league, "apply")
+    assert [job["name"] for job in await _jobs(league) if job["done_at"]] == ["apply"]
+
+    await league.restart()
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert league.texts(REVIEW_CHANNEL).count(BATCH_NOTICE) == 1
+    assert not any(str(message.content) == BATCH_NOTICE
+                   for message in league.review_channel.messages.values())
+    for chans in (PRO_CH, AM_CH):
+        _posted_once(league, chans.standings)
+        _posted_once(league, chans.attendance)
+
+
+async def test_a_restart_between_the_batch_notice_and_its_deletion_deletes_it_and_posts_nothing_twice(
+    tmp_path, monkeypatch,
+):
+    """Results and attendance on. Season 3's approval stops just after its "one moment" notice
+    is posted in the review's channel, and the bot restarts. Once the queue runs, that notice is
+    not posted again and is deleted, and each division's lineup, calendar, opening standings and
+    opening sheet are posted, none of them twice."""
+    league = await _league_for(tmp_path, monkeypatch, results=True, attendance=True)
+    await _pressed(league)
+    await _run_through(league, "post_batch_notice")
+    assert league.texts(REVIEW_CHANNEL).count(BATCH_NOTICE) == 1
+
+    await league.restart()
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert league.texts(REVIEW_CHANNEL).count(BATCH_NOTICE) == 1
+    assert not any(str(message.content) == BATCH_NOTICE
+                   for message in league.review_channel.messages.values())
+    for chans in (PRO_CH, AM_CH):
+        for cid in (chans.lineup, chans.calendar, chans.standings, chans.attendance):
+            _posted_once(league, cid)
+
+
 async def test_a_restart_while_the_approval_is_in_hand_does_not_say_nothing_was_confirmed(
     tmp_path, monkeypatch,
 ):
