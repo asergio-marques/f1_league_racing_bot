@@ -399,11 +399,6 @@ async def test_the_validation_refusal_s_line_is_unchanged(tmp_path, monkeypatch)
     assert "reason:" not in line, line
 
 
-
-SAVE_RECHECK_UNBUILT = "#439: a session's save does not read again whether its round was cancelled"
-
-
-@pytest.mark.xfail(strict=True, reason=SAVE_RECHECK_UNBUILT)
 async def test_a_cancellation_saved_between_the_settling_and_the_save_saves_no_session(
     tmp_path, monkeypatch,
 ):

@@ -13,7 +13,9 @@ the change judges the paste against the session the round then expects (`judge`)
 answered with its errors, logged as rejected (results spec :257) and the session asked for again;
 an accepted one is held back while another round of the division is being amended, or the
 submission has been closed by a cancellation (`settle`), else saved scored by the season's points
-configuration (`save_session`), the channel told so and asked for the next session. A message typed
+configuration (`save_session`), the channel told so and asked for the next session. The save reads
+again, inside itself, whether a cancellation's save has come since the turn was settled; where it
+has, it saves nothing and the channel is told the round has been cancelled (#439, slice 8). A message typed
 while a turn waits in the channel is turned away at once, with a note and a line in the log.
 
 **The points configuration is a second change.** Where the season has several attached, the turn
@@ -371,7 +373,8 @@ def turn_steps(
     async def settle(ctx: StepContext) -> StepResult:
         """Hold the session back where its round's submission was closed by a cancellation or
         another round of the division is being amended, else save it. Read as it is about to be
-        written, so an amendment opened while the manager chose the configuration still holds."""
+        written, so an amendment opened while the manager chose the configuration still holds. A
+        cancellation saved after this, before the save, is read again by `save_session`."""
         payload = ctx.step_payload
         channel_id = int(payload["channel_id"])
         round_id = int(payload["round_id"])
@@ -392,6 +395,13 @@ def turn_steps(
         round_id = int(payload["round_id"])
         session = SessionType(payload["session_type"])
         channel_id = int(payload["channel_id"])
+        closed = await submissions.closed_by_cancellation_on(db, round_id)
+        if closed:
+            # A cancellation's save came between the settling and this save: both hold the write
+            # lock in turn, so it is read here and the session is not saved against its round.
+            return StepResult(
+                result={"saved": False, "closed": True}, then=(_say(channel_id, closed),),
+            )
         already = await (
             await db.execute(
                 "SELECT 1 FROM session_results WHERE round_id = ? AND session_type = ?",

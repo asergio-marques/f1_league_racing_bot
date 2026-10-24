@@ -1395,16 +1395,26 @@ async def closed_by_cancellation(db_path: str, round_id: int) -> str | None:
     cancelled and is not asked.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT r.round_number, r.status AS round_status, d.status AS division_status, "
-            "s.status AS season_status, rsc.closed "
-            "FROM rounds r JOIN divisions d ON d.id = r.division_id "
-            "JOIN seasons s ON s.id = d.season_id "
-            "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id "
-            "WHERE r.id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
+        return await closed_by_cancellation_on(db, round_id)
+
+
+async def closed_by_cancellation_on(db: aiosqlite.Connection, round_id: int) -> str | None:
+    """`closed_by_cancellation`, read on the connection handed (#439, slice 8, F2).
+
+    A session's save reads it again inside its own save, after its turn was settled: a
+    cancellation's save written on the same connection, and not yet committed, is seen, and the
+    two saves hold the queue's write lock in turn, so one of them is read by the other.
+    """
+    cursor = await db.execute(
+        "SELECT r.round_number, r.status AS round_status, d.status AS division_status, "
+        "s.status AS season_status, rsc.closed "
+        "FROM rounds r JOIN divisions d ON d.id = r.division_id "
+        "JOIN seasons s ON s.id = d.season_id "
+        "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id "
+        "WHERE r.id = ?",
+        (round_id,),
+    )
+    row = await cursor.fetchone()
     if row is None:
         return None
     if "CANCELLED" in (row["round_status"], row["division_status"], row["season_status"]):

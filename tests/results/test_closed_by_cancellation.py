@@ -13,7 +13,6 @@ import pytest
 from leaguebot.core.db.database import get_connection
 from tests.support.season_league import PRO, SEASON_ID, ongoing_league, open_submission, round_id
 
-UNBUILT = "#439: there is no reader of a closed submission on a handed connection yet"
 R3 = round_id(PRO, 3)
 CANCELLED = (
     "⛔ Round 3 has been cancelled, so its results can no longer be entered. Nothing was saved."
@@ -35,7 +34,6 @@ _CASES = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("case", list(_CASES))
 async def test_closed_by_cancellation_on_reads_the_connection_handed(tmp_path, case):
     """Pro's round 3 awaits its results, its submission open. On one connection the round, its
