@@ -362,10 +362,6 @@ async def test_the_review_panel_notifies_no_group(tmp_path):
     assert (allowed.everyone, allowed.roles, allowed.users) == (False, False, True)
 
 
-PANEL_UNDISCARDABLE = "#439: posting the review panel may still be discarded"
-
-
-@pytest.mark.xfail(strict=True, reason=PANEL_UNDISCARDABLE)
 async def test_the_review_panel_s_post_cannot_be_discarded(tmp_path):
     """Kimi types his notes and his signup is saved, but Discord refuses the review panel in his
     channel, so the queue stops at `post_panel` on his channel's lane. A league admin's Discard on

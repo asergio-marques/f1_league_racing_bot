@@ -57,9 +57,10 @@ manager and the driver for the notice and the line (a save waits on no second co
 `lapse` (a save: back to Pending Admin Approval, the wizard unengaged and the correction's state,
 its reason, requester and offer time cleared), `post_lapse` (the notice mentioning the manager,
 worded for a restart where it was one) and `post_panel` (a fresh review panel, and the lapse
-written to the log, naming the panel where one was posted; where an admin discards `post_panel`
-the change's `finished_lines` write the lapse, saying no panel was posted, since the driver is back
-in the approval queue all the same).
+written to the log, naming the panel where one was posted). `lapse` and `post_panel` cannot be
+discarded (#439, slice 8): dropped, the driver would be left awaiting a correction nobody can
+choose, or waiting for approval with no panel, and either leaves a signup unsettled, which refuses
+the season's placements; a Discard on either is refused and only a Retry moves it.
 
 **The lap sum is signup's own.** The sum is written on the signup record by this module, in the
 approval's save; core's `PlacementService.store_total_lap_ms`, which commits on a connection of
@@ -885,10 +886,9 @@ def lapse_change(
 
     async def lapsed(ctx: StepContext) -> bool:
         """Whether the lapse took place, for the notice and the panel that follow it: not where
-        the window had nothing left to lapse, nor where an admin discarded the `lapse` job."""
+        the window had nothing left to lapse."""
         return any(
             view.name == LAPSE_JOB and view.done and not (view.result or {}).get("ended")
-            and "discarded" not in (view.result or {})
             for view in ctx.steps
         )
 
@@ -971,20 +971,6 @@ def lapse_change(
             ),
         )
 
-    def finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
-        # The lapse is `post_panel`'s line; where an admin discarded that job the driver is back in
-        # the approval queue all the same, so the record is written as the change closes, saying
-        # no panel was posted.
-        views = {view.name: view for view in ctx.steps}
-        lapse_view, panel = views.get(LAPSE_JOB), views.get(POST_PANEL)
-        if (
-            lapse_view is None or not lapse_view.done or (lapse_view.result or {}).get("ended")
-            or "discarded" in (lapse_view.result or {})
-            or panel is None or "discarded" not in (panel.result or {})
-        ):
-            return ()
-        return (lapse_line(ctx, False),)
-
     async def describe_names(ctx: StepContext) -> str:
         return f"finding the names of <@{ctx.step_payload['user_id']}> and their manager for the record"
 
@@ -997,11 +983,17 @@ def lapse_change(
     async def describe_panel(ctx: StepContext) -> str:
         return f"posting <@{ctx.step_payload['user_id']}>'s review panel again"
 
-    def outcome(ctx: OutcomeContext) -> str:
-        lapse_view = next((view for view in ctx.steps if view.name == LAPSE_JOB), None)
-        if lapse_view is not None and "discarded" in (lapse_view.result or {}):
-            return "⚠️ The driver was not returned to the approval queue: the job was discarded."
-        return ""
+    async def would_await_a_choice_nobody_can_make(ctx: StepContext) -> str:
+        return (
+            f"<@{ctx.step_payload['user_id']}> would be left awaiting a correction nobody can "
+            "choose, and the season's placements could not be confirmed until the bot restarts"
+        )
+
+    async def would_wait_unreviewed(ctx: StepContext) -> str:
+        return (
+            f"<@{ctx.step_payload['user_id']}> would wait for approval with no review panel, "
+            "and the season's placements could not be confirmed"
+        )
 
     return ChangeType(
         kind=LAPSE,
@@ -1009,18 +1001,21 @@ def lapse_change(
         plan=plan,
         steps={
             NAMES: Step(NAMES, StepKind.ACT, names, describe=describe_names),
-            LAPSE_JOB: Step(LAPSE_JOB, StepKind.SAVE, lapse, describe=describe_lapse),
+            LAPSE_JOB: Step(
+                LAPSE_JOB, StepKind.SAVE, lapse, describe=describe_lapse,
+                undiscardable=would_await_a_choice_nobody_can_make,
+            ),
             POST_LAPSE: Step(
                 POST_LAPSE, StepKind.ACT, post_lapse, still_due=lapsed,
                 describe=describe_post_lapse,
             ),
             POST_PANEL: Step(
-                POST_PANEL, StepKind.ACT, post_panel, still_due=lapsed, describe=describe_panel
+                POST_PANEL, StepKind.ACT, post_panel, still_due=lapsed, describe=describe_panel,
+                undiscardable=would_wait_unreviewed,
             ),
         },
         check=check,
         key=lambda payload: f"{LAPSE}:{payload['user_id']}",
         doing=lambda payload: "Returning a driver to the approval queue",
-        outcome=outcome,
-        finished_lines=finished_lines,
+        outcome=lambda _ctx: "",
     )

@@ -21,7 +21,9 @@ of its own save, `signup.submit` of the league: the signup is saved, the driver 
 Admin Approval and the wizard parked in one save, the driver's name read first by a job of its
 own (a save waits on no second connection) and their timers taken away after. That asks back
 `signup.panel` on the driver's lane, which locks typing, posts the review panel and takes the ⏳
-off, so the mark outlives the whole hand-over (R10). A driver whose signup a close of the window
+off, so the mark outlives the whole hand-over (R10). The panel's post cannot be discarded (#439,
+slice 8): dropped, the driver would wait for approval with no panel, an unsettled signup that
+refuses the season's placements, so a Discard on it is refused and only a Retry moves it. A driver whose signup a close of the window
 ended meanwhile is no longer due: the submit is dropped, nothing saved.
 
 **Rejected:** keeping the draft in memory until the last answer, which a restart would lose; one
@@ -881,12 +883,21 @@ def panel_change(
     async def describe_panel(ctx: StepContext) -> str:
         return f"posting the review panel in <#{ctx.step_payload['channel_id']}>"
 
+    async def would_wait_unreviewed(ctx: StepContext) -> str:
+        return (
+            f"<@{ctx.step_payload['user_id']}> would wait for approval with no review panel, "
+            "and the season's placements could not be confirmed"
+        )
+
     return ChangeType(
         kind=PANEL,
         opening=(),
         plan=plan,
         steps={
-            POST_PANEL: Step(POST_PANEL, StepKind.ACT, post_panel, describe=describe_panel),
+            POST_PANEL: Step(
+                POST_PANEL, StepKind.ACT, post_panel, describe=describe_panel,
+                undiscardable=would_wait_unreviewed,
+            ),
             typed_turns.CLEAR_MARK: typed_turns.clear_mark_step(),
         },
         check=standing,

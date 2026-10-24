@@ -435,17 +435,12 @@ async def test_a_close_leaves_a_driver_awaiting_a_correction_parameter_alone(tmp
     assert await _state(league) == AWAITING
 
 
-LAPSE_PANEL_UNDISCARDABLE = "#439: the lapse's review panel may still be discarded"
-LAPSE_UNDISCARDABLE = "#439: the lapse itself may still be discarded"
-
-
 def _review_panels_standing(league: SeasonLeague) -> list[Any]:
     """The review panels standing in Kimi's channel, refused posts left out."""
     return [message for message in league.channel(KIMI_CHANNEL).messages.values()
             if type(message.view).__name__ == "AdminReviewView"]
 
 
-@pytest.mark.xfail(strict=True, reason=LAPSE_PANEL_UNDISCARDABLE)
 async def test_a_lapse_s_panel_cannot_be_discarded_and_a_retry_records_the_lapse(tmp_path):
     """Kimi's correction lapses and Discord refuses the fresh review panel in his channel, so the
     queue stops at `post_panel`. A league admin's Discard on it is refused, saying Kimi would
@@ -480,7 +475,6 @@ async def test_a_lapse_s_panel_cannot_be_discarded_and_a_retry_records_the_lapse
     assert CORRECTION_LAPSE in league.log(), league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=LAPSE_UNDISCARDABLE)
 async def test_the_lapse_itself_cannot_be_discarded(tmp_path):
     """Kimi's correction lapses, but the save returning him to the approval queue fails, so the
     queue stops at `lapse`. A league admin's Discard on it is refused, saying Kimi would be left
