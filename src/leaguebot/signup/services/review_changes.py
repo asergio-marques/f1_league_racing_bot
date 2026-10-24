@@ -62,7 +62,11 @@ manager and the driver for the notice and the line (a save waits on no second co
 `lapse` (a save: back to Pending Admin Approval, the wizard unengaged and the correction's state,
 its reason, requester and offer time cleared), `post_lapse` (the notice mentioning the manager,
 worded for a restart where it was one) and `post_panel` (a fresh review panel, and the lapse
-written to the log, naming the panel where one was posted). `lapse` and `post_panel` cannot be
+written to the log, naming the panel where one was posted). A signup channel confirmed gone (the
+strict lookup `post_lapse` and `post_panel` share, which stops the job where the league's server
+is missing from the cache or Discord cannot tell) posts nothing and ends the signup as a driver
+who leaves does, `post_panel` asking `signup.end` in its own save and the lapse's record saying
+so (#439, slice 8). `lapse` and `post_panel` cannot be
 discarded (#439, slice 8): dropped, the driver would be left awaiting a correction nobody can
 choose, or waiting for approval with no panel, and either leaves a signup unsettled, which refuses
 the season's placements; a Discard on either is refused and only a Retry moves it.
@@ -120,7 +124,9 @@ from leaguebot.signup.services.wizard_answers import (
     INACTIVITY,
     _BUTTON_ONLY,
     _set_typing,
+    _signup_channel_or_gone,
     _text_channel,
+    channel_gone_ending,
 )
 from leaguebot.signup.services.wizard_service import (
     _CORRECTION_PARAMETER_STATES,
@@ -938,7 +944,7 @@ def lapse_change(
         channel_id = lapse_result(ctx).get("channel_id")
         if channel_id is None:
             return StepResult(result={"no_channel": True})
-        channel = await _text_channel(ctx, int(channel_id))
+        channel = await _signup_channel_or_gone(ctx, int(channel_id))
         if channel is None:
             return StepResult(result={"no_channel": True})
         requested_by = lapse_result(ctx).get("requested_by")
@@ -963,11 +969,22 @@ def lapse_change(
     @posts_in_a_job
     async def post_panel(ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
-        posted = False
         channel_id = lapse_result(ctx).get("channel_id")
-        channel = None if channel_id is None else await _text_channel(ctx, int(channel_id))
-        record = await signup().get_record(user_id) if channel is not None else None
-        if channel is not None and record is not None:
+        if channel_id is None:
+            return StepResult(result={"panel": False}, lines=(lapse_line(ctx, False),))
+        channel = await _signup_channel_or_gone(ctx, int(channel_id))
+        if channel is None:
+            # The channel is gone: the signup ends as it does for a driver who leaves, since
+            # nothing else would ever settle a driver awaiting a review that cannot be posted.
+            ended = await channel_gone_ending(ctx, user_id, int(channel_id))
+            return StepResult(
+                result={"panel": False, "channel_gone": True},
+                lines=(lapse_line(ctx, False, gone=True),),
+                follow_ons=ended.follow_ons,
+            )
+        record = await signup().get_record(user_id)
+        posted = False
+        if record is not None:
             wizard = await signup().get_wizard(user_id)
             slot_labels = {
                 slot.slot_id: slot.display_label
@@ -987,9 +1004,10 @@ def lapse_change(
             posted = True
         return StepResult(result={"panel": posted}, lines=(lapse_line(ctx, posted),))
 
-    def lapse_line(ctx: OutcomeContext, posted: bool) -> str:
+    def lapse_line(ctx: OutcomeContext, posted: bool, gone: bool = False) -> str:
         """The log channel's record of the lapse, naming the manager who asked and the driver, and
-        whether a fresh review panel is in the driver's channel."""
+        whether a fresh review panel is in the driver's channel, or that the channel was gone and
+        the signup ended."""
         user_id = str(ctx.payload["user_id"])
         driver = named_result(ctx).get("driver") or f"<@{user_id}>"
         return abandoned_line(
@@ -997,6 +1015,9 @@ def lapse_change(
             f"the correction request for {driver}'s signup",
             lapsed=True,
             detail=(
+                f"{driver}'s signup channel was gone, so no fresh review panel could be posted "
+                "and their signup is ended."
+                if gone else
                 f"{driver} is back in the approval queue"
                 + ("; a fresh review panel is in their channel." if posted else ".")
             ),

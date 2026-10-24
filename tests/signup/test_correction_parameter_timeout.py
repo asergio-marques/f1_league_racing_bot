@@ -528,7 +528,6 @@ LAPSE_CHANNEL_GONE = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=LAPSE_CHANNEL_GONE_UNBUILT)
 async def test_a_lapse_whose_channel_is_gone_ends_the_signup(tmp_path):
     """Manager 77 asked for a correction of Kimi's signup, and Kimi's signup channel 6405 is then
     deleted. The five minutes run out and the queue runs: the lapse returns Kimi to the approval
