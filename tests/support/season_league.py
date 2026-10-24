@@ -42,7 +42,7 @@ days ago), rounds 3 and 4 NOT_RUN; Am's four rounds are NOT_RUN. Round 3's check
 in Pro's check-in channel (603) as messages 7001 to 7003 (`CALL_MESSAGES`, recorded in
 `rsvp_embed_messages`), Lewis having accepted and Max not answered; Pro's calendar was posted as message 6001 in 601
 (`CALENDAR_MESSAGE`). The scheduler double records each round `cancel_round` or `cancel_rounds` is
-handed in `league.unarmed`, and a
+handed in `league.unarmed`, and gives the jobs it removed of each (`removed_jobs`), and a
 message id in `league.undeletable` is one Discord refuses to delete. `open_submission` opens a
 results submission for a round, its channel standing on the server; `cancel_round` and
 `cancel_division` run `/round cancel` and `/division cancel` as admin 77 and give the interaction;
@@ -776,10 +776,16 @@ async def ongoing_league(
     league.bot.attendance_service.get_embed_message = AttendanceService(
         league.db_path
     ).get_embed_message
-    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=league.unarmed.append)
-    league.bot.scheduler_service.cancel_rounds = MagicMock(
-        side_effect=lambda round_ids, **_: league.unarmed.extend(round_ids)
-    )
+    def _cancel_round(rid: int, **_kwargs: Any) -> list[str]:
+        league.unarmed.append(rid)
+        return removed_jobs(rid)
+
+    def _cancel_rounds(round_ids: Any, **_kwargs: Any) -> dict[int, list[str]]:
+        league.unarmed.extend(round_ids)
+        return {rid: removed_jobs(rid) for rid in round_ids}
+
+    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=_cancel_round)
+    league.bot.scheduler_service.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
     # Set up and approved: the cog holds no setup in memory, as after a restart.
     league.cog._pending = {}
     league.channel(DIVISIONS[PRO][3].calendar).seed(CALENDAR_MESSAGE, "Pro's calendar")
@@ -790,6 +796,12 @@ async def ongoing_league(
     await season_end_extras(league, tmp_path, test_mode=test_mode, signups_open=signups_open,
                             held=held)
     return league
+
+
+def removed_jobs(rid: int) -> list[str]:
+    """The jobs `ongoing_league`'s scheduler double says it removed of round *rid*: its results
+    submission and its two clean-ups, as a cancellation's removal of its timed work gives them."""
+    return [f"results_id{rid}", f"cleanup_id{rid}", f"rsvp_cleanup_id{rid}"]
 
 
 def _refusing_delete(league: SeasonLeague, message: Any) -> None:

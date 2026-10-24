@@ -64,6 +64,7 @@ from tests.support.season_league import (
     cancellation_changes,
     ongoing_league,
     open_submission,
+    removed_jobs,
     reply,
     round_id,
     seed_season_end,
@@ -825,6 +826,9 @@ async def test_the_save_refuses_writing_nothing_where_the_round_moved_on_after_t
     assert len(_refusal_lines(league)) == 1
     assert _success_lines(league) == []
     assert league.texts(PRO_CH.calendar) == []
+    assert [row for row in await change_rows(league.db_path)
+            if row["kind"] == "season.round.rearm"] == []
+    assert league.armed == []
 
 
 # ── What it does ────────────────────────────────────────────────────────────────────
@@ -1373,14 +1377,35 @@ async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_
         assert f"\n  not notified: {named}" in line
 
 
-async def test_a_session_accepted_after_the_check_is_refused_by_the_save(tmp_path):
+#: What a refused cancellation's reply adds of the timed work it removed (#439, slice 8, F2).
+REARMING = "Its timed work, removed for the cancellation, is being armed again as it stood."
+ARMED_AGAIN = (
+    "⏱️ The timed work of round 3 in **Pro** is armed again, `/round cancel` having been refused"
+)
+REARM_KIND = "season.round.rearm"
+REARM_UNBUILT = "#439: a cancellation refused at its save does not arm its rounds again yet"
+
+
+async def _rearmings(league: Any) -> list[dict[str, Any]]:
+    """Every re-arming of a round's timed work asked of the queue, in the order asked."""
+    return [row for row in await change_rows(league.db_path) if row["kind"] == REARM_KIND]
+
+
+@pytest.mark.xfail(strict=True, reason=REARM_UNBUILT)
+async def test_a_session_accepted_after_the_check_is_refused_by_the_save_and_its_timed_work_armed_again(
+    tmp_path,
+):
     """Round 3's open submission has accepted nothing when the cancellation is asked and when it
     starts to run, but removing its timed work fails and stops the queue; meanwhile the
-    submission accepts a session's results. Retried, the save refuses in the new words and
-    writes nothing: the round still awaits its results and its submission stays open."""
+    submission accepts a session's results. Retried, the removal goes through and the save
+    refuses in the new words and writes nothing: the round still awaits its results and its
+    submission stays open. The timed work it removed is armed again, by a change of its own that
+    runs once the cancellation has closed: the reply says it is being armed again as it stood, the
+    refusal line names the round as being armed again, and a later line says it is armed again."""
     league = await ongoing_league(tmp_path)
     await _empty_submission(league)
     interaction = await _asked(league)
+    unarming = league.bot.scheduler_service.cancel_round
     league.bot.scheduler_service.cancel_round = MagicMock(
         side_effect=RuntimeError("the job store is locked")
     )
@@ -1388,17 +1413,49 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_save(tmp_pat
     assert await _stopped_at(league) == "unarm"
     await accept_session(league, R3)
 
-    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=league.unarmed.append)
+    league.bot.scheduler_service.cancel_round = unarming
     await retry_job(league.bot)
 
     assert ACCEPTED in reply(interaction)
+    assert REARMING in reply(interaction)
     assert CANCELLED not in reply(interaction)
     assert (await _change(league))["state"] == "DONE"
     assert await _status(league) == "AWAITING_RESULTS"
     assert await _submission_closed(league) == 0
     assert await _round_audits(league) == []
-    assert len(_refusal_lines(league)) == 1
+    [refusal] = _refusal_lines(league)
+    assert "\n  timed work being armed again: round 3 in Pro" in refusal
     assert not _channel_deleted(league)
+    assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
+    assert ("results", [R3]) in league.armed
+    assert len([line for line in _log_lines(league) if ARMED_AGAIN in line]) == 1
+
+
+@pytest.mark.xfail(strict=True, reason=REARM_UNBUILT)
+async def test_a_re_arming_queued_behind_a_cancellation_that_then_calls_the_round_off_is_dropped(
+    tmp_path,
+):
+    """`/round cancel Pro 3` is asked, and behind it the re-arming of round 3's timed work, as a
+    cancellation refused earlier asks it. The queue runs: the cancellation calls round 3 off,
+    and the re-arming, finding the round cancelled, is dropped as no longer due: nothing is armed
+    and nothing stops the queue."""
+    from leaguebot.core.models.change import ChangeOrigin
+
+    league = await ongoing_league(tmp_path)
+    await _asked(league)
+    await league.bot.change_queue.ask(
+        REARM_KIND,
+        {"round_id": R3, "round_number": 3, "division_id": PRO, "division_name": "Pro",
+         "command": "/round cancel"},
+        what="arming the timed work of round 3 in **Pro** again", origin=ChangeOrigin.BOT,
+    )
+
+    await run_queue(league.bot)
+
+    assert await _status(league) == "CANCELLED"
+    assert await stopped_job(league.db_path) is None
+    assert [row["state"] for row in await _rearmings(league)] == ["DROPPED"]
+    assert league.armed == []
 
 
 # ── A cancellation ends its submission's conversation (#439, slice 6b, C88a) ────────
@@ -1444,18 +1501,20 @@ async def test_a_round_cancellation_ends_its_submission_s_conversation(tmp_path)
     assert await stopped_job(league.db_path, f"channel:{SUBMISSION_CHANNEL}") is None
 
 
+@pytest.mark.xfail(strict=True, reason=REARM_UNBUILT)
 async def test_a_cancellation_s_save_finds_a_paste_saved_after_its_check(tmp_path):
     """Round 3 of Pro waits for its results, its submission open in channel 690 with nothing
     accepted, and the admin runs `/round cancel Pro 3`. The cancellation's check passes when it
     runs; then, while its timed work is being removed and before its save, the round's own lane
     accepts the manager's race result (as a paste's turn may, running beside the league). The
     save checks again inside itself and writes nothing: round 3 still awaits its results, its
-    submission stays open with the session accepted, and its channel is not deleted."""
+    submission stays open with the session accepted, and its channel is not deleted. The timed
+    work its removal took is armed again, by a re-arming of its own."""
     league = await ongoing_league(tmp_path)
     await _empty_submission(league)
     await _asked(league)
 
-    def _unarm_and_accept(round_id: int) -> None:
+    def _unarm_and_accept(round_id: int, **_kwargs: Any) -> list[str]:
         league.unarmed.append(round_id)
         with sqlite3.connect(league.db_path) as db:
             db.execute(
@@ -1464,6 +1523,7 @@ async def test_a_cancellation_s_save_finds_a_paste_saved_after_its_check(tmp_pat
                 "'ACTIVE', 'Standard', 77, ?)",
                 (R3, R3 // 10, league.clock.now.isoformat()),
             )
+        return removed_jobs(round_id)
 
     league.bot.scheduler_service.cancel_round = MagicMock(side_effect=_unarm_and_accept)
 
@@ -1475,3 +1535,5 @@ async def test_a_cancellation_s_save_finds_a_paste_saved_after_its_check(tmp_pat
     assert len(await league.rows("SELECT * FROM session_results WHERE round_id = ?", R3)) == 1
     assert await _round_audits(league) == []
     assert not _channel_deleted(league)
+    assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
+    assert ("results", [R3]) in league.armed
