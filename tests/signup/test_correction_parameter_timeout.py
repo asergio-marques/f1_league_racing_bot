@@ -578,7 +578,7 @@ async def test_a_lapse_whose_server_is_out_of_cache_stops_rather_than_passing_th
     assert await _state(league) == "PENDING_ADMIN_APPROVAL"
     assert not [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
     assert _posted(league) == ""
-    assert "lapsed" not in league.log()
+    assert CORRECTION_LAPSE not in league.log()
 
     league.bot.get_guild.return_value = league.guild
     await retry_job(league.bot)
