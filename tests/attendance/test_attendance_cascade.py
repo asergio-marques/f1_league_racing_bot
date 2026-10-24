@@ -1,4 +1,4 @@
-"""`cascade_attendance_from_round` — carrying a round's totals forward (issue #238).
+"""Carrying a round's totals forward without rebuilding its attended flags (issue #238).
 
 A driver's attendance total is the sum of their rounds, but a copy of the answer is stored on
 every round's row. Amending round 3 of ten corrected only round 3's copy, and rounds 4 to 10
@@ -7,7 +7,9 @@ then published, that sheet being drawn against the last round with results.
 
 The cascade is the other half: the round's points are awarded and every later finalised
 round's total is worked out again, in one transaction. What it must **not** do is rebuild the
-attended flags, which is the subject of its own test below.
+attended flags, which is the subject of its own test below. It is
+``_recalculate_forward(..., recompute="none")``, the mode an amendment's or a review's save
+asks for once it has recorded the attendance itself.
 """
 from __future__ import annotations
 
@@ -18,10 +20,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.attendance.services import attendance_service
-from leaguebot.attendance.services.attendance_service import (
-    cascade_attendance_from_round,
-    distribute_attendance_points,
-)
+from leaguebot.attendance.services.attendance_service import distribute_attendance_points
 from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_db
 
 
@@ -53,6 +52,13 @@ async def _score_both_rounds(db_file: str, division_id: int, round_ids: list[int
         await distribute_attendance_points(db_file, round_id, division_id)
 
 
+async def _carry_forward(db_file: str, round_id: int, division_id: int) -> list[int]:
+    """The round's points awarded and its totals carried forward, no attended flag rebuilt."""
+    return await attendance_service._recalculate_forward(
+        db_file, round_id, division_id, recompute="none"
+    )
+
+
 async def _set_attended(db_file: str, round_id: int, value: int) -> None:
     async with get_connection(db_file) as db:
         await db.execute(
@@ -74,7 +80,7 @@ async def test_a_later_round_s_total_is_corrected(tmp_path):
 
     # The amendment shows the driver did race round 1, so only the missed check-in stands.
     await _set_attended(db_file, round_ids[0], 1)
-    await cascade_attendance_from_round(db_file, round_ids[0], division_id)
+    await _carry_forward(db_file, round_ids[0], division_id)
 
     assert await _awarded(db_file, round_ids[0]) == 2
     assert await _total(db_file, round_ids[0]) == 2, (
@@ -90,7 +96,7 @@ async def test_rounds_before_the_named_one_are_left_alone(tmp_path):
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
     await _score_both_rounds(db_file, division_id, round_ids)
 
-    await cascade_attendance_from_round(db_file, round_ids[1], division_id)
+    await _carry_forward(db_file, round_ids[1], division_id)
 
     assert await _awarded(db_file, round_ids[0]) == 3
     assert await _total(db_file, round_ids[0]) == 3
@@ -112,7 +118,7 @@ async def test_the_cascade_never_revokes_a_driver_s_attendance(tmp_path, monkeyp
         full_recompute,
     )
 
-    await cascade_attendance_from_round(db_file, round_ids[0], division_id)
+    await _carry_forward(db_file, round_ids[0], division_id)
 
     full_recompute.assert_not_awaited()
     assert await _attended(db_file, round_ids[0]) == 1
@@ -140,7 +146,7 @@ async def test_the_cascade_lands_whole_or_not_at_all(tmp_path, monkeypatch):
     )
 
     with pytest.raises(RuntimeError):
-        await cascade_attendance_from_round(db_file, round_ids[0], division_id)
+        await _carry_forward(db_file, round_ids[0], division_id)
 
     assert len(calls) == 2, "the propagation did not reach the second round"
     assert await _awarded(db_file, round_ids[0]) is None, (
@@ -152,7 +158,7 @@ async def test_the_cascade_lands_whole_or_not_at_all(tmp_path, monkeypatch):
 async def test_it_returns_the_rounds_it_touched_in_order(tmp_path):
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
 
-    assert await cascade_attendance_from_round(
+    assert await _carry_forward(
         db_file, round_ids[0], division_id
     ) == round_ids
 
@@ -198,7 +204,7 @@ async def test_the_division_s_current_total_stands_on_the_last_round_touched(tmp
     await _score_both_rounds(db_file, division_id, round_ids)
     await _set_attended(db_file, round_ids[0], 1)
 
-    touched = await cascade_attendance_from_round(db_file, round_ids[0], division_id)
+    touched = await _carry_forward(db_file, round_ids[0], division_id)
 
     assert touched[-1] == round_ids[1]
     assert await _total(db_file, touched[-1]) == 5
