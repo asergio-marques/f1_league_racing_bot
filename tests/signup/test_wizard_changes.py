@@ -46,6 +46,8 @@ from tests.support.change_queue import (
     discard_job,
     http_error,
     member_interaction,
+    refuse_the_job,
+    retry_job,
     run_queue,
     step_rows,
     stopped_job,
@@ -834,28 +836,54 @@ async def test_an_expiry_asked_by_its_timer_ends_the_signup(tmp_path):
     assert "lapsed" in league.log().lower()
 
 
-async def test_an_expiry_whose_end_is_discarded_tells_and_locks_and_deletes_nothing(
-    tmp_path, monkeypatch
-):
-    """Kimi's 24 hours run out, and the `end` job of his expiry fails and is discarded by an
-    admin. He is still Pending Signup Completion, so his channel is not told his signup expired,
-    his typing there is not revoked and the channel's deletion is not armed: a day later the
-    bot would otherwise delete the channel of a driver it still holds mid-signup."""
+END_UNDISCARDABLE = "#439: ending a signup may still be discarded"
+
+
+@pytest.mark.xfail(strict=True, reason=END_UNDISCARDABLE)
+async def test_ending_a_signup_cannot_be_discarded(tmp_path):
+    """Kimi is correcting his signup (Pending Driver Correction), last active 24 hours and a
+    minute ago. His 24-hour timer fires, but the save ending his signup fails, so the league lane
+    stops at `end`. A league admin's Discard on it is refused, saying Kimi's signup would never
+    end and the season's placements could not be confirmed until the bot restarts. He is still
+    Pending Driver Correction, his channel is not told his signup expired, his typing there is
+    not revoked, the channel's deletion is not armed, and the queue stays stopped there. Once the
+    fault is lifted, a Retry ends it: he is Not Signed Up, told once, his typing revoked and the
+    deletion armed a day on."""
     league = await _league(tmp_path)
     await _idle(league, SIGNING_UP, league.clock.now - timedelta(hours=24, minutes=1))
-    refused = AsyncMock(side_effect=RuntimeError("the database refused"))
-    monkeypatch.setattr(league.bot.driver_service, "transition_on", refused)
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'PENDING_DRIVER_CORRECTION' "
+        "WHERE discord_user_id = ?", str(SIGNING_UP),
+    )
+    await refuse_the_job(league.db_path, END_KIND, "end", True)
 
     await _timer_callback(league, INACTIVITY_TIMER)(str(SIGNING_UP))
     await run_queue(league.bot)
-    job = await stopped_job(league.db_path, "league")
-    assert job is not None and job["name"] == "end"
-    await discard_job(league.bot)
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "end"
 
-    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    refused = await discard_job(league.bot, lane="league")
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}>'s signup would never end, "
+        "and the season's placements could not be confirmed until the bot restarts. Fix what "
+        "stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path, "league"))["id"] == stopped["id"]
+    assert await _driver_state(league) == "PENDING_DRIVER_CORRECTION"
     assert _expired(league) == []
     assert not _locked(league)
     assert _armed(league, DELETE_TIMER) == []
+
+    await refuse_the_job(league.db_path, END_KIND, "end", False)
+    await retry_job(league.bot, lane="league")
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert len(_expired(league)) == 1
+    assert _locked(league)
+    assert _armed(league, DELETE_TIMER) == [
+        (DELETE_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))
+    ]
 
 
 async def test_an_answer_typed_before_the_24_hours_counts_though_it_runs_after(tmp_path):

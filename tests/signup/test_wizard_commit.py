@@ -44,6 +44,7 @@ from tests.support.change_queue import (
     change_rows,
     discard_job,
     member_interaction,
+    refuse_the_job,
     retry_job,
     run_queue,
     stopped_job,
@@ -467,6 +468,44 @@ async def test_a_button_answer_that_ends_a_correction_writes_only_correction_sub
     assert len(lines) == 1, lines
     assert "| Signup | Correction submitted" in lines[0], lines[0]
     assert "Platform: EA" not in lines[0]
+
+
+COMMIT_UNDISCARDABLE = "#439: committing a signup may still be discarded"
+
+
+@pytest.mark.xfail(strict=True, reason=COMMIT_UNDISCARDABLE)
+async def test_a_correction_s_commit_cannot_be_discarded(tmp_path):
+    """A league manager asked Kimi to correct his nationality, and he types "German". The save
+    that commits his signup on the league lane fails, so the queue stops at `commit`. A league
+    admin's Discard on it is refused, saying Kimi's signup would never be submitted and, while he
+    corrects it, the season's placements could not be confirmed until the bot restarts. Kimi is
+    still Pending Driver Correction, his signup still says British and the queue stays stopped
+    there. Once the fault is lifted, a Retry commits it: Kimi awaits approval and his signup
+    says German."""
+    league = await _correcting(tmp_path, "COLLECTING_NATIONALITY", FULL_DRAFT)
+    await refuse_the_job(league.db_path, "signup.submit", "commit", True)
+
+    await _type(league, "German")
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "commit"
+
+    refused = await discard_job(league.bot, lane="league")
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}>'s signup would never be "
+        "submitted, and while they correct it the season's placements could not be confirmed "
+        "until the bot restarts. Fix what stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path, "league"))["id"] == stopped["id"]
+    assert await _driver_state(league) == "PENDING_DRIVER_CORRECTION"
+    assert (await _record(league)).nationality == "British"
+
+    await refuse_the_job(league.db_path, "signup.submit", "commit", False)
+    await retry_job(league.bot, lane="league")
+
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+    assert (await _record(league)).nationality == "German"
 
 
 async def test_a_correction_amends_the_signup_it_was_asked_of(tmp_path):
