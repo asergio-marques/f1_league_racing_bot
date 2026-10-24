@@ -181,6 +181,24 @@ async def test_a_round_a_day_past_with_an_earlier_phase_standing_has_its_forecas
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
+async def test_a_superseded_forecast_whose_deletion_was_discarded_is_caught_up_with_the_round(
+    tmp_path, caplog
+):
+    """Phase 3 of round 21 posted, but deleting the Phase 2 forecast it superseded failed and a
+    league admin discarded that job, so both forecasts are still recorded. The bot starts a day
+    after the race: the catch-up asks the round's forecast clean-up, naming Phase 2 among what it
+    deletes, so the discarded deletion is carried out with the round's clean-up (#439, slice 8,
+    W4)."""
+    db_path = await _make_db(tmp_path, phases=(2, 3))
+
+    with caplog.at_level("INFO", logger=bot_module.__name__):
+        assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
+
+    lines = [record.getMessage() for record in caplog.records]
+    assert (f"_recover_missed_cleanups: deleting the Phase 2 and 3 forecasts of "
+            f"round_id={ROUND_ID}") in lines, lines
+
+
 @pytest.mark.parametrize(
     "phases, named",
     [((3,), "the Phase 3 forecast"), ((2,), "the Phase 2 forecast"),
