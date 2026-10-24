@@ -332,15 +332,13 @@ async def test_a_role_that_cannot_be_granted_is_named_and_does_not_stop_the_queu
 async def test_approve_saves_the_lap_sum_on_the_signup_record_itself(tmp_path):
     """Kimi's signup record holds lap times of 1:30.000 and 1:31.500. Manager 77 presses Approve
     and the queue runs: the record's total lap time is 181,500 ms, written by the approval
-    itself, and core's placement service is not asked to store it."""
+    itself."""
     league = await _league(tmp_path)
-    league.bot.placement_service.store_total_lap_ms = AsyncMock()
 
     await _press_approve(league)
     await run_queue(league.bot)
 
     assert (await _record(league))["total_lap_ms"] == LAP_SUM_MS
-    league.bot.placement_service.store_total_lap_ms.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

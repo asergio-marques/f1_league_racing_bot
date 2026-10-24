@@ -1,21 +1,9 @@
-"""`PlacementService` — lap-time seeding, and the team → Discord role mapping.
+"""`PlacementService` — formatting a seeding total, and the team → Discord role mapping.
 
 Issue #208. `placement_service.py` sat at 42.5%. This file takes its two self-contained
-halves: the lap-time arithmetic that decides a driver's seeding, and the `team_role_configs`
-layer that decides which Discord role a placed driver is given.
-
-**The seeding total is the number a whole season's divisions are built from.** A league asks
-drivers for a time at several tracks, and the sum of those times is the driver's seed — so a
-parse that silently returned a wrong number would sort the grid wrongly and nothing downstream
-could tell. `_parse_lap_time_ms` therefore returns `None` rather than guessing, and
-`_compute_total_lap_ms` propagates that: **one unparseable time discards the whole total**
-rather than seeding the driver on a partial sum, which would flatter them against drivers whose
-times all parsed. `test_one_unparseable_time_discards_the_whole_total` is what holds that, and
-it is the test most likely to be broken by someone making the parser more forgiving.
-
-A lap time is read in the one strict form the whole bot reads times in (#362): exactly three
-digits after the dot, which is the form signup accepts it in. Anything else is refused rather
-than padded into a seed.
+halves: how a driver's seeding total is shown, and the `team_role_configs` layer that decides
+which Discord role a placed driver is given. The total itself is worked out by signup, and
+`tests/signup/test_lap_sum.py` pins how.
 
 **The role mapping's three writers all audit, and each records a different shape of change.**
 Setting records the old role and the new; deleting records the old role and `None`; renaming
@@ -37,9 +25,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.placement_service import (
     PlacementService,
-    _compute_total_lap_ms,
     _fmt_ms,
-    _parse_lap_time_ms,
 )
 
 SERVER_ID = 9408
@@ -100,106 +86,6 @@ def test_an_hour_long_total_keeps_counting_in_minutes(tmp_path):
     """Several tracks summed can exceed an hour. Rolling over into hours would make a
     four-track total read as shorter than a three-track one."""
     assert _fmt_ms(3_600_000) == "60:00.000"
-
-
-# ---------------------------------------------------------------------------
-# Parsing
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "raw,expected",
-    [
-        ("1:23.456", 83_456),
-        ("0:59.999", 59_999),
-        ("  1:23.456  ", 83_456),
-        ("10:00.000", 600_000),
-        ("58.123", 58_123),
-    ],
-)
-def test_a_lap_time_is_parsed_to_milliseconds(raw, expected):
-    assert _parse_lap_time_ms(raw) == expected
-
-
-@pytest.mark.parametrize("raw", ["1:23.4", "1:23.45", "1:23.4567", "1:23"])
-def test_a_lap_time_outside_the_strict_form_is_refused(raw):
-    """Signup accepts a lap time in one form only, three digits after the dot (#362), so a
-    stored one outside it is refused rather than padded into a seed."""
-    assert _parse_lap_time_ms(raw) is None
-
-
-@pytest.mark.parametrize("raw", ["", "nonsense", "a:bc.def", None])
-def test_an_unparseable_time_is_refused_rather_than_guessed(raw):
-    """The seed is a number a whole season's divisions are built from, so a wrong one is
-    worse than no number at all."""
-    assert _parse_lap_time_ms(raw) is None
-
-
-# ---------------------------------------------------------------------------
-# The seeding total
-# ---------------------------------------------------------------------------
-
-
-def test_times_across_tracks_are_summed():
-    assert _compute_total_lap_ms({"1": "1:00.000", "2": "0:30.500"}) == 90_500
-
-
-def test_no_times_at_all_gives_no_total():
-    """A league that asked for no lap times seeds nobody, and a zero would seed every
-    driver identically at the top of the grid."""
-    assert _compute_total_lap_ms({}) is None
-
-
-def test_one_unparseable_time_discards_the_whole_total():
-    """Not a partial sum. Seeding a driver on two of their three times would flatter them
-    against drivers whose times all parsed — the most dangerous way this could fail,
-    because the result still looks like a plausible seed."""
-    assert _compute_total_lap_ms({"1": "1:00.000", "2": "rubbish"}) is None
-
-
-def test_a_total_of_zero_is_treated_as_no_total():
-    """All-zero times are not a real submission."""
-    assert _compute_total_lap_ms({"1": "0:00.000"}) is None
-
-
-async def test_the_total_is_persisted_against_the_signup(tmp_path):
-    db_path = await _make_db(tmp_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO signup_records (discord_user_id, discord_username) "
-            "VALUES ('4242', 'lewis')"
-        )
-        await db.commit()
-
-    total = await PlacementService(db_path).store_total_lap_ms(
-        "4242", {"1": "1:00.000", "2": "0:30.500"}
-    )
-
-    assert total == 90_500
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT total_lap_ms FROM signup_records WHERE discord_user_id = '4242'"
-        )
-        assert (await cursor.fetchone())["total_lap_ms"] == 90_500
-
-
-async def test_a_driver_with_no_times_is_stored_as_having_none(tmp_path):
-    """NULL rather than zero, so the seeded listing can put them last rather than first."""
-    db_path = await _make_db(tmp_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO signup_records (discord_user_id, discord_username) "
-            "VALUES ('4242', 'lewis')"
-        )
-        await db.commit()
-
-    assert await PlacementService(db_path).store_total_lap_ms("4242", {}) is None
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT total_lap_ms FROM signup_records WHERE discord_user_id = '4242'"
-        )
-        assert (await cursor.fetchone())["total_lap_ms"] is None
 
 
 # ---------------------------------------------------------------------------
