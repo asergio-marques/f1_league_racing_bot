@@ -23,10 +23,6 @@ names the refusal rather than the save raising.
 a division, so the division's own status is refreshed here as well as on a result being
 finalised — without it a league would cancel its final round and still be unable to complete the
 season. `test_cancelling_the_last_round_finishes_the_division` holds it.
-
-**`update_round_field` allows an explicit set of columns and no others.** It is a generic setter
-reached from the amendment service with a field name that ultimately comes from a manager's
-choice, so the allow-list is what stops that becoming an arbitrary write.
 """
 from __future__ import annotations
 
@@ -298,52 +294,3 @@ async def test_cancelling_one_of_several_rounds_leaves_the_division_running(tmp_
     await _cancel(db_path, 1)
 
     assert await _division_status(db_path) == "ACTIVE"
-
-
-# ---------------------------------------------------------------------------
-# The generic field setter
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "field,value",
-    [
-        ("track_name", "Monza"),
-        ("format", "SPRINT"),
-        ("phase1_done", 1),
-        ("phase2_done", 1),
-        ("phase3_done", 1),
-    ],
-)
-async def test_each_permitted_field_is_updatable(tmp_path, field, value):
-    db_path = await _make_db(tmp_path, rounds=((1, 1, 7, NOT_RUN),))
-
-    await SeasonService(db_path).update_round_field(1, field, value)
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"SELECT {field} FROM rounds WHERE id = 1"  # noqa: S608
-        )
-        assert (await cursor.fetchone())[field] == value
-
-
-@pytest.mark.parametrize(
-    "field", ["status", "division_id", "round_number", "id", "; DROP TABLE rounds --"]
-)
-async def test_a_field_outside_the_allow_list_is_refused(tmp_path, field):
-    """The field name ultimately comes from a manager's choice in the amendment flow, so
-    the allow-list is what stops a generic setter becoming an arbitrary write — `status`
-    in particular has its own commands and its own rules."""
-    db_path = await _make_db(tmp_path, rounds=((1, 1, 7, NOT_RUN),))
-
-    with pytest.raises(ValueError, match="not updatable"):
-        await SeasonService(db_path).update_round_field(1, field, "anything")
-
-
-async def test_a_refused_field_writes_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, rounds=((1, 1, 7, NOT_RUN),))
-
-    with pytest.raises(ValueError):
-        await SeasonService(db_path).update_round_field(1, "status", "FINAL")
-
-    assert await _status(db_path, 1) == NOT_RUN

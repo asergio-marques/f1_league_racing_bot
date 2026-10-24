@@ -1,13 +1,12 @@
 """The division and season writes in `SeasonService` that nothing else exercised.
 
-Issue #208. `duplicate_division`, `add_division`'s tier checks and `load_all_setup_seasons` were
-uncovered at the service level — the cogs that call them are tested with the service stubbed, which is the right shape for the cogs and left the
-SQL itself unread.
+Issue #208. `duplicate_division` and `load_all_setup_seasons` were uncovered at the service
+level — the cogs that call them are tested with the service stubbed, which is the right shape for
+the cogs and left the SQL itself unread. The divisions and rounds they copy and read are laid down
+by SQL, as the setup commands' saves write them.
 
-**A tier is unique within a season, and zero means "not yet tiered".** Both `add_division` and
-`duplicate_division` refuse a tier another division of the season holds and a negative one, but
-a tier of zero is not checked at all — setup lays down untiered divisions before a manager
-orders them, and refusing a second zero would block laying down a second division.
+**A tier is unique within a season.** `duplicate_division` refuses a tier another division of the
+season holds and a negative one.
 
 **A duplicated division copies the calendar, shifted, and nothing else.** Every round is
 copied with the same format and track and its time moved by the offset; the phase flags start
@@ -57,56 +56,35 @@ async def _make_db(tmp_path, *, name="season_divisions", status="SETUP") -> str:
     return db_path
 
 
-async def _source(service: SeasonService, *, tier=1):
-    div = await service.add_division(SEASON_ID, "Pro", 555, forecast_channel_id=600, tier=tier)
-    await service.add_round(
-        div.id, 1, RoundFormat.NORMAL, "Silverstone", datetime(2026, 3, 1, 18, tzinfo=timezone.utc)
-    )
-    await service.add_round(
-        div.id, 2, RoundFormat.SPRINT, "Monza", datetime(2026, 3, 8, 18, tzinfo=timezone.utc)
-    )
-    return div
+async def _division(db_path: str, name: str, role_id: int, *, forecast_channel_id=None,
+                    tier: int) -> int:
+    """A division of season 5 laid down by SQL, its id returned."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id, tier) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (SEASON_ID, name, role_id, forecast_channel_id, tier),
+        )
+        await db.commit()
+        return cursor.lastrowid
 
 
-# ---------------------------------------------------------------------------
-# add_division
-# ---------------------------------------------------------------------------
-
-
-async def test_a_division_is_added_with_its_tier(tmp_path):
-    service = SeasonService(await _make_db(tmp_path))
-
-    div = await service.add_division(SEASON_ID, "Pro", 555, forecast_channel_id=600, tier=1)
-
-    assert (div.name, div.tier, div.mention_role_id, div.forecast_channel_id) == (
-        "Pro", 1, 555, 600
-    )
-    assert [d.name for d in await service.get_divisions(SEASON_ID)] == ["Pro"]
-
-
-async def test_a_negative_tier_is_refused(tmp_path):
-    service = SeasonService(await _make_db(tmp_path, name="add_negative"))
-
-    with pytest.raises(ValueError, match="Tier must be >= 1"):
-        await service.add_division(SEASON_ID, "Pro", 555, tier=-1)
-
-
-async def test_a_tier_already_held_is_refused(tmp_path):
-    service = SeasonService(await _make_db(tmp_path, name="add_dup"))
-    await service.add_division(SEASON_ID, "Pro", 555, tier=1)
-
-    with pytest.raises(ValueError, match="tier 1 already exists"):
-        await service.add_division(SEASON_ID, "Am", 556, tier=1)
-
-
-async def test_several_untiered_divisions_may_be_laid_down(tmp_path):
-    """Setup lays them down before a manager orders them; zero is not checked."""
-    service = SeasonService(await _make_db(tmp_path, name="add_zero"))
-
-    await service.add_division(SEASON_ID, "Pro", 555)
-    await service.add_division(SEASON_ID, "Am", 556)
-
-    assert len(await service.get_divisions(SEASON_ID)) == 2
+async def _source(db_path: str, *, tier=1) -> int:
+    """Pro (tier *tier*, role 555, forecast channel 600) with round 1 at Silverstone on 1 March
+    and a sprint round 2 at Monza on 8 March, both at 18:00 UTC; its id returned."""
+    div_id = await _division(db_path, "Pro", 555, forecast_channel_id=600, tier=tier)
+    async with get_connection(db_path) as db:
+        for number, fmt, track, at in (
+            (1, RoundFormat.NORMAL, "Silverstone", datetime(2026, 3, 1, 18, tzinfo=timezone.utc)),
+            (2, RoundFormat.SPRINT, "Monza", datetime(2026, 3, 8, 18, tzinfo=timezone.utc)),
+        ):
+            await db.execute(
+                "INSERT INTO rounds (division_id, round_number, format, track_name, "
+                "scheduled_at) VALUES (?, ?, ?, ?, ?)",
+                (div_id, number, fmt.value, track, at.isoformat()),
+            )
+        await db.commit()
+    return div_id
 
 
 # ---------------------------------------------------------------------------
@@ -115,10 +93,11 @@ async def test_several_untiered_divisions_may_be_laid_down(tmp_path):
 
 
 async def test_a_duplicate_copies_every_round(tmp_path):
-    service = SeasonService(await _make_db(tmp_path, name="dup_rounds"))
-    source = await _source(service)
+    db_path = await _make_db(tmp_path, name="dup_rounds")
+    service = SeasonService(db_path)
+    source = await _source(db_path)
 
-    copy = await service.duplicate_division(source.id, "Am", 556, tier=2)
+    copy = await service.duplicate_division(source, "Am", 556, tier=2)
 
     rounds = await service.get_division_rounds(copy.id)
     assert [(r.round_number, r.format, r.track_name) for r in rounds] == [
@@ -128,10 +107,11 @@ async def test_a_duplicate_copies_every_round(tmp_path):
 
 
 async def test_a_duplicate_carries_its_own_name_role_and_tier(tmp_path):
-    service = SeasonService(await _make_db(tmp_path, name="dup_identity"))
-    source = await _source(service)
+    db_path = await _make_db(tmp_path, name="dup_identity")
+    service = SeasonService(db_path)
+    source = await _source(db_path)
 
-    copy = await service.duplicate_division(source.id, "Am", 556, forecast_channel_id=601, tier=2)
+    copy = await service.duplicate_division(source, "Am", 556, forecast_channel_id=601, tier=2)
 
     assert (copy.name, copy.mention_role_id, copy.forecast_channel_id, copy.tier) == (
         "Am", 556, 601, 2
@@ -140,10 +120,11 @@ async def test_a_duplicate_carries_its_own_name_role_and_tier(tmp_path):
 
 
 async def test_the_offset_moves_every_round(tmp_path):
-    service = SeasonService(await _make_db(tmp_path, name="dup_offset"))
-    source = await _source(service)
+    db_path = await _make_db(tmp_path, name="dup_offset")
+    service = SeasonService(db_path)
+    source = await _source(db_path)
 
-    copy = await service.duplicate_division(source.id, "Am", 556, day_offset=1, hour_offset=1.5)
+    copy = await service.duplicate_division(source, "Am", 556, day_offset=1, hour_offset=1.5)
 
     first = (await service.get_division_rounds(copy.id))[0]
     assert first.scheduled_at.replace(tzinfo=timezone.utc) == datetime(
@@ -152,10 +133,11 @@ async def test_the_offset_moves_every_round(tmp_path):
 
 
 async def test_a_negative_offset_moves_rounds_back(tmp_path):
-    service = SeasonService(await _make_db(tmp_path, name="dup_back"))
-    source = await _source(service)
+    db_path = await _make_db(tmp_path, name="dup_back")
+    service = SeasonService(db_path)
+    source = await _source(db_path)
 
-    copy = await service.duplicate_division(source.id, "Am", 556, day_offset=-2)
+    copy = await service.duplicate_division(source, "Am", 556, day_offset=-2)
 
     first = (await service.get_division_rounds(copy.id))[0]
     assert first.scheduled_at.date() == date(2026, 2, 27)
@@ -165,15 +147,15 @@ async def test_the_copys_phase_flags_start_clear(tmp_path):
     """A copy of a round whose phase 1 has run is a new round nobody has forecast."""
     db_path = await _make_db(tmp_path, name="dup_flags")
     service = SeasonService(db_path)
-    source = await _source(service)
+    source = await _source(db_path)
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE rounds SET phase1_done = 1, phase2_done = 1 WHERE division_id = ?",
-            (source.id,),
+            (source,),
         )
         await db.commit()
 
-    copy = await service.duplicate_division(source.id, "Am", 556)
+    copy = await service.duplicate_division(source, "Am", 556)
 
     assert all(
         not (r.phase1_done or r.phase2_done or r.phase3_done)
@@ -182,38 +164,42 @@ async def test_the_copys_phase_flags_start_clear(tmp_path):
 
 
 async def test_the_source_is_untouched(tmp_path):
-    service = SeasonService(await _make_db(tmp_path, name="dup_source"))
-    source = await _source(service)
+    db_path = await _make_db(tmp_path, name="dup_source")
+    service = SeasonService(db_path)
+    source = await _source(db_path)
 
-    await service.duplicate_division(source.id, "Am", 556, day_offset=7)
+    await service.duplicate_division(source, "Am", 556, day_offset=7)
 
-    rounds = await service.get_division_rounds(source.id)
+    rounds = await service.get_division_rounds(source)
     assert rounds[0].scheduled_at.date() == date(2026, 3, 1)
 
 
 async def test_duplicating_onto_a_held_tier_is_refused(tmp_path):
-    service = SeasonService(await _make_db(tmp_path, name="dup_tier"))
-    source = await _source(service, tier=1)
+    db_path = await _make_db(tmp_path, name="dup_tier")
+    service = SeasonService(db_path)
+    source = await _source(db_path, tier=1)
 
     with pytest.raises(ValueError, match="tier 1 already exists"):
-        await service.duplicate_division(source.id, "Am", 556, tier=1)
+        await service.duplicate_division(source, "Am", 556, tier=1)
 
     assert len(await service.get_divisions(SEASON_ID)) == 1
 
 
 async def test_duplicating_onto_a_negative_tier_is_refused(tmp_path):
-    service = SeasonService(await _make_db(tmp_path, name="dup_negative"))
-    source = await _source(service)
+    db_path = await _make_db(tmp_path, name="dup_negative")
+    service = SeasonService(db_path)
+    source = await _source(db_path)
 
     with pytest.raises(ValueError, match="Tier must be >= 1"):
-        await service.duplicate_division(source.id, "Am", 556, tier=-2)
+        await service.duplicate_division(source, "Am", 556, tier=-2)
 
 
 async def test_a_division_with_no_rounds_duplicates_empty(tmp_path):
-    service = SeasonService(await _make_db(tmp_path, name="dup_empty"))
-    source = await service.add_division(SEASON_ID, "Pro", 555, tier=1)
+    db_path = await _make_db(tmp_path, name="dup_empty")
+    service = SeasonService(db_path)
+    source = await _division(db_path, "Pro", 555, tier=1)
 
-    copy = await service.duplicate_division(source.id, "Am", 556, tier=2)
+    copy = await service.duplicate_division(source, "Am", 556, tier=2)
 
     assert await service.get_division_rounds(copy.id) == []
 
@@ -224,8 +210,9 @@ async def test_a_division_with_no_rounds_duplicates_empty(tmp_path):
 
 
 async def test_a_setup_season_is_rebuilt_with_its_divisions_and_rounds(tmp_path):
-    service = SeasonService(await _make_db(tmp_path, name="load_setup"))
-    await _source(service)
+    db_path = await _make_db(tmp_path, name="load_setup")
+    service = SeasonService(db_path)
+    await _source(db_path)
 
     [season] = await service.load_all_setup_seasons()
 
