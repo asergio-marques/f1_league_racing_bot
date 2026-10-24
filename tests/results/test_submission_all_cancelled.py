@@ -584,3 +584,76 @@ async def test_a_discarded_notice_is_named_in_the_round_s_log_line(tmp_path):
     [line] = _ended_lines(league)
     assert ("\n  not notified: **Pro** — forecast channel: the notice could not be posted, and a "
             "league admin discarded it") in line
+
+
+# ---------------------------------------------------------------------------
+# Its check-in record, beneath its line (Part E, E3b; owner, check 2, "Write the record")
+# ---------------------------------------------------------------------------
+
+
+#: The heading of round 3's check-in record in the log channel.
+RECORD_HEADING = "\n  check-in, Pro, Round 3 (Silverstone):"
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_a_round_ending_cancelled_writes_its_check_in_record_beneath_its_line(tmp_path):
+    """Attendance is on. Round 3's check-in recorded Lewis as accepted and Max as giving no
+    answer, and the reserves were distributed, Lewis sent to Scuderia Ferrari. Round 3 ends
+    cancelled when the admin types CANCELLED for its race: beneath its `ROUND_CANCELLED` line,
+    after the reason, the log channel shows the round's check-in, every driver grouped by their
+    answer and Lewis to Scuderia Ferrari, as `/round cancel` writes it (attendance :130-131)."""
+    from tests.support.season_league import FERRARI, LEWIS, profile_id
+
+    league = await _league(tmp_path, attendance=True)
+    await league.write(
+        "UPDATE driver_round_attendance SET assigned_team_id = ? "
+        "WHERE round_id = ? AND driver_profile_id = ?", FERRARI, ROUND_3, profile_id(LEWIS),
+    )
+
+    await _cancel_the_race(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [line] = _ended_lines(league)
+    record = (
+        RECORD_HEADING
+        + "\n    accepted: `<@101>`"
+        + "\n    tentative: none"
+        + "\n    declined: none"
+        + "\n    no answer: `<@102>`"
+        + "\n    reserves: `<@101>` to Scuderia Ferrari"
+    )
+    assert record in line
+    assert line.index("reason: every session was entered as not held") < line.index(record)
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_no_check_in_record_is_written_where_no_call_was_posted(tmp_path):
+    """Attendance is on, but round 3's check-in call was never posted, so it recorded nobody.
+    Round 3 ends cancelled when the admin types CANCELLED for its race: its `ROUND_CANCELLED`
+    line is written with no check-in record beneath it (attendance :130)."""
+    league = await _league(tmp_path, attendance=True)
+    await league.write("DELETE FROM driver_round_attendance WHERE round_id = ?", ROUND_3)
+    await league.write("DELETE FROM rsvp_embed_messages WHERE round_id = ?", ROUND_3)
+
+    await _cancel_the_race(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [line] = _ended_lines(league)
+    assert "check-in, Pro" not in line
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
+async def test_no_check_in_record_is_written_while_attendance_is_off(tmp_path):
+    """Attendance is off, though round 3's check-in recorded Lewis and Max. Round 3 ends
+    cancelled when the admin types CANCELLED for its race: its `ROUND_CANCELLED` line is written
+    with no check-in record beneath it (attendance :131)."""
+    league = await _league(tmp_path)
+
+    await _cancel_the_race(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [line] = _ended_lines(league)
+    assert "check-in, Pro" not in line

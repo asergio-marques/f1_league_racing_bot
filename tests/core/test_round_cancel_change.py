@@ -987,6 +987,24 @@ async def test_the_check_in_is_written_beneath_the_success_line(tmp_path):
     assert entry == SUCCESS + "\n  division: Pro\n  round: 3" + CHECKIN_LOGGED
 
 
+#: Why the check-in record's public reader is not yet there to call.
+CHECKIN_RECORD_UNBUILT = "#439: core's check-in record of a round has no public reader yet"
+
+
+@pytest.mark.xfail(strict=True, reason=CHECKIN_RECORD_UNBUILT)
+async def test_checkin_record_gives_what_round_cancel_writes(tmp_path):
+    """Round 3's check-in recorded Lewis as accepted and Max as giving no answer. Core's public
+    `checkin_record`, read for Pro's round 3, gives the record `/round cancel` writes beneath its
+    line, which a round ending with every session not held writes too (attendance :130)."""
+    from leaguebot.core.services.cancellation_notice_service import checkin_record
+
+    league = await ongoing_league(tmp_path, attendance=True)
+
+    record = await checkin_record(league.db_path, SimpleNamespace(id=PRO, name="Pro"), R3)
+
+    assert record == CHECKIN_AUDIT
+
+
 async def test_a_calendar_never_posted_is_left_alone(tmp_path):
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE divisions SET calendar_message_id = NULL WHERE id = ?", PRO)
