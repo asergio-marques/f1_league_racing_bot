@@ -19,7 +19,8 @@ and resumes after a stop:
    queue's schedule, and a league manager may Retry it. A league admin may Discard it, and the
    change's outcome then names the message with a link, for removal by hand, and does not count it
    as removed (the results specification). A failure's ``left`` is kept on the job, so a discard
-   names only the messages still standing.
+   names only the messages still standing. A channel is named by its link, in the stop and, once
+   discarded, in the reply and the closing line, for deletion by hand.
 3. **`close`**, one save: it counts what went, forgets the banners taken down so that one left
    standing keeps its record, and writes the closing line. A message left standing is one in a
    discarded job's ``left``, or every message of an item whose job was discarded with none (the
@@ -65,6 +66,7 @@ from leaguebot.core.services.season_lifecycle_service import (
 )
 from leaguebot.core.services.season_service import end_rounds_awaiting_results_on
 from leaguebot.results.services.results_purge_service import (
+    CHANNEL_KINDS,
     MESSAGE_KINDS,
     erase_season_on,
     message_link,
@@ -176,7 +178,8 @@ def results_off_change(
         links = ", ".join(
             message_link(item["server_id"], item["channel_id"], m) for m in item["message_ids"]
         )
-        return f"removing the {item['label']}" + (f" ({links})" if links else "")
+        channel = f" <#{item['channel_id']}>" if item["kind"] in CHANNEL_KINDS else ""
+        return f"removing the {item['label']}{channel}" + (f" ({links})" if links else "")
 
     async def describe_close(_ctx: StepContext) -> str:
         return "counting what was removed"
@@ -185,7 +188,8 @@ def results_off_change(
         tally = _tally(ctx)
         await _forget_banners_on(db, tally["banners_down"])
         lines: tuple[str, ...] = ()
-        if tally["had_messages"]:
+        channels_left = tally["channels_left"]
+        if tally["had_messages"] or channels_left:
             left = tally["left"]
             line = (
                 f"{ctx.named} | /module disable results | Messages removed\n"
@@ -196,6 +200,8 @@ def results_off_change(
                 line += f"\n  left standing, to delete by hand: {len(left)}\n" + "\n".join(
                     f"  {link}" for link in left
                 )
+            if channels_left:
+                line += "\n  channels left standing, to delete by hand: " + ", ".join(channels_left)
             lines = (line,)
         return StepResult(
             result={"messages": tally["messages"], "verdicts": tally["verdicts"],
@@ -229,6 +235,12 @@ def results_off_change(
             reply += (
                 f"\n⚠️ {len(left)} message(s) could not be removed — delete them by hand:\n"
                 + "\n".join(left)
+            )
+        channels_left = taken["channels_left"]
+        if channels_left:
+            reply += (
+                f"\n⚠️ {len(channels_left)} channel(s) could not be removed — delete them by "
+                "hand:\n" + "\n".join(channels_left)
             )
         return reply
 
@@ -274,6 +286,7 @@ def _tally(ctx: OutcomeContext) -> dict[str, Any]:
     messages = verdicts = 0
     banners_down: list[int] = []
     left: list[str] = []
+    channels_left: list[str] = []
     had_messages = False
     for view in ctx.steps:
         if view.name != _TAKE_DOWN:
@@ -282,7 +295,9 @@ def _tally(ctx: OutcomeContext) -> dict[str, Any]:
         kind = item["kind"]
         had_messages = had_messages or kind in MESSAGE_KINDS
         result = view.result or {}
-        if result.get("discarded") is not None:
+        if result.get("discarded") is not None and kind in CHANNEL_KINDS:
+            channels_left.append(f"<#{item['channel_id']}>")
+        elif result.get("discarded") is not None:
             ids = result.get("left")
             if ids is None:
                 ids = item["message_ids"]
@@ -296,5 +311,5 @@ def _tally(ctx: OutcomeContext) -> dict[str, Any]:
                 banners_down.append(int(item["anchor"]))
     return {
         "messages": messages, "verdicts": verdicts, "banners_down": banners_down,
-        "left": left, "had_messages": had_messages,
+        "left": left, "channels_left": channels_left, "had_messages": had_messages,
     }

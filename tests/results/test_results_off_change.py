@@ -680,11 +680,6 @@ async def test_messages_left_standing_are_listed_in_the_reply_and_the_closing_li
     assert "left standing" not in switch_off
 
 
-#: A channel left standing is not yet named with its link (#439, slice 8, B9).
-CHANNEL_LINK_UNBUILT = "#439: a discarded channel take-down is not yet named with its <#link>"
-
-
-@pytest.mark.xfail(strict=True, reason=CHANNEL_LINK_UNBUILT)
 async def test_a_discarded_channel_take_down_names_the_channel_with_its_link(tmp_path):
     """Division 1's round 1 is final, its submission channel 8000 still open and an amendment open
     in channel 9100; Discord refuses to delete either. Each removal stops the queue, naming the
@@ -1128,7 +1123,6 @@ async def test_an_outcome_after_a_restart_is_left_to_the_log_channel(tmp_path):
     await _line_starting(bot, f"{NAMED} | /module disable results | Messages removed")
 
 
-@pytest.mark.xfail(strict=True, reason=CHANNEL_LINK_UNBUILT)
 async def test_a_server_out_of_cache_erases_the_rows_and_names_every_message_left_standing(
     tmp_path,
 ):
