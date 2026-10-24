@@ -1326,6 +1326,62 @@ async def test_recovery_reposts_the_appeals_prompt_replacing_the_old_one(tmp_pat
     assert await changes_of(league.db_path, KIND) == []
 
 
+async def _ask_appeals_approval(league: ReviewLeague) -> None:
+    """Approve on round 3's appeals review, pressed by the league manager Alex on the standing
+    appeals prompt: one upheld appeal, Lewis's 5-second penalty taken back. Not yet run."""
+    await league.bot.change_queue.ask(
+        "results.appeals.approve",
+        {"round_id": ROUND_ID, "division_id": DIVISION_ID,
+         "staged": [penalty(LEWIS, seconds=-5).to_payload()],
+         "appeals_prompt_message_id": OLD_APPEALS_PROMPT},
+        actor=tier_member("manager", display_name="Alex", name="Alex#0001"),
+        what="✅ Approve on round 3's appeals review",
+    )
+
+
+async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_in_hand(tmp_path):
+    """Round 3 awaits its appeal verdicts, its appeals prompt standing, and Approve on it waits
+    on the queue when the bot restarts. Restart recovery asks no reopening of the appeals review,
+    and the old prompt stands for the approval to take down."""
+    league = await _league(tmp_path, name="recover_appeals_in_hand", in_review=True,
+                           results_posted=True, appeals_prompt=OLD_APPEALS_PROMPT,
+                           round_status=RoundStatus.AWAITING_APPEAL_VERDICTS.value)
+    league.channel(SUBMISSION_CHANNEL).seed(OLD_APPEALS_PROMPT, "appeals review")
+    await _ask_appeals_approval(league)
+
+    import leaguebot.__main__ as bot_module
+
+    await restart_queue(league.bot)
+    await bot_module._recover_orphaned_submission_channels(league.bot)
+
+    assert await changes_of(league.db_path, APPEALS_OPEN) == []
+    assert OLD_APPEALS_PROMPT in league.channel(SUBMISSION_CHANNEL).messages
+
+
+async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_stopped(tmp_path):
+    """Round 3's appeals approval stopped at its save, the points failing to recalculate (the
+    session scored by a points configuration, so the recalculation is reached). Restart recovery
+    asks no reopening of the appeals review: the approval stays stopped at `apply` and no new
+    appeals prompt is posted."""
+    league = await _league(tmp_path, name="recover_appeals_stopped", in_review=True,
+                           results_posted=True, appeals_prompt=OLD_APPEALS_PROMPT,
+                           round_status=RoundStatus.AWAITING_APPEAL_VERDICTS.value)
+    league.channel(SUBMISSION_CHANNEL).seed(OLD_APPEALS_PROMPT, "appeals review")
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE session_results SET config_name = 'Standard'")
+        await db.commit()
+    with points_fail():
+        await _ask_appeals_approval(league)
+        await run_queue(league.bot)
+    assert await stopped_at(league) == "apply"
+
+    await _recover(league)
+
+    assert await changes_of(league.db_path, APPEALS_OPEN) == []
+    assert await stopped_at(league) == "apply"
+    assert _prompts(league, "AppealsReviewView") == []
+
+
 APPEALS_OPEN = "results.appeals.open"
 APPEALS_REOPENING_UNDISCARDABLE = "#439: the appeals review's reopening may still be discarded"
 
