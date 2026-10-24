@@ -251,10 +251,8 @@ CANNOT_DISCARD_FORGET = (
     "record, and the next restart would tell them it expired and record it as lapsed. Fix what "
     "stopped it and press **Retry**."
 )
-FORGET_UNDISCARDABLE = "#439: forgetting a taken-down review may still be discarded"
 
 
-@pytest.mark.xfail(strict=True, reason=FORGET_UNDISCARDABLE)
 async def test_forgetting_a_taken_down_review_cannot_be_discarded(standing):
     """Alex's review was approved and the bot asks for it to be taken down, confirmed. Its three
     messages are deleted, then forgetting the review's record fails and stops the queue. A league

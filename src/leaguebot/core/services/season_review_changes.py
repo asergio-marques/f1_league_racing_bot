@@ -45,7 +45,9 @@ partly done). Its jobs are:
   reviewer's name, as a save waits on no second connection;
 - `forget`, a save: the `season_review_prompts` row goes, and, but where the review was confirmed
   or its end is the refusal's, the log line records the review's lapse, naming the reviewer.
-  Messages a Discard left standing are named in a line of their own, for deletion by hand.
+  Messages a Discard left standing are named in a line of their own, for deletion by hand. It
+  cannot be discarded: the review's row would stay on the bot's record, and the next restart
+  would tell the reviewer it expired and record it as lapsed.
 
 A job that fails stops the queue (core specification, "How a change is carried out").
 
@@ -333,6 +335,12 @@ def season_review_take_down_change() -> ChangeType:
     async def describe_forget(ctx: StepContext) -> str:
         return f"forgetting the review of <@{ctx.step_payload['reviewer_id']}>"
 
+    async def stays_on_record(ctx: StepContext) -> str:
+        return (
+            f"<@{ctx.step_payload['reviewer_id']}>'s review would stay on the bot's record, and "
+            "the next restart would tell them it expired and record it as lapsed"
+        )
+
     def outcome(_ctx: OutcomeContext) -> str:
         return ""
 
@@ -347,7 +355,10 @@ def season_review_take_down_change() -> ChangeType:
             POST_EXPIRY: Step(
                 POST_EXPIRY, StepKind.ACT, post_expiry, describe=describe_expiry
             ),
-            FORGET: Step(FORGET, StepKind.SAVE, forget, describe=describe_forget),
+            FORGET: Step(
+                FORGET, StepKind.SAVE, forget, describe=describe_forget,
+                undiscardable=stays_on_record,
+            ),
         },
         check=check,
         key=lambda payload: f"{TAKE_DOWN}:{payload['question_id']}",
