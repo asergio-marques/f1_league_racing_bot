@@ -165,13 +165,15 @@ after a round, for attendance), it does so through a hook too.
 
 **Results reaches attendance through one hook, handed in by the builder.** What attendance does
 after a round's review (recording the round's attendance and its pardons, recalculating after an
-amendment, posting the sheet, finding the drivers over a threshold, applying and announcing one
-driver's sanction, redrawing a lineup) is a protocol results declares, `AttendanceAfterReview`, and
+amendment, posting the sheet, finding the drivers over a threshold, saying which pardons an amendment's review may offer,
+checking, saving, changing the roles of and announcing one driver's sanction, redrawing a lineup) is a protocol results declares, `AttendanceAfterReview`, and
 attendance implements it on its own functions. The builder makes it once, attaches it to the bot
 and hands it to the review's change types, so results imports nothing of attendance and the
 `.importlinter` exception for it is gone. Each method checks attendance's switch itself, on the
-connection it is handed where it writes, and does nothing while the module is off; a change type
-asks the hook without asking whether attendance is on. The placement service, which a sanction
+connection it is handed where it writes, and does nothing while the module is off, save
+`change_sanction_roles`, which acts whatever the switch says: a sanction saved is owed its roles,
+and leaving a driver in the wrong roles because the module was turned off meanwhile would be worse
+than acting. A change type asks the hook without asking whether attendance is on. The placement service, which a sanction
 moves seats through, is handed to the hook by the builder and not looked up on the bot.
 
 *Rejected:* results calling attendance's functions directly and checking the switch itself, which
