@@ -407,3 +407,35 @@ async def test_the_restart_s_clearing_cannot_be_discarded(tmp_path):
     assert _deleted(league)
     [made] = league.created
     assert await _submission(league) == [{"channel_id": made, "closed": 0}]
+
+
+CUT_SHORT_LEFT = (
+    f"⚠️ The cut-short submission channel <#{SUBMISSION_CHANNEL}> of round 3 was not deleted, and "
+    "no record of it is kept: delete it by hand."
+)
+CUT_SHORT_UNNAMED = "#439: a discarded deletion at a restart does not yet name the channel left"
+
+
+@pytest.mark.xfail(strict=True, reason=CUT_SHORT_UNNAMED)
+async def test_a_discarded_deletion_at_a_restart_names_the_channel_to_delete_by_hand(tmp_path):
+    """Discord refuses to delete channel 690 at the restart, after round 3's cut-short submission
+    was cleared, so the queue stops at the deletion. A league admin discards it. The log channel
+    is told, once, that the cut-short submission channel 690 of round 3 was not deleted and that
+    no record of it is kept, to delete it by hand; round 3's submission is still opened afresh in a
+    new channel."""
+    league = await _league(tmp_path)
+    league.channel(SUBMISSION_CHANNEL).delete_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Permissions"
+    )
+
+    await _restart(league)
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "delete_channel"
+
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.log().count(CUT_SHORT_LEFT) == 1
+    assert not _deleted(league)
+    [made] = league.created
+    assert await _submission(league) == [{"channel_id": made, "closed": 0}]
