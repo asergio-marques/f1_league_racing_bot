@@ -26,7 +26,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 from typing import TYPE_CHECKING, Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -815,6 +815,22 @@ class SchedulerService:
                     continue
             if self._remove_job(job.id):
                 log.info("Removed job %s", job.id)
+
+    def cancel_rounds(self, round_ids: Iterable[int], *, season_end: bool = False) -> None:
+        """Remove the scheduler jobs of every round in *round_ids* in one pass.
+
+        The store is listed once, before anything is removed, and that listing is the only call
+        that can raise: a store that cannot be read removes nothing, so a division's or a
+        season's cancellation that unarms its rounds first stands as it was (#439, slice 8).
+        Each removal then goes through `_remove_job`, which never raises. With *season_end*,
+        any stale ``season_end*`` job the store still carries goes in the same pass.
+        """
+        wanted = set(round_ids)
+        jobs = list(self._scheduler.get_jobs())
+        for job in jobs:
+            if job.kwargs.get("round_id") in wanted or (season_end and job.id.startswith("season_end")):
+                if self._remove_job(job.id):
+                    log.info("Removed job %s", job.id)
 
     async def cancel_all_weather(self) -> None:
         """Cancel the weather module's jobs for every round in active/setup seasons.

@@ -41,17 +41,7 @@ CANCELS = [
     ("cancel_rounds", ([5],)),
 ]
 
-CANCEL_ROUNDS_UNBUILT = "#439: the scheduler service has no cancel_rounds yet"
-
-#: The cases of `CANCELS`, `cancel_rounds` marked until it is built.
-CANCEL_CASES = [
-    pytest.param(
-        name, args, id=name,
-        marks=pytest.mark.xfail(strict=True, reason=CANCEL_ROUNDS_UNBUILT)
-        if name == "cancel_rounds" else (),
-    )
-    for name, args in CANCELS
-]
+CANCEL_CASES = [pytest.param(name, args, id=name) for name, args in CANCELS]
 
 
 def _service(jobs) -> SchedulerService:
@@ -117,7 +107,6 @@ def _round_job(job_id: str, round_id: int):
     return SimpleNamespace(id=job_id, kwargs={"round_id": round_id})
 
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ROUNDS_UNBUILT)
 def test_cancel_rounds_removes_every_job_of_every_round_handed_and_no_other():
     """Rounds 5 and 6 each carry two jobs, round 7 one, and a season-end job stands. Cancelling
     rounds 5 and 6 removes their four jobs, listing the store once, and leaves round 7's job and
@@ -136,7 +125,6 @@ def test_cancel_rounds_removes_every_job_of_every_round_handed_and_no_other():
     assert service._scheduler.get_jobs.call_count == 1
 
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ROUNDS_UNBUILT)
 def test_a_store_that_cannot_be_listed_removes_nothing():
     """The job store cannot be read when round 5's and round 6's timed work is to be removed:
     the fault is raised, so that the cancellation stops, and no job is removed."""
@@ -149,7 +137,6 @@ def test_a_store_that_cannot_be_listed_removes_nothing():
     service._scheduler.remove_job.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ROUNDS_UNBUILT)
 def test_cancel_rounds_takes_the_season_end_job_in_the_same_pass():
     """A season's cancellation removes round 5's job and the stale season-end job a store still
     carries in the one pass, listing the store once."""
