@@ -584,12 +584,10 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         submission_all_cancelled_change(
             seasons=bot.season_service,
-            notices={
-                **check_in_record_steps(modules=bot.module_service),
-                **notice_steps(
-                    modules=bot.module_service, seasons=bot.season_service, scope=SCOPE_ROUND,
-                ),
-            },
+            record=check_in_record_steps(modules=bot.module_service),
+            notices=notice_steps(
+                modules=bot.module_service, seasons=bot.season_service, scope=SCOPE_ROUND,
+            ),
             now=lambda: bot.change_queue.now(),
         )
     )

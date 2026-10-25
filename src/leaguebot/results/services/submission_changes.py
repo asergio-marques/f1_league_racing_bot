@@ -511,7 +511,8 @@ async def _submission_standing(ctx: CheckContext) -> Verdict:
 
 
 def submission_all_cancelled_change(
-    *, seasons: "SeasonService", notices: dict[str, Step], now: Callable[[], datetime],
+    *, seasons: "SeasonService", record: dict[str, Step], notices: dict[str, Step],
+    now: Callable[[], datetime],
 ) -> ChangeType:
     """The `results.submission.all_cancelled` change type, for the builder to register, on the
     league lane.
@@ -519,19 +520,22 @@ def submission_all_cancelled_change(
     The payload is the last turn's: ``round_id``, ``channel_id``, ``round_number`` and
     ``sessions``, each ``{"session_id", "session_type"}`` of the round's cancelled sessions in
     running order. A resubmission's adds ``resubmission`` and ``old_tables``, the ids of the
-    earlier results tables the new sessions could not carry. *seasons* posts the calendar and *now*
-    is the queue's clock, read when the round's ending is audited.
+    earlier results tables the new sessions could not carry. *seasons* posts the calendar, *record*
+    holds the job core builds that reads the round's check-in, *notices* the jobs core builds that
+    tell the round's cancellation, and *now* is the queue's clock, read when the round's ending is
+    audited.
 
     Its first job, ``end_round`` (a save, **never to be discarded**: without it the round would
     never finish and its season could never be completed), ends the round CANCELLED through core's
     ``end_round_not_held_on``: the status and its audit, the division's refresh and the season's
     move on, in one save. A resubmission leaves the standings its first submission posted, so that
     save withdraws them too: their rows are deleted and the later rounds' worked out again without
-    the round, on the names the ``names`` job resolved first. It then plans one posting job for each
-    session (the line, in the results channel, saved as the session's results message; a division
-    with no results channel has none to post), the deletion of the withdrawn standings' posts and of
-    the old tables, the later rounds' standings posted again, and the round's calendar again, struck through, where one stands; its follow-on is the
-    season's wind-down. Where the save finds a session not cancelled after all, or the round past
+    the round, on the names the ``names`` job resolved first. It then plans, in this order, the
+    reading of the check-in, one posting job for each session (the line, in the results channel,
+    saved as the session's results message; a division with no results channel has none to post),
+    the deletion of the withdrawn standings' posts and of the old tables, the later rounds'
+    standings posted again, the notices, and the round's calendar again, struck through, where one
+    stands; its follow-on is the season's wind-down. Where the save finds a session not cancelled after all, or the round past
     the point it can end from, it writes and plans nothing. ``ask_close`` asks the closing of the
     channel of the round's lane in its own save either way. A discarded line leaves the others and
     the closing to go on.
@@ -608,11 +612,12 @@ def submission_all_cancelled_change(
         return StepResult(
             result={"ended": True, "previous": previous, **target},
             then=(
+                *(PlannedStep(name, target) for name in record),
                 *posts,
                 *deletions,
                 *reposts,
-                PlannedStep(POST_CALENDAR, {**target, "round_ids": [round_id], "only_if_posted": True}),
                 *(PlannedStep(name, target) for name in notices),
+                PlannedStep(POST_CALENDAR, {**target, "round_ids": [round_id], "only_if_posted": True}),
             ),
             follow_ons=(FollowOn(WIND_DOWN, {}, f"Winding the season down after {ctx.what}"),),
         )
@@ -683,6 +688,7 @@ def submission_all_cancelled_change(
             POST_STANDINGS: posting_steps()[POST_STANDINGS],
             DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
             **calendar_steps(seasons),
+            **record,
             **notices,
             ASK_CLOSE: Step(ASK_CLOSE, StepKind.SAVE, ask_close, describe=describe_ask_close),
         },
