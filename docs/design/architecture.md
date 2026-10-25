@@ -763,10 +763,10 @@ The exceptions, each with its reason:
   the results picker's choice (`_ConfigSelectView`) replaces the text of a message in the
   submission or amendment channel and takes its buttons down. It is the interaction's own response
   to the press, Discord's one answer to it, and the buttons come down with it. A second press made
-  before they are down is refused by the view itself, privately: the first press claims the choice
-  before its edit, so the text names the configuration the queue is asked for. An edit that fails
-  releases the claim, leaving the buttons up and nothing lost, and so does a choice the queue's
-  check refuses, which is checked before the edit so that the message is left alone.
+  before they are down is refused by the view itself (results specification, "Submitting round
+  results"): the first press claims the choice before its edit, so the message names that press's
+  choice, and the press puts the message back, buttons and all, where the queue then refuses the
+  choice or fails on it. The `_ConfigSelectView` docstring says when the claim is released.
 - **The factory reset's clean-up and its progress.** The reset empties the database the queue
   lives in and leaves no log channel or roles for Retry and Discard, and its progress is the reply
   to the owner's own command.
