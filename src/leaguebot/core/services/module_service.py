@@ -59,15 +59,6 @@ class ModuleService:
             return False
         return bool(row[0])
 
-    async def set_results_enabled(self, value: bool) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "INSERT OR REPLACE INTO results_module_config (id, module_enabled) "
-                "VALUES (?, ?)",
-                (1, int(value)),
-            )
-            await db.commit()
-
     async def is_attendance_enabled(self) -> bool:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute("SELECT module_enabled FROM attendance_config")
@@ -75,13 +66,6 @@ class ModuleService:
         if row is None:
             return False
         return bool(row[0])
-
-    async def set_attendance_enabled(self, value: bool) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET module_enabled = ?", (int(value),)
-            )
-            await db.commit()
 
     async def is_images_enabled(self) -> bool:
         async with get_connection(self._db_path) as db:
