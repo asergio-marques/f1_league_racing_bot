@@ -1047,7 +1047,6 @@ def _put_back_failures(caplog: Any) -> list[Any]:
             and isinstance(record.exc_info[1], discord.HTTPException)]
 
 
-@pytest.mark.xfail(strict=True, reason="the put-back's fault replaces the original")
 async def test_a_put_back_that_fails_keeps_the_original_fault_in_the_report(
     tmp_path, monkeypatch, caplog,
 ):
@@ -1074,7 +1073,6 @@ async def test_a_put_back_that_fails_keeps_the_original_fault_in_the_report(
     assert picker.view.selected is None
 
 
-@pytest.mark.xfail(strict=True, reason="the put-back's fault gives the presser a second reply")
 async def test_a_put_back_that_fails_after_a_refusal_gives_no_second_reply(
     tmp_path, monkeypatch, caplog,
 ):
@@ -1105,3 +1103,12 @@ async def test_a_put_back_that_fails_after_a_refusal_gives_no_second_reply(
     assert "Not this time." in told, told
     assert _put_back_failures(caplog), caplog.records
     assert picker.view.selected is None
+
+
+async def test_a_picker_asking_the_queue_is_built_with_the_text_it_is_put_back_to():
+    """A submission's picker, which asks the queue, is put back to the text it was posted with,
+    so it cannot be built without one."""
+    with pytest.raises(TypeError):
+        result_submission_service._ConfigSelectView(
+            [HEAVY, STANDARD], None, ask=(CONFIG_KIND, {}),
+        )

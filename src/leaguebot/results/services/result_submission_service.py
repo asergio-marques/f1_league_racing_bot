@@ -2414,6 +2414,11 @@ class _ConfigSelectView(LeagueView):
     queue would refuse (an amendment's, pressed after its five minutes) leaves the message alone;
     the refusal is the queue's own, its ask checking again. The claim is released only once the
     message is put back, so that no press chooses while the picker is being restored over it.
+    A put-back that fails is logged on the host and changes nothing else (`_put_back`): a refusal
+    stays the presser's one reply, and a fault in the ask is still the one the press raises.
+
+    *text* is required with *ask*, as only a submission's picker is put back and the text it was
+    posted with is what it is put back to.
     """
 
     def __init__(
@@ -2425,6 +2430,8 @@ class _ConfigSelectView(LeagueView):
         ask: tuple[str, dict[str, Any]] | None = None,
         text: str | None = None,
     ) -> None:
+        if ask is not None and text is None:
+            raise TypeError("a picker asking the queue needs the text it is put back to")
         super().__init__(timeout=None)
         #: The configuration claimed by the press in hand, or chosen.
         self.selected: str | None = None
@@ -2526,10 +2533,23 @@ class _ConfigSelectView(LeagueView):
 
     async def _put_back(self, interaction: discord.Interaction) -> None:
         """Edit the message pressed back to the picker, its text and its buttons, where the
-        press's edit took them down but the queue did not take the choice."""
-        message = getattr(interaction, "message", None)
-        content = self._text if self._text is not None else getattr(message, "content", None)
-        await interaction.edit_original_response(content=content, view=self)
+        press's edit took them down but the queue did not take the choice.
+
+        Never raises: the press has already been answered, by a refusal, or is failing on the
+        fault of its ask, and a failed put-back must neither give the presser a second reply nor
+        stand in that fault's place. It is logged on the host with its traceback, and the
+        message stays as the press's edit left it. Pinned by
+        `test_a_put_back_that_fails_keeps_the_original_fault_in_the_report` and
+        `test_a_put_back_that_fails_after_a_refusal_gives_no_second_reply`.
+        """
+        try:
+            await interaction.edit_original_response(content=self._text, view=self)
+        except Exception:  # noqa: BLE001 — the press is answered already; this must not answer it
+            message = getattr(interaction, "message", None)
+            log.error(
+                "could not put the points-configuration picker back on message %s; it is left "
+                "without its buttons", getattr(message, "id", None), exc_info=True,
+            )
 
     def _what(self, name: str) -> str:
         """The button as the log channel names it, with the choice it belongs to."""
