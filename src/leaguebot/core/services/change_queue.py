@@ -125,8 +125,8 @@ behind it could not run. Each is a press on the stop notice (`QueueStopView`) an
 a line, where the presser may not use it or the notice's job no longer stops the queue.
 
 **A job whose loss could stop a season from being started or completed, or would leave the league
-no way to put it right, cannot be discarded** (`Step.undiscardable`; decided 2026-10-23 and, for
-the second, in #439's slice 8): the arming of a round's timed work, the opening of a round's
+no way to put it right, cannot be discarded** (`Step.undiscardable`; the core specification's
+"How a change is carried out"): the arming of a round's timed work, the opening of a round's
 results submission, a cancellation's save once its timed work is removed, the closing jobs of a
 review, the signup jobs that settle a driver, and the like. Dropping one would leave a round that
 never runs or never ends, a driver nobody can settle, or records the bot would go on holding

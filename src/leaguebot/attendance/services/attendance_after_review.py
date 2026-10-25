@@ -170,7 +170,8 @@ class AttendanceAfterReview:
         self, user_id: int, profile_id: int, *, revoke: list[int], grant: list[int]
     ) -> dict[str, Any]:
         # The one method that acts whatever attendance's switch says: a sanction already saved
-        # is owed its roles even once attendance is turned off (owner, #439 slice 8).
+        # is owed its roles even once attendance is turned off (the attendance specification's
+        # "Sanctions that do not apply").
         guild = await self._guild()
         entitled = await self._placement.driver_role_ids(profile_id)
         to_revoke = [role_id for role_id in revoke if role_id not in entitled]
