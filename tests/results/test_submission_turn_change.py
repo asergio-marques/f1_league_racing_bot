@@ -17,6 +17,7 @@ Charles (103) races in Am.
 from __future__ import annotations
 
 import asyncio
+import logging
 import sqlite3
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -1038,3 +1039,69 @@ async def test_the_picker_s_claim_is_held_until_it_is_put_back(tmp_path, monkeyp
     assert picker.view.selected is None
     assert [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND] == []
 
+
+def _put_back_failures(caplog: Any) -> list[Any]:
+    """The host's error records carrying the traceback of a put-back Discord refused."""
+    return [record for record in caplog.records
+            if record.levelno >= logging.ERROR and record.exc_info
+            and isinstance(record.exc_info[1], discord.HTTPException)]
+
+
+@pytest.mark.xfail(strict=True, reason="the put-back's fault replaces the original")
+async def test_a_put_back_that_fails_keeps_the_original_fault_in_the_report(
+    tmp_path, monkeypatch, caplog,
+):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy": the press edits the message, but the queue's ask
+    fails on a fault in the bot (the database is locked), and Discord then refuses the edit that
+    would put the picker back. The press raises the database's fault, the one the choice failed
+    on, not Discord's; the put-back's failure is logged on the host with its traceback."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    _failing_once(monkeypatch, league.bot.change_queue, "ask", 1,
+                  sqlite3.OperationalError("database is locked"))
+    picker = _picker(league)
+    first = _choice(league, picker)
+    first.edit_original_response = AsyncMock(side_effect=http_error())
+
+    with caplog.at_level(logging.ERROR), pytest.raises(sqlite3.OperationalError):
+        await _button(picker, HEAVY).callback(first)
+
+    first.edit_original_response.assert_awaited_once()
+    assert _put_back_failures(caplog), caplog.records
+    assert picker.view.selected is None
+
+
+@pytest.mark.xfail(strict=True, reason="the put-back's fault gives the presser a second reply")
+async def test_a_put_back_that_fails_after_a_refusal_gives_no_second_reply(
+    tmp_path, monkeypatch, caplog,
+):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy": the press edits the message, but the queue's ask,
+    checking again, refuses the choice, and Discord then refuses the edit that would put the
+    picker back. He is told of the refusal, seen by him alone, and of nothing else: the press does
+    not fail on the put-back, whose failure is logged on the host with its traceback."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    _failing_once(monkeypatch, league.bot.change_queue, "check", 2,
+                  Verdict.refuse("⛔ Not this time."))
+    picker = _picker(league)
+    first = _choice(league, picker)
+    first.edit_original_response = AsyncMock(side_effect=http_error())
+    button = _button(picker, HEAVY)
+
+    with caplog.at_level(logging.ERROR):
+        try:
+            await button.callback(first)
+        except Exception as error:  # noqa: BLE001 — answered as the view answers a fault
+            await picker.view.on_error(first, error, button)
+
+    first.edit_original_response.assert_awaited_once()
+    [told] = _private_texts(first)
+    assert "Not this time." in told, told
+    assert _put_back_failures(caplog), caplog.records
+    assert picker.view.selected is None
