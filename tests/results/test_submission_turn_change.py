@@ -999,3 +999,42 @@ async def test_a_picker_whose_ask_fails_after_its_edit_is_put_back(tmp_path, mon
     assert [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND] == []
     _put_back(first, picker)
     await _chooses_again(league)
+
+
+async def test_the_picker_s_claim_is_held_until_it_is_put_back(tmp_path, monkeypatch):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy": the press edits the message, but the queue's ask,
+    checking again, refuses the choice, and while the message is still being put back to the
+    picker a second league manager (78) presses "Standard". His press does not touch the message
+    and is told, seen by him alone, that the configuration is being chosen, naming Heavy. Once the
+    put-back lands the picker stands, its text and its buttons, and nothing has been asked."""
+    league = await _league(tmp_path, monkeypatch)
+    league.roles_held[PRESSER] = {MANAGER_ROLE_ID}
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    _failing_once(monkeypatch, league.bot.change_queue, "check", 2,
+                  Verdict.refuse("⛔ Not this time."))
+    picker = _picker(league)
+    first = _choice(league, picker)
+    begun, landed = asyncio.Event(), asyncio.Event()
+
+    async def _put_back_in_flight(*_args: Any, **_kwargs: Any) -> None:
+        begun.set()
+        await landed.wait()
+
+    first.edit_original_response = AsyncMock(side_effect=_put_back_in_flight)
+    pressing = asyncio.create_task(_button(picker, HEAVY).callback(first))
+    await asyncio.wait_for(begun.wait(), timeout=5)
+
+    second = await _press(league, STANDARD, by=PRESSER)
+    landed.set()
+    await pressing
+
+    second.response.edit_message.assert_not_awaited()
+    [told] = _private_texts(second)
+    assert told.startswith("⚠️") and "is being chosen" in told and HEAVY in told, told
+    _put_back(first, picker)
+    assert picker.view.selected is None
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND] == []
+
