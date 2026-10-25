@@ -170,11 +170,12 @@ amendment's review may offer, checking, saving, changing the roles of and announ
 sanction, redrawing a lineup) is a protocol results declares, `AttendanceAfterReview`, and
 attendance implements it on its own functions. The builder makes it once, attaches it to the bot and
 hands it to the review's change types, so results imports nothing of attendance and the
-`.importlinter` exception for it is gone. Each method checks attendance's switch itself, on the
-connection it is handed where it writes, and does nothing while the module is off, save
-`change_sanction_roles`, which acts whatever the switch says: a sanction saved is owed its roles,
-and leaving a driver in the wrong roles because the module was turned off meanwhile would be worse
-than acting. A change type asks the hook without asking whether attendance is on. The placement
+`.importlinter` exception for it is gone. Of its methods, `enabled` reports attendance's switch,
+`sync_hint` only words the hint naming the "attendance sync" command and reads no switch, and
+`change_sanction_roles` acts whatever the switch says, as the attendance specification's
+"Sanctions that do not apply" requires. Every other method checks the switch itself, on the
+connection it is handed where it writes, and does nothing while the module is off. A change type
+asks the hook without asking whether attendance is on. The placement
 service, which a sanction moves seats through, is handed to the hook by the builder and not looked
 up on the bot.
 
@@ -611,12 +612,18 @@ sweep to apply, which puts a module's rule in core.
 
 **Jobs are made only through the scheduler service.** Nothing else arms, finds or removes a job. A
 round's job is named from the round and the event, so arming it again replaces the old one instead
-of adding a second (the `_round_job_suffix` docstring in the scheduler service). One function works
-out when each of a round's events falls, and one function arms them. Every path that arms a round (a
-season approved, a round amended, a restart, test mode, and a refused cancellation arming again the
-timed work it took) uses those two, so the timings cannot drift apart between copies. A round's
-next-day clean-ups, which its weather and its attendance arming both owe, are armed by one function
-too (`schedule_round_cleanups`), which a refused cancellation calls alone for a round already raced.
+of adding a second (the `_round_job_suffix` docstring in the scheduler service). A round's timed
+work is armed by the scheduler service's own functions, which work out from the round's moment when
+each event falls: `schedule_round` its forecasts and results submission, `schedule_all_rounds` a
+season's rounds through it, `schedule_result_submission_jobs` the submission alone, and
+`schedule_attendance_round` its check-in. Only two changes call them, a season's approval and the
+amendment of a round (`round_amend_change`), whose re-arming also serves a refused cancellation
+arming again the timed work it took, so the timings cannot drift apart between copies. A restart
+arms nothing, the job store keeping the jobs and the start-up sweep catching up those missed
+(above), and neither does test mode, whose advance brings forward work already armed or found due in
+the database. A round's next-day clean-ups, which its weather and its attendance arming both owe,
+are armed by one function too (`schedule_round_cleanups`), which the re-arming calls alone for a
+round raced, or ended cancelled because every session was entered as not held.
 
 **A delay is a one-off timer that asks a change.** The queue holds no delay of its own. Where
 something must happen a set time after a job (a season review's, a correction's or an
@@ -746,9 +753,13 @@ The exceptions, each with its reason:
 - **A log line,** delivered by the router and sent again by its own retry (below), and **the stop
   notice,** which says that a lane is stopped and so cannot wait on one, with its buttons taken off
   once the job clears (`OutputRouter.strip_view`), which cannot wait on the lane either.
-- **A reply** to a member's command or press, the queue's update of its acknowledgement with the
-  outcome included, and a press's own edit of the message pressed, taking its buttons down: it
-  answers the member and posts in no channel.
+- **A reply** to a member's command or press, and the queue's update of its acknowledgement with
+  the outcome included: it answers the member and posts in no channel. A press's own edit of the
+  message pressed is a reply too, though the message is one a job posted where a channel reads it:
+  the results picker's choice (`_ConfigSelectView`) replaces the text of a message in the
+  submission or amendment channel and takes its buttons down. It is the interaction's own response
+  to the press, Discord's one answer to it, and is made at once so that a second press cannot race
+  the first; an edit that fails leaves the buttons up and nothing lost.
 - **The factory reset's clean-up and its progress.** The reset empties the database the queue
   lives in and leaves no log channel or roles for Retry and Discard, and its progress is the reply
   to the owner's own command.
