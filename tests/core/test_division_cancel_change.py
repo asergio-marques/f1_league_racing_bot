@@ -908,6 +908,50 @@ async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_agai
     assert [call.args[0].id for call in opened.call_args_list] == [R4]
 
 
+async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_the_clean_ups_of_a_round_that_ended_cancelled_as_not_held(
+    tmp_path,
+):
+    """Pro's round 1 is final; round 2 ended cancelled because every session was entered as not
+    held, its next-day clean-ups armed; round 3 was called off; round 4 awaits its results, its
+    submission open with nothing accepted. `/division cancel Pro` passes its check and its
+    unarming removes the timed work of every round; a session is then accepted on round 4's
+    submission, so the save refuses. Round 2 has one clean-ups-only re-arming asked, which runs
+    and arms its next-day clean-ups again; round 4 is armed in full; round 3, called off, is left
+    alone; and the reply names round 4 alone as armed again."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True)
+    r1, r2 = round_id(PRO, 1), round_id(PRO, 2)
+    await league.write("UPDATE rounds SET status = 'CANCELLED', not_held = 1 WHERE id = ?", r2)
+    await league.write("UPDATE rounds SET status = 'CANCELLED', not_held = 0 WHERE id = ?", R3)
+    await _awaiting_results(league, R4)
+    await open_submission(league, R4)
+    interaction = await _asked(league)
+    await _run_through(league, "unarm")
+    assert {r2, R4} <= set(league.unarmed)
+    await accept_session(league, R4)
+    before = await _statuses(league)
+
+    await run_queue(league.bot)
+
+    assert _accepted(4) in reply(interaction)
+    assert CANCELLED not in reply(interaction)
+    assert ("The timed work of its rounds still to be run, removed for the cancellation, is "
+            "being armed again as it stood: round 4 in **Pro**.") in reply(interaction)
+    assert await _division(league) == "ACTIVE"
+    assert await _statuses(league) == before
+    [refusal] = _refusal_lines(league)
+    assert "\n  timed work being armed again: round 4 in Pro" in refusal
+    rearmings = await _rearmings(league)
+    assert [row["state"] for row in rearmings] == ["DONE"] * len(rearmings)
+    payloads = [json.loads(row["payload"]) for row in rearmings]
+    assert sorted(payload["round_id"] for payload in payloads) == [r1, r2, R4]
+    [round_2] = [payload for payload in payloads if payload["round_id"] == r2]
+    assert round_2.get("cleanups_only") is True
+    assert ("cleanups", [r2]) in league.armed
+    armed_whole = {rid for which, ids in league.armed if which != "cleanups" for rid in ids}
+    assert armed_whole == {R4}
+    assert R3 not in {rid for _which, ids in league.armed for rid in ids}
+
+
 # ── An open submission (#439 slice 4b, amendment A, A2) ─────────────────────────────
 
 #: A second submission channel, for round 4.
