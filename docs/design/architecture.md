@@ -729,8 +729,9 @@ rule has two halves:
   (`core/services/output_router.py`) is exempt from it whole (`POSTING_ALLOWED`), as it is from the
   check of posting outside the handlers: what it posts off the queue are the exceptions below, and
   its forecast post carries the decorator all the same. Two calls that look like posts and are not
-  are named in `NOT_A_POST` with their reasons: the reply to the owner's own `!sync` command
-  (`guild_sync` in the entry point), and the queue's edit of a member's own acknowledgement
+  are named in `NOT_A_POST` with their reasons: the owner's own `!sync` command
+  (`guild_sync` in the entry point), which deletes the owner's message and posts a note that deletes
+  itself, a prefix command's reply, and the queue's edit of a member's own acknowledgement
   (`ChangeQueue._update_reply`), which answers the member and posts in no channel.
 
 The exceptions, each with its reason:

@@ -39,9 +39,9 @@ production task never drain one lane at once. A due time the dispatcher cannot a
 lane has a task already or every conversation slot is taken, is not waited for
 (`_seconds_to_next_try`): the task ending wakes it, so it neither spins nor sleeps through.
 
-**One save at a time, across lanes.** SQLite has one writer, so the twelve saves the queue makes
+**One save at a time, across lanes.** SQLite has one writer, so every save the queue makes
 (the request's, its acknowledgement's mark, the restart's, a start, an end, a `SAVE` step's, a
-mark, a stop, the notice's id, a Retry, a Discard, a finish) each hold `ChangeQueue._writing`, an
+mark, a stop, the notice's id, a Retry, a Discard, a finish) holds `ChangeQueue._writing`, an
 in-process lock, for the length of the save and no longer. *Rejected:* one worker for every lane,
 which holds a conversation behind the league's Discord calls; and SQLite's own busy wait, which
 gives up after `_BUSY_TIMEOUT_SECONDS` where a save is held longer. No Discord call is made under

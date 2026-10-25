@@ -2383,7 +2383,7 @@ class _ConfigSelectView(LeagueView):
 
     **A league manager's, and it asked nothing at all until 2026-09-10.** This view is
     posted publicly into the submission and amendment channels — never ephemerally — from
-    three call sites, so every member who could read one of those channels could decide
+    two call sites, so every member who could read one of those channels could decide
     which points configuration scored the session, and the first press won the race against
     whoever was actually running the round.
 
