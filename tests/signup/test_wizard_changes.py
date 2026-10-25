@@ -1033,11 +1033,6 @@ async def test_a_driver_whose_signup_ended_for_a_gone_channel_may_sign_up_again(
     assert (await _wizard(league))["signup_channel_id"] == NEW_CHANNEL
 
 
-#: A signup channel deleted while its signup is under way is not yet seen (#439, slice 8, G2).
-CHANNEL_DELETED_UNBUILT = "#439: a signup channel deleted by hand does not yet end its signup"
-
-
-@pytest.mark.xfail(strict=True, reason=CHANNEL_DELETED_UNBUILT)
 @pytest.mark.parametrize("state", ["NOT_SIGNED_UP", "UNASSIGNED"],
                          ids=["not signed up", "unassigned"])
 async def test_a_channel_gone_ending_is_not_due_once_the_driver_is_no_longer_signing_up(

@@ -148,15 +148,26 @@ WITHDRAWN_NOTICE = (
 )
 #: The most channels Discord lets a category hold.
 CATEGORY_LIMIT = 50
+#: Where a gone signup channel was found (`found` in a `CHANNEL_GONE` ending's payload): where the
+#: review panel was due (the default), by the bot seeing the channel deleted, or at a restart.
+PANEL = "panel"
+DELETED = "deleted"
+RESTART = "restart"
+#: What each finding says in the log channel, after "Their signup channel".
+_GONE_SENTENCE = {
+    PANEL: "was gone when their review panel was due",
+    DELETED: "was deleted",
+    RESTART: "was found deleted when the bot restarted",
+}
 
 __all__ = [
     "ANSWER", "Accepted", "Refused", "judge_answer",
-    "ARM_INACTIVITY", "CHANNEL_GONE", "CREATE_CHANNEL", "DELETE_CHANNEL", "DELETE_KIND", "DELETE_OLD_CHANNEL", "END",
+    "ARM_INACTIVITY", "CHANNEL_GONE", "CREATE_CHANNEL", "DELETE_CHANNEL", "DELETE_KIND", "DELETE_OLD_CHANNEL", "DELETED", "END",
     "END_JOB", "EXPIRED", "INACTIVITY", "NAME_JOB",
-    "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
+    "PANEL", "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "RESTART", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
     "WITHDRAWN_NOTICE",
     "LEAVE_JOB", "MEMBER_LEFT",
-    "ask_member_left", "channel_delete_change", "departed_placed_driver", "end_change", "member_left_change", "start_change",
+    "ask_channel_gone", "ask_member_left", "channel_delete_change", "departed_placed_driver", "end_change", "member_left_change", "start_change",
 ]
 
 
@@ -498,9 +509,10 @@ def end_change(
     payload then carries ``actor_id`` and ``actor_name`` (the manager), ``text`` (the reason) and
     ``reason_message_id`` (the message it was typed in)), `EXPIRED` (their 24 hours ran out,
     asked by the timer or at a restart, with the signup channel's id as ``channel_id``), or
-    `CHANNEL_GONE` (their signup channel was gone where their review panel was due: the payload
-    carries ``channel_id``, None where the wizard names none, and ``named``, the driver's name, found
-    by the panel's job). Its job
+    `CHANNEL_GONE` (their signup channel was gone: where their review panel was due, or deleted
+    while the signup was under way, seen by the bot or found at a restart. The payload carries
+    ``channel_id``, None where the wizard names none, ``named``, the driver's name, found by the
+    asker, and ``found``, `PANEL` (the default), `DELETED` or `RESTART`). Its job
     `end` is a save, after `name_driver` (which `CHANNEL_GONE` does without, having its name), which finds the driver's name for the line (the lookup
     uses a connection of its own, which a save must not wait on): the driver is moved to Not
     Signed Up and the wizard ended in the same save, the timers taken
@@ -519,8 +531,9 @@ def end_change(
     `end`. It is not due, and is dropped, where the driver's wizard is parked or they are not
     mid-signup any longer, and where an answer typed before the 24 hours ran out is still waiting
     on the driver's lane (the time typed counts, Q22). A gone channel's ending is due only while
-    the driver awaits approval and their wizard still names that channel: it posts, locks and
-    deletes nothing, the channel being gone, and writes the one line. *cancel_timers* takes away a driver's
+    the driver is signing up (answering, awaiting approval, or awaiting or making a correction)
+    and their wizard still names that channel: it posts, locks and deletes nothing, the channel
+    being gone, and writes the one line, which says how the channel was found gone. *cancel_timers* takes away a driver's
     timers, and *now* and
     *arm_once* are the queue's clock and the scheduler service's one-off timer, for the deletion.
     """
@@ -578,7 +591,7 @@ def end_change(
             held = None if named_channel is None else named_channel["signup_channel_id"]
             if (
                 profile is None
-                or profile.current_state != DriverState.PENDING_ADMIN_APPROVAL
+                or profile.current_state not in IN_PROGRESS_STATES
                 # A payload naming no channel is for a wizard that names none either.
                 or (held is None) != (asked is None)
                 or (held is not None and asked is not None and int(held) != int(asked))
@@ -605,6 +618,7 @@ def end_change(
         if payload["reason"] == CHANNEL_GONE:
             # The panel's job found the name; the channel is gone, so nothing follows `end`.
             shared_end.update({key: payload[key] for key in ("channel_id", "named")})
+            shared_end["found"] = payload.get("found", PANEL)
             return (PlannedStep(END_JOB, shared_end),)
         if payload["reason"] == REJECTED:
             shared_end.update({
@@ -643,7 +657,7 @@ def end_change(
             )
             return StepResult(result={}, lines=(
                 f"{payload['named']} | Signup | Ended\n{where}"
-                "  Their signup channel was gone when their review panel was due, so their "
+                f"  Their signup channel {_GONE_SENTENCE[payload.get('found', PANEL)]}, so their "
                 "signup ended. They may press Sign Up again while signups are open.",
             ))
         if ctx.step_payload["reason"] == EXPIRED:
@@ -705,6 +719,13 @@ def end_change(
 
     async def would_never_end(ctx: StepContext) -> str:
         if ctx.step_payload["reason"] == CHANNEL_GONE:
+            if ctx.step_payload.get("found", PANEL) != PANEL:
+                return (
+                    f"<@{ctx.step_payload['user_id']}>'s signup would stay under way with no "
+                    "signup channel, so they could neither finish it nor sign up again, and "
+                    "while they await review or a correction the season's placements could not "
+                    "be confirmed"
+                )
             return (
                 f"<@{ctx.step_payload['user_id']}> would be left awaiting approval with no "
                 "signup channel and no review panel, and the season's placements could not be "
@@ -853,6 +874,26 @@ async def ask_member_left(queue: "ChangeQueue", db_path: str, user_id: str) -> i
         MEMBER_LEFT,
         {"user_id": user_id, "channel_id": None if row is None else row["signup_channel_id"]},
         what=f"cleaning up after <@{user_id}> leaving the server",
+        origin=ChangeOrigin.BOT,
+    )
+
+
+async def ask_channel_gone(
+    queue: "ChangeQueue", *, user_id: str, channel_id: int, named: str, found: str,
+) -> int | None:
+    """Ask the queue, as the bot, to end the signup of *user_id* whose signup channel *channel_id*
+    is gone (`signup.end`, reason `CHANNEL_GONE`): *found* is `DELETED` where the bot saw the
+    channel deleted and `RESTART` where a restart found it gone, and *named* is the driver's name
+    for the log, found by the asker. The change's own check drops the ask where the driver is no
+    longer signing up or their wizard names another channel. Gives the change's id, or None
+    where it was dropped."""
+    return await queue.ask(
+        END,
+        {
+            "user_id": user_id, "reason": CHANNEL_GONE, "channel_id": int(channel_id),
+            "named": named, "found": found,
+        },
+        what=f"ending the signup of <@{user_id}>, their signup channel deleted",
         origin=ChangeOrigin.BOT,
     )
 
