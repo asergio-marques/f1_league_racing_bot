@@ -517,6 +517,69 @@ async def test_the_amendment_s_configuration_choice_is_a_turn(tmp_path, monkeypa
     assert session["config_name"] == HEAVY
 
 
+def _amendment_picker(league: ReviewLeague) -> Any:
+    """The message standing in the amendment channel that offers the configurations."""
+    [picker] = [message for message in league.channel(AMEND_CHANNEL).messages.values()
+                if message.view is not None
+                and "Select the points configuration" in str(message.content)]
+    return picker
+
+
+async def _press_choice(
+    league: ReviewLeague, picker: Any, label: str, *, after: timedelta = timedelta(0),
+) -> Any:
+    """Alex presses *label* on *picker*, *after* now; gives the press, its edit of the message and
+    its private answers recorded."""
+    button = next(item for item in picker.view.children if item.label == label)
+    press = member_interaction(league.bot, user=_alex(), created_at=NOW + after)
+    press.guild = league.guild
+    press.channel_id = AMEND_CHANNEL
+    press.message = picker
+    press.response.edit_message = AsyncMock()
+    await button.callback(press)
+    return press
+
+
+def _privately(press: Any) -> list[str]:
+    """Every message *press* was answered with, seen by its presser alone, in order."""
+    calls = [*press.response.send_message.await_args_list, *press.followup.send.await_args_list]
+    return [str(call.args[0] if call.args else call.kwargs.get("content", ""))
+            for call in calls if call.kwargs.get("ephemeral")]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="a second press edits the amendment's picker to name its own choice before the queue "
+           "refuses it",
+)
+async def test_a_second_press_of_the_amendment_s_picker_is_refused_and_the_first_choice_holds(
+    tmp_path, monkeypatch,
+):
+    """The season has two points configurations attached and the Feature Race carries neither.
+    Alex pastes the Feature Race and its turn offers the configurations. He presses "Heavy", then
+    "Standard" on the same picker. The second press does not touch the message and is refused,
+    seen by him alone, naming Heavy; one configuration turn is asked, and when the queue runs the
+    amended Feature Race is written scored by Heavy."""
+    league = await _league(tmp_path, monkeypatch, configs=("Standard", HEAVY))
+    await _ask_open(league)
+    await _type(league)
+    picker = _amendment_picker(league)
+
+    await _press_choice(league, picker, HEAVY)
+    second = await _press_choice(league, picker, "Standard")
+    await run_queue(league.bot)
+
+    second.response.edit_message.assert_not_awaited()
+    [told] = _privately(second)
+    assert told.startswith("⚠️") and "already been chosen" in told and HEAVY in told, told
+    assert len(await _changes(league, CONFIG)) == 1
+    assert await stopped_job(league.db_path) is None
+    [session] = await _rows(league,
+        "SELECT config_name FROM session_results WHERE round_id = ? "
+        "AND session_type = 'FEATURE_RACE'", ROUND_ID)
+    assert session["config_name"] == HEAVY
+
+
 # ---------------------------------------------------------------------------
 # Stage one and its stage-two prompt (C61)
 # ---------------------------------------------------------------------------
