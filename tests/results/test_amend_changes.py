@@ -1080,6 +1080,36 @@ async def test_a_late_choice_of_configuration_is_not_taken(tmp_path, monkeypatch
     assert await _winner(league) == LEWIS
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="a late press edits the amendment's picker to name a choice that is then not taken",
+)
+async def test_a_late_press_of_the_amendment_s_picker_leaves_the_message_alone(
+    tmp_path, monkeypatch,
+):
+    """The season has Standard and Heavy attached, and Alex pastes the Feature Race at once: the
+    picker appears. He presses Heavy six minutes later, before the lapse has run. The press does
+    not touch the message, which still offers the configurations: he is told, seen by him alone,
+    that it came too late, and no configuration turn is asked. Pressing Standard after it, he is
+    told the same, not that a configuration has been chosen."""
+    league = await _league(tmp_path, monkeypatch, configs=("Standard", HEAVY))
+    await _ask_open(league)
+    await _type(league)
+    picker = _amendment_picker(league)
+
+    late = await _press_choice(league, picker, HEAVY, after=timedelta(minutes=6))
+    again = await _press_choice(league, picker, "Standard", after=timedelta(minutes=6))
+    await run_queue(league.bot)
+
+    for press in (late, again):
+        press.response.edit_message.assert_not_awaited()
+        [told] = _privately(press)
+        assert told.startswith("⚠️") and "five minutes" in told, told
+        assert "already been chosen" not in told, told
+    assert await _changes(league, CONFIG) == []
+    assert await _drafts(league) == []
+
+
 async def test_a_lapse_queued_for_an_earlier_prompt_does_not_swallow_the_next_prompt_s(
     tmp_path, monkeypatch,
 ):
