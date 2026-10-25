@@ -888,7 +888,7 @@ async def distribute_attendance_points(
 
     It follows that the latest round is where a division's current total stands, and that is
     the round a sheet is drawn against and the sanctions enforced upon — see
-    :func:`cascade_attendance_from_round` and :func:`sync_attendance`.
+    :func:`_recalculate_forward` and :func:`sync_attendance`.
 
     *db* joins a transaction the caller already opened, and is then the caller's to commit;
     see :func:`_shared_or_own`.
@@ -2274,8 +2274,18 @@ async def _recalculate_forward(
         an amendment approval needs.
     ``"none"``
         None is. The caller has already recorded the attendance under the upgrade-only rule
-        and wants the totals carried forward and nothing else — see
-        :func:`cascade_attendance_from_round`.
+        and wants the totals carried forward and nothing else.
+
+        **It deliberately does not rebuild the attended flags.** On this path the recording
+        was done by ``record_attendance_from_results_on``, which only ever upgrades a driver
+        to present and never revokes it (FR-003): a driver dropped from the results was given
+        no chance to justify themselves, and the record errs in their favour.
+        ``record_attendance_from_results_full_recompute`` can flip present to absent, so it is
+        not reached under ``"none"`` — by design, not by oversight. A driver's total is the sum
+        of their rounds, but a copy of the answer is stored on every round's row as
+        ``total_points_after``, and the sheet and the sanctions read a copy rather than the
+        sum; carrying the totals forward keeps the season's final sheet, drawn against the
+        last round with results, from publishing a figure worked out from an old one.
 
     The rebuild is a **full** one (FR-028), without the upgrade-only constraint, so it can
     flip a driver from present to absent. That is why it is not reached under ``"none"``.
@@ -2335,38 +2345,6 @@ async def _recalculate_forward(
         if _owned:
             await db.commit()
     return [round_id, *subsequent_rounds]
-
-
-async def cascade_attendance_from_round(
-    db_path: str, round_id: int, division_id: int
-) -> list[int]:
-    """Award *round_id*'s attendance points and carry the new totals through every later
-    finalised round, in one transaction. Returns the ids of the rounds it touched.
-
-    What a round's report approval calls, through attendance's hook, where it once called
-    `distribute_attendance_points` alone (#238). A driver's total is the sum of their rounds, but a copy of the answer is
-    stored on every round's row as ``total_points_after``, and the sheet and the sanctions
-    read a copy rather than the sum. Amending round 3 of ten and correcting only round 3's
-    copy left rounds 4 to 10 holding a total worked out from the old figure — which the
-    season's **final** sheet then published, that sheet being drawn against the last round
-    with results. Standings already cascade from this same path through
-    ``standings_service.cascade_recompute_from_round``; attendance did not.
-
-    **It deliberately does not rebuild the attended flags.** On this path the recording was
-    done by ``record_attendance_from_results_on``, which only ever upgrades a driver to present
-    and never revokes it (FR-003): a driver dropped from the results was given no chance to
-    justify themselves, and the record errs in their favour.
-    ``record_attendance_from_results_full_recompute`` can flip present to absent, so it is
-    not reached from here — it is unused on this path by design, not by oversight.
-
-    **The last id returned is where the division's total now stands**, each round's copy being
-    that driver's total as at that round and no further. The caller posts its sheet and
-    enforces its sanctions against that round, not against the amended one, exactly as
-    :func:`sync_attendance` does.
-    """
-    return await _recalculate_forward(
-        db_path, round_id, division_id, recompute="none"
-    )
 
 
 async def sync_attendance(
