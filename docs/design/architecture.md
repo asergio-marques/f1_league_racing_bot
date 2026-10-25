@@ -175,7 +175,7 @@ hands it to the review's change types, so results imports nothing of attendance 
 `change_sanction_roles` acts whatever the switch says, as the attendance specification's
 "Sanctions that do not apply" requires. Every other method checks the switch itself, on the
 connection it is handed where it writes, and does nothing while the module is off. A change type
-asks the hook without asking whether attendance is on. The placement
+never reads the switch itself; one whose job serves attendance alone asks `enabled`. The placement
 service, which a sanction moves seats through, is handed to the hook by the builder and not looked
 up on the bot.
 
@@ -616,14 +616,17 @@ of adding a second (the `_round_job_suffix` docstring in the scheduler service).
 work is armed by the scheduler service's own functions, which work out from the round's moment when
 each event falls: `schedule_round` its forecasts and results submission, `schedule_all_rounds` a
 season's rounds through it, `schedule_result_submission_jobs` the submission alone, and
-`schedule_attendance_round` its check-in. Only two changes call them, a season's approval and the
-amendment of a round (`round_amend_change`), whose re-arming also serves a refused cancellation
-arming again the timed work it took, so the timings cannot drift apart between copies. A restart
-arms nothing, the job store keeping the jobs and the start-up sweep catching up those missed
-(above), and neither does test mode, whose advance brings forward work already armed or found due in
-the database. A round's next-day clean-ups, which its weather and its attendance arming both owe,
-are armed by one function too (`schedule_round_cleanups`), which the re-arming calls alone for a
-round raced, or ended cancelled because every session was entered as not held.
+`schedule_attendance_round` its check-in. Beside them, `run_result_submission_now` runs at once
+the submission of a round whose moment has passed. Only three changes call them: a season's
+approval, the amendment of a round (`round_amend_change`), and the re-arming of a round whose timed
+work a refused cancellation took, a change of its own (`round_rearm_change`, `season.round.rearm`)
+built from the amendment's steps. The arming step those two share calls `run_result_submission_now`
+for a passed round. Every path arms through these functions. A restart arms nothing, the job store
+keeping the jobs and the start-up sweep catching up those missed (above), and neither does test
+mode, whose advance brings forward work already armed or found due in the database. A round's
+next-day clean-ups, which its weather and its attendance arming both owe, are armed by one function
+too (`schedule_round_cleanups`), which the re-arming calls alone for a round raced, or ended
+cancelled because every session was entered as not held.
 
 **A delay is a one-off timer that asks a change.** The queue holds no delay of its own. Where
 something must happen a set time after a job (a season review's, a correction's or an
@@ -758,8 +761,10 @@ The exceptions, each with its reason:
   message pressed is a reply too, though the message is one a job posted where a channel reads it:
   the results picker's choice (`_ConfigSelectView`) replaces the text of a message in the
   submission or amendment channel and takes its buttons down. It is the interaction's own response
-  to the press, Discord's one answer to it, and is made at once so that a second press cannot race
-  the first; an edit that fails leaves the buttons up and nothing lost.
+  to the press, Discord's one answer to it, and the buttons come down with it. A second press made
+  before they are down asks a change with the same key, the channel and the session, which the
+  queue turns away as a repeat while the first has not started ("How a change is carried out");
+  an edit that fails leaves the buttons up and nothing lost.
 - **The factory reset's clean-up and its progress.** The reset empties the database the queue
   lives in and leaves no log channel or roles for Retry and Discard, and its progress is the reply
   to the owner's own command.
