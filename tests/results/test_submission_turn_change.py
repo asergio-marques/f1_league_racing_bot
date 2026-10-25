@@ -781,10 +781,6 @@ def _presser_refusals(lines: list[str]) -> list[str]:
     return [line for line in lines if line.startswith("⛔") and f"`<@{PRESSER}>`" in line]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="a second press edits the picker to name its own choice before the queue refuses it",
-)
 @pytest.mark.parametrize("ran_first", [False, True], ids=["waiting", "ran"])
 async def test_a_second_press_of_the_picker_is_refused_privately_and_the_first_choice_stands(
     tmp_path, monkeypatch, ran_first,
@@ -818,10 +814,6 @@ async def test_a_second_press_of_the_picker_is_refused_privately_and_the_first_c
     assert len(_presser_refusals(lines)) == 1, lines
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="a press made while the first press's edit is in flight edits the picker and is asked",
-)
 async def test_a_press_made_while_the_first_press_s_edit_is_in_flight_is_refused(
     tmp_path, monkeypatch,
 ):

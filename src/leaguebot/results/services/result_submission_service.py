@@ -13,7 +13,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.core.models.change import StepFailedOnDiscord, VerdictKind
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat
@@ -2397,6 +2397,17 @@ class _ConfigSelectView(LeagueView):
     choice is for ("the Feature Race of round 3 (Pro)"), and every caller passes it, so a league
     reads it in each line. It is optional so that a view built without one still names its
     button; the lines then say nothing of the session.
+
+    **The first press chooses** (results spec, "Submitting round results"). It claims the
+    choice (`selected`) before anything is awaited, so a later press — made while the first
+    press's edit of the message is still on its way to Discord, or on a client still showing the
+    buttons — is refused by the view itself, seen by its presser alone, naming the configuration
+    chosen, and never edits the message, which so names the configuration the queue is asked for.
+    The claim is released only where nothing was chosen and the buttons stay up: where the edit
+    fails, which the press raises, and where the queue's check refuses the choice. That check is
+    made before the edit, so that a press the queue would refuse (an amendment's, pressed after
+    its five minutes) leaves the message alone; the refusal is the queue's own, its ask checking
+    again. A claim refused by the queue after the edit is kept, the buttons being down by then.
     """
 
     def __init__(
@@ -2426,6 +2437,17 @@ class _ConfigSelectView(LeagueView):
                         reason="Only league managers can choose the points configuration.",
                     )
                     return
+                if self.selected is not None:
+                    await refuse(
+                        interaction,
+                        "⚠️ The points configuration for "
+                        f"{self._session or 'this session'} has already been chosen: "
+                        f"**{self.selected}**.",
+                        what=what,
+                    )
+                    return
+                # Claimed before anything is awaited, so that no second press gets past the
+                # check above while this one is in hand.
                 self.selected = _name
                 if self._ask is not None:
                     # A submission's picker: the choice is a change of its own, asked of the
@@ -2435,25 +2457,35 @@ class _ConfigSelectView(LeagueView):
                     kind, asked = self._ask
                     queue = bot_of(interaction).change_queue
                     pressed = interaction.created_at
-                    await interaction.response.edit_message(
-                        content=f"🔧 Config selected: **{_name}**", view=None
-                    )
-                    await queue.ask(
-                        kind,
-                        {
-                            **asked, "config_name": _name,
-                            # When it was pressed, which an amendment's five minutes are judged by
-                            # however long the choice's turn waits.
-                            "typed_at": (
-                                pressed.isoformat() if isinstance(pressed, datetime) else None
-                            ),
-                            "choice_line": (
-                                f"{interaction_member(interaction)} | {what} | Success\n"
-                                f"  configuration: {_name}"
-                            ),
-                        },
-                        interaction=interaction, what=what,
-                    )
+                    payload = {
+                        **asked, "config_name": _name,
+                        # When it was pressed, which an amendment's five minutes are judged by
+                        # however long the choice's turn waits.
+                        "typed_at": pressed.isoformat() if isinstance(pressed, datetime) else None,
+                        "choice_line": (
+                            f"{interaction_member(interaction)} | {what} | Success\n"
+                            f"  configuration: {_name}"
+                        ),
+                    }
+                    if (await queue.check(kind, payload)).kind is not VerdictKind.GO:
+                        # Nothing is chosen: the message is left offering the configurations, and
+                        # the queue's ask, checking again, refuses the press privately.
+                        change_id = await queue.ask(
+                            kind, payload, interaction=interaction, what=what
+                        )
+                        if change_id is None:
+                            self.selected = None
+                        return
+                    try:
+                        await interaction.response.edit_message(
+                            content=f"🔧 Config selected: **{_name}**", view=None
+                        )
+                    except Exception:
+                        # The buttons are still up and nothing was asked: another press may
+                        # choose.
+                        self.selected = None
+                        raise
+                    await queue.ask(kind, payload, interaction=interaction, what=what)
                     return
                 self.stop()
                 await interaction.response.defer()

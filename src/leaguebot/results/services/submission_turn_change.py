@@ -458,7 +458,8 @@ def turn_steps(
             )
         ).fetchone()
         if already is not None:
-            # Two presses of one picker reach the queue; the first saved it.
+            # A backstop: two pickers for one session reach the queue, and the first saved
+            # it. A second press of one picker never gets here, the view refusing it.
             return StepResult(result={"saved": False})
         saved_id = await submissions._save_session_result_in_tx(
             db, round_id, int(payload["division_id"]), session, str(payload["status"]),
@@ -542,7 +543,8 @@ def turn_steps(
             )
         ).fetchone()
         if already is not None:
-            # Two presses of one picker reach the queue; the first held it.
+            # A backstop: two pickers for one session reach the queue, and the first held
+            # it. A second press of one picker never gets here, the view refusing it.
             return StepResult(result={"saved": False})
         await db.execute(
             "INSERT OR REPLACE INTO resubmission_drafts "

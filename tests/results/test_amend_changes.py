@@ -547,11 +547,6 @@ def _privately(press: Any) -> list[str]:
             for call in calls if call.kwargs.get("ephemeral")]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="a second press edits the amendment's picker to name its own choice before the queue "
-           "refuses it",
-)
 async def test_a_second_press_of_the_amendment_s_picker_is_refused_and_the_first_choice_holds(
     tmp_path, monkeypatch,
 ):
@@ -1080,10 +1075,6 @@ async def test_a_late_choice_of_configuration_is_not_taken(tmp_path, monkeypatch
     assert await _winner(league) == LEWIS
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="a late press edits the amendment's picker to name a choice that is then not taken",
-)
 async def test_a_late_press_of_the_amendment_s_picker_leaves_the_message_alone(
     tmp_path, monkeypatch,
 ):
