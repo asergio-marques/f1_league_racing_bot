@@ -262,6 +262,8 @@
 - Once the results introduced to a given session are attributed, the bot shall post buttons, each containing the name of a points configuration in the season, for the user to choose one. This will be saved together with the results of a session. So for each session, there's one chosen configuration from which to get the points-per-position information. This information shall be persisted.
     - Where exactly one configuration is attached to the season, it shall be chosen without asking and the choice stated.
     - The first press shall choose. A later press of the buttons shall be refused, seen by its presser alone, naming the configuration chosen, and recorded; the message shall keep the first choice. Decided 2026-10-25.
+    - A press made while an earlier press's choice is still being made shall be refused in the same way, saying the configuration is being chosen rather than that it has been. Decided 2026-10-25.
+    - A choice that is refused or that fails shall leave the buttons standing, the message offering the configurations again, for a press to choose. Decided 2026-10-25.
     - A press of an amendment's buttons made once its period has passed shall be refused, seen by its presser alone, and recorded, the message left as it stands.
 - A driver shall be recorded under one team across every session of a round; see "One driver, one team, for the whole of a round" below.
 - The channel shall be private to the server's admin role, and shall be deleted once the round is settled.
