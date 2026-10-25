@@ -339,7 +339,11 @@ def window_open_change(
             moment = datetime.fromisoformat(close_at)
             armed = views.get(ARM_CLOSE)
             if armed is not None and "discarded" in (armed.result or {}):
-                text += " The auto-close was not scheduled: set it with `/signup close-time add`."
+                text += (
+                    " The auto-close was not scheduled: arm it again with `/signup close-time "
+                    "cancel` and then `/signup close-time add`; the bot also arms it when it "
+                    "next starts."
+                )
             else:
                 text += f" Auto-close scheduled for {_stamp(moment)} ({_stamp(moment, 'R')})."
         closed = views.get(DELETE_CLOSED)

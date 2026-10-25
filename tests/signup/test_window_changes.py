@@ -343,8 +343,6 @@ ARM_AGAIN = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a discarded auto-close arming still says to set it "
-                   "with `/signup close-time add`, which a saved close time refuses")
 async def test_a_discarded_close_arming_names_the_commands_that_arm_it_again(tmp_path):
     """Manager 77 runs `/signup open` with a close time, and arming the close fails, so the
     change stops at `arm_close` with the information posted and signups open. A league admin
