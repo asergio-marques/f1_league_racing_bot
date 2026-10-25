@@ -17,12 +17,14 @@ Charles (103) races in Am.
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
+from leaguebot.core.models.change import Verdict
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.services import result_submission_service
@@ -877,3 +879,129 @@ async def test_a_picker_whose_edit_fails_can_be_pressed_again(tmp_path, monkeypa
     assert len([row for row in await change_rows(league.db_path)
                 if row["kind"] == CONFIG_KIND]) == 1
     assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", STANDARD)]
+
+
+#: The picker's text as the qualifying paste's turn posts it.
+PICKER_TEXT = "🔧 Select the points configuration for this session:"
+
+
+def _failing_once(monkeypatch: Any, queue: Any, name: str, call: int, outcome: Any) -> None:
+    """The queue's *name* (``check`` or ``ask``) gives *outcome* on its *call*-th call — raising
+    it where it is an exception — and runs as it does otherwise."""
+    real = getattr(queue, name)
+    calls = {"made": 0}
+
+    async def _wrapped(*args: Any, **kwargs: Any) -> Any:
+        calls["made"] += 1
+        if calls["made"] == call:
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(queue, name, _wrapped)
+
+
+async def _chooses_again(league: SeasonLeague) -> None:
+    """The admin presses "Standard" on the picker: that press edits the message, its choice is
+    the one choice asked, and the qualifying is saved scored by Standard."""
+    second = await _press(league, STANDARD)
+    await run_queue(league.bot)
+
+    [edit] = second.response.edit_message.await_args_list
+    assert f"Config selected: **{STANDARD}**" in str(edit.kwargs.get("content"))
+    assert len([row for row in await change_rows(league.db_path)
+                if row["kind"] == CONFIG_KIND]) == 1
+    assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", STANDARD)]
+
+
+def _put_back(press: Any, picker: Any) -> None:
+    """*press*'s response was edited back to the picker: its text, and its buttons."""
+    [restored] = press.edit_original_response.await_args_list
+    assert restored.kwargs.get("content") == PICKER_TEXT, restored
+    view = restored.kwargs.get("view")
+    assert view is picker.view, restored
+    assert {getattr(item, "label", None) for item in view.children} == {HEAVY, STANDARD}
+
+
+@pytest.mark.xfail(strict=True, reason="a raising check leaves the press's claim set, so the "
+                                       "second press is told the configuration was chosen")
+async def test_a_picker_whose_check_fails_can_be_pressed_again(tmp_path, monkeypatch):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy", but the queue's check of the choice fails on a
+    fault in the bot (the database is locked): he is told the press stopped on a fault, no
+    choice is asked and the message is left alone. He presses "Standard": that press edits the
+    message, its choice is asked, and the qualifying is saved scored by Standard."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    _failing_once(monkeypatch, league.bot.change_queue, "check", 1,
+                  sqlite3.OperationalError("database is locked"))
+    picker = _picker(league)
+    first = _choice(league, picker)
+    button = _button(picker, HEAVY)
+
+    with pytest.raises(sqlite3.OperationalError) as raised:
+        await button.callback(first)
+    await picker.view.on_error(first, raised.value, button)
+
+    [told] = _private_texts(first)
+    assert told.startswith("❌"), told
+    first.response.edit_message.assert_not_awaited()
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND] == []
+    await _chooses_again(league)
+
+
+@pytest.mark.xfail(strict=True, reason="a choice the queue's ask refuses after the edit leaves "
+                                       "the message saying it was chosen, its buttons gone")
+async def test_a_picker_whose_ask_is_refused_after_its_edit_is_put_back(tmp_path, monkeypatch):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy": the queue's check lets the choice through and
+    the press edits the message, but the ask, checking again, refuses it. He is told why, seen by
+    him alone; nothing is asked, and the message is put back to the picker, its text and its
+    buttons. He presses "Standard": that press edits the message, its choice is asked, and the
+    qualifying is saved scored by Standard."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    _failing_once(monkeypatch, league.bot.change_queue, "check", 2,
+                  Verdict.refuse("⛔ Not this time."))
+    picker = _picker(league)
+    first = _choice(league, picker)
+
+    await _button(picker, HEAVY).callback(first)
+
+    first.response.edit_message.assert_awaited_once()
+    assert any("Not this time." in text for text in _private_texts(first)), _private_texts(first)
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND] == []
+    _put_back(first, picker)
+    await _chooses_again(league)
+
+
+@pytest.mark.xfail(strict=True, reason="a choice whose ask fails after the edit leaves the "
+                                       "message saying it was chosen, its buttons gone")
+async def test_a_picker_whose_ask_fails_after_its_edit_is_put_back(tmp_path, monkeypatch):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy": the press edits the message, but the queue's
+    ask of the choice fails on a fault in the bot (the database is locked), which the press
+    raises. Nothing is asked, and the message is put back to the picker, its text and its
+    buttons. He presses "Standard": that press edits the message, its choice is asked, and the
+    qualifying is saved scored by Standard."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    _failing_once(monkeypatch, league.bot.change_queue, "ask", 1,
+                  sqlite3.OperationalError("database is locked"))
+    picker = _picker(league)
+    first = _choice(league, picker)
+
+    with pytest.raises(sqlite3.OperationalError):
+        await _button(picker, HEAVY).callback(first)
+
+    first.response.edit_message.assert_awaited_once()
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND] == []
+    _put_back(first, picker)
+    await _chooses_again(league)
