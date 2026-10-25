@@ -65,7 +65,7 @@ def validate_division_tier(
     division amended to keep its own tier is not refused. *within* names the whole in the
     taken-tier words — "setup", as `/division add` and `/division amend` say it, or "season", as
     `/division duplicate` has always said it. The reason carries no mark: each command adds its
-    own, and `season_service.add_division` keeps its own guard beneath all three.
+    own.
     """
     if tier < 1:
         return "Tier must be 1 or higher."
@@ -108,31 +108,6 @@ class SeasonService:
     # ------------------------------------------------------------------
     # Season
     # ------------------------------------------------------------------
-
-    async def create_season(self, start_date: date | None = None) -> Season:
-        """Insert a new SETUP season and return it.
-
-        Raises ``sqlite3.IntegrityError`` where the league already holds a live season:
-        the schema permits one SETUP-or-ACTIVE row, and this method applies
-        none of the checks `/season setup` makes before its own writes. Nothing in
-        ``src/`` calls it — season setup writes its season through
-        :meth:`sync_pending_config` — so any new caller wants those checks first.
-        """
-        if start_date is None:
-            start_date = date.today()
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "INSERT INTO seasons (start_date, status) VALUES (?, ?)",
-                (start_date.isoformat(), SeasonStatus.SETUP.value),
-            )
-            await db.commit()
-            season_id = inserted_id(cursor)
-
-        return Season(
-            id=season_id,
-            start_date=start_date,
-            status=SeasonStatus.SETUP,
-        )
 
     async def get_confirmed_season(self) -> Season | None:
         """Return the ACTIVE season, or None.
@@ -560,12 +535,6 @@ class SeasonService:
             row = await cursor.fetchone()
         return row is not None and row[0] == 0
 
-    async def advance_to_pending_completion(self, season_id: int) -> bool:
-        """Move *season_id* to Pending completion where every division is done (issue #220)."""
-        from leaguebot.core.services.season_lifecycle_service import advance_to_pending_completion
-
-        return await advance_to_pending_completion(self._db_path, season_id)
-
     async def get_outstanding_rounds(self) -> list[dict]:
         """Return division, round_number and track_name for every round still to be finalised.
 
@@ -700,48 +669,6 @@ class SeasonService:
     # ------------------------------------------------------------------
     # Division
     # ------------------------------------------------------------------
-
-    async def add_division(
-        self,
-        season_id: int,
-        name: str,
-        mention_role_id: int,
-        forecast_channel_id: int | None = None,
-        tier: int = 0,
-    ) -> Division:
-        """Insert a division and return it."""
-        if tier != 0:
-            if tier < 1:
-                raise ValueError(f"Tier must be >= 1, got {tier}.")
-            async with get_connection(self._db_path) as db:
-                cursor = await db.execute(
-                    "SELECT 1 FROM divisions WHERE season_id = ? AND tier = ?",
-                    (season_id, tier),
-                )
-                if await cursor.fetchone():
-                    raise ValueError(
-                        f"A division with tier {tier} already exists in this season."
-                    )
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                """
-                INSERT INTO divisions
-                    (season_id, name, mention_role_id, forecast_channel_id, tier)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (season_id, name, mention_role_id, forecast_channel_id, tier),
-            )
-            await db.commit()
-            div_id = inserted_id(cursor)
-
-        return Division(
-            id=div_id,
-            season_id=season_id,
-            name=name,
-            mention_role_id=mention_role_id,
-            forecast_channel_id=forecast_channel_id,
-            tier=tier,
-        )
 
     async def get_previewable_divisions(
         self, *, timeout: float | None = None
@@ -1032,43 +959,6 @@ class SeasonService:
     # Round
     # ------------------------------------------------------------------
 
-    async def add_round(
-        self,
-        division_id: int,
-        round_number: int,
-        fmt: RoundFormat,
-        track_name: str | None,
-        scheduled_at: datetime,
-    ) -> Round:
-        """Insert a round and return it."""
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                """
-                INSERT INTO rounds
-                    (division_id, round_number, format, track_name, scheduled_at,
-                     phase1_done, phase2_done, phase3_done)
-                VALUES (?, ?, ?, ?, ?, 0, 0, 0)
-                """,
-                (
-                    division_id,
-                    round_number,
-                    fmt.value,
-                    track_name,
-                    scheduled_at.isoformat(),
-                ),
-            )
-            await db.commit()
-            round_id = inserted_id(cursor)
-
-        return Round(
-            id=round_id,
-            division_id=division_id,
-            round_number=round_number,
-            format=fmt,
-            track_name=track_name,
-            scheduled_at=scheduled_at,
-        )
-
     async def get_round(self, round_id: int) -> Round | None:
         """Return a single round by ID."""
         async with get_connection(self._db_path) as db:
@@ -1117,18 +1007,6 @@ class SeasonService:
 
         await self.renumber_rounds(division_id)
 
-    async def update_round_field(self, round_id: int, field: str, value: object) -> None:
-        """Generic field updater used by amendment_service."""
-        allowed = {"track_name", "format", "scheduled_at", "phase1_done", "phase2_done", "phase3_done"}
-        if field not in allowed:
-            raise ValueError(f"Field {field!r} not updatable via this method")
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                f"UPDATE rounds SET {field} = ? WHERE id = ?",  # noqa: S608
-                (value, round_id),
-            )
-            await db.commit()
-
     # ------------------------------------------------------------------
     # Session
     # ------------------------------------------------------------------
@@ -1143,32 +1021,6 @@ class SeasonService:
             )
             rows = await cursor.fetchall()
         return [_row_to_session(r) for r in rows]
-
-    async def update_session_phase2(self, session_id: int, slot_type: str) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE sessions SET phase2_slot_type = ? WHERE id = ?",
-                (slot_type, session_id),
-            )
-            await db.commit()
-
-    async def update_session_phase3(self, session_id: int, slots: list[str]) -> None:
-        import json
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE sessions SET phase3_slots = ? WHERE id = ?",
-                (json.dumps(slots), session_id),
-            )
-            await db.commit()
-
-    async def clear_session_phase_data(self, round_id: int) -> None:
-        """Clear phase2 / phase3 data for all sessions in a round (used by amendments)."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE sessions SET phase2_slot_type = NULL, phase3_slots = NULL WHERE round_id = ?",
-                (round_id,),
-            )
-            await db.commit()
 
 
 async def renumber_rounds_on(db: aiosqlite.Connection, division_id: int) -> None:
