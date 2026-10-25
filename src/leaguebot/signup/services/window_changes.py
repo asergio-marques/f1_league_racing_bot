@@ -396,8 +396,8 @@ def failed_jobs(steps: tuple[StepView, ...]) -> list[str]:
             failed.append(f"{who} was not told signups had closed.")
         elif view.name == CLOSE_SIGNUP:
             failed.append(
-                f"{who}'s signup channel could not be locked and will not delete itself: "
-                "delete it by hand."
+                f"{who}'s signup channel could not be locked: they can still type in it until it "
+                "deletes itself a day on, or delete it by hand sooner."
             )
         elif view.name == ARM_DELETION:
             failed.append(f"{who}'s signup channel will not delete itself: delete it by hand.")

@@ -611,8 +611,6 @@ NOT_LOCKED = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a discarded lock still says the channel will not "
-                   "delete itself, though its deletion is armed")
 async def test_a_discarded_lock_says_the_channel_stays_open_to_typing_until_it_deletes_itself(
     tmp_path,
 ):
