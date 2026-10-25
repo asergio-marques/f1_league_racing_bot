@@ -20,6 +20,7 @@ import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 
 from leaguebot.core.models.round import RoundFormat
@@ -34,6 +35,7 @@ from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     MARK,
     change_rows,
+    http_error,
     member_interaction,
     queued_log_lines,
     retry_job,
@@ -856,3 +858,30 @@ async def test_a_press_made_while_the_first_press_s_edit_is_in_flight_is_refused
     assert len([row for row in await change_rows(league.db_path)
                 if row["kind"] == CONFIG_KIND]) == 1
     assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", HEAVY)]
+
+
+async def test_a_picker_whose_edit_fails_can_be_pressed_again(tmp_path, monkeypatch):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy", but Discord refuses the press's edit of the
+    message: no choice is asked and the buttons stay up. He presses "Standard": that press edits
+    the message, its choice is asked, and the qualifying is saved scored by Standard."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    picker = _picker(league)
+    first = _choice(league, picker)
+    first.response.edit_message = AsyncMock(side_effect=http_error())
+
+    with pytest.raises(discord.HTTPException):
+        await _button(picker, HEAVY).callback(first)
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND] == []
+
+    second = await _press(league, STANDARD)
+    await run_queue(league.bot)
+
+    [edit] = second.response.edit_message.await_args_list
+    assert f"Config selected: **{STANDARD}**" in str(edit.kwargs.get("content"))
+    assert len([row for row in await change_rows(league.db_path)
+                if row["kind"] == CONFIG_KIND]) == 1
+    assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", STANDARD)]
