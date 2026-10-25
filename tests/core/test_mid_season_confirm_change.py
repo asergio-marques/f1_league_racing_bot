@@ -58,8 +58,6 @@ from tests.support.season_league import (
     round_id,
 )
 
-UNBUILT = "#439: the mid-season Confirm placements does not yet ask the change queue"
-
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 CONFIRMED = "✅ 2 placement(s) confirmed. The season is ongoing again."
 NOT_EVERYTHING = "⚠️ **Not everything could be done**"
@@ -250,7 +248,6 @@ _REFUSALS = {
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_stop_after_the_save_finishes_the_roles_and_lineups_on_restart(
     tmp_path, monkeypatch,
 ):
@@ -268,7 +265,6 @@ async def test_a_stop_after_the_save_finishes_the_roles_and_lineups_on_restart(
     assert len(_confirmed_lines(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_placements_and_the_season_s_move_are_saved_in_one_save(
     tmp_path, monkeypatch,
 ):
@@ -287,7 +283,6 @@ async def test_the_placements_and_the_season_s_move_are_saved_in_one_save(
     assert await _stage(league) == "ONGOING"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("when", ["at the press", "when it runs"])
 async def test_a_confirmation_with_every_division_done_is_refused_naming_season_complete(
     tmp_path, monkeypatch, when,
@@ -311,7 +306,6 @@ async def test_a_confirmation_with_every_division_done_is_refused_naming_season_
     assert league.granted == {}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_named(
     tmp_path, monkeypatch,
 ):
@@ -333,7 +327,6 @@ async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_name
     assert await _stage(league) == "ONGOING"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_driver_discord_cannot_fetch_for_another_reason_stops_the_queue(
     tmp_path, monkeypatch,
 ):
@@ -349,7 +342,6 @@ async def test_a_driver_discord_cannot_fetch_for_another_reason_stops_the_queue(
     assert await _uncommitted(league) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_lineup_discord_refuses_stops_the_queue_and_once_discarded_is_named(
     tmp_path, monkeypatch,
 ):
@@ -371,7 +363,6 @@ async def test_a_lineup_discord_refuses_stops_the_queue_and_once_discarded_is_na
 # ── A second press ──────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("first", ["waiting", "stopped at apply", "stopped at a role"])
 async def test_a_second_press_while_the_confirmation_is_in_hand_is_refused_at_once_without_a_job_number(
     tmp_path, monkeypatch, first,
@@ -407,7 +398,6 @@ async def test_a_second_press_while_the_confirmation_is_in_hand_is_refused_at_on
     assert len(_confirmed_lines(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_press_while_the_confirmation_is_stopped_after_its_save_is_refused_as_in_hand_not_as_changed(
     tmp_path, monkeypatch,
 ):
@@ -429,7 +419,6 @@ async def test_a_press_while_the_confirmation_is_stopped_after_its_save_is_refus
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_manager_is_told_at_once_and_the_reply_is_updated_when_the_placements_are_confirmed(
     tmp_path, monkeypatch,
 ):
@@ -448,7 +437,6 @@ async def test_the_manager_is_told_at_once_and_the_reply_is_updated_when_the_pla
     assert NOT_EVERYTHING not in reply(press)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_press_is_not_deferred_the_acknowledgement_is_its_response(
     tmp_path, monkeypatch,
 ):
@@ -463,7 +451,6 @@ async def test_the_press_is_not_deferred_the_acknowledgement_is_its_response(
     )
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_one_line_records_the_confirmation_after_the_last_job(tmp_path, monkeypatch):
     league = await _league(tmp_path, monkeypatch)
     await _pressed(league)
@@ -475,7 +462,6 @@ async def test_one_line_records_the_confirmation_after_the_last_job(tmp_path, mo
     assert _confirmed_lines(league) == [CONFIRMED_LINE]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_each_driver_s_roles_and_each_division_s_lineup_are_jobs_of_their_own(
     tmp_path, monkeypatch,
 ):
@@ -495,7 +481,6 @@ async def test_each_driver_s_roles_and_each_division_s_lineup_are_jobs_of_their_
     assert sends.index(PRO_CH.lineup) < sends.index(AM_CH.lineup)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_driver_discord_reports_absent_is_passed_over_and_the_queue_runs_on(
     tmp_path, monkeypatch,
 ):
@@ -511,7 +496,6 @@ async def test_a_driver_discord_reports_absent_is_passed_over_and_the_queue_runs
     assert (await _confirmation(league))["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_test_driver_is_granted_nothing(tmp_path, monkeypatch):
     """The test driver (104), placed at McLaren in Am beside Charles, is committed with the
     others and granted nothing."""
@@ -525,7 +509,6 @@ async def test_a_test_driver_is_granted_nothing(tmp_path, monkeypatch):
     assert await _uncommitted(league) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_confirmation_is_audited(tmp_path, monkeypatch):
     league = await _league(tmp_path, monkeypatch)
     await _pressed(league)
@@ -546,7 +529,6 @@ async def test_the_confirmation_is_audited(tmp_path, monkeypatch):
 # ── The checks when it runs ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("change", sorted(_REFUSALS))
 async def test_a_refusal_found_when_the_confirmation_runs_updates_the_reply_and_the_queue_goes_on(
     tmp_path, monkeypatch, change,
@@ -566,7 +548,6 @@ async def test_a_refusal_found_when_the_confirmation_runs_updates_the_reply_and_
     assert await _stopped_at(league) is None
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_season_no_longer_placing_when_the_confirmation_runs_is_refused_and_nothing_committed(
     tmp_path, monkeypatch,
 ):
@@ -582,7 +563,6 @@ async def test_a_season_no_longer_placing_when_the_confirmation_runs_is_refused_
     assert league.granted == {}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_retried_save_judges_the_confirmation_again_and_refuses_what_changed_while_it_was_stopped(
     tmp_path, monkeypatch,
 ):
@@ -605,7 +585,6 @@ async def test_a_retried_save_judges_the_confirmation_again_and_refuses_what_cha
     assert await _stopped_at(league) is None
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_retried_save_with_nothing_changed_confirms(tmp_path, monkeypatch):
     league = await _league(tmp_path, monkeypatch)
     press = await _pressed(league)
@@ -621,7 +600,6 @@ async def test_a_retried_save_with_nothing_changed_confirms(tmp_path, monkeypatc
     assert await _stopped_at(league) is None
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_discarded_save_confirms_nothing_and_says_to_review_again(tmp_path, monkeypatch):
     league = await _league(tmp_path, monkeypatch)
     press = await _pressed(league)
@@ -638,7 +616,6 @@ async def test_a_discarded_save_confirms_nothing_and_says_to_review_again(tmp_pa
     assert league.granted == {}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_discarded_rejudgement_confirms_nothing(tmp_path, monkeypatch):
     league = await _league(tmp_path, monkeypatch)
     press = await _pressed(league)
@@ -661,7 +638,6 @@ async def test_a_discarded_rejudgement_confirms_nothing(tmp_path, monkeypatch):
 # ── The review's channel ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("cut_off", ["fourteen minutes passed", "a restart"])
 async def test_a_confirmation_whose_reply_can_no_longer_be_updated_tells_the_review_s_channel(
     tmp_path, monkeypatch, cut_off,
@@ -683,7 +659,6 @@ async def test_a_confirmation_whose_reply_can_no_longer_be_updated_tells_the_rev
     assert "tell_review_channel" in [job["name"] for job in await _jobs(league)]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_confirmation_whose_reply_is_updated_tells_the_channel_nothing(
     tmp_path, monkeypatch,
 ):
@@ -697,7 +672,6 @@ async def test_a_confirmation_whose_reply_is_updated_tells_the_channel_nothing(
     assert "tell_review_channel" in [job["name"] for job in await _jobs(league)]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_refusal_at_run_after_the_reply_expired_is_told_in_the_review_s_channel(
     tmp_path, monkeypatch,
 ):
@@ -717,7 +691,6 @@ async def test_a_refusal_at_run_after_the_reply_expired_is_told_in_the_review_s_
     assert [(row["origin"], row["actor_id"]) for row in told] == [("BOT", ADMIN_ID)]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_discard_of_the_confirmation_stopped_at_its_check_after_the_reply_expired_is_told_in_the_review_s_channel(
     tmp_path, monkeypatch,
 ):
@@ -737,7 +710,6 @@ async def test_a_discard_of_the_confirmation_stopped_at_its_check_after_the_repl
     assert "was discarded by a league admin" not in reply(press)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_channel_notice_discord_refuses_stops_the_queue_and_once_discarded_is_named_in_the_line(
     tmp_path, monkeypatch,
 ):
@@ -762,7 +734,6 @@ async def test_a_channel_notice_discord_refuses_stops_the_queue_and_once_discard
 # ── The review ──────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_review_is_taken_down_ahead_of_the_confirmation_and_stays_up_for_a_refused_request(
     tmp_path, monkeypatch,
 ):

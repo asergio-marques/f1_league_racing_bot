@@ -84,6 +84,7 @@ __all__ = [
     "STAGE_REFUSAL",
     "confirmation_in_hand",
     "every_division_done",
+    "every_division_done_in",
     "every_division_done_refusal",
     "mid_season_confirm_change",
 ]
@@ -172,6 +173,12 @@ async def every_division_done(db: aiosqlite.Connection, season_id: int) -> bool:
     )
     row = await cursor.fetchone()
     return row is not None and row["divisions"] > 0 and row["outstanding"] == 0
+
+
+async def every_division_done_in(db_path: str, season_id: int) -> bool:
+    """`every_division_done`, read on a connection of its own: for the press, which holds none."""
+    async with get_connection(db_path) as db:
+        return await every_division_done(db, season_id)
 
 
 def mid_season_confirm_change(
