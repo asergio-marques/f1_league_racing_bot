@@ -578,7 +578,7 @@ Things change. While the season is ongoing:
 | `/division calendar-sync` | Repost a division's calendar with your changes on it. Acknowledged at once ("⏳ Posting the calendar of **Pro** again. …") and carried out on the change queue, the reply updated when it is done. The new calendar is posted first and the old one deleted by a job after it. Refused once every division is done — there is no round left for the calendar to describe |
 | `/clean-bot` | Delete the bot's own most recent messages in the command channel, chosen when its turn on the queue comes (a refused deletion stops the queue). You say how many, up to ten, and nobody else's messages are touched. An approved or expired review clears itself, so this is for whatever else the bot has left behind |
 
-> **The posted calendar does not update itself — except for a cancellation.** It is the calendar the season was approved with, and it stays that way until you cancel a round, a division or the season, which reposts it with the cancelled rounds marked. `/round amend` changes what the bot *does*, but the picture or the message your drivers scroll back to is untouched until you run `/division calendar-sync`. This trips up nearly everyone once.
+> **The posted calendar does not update itself — except for a cancellation.** It is the calendar the season was approved with, and it stays that way until you cancel a round, a division or the season, or a round ends cancelled because every session was entered as `CANCELLED`, which reposts it with the cancelled rounds marked. `/round amend` changes what the bot *does*, but the picture or the message your drivers scroll back to is untouched until you run `/division calendar-sync`. This trips up nearly everyone once.
 
 ### Changing the lineup
 
