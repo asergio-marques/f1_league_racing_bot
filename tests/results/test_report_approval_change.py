@@ -82,11 +82,6 @@ from tests.results.test_review_open_change import _refuse_the_job
 
 KIND = "results.reports.approve"
 
-#: What is not yet true of a sanction's jobs (#439, Part C).
-SANCTION_ROLE_JOBS_UNBUILT = (
-    "#439: a sanction's roles are changed inside its apply, swallowing Discord's refusal, with no "
-    "check of an autoreserve ahead of it and no role job of its own"
-)
 
 
 def _payload(*, staged: Any = None, pardons: Any = (), prompt: int = PROMPT,
@@ -1197,7 +1192,6 @@ async def test_a_sanction_s_roles_are_a_job_of_their_own_between_its_save_and_it
     assert league.attendance.role_changes == [(MAX_PROFILE, [5502], [5503])]
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_ROLE_JOBS_UNBUILT)
 async def test_a_role_change_discord_refuses_stops_the_queue_with_the_sanction_saved_and_its_card_waiting(
     tmp_path,
 ):
@@ -1248,7 +1242,6 @@ ROLES_NOT_CHANGED_LOGGED = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_ROLE_JOBS_UNBUILT)
 async def test_a_discarded_role_change_names_the_roles_to_change_by_hand_and_the_card_still_posts(
     tmp_path,
 ):
@@ -1303,7 +1296,6 @@ async def test_an_autoreserve_is_checked_before_it_is_saved(tmp_path):
     assert league.attendance.checks == [MAX_PROFILE]
 
 
-@pytest.mark.xfail(strict=True, reason=SANCTION_ROLE_JOBS_UNBUILT)
 async def test_a_discarded_check_leaves_the_autoreserve_unapplied_and_named_with_attendance_sync(
     tmp_path,
 ):

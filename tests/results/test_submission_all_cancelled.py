@@ -761,7 +761,6 @@ async def _snapshot_rounds(league: Any, round_id: int) -> tuple[int, int]:
     return counts[0], counts[1]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_a_resubmission_entering_every_session_cancelled_withdraws_the_round_s_standings(
     tmp_path, monkeypatch,
 ):
@@ -830,7 +829,6 @@ async def test_the_earlier_provisional_tables_come_down_after_each_session_s_not
                 > league.events.index(("send", RESULTS_CHANNEL, note)))
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_a_later_round_s_standings_are_recomputed_without_the_round_and_posted_again(
     tmp_path, monkeypatch,
 ):

@@ -765,16 +765,10 @@ async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_comm
     assert "/division lineup-channel" in _sheet_stop(league)
 
 
-#: What is not yet true of a sanction's role change (#439, Part C).
-REFUSED_ROLES_UNBUILT = (
-    "#439: a sanction's roles are changed inside its apply through placement's swallowing role "
-    "helpers, so Discord's refusal never stops the queue"
-)
 #: Pro's team 3001's role, and its Reserve team's.
 TEAM_ROLE, RESERVE_ROLE = 5502, 5503
 
 
-@pytest.mark.xfail(strict=True, reason=REFUSED_ROLES_UNBUILT)
 async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_queue(tmp_path):
     """Attendance is on, with its real hook and the real placement service. Pro sets an
     autoreserve threshold of one point and has a Reserve team with a free seat; Lewis, placed in
