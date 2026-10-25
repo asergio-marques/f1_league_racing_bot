@@ -1050,7 +1050,6 @@ async def test_a_change_whose_acknowledgement_fails_still_runs_and_holds_nothing
     assert "Admin (`<@4242>`) | /dummy | Success" in "\n".join(await _lines(env))
 
 
-@pytest.mark.xfail(strict=True, reason="a fault after the save raises out of ask")
 async def test_a_fault_acknowledging_a_saved_change_still_returns_its_id_and_runs_it(
     env, caplog
 ):

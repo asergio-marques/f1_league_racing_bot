@@ -690,7 +690,10 @@ class ChangeQueue:
         has started, is refused at once through *interaction* (the line naming *refusal_what*,
         or *what*) and nothing is saved. Otherwise the change and its opening steps are saved
         in one transaction, the member is told it is under way, and the worker is woken. A fault
-        in the save raises to the caller.
+        in the save raises to the caller. A fault after the save does not: the change goes ahead,
+        so once it is saved its id is returned and the worker woken whatever the acknowledgement
+        meets (`_acknowledge_saved`). Pinned by
+        `test_a_fault_acknowledging_a_saved_change_still_returns_its_id_and_runs_it`.
         """
         change_type = self._type(kind)
         member = actor if actor is not None else (interaction.user if interaction else None)
@@ -735,11 +738,13 @@ class ChangeQueue:
                 )
                 return None
             change_id, first_job = saved
-            await self._acknowledge_saved(
-                change_id, change_type, payload, interaction=interaction, lane=lane,
-                first_job=first_job,
-            )
-            self._signal.set()
+            try:
+                await self._acknowledge_saved(
+                    change_id, change_type, payload, interaction=interaction, lane=lane,
+                    first_job=first_job,
+                )
+            finally:
+                self._signal.set()
             return change_id
 
     async def _insert(
@@ -836,16 +841,35 @@ class ChangeQueue:
         lane: str,
         first_job: int | None,
     ) -> None:
-        """Acknowledge a change just saved to *interaction*, or adopt the reply kept for it."""
-        if interaction is None:
-            self._adopt_kept_reply(change_id, change_type.kind, change_type.key(payload))
-            return
-        stopped = await self._stopped_jobs(lane=lane)
-        await self._acknowledge(
-            change_id, change_type, payload, interaction,
-            first_job=first_job, stopped_at=stopped[0][2]["id"] if stopped else None,
-            lane=lane,
-        )
+        """Acknowledge a change just saved to *interaction*, or adopt the reply kept for it.
+
+        The change is saved, so nothing here raises to the request, as `_acknowledge` holds for the
+        answer itself: a fault is logged on the host with its traceback and the change goes ahead.
+        A fault looking up whether its lane is stopped still answers the member, without naming
+        the stop, which the stop notice and the log channel already carry.
+        """
+        try:
+            if interaction is None:
+                self._adopt_kept_reply(change_id, change_type.kind, change_type.key(payload))
+                return
+            try:
+                stopped = await self._stopped_jobs(lane=lane)
+            except Exception:  # noqa: BLE001 — the change is saved and goes ahead whatever this does
+                log.error(
+                    "could not tell whether the queue is stopped ahead of change %s; it is "
+                    "acknowledged without saying so", change_id, exc_info=True,
+                )
+                stopped = []
+            await self._acknowledge(
+                change_id, change_type, payload, interaction,
+                first_job=first_job, stopped_at=stopped[0][2]["id"] if stopped else None,
+                lane=lane,
+            )
+        except Exception:  # noqa: BLE001 — the change is saved and goes ahead whatever this does
+            log.error(
+                "could not acknowledge change %s; it goes ahead all the same", change_id,
+                exc_info=True,
+            )
 
     async def ask_after(
         self,
@@ -913,17 +937,19 @@ class ChangeQueue:
                     what=what, refusal_what=refusal_what,
                 )
                 return None
-            if first is not None:
-                await self._acknowledge_saved(
-                    first[0], ahead_type, ahead.payload, interaction=None,
-                    lane=ahead_type.lane(ahead.payload), first_job=first[1],
-                )
             change_id, first_job = saved
-            await self._acknowledge_saved(
-                change_id, change_type, payload, interaction=interaction, lane=lane,
-                first_job=first_job,
-            )
-            self._signal.set()
+            try:
+                if first is not None:
+                    await self._acknowledge_saved(
+                        first[0], ahead_type, ahead.payload, interaction=None,
+                        lane=ahead_type.lane(ahead.payload), first_job=first[1],
+                    )
+                await self._acknowledge_saved(
+                    change_id, change_type, payload, interaction=interaction, lane=lane,
+                    first_job=first_job,
+                )
+            finally:
+                self._signal.set()
             return change_id
 
     def keep_reply(self, change_id: int, kind: str, key: str) -> None:
