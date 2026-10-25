@@ -2467,24 +2467,25 @@ class _ConfigSelectView(LeagueView):
                             f"  configuration: {_name}"
                         ),
                     }
-                    if (await queue.check(kind, payload)).kind is not VerdictKind.GO:
-                        # Nothing is chosen: the message is left offering the configurations, and
-                        # the queue's ask, checking again, refuses the press privately.
-                        change_id = await queue.ask(
-                            kind, payload, interaction=interaction, what=what
-                        )
-                        if change_id is None:
-                            self.selected = None
-                        return
+                    # Whether the choice was made. Until it is, the claim is released on every
+                    # way out, a fault included: the buttons are still up and nothing was
+                    # asked, so another press may choose.
+                    chosen = False
                     try:
+                        if (await queue.check(kind, payload)).kind is not VerdictKind.GO:
+                            # The message is left offering the configurations, and the queue's
+                            # ask, checking again, refuses the press privately.
+                            chosen = await queue.ask(
+                                kind, payload, interaction=interaction, what=what
+                            ) is not None
+                            return
                         await interaction.response.edit_message(
                             content=f"🔧 Config selected: **{_name}**", view=None
                         )
-                    except Exception:
-                        # The buttons are still up and nothing was asked: another press may
-                        # choose.
-                        self.selected = None
-                        raise
+                        chosen = True
+                    finally:
+                        if not chosen:
+                            self.selected = None
                     await queue.ask(kind, payload, interaction=interaction, what=what)
                     return
                 self.stop()

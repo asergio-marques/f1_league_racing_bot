@@ -924,8 +924,6 @@ def _put_back(press: Any, picker: Any) -> None:
     assert {getattr(item, "label", None) for item in view.children} == {HEAVY, STANDARD}
 
 
-@pytest.mark.xfail(strict=True, reason="a raising check leaves the press's claim set, so the "
-                                       "second press is told the configuration was chosen")
 async def test_a_picker_whose_check_fails_can_be_pressed_again(tmp_path, monkeypatch):
     """The season has two points configurations attached, and the admin's qualifying paste has
     posted the picker. The admin presses "Heavy", but the queue's check of the choice fails on a
