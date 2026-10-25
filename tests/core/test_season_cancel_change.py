@@ -127,10 +127,6 @@ CANNOT_DISCARD = (
     "⛔ This job can't be discarded: without it the rounds of season 3 would be left with no "
     "timed work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
 )
-CALENDAR_UNPOSTABLE_UNBUILT = (
-    "#439: a discarded calendar repost after a season cancel still names "
-    "`/division calendar-sync`, which a cancelled season refuses"
-)
 #: How a discarded calendar repost is named once the season is cancelled (W1).
 CALENDAR_DISCARDED = (
     "**Pro** — calendar: the calendar could not be posted, and a league admin discarded it; no "
@@ -624,7 +620,6 @@ async def test_a_calendar_discord_refuses_stops_the_queue_and_puts_nothing_on_th
     assert CANCELLED in reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=CALENDAR_UNPOSTABLE_UNBUILT)
 async def test_a_discarded_calendar_repost_says_no_command_posts_it_again_once_the_season_is_cancelled(
     tmp_path,
 ):
@@ -652,13 +647,8 @@ CALENDAR_DISCARDED_NOT_ENDED = (
     "**Pro** — calendar: the calendar could not be posted, and a league admin discarded it; run "
     "`/division calendar-sync` while the season is still being raced"
 )
-END_DISCARDED_UNNAMED = (
-    "#439: a season cancel whose end is discarded names no discarded announcement in its reply "
-    "or the log channel"
-)
 
 
-@pytest.mark.xfail(strict=True, reason=END_DISCARDED_UNNAMED)
 async def test_a_discarded_calendar_repost_is_named_when_the_season_s_end_is_discarded_too(
     tmp_path,
 ):

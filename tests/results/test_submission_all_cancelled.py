@@ -71,11 +71,6 @@ RESULTS = DIVISIONS[PRO][3].results
 LANE = f"channel:{SUBMISSION_CHANNEL}"
 CALENDAR = DIVISIONS[PRO][3].calendar
 
-#: Why the tests of the round ending cancelled fail until Part E is built.
-NOT_HELD_UNBUILT = (
-    "#439: a round whose every session is entered as cancelled is left awaiting its results, "
-    "and rounds has no not_held column"
-)
 #: The refusal of a Discard on the round's ending.
 CANNOT_DISCARD_END = (
     "⛔ This job can't be discarded: without it round 3 in **Pro** would never finish, and "
@@ -377,7 +372,6 @@ async def test_no_calendar_is_posted_where_none_stood(tmp_path):
     assert league.texts(CALENDAR) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD_UNBUILT)
 async def test_a_discarded_calendar_is_named_with_division_calendar_sync(tmp_path):
     """Discord refuses Pro's calendar repost after round 3 ends cancelled, and a league admin
     discards it. The round stays cancelled, and the log channel's `ROUND_CANCELLED` line names

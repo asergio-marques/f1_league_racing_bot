@@ -305,7 +305,7 @@ async def take_down_call(
 #: every channel is gone, or one long error from Discord, would otherwise lose the whole reply.
 #: The log channel carries every failure in full.
 MAX_LINES = 8
-MAX_LINE = 180
+MAX_LINE = 210
 
 
 def failure_lines(failures: list[NoticeFailure]) -> str:

@@ -428,7 +428,13 @@ _DISCARDED_CHANNEL = (
 )
 _DISCARDED_CALENDAR = (
     "the calendar could not be posted, and a league admin discarded it; run "
-    "`/division calendar-sync`"
+    "`/division calendar-sync` while the season is still being raced"
+)
+#: The same once the season is cancelled, which `/division calendar-sync` refuses.
+_DISCARDED_CALENDAR_CANCELLED = (
+    "the calendar could not be posted, and a league admin discarded it; no command posts it "
+    "again now the season is cancelled; the earlier calendar stands, to delete by hand if it "
+    "should not"
 )
 
 SEASON_UNARM_DISCARDED = (
@@ -458,6 +464,13 @@ def _view(ctx: OutcomeContext, name: str) -> StepView:
 
 def _discarded(view: StepView) -> bool:
     return "discarded" in (view.result or {})
+
+
+def _season_ended(ctx: OutcomeContext) -> bool:
+    """Whether a season cancel's end was saved: `end` is done, and neither refused nor
+    discarded."""
+    view = _view(ctx, END)
+    return view.done and not (_discarded(view) or (view.result or {}).get("refused"))
 
 
 def _refusal_of(ctx: OutcomeContext) -> str | None:
@@ -615,7 +628,13 @@ def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
                 ))
         elif view.name == POST_CALENDAR:
             if _discarded(view):
-                failures.append(notices.NoticeFailure(name, "calendar", _DISCARDED_CALENDAR))
+                # A season cancelled for good is refused by `/division calendar-sync`; one whose
+                # end was discarded is not cancelled, and the command still works.
+                cancelled = ctx.kind == SEASON_CANCEL and _season_ended(ctx)
+                failures.append(notices.NoticeFailure(
+                    name, "calendar",
+                    _DISCARDED_CALENDAR_CANCELLED if cancelled else _DISCARDED_CALENDAR,
+                ))
             elif result.get("fell_back"):
                 failures.append(notices.NoticeFailure(
                     name, "calendar",
@@ -1673,11 +1692,6 @@ def season_cancel_change(
                 return str(refused)
         return None
 
-    def _ended(ctx: OutcomeContext) -> bool:
-        """Whether the season's end was saved: `end` is done, and neither refused nor discarded."""
-        view = _view(ctx, END)
-        return view.done and not (_discarded(view) or (view.result or {}).get("refused"))
-
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """Write the one line that records the cancellation, or the refusal a save met.
 
@@ -1698,8 +1712,19 @@ def season_cancel_change(
                     *untold_log(ctx.named, "/season cancel", untold),
                 ),
             )
-        if _discarded(_view(ctx, UNARM)) or not _ended(ctx):
+        if _discarded(_view(ctx, UNARM)):
             return StepResult(result=result, lines=untold_log(ctx.named, "/season cancel", untold))
+        if not _season_ended(ctx):
+            # The season is not cancelled, but what was discarded on the way is still named.
+            failed = notices.failure_log_lines(not_notified(ctx))
+            if not failed:
+                return StepResult(
+                    result=result, lines=untold_log(ctx.named, "/season cancel", untold)
+                )
+            return StepResult(result=result, lines=(
+                f"{ctx.named} | /season cancel | Incomplete" + failed
+                + "".join(f"\n  not done: {each}" for each in untold_lines(untold)),
+            ))
         line = (
             f"{ctx.named} | /season cancel | Success"
             + checkin_audit(ctx)
@@ -1712,7 +1737,7 @@ def season_cancel_change(
         text = _outcome(ctx)
         if (
             not _discarded(_view(ctx, UNARM))
-            and _ended(ctx)
+            and _season_ended(ctx)
             and not _refused(ctx)
         ):
             return text
@@ -1725,8 +1750,10 @@ def season_cancel_change(
         refused = _refused(ctx)
         if refused:
             return refused + _rearming_sentence(ctx)
-        if not _ended(ctx):
-            return SEASON_END_DISCARDED.format(number=number)
+        if not _season_ended(ctx):
+            return SEASON_END_DISCARDED.format(number=number) + notices.failure_lines(
+                not_notified(ctx)
+            )
         return (
             SEASON_CANCELLED
             + notices.failure_lines(not_notified(ctx))

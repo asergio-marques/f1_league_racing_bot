@@ -81,10 +81,6 @@ CANNOT_DISCARD = (
     "⛔ This job can't be discarded: without it the rounds of **Pro** would be left with no timed "
     "work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
 )
-CALENDAR_SYNC_UNBUILT = (
-    "#439: a discarded calendar repost still names `/division calendar-sync` without saying it "
-    "works only while the season is still being raced"
-)
 #: How a discarded calendar repost is named, in the reply and beneath the success line (W1).
 CALENDAR_DISCARDED = (
     "**Pro** — calendar: the calendar could not be posted, and a league admin discarded it; run "
@@ -614,7 +610,6 @@ async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
 
 
-@pytest.mark.xfail(strict=True, reason=CALENDAR_SYNC_UNBUILT)
 async def test_a_discarded_calendar_repost_names_calendar_sync_while_the_season_is_raced(tmp_path):
     """Discord refuses Pro's calendar repost after the division is cancelled, and a league admin
     discards it. The reply and the success line name it with the fix that works: run
