@@ -2045,7 +2045,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/module_service.py", "ModuleService.set_weather_enabled"): (1, PASS["core"]),
     ("core/services/pack_service.py", "pack"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.assign_driver"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.commit_mid_season_placements"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.delete_team_role_config"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.move_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.rename_team_role_config"): (1, PASS["core"]),

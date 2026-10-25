@@ -37,21 +37,6 @@ _UNSETTLED_SQL = ", ".join(
 
 
 @dataclass
-class PlacementsCommitted:
-    """What committing a season's mid-season placements did.
-
-    *placements* is every placement committed, as ``uncommitted_placements`` read them.
-    *ungranted* is the Discord id of each driver among them whose roles could not be granted,
-    and *lineups* the id of each division holding a placement it committed, whose lineup the
-    caller asks the change queue to post (#439).
-    """
-
-    placements: list[dict] = field(default_factory=list)
-    ungranted: list[str] = field(default_factory=list)
-    lineups: list[int] = field(default_factory=list)
-
-
-@dataclass
 class SackSaved:
     """A sack written on the caller's save, and what is left for a job of its own to do (#439).
 
@@ -574,66 +559,6 @@ class PlacementService:
         :func:`uncommitted_placements_on`), read on a connection of its own."""
         async with get_connection(self._db_path) as db:
             return await uncommitted_placements_on(db, season_id)
-
-    async def commit_mid_season_placements(
-        self, season_id: int, guild: discord.Guild | None
-    ) -> PlacementsCommitted:
-        """Commit the season's uncommitted placements, granting their roles.
-
-        Each driver committed is granted their division's role and their team's role. The
-        lineup of each division holding such a driver is not posted here: the divisions are
-        returned in ``lineups``, once each however many drivers they hold, for the caller to
-        ask the change queue to post (#439).
-
-        **Nothing after the commit raises** (issue #387). The placements are committed by
-        then, and a raise would leave every driver not yet reached undone for good:
-        confirming again finds nothing left to commit. So each driver is guarded on its own,
-        and a driver whose roles could not be granted is returned in ``ungranted`` for the
-        manager to be told. A driver no longer in the server is passed over, there being
-        nobody to give a role to.
-        """
-        placements = await self.uncommitted_placements(season_id)
-        if not placements:
-            return PlacementsCommitted()
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE driver_season_assignments SET committed = 1 "
-                "WHERE season_id = ? AND committed = 0",
-                (season_id,),
-            )
-            await db.commit()
-
-        ungranted: list[str] = []
-        if guild is not None:
-            for placement in placements:
-                if placement["is_test_driver"]:
-                    continue
-                try:
-                    member = guild.get_member(int(placement["discord_user_id"]))
-                    if member is None:
-                        try:
-                            member = await guild.fetch_member(
-                                int(placement["discord_user_id"])
-                            )
-                        except discord.HTTPException:
-                            continue
-                    role_ids = [placement["division_role_id"]]
-                    if placement["team_name"]:
-                        team_cfg = await self.get_team_role_config(placement["team_name"])
-                        if team_cfg is not None:
-                            role_ids.append(team_cfg.role_id)
-                    await self._grant_roles(member, *role_ids)
-                except Exception:  # noqa: BLE001 — the placement is committed
-                    log.exception(
-                        "commit_mid_season_placements: could not grant the roles of %s",
-                        placement["discord_user_id"],
-                    )
-                    ungranted.append(str(placement["discord_user_id"]))
-        return PlacementsCommitted(
-            placements=placements,
-            ungranted=ungranted,
-            lineups=list(dict.fromkeys(p["division_id"] for p in placements)),
-        )
 
     # ------------------------------------------------------------------
     # Seeded unassigned listing (T008)

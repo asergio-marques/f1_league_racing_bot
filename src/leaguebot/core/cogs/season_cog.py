@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -39,13 +38,11 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
-from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks
-from leaguebot.core.services.channel_tell_change import KIND as CHANNEL_TELL
 from leaguebot.core.services.cancellation_changes import (
     DIVISION_CANCEL,
     ROUND_CANCEL,
@@ -531,48 +528,6 @@ async def _overflow_for(cog, _division_name: str, would_hold: int):
 #: The key a setup recovered after a restart is held under. No user began it in this
 #: process, and no Discord id is 0.
 _RECOVERED = 0
-
-
-async def _confirm_privately(
-    interaction: discord.Interaction, text: str, *, fallback: str
-) -> None:
-    """Tell the member *text* privately, or tell the channel *fallback* where that is refused.
-
-    For the confirmation of something already committed, so it never raises (issue #387).
-    Chunked, *text* being free to outgrow Discord's limit. And sent best effort, as
-    `/results rounds amend` sends its own (#345): the interaction's token lapses after fifteen
-    minutes, which an approval that waited on the backup question and then drew on the Pi can
-    outlast. Where the reply is refused, the channel the interaction came from is told
-    *fallback* instead, by a `channel.tell` change asked of the queue as the bot's (an interaction
-    only ever arises in a channel a member can write in, #228). *fallback* points
-    at the log channel, which the caller makes carry all that *text* said (decided
-    2026-09-22).
-    """
-    try:
-        for chunk in chunk_message(text):
-            if interaction.response.is_done():
-                await interaction.followup.send(chunk, ephemeral=True)
-            else:
-                await interaction.response.send_message(chunk, ephemeral=True)
-    except Exception:  # noqa: BLE001 — what is confirmed is committed
-        log.warning("could not send a confirmation privately", exc_info=True)
-        if interaction.channel is None:
-            return
-        # The line goes on the queue, as the bot's: a refusal of it stops the queue with Retry and
-        # Discard, and the confirmation, already committed, stands whatever becomes of it.
-        try:
-            await bot_of(interaction).change_queue.ask(
-                CHANNEL_TELL,
-                {
-                    "channel_id": interaction.channel.id,
-                    "text": fallback,
-                    "mention": interaction.user.id,
-                },
-                what="telling the channel what the confirmation said",
-                origin=ChangeOrigin.BOT,
-            )
-        except Exception:  # noqa: BLE001
-            log.exception("could not ask the queue to tell the channel what the confirmation said")
 
 
 async def _take_the_review_down(bot: LeagueBot, interaction: discord.Interaction) -> int | None:
