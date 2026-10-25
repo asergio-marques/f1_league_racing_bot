@@ -52,8 +52,6 @@ from tests.support.change_queue import (
 )
 from tests.support.season_league import SIGNING_UP, SeasonLeague, signing_up
 
-#: What is not yet true (#439, slice 8, G2).
-RESTART_UNBUILT = "#439: the restart does not yet end a signup whose channel was deleted"
 #: The correction's five-minute window, and the change its lapse asks.
 CORRECTION_TIMER = "correction_lapse"
 LAPSE_KIND = "signup.correction.lapse"
@@ -338,7 +336,6 @@ async def test_a_driver_whose_channel_was_deleted_may_sign_up_again(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=RESTART_UNBUILT)
 @pytest.mark.parametrize(("state", "wizard_state"), IN_PROGRESS, ids=IN_PROGRESS_IDS)
 async def test_a_restart_ends_a_signup_whose_channel_was_deleted_while_the_bot_was_down(
     tmp_path, state, wizard_state,
@@ -364,7 +361,6 @@ async def test_a_restart_ends_a_signup_whose_channel_was_deleted_while_the_bot_w
     assert league.log().count(RESTART_LINE) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=RESTART_UNBUILT)
 async def test_a_restart_with_no_league_server_ends_nothing(tmp_path, caplog):
     """Kimi awaits approval and his signup channel 6405 is gone, but when the bot starts again the
     league's server is missing from its cache. Recovering the wizards ends nothing: no `signup.end`
@@ -384,7 +380,6 @@ async def test_a_restart_with_no_league_server_ends_nothing(tmp_path, caplog):
                for record in caplog.records)
 
 
-@pytest.mark.xfail(strict=True, reason=RESTART_UNBUILT)
 @pytest.mark.parametrize(
     "refusal",
     [http_error(), http_error(discord.Forbidden, status=403, text="Missing Access")],
