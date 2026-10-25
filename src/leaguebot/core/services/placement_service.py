@@ -18,7 +18,6 @@ from leaguebot.core.services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, wri
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.signup.models.signup_module import AvailabilitySlot
 from leaguebot.core.models.team import TeamRoleConfig
-from leaguebot.core.utils.input_validator import parse_time
 from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -91,25 +90,6 @@ def _fmt_ms(total_ms: int) -> str:
     minutes, remainder = divmod(total_ms, 60_000)
     seconds, ms = divmod(remainder, 1000)
     return f"{minutes}:{seconds:02d}.{ms:03d}"
-
-
-def _parse_lap_time_ms(time_str: str) -> int | None:
-    """A driver's signup lap time in milliseconds, or None — read by the shared strict parser
-    (#362), the one the signup wizard accepted it by."""
-    return parse_time(time_str)
-
-
-def _compute_total_lap_ms(lap_times: dict[str, str]) -> int | None:
-    """Sum all lap times in a lap_times dict. Returns None if empty or unparseable."""
-    if not lap_times:
-        return None
-    total = 0
-    for time_str in lap_times.values():
-        ms = _parse_lap_time_ms(time_str)
-        if ms is None:
-            return None
-        total += ms
-    return total if total > 0 else None
 
 
 async def uncommitted_placements_on(db: aiosqlite.Connection, season_id: int) -> list[dict]:
@@ -525,30 +505,6 @@ class PlacementService:
                 ),
             )
             await db.commit()
-
-    # ------------------------------------------------------------------
-    # total_lap_ms computation (called at approval)
-    # ------------------------------------------------------------------
-
-    async def store_total_lap_ms(
-        self, discord_user_id: str, lap_times: dict[str, str]
-    ) -> int | None:
-        """Compute and persist total_lap_ms on the driver's SignupRecord.
-
-        Returns the computed value (or None if no times). Called within the
-        same logical operation as signup approval — uses its own connection
-        since the caller may already be inside a different context.
-        """
-        total_ms = _compute_total_lap_ms(lap_times)
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE signup_records SET total_lap_ms = ? "
-                "WHERE id = (SELECT MAX(id) FROM signup_records "
-                "            WHERE discord_user_id = ?)",
-                (total_ms, discord_user_id),
-            )
-            await db.commit()
-        return total_ms
 
     # ------------------------------------------------------------------
     # Confirming placements mid-season (issue #220)

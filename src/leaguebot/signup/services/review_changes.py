@@ -72,8 +72,7 @@ choose, or waiting for approval with no panel, and either leaves a signup unsett
 the season's placements; a Discard on either is refused and only a Retry moves it.
 
 **The lap sum is signup's own.** The sum is written on the signup record by this module, in the
-approval's save; core's `PlacementService.store_total_lap_ms`, which commits on a connection of
-its own, is not asked.
+approval's save, and nothing else computes it.
 
 A job that fails stops the queue (core specification, "How a change is carried out").
 """
