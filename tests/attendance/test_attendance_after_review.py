@@ -573,7 +573,8 @@ async def test_change_sanction_roles_leaves_a_role_the_driver_is_entitled_to_aga
 async def test_a_sanction_s_roles_are_changed_even_once_attendance_is_off(tmp_path):
     """Owner, check 1: "Change the roles anyway". Lewis's autosack was saved and attendance was
     then turned off before its role change ran. The hook still takes back his roles of Pro and
-    Alpha, the one method that acts whatever the switch."""
+    Alpha: of the methods that leave the switch alone, `enabled` reports it, `sync_hint` reads
+    none, and `change_sanction_roles` acts whatever it says."""
     db_path = await _db(tmp_path, attendance=False)
     await _sacked(db_path, LEWIS)
     guild = _role_guild((PRO_ROLE, ALPHA_ROLE))
