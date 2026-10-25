@@ -36,7 +36,9 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
 from leaguebot.signup.services.wizard_answers import take_typed_answer
-from leaguebot.signup.services.wizard_changes import ask_member_left, departed_placed_driver
+from leaguebot.signup.services.wizard_changes import (
+    DELETED, ask_channel_gone, ask_member_left, departed_placed_driver,
+)
 from leaguebot.signup.services.window_changes import (
     AUDIT_CLOSE,
     AUDIT_FORCE_CLOSE,
@@ -50,7 +52,7 @@ from leaguebot.core.utils.time_parsing import parse_time_of_day
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults, changes_nothing
 from leaguebot.core.utils.league_server import LeagueView, is_foreign_guild
 from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.core.utils.log_lines import name_of_member, record_abandoned, refuse
 from leaguebot.weather.utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
@@ -309,6 +311,31 @@ class SignupCog(commands.Cog):
         if wizard is None or wizard.discord_user_id != str(message.author.id):
             return
         await take_typed_answer(self.bot, message, wizard, queue=self.bot.change_queue)
+
+    @commands.Cog.listener()
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
+        """A channel of the server was deleted: where a wizard names it, its signup is ended.
+
+        The ending is the change queue's: the listener asks it, as the bot, for `signup.end` with
+        the reason `CHANNEL_GONE`, found "deleted", and the change's own check decides whether the
+        signup is still under way. The bot's own deletions of held channels fire this too, and
+        each finds its driver no longer signing up and is dropped. A channel no wizard names is
+        nothing to the signup module.
+
+        Only a channel of the league's own server counts.
+        """
+        if await is_foreign_guild(self.bot, channel.guild.id):
+            return
+        wizard = await self.bot.signup_module_service.get_wizard_by_channel(channel.id)
+        if wizard is None:
+            return
+        await ask_channel_gone(
+            self.bot.change_queue,
+            user_id=wizard.discord_user_id,
+            channel_id=channel.id,
+            named=await name_of_member(self.bot, int(wizard.discord_user_id)),
+            found=DELETED,
+        )
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member) -> None:

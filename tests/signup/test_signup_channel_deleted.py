@@ -53,7 +53,6 @@ from tests.support.change_queue import (
 from tests.support.season_league import SIGNING_UP, SeasonLeague, signing_up
 
 #: What is not yet true (#439, slice 8, G2).
-DELETED_UNBUILT = "#439: a signup channel deleted by hand does not yet end its signup"
 RESTART_UNBUILT = "#439: the restart does not yet end a signup whose channel was deleted"
 #: The correction's five-minute window, and the change its lapse asks.
 CORRECTION_TIMER = "correction_lapse"
@@ -123,7 +122,6 @@ def _disarmed(league: SeasonLeague) -> list[tuple[Any, ...]]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=DELETED_UNBUILT)
 async def test_a_channel_deleted_while_its_signup_awaits_approval_ends_the_signup(tmp_path):
     """Kimi awaits approval, and his signup channel 6405 is deleted by hand. The bot hears it and
     the queue runs: one `signup.end`, asked as the bot on the league lane, runs its single job
@@ -147,7 +145,6 @@ async def test_a_channel_deleted_while_its_signup_awaits_approval_ends_the_signu
     assert league.log().count(DELETED_LINE) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=DELETED_UNBUILT)
 @pytest.mark.parametrize(
     ("state", "wizard_state"),
     [IN_PROGRESS[0], IN_PROGRESS[2], IN_PROGRESS[3]],
@@ -174,7 +171,6 @@ async def test_a_channel_deleted_mid_signup_ends_it(tmp_path, state, wizard_stat
     assert league.log().count(DELETED_LINE) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=DELETED_UNBUILT)
 @pytest.mark.parametrize(
     "state", ["NOT_SIGNED_UP", "UNASSIGNED"],
     ids=["withdrawn", "approved"],
@@ -201,7 +197,6 @@ async def test_a_channel_deleted_after_its_signup_ended_changes_nothing(tmp_path
     assert "| Signup | Ended" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=DELETED_UNBUILT)
 async def test_the_bot_deleting_a_held_channel_ends_nothing(tmp_path):
     """Kimi's signup ended a day ago and his channel 6405 is held. Its 24-hour timer fires and the
     bot deletes the channel; Discord then tells the bot the channel was deleted. Nothing is
@@ -223,7 +218,6 @@ async def test_the_bot_deleting_a_held_channel_ends_nothing(tmp_path):
     assert "| Signup | Ended" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=DELETED_UNBUILT)
 async def test_a_channel_no_wizard_names_is_ignored(tmp_path):
     """Kimi awaits approval in channel 6405, and another channel of the server, 6999, which no
     wizard names, is deleted. Nothing is asked of the queue: no `signup.end`, Kimi still awaits
@@ -244,7 +238,6 @@ async def test_a_channel_no_wizard_names_is_ignored(tmp_path):
     assert "| Signup | Ended" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=DELETED_UNBUILT)
 async def test_a_channel_deleted_in_another_server_is_ignored(tmp_path):
     """Kimi awaits approval in channel 6405, and a channel of the same id is deleted in another
     server the bot sits in. Nothing is asked of the queue: Kimi still awaits approval, his wizard
@@ -264,7 +257,6 @@ async def test_a_channel_deleted_in_another_server_is_ignored(tmp_path):
     assert "| Signup | Ended" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=DELETED_UNBUILT)
 async def test_the_old_channel_of_a_driver_who_signed_up_again_ends_nothing(tmp_path):
     """Kimi signed up again and awaits approval in his new channel 6500; his old channel 6405
     still stands, and is then deleted. Nothing is ended: Kimi still awaits approval, his wizard
@@ -285,7 +277,6 @@ async def test_the_old_channel_of_a_driver_who_signed_up_again_ends_nothing(tmp_
     assert "| Signup | Ended" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=DELETED_UNBUILT)
 async def test_ending_a_deleted_channel_s_signup_cannot_be_discarded(tmp_path):
     """Kimi awaits approval and his signup channel 6405 is deleted; the ending's save fails,
     stopping the league lane at `end`. A league admin's Discard on it is refused, saying Kimi's
@@ -321,7 +312,6 @@ async def test_ending_a_deleted_channel_s_signup_cannot_be_discarded(tmp_path):
     assert league.log().count(DELETED_LINE) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=DELETED_UNBUILT)
 async def test_a_driver_whose_channel_was_deleted_may_sign_up_again(tmp_path):
     """Kimi's signup ended because his signup channel 6405 was deleted. He presses Sign Up and the
     queue runs: a new channel 6500 is created, he is part-way through signing up in it, his
