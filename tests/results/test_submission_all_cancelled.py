@@ -693,8 +693,10 @@ async def test_no_check_in_record_is_written_while_attendance_is_off(tmp_path):
 
 #: Round 4 of the reviewed division, final, and round 2 before it, in the resubmission's league.
 LATER_ROUND, EARLIER_ROUND = 22, 20
-#: Round 4's standings post, standing in the standings channel before the resubmission.
-LATER_STANDINGS = 9001
+#: Round 4's standings post, standing in the standings channel before the resubmission: below
+#: 9000, where the channel double's ids for the messages it is sent begin, so no message sent in
+#: an earlier test can share it.
+LATER_STANDINGS = 8802
 
 
 async def _resubmitting(tmp_path: Any, monkeypatch: Any) -> Any:
@@ -784,10 +786,13 @@ async def test_a_resubmission_entering_every_session_cancelled_withdraws_the_rou
     [handed] = await _changes(league, ALL_CANCELLED_KIND)
     names = [row["name"] for row in await step_rows(league.db_path, handed["id"])]
     assert names.count("delete_message") >= len(standings)
+    # A message sent to the results channel and since deleted, the earlier provisional table
+    # among them, is no note line.
+    standing = league.channel(RESULTS_CHANNEL).messages
     lines = [index for index, event in enumerate(league.events)
              if event[0] == "send" and event[1] == RESULTS_CHANNEL
-             and "This session was cancelled"
-             in str(league.channel(RESULTS_CHANNEL).messages[event[2]].content)]
+             and (sent := standing.get(event[2])) is not None
+             and "This session was cancelled" in str(sent.content)]
     assert len(lines) == 2
     deleted_at = [league.events.index(("delete", STANDINGS_CHANNEL, mid)) for mid in standings]
     assert min(deleted_at) > max(lines)
@@ -833,28 +838,31 @@ async def test_a_later_round_s_standings_are_recomputed_without_the_round_and_po
     were posted with Max on 43 points, counting his 18 from round 3. Alex resubmits round 3 and
     types CANCELLED for both its sessions. When the queue runs, round 4's standings are worked
     out again without round 3, Max on 25 points, and posted again by the one standings job the
-    change plans, a new post in the standings channel (owner, check 1)."""
+    change plans: round 4's standings post, the one standing or its replacement, shows Max on 25
+    points (owner, check 1)."""
     from tests.results.test_resubmission_changes import _changes, _rows, _type
     from tests.results.test_review_open_change import STANDINGS_CHANNEL
     from tests.support.review_league import MAX
 
     league = await _resubmitting(tmp_path, monkeypatch)
     await _seed_later_round(league)
-    posted_before = set(league.sent_to(STANDINGS_CHANNEL))
 
     await _type(league, "CANCELLED")
     await _type(league, "CANCELLED")
 
     assert await stopped_job(league.db_path) is None
     [row] = await _rows(
-        league, "SELECT total_points FROM driver_standings_snapshots "
+        league, "SELECT total_points, standings_message_id FROM driver_standings_snapshots "
         "WHERE round_id = ? AND driver_user_id = ?", LATER_ROUND, MAX,
     )
     assert row["total_points"] == 25
     [handed] = await _changes(league, ALL_CANCELLED_KIND)
     names = [step["name"] for step in await step_rows(league.db_path, handed["id"])]
     assert names.count("post_standings") == 1
-    assert set(league.sent_to(STANDINGS_CHANNEL)) - posted_before
+    # The standings job edits the post in place where the new text fits in one message, and
+    # replaces it otherwise: either way the post round 4's snapshot names shows Max on 25.
+    post = league.channel(STANDINGS_CHANNEL).messages[row["standings_message_id"]]
+    assert f"<@{MAX}> — **25 pts**" in str(post.content), post.content
 
 
 async def test_the_next_round_s_movement_is_measured_against_the_round_before(
