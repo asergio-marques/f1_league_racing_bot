@@ -680,8 +680,8 @@ def forecast_failure(view: StepView) -> tuple[str, str] | None:
     Handed to core's amendment through its hooks, so that it names a discarded weather job without
     importing weather. A discarded draw is made when the bot next starts, while its round is still
     to be run; a discarded post leaves the draw standing in the log channel and nothing to post it
-    again; a discarded deletion of part of a superseded forecast post is left to delete by hand, by
-    its link. A discarded `DELETE_FORECAST` is not named here: the amendment names it itself, as a
+    again; a discarded deletion of a part of any forecast posted in parts, which a `DELETE_FORECAST`
+    plans for each part before the last, is left to delete by hand, by its link. A discarded `DELETE_FORECAST` is not named here: the amendment names it itself, as a
     forecast to delete by hand, before it asks this hook.
     """
     result = view.result or {}
