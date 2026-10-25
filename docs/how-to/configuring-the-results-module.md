@@ -467,7 +467,7 @@ Worth knowing so you do not go looking for the setting.
 | What a tie-break counts | Feature-race classified finishes, in order, then who got there first. Sprints and qualifying are invisible to it |
 | Two entries level on everything | Ordered by team alphabetically, reserves last, then by driver name, then by Discord ID. Not yours to set |
 | Where verdicts go | The division's verdicts channel, alongside any automatic attendance sanctions |
-| Cancelling a round once its results exist | Refused, and refused once its submission channel has accepted a session. Amend the results instead |
+| Cancelling a round once its results exist | Refused, and refused once its submission channel has accepted a session, even one accepted between your asking and the cancellation's save, which arms the round's timed work again as it stood. Amend the results instead |
 | Editing a running season's points tables directly | The season holds its own copy. `/results amend` is the way, and it rescores everything |
 | Attaching or detaching a configuration mid-season | Refused. Decide before approval |
 | Turning the module off mid-season | Allowed, and it deletes the season's results — see [Step 1](#step-1--switch-it-on). You confirm first, and nothing can be undone |
