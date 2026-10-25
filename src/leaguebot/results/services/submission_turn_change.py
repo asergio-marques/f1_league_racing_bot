@@ -169,7 +169,8 @@ async def take_paste(
             refusal_line(
                 member_named(message.author.display_name, message.author.id),
                 "A results paste",
-                f"Round {row['round_number']} ({row['division_name']}) is still waiting on an "
+                f"Round {row['round_number']} of season {row['season_number']} "
+                f"({row['division_name']}) is still waiting on an "
                 f"earlier paste for {waiting}",
             )
         )

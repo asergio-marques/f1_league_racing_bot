@@ -146,9 +146,6 @@ async def test_a_paste_is_marked_at_once_and_saved_with_the_next_prompt_when_its
     assert MARK not in paste.marks
 
 
-TURN_AWAY_SEASON_UNBUILT = "#439: the turn-away line does not name the season"
-
-
 async def _refused_lines(league: SeasonLeague) -> list[str]:
     """Every `RESULT_SUBMISSION_REJECTED` line written to the log channel, queued or posted, its
     mentions read without the backticks the log channel posts them in."""
@@ -167,7 +164,6 @@ def _names_the_paste(line: str, *, reason: str, content: str,
     assert content in line, line
 
 
-@pytest.mark.xfail(strict=True, reason=TURN_AWAY_SEASON_UNBUILT)
 async def test_a_paste_while_its_turn_waits_is_turned_away_with_a_note(tmp_path, monkeypatch):
     """The admin pastes the qualifying, then the race before the queue has reached the first.
     The second is deleted at once and a note in the channel says the earlier message is still
