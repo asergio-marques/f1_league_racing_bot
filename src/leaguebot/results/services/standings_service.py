@@ -760,17 +760,6 @@ async def _drop_superseded_driver_rows(db, driver_snaps: list[DriverStandingsSna
             )
 
 
-async def persist_snapshots(
-    db_path: str,
-    driver_snaps: list[DriverStandingsSnapshot],
-    team_snaps: list[TeamStandingsSnapshot],
-) -> None:
-    """:func:`persist_snapshots_on`, saved on a connection of its own."""
-    async with get_connection(db_path) as db:
-        await persist_snapshots_on(db, driver_snaps, team_snaps)
-        await db.commit()
-
-
 async def persist_snapshots_on(
     db: aiosqlite.Connection,
     driver_snaps: list[DriverStandingsSnapshot],
@@ -847,20 +836,6 @@ async def persist_snapshots_on(
         )
 
 
-async def compute_and_persist_round(
-    db_path: str,
-    round_id: int,
-    division_id: int,
-    display_names: Mapping[int, str] | None = None,
-) -> None:
-    """:func:`compute_and_persist_round_on`, saved through :func:`persist_snapshots`."""
-    driver_snaps = await compute_driver_standings(
-        db_path, division_id, round_id, display_names
-    )
-    team_snaps = await compute_team_standings(db_path, division_id, round_id)
-    await persist_snapshots(db_path, driver_snaps, team_snaps)
-
-
 async def compute_and_persist_round_on(
     db: aiosqlite.Connection,
     round_id: int,
@@ -886,22 +861,6 @@ async def compute_and_persist_round_on(
     )
     team_snaps = await compute_team_standings_on(db, division_id, round_id)
     await persist_snapshots_on(db, driver_snaps, team_snaps)
-
-
-async def cascade_recompute_from_round(
-    db_path: str,
-    division_id: int,
-    from_round_id: int,
-    display_names: Mapping[int, str] | None = None,
-) -> None:
-    """:func:`cascade_recompute_from_round_on`, saved on a connection of its own.
-
-    Each round is saved as it is computed, as it always was.
-    """
-    async with get_connection(db_path) as db:
-        round_ids = await _rounds_from(db, division_id, from_round_id)
-    for round_id in round_ids:
-        await compute_and_persist_round(db_path, round_id, division_id, display_names)
 
 
 async def _rounds_from(
