@@ -18,8 +18,8 @@ wrote, a renumbering included.
 cancellation refused at its save has already removed the timed work of its rounds, and asks one
 `season.round.rearm` for each round that is still to be run or awaiting its results, which judges
 the round as it stands when it runs and arms it as an amended round is armed, catching up what fell
-due meanwhile. For a round already raced it arms the next-day clean-ups alone (the payload's
-`cleanups_only`). Neither of its two jobs can be discarded.
+due meanwhile. For a round already raced, or one that ended cancelled for every session being entered as not
+held, it arms the next-day clean-ups alone (the payload's `cleanups_only`). Neither of its two jobs can be discarded.
 
 `amendment_in_hand` reads the queue for an amendment of a division, so that a cancellation is
 refused while one is waiting, running or stopped. It is read from the queue, never from memory
@@ -266,7 +266,7 @@ def round_rearm_change(
 
     The payload is ``{"round_id", "round_number", "division_id", "division_name", "command"}``,
     *command* naming the cancellation that was refused, and ``"cleanups_only": True`` for a round
-    already raced, whose next-day clean-ups alone are armed. It opens with the amendment's own
+    already raced or ended cancelled as not held, whose next-day clean-ups alone are armed. It opens with the amendment's own
     judging and arming, unchanged but for when they are due and that neither can be discarded.
     The bot asks it, on the league's lane, one for each round.
     """
@@ -292,7 +292,7 @@ def _round_change(
 
     async def rearm_check(ctx: CheckContext) -> Verdict:
         """A re-arming is due while the round can still be cancelled, or, for its clean-ups alone,
-        while it is raced; a round gone or past that is dropped."""
+        while it is raced or ended cancelled as not held; a round gone or past that is dropped."""
         if await rearm_due(ctx):
             return Verdict.go()
         return Verdict.not_due("the round can no longer be armed again")
@@ -303,7 +303,18 @@ def _round_change(
             return False
         if not ctx.payload.get("cleanups_only"):
             return rnd.status in ROUND_CANCELLABLE
-        return rnd.status in ROUND_RACED_AWAITING_VERDICTS or rnd.status == RoundStatus.FINAL.value
+        if rnd.status in ROUND_RACED_AWAITING_VERDICTS or rnd.status == RoundStatus.FINAL.value:
+            return True
+        if rnd.status != RoundStatus.CANCELLED.value:
+            return False
+        # A round that ended cancelled for every session being entered as not held keeps its
+        # clean-ups, a day after it; a round called off has none.
+        async with get_connection(ctx.db_path) as db:
+            cursor = await db.execute(
+                "SELECT not_held FROM rounds WHERE id = ?", (rnd.id,)
+            )
+            row = await cursor.fetchone()
+        return row is not None and bool(row["not_held"])
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload

@@ -490,8 +490,9 @@ async def _rearm_on(
     with their timed work gone and nothing cancelled. One ``season.round.rearm`` is asked for each
     round the unarming removed jobs from, in this save, so the refusal is never recorded without
     it: a round still to be run or awaiting its results has all its timed work armed again, and
-    one already raced (final, or awaiting verdicts) only its next-day clean-ups. A round the save
-    finds cancelled, or gone, is left alone. Returns the follow-ons and, as the reply names them,
+    one already raced (final, or awaiting verdicts) or ended cancelled for every session being
+    entered as not held (`rounds.not_held`), which keeps its clean-ups, only its next-day
+    clean-ups. A round the save finds called off, or gone, is left alone. Returns the follow-ons and, as the reply names them,
     the rounds armed in full ("round 3 in **Pro**"), by tier then round number.
     """
     removed = _removed_by(ctx)
@@ -499,7 +500,8 @@ async def _rearm_on(
         return (), []
     marks = ",".join("?" * len(removed))
     cursor = await db.execute(
-        "SELECT r.id, r.round_number, r.status, d.id AS division_id, d.name AS division_name "
+        "SELECT r.id, r.round_number, r.status, r.not_held, d.id AS division_id, "
+        "d.name AS division_name "
         f"FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id IN ({marks}) "  # noqa: S608
         "ORDER BY d.tier, r.round_number",
         list(removed),
@@ -507,8 +509,10 @@ async def _rearm_on(
     follow_ons: list[FollowOn] = []
     names: list[str] = []
     for row in await cursor.fetchall():
-        cleanups_only = row["status"] in ROUND_RACED_AWAITING_VERDICTS or (
-            row["status"] == RoundStatus.FINAL.value
+        cleanups_only = (
+            row["status"] in ROUND_RACED_AWAITING_VERDICTS
+            or row["status"] == RoundStatus.FINAL.value
+            or (row["status"] == RoundStatus.CANCELLED.value and bool(row["not_held"]))
         )
         if not cleanups_only and row["status"] not in ROUND_CANCELLABLE:
             continue
