@@ -831,7 +831,10 @@ def test_only_the_router_writes_the_log_channel():
 POSTING_ALLOWED = frozenset({"core/services/output_router.py"})
 #: A `.send` that is not a post, and why.
 NOT_A_POST = {
-    ("__main__.py", "main.guild_sync"): "the reply to the owner's own `!sync` command",
+    ("__main__.py", "main.guild_sync"): (
+        "the owner's own `!sync` command, which deletes the owner's message and posts a note "
+        "that deletes itself: a prefix command's reply"
+    ),
     ("core/services/change_queue.py", "ChangeQueue._update_reply"): (
         "edits the member's own ephemeral acknowledgement, a WebhookMessage the follow-up "
         "returned, which answers a member and posts in no channel"
