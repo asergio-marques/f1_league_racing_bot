@@ -292,7 +292,7 @@ audit record, which is how some settings came to have none.
   conversation ends when its channel's deletion removes the row. A job of that lane already
   stopped stays stopped, with its notice, and the bot makes no try of its own on it (`_choose`
   clears its `next_try_at`): a Retry runs a try that finds it no longer due and clears the stop, a
-  Discard drops it. A refused deletion of the conversation's channel stops the lane that asked: a
+  Discard drops it (unless the job cannot be discarded). A refused deletion of the conversation's channel stops the lane that asked: a
   conversation ending itself stops its own, a league change ending it stops the league.
 - **The same change is not queued twice in a row.** A change is named by what it does, what it acts
   on and the values it sets (approving a round's appeals, reposting a division's calendar, setting a
@@ -398,7 +398,7 @@ audit record, which is how some settings came to have none.
   being tried, and the only way on after the hour: the job is made due at once. *Discard,* a button a league admin
   presses, drops that one job, which the log records with what was not done, and the request's
   later jobs run on, each checking again whether it is still due. A change that had not yet begun,
-  because its check failed, is dropped whole. Where a discarded job leaves a review without what
+  because its check failed, is dropped whole, unless its first job cannot be discarded. Where a discarded job leaves a review without what
   it stands on, the change's closing job asks, as a bot's request in a save of its own, for the
   review to open again (core specification, "How a change is carried out"; the results
   specification says which jobs).
@@ -414,8 +414,9 @@ audit record, which is how some settings came to have none.
   persistent view with fixed identities, found again after a restart, and a notice without Discard
   would need a second view, chosen for each notice and registered at start. *Rejected:* that second view; and a
   discard that drops the job and names the loss, which leaves a league with nothing it can do to
-  put it right. A change stopped at its check, before any job of it ran, is still dropped whole,
-  since a stop at the check sits on the change's first job, and no arming is a first job.
+  put it right. A change stopped at its check, before any job of it ran, sits on the change's
+  first job, so its Discard is refused where that job cannot be discarded, and drops the whole
+  change where it can.
 
   Both buttons are on the stop notice, the one log-channel message that says a lane is stopped
   and names the job, and the channel of a conversation's lane. Who a stop notice
@@ -738,7 +739,8 @@ The exceptions, each with its reason:
   notice,** which says that a lane is stopped and so cannot wait on one, with its buttons taken off
   once the job clears (`OutputRouter.strip_view`), which cannot wait on the lane either.
 - **A reply** to a member's command or press, the queue's update of its acknowledgement with the
-  outcome included: it answers the member and posts in no channel.
+  outcome included, and a press's own edit of the message pressed, taking its buttons down: it
+  answers the member and posts in no channel.
 - **The factory reset's clean-up and its progress.** The reset empties the database the queue
   lives in and leaves no log channel or roles for Retry and Discard, and its progress is the reply
   to the owner's own command.

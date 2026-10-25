@@ -2429,7 +2429,8 @@ class _ConfigSelectView(LeagueView):
                 if self._ask is not None:
                     # A submission's picker: the choice is a change of its own, asked of the
                     # queue with the pasted session's payload, and the picker comes down by the
-                    # press's own response (#439).
+                    # press's own edit of the message pressed, which is a reply
+                    # (docs/design/architecture.md, "Posting to Discord").
                     kind, asked = self._ask
                     queue = bot_of(interaction).change_queue
                     pressed = interaction.created_at
