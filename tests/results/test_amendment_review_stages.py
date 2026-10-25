@@ -99,20 +99,39 @@ def _channel():
 async def _run(db_path, channel=None, *, attendance=True):
     """Stage two's prompt posted for round 3 of Pro, inside a job: the prompt is a post the
     amendment's stage-two job makes (#439 slice 6b), never one made outside a job. Imported here
-    so the file still collects should the function move."""
+    so the file still collects should the function move.
+
+    Attendance is on or off as *attendance* says, in the league's own setting and in the bot's
+    module service alike. The function is handed attendance's real hook, over that setting, where
+    it takes one (#439 slice 8, G4: the hook says which pardons the review may offer); until it
+    does, it reads the switch itself, so the pins below hold either way."""
+    import inspect
+
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
     from leaguebot.results.services.result_submission_service import (
         run_amendment_review_stages,
     )
 
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (1, ?)",
+            (int(attendance),),
+        )
+        await db.commit()
     channel = channel or _channel()
     bot = MagicMock()
     bot.add_view = MagicMock()
+    bot.db_path = db_path
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
+    handed = (
+        {"attendance": AttendanceAfterReview(bot, MagicMock())}
+        if "attendance" in inspect.signature(run_amendment_review_stages).parameters else {}
+    )
     with in_a_job():
         state = await run_amendment_review_stages(
             db_path, ROUND_ID, DIVISION_ID, channel, bot,
             round_number=3, division_name="Pro",
-            session_types=[SessionType.FEATURE_RACE],
+            session_types=[SessionType.FEATURE_RACE], **handed,
         )
     return state, channel, bot
 
@@ -246,3 +265,35 @@ async def test_the_rounds_pardons_are_not_offered_with_attendance_off(tmp_path):
     assert state.staged_pardons == []
     view = channel._sent[-1][1]
     assert not [c for c in view.children if "pardon_remove" in str(getattr(c, "custom_id", ""))]
+
+
+async def test_the_review_asks_the_hook_and_never_reads_attendance_s_switch(tmp_path):
+    """Round 3 carries a NO_RSVP pardon. The amendment's review is handed an attendance hook
+    that offers no pardon, and the bot's module service fails the test if asked whether
+    attendance is on. The review asks the hook once, with the round's pardon, offers none, and
+    never reads attendance's switch itself (architecture.md :172-178)."""
+    from leaguebot.results.services.result_submission_service import (
+        run_amendment_review_stages,
+    )
+
+    db_path, _ = await _db(tmp_path, "stage_pardons_hook")
+    await _pardon(db_path)
+    bot = MagicMock()
+    bot.add_view = MagicMock()
+    bot.module_service.is_attendance_enabled = AsyncMock(
+        side_effect=AssertionError("results read attendance's switch itself")
+    )
+    hook = MagicMock()
+    hook.pardons_to_review = AsyncMock(return_value=[])
+
+    with in_a_job():
+        state = await run_amendment_review_stages(
+            db_path, ROUND_ID, DIVISION_ID, _channel(), bot,
+            round_number=3, division_name="Pro",
+            session_types=[SessionType.FEATURE_RACE], attendance=hook,
+        )
+
+    [call] = hook.pardons_to_review.await_args_list
+    assert [p.pardon_type for p in call.args[0]] == ["NO_RSVP"]
+    assert state.staged_pardons == []
+    bot.module_service.is_attendance_enabled.assert_not_awaited()

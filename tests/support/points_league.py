@@ -18,9 +18,8 @@ unless *images*.
 
 `press_approve` runs `/results amend review` and presses ✅ Approve on its panel through an
 interaction of its own; `open_panel` draws a panel and leaves it open for a later press;
-`run_staging` runs one of the commands that stage points changes and then the queue, reading
-every word the member saw. The season is seeded through `tests/support/saves.py`. Every import of the change type
-is made inside a function, so a test file using this module still collects while it is unbuilt.
+`run_staging` runs one of the commands that stage points changes and then the queue, reading every
+word the member saw. The season is seeded through `tests/support/saves.py`.
 """
 from __future__ import annotations
 

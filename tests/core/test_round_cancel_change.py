@@ -11,10 +11,7 @@ while its division's is in hand, is refused at once, naming the job; so is one w
 completion, cancellation or abort is in hand (slice 5).
 
 Every test drives the real cog and the real queue through `tests/support/season_league.py`'s
-`ongoing_league`, with "now" pinned. The change type is unbuilt until the build, so each test that
-needs it is marked to fail until then: today the command cancels on the spot. The press's refusals
-and the set of states that may be cancelled are what today's command already does, and pass as
-they stand.
+`ongoing_league`, with "now" pinned.
 """
 from __future__ import annotations
 
@@ -64,6 +61,7 @@ from tests.support.season_league import (
     cancellation_changes,
     ongoing_league,
     open_submission,
+    removed_jobs,
     reply,
     round_id,
     seed_season_end,
@@ -90,9 +88,14 @@ CHECKIN_LOGGED = CHECKIN_AUDIT.replace("<@101>", "`<@101>`").replace("<@102>", "
 UNARM_DISCARDED = (
     "Nothing was cancelled: round 3 in **Pro** stands as it was. Run `/round cancel` again."
 )
-SAVE_DISCARDED = (
-    "Nothing was cancelled, but round 3 in **Pro** no longer has its timed work: run "
-    "`/round cancel` again."
+CANNOT_DISCARD = (
+    "⛔ This job can't be discarded: without it round 3 in **Pro** would be left with no timed "
+    "work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
+)
+#: How a discarded calendar repost is named, in the reply and beneath the success line (W1).
+CALENDAR_DISCARDED = (
+    "**Pro** — calendar: the calendar could not be posted, and a league admin discarded it; run "
+    "`/division calendar-sync` while the season is still being raced"
 )
 ALL_JOBS = ["unarm", "apply", "notify_checkin", "take_down_call", "notify_forecast",
             "notify_results", "post_calendar", "delete_replaced", "close"]
@@ -755,26 +758,28 @@ def _outcome(interaction: Any) -> str:
 @pytest.mark.parametrize("case", [
     pytest.param("cancelled", id="cancelled"),
     pytest.param("submission", id="refused, its submission has accepted a session"),
-    pytest.param("discarded", id="its save discarded, renumbered while it stood stopped"),
+    pytest.param("retried", id="its save retried, renumbered while it stood stopped"),
 ])
 async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_its_number_when_it_runs(
     tmp_path, case,
 ):
     league = await ongoing_league(tmp_path, attendance=True)
-    if case == "discarded":
+    if case == "retried":
         # The save stops on a fault after the timed work came off; the round is renumbered
-        # while it stands stopped, and a league admin then discards it.
+        # while it stands stopped. A league admin's Discard is refused, naming the round by its
+        # new number; once the fault is lifted, Retry cancels it.
         interaction = await _asked(league)
         with _failing("cancel_round_on"):
             await run_queue(league.bot)
             assert await _stopped_at(league) == "apply"
             await _renumbered(league)
-            await discard_job(league.bot)
+            discarding = await discard_job(league.bot)
+        assert CANNOT_DISCARD.replace("round 3", "round 2") in reply(discarding)
+        await retry_job(league.bot)
         outcome = _outcome(interaction)
-        assert outcome == SAVE_DISCARDED.replace("round 3", "round 2")
+        assert outcome == "✅ Round **2** in **Pro** cancelled."
         assert "round 3" not in outcome
-        assert await _status(league) == "NOT_RUN"
-        assert _success_lines(league) == []
+        assert await _status(league) == "CANCELLED"
         return
 
     await _stopped_blocker(league)
@@ -807,7 +812,11 @@ async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_i
 async def test_the_save_refuses_writing_nothing_where_the_round_moved_on_after_the_check(
     tmp_path,
 ):
-    league = await ongoing_league(tmp_path)
+    """Weather and attendance on. `/round cancel Pro 3` removes round 3's timed work, and its
+    results are entered before the save, so the save refuses and writes nothing. The round, now
+    raced, is owed its next-day clean-ups: one re-arming of its clean-ups alone is asked and runs,
+    arming the forecast's and the check-in's clean-ups and nothing else."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True)
     interaction = await _asked(league)
     await _run_through(league, "unarm")
     await _results_entered(league)
@@ -821,6 +830,12 @@ async def test_the_save_refuses_writing_nothing_where_the_round_moved_on_after_t
     assert len(_refusal_lines(league)) == 1
     assert _success_lines(league) == []
     assert league.texts(PRO_CH.calendar) == []
+    rearmings = [row for row in await change_rows(league.db_path)
+                 if row["kind"] == "season.round.rearm"]
+    assert [row["state"] for row in rearmings] == ["DONE"]
+    payload = json.loads(rearmings[0]["payload"])
+    assert payload["round_id"] == R3 and payload.get("cleanups_only") is True
+    assert league.armed == [("cleanups", [R3])]
 
 
 # ── What it does ────────────────────────────────────────────────────────────────────
@@ -962,6 +977,19 @@ async def test_the_check_in_is_written_beneath_the_success_line(tmp_path):
     assert entry == SUCCESS + "\n  division: Pro\n  round: 3" + CHECKIN_LOGGED
 
 
+async def test_checkin_record_gives_what_round_cancel_writes(tmp_path):
+    """Round 3's check-in recorded Lewis as accepted and Max as giving no answer. Core's public
+    `checkin_record`, read for Pro's round 3, gives the record `/round cancel` writes beneath its
+    line, which a round ending with every session not held writes too (attendance :130)."""
+    from leaguebot.core.services.cancellation_notice_service import checkin_record
+
+    league = await ongoing_league(tmp_path, attendance=True)
+
+    record = await checkin_record(league.db_path, SimpleNamespace(id=PRO, name="Pro"), R3)
+
+    assert record == CHECKIN_AUDIT
+
+
 async def test_a_calendar_never_posted_is_left_alone(tmp_path):
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE divisions SET calendar_message_id = NULL WHERE id = ?", PRO)
@@ -1040,20 +1068,47 @@ async def test_a_calendar_that_falls_back_to_text_is_named(tmp_path, monkeypatch
     assert result["fell_back"] and result["problem"] == "the template has no rows"
 
 
-async def test_a_discarded_save_cancels_nothing_and_says_the_timed_work_is_gone(tmp_path):
+async def test_a_discarded_calendar_repost_names_calendar_sync_while_the_season_is_raced(tmp_path):
+    """Discord refuses Pro's calendar repost after round 3 is cancelled, and a league admin
+    discards it. The reply and the success line name it with the fix that works: run
+    `/division calendar-sync`, which is refused once the season is no longer being raced."""
+    league = await ongoing_league(tmp_path)
+    _refused(league, PRO_CH.calendar)
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "post_calendar"
+    await discard_job(league.bot)
+
+    assert CANCELLED in reply(interaction)
+    assert CALENDAR_DISCARDED in _not_notified(reply(interaction))
+    assert f"\n  not notified: {CALENDAR_DISCARDED}" in _success_lines(league)[0]
+
+
+async def test_the_save_cannot_be_discarded_once_the_timed_work_is_removed(tmp_path):
+    """The save stops on a fault after round 3's timed work came off. A league admin's Discard
+    is refused, saying the round would be left with no timed work; the queue stays stopped at the
+    save and nothing is discarded. Once the fault is lifted, Retry cancels the round."""
     league = await ongoing_league(tmp_path, attendance=True)
     interaction = await _asked(league)
     with _failing("cancel_round_on"):
         await run_queue(league.bot)
         assert await _stopped_at(league) == "apply"
-        await discard_job(league.bot)
+        discarding = await discard_job(league.bot)
 
-    assert SAVE_DISCARDED in reply(interaction)
-    assert CANCELLED not in reply(interaction)
-    assert await _status(league) == "NOT_RUN"
+        assert CANNOT_DISCARD in reply(discarding)
+        assert await _stopped_at(league) == "apply"
+        assert await league.rows(
+            "SELECT * FROM audit_entries WHERE change_type = 'CHANGE_JOB_DISCARDED'"
+        ) == []
+        assert await _status(league) == "NOT_RUN"
     assert league.unarmed == [R3]
-    assert _success_lines(league) == []
-    assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
+
+    await retry_job(league.bot)
+
+    assert _outcome(interaction) == CANCELLED
+    assert await _status(league) == "CANCELLED"
+    assert len(_success_lines(league)) == 1
 
 
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
@@ -1358,14 +1413,33 @@ async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_
         assert f"\n  not notified: {named}" in line
 
 
-async def test_a_session_accepted_after_the_check_is_refused_by_the_save(tmp_path):
+#: What a refused cancellation's reply adds of the timed work it removed (#439, slice 8, F2).
+REARMING = "Its timed work, removed for the cancellation, is being armed again as it stood."
+ARMED_AGAIN = (
+    "⏱️ The timed work of round 3 in **Pro** is armed again, `/round cancel` having been refused"
+)
+REARM_KIND = "season.round.rearm"
+
+
+async def _rearmings(league: Any) -> list[dict[str, Any]]:
+    """Every re-arming of a round's timed work asked of the queue, in the order asked."""
+    return [row for row in await change_rows(league.db_path) if row["kind"] == REARM_KIND]
+
+
+async def test_a_session_accepted_after_the_check_is_refused_by_the_save_and_its_timed_work_armed_again(
+    tmp_path,
+):
     """Round 3's open submission has accepted nothing when the cancellation is asked and when it
     starts to run, but removing its timed work fails and stops the queue; meanwhile the
-    submission accepts a session's results. Retried, the save refuses in the new words and
-    writes nothing: the round still awaits its results and its submission stays open."""
+    submission accepts a session's results. Retried, the removal goes through and the save
+    refuses in the new words and writes nothing: the round still awaits its results and its
+    submission stays open. The timed work it removed is armed again, by a change of its own that
+    runs once the cancellation has closed: the reply says it is being armed again as it stood, the
+    refusal line names the round as being armed again, and a later line says it is armed again."""
     league = await ongoing_league(tmp_path)
     await _empty_submission(league)
     interaction = await _asked(league)
+    unarming = league.bot.scheduler_service.cancel_round
     league.bot.scheduler_service.cancel_round = MagicMock(
         side_effect=RuntimeError("the job store is locked")
     )
@@ -1373,17 +1447,48 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_save(tmp_pat
     assert await _stopped_at(league) == "unarm"
     await accept_session(league, R3)
 
-    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=league.unarmed.append)
+    league.bot.scheduler_service.cancel_round = unarming
     await retry_job(league.bot)
 
     assert ACCEPTED in reply(interaction)
+    assert REARMING in reply(interaction)
     assert CANCELLED not in reply(interaction)
     assert (await _change(league))["state"] == "DONE"
     assert await _status(league) == "AWAITING_RESULTS"
     assert await _submission_closed(league) == 0
     assert await _round_audits(league) == []
-    assert len(_refusal_lines(league)) == 1
+    [refusal] = _refusal_lines(league)
+    assert "\n  timed work being armed again: round 3 in Pro" in refusal
     assert not _channel_deleted(league)
+    assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
+    assert ("results", [R3]) in league.armed
+    assert len([line for line in _log_lines(league) if ARMED_AGAIN in line]) == 1
+
+
+async def test_a_re_arming_queued_behind_a_cancellation_that_then_calls_the_round_off_is_dropped(
+    tmp_path,
+):
+    """`/round cancel Pro 3` is asked, and behind it the re-arming of round 3's timed work, as a
+    cancellation refused earlier asks it. The queue runs: the cancellation calls round 3 off,
+    and the re-arming, finding the round cancelled, is dropped as no longer due: nothing is armed
+    and nothing stops the queue."""
+    from leaguebot.core.models.change import ChangeOrigin
+
+    league = await ongoing_league(tmp_path)
+    await _asked(league)
+    await league.bot.change_queue.ask(
+        REARM_KIND,
+        {"round_id": R3, "round_number": 3, "division_id": PRO, "division_name": "Pro",
+         "command": "/round cancel"},
+        what="arming the timed work of round 3 in **Pro** again", origin=ChangeOrigin.BOT,
+    )
+
+    await run_queue(league.bot)
+
+    assert await _status(league) == "CANCELLED"
+    assert await stopped_job(league.db_path) is None
+    assert [row["state"] for row in await _rearmings(league)] == ["DROPPED"]
+    assert league.armed == []
 
 
 # ── A cancellation ends its submission's conversation (#439, slice 6b, C88a) ────────
@@ -1435,12 +1540,13 @@ async def test_a_cancellation_s_save_finds_a_paste_saved_after_its_check(tmp_pat
     runs; then, while its timed work is being removed and before its save, the round's own lane
     accepts the manager's race result (as a paste's turn may, running beside the league). The
     save checks again inside itself and writes nothing: round 3 still awaits its results, its
-    submission stays open with the session accepted, and its channel is not deleted."""
+    submission stays open with the session accepted, and its channel is not deleted. The timed
+    work its removal took is armed again, by a re-arming of its own."""
     league = await ongoing_league(tmp_path)
     await _empty_submission(league)
     await _asked(league)
 
-    def _unarm_and_accept(round_id: int) -> None:
+    def _unarm_and_accept(round_id: int, **_kwargs: Any) -> list[str]:
         league.unarmed.append(round_id)
         with sqlite3.connect(league.db_path) as db:
             db.execute(
@@ -1449,6 +1555,7 @@ async def test_a_cancellation_s_save_finds_a_paste_saved_after_its_check(tmp_pat
                 "'ACTIVE', 'Standard', 77, ?)",
                 (R3, R3 // 10, league.clock.now.isoformat()),
             )
+        return removed_jobs(round_id)
 
     league.bot.scheduler_service.cancel_round = MagicMock(side_effect=_unarm_and_accept)
 
@@ -1460,3 +1567,49 @@ async def test_a_cancellation_s_save_finds_a_paste_saved_after_its_check(tmp_pat
     assert len(await league.rows("SELECT * FROM session_results WHERE round_id = ?", R3)) == 1
     assert await _round_audits(league) == []
     assert not _channel_deleted(league)
+    assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
+    assert ("results", [R3]) in league.armed
+
+
+# ── A round whose every session was entered cancelled (#439, slice 8, Part E) ─────────────────
+
+
+async def _every_session_entered_cancelled(league: Any) -> None:
+    """Round 3's open submission has accepted its qualifying and its race, each entered as not
+    held, and the round has not yet ended."""
+    await _submission_open(league)
+    for session in ("FEATURE_QUALIFYING", "FEATURE_RACE"):
+        await accept_session(league, R3, session=session, status="CANCELLED")
+
+
+async def _ended_not_held(league: Any) -> None:
+    """Round 3 has ended cancelled because every session of it was entered as not held."""
+    await _every_session_entered_cancelled(league)
+    await league.write("UPDATE rounds SET status = 'CANCELLED', not_held = 1 WHERE id = ?", R3)
+
+
+@pytest.mark.parametrize(("setup", "text"), [
+    pytest.param(_every_session_entered_cancelled, ACCEPTED,
+                 id="before the change is taken up"),
+    pytest.param(_ended_not_held, "❌ Round 3 in **Pro** is already cancelled.",
+                 id="after the change is taken up"),
+])
+async def test_round_cancel_refuses_a_round_whose_every_session_was_entered_cancelled(
+    tmp_path, setup, text,
+):
+    """Every session of round 3 in Pro was entered as not held. Before the round has ended,
+    `/round cancel` for it is refused as having accepted a session, naming its submission
+    channel; once it has ended cancelled, as already cancelled. Either way at once, with one ⛔
+    line, no cancellation asked, no timed work removed and its status unchanged (core :472)."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await setup(league)
+    before = await _status(league)
+
+    interaction = await _asked(league)
+
+    assert reply(interaction) == text
+    assert len(_refusal_lines(league)) == 1
+    assert await cancellation_changes(league) == []
+    await run_queue(league.bot)
+    assert R3 not in league.unarmed
+    assert await _status(league) == before

@@ -5,8 +5,7 @@ reached; the sync's outcome is unchanged and the sheet follows on the queue. A s
 refuses stops the queue rather than being put on the old retry queue.
 
 The league is `ongoing_league`'s with attendance on: season 7 being raced, Pro (21) with its
-attendance channel 604, its round 1 final. Everything of the change is imported inside a test, so
-this file collects while it is unbuilt.
+attendance channel 604, its round 1 final.
 """
 from __future__ import annotations
 

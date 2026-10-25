@@ -26,7 +26,8 @@ season in Placements with nothing written and the queue stops at it to retry. A 
 the approval again before it saves (`apply`, `judge`), the setup being open meanwhile.
 **Everything else
 follows the save as a job of its own**, each of which stops the queue where it fails: letting go of
-the setup held in memory, arming the timed work (after the save, so that a stop before it leaves
+the setup held in memory (it cannot be discarded either: the bot would go on holding the season's
+setup, and `/round amend` would refuse its rounds until it restarts), arming the timed work (after the save, so that a stop before it leaves
 no job armed against a season still in Placements; it cannot be discarded, since without it no
 round would ever run, and only Retry moves the queue on), each driver's roles, the notice that the
 season's posts are being made, each division's lineup, calendar, opening standings and opening
@@ -93,12 +94,15 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 __all__ = [
+    "GRANT_ROLES",
     "KIND",
     "STAGE_REFUSAL",
     "TELL_KIND",
     "approval_in_hand",
+    "driver_roles_step",
     "season_approval_change",
     "season_approval_tell_change",
+    "tell_channel",
     "ungranted_line",
     "unposted_lineup_line",
 ]
@@ -131,10 +135,6 @@ NOTICE_TEXT = "🎨 Posting lineups, calendars and opening classifications — o
 NOT_SAVED = (
     "Nothing has been approved: the season is still in placements. Run `/season "
     "placements-review` again."
-)
-NOT_FORGOTTEN = (
-    "The setup the bot held in memory could not be let go of: `/round amend` may refuse this "
-    "season until the bot restarts."
 )
 NOTICE_NOT_POSTED = "The notice that the season's posts were being made could not be posted."
 _NOTICE_NOT_DELETED = "The notice that the season's posts were being made could not be deleted"
@@ -183,10 +183,10 @@ async def tell_channel(bot: Any, channel_id: int, text: str) -> None:
 
 
 def ungranted_line(user_ids: list[str]) -> str:
-    """The drivers a placements confirmation could not give their roles (#387).
+    """The drivers whose roles a league admin discarded the granting of (#387).
 
-    No command grants them again — at the mid-season confirmation, confirming again finds
-    nothing left to commit — so the manager grants them by hand.
+    The confirmation is saved by then and no command grants them again, so the manager grants
+    them by hand.
     """
     who = ", ".join(f"<@{user_id}>" for user_id in user_ids)
     return (
@@ -220,6 +220,47 @@ async def approval_in_hand(
         payload.get("season_id") == season_id
         for payload in await unfinished(db_path, [KIND], excluding=excluding)
     )
+
+
+def driver_roles_step(placement: Any, name: str = GRANT_ROLES) -> Step:
+    """The one job that gives a driver the roles of their division and their team.
+
+    The season's approval and the mid-season confirmation both plan it, one per driver, with the
+    payload ``{user_id, division_id, division_name, team_name}`` (issue #439). It raises where
+    Discord will not (:meth:`PlacementService.grant_roles`), so the queue stops, and passes over
+    a member Discord reports absent. A driver seated with no team, or whose team has no role
+    set, is given their division's role alone, and one with no role to give is given nothing:
+    Discord is not reached for it.
+    """
+
+    async def grant_roles(ctx: StepContext) -> StepResult:
+        guild = await _guild(ctx.bot)
+        each = ctx.step_payload
+        async with get_connection(ctx.db_path) as db:
+            cursor = await db.execute(
+                "SELECT mention_role_id FROM divisions WHERE id = ?", (each["division_id"],)
+            )
+            division = await cursor.fetchone()
+        role_ids = (
+            [int(division["mention_role_id"])]
+            if division is not None and division["mention_role_id"]
+            else []
+        )
+        if each.get("team_name") is not None:
+            team = await placement.get_team_role_config(str(each["team_name"]))
+            if team is not None:
+                role_ids.append(team.role_id)
+        if not role_ids:
+            return StepResult(result={"granted": False})
+        granted = await placement.grant_roles(guild, int(each["user_id"]), *role_ids)
+        return StepResult(result={"granted": granted})
+
+    async def describe_grant(ctx: StepContext) -> str:
+        each = ctx.step_payload
+        team = f" and {each['team_name']}" if each.get("team_name") is not None else ""
+        return f"granting <@{each['user_id']}> the roles of **{each['division_name']}**{team}"
+
+    return Step(name, StepKind.ACT, grant_roles, describe=describe_grant)
 
 
 def season_approval_change(
@@ -476,25 +517,6 @@ def season_approval_change(
                 )
         return StepResult(result={"rounds": len(rounds)})
 
-    async def grant_roles(ctx: StepContext) -> StepResult:
-        guild = await _guild(ctx.bot)
-        each = ctx.step_payload
-        async with get_connection(ctx.db_path) as db:
-            cursor = await db.execute(
-                "SELECT mention_role_id FROM divisions WHERE id = ?", (each["division_id"],)
-            )
-            division = await cursor.fetchone()
-        role_ids = (
-            [int(division["mention_role_id"])]
-            if division is not None and division["mention_role_id"]
-            else []
-        )
-        team = await placement.get_team_role_config(str(each["team_name"]))
-        if team is not None:
-            role_ids.append(team.role_id)
-        granted = await placement.grant_roles(guild, int(each["user_id"]), *role_ids)
-        return StepResult(result={"granted": granted})
-
     async def post_batch_notice(ctx: StepContext) -> StepResult:
         guild = await _guild(ctx.bot)
         channel_id = int(ctx.step_payload["channel_id"])
@@ -627,18 +649,17 @@ def season_approval_change(
     async def never_runs(ctx: StepContext) -> str:
         return f"no round of season {ctx.payload['season_number']} would ever run"
 
+    async def keeps_the_setup(ctx: StepContext) -> str:
+        return (
+            f"the bot would go on holding season {ctx.payload['season_number']}'s setup, and "
+            "`/round amend` would refuse its rounds until the bot restarts"
+        )
+
     async def describe_forget(_ctx: StepContext) -> str:
         return "letting go of the setup the bot holds in memory"
 
     async def describe_arm(ctx: StepContext) -> str:
         return f"arming the timed work of season {ctx.payload['season_number']}"
-
-    async def describe_grant(ctx: StepContext) -> str:
-        each = ctx.step_payload
-        return (
-            f"granting <@{each['user_id']}> the roles of **{each['division_name']}** and "
-            f"{each['team_name']}"
-        )
 
     async def describe_notice_post(ctx: StepContext) -> str:
         return (
@@ -733,11 +754,14 @@ def season_approval_change(
     steps: dict[str, Step] = {
         APPLY: Step(APPLY, StepKind.SAVE, apply, describe=describe_apply),
         JUDGE: Step(JUDGE, StepKind.ACT, judge, describe=describe_judge),
-        FORGET_SETUP: Step(FORGET_SETUP, StepKind.ACT, forget_the_setup, describe=describe_forget),
+        FORGET_SETUP: Step(
+            FORGET_SETUP, StepKind.ACT, forget_the_setup, describe=describe_forget,
+            undiscardable=keeps_the_setup,
+        ),
         ARM: Step(
             ARM, StepKind.ACT, arm, describe=describe_arm, undiscardable=never_runs
         ),
-        GRANT_ROLES: Step(GRANT_ROLES, StepKind.ACT, grant_roles, describe=describe_grant),
+        GRANT_ROLES: driver_roles_step(placement),
         POST_BATCH_NOTICE: Step(
             POST_BATCH_NOTICE, StepKind.ACT, post_batch_notice, describe=describe_notice_post
         ),
@@ -854,9 +878,7 @@ def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
         if not _discarded(view):
             continue
         each = view.payload
-        if view.name == FORGET_SETUP:
-            lines.append(NOT_FORGOTTEN)
-        elif view.name == GRANT_ROLES:
+        if view.name == GRANT_ROLES:
             if ungranted_at is None:
                 ungranted_at = len(lines)
                 lines.append("")

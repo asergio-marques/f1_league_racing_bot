@@ -29,7 +29,9 @@ It is now a list of jobs the queue saves and resumes:
    the review, and the prompt as being posted again (`_not_done`, as the approvals do); for a
    cancel, the cancel's line, now after the prompt is back, and none where the prompt was discarded, the review asked for
    again writing it once its own prompt stands; for a lapse or a failure, the line of the
-   resubmission that ended. **A Discard reopens the review** ("Discard reopens the review"):
+   resubmission that ended. **It cannot be discarded**, nor can the prompt change's: dropping it
+   could leave the round in its penalty review with no prompt, never final, until the bot restarts.
+   **A Discard reopens the review** ("Discard reopens the review"):
    where `open` or the prompt's post was discarded, `close` asks, in its own save, as the bot,
    for `results.review.open` again, with the dead prompt's id as ``old_prompt_id``, so that a fresh
    prompt replaces it. Where the interim results already stand it asks with ``publish`` unset,
@@ -74,7 +76,10 @@ opened, and the flag still comes down and the lapse is still recorded (results s
 
 **Two more kinds put a review back after a restart, as the bot.** `results.appeals.open` posts a
 round's appeals prompt again, replacing the old one once the new one stands; its `close` asks for
-it again where a Discard dropped the post. `results.review.close_stale` closes a FINAL round whose
+it again where a Discard dropped the post. Neither of its jobs can be discarded, for the appeals
+review would have no prompt, and the round would not become final, until the bot restarts; its
+`open` is dropped on a Retry once the round no longer awaits its appeal verdicts or its channel is
+closed. `results.review.close_stale` closes a FINAL round whose
 submission row a run from before this change left open: its channel is deleted and its row marked
 closed with the deletion, and a line says so, in place of the dead review that used to be posted
 again at every restart. Both are dropped, not stopped, where they are no longer due.
@@ -107,6 +112,7 @@ from leaguebot.core.services.change_queue import (
     unfinished,
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services import season_service
 from leaguebot.core.services.season_service import set_round_status_on
 from leaguebot.core.services import typed_turns
 from leaguebot.core.utils.log_lines import abandoned_line
@@ -642,6 +648,13 @@ def review_open_change() -> ChangeType:
     async def describe_close(_ctx: StepContext) -> str:
         return "recording that the penalty review is open"
 
+    async def would_be_left_unreviewed(ctx: StepContext) -> str:
+        called = await season_service.round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        return (
+            f"{called} could be left in its penalty review with no prompt, never final, until "
+            "the bot restarts"
+        )
+
     def outcome(ctx: OutcomeContext) -> str:
         done = {view.name: view for view in ctx.steps}
         opened = done.get(_OPEN)
@@ -722,7 +735,10 @@ def review_open_change() -> ChangeType:
             _POST_CANCEL_LINE, StepKind.ACT, _post_cancel_line_job, still_due=_prompt_not_discarded,
             describe=_describe_cancel_line,
         ),
-        _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
+        _CLOSE: Step(
+            _CLOSE, StepKind.SAVE, close, describe=describe_close,
+            undiscardable=would_be_left_unreviewed,
+        ),
     }
     return ChangeType(
         kind=KIND,
@@ -841,6 +857,14 @@ def review_prompt_change() -> ChangeType:
     async def describe_close(_ctx: StepContext) -> str:
         return "recording that the penalty review is open"
 
+    async def would_be_left_unreviewed(ctx: StepContext) -> str:
+        called = await season_service.round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        review = "appeals" if ctx.payload.get("stage") == APPEALS_STAGE else "penalty"
+        return (
+            f"{called} could be left in its {review} review with no prompt, never final, until "
+            "the bot restarts"
+        )
+
     def outcome(ctx: OutcomeContext) -> str:
         if ctx.payload.get("stage") == APPEALS_STAGE:
             left = review_posting.not_done(ctx)
@@ -900,7 +924,10 @@ def review_prompt_change() -> ChangeType:
             _POST_CANCEL_LINE, StepKind.ACT, _post_cancel_line_job,
             still_due=_prompt_not_discarded, describe=_describe_cancel_line,
         ),
-        _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
+        _CLOSE: Step(
+            _CLOSE, StepKind.SAVE, close, describe=describe_close,
+            undiscardable=would_be_left_unreviewed,
+        ),
         typed_turns.CLEAR_MARK: typed_turns.clear_mark_step(),
     }
 
@@ -1023,6 +1050,24 @@ def appeals_open_change() -> ChangeType:
             ),),
         )
 
+    async def still_awaiting_appeals(ctx: StepContext) -> bool:
+        """The reopening is owed while its round awaits its appeal verdicts with its submission
+        row open: a Retry after the round became final, or its channel closed, drops it."""
+        row = await _round_and_channel(ctx.db_path, int(ctx.payload["round_id"]))
+        return (
+            row is not None
+            and row["status"] == RoundStatus.AWAITING_APPEAL_VERDICTS.value
+            and row["channel_id"] is not None
+            and not row["closed"]
+        )
+
+    async def would_have_no_prompt(ctx: StepContext) -> str:
+        called = await season_service.round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        return (
+            f"{called}'s appeals review would have no prompt, and the round would not become "
+            "final, until the bot restarts"
+        )
+
     async def describe_plan(_ctx: StepContext) -> str:
         return "working out where the appeals review prompt goes"
 
@@ -1041,8 +1086,14 @@ def appeals_open_change() -> ChangeType:
     steps: dict[str, Step] = {
         **posting_steps(),
         review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(),
-        _OPEN: Step(_OPEN, StepKind.SAVE, plan, describe=describe_plan),
-        _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
+        _OPEN: Step(
+            _OPEN, StepKind.SAVE, plan, still_due=still_awaiting_appeals,
+            describe=describe_plan, undiscardable=would_have_no_prompt,
+        ),
+        _CLOSE: Step(
+            _CLOSE, StepKind.SAVE, close, describe=describe_close,
+            undiscardable=would_have_no_prompt,
+        ),
     }
     return ChangeType(
         kind=APPEALS_OPEN_KIND,

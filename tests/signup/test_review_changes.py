@@ -29,13 +29,17 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import discord
+import pytest
 
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     acknowledgement,
     change_rows,
+    discard_job,
     http_error,
     member_interaction,
+    refuse_the_job,
+    retry_job,
     run_queue,
     step_rows,
     stopped_job,
@@ -328,15 +332,13 @@ async def test_a_role_that_cannot_be_granted_is_named_and_does_not_stop_the_queu
 async def test_approve_saves_the_lap_sum_on_the_signup_record_itself(tmp_path):
     """Kimi's signup record holds lap times of 1:30.000 and 1:31.500. Manager 77 presses Approve
     and the queue runs: the record's total lap time is 181,500 ms, written by the approval
-    itself, and core's placement service is not asked to store it."""
+    itself."""
     league = await _league(tmp_path)
-    league.bot.placement_service.store_total_lap_ms = AsyncMock()
 
     await _press_approve(league)
     await run_queue(league.bot)
 
     assert (await _record(league))["total_lap_ms"] == LAP_SUM_MS
-    league.bot.placement_service.store_total_lap_ms.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -413,6 +415,104 @@ async def test_the_correction_timer_is_armed_by_a_job_of_its_own_after_the_choic
     assert _armed(league, CORRECTION_TIMER) == [
         (CORRECTION_TIMER, str(SIGNING_UP), league.clock.now + timedelta(minutes=5))
     ]
+
+
+def _refusing_to_arm(timer: str) -> Any:
+    """A one-off timer that the scheduler refuses to arm for *timer*, and arms for any other."""
+    def arm(name: str, *_args: Any, **_kwargs: Any) -> None:
+        if name == timer:
+            raise RuntimeError("the job store is unavailable")
+    return arm
+
+
+async def test_arming_the_five_minutes_cannot_be_discarded(tmp_path):
+    """Manager 77 types the reason after Request Changes and the correction choices are posted
+    in Kimi's channel, but the scheduler refuses to arm the five minutes, so Kimi's lane stops at
+    `arm_lapse`. A league admin's Discard on it is refused, saying nothing would end Kimi's
+    correction request once its five minutes ran out and the season's placements could not be
+    confirmed until the bot restarts. The lane stays stopped there. Once the scheduler takes it,
+    a Retry arms the lapse five minutes from the post."""
+    league = await _league(tmp_path)
+    scheduler = league.bot.scheduler_service
+    scheduler.arm_once.side_effect = _refusing_to_arm(CORRECTION_TIMER)
+
+    await _type_reason(league)
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path, KIMI_LANE)
+    assert stopped is not None and stopped["name"] == "arm_lapse"
+
+    refused = await discard_job(league.bot, lane=KIMI_LANE)
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it nothing would end <@{SIGNING_UP}>'s "
+        "correction request once its five minutes ran out, and the season's placements could "
+        "not be confirmed until the bot restarts. Fix what stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path, KIMI_LANE))["id"] == stopped["id"]
+
+    scheduler.arm_once.side_effect = None
+    await retry_job(league.bot, lane=KIMI_LANE)
+
+    assert await stopped_job(league.db_path) is None
+    assert _armed(league, CORRECTION_TIMER)[-1] == (
+        CORRECTION_TIMER, str(SIGNING_UP), league.clock.now + timedelta(minutes=5)
+    )
+
+
+@pytest.mark.parametrize("job", ["choose", "arm_inactivity"])
+async def test_the_choice_and_its_24_hours_cannot_be_discarded(tmp_path, job):
+    """Kimi awaits a correction parameter, the choices posted a minute ago, and manager 77
+    presses Nationality. Either the save sending Kimi back to his nationality fails (`choose`), or
+    the scheduler refuses to arm his 24 hours of inactivity (`arm_inactivity`), so the league
+    lane stops at that job. A league admin's Discard on it is refused, saying, for `choose`, that
+    Kimi would be left awaiting a correction nobody can choose, or, for `arm_inactivity`, that
+    his signup would never time out if he stopped answering, and in both that the season's
+    placements could not be confirmed until the bot restarts. The queue stays stopped there.
+    Once the fault is lifted, a Retry leaves Kimi Pending Driver Correction with his 24 hours
+    armed."""
+    league = await _league(tmp_path, state="AWAITING_CORRECTION_PARAMETER",
+                           offered_ago=timedelta(minutes=1))
+    scheduler = league.bot.scheduler_service
+    if job == "choose":
+        await refuse_the_job(league.db_path, CHOOSE_KIND, "choose", True)
+    else:
+        scheduler.arm_once.side_effect = _refusing_to_arm(INACTIVITY_TIMER)
+
+    await _press_choice(league)
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == job
+
+    refused = await discard_job(league.bot, lane="league")
+
+    follows = (
+        f"<@{SIGNING_UP}> would be left awaiting a correction nobody can choose"
+        if job == "choose" else
+        f"<@{SIGNING_UP}>'s signup would never time out if they stopped answering, and while "
+        "they correct it"
+    )
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it {follows}"
+        + (", and" if job == "choose" else "")
+        + " the season's placements could not be confirmed until the bot restarts. Fix what "
+        "stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path, "league"))["id"] == stopped["id"]
+    assert await _driver_state(league) == (
+        "AWAITING_CORRECTION_PARAMETER" if job == "choose" else "PENDING_DRIVER_CORRECTION"
+    )
+
+    if job == "choose":
+        await refuse_the_job(league.db_path, CHOOSE_KIND, "choose", False)
+    else:
+        scheduler.arm_once.side_effect = None
+    await retry_job(league.bot, lane="league")
+
+    assert await stopped_job(league.db_path, "league") is None
+    assert await _driver_state(league) == "PENDING_DRIVER_CORRECTION"
+    assert _armed(league, INACTIVITY_TIMER)[-1] == (
+        INACTIVITY_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24)
+    )
 
 
 async def test_request_changes_changes_the_status_on_the_league_and_the_choices_come_back_on_the_lane(

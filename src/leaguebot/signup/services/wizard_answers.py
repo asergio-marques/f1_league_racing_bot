@@ -21,7 +21,16 @@ of its own save, `signup.submit` of the league: the signup is saved, the driver 
 Admin Approval and the wizard parked in one save, the driver's name read first by a job of its
 own (a save waits on no second connection) and their timers taken away after. That asks back
 `signup.panel` on the driver's lane, which locks typing, posts the review panel and takes the ⏳
-off, so the mark outlives the whole hand-over (R10). A driver whose signup a close of the window
+off, so the mark outlives the whole hand-over (R10). The panel's post cannot be discarded (#439,
+slice 8): dropped, the driver would wait for approval with no panel, an unsettled signup that
+refuses the season's placements, so a Discard on it is refused and only a Retry moves it. Where
+the channel is confirmed gone when the panel is due (`_signup_channel_or_gone`), nothing is posted
+and the job asks `signup.end` of the league's queue in its own save, so the driver is not left
+awaiting a review that can never be posted; a league server missing from the cache, or a lookup
+that cannot tell, stops the job until a Retry instead. Nor can
+`arm_inactivity` or a correction's `commit` (#439, slice 8): dropped, a signup would never time
+out, or a correction would never be submitted, while the driver corrects it, either an unsettled
+signup that refuses the season's placements. A driver whose signup a close of the window
 ended meanwhile is no longer due: the submit is dropped, nothing saved.
 
 **Rejected:** keeping the draft in memory until the last answer, which a restart would lose; one
@@ -61,10 +70,10 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationality
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import refusal_line
+from leaguebot.core.utils.log_lines import name_of_member, refusal_line
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
-from leaguebot.signup.services.closing_steps import INACTIVITY_TIMER
+from leaguebot.signup.services.closing_steps import CHANNEL_GONE, END, INACTIVITY_TIMER
 from leaguebot.signup.services.signup_posting import post
 from leaguebot.signup.services.wizard_service import (
     _CORRECTION_LABELS,
@@ -465,6 +474,48 @@ async def _text_channel(ctx: StepContext, channel_id: int) -> discord.TextChanne
     return found if isinstance(found, discord.TextChannel) else None
 
 
+async def _signup_channel_or_gone(
+    ctx: StepContext, channel_id: int
+) -> discord.TextChannel | None:
+    """The signup channel *channel_id*, or None where Discord confirms it is gone (#439, slice 8).
+
+    A channel the cache lacks is looked for with `fetch_channel`: not found, or found as no text
+    channel, is gone. What cannot tell gone from standing stops the queue until a Retry clears it
+    — a league server missing from the cache, or a lookup that fails for any other reason,
+    Forbidden included — rather than ending the signup of a driver whose channel may well stand.
+    """
+    guild = await league_guild(ctx.bot)
+    if guild is None:
+        raise StepFailedOnDiscord("the league's server could not be found")
+    found = guild.get_channel(channel_id)
+    if found is not None:
+        return found if isinstance(found, discord.TextChannel) else None
+    try:
+        fetched = await guild.fetch_channel(channel_id)
+    except discord.NotFound:
+        return None
+    except discord.HTTPException as error:
+        raise StepFailedOnDiscord(f"signup channel {channel_id} could not be looked for") from error
+    return fetched if isinstance(fetched, discord.TextChannel) else None
+
+
+async def channel_gone_ending(
+    ctx: StepContext, user_id: str, channel_id: int | None,
+) -> StepResult:
+    """The result of a job that found the driver's signup channel gone, or found that the wizard
+    names none (*channel_id* None): nothing is posted, and `signup.end` is asked of the league's
+    queue in the job's own save (#439, slice 8)."""
+    named = await name_of_member(ctx.bot, int(user_id))
+    return StepResult(
+        result={"no_channel": True, "ended": True},
+        follow_ons=(FollowOn(
+            END,
+            {"user_id": user_id, "reason": CHANNEL_GONE, "channel_id": channel_id, "named": named},
+            f"ending <@{user_id}>'s signup, their signup channel being gone",
+        ),),
+    )
+
+
 def answer_change(
     *,
     signup: Callable[[], "SignupModuleService"],
@@ -643,6 +694,13 @@ def answer_change(
     async def describe_arm(_ctx: StepContext) -> str:
         return "arming the signup's 24 hours again"
 
+    async def would_never_time_out(ctx: StepContext) -> str:
+        return (
+            f"<@{ctx.step_payload['user_id']}>'s signup would never time out if they stopped "
+            "answering, and while they correct it the season's placements could not be "
+            "confirmed until the bot restarts"
+        )
+
     async def describe_show(ctx: StepContext) -> str:
         return f"asking the next question in <#{ctx.step_payload['channel_id']}>"
 
@@ -657,7 +715,8 @@ def answer_change(
         REFUSE: Step(REFUSE, StepKind.ACT, refuse, describe=describe_refuse),
         SAVE_ANSWER: Step(SAVE_ANSWER, StepKind.SAVE, save_answer, describe=describe_save),
         ARM_INACTIVITY: Step(
-            ARM_INACTIVITY, StepKind.ACT, arm_inactivity, still_due=_saved_due, describe=describe_arm
+            ARM_INACTIVITY, StepKind.ACT, arm_inactivity, still_due=_saved_due,
+            describe=describe_arm, undiscardable=would_never_time_out,
         ),
         SHOW_NEXT: Step(
             SHOW_NEXT, StepKind.ACT, show_next, still_due=_saved_due, describe=describe_show
@@ -803,12 +862,21 @@ def submit_change(
     async def describe_disarm(_ctx: StepContext) -> str:
         return "taking the signup's 24 hours away"
 
+    async def would_never_be_submitted(ctx: StepContext) -> str:
+        return (
+            f"<@{ctx.payload['user_id']}>'s signup would never be submitted, and while they "
+            "correct it the season's placements could not be confirmed until the bot restarts"
+        )
+
     return ChangeType(
         kind=SUBMIT,
         opening=(PlannedStep(NAME_DRIVER), PlannedStep(COMMIT), PlannedStep(DISARM)),
         steps={
             NAME_DRIVER: Step(NAME_DRIVER, StepKind.ACT, name_driver, describe=describe_name),
-            COMMIT: Step(COMMIT, StepKind.SAVE, commit, describe=describe_commit),
+            COMMIT: Step(
+                COMMIT, StepKind.SAVE, commit, describe=describe_commit,
+                undiscardable=would_never_be_submitted,
+            ),
             DISARM: Step(DISARM, StepKind.ACT, disarm, describe=describe_disarm),
         },
         check=check,
@@ -827,7 +895,8 @@ def panel_change(
     typing away, now that the channel holds a review rather than a question, and posts the
     review panel (users may be notified, never a group, #362); then `clear_mark` takes the ⏳ off
     the last answer, the mark outliving the whole hand-over. The payload is ``user_id``,
-    ``channel_id`` and the ``mark``. A channel gone from the server is nothing to post in. *queue_of*
+    ``channel_id`` and the ``mark``. A channel gone from the server is nothing to post in: the signup ends instead
+    (`channel_gone_ending`). *queue_of*
     gives the change queue the panel's buttons are handed."""
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
@@ -852,9 +921,9 @@ def panel_change(
     @posts_in_a_job
     async def post_panel(ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
-        channel = await _text_channel(ctx, int(ctx.step_payload["channel_id"]))
+        channel = await _signup_channel_or_gone(ctx, int(ctx.step_payload["channel_id"]))
         if channel is None:
-            return StepResult(result={"no_channel": True})
+            return await channel_gone_ending(ctx, user_id, int(ctx.step_payload["channel_id"]))
         member = channel.guild.get_member(int(user_id))
         if member is not None:
             await _set_typing(channel, member, allowed=False, reason="Signup wizard channel hold")
@@ -881,12 +950,21 @@ def panel_change(
     async def describe_panel(ctx: StepContext) -> str:
         return f"posting the review panel in <#{ctx.step_payload['channel_id']}>"
 
+    async def would_wait_unreviewed(ctx: StepContext) -> str:
+        return (
+            f"<@{ctx.step_payload['user_id']}> would wait for approval with no review panel, "
+            "and the season's placements could not be confirmed"
+        )
+
     return ChangeType(
         kind=PANEL,
         opening=(),
         plan=plan,
         steps={
-            POST_PANEL: Step(POST_PANEL, StepKind.ACT, post_panel, describe=describe_panel),
+            POST_PANEL: Step(
+                POST_PANEL, StepKind.ACT, post_panel, describe=describe_panel,
+                undiscardable=would_wait_unreviewed,
+            ),
             typed_turns.CLEAR_MARK: typed_turns.clear_mark_step(),
         },
         check=standing,

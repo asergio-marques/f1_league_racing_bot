@@ -13,7 +13,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.core.models.change import StepFailedOnDiscord, VerdictKind
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat
@@ -37,9 +37,11 @@ from leaguebot.image.utils.tyre_compound import (
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.results.services.results_post_service import _parse_ids
 
 if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.results.services.attendance_hook import AttendanceAfterReview
     from leaguebot.results.services.penalty_wizard import PenaltyReviewState
 
 log = logging.getLogger(__name__)
@@ -1395,16 +1397,26 @@ async def closed_by_cancellation(db_path: str, round_id: int) -> str | None:
     cancelled and is not asked.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT r.round_number, r.status AS round_status, d.status AS division_status, "
-            "s.status AS season_status, rsc.closed "
-            "FROM rounds r JOIN divisions d ON d.id = r.division_id "
-            "JOIN seasons s ON s.id = d.season_id "
-            "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id "
-            "WHERE r.id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
+        return await closed_by_cancellation_on(db, round_id)
+
+
+async def closed_by_cancellation_on(db: aiosqlite.Connection, round_id: int) -> str | None:
+    """`closed_by_cancellation`, read on the connection handed (#439, slice 8, F2).
+
+    A session's save reads it again inside its own save, after its turn was settled: a
+    cancellation's save written on the same connection, and not yet committed, is seen, and the
+    two saves hold the queue's write lock in turn, so one of them is read by the other.
+    """
+    cursor = await db.execute(
+        "SELECT r.round_number, r.status AS round_status, d.status AS division_status, "
+        "s.status AS season_status, rsc.closed "
+        "FROM rounds r JOIN divisions d ON d.id = r.division_id "
+        "JOIN seasons s ON s.id = d.season_id "
+        "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id "
+        "WHERE r.id = ?",
+        (round_id,),
+    )
+    row = await cursor.fetchone()
     if row is None:
         return None
     if "CANCELLED" in (row["round_status"], row["division_status"], row["season_status"]):
@@ -1456,6 +1468,7 @@ async def run_amendment_review_stages(
     round_number: int,
     division_name: str,
     session_types: list[SessionType],
+    attendance: AttendanceAfterReview,
 ) -> "PenaltyReviewState":
     """Replay a settled round's report and appeal stages in the amendment channel (#345).
 
@@ -1476,6 +1489,9 @@ async def run_amendment_review_stages(
     ``AWAITING_APPEAL_VERDICTS`` then ``FINAL``, finishes the division, may wind the season down
     and publishes as it goes, none of which an amendment may do.
 
+    *attendance* is the hook the change type was built with: it says which of the round's pardons
+    the review may offer, so results reads nothing of attendance's switch itself.
+
     Returns the state the screens share. The approvals happen through the screens themselves.
     """
     from leaguebot.results.services.penalty_service import load_staged_from_records
@@ -1491,11 +1507,11 @@ async def run_amendment_review_stages(
     staged, staged_appeals, staged_pardons = await load_staged_from_records(
         db_path, round_id, session_types=session_types
     )
-    # **The pardons only while attendance is on.** The appeal stage writes them back only then,
-    # so offering them with the module off let a manager remove one, be told it was removed,
-    # and approve a round still carrying it.
-    if not await bot.module_service.is_attendance_enabled():
-        staged_pardons = []
+    # **The pardons only while attendance is on, as attendance's hook says.** The appeal stage
+    # writes them back only then, so offering them with the module off let a manager remove one,
+    # be told it was removed, and approve a round still carrying it. Results never reads
+    # attendance's switch itself (architecture.md, "Results reaches attendance through one hook").
+    staged_pardons = await attendance.pardons_to_review(staged_pardons)
 
     state = PenaltyReviewState(
         round_id=round_id,
@@ -2368,7 +2384,7 @@ class _ConfigSelectView(LeagueView):
 
     **A league manager's, and it asked nothing at all until 2026-09-10.** This view is
     posted publicly into the submission and amendment channels — never ephemerally — from
-    three call sites, so every member who could read one of those channels could decide
+    two call sites, so every member who could read one of those channels could decide
     which points configuration scored the session, and the first press won the race against
     whoever was actually running the round.
 
@@ -2381,6 +2397,28 @@ class _ConfigSelectView(LeagueView):
     choice is for ("the Feature Race of round 3 (Pro)"), and every caller passes it, so a league
     reads it in each line. It is optional so that a view built without one still names its
     button; the lines then say nothing of the session.
+
+    **The first press chooses** (results spec, "Submitting round results"). It claims the
+    choice (`selected`) before anything is awaited, so a later press — made while the first
+    press's check or edit is still on its way, or on a client still showing the buttons — is
+    refused by the view itself, seen by its presser alone, naming the configuration claimed, and
+    never edits the message. It is told the configuration is being chosen while the choice is
+    still being made, and that it has been chosen once it is (`_chosen`): the edit landed and the
+    queue took the choice. The message the press edits names the press's choice, and is put back
+    to the picker — its text, kept when the view is built, and its buttons — where the queue then
+    refuses the choice or fails on it.
+
+    The claim is released wherever the choice is not made, a fault included: where the queue's
+    check fails or refuses the choice, where the edit fails, and where the queue's ask, after the
+    edit, refuses the choice or fails. The check is made before the edit, so that a press the
+    queue would refuse (an amendment's, pressed after its five minutes) leaves the message alone;
+    the refusal is the queue's own, its ask checking again. The claim is released only once the
+    message is put back, so that no press chooses while the picker is being restored over it.
+    A put-back that fails is logged on the host and changes nothing else (`_put_back`): a refusal
+    stays the presser's one reply, and a fault in the ask is still the one the press raises.
+
+    *text* is required with *ask*, as only a submission's picker is put back and the text it was
+    posted with is what it is put back to.
     """
 
     def __init__(
@@ -2390,9 +2428,17 @@ class _ConfigSelectView(LeagueView):
         *,
         session: str | None = None,
         ask: tuple[str, dict[str, Any]] | None = None,
+        text: str | None = None,
     ) -> None:
+        if ask is not None and text is None:
+            raise TypeError("a picker asking the queue needs the text it is put back to")
         super().__init__(timeout=None)
+        #: The configuration claimed by the press in hand, or chosen.
         self.selected: str | None = None
+        #: Whether the claim is a choice made, not one still being made.
+        self._chosen = False
+        #: The text the picker is posted with, which a press puts back.
+        self._text = text
         self._config = config
         self._session = session
         self._ask = ask
@@ -2410,34 +2456,69 @@ class _ConfigSelectView(LeagueView):
                         reason="Only league managers can choose the points configuration.",
                     )
                     return
+                if self.selected is not None:
+                    state = "has already been chosen" if self._chosen else "is being chosen"
+                    await refuse(
+                        interaction,
+                        "⚠️ The points configuration for "
+                        f"{self._session or 'this session'} {state}: **{self.selected}**.",
+                        what=what,
+                    )
+                    return
+                # Claimed before anything is awaited, so that no second press gets past the
+                # check above while this one is in hand.
                 self.selected = _name
                 if self._ask is not None:
                     # A submission's picker: the choice is a change of its own, asked of the
                     # queue with the pasted session's payload, and the picker comes down by the
-                    # press's own response (#439).
+                    # press's own edit of the message pressed, which is a reply
+                    # (docs/design/architecture.md, "Posting to Discord").
                     kind, asked = self._ask
                     queue = bot_of(interaction).change_queue
                     pressed = interaction.created_at
-                    await interaction.response.edit_message(
-                        content=f"🔧 Config selected: **{_name}**", view=None
-                    )
-                    await queue.ask(
-                        kind,
-                        {
-                            **asked, "config_name": _name,
-                            # When it was pressed, which an amendment's five minutes are judged by
-                            # however long the choice's turn waits.
-                            "typed_at": (
-                                pressed.isoformat() if isinstance(pressed, datetime) else None
-                            ),
-                            "choice_line": (
-                                f"{interaction_member(interaction)} | {what} | Success\n"
-                                f"  configuration: {_name}"
-                            ),
-                        },
-                        interaction=interaction, what=what,
-                    )
-                    return
+                    payload = {
+                        **asked, "config_name": _name,
+                        # When it was pressed, which an amendment's five minutes are judged by
+                        # however long the choice's turn waits.
+                        "typed_at": pressed.isoformat() if isinstance(pressed, datetime) else None,
+                        "choice_line": (
+                            f"{interaction_member(interaction)} | {what} | Success\n"
+                            f"  configuration: {_name}"
+                        ),
+                    }
+                    # Whether the choice was made. Until it is, the claim is released on every
+                    # way out, a fault included: the buttons are still up, or put back, and
+                    # nothing was asked, so another press may choose.
+                    chosen = False
+                    try:
+                        if (await queue.check(kind, payload)).kind is not VerdictKind.GO:
+                            # The message is left offering the configurations, and the queue's
+                            # ask, checking again, refuses the press privately.
+                            chosen = await queue.ask(
+                                kind, payload, interaction=interaction, what=what
+                            ) is not None
+                            return
+                        await interaction.response.edit_message(
+                            content=f"🔧 Config selected: **{_name}**", view=None
+                        )
+                        try:
+                            chosen = await queue.ask(
+                                kind, payload, interaction=interaction, what=what
+                            ) is not None
+                        except Exception:
+                            await self._put_back(interaction)
+                            raise
+                        if not chosen:
+                            await self._put_back(interaction)
+                        return
+                    finally:
+                        # Released only once the message is put back, so that no press chooses
+                        # while the picker is being restored over its edit.
+                        if chosen:
+                            self._chosen = True
+                        else:
+                            self.selected = None
+                self._chosen = True
                 self.stop()
                 await interaction.response.defer()
                 await self._record_choice(interaction, what, _name)
@@ -2449,6 +2530,26 @@ class _ConfigSelectView(LeagueView):
                 on_press=_cb,
             )
             self.add_item(button)
+
+    async def _put_back(self, interaction: discord.Interaction) -> None:
+        """Edit the message pressed back to the picker, its text and its buttons, where the
+        press's edit took them down but the queue did not take the choice.
+
+        Never raises: the press has already been answered, by a refusal, or is failing on the
+        fault of its ask, and a failed put-back must neither give the presser a second reply nor
+        stand in that fault's place. It is logged on the host with its traceback, and the
+        message stays as the press's edit left it. Pinned by
+        `test_a_put_back_that_fails_keeps_the_original_fault_in_the_report` and
+        `test_a_put_back_that_fails_after_a_refusal_gives_no_second_reply`.
+        """
+        try:
+            await interaction.edit_original_response(content=self._text, view=self)
+        except Exception:  # noqa: BLE001 — the press is answered already; this must not answer it
+            message = getattr(interaction, "message", None)
+            log.error(
+                "could not put the points-configuration picker back on message %s; it is left "
+                "without its buttons", getattr(message, "id", None), exc_info=True,
+            )
 
     def _what(self, name: str) -> str:
         """The button as the log channel names it, with the choice it belongs to."""
@@ -2934,7 +3035,7 @@ async def replace_round_results_on(
     division_id: int,
     season_id: int,
     collected: list[CollectedSession],
-) -> None:
+) -> list[int]:
     """Replace every session of a round with a resubmission's on the connection handed, committing
     nothing: the resubmission's swap does it in a save of its own (#439).
 
@@ -2943,7 +3044,20 @@ async def replace_round_results_on(
     results, the insert of the new, their points and the clearing of the channel's `resubmitting`
     flag land together or not at all. `results_posted` is cleared with them: the round is still in
     penalty review, so the new results go out then. Raises `SeasonImmutableError` for an archived
-    season, with the old results untouched."""
+    season, with the old results untouched.
+
+    The table posted for an old session is carried onto the new session of the same type, as the
+    message it replaces: the posting then takes the old table down once the new one stands, so an
+    amended table replaces the original rather than standing beside it (results spec :412). The
+    message ids of an old session whose type the resubmission does not enter are returned, for the
+    caller to take down; they are otherwise lost with the old row."""
+    earlier = {
+        each["session_type"]: each
+        for each in await (await db.execute(
+            "SELECT session_type, results_message_id, results_message_ids FROM session_results "
+            "WHERE round_id = ? AND results_message_id IS NOT NULL", (round_id,),
+        )).fetchall()
+    }
     await db.execute("DELETE FROM session_results WHERE round_id = ?", (round_id,))
     for session in collected:
         session_result_id = await _save_session_result_in_tx(
@@ -2956,11 +3070,23 @@ async def replace_round_results_on(
                 db, session_result_id, season_id, session.config_name,
                 session.session_type,
             )
+        carried = earlier.pop(session.session_type.value, None)
+        if carried is not None:
+            await db.execute(
+                "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
+                "WHERE id = ?",
+                (carried["results_message_id"], carried["results_message_ids"], session_result_id),
+            )
     await db.execute(
         "UPDATE round_submission_channels SET resubmitting = 0, results_posted = 0, "
         "resubmit_prompt_message_id = NULL WHERE round_id = ?",
         (round_id,),
     )
+    unplaced: list[int] = []
+    for each in earlier.values():
+        ids = _parse_ids(each["results_message_ids"]) or [int(each["results_message_id"])]
+        unplaced.extend(ids)
+    return unplaced
 
 
 async def resubmission_drafts_on(

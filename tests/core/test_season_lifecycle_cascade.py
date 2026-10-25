@@ -710,7 +710,12 @@ async def _run_the_round_job(db_path, round_id, *, results_enabled):
     bot.config_service = ConfigService(db_path)
     bot.module_service = ModuleService(db_path)
     bot.season_service = SeasonService(db_path)
-    await bot.module_service.set_results_enabled(results_enabled)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, ?)",
+            (int(results_enabled),),
+        )
+        await db.commit()
     attach_queue(bot, db_path, now=NOW)
 
     await bot.change_queue.ask(

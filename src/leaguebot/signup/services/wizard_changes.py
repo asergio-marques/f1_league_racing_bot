@@ -24,7 +24,10 @@ Cancel Signup asks `signup.end`, a change of the league lane too: its check refu
 has already ended, and its one job `end` (a save) returns the driver to Not Signed Up, ends the
 wizard, takes away the timers, writes the "Withdrawn" line and asks back `signup.closing` (signup's
 closing jobs, `closing_steps`) on the driver's own lane, so that a closing notice Discord refuses
-stops that lane alone and the league's change is done.
+stops that lane alone and the league's change is done. `end` cannot be discarded (#439, slice 8),
+whatever ended the signup: dropped, a driver correcting their signup would stay in Pending Driver
+Correction, an unsettled signup that refuses the season's placements, so a Discard on it is refused
+and only a Retry moves it.
 
 A held channel's deletion asks `signup.channel.delete` (`channel_delete_change`): the hold's
 24-hour timer's own, on the driver's lane, and `/driver reassign`'s for the replaced account's channel, on
@@ -41,7 +44,6 @@ A job that fails stops the queue (core specification, "How a change is carried o
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import logging
 from collections.abc import Callable
@@ -80,6 +82,7 @@ from leaguebot.core.utils.member_names import member_named
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     ARM_DELETION,
+    CHANNEL_GONE,
     CLOSE_SIGNUP,
     DELETE_KIND,
     END,
@@ -145,15 +148,26 @@ WITHDRAWN_NOTICE = (
 )
 #: The most channels Discord lets a category hold.
 CATEGORY_LIMIT = 50
+#: Where a gone signup channel was found (`found` in a `CHANNEL_GONE` ending's payload): where the
+#: review panel was due (the default), by the bot seeing the channel deleted, or at a restart.
+PANEL = "panel"
+DELETED = "deleted"
+RESTART = "restart"
+#: What each finding says in the log channel, after "Their signup channel".
+_GONE_SENTENCE = {
+    PANEL: "was gone when their review panel was due",
+    DELETED: "was deleted",
+    RESTART: "was found deleted when the bot restarted",
+}
 
 __all__ = [
     "ANSWER", "Accepted", "Refused", "judge_answer",
-    "ARM_INACTIVITY", "CREATE_CHANNEL", "DELETE_CHANNEL", "DELETE_KIND", "DELETE_OLD_CHANNEL", "END",
+    "ARM_INACTIVITY", "CHANNEL_GONE", "CREATE_CHANNEL", "DELETE_CHANNEL", "DELETE_KIND", "DELETE_OLD_CHANNEL", "DELETED", "END",
     "END_JOB", "EXPIRED", "INACTIVITY", "NAME_JOB",
-    "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
+    "PANEL", "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "RESTART", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
     "WITHDRAWN_NOTICE",
     "LEAVE_JOB", "MEMBER_LEFT",
-    "ask_member_left", "channel_delete_change", "departed_placed_driver", "end_change", "member_left_change", "start_change",
+    "ask_channel_gone", "ask_member_left", "channel_delete_change", "departed_placed_driver", "end_change", "member_left_change", "start_change",
 ]
 
 
@@ -493,9 +507,13 @@ def end_change(
     The payload is ``user_id`` (the driver's account, as text) and ``reason``: `WITHDRAWN` (the
     driver pressed Cancel Signup), `REJECTED` (a manager pressed Reject and typed the reason: the
     payload then carries ``actor_id`` and ``actor_name`` (the manager), ``text`` (the reason) and
-    ``reason_message_id`` (the message it was typed in)), or `EXPIRED` (their 24 hours ran out,
-    asked by the timer or at a restart, with the signup channel's id as ``channel_id``). Its job
-    `end` is a save, after `name_driver`, which finds the driver's name for the line (the lookup
+    ``reason_message_id`` (the message it was typed in)), `EXPIRED` (their 24 hours ran out,
+    asked by the timer or at a restart, with the signup channel's id as ``channel_id``), or
+    `CHANNEL_GONE` (their signup channel was gone: where their review panel was due, or deleted
+    while the signup was under way, seen by the bot or found at a restart. The payload carries
+    ``channel_id``, None where the wizard names none, ``named``, the driver's name, found by the
+    asker, and ``found``, `PANEL` (the default), `DELETED` or `RESTART`). Its job
+    `end` is a save, after `name_driver` (which `CHANNEL_GONE` does without, having its name), which finds the driver's name for the line (the lookup
     uses a connection of its own, which a save must not wait on): the driver is moved to Not
     Signed Up and the wizard ended in the same save, the timers taken
     away and the line written ("Withdrawn", "Rejected" with the manager and the reason, or the
@@ -512,7 +530,10 @@ def end_change(
     whole (a timer is a command's, decision 31): the change carries those three jobs itself, after
     `end`. It is not due, and is dropped, where the driver's wizard is parked or they are not
     mid-signup any longer, and where an answer typed before the 24 hours ran out is still waiting
-    on the driver's lane (the time typed counts, Q22). *cancel_timers* takes away a driver's
+    on the driver's lane (the time typed counts, Q22). A gone channel's ending is due only while
+    the driver is signing up (answering, awaiting approval, or awaiting or making a correction)
+    and their wizard still names that channel: it posts, locks and deletes nothing, the channel
+    being gone, and writes the one line, which says how the channel was found gone. *cancel_timers* takes away a driver's
     timers, and *now* and
     *arm_once* are the queue's clock and the scheduler service's one-off timer, for the deletion.
     """
@@ -560,6 +581,23 @@ def end_change(
             if last is not None and last + INACTIVITY > now():
                 return Verdict.not_due("the driver has answered within the last 24 hours")
             return Verdict.go()
+        if ctx.payload.get("reason") == CHANNEL_GONE:
+            async with get_connection(ctx.db_path) as db:
+                named_channel = await (await db.execute(
+                    "SELECT signup_channel_id FROM signup_wizard_records "
+                    "WHERE discord_user_id = ?", (user_id,),
+                )).fetchone()
+            asked = ctx.payload.get("channel_id")
+            held = None if named_channel is None else named_channel["signup_channel_id"]
+            if (
+                profile is None
+                or profile.current_state not in IN_PROGRESS_STATES
+                # A payload naming no channel is for a wizard that names none either.
+                or (held is None) != (asked is None)
+                or (held is not None and asked is not None and int(held) != int(asked))
+            ):
+                return Verdict.not_due("the signup has ended or moved to another channel")
+            return Verdict.go()
         if ctx.payload.get("reason") == REJECTED:
             # A signup that has moved on since the press: approved by another manager, withdrawn,
             # or already sent back for a correction (#492). The reason is too late to act on.
@@ -577,6 +615,11 @@ def end_change(
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         user_id = str(payload["user_id"])
         shared_end = {"user_id": user_id, "reason": payload["reason"]}
+        if payload["reason"] == CHANNEL_GONE:
+            # The panel's job found the name; the channel is gone, so nothing follows `end`.
+            shared_end.update({key: payload[key] for key in ("channel_id", "named")})
+            shared_end["found"] = payload.get("found", PANEL)
+            return (PlannedStep(END_JOB, shared_end),)
         if payload["reason"] == REJECTED:
             shared_end.update({
                 key: payload[key]
@@ -607,6 +650,16 @@ def end_change(
         for view in ctx.steps:
             if view.name == NAME_JOB and view.done:
                 named = str((view.result or {}).get("named") or named)
+        if ctx.step_payload["reason"] == CHANNEL_GONE:
+            payload = ctx.step_payload
+            where = (
+                "" if payload["channel_id"] is None else f"  channel: <#{payload['channel_id']}>\n"
+            )
+            return StepResult(result={}, lines=(
+                f"{payload['named']} | Signup | Ended\n{where}"
+                f"  Their signup channel {_GONE_SENTENCE[payload.get('found', PANEL)]}, so their "
+                "signup ended. They may press Sign Up again while signups are open.",
+            ))
         if ctx.step_payload["reason"] == EXPIRED:
             # The lapse is the whole of the expiry's line: its notice, lock and deletion are the
             # change's own jobs after this one.
@@ -658,34 +711,39 @@ def end_change(
             "named": await name_of_member(ctx.bot, int(ctx.step_payload["user_id"]))
         })
 
-    async def ended(ctx: StepContext) -> bool:
-        """Whether the signup was ended, for the notice, lock and deletion that follow `end`: not
-        where an admin discarded `end`, which leaves the driver still part-way through signing up
-        (Discard drops that one job and the later ones check they are still due, core spec)."""
-        return not any(
-            view.name == END_JOB and "discarded" in (view.result or {}) for view in ctx.steps
-        )
-
     async def describe_name(ctx: StepContext) -> str:
         return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"
 
     async def describe_end(ctx: StepContext) -> str:
         return f"ending the signup of <@{ctx.step_payload['user_id']}>"
 
+    async def would_never_end(ctx: StepContext) -> str:
+        if ctx.step_payload["reason"] == CHANNEL_GONE:
+            if ctx.step_payload.get("found", PANEL) != PANEL:
+                return (
+                    f"<@{ctx.step_payload['user_id']}>'s signup would stay under way with no "
+                    "signup channel, so they could neither finish it nor sign up again, and "
+                    "while they await review or a correction the season's placements could not "
+                    "be confirmed"
+                )
+            return (
+                f"<@{ctx.step_payload['user_id']}> would be left awaiting approval with no "
+                "signup channel and no review panel, and the season's placements could not be "
+                "confirmed"
+            )
+        return (
+            f"<@{ctx.step_payload['user_id']}>'s signup would never end, and the season's "
+            "placements could not be confirmed until the bot restarts"
+        )
+
     def outcome(ctx: OutcomeContext) -> str:
         views = {view.name: view for view in ctx.steps}
-        ended = views.get(END_JOB)
         expired = ctx.payload.get("reason") == EXPIRED
         rejected = ctx.payload.get("reason") == REJECTED
-        if ended is not None and "discarded" in (ended.result or {}):
-            if rejected:
-                return "⚠️ The signup was not rejected: the job was discarded."
-            return (
-                "⚠️ The signup was not ended: the job was discarded." if expired
-                else "⚠️ Your signup was not withdrawn: the job was discarded."
-            )
         if rejected:
             return "✅ Signup rejected."
+        if ctx.payload.get("reason") == CHANNEL_GONE:
+            return "✅ The signup has ended: its signup channel was gone."
         if expired:
             left = [name for name in (SIGNUP_NOTICE, CLOSE_SIGNUP, ARM_DELETION)
                     if name in views and "discarded" in (views[name].result or {})]
@@ -700,19 +758,16 @@ def end_change(
         plan=plan,
         steps={
             NAME_JOB: Step(NAME_JOB, StepKind.ACT, name_driver, describe=describe_name),
-            END_JOB: Step(END_JOB, StepKind.SAVE, end, describe=describe_end),
-            **{
-                name: (
-                    dataclasses.replace(step, still_due=ended)
-                    if name in (SIGNUP_NOTICE, CLOSE_SIGNUP, ARM_DELETION) else step
-                )
-                for name, step in closing_steps(now=now, arm_once=arm_once).items()
-            },
+            END_JOB: Step(
+                END_JOB, StepKind.SAVE, end, describe=describe_end,
+                undiscardable=would_never_end,
+            ),
+            **closing_steps(now=now, arm_once=arm_once),
         },
         check=check,
         key=lambda payload: f"{END}:{payload['user_id']}",
         doing=lambda payload: (
-            "Ending a signup" if payload.get("reason") == EXPIRED
+            "Ending a signup" if payload.get("reason") in (EXPIRED, CHANNEL_GONE)
             else "Rejecting a signup" if payload.get("reason") == REJECTED
             else "Withdrawing a signup"
         ),
@@ -819,6 +874,26 @@ async def ask_member_left(queue: "ChangeQueue", db_path: str, user_id: str) -> i
         MEMBER_LEFT,
         {"user_id": user_id, "channel_id": None if row is None else row["signup_channel_id"]},
         what=f"cleaning up after <@{user_id}> leaving the server",
+        origin=ChangeOrigin.BOT,
+    )
+
+
+async def ask_channel_gone(
+    queue: "ChangeQueue", *, user_id: str, channel_id: int, named: str, found: str,
+) -> int | None:
+    """Ask the queue, as the bot, to end the signup of *user_id* whose signup channel *channel_id*
+    is gone (`signup.end`, reason `CHANNEL_GONE`): *found* is `DELETED` where the bot saw the
+    channel deleted and `RESTART` where a restart found it gone, and *named* is the driver's name
+    for the log, found by the asker. The change's own check drops the ask where the driver is no
+    longer signing up or their wizard names another channel. Gives the change's id, or None
+    where it was dropped."""
+    return await queue.ask(
+        END,
+        {
+            "user_id": user_id, "reason": CHANNEL_GONE, "channel_id": int(channel_id),
+            "named": named, "found": found,
+        },
+        what=f"ending the signup of <@{user_id}>, their signup channel deleted",
         origin=ChangeOrigin.BOT,
     )
 

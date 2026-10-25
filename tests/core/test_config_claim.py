@@ -15,7 +15,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.server_config import ServerConfig
-from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.services.config_service import RELEASE_CLAIM_SQL, ConfigService
 
 OLD_SERVER = 4242
 NEW_SERVER = 5353
@@ -46,6 +46,13 @@ async def service(tmp_path) -> ConfigService:
     return service
 
 
+async def _release(service: ConfigService) -> None:
+    """Free the claim as `/bot pack` does, through the statement it runs in its own save."""
+    async with get_connection(service._db_path) as db:
+        await db.execute(RELEASE_CLAIM_SQL)
+        await db.commit()
+
+
 async def _row(service: ConfigService) -> dict:
     async with get_connection(service._db_path) as db:
         cursor = await db.execute("SELECT * FROM server_configs")
@@ -55,7 +62,7 @@ async def _row(service: ConfigService) -> dict:
 
 
 async def test_releasing_the_claim_clears_the_server_and_its_four_settings(service):
-    await service.release_claim()
+    await _release(service)
 
     row = await _row(service)
     assert row["server_id"] is None
@@ -66,7 +73,7 @@ async def test_releasing_the_claim_clears_the_server_and_its_four_settings(servi
 
 
 async def test_releasing_the_claim_keeps_what_is_the_league_s(service):
-    await service.release_claim()
+    await _release(service)
 
     row = await _row(service)
     assert row["test_mode_active"] == 1
@@ -76,7 +83,7 @@ async def test_releasing_the_claim_keeps_what_is_the_league_s(service):
 
 
 async def test_a_released_row_is_no_configured_server(service):
-    await service.release_claim()
+    await _release(service)
 
     assert await service.get_server_config() is None
     assert await service.get_league_server_id() is None
@@ -84,14 +91,14 @@ async def test_a_released_row_is_no_configured_server(service):
 
 async def test_a_released_row_takes_no_setting(service):
     """The settings belong to the next server's `/bot init`, not to whoever asks first."""
-    await service.release_claim()
+    await _release(service)
 
     assert await service.set_core_setting("log_channel_id", 99) is False
     assert (await _row(service))["log_channel_id"] is None
 
 
 async def test_another_server_claims_a_released_row(service):
-    await service.release_claim()
+    await _release(service)
 
     assert await service.save_server_config(_config(NEW_SERVER)) is True
 
@@ -104,7 +111,7 @@ async def test_another_server_claims_a_released_row(service):
 
 async def test_the_claim_carries_test_mode_and_the_module_flags_over(service):
     """`ServerConfig` defaults test mode off; the claim must write neither it nor the flags."""
-    await service.release_claim()
+    await _release(service)
     await service.save_server_config(_config(NEW_SERVER))
 
     config = await service.get_server_config()
@@ -128,7 +135,7 @@ def test_server_config_carries_no_module_flags():
 
 
 async def test_only_one_server_claims_a_released_row(service):
-    await service.release_claim()
+    await _release(service)
 
     assert await service.save_server_config(_config(NEW_SERVER)) is True
     assert await service.save_server_config(_config(OLD_SERVER)) is False

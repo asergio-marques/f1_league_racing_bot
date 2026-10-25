@@ -41,17 +41,27 @@ None, which it gives only while attendance is off, plans no heading. The sheet i
 that stops the queue holds the sanctions behind it until it is retried or discarded, which delays
 them and never skips them.
 
-**Each sanction is a job of its own.** `plan_sanctions` reads the drivers owed one and plans, for
-each, `apply_sanction` then `announce_sanction`, and, where any was owed, `refresh_lineup` and the
-sheet again for this division and for each division a sack reached. One that does not apply (a
-division with no reserve team, a role change Discord refuses) stops the queue until it is retried
-or discarded. An `apply_sanction` is due only while its driver is still owed the sanction, so a
-retry applies only what is owed and a driver `/attendance sync` sanctioned meanwhile is not
-sanctioned twice; its announcement, the lineup and the later sheets are due only where a sanction
-was applied by one of these jobs. The sync command is named only once a job is discarded: a failure
-carries the hint the hook gives for it on the job's kept result, which the discard keeps. A
-`plan_sanctions` a league admin discards is named, with the sync command, as a run of the
-sanctions that could not begin (attendance specification, "Sanctions that do not apply").
+**Each sanction is jobs of its own** (#439, slice 8, Part C). `plan_sanctions` reads the drivers
+owed one and plans, for each, `check_sanction` (an autoreserve's only: the Reserve team's capacity
+guards read templates off the loop, which a save cannot), `apply_sanction`, which is a **save** on
+the queue's own connection, and `announce_sanction`, and, where any was owed, `refresh_lineup` and
+the sheet again for this division and for each division a sack reached. The save writes the
+sanction and its audit with the cards' heading worked out on the same connection, so a fault rolls
+the lot back and the sanction is still owed on Retry; it plans `sanction_roles` ahead of the card,
+the change of the driver's roles as a job of its own, which stops the queue where Discord refuses
+a role or cannot fetch the member, with the sanction saved and the card waiting. Once discarded,
+the card still posts and the log names the roles to change by hand. `sanction_roles` is due
+whatever attendance's switch says: a sanction saved is owed its roles. A check or a save that does
+not apply (a division with no reserve team) stops the queue until it is retried or discarded. A
+`check_sanction` and an `apply_sanction` are due only while the driver is still owed the
+sanction, and the save not after its check was discarded, so a retry applies only what is owed
+and a driver `/attendance sync` sanctioned meanwhile is not sanctioned twice; its announcement,
+the lineup and the later sheets are due only where a sanction was applied by one of these jobs.
+The sync command is named only once a check or a save is discarded: the hint the hook gives for it
+is worked out when the sanctions are planned and carried in each job's payload, and a failure
+keeps it on the job's result, which the discard keeps. A `plan_sanctions` a league admin
+discards is named, with the sync command, as a run of the sanctions that could not begin
+(attendance specification, "Sanctions that do not apply").
 """
 from __future__ import annotations
 
@@ -89,7 +99,9 @@ ANNOUNCE_HEADING = "announce_heading"
 ANNOUNCE_VERDICT = "announce_verdict"
 ATTENDANCE_SHEET = "attendance_sheet"
 PLAN_SANCTIONS = "plan_sanctions"
+CHECK_SANCTION = "check_sanction"
 APPLY_SANCTION = "apply_sanction"
+SANCTION_ROLES = "sanction_roles"
 ANNOUNCE_SANCTION = "announce_sanction"
 REFRESH_LINEUP = "refresh_lineup"
 
@@ -113,6 +125,12 @@ def verdict_steps(
 
         return run
 
+
+    def bound_save(fn: Any) -> Any:
+        async def run(db: Any, ctx: StepContext) -> Any:
+            return await fn(db, ctx, attendance)
+
+        return run
 
     async def record_heading(db: Any, ctx: StepContext, result: StepResult) -> None:
         await vas._record_banner_on(
@@ -160,9 +178,16 @@ def verdict_steps(
         PLAN_SANCTIONS: Step(
             PLAN_SANCTIONS, StepKind.ACT, bound(_plan_sanctions), describe=_describe_plan,
         ),
+        CHECK_SANCTION: Step(
+            CHECK_SANCTION, StepKind.ACT, bound(_check_sanction), still_due=bound(_still_owed),
+            describe=_describe_check,
+        ),
         APPLY_SANCTION: Step(
-            APPLY_SANCTION, StepKind.ACT, bound(_apply_sanction), still_due=bound(_still_owed),
-            describe=_describe_apply,
+            APPLY_SANCTION, StepKind.SAVE, bound_save(_apply_sanction),
+            still_due=bound(_apply_due), describe=_describe_apply,
+        ),
+        SANCTION_ROLES: Step(
+            SANCTION_ROLES, StepKind.ACT, bound(_sanction_roles), describe=_describe_roles,
         ),
         ANNOUNCE_SANCTION: Step(
             ANNOUNCE_SANCTION, StepKind.ACT, bound(_announce_sanction), still_due=_was_applied,
@@ -258,6 +283,35 @@ def _sanction_name(candidate: dict[str, Any]) -> str:
     return "autosack" if candidate["sanction"] == "AUTOSACK" else "autoreserve"
 
 
+def _role_mentions(role_ids: list[int]) -> str:
+    """The roles as mentions a log line shows without pinging them: ``<@&a>, <@&b> and <@&c>``."""
+    mentions = [f"<@&{role_id}>" for role_id in role_ids]
+    if len(mentions) <= 1:
+        return "".join(mentions)
+    return f"{', '.join(mentions[:-1])} and {mentions[-1]}"
+
+
+def _roles_not_changed(candidate: dict[str, Any], roles: dict[str, Any]) -> str:
+    """What a league admin is told where a saved sanction's role change was discarded: the roles
+    to take or give by hand, named as role mentions."""
+    revoke, grant = list(roles.get("revoke", [])), list(roles.get("grant", []))
+    driver = f"<@{candidate['driver_user_id']}>"
+    if candidate["sanction"] == "AUTOSACK":
+        return (
+            f"⚠️ The autosack of {driver} was applied but their roles were not taken back. "
+            f"Take {_role_mentions(revoke)} from them by hand."
+        )
+    by_hand = []
+    if revoke:
+        by_hand.append(f"take {_role_mentions(revoke)} from them")
+    if grant:
+        by_hand.append(f"give them {_role_mentions(grant)}")
+    return (
+        f"⚠️ The autoreserve of {driver} was applied but their roles were not changed. "
+        f"{' and '.join(by_hand).capitalize()} by hand."
+    )
+
+
 def not_done(ctx: OutcomeContext) -> list[str]:
     """One line for each job of this module a league admin discarded, in the order the jobs stood:
     what was not done, and what the manager does about it where there is something to do."""
@@ -297,12 +351,15 @@ def not_done(ctx: OutcomeContext) -> list[str]:
                 f"⚠️ The attendance sanctions of {payload.get('division', 'the division')} were "
                 f"not worked out, so none was applied. {_hint(view)}"
             )
-        elif view.name == APPLY_SANCTION:
+        elif view.name in (CHECK_SANCTION, APPLY_SANCTION):
             candidate = payload["candidate"]
             lines.append(
                 f"⚠️ The {_sanction_name(candidate)} of <@{candidate['driver_user_id']}> was not "
                 f"applied. {_hint(view)}"
             )
+        elif view.name == SANCTION_ROLES:
+            candidate = payload["candidate"]
+            lines.append(_roles_not_changed(candidate, payload["roles"]))
         elif view.name == ANNOUNCE_SANCTION:
             candidate = payload["candidate"]
             lines.append(
@@ -330,11 +387,22 @@ async def _failed(
     reach of the league's server stands as it is."""
     if isinstance(error, GuildUnavailable):
         return error
+    return _failure(error, await _sync_hint(hook, division_id, round_id))
+
+
+async def _sync_hint(hook: AttendanceAfterReview, division_id: int, round_id: int) -> str:
+    """The hook's line telling the manager how to finish a sanction, or the plain one."""
     try:
-        hint = await hook.sync_hint(division_id, round_id)
+        return await hook.sync_hint(division_id, round_id)
     except Exception:  # noqa: BLE001 — the hint is a courtesy to the failure it rides on
         log.exception("could not form the attendance sync hint for division %s", division_id)
-        hint = _SYNC
+        return _SYNC
+
+
+def _failure(error: Exception, hint: str) -> Exception:
+    """*error* as the failure a job stops the queue with, carrying *hint* on its kept result."""
+    if isinstance(error, GuildUnavailable):
+        return error
     kept = {**(getattr(error, "result", None) or {}), "hint": hint}
     failure = StepFailedOnDiscord(str(error) or type(error).__name__, result=kept)
     if not isinstance(error, StepFailedOnDiscord):
@@ -610,10 +678,14 @@ async def _plan_sanctions(ctx: StepContext, hook: AttendanceAfterReview) -> Step
     except Exception as error:
         raise await _failed(hook, division_id, round_id, error)
     planned: list[PlannedStep] = []
+    # The hint is worked out here, once, for the save that applies a sanction cannot read it.
+    hint = await _sync_hint(hook, division_id, round_id) if owed else _SYNC
     for candidate in owed:
         job = {"round_id": round_id, "division_id": division_id, "division": division,
-               "candidate": candidate,
+               "candidate": candidate, "hint": hint,
                "heading_round_id": int(payload.get("heading_round_id", round_id))}
+        if candidate["sanction"] == "AUTORESERVE":
+            planned.append(PlannedStep(CHECK_SANCTION, job))
         planned.append(PlannedStep(APPLY_SANCTION, job))
         planned.append(PlannedStep(ANNOUNCE_SANCTION, job))
     if owed:
@@ -664,6 +736,38 @@ async def _still_owed(ctx: StepContext, hook: AttendanceAfterReview) -> bool:
     return any(c["driver_profile_id"] == payload["candidate"]["driver_profile_id"] for c in owed)
 
 
+async def _apply_due(ctx: StepContext, hook: AttendanceAfterReview) -> bool:
+    """A sanction is saved only while it is still owed, and not after its check was discarded: an
+    autoreserve its check would not let through stays unapplied."""
+    if any(
+        view.name == CHECK_SANCTION and _same_driver(view, ctx.step_payload) and _discarded(view)
+        for view in ctx.steps
+    ):
+        return False
+    return await _still_owed(ctx, hook)
+
+
+async def _describe_check(ctx: StepContext) -> str:
+    candidate = ctx.step_payload["candidate"]
+    return (
+        f"checking the {_sanction_name(candidate)} of <@{candidate['driver_user_id']}> in "
+        f"{ctx.step_payload.get('division', 'the division')} can be applied"
+    )
+
+
+async def _check_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
+    """Refuse an autoreserve the Reserve team cannot take, before it is saved: the capacity
+    guards read templates off the loop, which a save cannot."""
+    payload = ctx.step_payload
+    try:
+        await hook.check_sanction(
+            int(payload["round_id"]), int(payload["division_id"]), payload["candidate"]
+        )
+    except Exception as error:
+        raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
+    return StepResult()
+
+
 async def _was_applied(ctx: StepContext) -> bool:
     """The announcement is due only where this change's own job applied the sanction, or where the
     change was asked for sanctions already applied (`/attendance sync`'s: its payload says so)."""
@@ -684,9 +788,10 @@ async def _describe_apply(ctx: StepContext) -> str:
     )
 
 
-async def _sanction_heading(ctx: StepContext) -> tuple[PlannedStep, ...]:
+async def _sanction_heading_on(db: Any, ctx: StepContext) -> tuple[PlannedStep, ...]:
     """The heading the sanction cards are owed, planned after the first sanction that applies and
-    so ahead of its card; nothing where the cards already have one.
+    so ahead of its card; nothing where the cards already have one. Read on *db*, the save the
+    sanction is applied on.
 
     One heading per approval: where a heading of this change over the round's verdicts has run,
     the cards go beneath it, and where it was discarded they stand beneath none, as the verdicts
@@ -701,37 +806,72 @@ async def _sanction_heading(ctx: StepContext) -> tuple[PlannedStep, ...]:
         for view in ctx.steps
     ):
         return ()
-    if await vas._banners_of(ctx.db_path, round_id):
+    if await vas._banners_of_on(db, round_id):
         return ()
-    async with get_connection(ctx.db_path) as db:
-        row = await (
-            await db.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
-        ).fetchone()
+    row = await (
+        await db.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
+    ).fetchone()
     heading: dict[str, Any] = {"round_id": round_id, "over": _OVER_SANCTIONS}
     if row is not None:
         heading["round_number"] = row["round_number"]
     return (PlannedStep(ANNOUNCE_HEADING, heading),)
 
 
-async def _apply_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
-    """Apply one driver's sanction and, where it is the first to apply with no heading standing,
-    plan the heading over the cards.
+async def _apply_sanction(db: Any, ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
+    """Save one driver's sanction on the queue's save and plan what follows it: the change of
+    their roles, and where it is the first to apply with no heading standing, the heading over
+    the cards.
 
-    The heading is worked out before the sanction is applied, so that a fault in the reads it
-    takes fails the job with nothing applied: applied ahead of the fault, the sanction would be
-    found no longer owed on Retry, its job dropped and its card never posted. It is planned only
-    where the sanction applied."""
+    The sanction, its audit and the cards' heading are all read and written on *db*, so a fault
+    in any of them rolls the save back whole and the sanction is still owed on Retry. The roles
+    are a job of their own (`sanction_roles`), planned ahead of the card, so a role Discord
+    refuses stops the queue with the sanction saved and the card waiting."""
     payload = ctx.step_payload
-    heading = await _sanction_heading(ctx)
+    round_id, division_id = int(payload["round_id"]), int(payload["division_id"])
     try:
-        line = await hook.apply_sanction(
-            int(payload["round_id"]), int(payload["division_id"]), payload["candidate"], None
-        )
+        heading = await _sanction_heading_on(db, ctx)
+        applied = await hook.apply_sanction_on(db, round_id, division_id, payload["candidate"])
     except Exception as error:
-        raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
-    # None is the hook's word that attendance is off and nothing was applied: no card follows,
-    # so there is nothing to head.
-    return StepResult(lines=(line,) if line else (), then=() if line is None else heading)
+        raise _failure(error, payload.get("hint") or _SYNC)
+    # None is the hook's word that attendance is off and nothing was applied: no roles change and
+    # no card follows, so there is nothing to head.
+    if applied is None:
+        return StepResult()
+    then: list[PlannedStep] = []
+    roles = applied.get("roles")
+    if roles:
+        then.append(PlannedStep(SANCTION_ROLES, {
+            "round_id": round_id, "division_id": division_id,
+            "division": payload.get("division", "the division"),
+            "candidate": payload["candidate"], "roles": roles,
+        }))
+    then.extend(heading)
+    return StepResult(lines=(applied["line"],), then=tuple(then))
+
+
+async def _describe_roles(ctx: StepContext) -> str:
+    candidate = ctx.step_payload["candidate"]
+    driver = f"<@{candidate['driver_user_id']}>"
+    if candidate["sanction"] == "AUTOSACK":
+        return f"taking back {driver}'s roles for their autosack"
+    return (
+        f"changing {driver}'s roles for their autoreserve in "
+        f"**{ctx.step_payload.get('division', 'the division')}**"
+    )
+
+
+async def _sanction_roles(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
+    """Change the roles a saved sanction named, as the hook decides them now. A refusal, a member
+    who cannot be fetched for any reason but absence or a role gone from the server raises, and
+    the queue stops until it is retried or discarded; a member who left is passed over. Due
+    whatever attendance's switch says: a sanction saved is owed its roles."""
+    payload = ctx.step_payload
+    roles = payload["roles"]
+    result = await hook.change_sanction_roles(
+        int(roles["user_id"]), int(payload["candidate"]["driver_profile_id"]),
+        revoke=list(roles["revoke"]), grant=list(roles["grant"]),
+    )
+    return StepResult(result=result)
 
 
 async def _describe_announce(ctx: StepContext) -> str:
@@ -779,7 +919,8 @@ async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> Step
 
 __all__ = [
     "ANNOUNCE_HEADING", "ANNOUNCE_SANCTION", "ANNOUNCE_VERDICT", "APPLY_SANCTION",
-    "ATTENDANCE_SHEET", "PLAN_SANCTIONS", "POST_APPEALS_PROMPT", "REFRESH_LINEUP", "appeals_prompt_step",
+    "ATTENDANCE_SHEET", "CHECK_SANCTION", "PLAN_SANCTIONS", "POST_APPEALS_PROMPT",
+    "REFRESH_LINEUP", "SANCTION_ROLES", "appeals_prompt_step",
     "not_done", "plan_attendance",
     "plan_round_verdicts", "plan_verdicts", "verdict_steps",
 ]

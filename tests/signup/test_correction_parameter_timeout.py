@@ -34,12 +34,18 @@ from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
+    acknowledgement,
     change_rows,
     discard_job,
     member_interaction,
+    refuse_the_job,
+    retry_job,
     run_queue,
+    stopped_job,
     tier_member,
     typed_message,
 )
@@ -429,19 +435,187 @@ async def test_a_close_leaves_a_driver_awaiting_a_correction_parameter_alone(tmp
     assert await _state(league) == AWAITING
 
 
-async def test_a_lapse_whose_panel_is_discarded_is_still_recorded(tmp_path):
-    """Kimi's correction lapses and Discord refuses the fresh review panel in his channel; an
-    admin discards that job. Kimi is back awaiting approval, and the log channel records the
-    lapse all the same, naming manager 77 and Kimi and saying he is back in the approval queue,
-    without saying a panel is in his channel."""
+def _review_panels_standing(league: SeasonLeague) -> list[Any]:
+    """The review panels standing in Kimi's channel, refused posts left out."""
+    return [message for message in league.channel(KIMI_CHANNEL).messages.values()
+            if type(message.view).__name__ == "AdminReviewView"]
+
+
+async def test_a_lapse_s_panel_cannot_be_discarded_and_a_retry_records_the_lapse(tmp_path):
+    """Kimi's correction lapses and Discord refuses the fresh review panel in his channel, so the
+    queue stops at `post_panel`. A league admin's Discard on it is refused, saying Kimi would
+    wait for approval with no review panel and the season's placements could not be confirmed.
+    Kimi is back awaiting approval, the queue stays stopped there and no lapse is recorded yet.
+    Once Discord takes posts again, a Retry posts one review panel, and the log channel records
+    the lapse naming manager 77 and Kimi and saying a fresh review panel is in his channel."""
     league = await _league(tmp_path)
     league.channel(KIMI_CHANNEL).fail_when = lambda _content, kwargs: kwargs.get("view") is not None
 
     await _fire_the_timer(league)
     await run_queue(league.bot)
-    await discard_job(league.bot)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "post_panel"
 
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}> would wait for approval with "
+        "no review panel, and the season's placements could not be confirmed. Fix what stopped "
+        "it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path))["id"] == stopped["id"]
     assert await _state(league) == "PENDING_ADMIN_APPROVAL"
-    lapse = CORRECTION_LAPSE.split("\n")[0]
-    assert lapse + "\n  Kimi is back in the approval queue." in league.log(), league.log()
-    assert "a fresh review panel is in their channel" not in league.log()
+    assert CORRECTION_LAPSE.split("\n")[0] not in league.log()
+
+    league.channel(KIMI_CHANNEL).fail_when = None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(_review_panels_standing(league)) == 1
+    assert CORRECTION_LAPSE in league.log(), league.log()
+
+
+async def test_the_lapse_itself_cannot_be_discarded(tmp_path):
+    """Kimi's correction lapses, but the save returning him to the approval queue fails, so the
+    queue stops at `lapse`. A league admin's Discard on it is refused, saying Kimi would be left
+    awaiting a correction nobody can choose and the season's placements could not be confirmed
+    until the bot restarts. Kimi still awaits a correction parameter, nothing is posted in his
+    channel and the queue stays stopped there. Once the fault is lifted, a Retry returns him to
+    the approval queue, posts one review panel and records the lapse."""
+    league = await _league(tmp_path)
+    await refuse_the_job(league.db_path, LAPSE_KIND, "lapse", True)
+
+    await _fire_the_timer(league)
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "lapse"
+
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}> would be left awaiting a "
+        "correction nobody can choose, and the season's placements could not be confirmed until "
+        "the bot restarts. Fix what stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path))["id"] == stopped["id"]
+    assert await _state(league) == AWAITING
+    assert _posted(league) == ""
+
+    await refuse_the_job(league.db_path, LAPSE_KIND, "lapse", False)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _state(league) == "PENDING_ADMIN_APPROVAL"
+    assert len(_review_panels_standing(league)) == 1
+    assert CORRECTION_LAPSE in league.log(), league.log()
+
+
+# ── A lapse whose signup channel is gone (#439, slice 8, F1) ───────────────
+
+#: The line the ending writes in the log channel, naming Kimi and his gone channel.
+CHANNEL_GONE_LINE = (
+    f"Kimi (`<@{SIGNING_UP}>`) | Signup | Ended\n  channel: <#{KIMI_CHANNEL}>\n  Their signup "
+    "channel was gone when their review panel was due, so their signup ended. They may press "
+    "Sign Up again while signups are open."
+)
+#: What the lapse's own record says of a gone channel.
+LAPSE_CHANNEL_GONE = (
+    "Kimi's signup channel was gone, so no fresh review panel could be posted and their signup "
+    "is ended."
+)
+
+
+async def test_a_lapse_whose_channel_is_gone_ends_the_signup(tmp_path):
+    """Manager 77 asked for a correction of Kimi's signup, and Kimi's signup channel 6405 is then
+    deleted. The five minutes run out and the queue runs: the lapse returns Kimi to the approval
+    queue, finds his channel gone, posts nothing and asks the ending of his signup, so he is Not
+    Signed Up, his wizard Unengaged. The lapse's record in the log channel says his signup
+    channel was gone, so no fresh review panel could be posted and his signup is ended, and the
+    ending is written once, naming Kimi and the channel. The queue is not stopped."""
+    league = await _league(tmp_path)
+    gone = league.channel(KIMI_CHANNEL)
+    league.remove_channel(KIMI_CHANNEL)
+
+    await _fire_the_timer(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _state(league) == "NOT_SIGNED_UP"
+    [wizard] = await league.rows(
+        "SELECT wizard_state FROM signup_wizard_records WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    assert wizard["wizard_state"] == "UNENGAGED"
+    gone.send.assert_not_awaited()
+    log = league.log()
+    assert LAPSE_CHANNEL_GONE in log, log
+    assert "a fresh review panel is in their channel" not in log
+    assert log.count(CHANNEL_GONE_LINE) == 1, log
+
+
+async def test_a_lapse_whose_server_is_out_of_cache_stops_rather_than_passing_the_driver_over(
+    tmp_path,
+):
+    """Kimi's correction lapses and the lapse returns him to the approval queue, but when its
+    notice is due the league's server is missing from the bot's cache, so his channel cannot be
+    looked for. The queue stops at `post_lapse`: Kimi awaits approval, his signup is not ended,
+    nothing is posted in his channel and no lapse is recorded yet. Once the server is back, a
+    Retry tells his channel the correction lapsed, posts one review panel, and records the lapse
+    naming manager 77 and saying a fresh review panel is in his channel."""
+    league = await _league(tmp_path)
+
+    await _fire_the_timer(league)
+    await run_queue(league.bot, steps=2)
+    league.bot.get_guild.return_value = None
+    await run_queue(league.bot)
+
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "post_lapse"
+    assert await _state(league) == "PENDING_ADMIN_APPROVAL"
+    assert not [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
+    assert _posted(league) == ""
+    assert CORRECTION_LAPSE not in league.log()
+
+    league.bot.get_guild.return_value = league.guild
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert f"<@{REVIEWER}>" in _posted(league)
+    assert len(_review_panels_standing(league)) == 1
+    assert CORRECTION_LAPSE in league.log(), league.log()
+
+
+async def test_a_lapse_whose_wizard_names_no_channel_ends_the_signup(tmp_path):
+    """Manager 77 asked for a correction of Kimi's signup, but Kimi's wizard names no signup
+    channel. The five minutes run out and the queue runs: with nowhere to post a fresh review
+    panel, the lapse ends his signup as it does for a gone channel, so he is Not Signed Up and
+    not left in Pending Admin Approval, his wizard Unengaged. Nothing is posted in his channel,
+    no record says he is back in the approval queue, and the ending is written once, naming Kimi
+    with no channel and saying his signup channel was gone. The queue is not stopped."""
+    league = await _league(tmp_path)
+    await league.write(
+        "UPDATE signup_wizard_records SET signup_channel_id = NULL WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+
+    await _fire_the_timer(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _state(league) == "NOT_SIGNED_UP"
+    [wizard] = await league.rows(
+        "SELECT wizard_state FROM signup_wizard_records WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    assert wizard["wizard_state"] == "UNENGAGED"
+    assert _panels(league) == []
+    assert _posted(league) == ""
+    log = league.log()
+    assert "back in the approval queue" not in log, log
+    assert log.count("| Signup | Ended") == 1, log
+    assert log.count(
+        f"Kimi (`<@{SIGNING_UP}>`) | Signup | Ended\n  Their signup channel was gone when their "
+        "review panel was due, so their signup ended. They may press Sign Up again while signups "
+        "are open."
+    ) == 1, log
+    assert "channel:" not in log, log

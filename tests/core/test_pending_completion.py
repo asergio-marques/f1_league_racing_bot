@@ -53,6 +53,24 @@ async def _stage(path):
     return await SeasonService(path).get_stage(SEASON_ID)
 
 
+async def _advance(path):
+    """The season moved on, where it is due, on a connection of its own, committed, as every
+    caller's save does."""
+    async with get_connection(path) as db:
+        moved = await lifecycle.advance_to_pending_completion_on(db, SEASON_ID)
+        await db.commit()
+    return moved
+
+
+async def _close_window(path):
+    """The signup window closed on a connection of its own, committed, as the closing's save
+    does."""
+    async with get_connection(path) as db:
+        moved = await lifecycle.advance_on_window_close_on(db)
+        await db.commit()
+    return moved
+
+
 async def _refresh(path, division_id):
     """Refresh *division_id* on a connection of its own, committed, as every caller's save does."""
     async with get_connection(path) as db:
@@ -103,7 +121,7 @@ async def test_cancelling_the_last_running_division_leaves_the_season_pending_co
 async def test_a_season_with_a_window_or_placements_waits(tmp_path, stage):
     path = await _db(tmp_path, stage=stage, divisions=(("FINISHED", None), ("CANCELLED", None)))
 
-    assert await lifecycle.advance_to_pending_completion(path, SEASON_ID) is False
+    assert await _advance(path) is False
 
     assert await _stage(path) is stage
 
@@ -113,7 +131,7 @@ async def test_a_season_returning_to_ongoing_moves_on_at_once(tmp_path):
         tmp_path, stage=SeasonStage.ONGOING_SIGNUPS, divisions=(("FINISHED", None),)
     )
 
-    assert await lifecycle.advance_on_window_close(path) is SeasonStage.ONGOING
+    assert await _close_window(path) is SeasonStage.ONGOING
 
     assert await _stage(path) is SeasonStage.PENDING_COMPLETION
 
@@ -121,7 +139,7 @@ async def test_a_season_returning_to_ongoing_moves_on_at_once(tmp_path):
 async def test_a_season_with_no_division_is_not_pending_completion(tmp_path):
     path = await _db(tmp_path, divisions=())
 
-    assert await lifecycle.advance_to_pending_completion(path, SEASON_ID) is False
+    assert await _advance(path) is False
 
 
 # ── Leaving the ongoing stages with every division done ────────────────────────────
@@ -285,5 +303,5 @@ async def test_a_season_that_moves_on_meanwhile_is_not_made_pending_completion(t
         )
         await db.commit()
 
-    assert await lifecycle.advance_to_pending_completion(path, SEASON_ID) is False
+    assert await _advance(path) is False
     assert await _stage(path) is SeasonStage.ONGOING

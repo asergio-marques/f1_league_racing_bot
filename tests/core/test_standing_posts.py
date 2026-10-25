@@ -7,8 +7,7 @@ already gone, or its channel, completes the deletion; one Discord refuses to del
 keeping its link, and a league admin's Discard names it for deletion by hand.
 
 The change types are the dummy ones of `test_change_queue.py`, on its league; the league's server
-holds Pro's calendar channel (601) with its old calendar (6001) standing. Everything of the module is
-imported inside a test, so this file collects while it is unbuilt.
+holds Pro's calendar channel (601) with its old calendar (6001) standing.
 """
 from __future__ import annotations
 

@@ -5,9 +5,6 @@ it into a change type: the value, its audit entry and its log line saved togethe
 held answered "Nothing changed" when the change runs, and a fault that saves nothing, says so and
 lets the lane go on. These tests drive a dummy setting on a table of the test's own, through the
 real queue on a database built by the migrations, with "now" pinned.
-
-Everything of the setting change is imported inside a test, so this file collects while it is
-unbuilt.
 """
 from __future__ import annotations
 

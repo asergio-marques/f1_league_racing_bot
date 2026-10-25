@@ -11,8 +11,6 @@ Round 3 is moved to 25 hours ago, so its clean-up is due.
 A test asks the clean-up of the queue as its timer does, as the bot (`ask_check_in_clean_up`),
 and runs the queue. A refused deletion stops the queue; a Discard names the message for deletion
 by hand (Q9, as a cancellation's does); a message already gone completes its deletion.
-
-Everything of the change is imported inside a test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 
@@ -25,9 +23,11 @@ import pytest
 
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
+    acknowledgement,
     attach_queue,
     change_rows,
     discard_job,
+    refuse_the_job,
     retry_job,
     run_queue,
     step_rows,
@@ -115,6 +115,29 @@ async def test_the_timer_asks_for_the_clean_up_and_the_queue_deletes_each_messag
     assert "ask_check_in_clean_up(" in inspect.getsource(bot_module.main)
 
 
+async def test_the_day_after_takes_down_the_call_of_a_round_whose_every_session_was_not_held(
+    tmp_path,
+):
+    """Pro's round 3 was raced 25 hours ago, its call, last notice and announcement standing, and
+    then ended cancelled because every session of it was entered as not held. Its clean-up is
+    asked as its timer asks it a day after the start: the queue deletes all three from Pro's
+    check-in channel, drops the call's record and marks the round's check-in over, as for any
+    round raced (attendance :75). A round called off is left alone, as
+    `test_rsvp_call_cleanup.py::test_the_cleanup_leaves_a_cancelled_round_alone` pins."""
+    league = await _league(tmp_path)
+    await league.write("UPDATE rounds SET status = 'CANCELLED', not_held = 1 WHERE id = ?",
+                       ROUND_3)
+
+    await _ask(league)
+    await run_queue(league.bot)
+
+    assert sorted(_deleted(league)) == sorted(CALL_MESSAGES)
+    assert await _call_rows(league) == []
+    assert await _cleared(league)
+    assert [row["state"] for row in await _clean_up_changes(league)] == ["DONE"]
+    assert await stopped_job(league.db_path) is None
+
+
 async def test_a_refused_delete_stops_the_queue_and_a_discard_names_it_for_deletion_by_hand(
     tmp_path,
 ):
@@ -176,6 +199,37 @@ async def test_the_round_is_marked_cleared_after_its_deletes(tmp_path):
 
     assert await stopped_job(league.db_path) is None
     assert all(mid not in league.channel(CHECK_IN).messages for mid in CALL_MESSAGES)
+    assert await _cleared(league)
+
+
+async def test_marking_the_check_in_over_cannot_be_discarded(tmp_path):
+    """Round 3's clean-up in Pro deletes its call (7001), last notice (7002) and announcement
+    (7003), then the save of its last job, which marks the round's check-in over, fails and stops
+    the queue at `mark_cleared`. A league admin's Discard on it is refused, saying the check-in of
+    round 3 in Pro would never be marked over, and the next restart would delete every attendance
+    answer of the round; the queue stays stopped there and the round is not marked. Once the fault
+    is lifted, a Retry marks it over."""
+    league = await _league(tmp_path)
+    await refuse_the_job(league.db_path, KIND, "mark_cleared", True)
+    await _ask(league)
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "mark_cleared"
+
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == (
+        "⛔ This job can't be discarded: without it the check-in of round 3 in **Pro** would never "
+        "be marked over, and the next restart would delete every attendance answer of the round. "
+        "Fix what stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path))["id"] == stopped["id"]
+    assert not await _cleared(league)
+
+    await refuse_the_job(league.db_path, KIND, "mark_cleared", False)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
     assert await _cleared(league)
 
 

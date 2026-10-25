@@ -329,7 +329,8 @@ def turn_steps(
             )
         ).fetchone()
         if already is not None:
-            # Two presses of one picker reach the queue; the first held it.
+            # A backstop: two pickers for one session reach the queue, and the first held
+            # it. A second press of one picker never gets here, the view refusing it.
             return StepResult(result={"saved": False})
         await db.execute(
             "INSERT OR REPLACE INTO amend_drafts (amend_id, session_type, rows_json, config_name) "
@@ -394,6 +395,7 @@ def turn_steps(
             list(payload["config_names"]), await server_config(),
             session=str(payload["session"]),
             ask=(CONFIG_KIND, dict(payload["draft"])),
+            text=str(payload["text"]),
         )
 
     async def describe_judge(_ctx: StepContext) -> str:

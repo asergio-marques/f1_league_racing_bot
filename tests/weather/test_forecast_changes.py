@@ -1038,6 +1038,27 @@ async def test_a_clean_up_no_longer_due_when_its_turn_comes_is_dropped(tmp_path,
     assert await stopped_job(league.db_path) is None
 
 
+async def test_a_clean_up_deletes_the_forecast_of_a_round_whose_every_session_was_not_held(
+    tmp_path,
+):
+    """Round 3's Phase 3 forecast (9303) stands, and the round then ended cancelled because every
+    session of it was entered as not held. Its clean-up, asked a day after the start, is not
+    dropped: the queue deletes the forecast and drops its record, as for any round raced
+    (weather :143). A round called off keeps its forecast, as the test above pins."""
+    league = await _league(tmp_path)
+    await posted_forecast(league, ROUND, 3, 9303)
+    await league.write("UPDATE rounds SET status = 'CANCELLED', not_held = 1 WHERE id = ?", ROUND)
+
+    await _clean_up(league)
+    await run_queue(league.bot)
+
+    assert await _states(league, CLEAN_UP_KIND) == ["DONE"]
+    assert ("delete", 9303) in _events(league)
+    assert 9303 not in league.channel(FORECAST).messages
+    assert await _forecasts(league) == {}
+    assert await stopped_job(league.db_path) is None
+
+
 async def test_a_clean_up_for_a_round_that_is_not_there_asks_nothing(tmp_path):
     """The clean-up's timer fires for a round no longer in the database: nothing is asked of the
     queue."""
@@ -1211,26 +1232,3 @@ async def test_a_delete_naming_no_division_for_a_round_that_is_gone_deletes_and_
     assert result.result == {"none": True}
     assert _events(league) == []
     assert await _forecasts(league) == {3: 9303}
-
-
-@pytest.mark.parametrize("result, where", [
-    pytest.param({"phase": 2, "channel_id": 605, "message_id": 9302, "guild_id": 1},
-                 "https://discord.com/channels/1/605/9302", id="server known"),
-    pytest.param({"phase": 2, "channel_id": 605, "message_id": 9302},
-                 "message 9302 in <#605>", id="server unknown"),
-])
-async def test_a_discarded_forecast_delete_names_the_forecast_to_delete_by_hand(result, where):
-    """A league admin discards the deletion of a Phase 2 forecast (9302 in channel 605) that
-    Discord refused: what is not done names the forecast channel, and says to delete the forecast
-    by hand, by its link where the server was known when it failed and by its message and channel
-    otherwise."""
-    from leaguebot.core.services.change_queue import StepView
-    from leaguebot.weather.services.forecast_changes import DELETE_FORECAST, forecast_failure
-
-    view = StepView(name=DELETE_FORECAST, payload={"phase": 2}, result=result, done=False)
-
-    assert forecast_failure(view) == (
-        "forecast channel",
-        "the Phase 2 forecast could not be deleted, and a league admin discarded it; delete it "
-        f"by hand ({where})",
-    )

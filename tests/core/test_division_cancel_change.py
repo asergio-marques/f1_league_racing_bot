@@ -12,10 +12,7 @@ of the division is refused at once, naming the job; so is one while its season's
 cancellation or abort is in hand (slice 5).
 
 Every test drives the real cog and the real queue through `tests/support/season_league.py`'s
-`ongoing_league`, with "now" pinned. The change type is unbuilt until the build, so each test that
-needs it is marked to fail until then: today the command cancels on the spot. The press's refusals,
-and a division cancelled with a round's submission open, are what today's command already does,
-and pass as they stand.
+`ongoing_league`, with "now" pinned.
 """
 from __future__ import annotations
 
@@ -80,9 +77,14 @@ ACK = (
 UNARM_DISCARDED = (
     "Nothing was cancelled: **Pro** stands as it was. Run `/division cancel` again."
 )
-SAVE_DISCARDED = (
-    "Nothing was cancelled, but the rounds of **Pro** no longer have their timed work: run "
-    "`/division cancel` again."
+CANNOT_DISCARD = (
+    "⛔ This job can't be discarded: without it the rounds of **Pro** would be left with no timed "
+    "work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
+)
+#: How a discarded calendar repost is named, in the reply and beneath the success line (W1).
+CALENDAR_DISCARDED = (
+    "**Pro** — calendar: the calendar could not be posted, and a league admin discarded it; run "
+    "`/division calendar-sync` while the season is still being raced"
 )
 CHECKIN_R3 = (
     "\n  check-in, Pro, Round 3 (Silverstone):"
@@ -529,6 +531,23 @@ async def test_every_round_of_the_division_loses_its_timed_work(tmp_path):
     assert (await _jobs(league))[0]["name"] == "unarm"
 
 
+async def test_the_unarming_removes_the_division_s_rounds_in_one_pass(tmp_path):
+    """Pro's four rounds lose their timed work in one call to the scheduler, handed every round
+    of the division, read before anything is removed; no round is removed on its own and the
+    season-end job is not asked for."""
+    league = await ongoing_league(tmp_path)
+    await _asked(league)
+
+    await _run_through(league, "unarm")
+
+    scheduler = league.bot.scheduler_service
+    scheduler.cancel_round.assert_not_called()
+    assert scheduler.cancel_rounds.call_count == 1
+    call = scheduler.cancel_rounds.call_args
+    assert sorted(call.args[0]) == [round_id(PRO, n) for n in range(1, 5)]
+    assert call.kwargs.get("season_end", False) is False
+
+
 async def test_the_wind_down_follows_as_a_change_of_its_own(tmp_path):
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE seasons SET stage = 'ONGOING_PLACEMENTS' WHERE id = ?", SEASON_ID)
@@ -544,24 +563,35 @@ async def test_the_wind_down_follows_as_a_change_of_its_own(tmp_path):
 
 
 async def test_a_discarded_save_cancels_nothing(tmp_path):
+    """The save stops on a fault after Pro's timed work came off. A league admin's Discard is
+    refused, saying Pro's rounds would be left with no timed work; the queue stays stopped at the
+    save, nothing is cancelled and nothing posted. Once the fault is lifted, Retry cancels Pro."""
     league = await ongoing_league(tmp_path, attendance=True)
     interaction = await _asked(league)
     with _failing("cancel_division_on"):
         await run_queue(league.bot)
         assert await _stopped_at(league) == "apply"
-        await discard_job(league.bot)
+        discarding = await discard_job(league.bot)
 
-    assert SAVE_DISCARDED in reply(interaction)
-    assert CANCELLED not in reply(interaction)
-    assert await _division(league) == "ACTIVE"
-    assert (await _statuses(league))[R3] == "NOT_RUN"
-    assert _success_lines(league) == []
-    assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
+        assert CANNOT_DISCARD in reply(discarding)
+        assert await _stopped_at(league) == "apply"
+        assert CANCELLED not in reply(interaction)
+        assert await _division(league) == "ACTIVE"
+        assert (await _statuses(league))[R3] == "NOT_RUN"
+        assert _success_lines(league) == []
+        assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
+
+    await retry_job(league.bot)
+
+    assert CANCELLED in reply(interaction)
+    assert await _division(league) == "CANCELLED"
+    assert (await _statuses(league))[R3] == "CANCELLED"
+    assert len(_success_lines(league)) == 1
 
 
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.scheduler_service.cancel_round = MagicMock(
+    league.bot.scheduler_service.cancel_rounds = MagicMock(
         side_effect=RuntimeError("the job store is locked")
     )
     interaction = await _asked(league)
@@ -578,6 +608,25 @@ async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     assert await _round_audits(league) == []
     assert _success_lines(league) == []
     assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
+
+
+async def test_a_discarded_calendar_repost_names_calendar_sync_while_the_season_is_raced(tmp_path):
+    """Discord refuses Pro's calendar repost after the division is cancelled, and a league admin
+    discards it. The reply and the success line name it with the fix that works: run
+    `/division calendar-sync`, which is refused once the season is no longer being raced."""
+    league = await ongoing_league(tmp_path)
+    league.channel(PRO_CH.calendar).send_fails = http_error(discord.Forbidden, status=403,
+                                                            text="Missing Access")
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "post_calendar"
+    await discard_job(league.bot)
+
+    assert CANCELLED in reply(interaction)
+    assert CALENDAR_DISCARDED in reply(interaction)
+    [line] = _success_lines(league)
+    assert f"\n  not notified: {CALENDAR_DISCARDED}" in line
 
 
 async def test_a_round_s_cancellation_queued_first_runs_first_and_the_division_s_then_calls_off_the_rest(
@@ -786,6 +835,121 @@ async def test_a_division_that_finishes_after_its_check_is_refused_by_the_save_o
     assert _refusal_lines(league)[0].startswith(REFUSAL)
     assert _success_lines(league) == []
     assert [row for row in await change_rows(league.db_path) if row["kind"] == WIND_DOWN] == []
+
+
+
+# ── A refused save arms the rounds again (#439 slice 8, F2) ─────────────────────────
+
+REARM_KIND = "season.round.rearm"
+REARMING_ROUNDS = (
+    "The timed work of its rounds still to be run, removed for the cancellation, is being armed "
+    "again as it stood: round 3 in **Pro**, round 4 in **Pro**."
+)
+
+
+async def _rearmings(league: Any) -> list[dict[str, Any]]:
+    """Every re-arming of a round's timed work asked of the queue, in the order asked."""
+    return [row for row in await change_rows(league.db_path) if row["kind"] == REARM_KIND]
+
+
+async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_again_only_the_rounds_still_to_be_run(
+    tmp_path,
+):
+    """Weather and attendance on. Pro's round 1 is final and round 2 awaits its report verdicts,
+    both raced; round 3 awaits its results, its submission open with nothing accepted; round 4,
+    still to be run, was due ten minutes ago. `/division cancel Pro` passes its check, but removing
+    the timed work fails and stops the queue; meanwhile round 3's submission accepts a session.
+    Retried, the removal goes through and the save refuses, naming round 3. Rounds 3 and 4 are
+    armed again, each by a change of its own, the reply naming the two; round 4, its moment past,
+    has its results submission run at once. Rounds 1 and 2, already raced, have their next-day
+    clean-ups armed again alone."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True)
+    await _awaiting_results(league, R3)
+    await open_submission(league, R3)
+    await league.write(
+        "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+        (league.clock.now - timedelta(minutes=10)).replace(tzinfo=None).isoformat(), R4,
+    )
+    interaction = await _asked(league)
+    scheduler = league.bot.scheduler_service
+    unarming = (scheduler.cancel_round, scheduler.cancel_rounds)
+    scheduler.cancel_round = MagicMock(side_effect=RuntimeError("the job store is locked"))
+    scheduler.cancel_rounds = MagicMock(side_effect=RuntimeError("the job store is locked"))
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "unarm"
+    await accept_session(league, R3)
+    before = await _statuses(league)
+
+    scheduler.cancel_round, scheduler.cancel_rounds = unarming
+    await retry_job(league.bot)
+
+    r1, r2 = round_id(PRO, 1), round_id(PRO, 2)
+    assert _accepted(3) in reply(interaction)
+    assert REARMING_ROUNDS in reply(interaction)
+    assert CANCELLED not in reply(interaction)
+    assert await _division(league) == "ACTIVE"
+    assert await _statuses(league) == before
+    [refusal] = _refusal_lines(league)
+    assert "\n  timed work being armed again: round 3 in Pro, round 4 in Pro" in refusal
+    rearmings = await _rearmings(league)
+    assert [row["state"] for row in rearmings] == ["DONE"] * 4
+    payloads = {json.loads(row["payload"])["round_id"]: json.loads(row["payload"])
+                for row in rearmings}
+    assert sorted(payloads) == sorted([r1, r2, R3, R4])
+    assert sorted(rid for rid, payload in payloads.items()
+                  if payload.get("cleanups_only")) == [r1, r2]
+    assert ("cleanups", [r1]) in league.armed
+    assert ("cleanups", [r2]) in league.armed
+    armed_whole = {rid for which, ids in league.armed if which != "cleanups" for rid in ids}
+    assert armed_whole == {R3, R4}
+    assert not {rid for which, ids in league.armed if which == "cleanups" for rid in ids} & {
+        R3, R4}
+    opened = scheduler.run_result_submission_now
+    assert [call.args[0].id for call in opened.call_args_list] == [R4]
+
+
+async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_the_clean_ups_of_a_round_that_ended_cancelled_as_not_held(
+    tmp_path,
+):
+    """Pro's round 1 is final; round 2 ended cancelled because every session was entered as not
+    held, its next-day clean-ups armed; round 3 was called off; round 4 awaits its results, its
+    submission open with nothing accepted. `/division cancel Pro` passes its check and its
+    unarming removes the timed work of every round; a session is then accepted on round 4's
+    submission, so the save refuses. Round 2 has one clean-ups-only re-arming asked, which runs
+    and arms its next-day clean-ups again; round 4 is armed in full; round 3, called off, is left
+    alone; and the reply names round 4 alone as armed again."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True)
+    r1, r2 = round_id(PRO, 1), round_id(PRO, 2)
+    await league.write("UPDATE rounds SET status = 'CANCELLED', not_held = 1 WHERE id = ?", r2)
+    await league.write("UPDATE rounds SET status = 'CANCELLED', not_held = 0 WHERE id = ?", R3)
+    await _awaiting_results(league, R4)
+    await open_submission(league, R4)
+    interaction = await _asked(league)
+    await _run_through(league, "unarm")
+    assert {r2, R4} <= set(league.unarmed)
+    await accept_session(league, R4)
+    before = await _statuses(league)
+
+    await run_queue(league.bot)
+
+    assert _accepted(4) in reply(interaction)
+    assert CANCELLED not in reply(interaction)
+    assert ("The timed work of its rounds still to be run, removed for the cancellation, is "
+            "being armed again as it stood: round 4 in **Pro**.") in reply(interaction)
+    assert await _division(league) == "ACTIVE"
+    assert await _statuses(league) == before
+    [refusal] = _refusal_lines(league)
+    assert "\n  timed work being armed again: round 4 in Pro" in refusal
+    rearmings = await _rearmings(league)
+    assert [row["state"] for row in rearmings] == ["DONE"] * len(rearmings)
+    payloads = [json.loads(row["payload"]) for row in rearmings]
+    assert sorted(payload["round_id"] for payload in payloads) == [r1, r2, R4]
+    [round_2] = [payload for payload in payloads if payload["round_id"] == r2]
+    assert round_2.get("cleanups_only") is True
+    assert ("cleanups", [r2]) in league.armed
+    armed_whole = {rid for which, ids in league.armed if which != "cleanups" for rid in ids}
+    assert armed_whole == {R4}
+    assert R3 not in {rid for _which, ids in league.armed for rid in ids}
 
 
 # ── An open submission (#439 slice 4b, amendment A, A2) ─────────────────────────────

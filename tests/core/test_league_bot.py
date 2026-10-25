@@ -21,7 +21,6 @@ from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "leaguebot"
 
-
 def _attached_in_bot_py() -> set[str]:
     """Every `bot.<name> = …` in `__main__.py`."""
     tree = ast.parse((SRC / "__main__.py").read_text(encoding="utf-8"))
@@ -191,13 +190,25 @@ def test_the_settings_changes_are_registered():
     assert len(SETTING_KINDS) == 24
 
 
-def test_only_the_armings_and_a_submission_s_channel_are_undiscardable():
-    """Over every change type the builder registers, the jobs marked as never to be discarded
-    are exactly three: the arming of an approved season's timed work ("season.approve", its
-    "arm"), the arming of an amended round's ("season.round.amend", its "arm"), and the creation
-    of a round's results submission channel ("results.submission.open", its "create_channel").
-    Without any of them a round would never run or never have its results submitted; every other
-    job a league admin may discard (#439, slice 4b, amendment A; slice 6b, decision 12)."""
+def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
+    """Over every change type the builder registers, the jobs marked as never to be discarded are
+    exactly those whose loss could stop a season from being started or completed, or would leave
+    the league no way to put it right (#439, slice 8; owner, 2026-10-23): the arming of an
+    approved season's timed work and of an amended round's, the creation of a round's results
+    submission channel, the save of a round's, a division's and a season's cancellation once
+    their timed work is removed, and the letting go of a season's setup held in memory once it is
+    approved or aborted, the forgetting of a review taken down, and the start of a round's
+    results submission and the clearing of one a restart cut short, and the last job of a penalty
+    review's opening and of its prompt's posting, both jobs of an appeals review's reopening, and
+    the last job of a reports approval and of an appeals approval, the marking of a round's
+    resubmission, and the placing of a round's reserves and the marking of its check-in over,
+    an amended round's included, and the posting of a driver's review panel, on submission and on
+    a correction's lapse, and the lapse itself, the arming of a correction's five minutes, the
+    choice of what to correct, the arming of a signup's 24 hours on each answer and on a
+    correction's choice, the commit of a signup, and the ending of one, and the judging and the
+    arming of a round's timed work again after a refused cancellation, its reserve placement and
+    the marking of its check-in over included, and the ending of a round whose every session was
+    entered as not held. Every other job a league admin may discard."""
     from leaguebot.__main__ import register_change_types
 
     bot = MagicMock()
@@ -210,7 +221,40 @@ def test_only_the_armings_and_a_submission_s_channel_are_undiscardable():
         if getattr(step, "undiscardable", None) is not None
     )
     assert marked == [
+        ("attendance.check_in.clean_up", "mark_cleared"),
+        ("attendance.check_in.deadline", "distribute"),
+        ("results.appeals.approve", "close"),
+        ("results.appeals.open", "close"),
+        ("results.appeals.open", "open"),
+        ("results.reports.approve", "close"),
+        ("results.resubmission.start", "mark"),
+        ("results.review.open", "close"),
+        ("results.review.prompt", "close"),
+        ("results.submission.all_cancelled", "end_round"),
         ("results.submission.open", "create_channel"),
+        ("results.submission.open", "start_round"),
+        ("results.submission.restart", "clear"),
+        ("season.abort", "forget_setup"),
         ("season.approve", "arm"),
+        ("season.approve", "forget_setup"),
+        ("season.cancel", "apply"),
+        ("season.division.cancel", "apply"),
+        ("season.review.take_down", "forget"),
         ("season.round.amend", "arm"),
+        ("season.round.amend", "distribute"),
+        ("season.round.amend", "mark_cleared"),
+        ("season.round.cancel", "apply"),
+        ("season.round.rearm", "arm"),
+        ("season.round.rearm", "distribute"),
+        ("season.round.rearm", "judge"),
+        ("season.round.rearm", "mark_cleared"),
+        ("signup.answer", "arm_inactivity"),
+        ("signup.choices", "arm_lapse"),
+        ("signup.correction.choose", "arm_inactivity"),
+        ("signup.correction.choose", "choose"),
+        ("signup.correction.lapse", "lapse"),
+        ("signup.correction.lapse", "post_panel"),
+        ("signup.end", "end"),
+        ("signup.panel", "post_panel"),
+        ("signup.submit", "commit"),
     ]

@@ -89,6 +89,8 @@ DELETE_KIND = "signup.channel.delete"
 #: The kind of the change that ends a driver's signup, and the reason a day without an answer gives.
 END = "signup.end"
 EXPIRED = "expired"
+#: The reason a signup ends when its signup channel is gone where its review panel was due.
+CHANNEL_GONE = "channel_gone"
 #: What a signup channel is told when its driver's 24 hours run out.
 EXPIRED_NOTICE = (
     "⏰ Your signup session has expired due to inactivity. "
@@ -98,7 +100,7 @@ EXPIRED_NOTICE = (
 __all__ = [
     "ARM_DELETION", "CLOSED_NOTICE", "CLOSE_CAUSES", "CLOSE_SIGNUP", "DELETE_BUTTON", "DELETE_REASON",
     "DELETE_TIMER",
-    "DELETE_KIND", "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND",
+    "CHANNEL_GONE", "DELETE_KIND", "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND",
     "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "ask_channel_delete", "ask_expiry", "closing_change",
     "closing_steps", "reason_delete_change", "take_reason_down", "window_close_jobs", "window_close_steps",
 ]

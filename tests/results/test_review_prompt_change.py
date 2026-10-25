@@ -9,8 +9,7 @@ review again, as the prompt's discard did before. A review put back by the start
 work: it runs whole on the league lane, posting its prompt itself.
 
 The league, its channels and its queue are `test_review_open_change.py`'s, round 3 of Pro with its
-submission channel 702. Everything of the change types is reached through the queue, so this file
-collects while they are unbuilt.
+submission channel 702.
 """
 from __future__ import annotations
 
@@ -20,15 +19,19 @@ import pytest
 
 from leaguebot.core.models.round import RoundStatus
 from tests.results.test_review_open_change import (
+    DIVISION_ID,
     KIND,
+    ROUND_ID,
     SUBMISSION_CHANNEL,
     _channel_row,
     _league,
     _open,
     _prompts,
     _recover,
+    _refuse_the_job,
 )
 from tests.support.change_queue import (
+    acknowledgement,
     change_rows,
     discard_job,
     retry_job,
@@ -136,3 +139,60 @@ async def test_a_review_put_back_at_a_restart_posts_its_prompt_on_the_league_lan
     [prompt] = _prompts(league)
     assert prompt != PROMPT
     assert PROMPT not in league.channel(SUBMISSION_CHANNEL).messages
+
+
+async def _put_up_the_appeals_prompt(league: Any) -> None:
+    """Ask round 3's lane for the appeals stage's prompt, as the reports approval asks it in its
+    last save, then run the queue."""
+    from leaguebot.core.models.change import ChangeOrigin
+
+    await league.bot.change_queue.ask(
+        PROMPT_KIND,
+        {"stage": "appeals", "round_id": ROUND_ID, "division_id": DIVISION_ID,
+         "channel_id": SUBMISSION_CHANNEL, "takedowns": [], "round_number": 3,
+         "division_name": "Pro"},
+        what="the appeals review prompt, with the penalty review taken down",
+        origin=ChangeOrigin.BOT,
+    )
+    await run_queue(league.bot)
+
+
+@pytest.mark.parametrize("stage, review", [
+    pytest.param("review", "penalty review", id="review"),
+    pytest.param("appeals", "appeals review", id="appeals"),
+])
+async def test_the_prompt_s_closing_job_cannot_be_discarded(tmp_path, stage, review):
+    """Round 3's prompt is put up on its lane: for the penalty review after Alex's last paste, or
+    for the appeals review once its reports were approved. The prompt is posted, then the save of
+    the change's last job fails, stopping round 3's lane at `close`. A league admin's Discard on it
+    is refused, saying round 3 in Pro could be left in its penalty (or appeals) review with no
+    prompt, never final, until the bot restarts; the lane stays stopped there. Once the fault is
+    lifted, a Retry finishes the change and nothing is left stopped."""
+    if stage == "appeals":
+        league = await _league(tmp_path, name="appeals_close_undiscardable", in_review=True,
+                               results_posted=True, prompt=PROMPT,
+                               round_status=RoundStatus.AWAITING_APPEAL_VERDICTS.value)
+        await _refuse_the_job(league.db_path, PROMPT_KIND, True)
+        await _put_up_the_appeals_prompt(league)
+    else:
+        league = await _league(tmp_path, name="prompt_close_undiscardable")
+        await _refuse_the_job(league.db_path, PROMPT_KIND, True)
+        await _open(league)
+    stopped = await stopped_job(league.db_path, ROUND_LANE)
+    assert stopped is not None and stopped["name"] == "close"
+
+    refused = await discard_job(league.bot, lane=ROUND_LANE)
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it round 3 in **Pro** could be left in its "
+        f"{review} with no prompt, never final, until the bot restarts. Fix what stopped it and "
+        "press **Retry**."
+    )
+    assert (await stopped_job(league.db_path, ROUND_LANE))["id"] == stopped["id"]
+
+    await _refuse_the_job(league.db_path, PROMPT_KIND, False)
+    await retry_job(league.bot, lane=ROUND_LANE)
+
+    assert await stopped_job(league.db_path) is None
+    [prompt_change] = await changes_of(league.db_path, PROMPT_KIND)
+    assert prompt_change["state"] == "DONE"

@@ -310,8 +310,8 @@ def _portrait_case(method: str, command: str, column: str, label: str, enabled: 
 
 #: Portraits obtained from Discord, updated before each drawing and daily at 03:00.
 BOTH_UPDATES = {"use_pfp": 1, "pfp_prerender": 1, "pfp_daily": 1}
-#: The two templates of the sixteen the tests set, chosen by `sorted()`.
-TEMPLATES = (sorted(TEMPLATE_COLUMNS)[0], sorted(TEMPLATE_COLUMNS)[-1])
+#: The sixteen templates, every one set by the tests, in `sorted()` order.
+TEMPLATES = tuple(sorted(TEMPLATE_COLUMNS))
 TEMPLATE_DIRECTORY = "resources/league/templates"
 
 CASES: dict[str, Case] = {
@@ -517,9 +517,9 @@ async def test_the_template_directory_saves_with_its_audit_entry_and_line(tmp_pa
 
 @pytest.mark.parametrize("column", TEMPLATES)
 async def test_a_template_saves_with_its_audit_entry_and_line(tmp_path, column):
-    """The first and the last of the sixteen template commands by name, the template standing at
-    `old.svg`, set to the file the bot ships: once run, the file is stored, with one
-    `IMAGE_CONFIG_SET` entry from `old.svg` to it and its Success line."""
+    """Each of the sixteen template commands by name, the template standing at `old.svg`, set
+    to the file the bot ships: once run, the file is stored, with one `IMAGE_CONFIG_SET` entry
+    from `old.svg` to it and its Success line."""
     await _saves_with_record(tmp_path, CASES[f"template-{column}"])
 
 

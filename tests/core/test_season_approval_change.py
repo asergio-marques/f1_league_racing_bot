@@ -10,8 +10,7 @@ hand, a second is refused without naming its job. Where the outcome can no longe
 the review's channel is told, a refusal as the approval comes up to run included.
 
 Every test drives the real cog and the real queue through `tests/support/season_league.py`, with
-"now" pinned. The change type is unbuilt until the build, so each is marked to fail until then:
-today the press approves on the spot, inside the button.
+"now" pinned.
 """
 from __future__ import annotations
 
@@ -277,6 +276,63 @@ async def test_a_stop_after_the_season_is_saved_finishes_its_roles_lineups_calen
     assert _armed(league) == {"results": sorted(_all_rounds()),
                               "attendance": sorted(_all_rounds())}
     assert len(_confirmed_lines(league)) == 1
+
+
+BATCH_NOTICE = "🎨 Posting lineups, calendars and opening classifications — one moment."
+
+
+def _posted_once(league: Any, cid: int) -> None:
+    """Channel *cid* was sent something, and nothing it was sent was sent twice."""
+    texts = league.texts(cid)
+    assert texts and len(texts) == len(set(texts)), (cid, texts)
+
+
+async def test_a_stop_after_the_season_is_saved_posts_the_opening_standings_and_the_batch_notice_once_on_restart(
+    tmp_path, monkeypatch,
+):
+    """Results and attendance on. Season 3's approval stops just after its save, before any
+    post, and the bot restarts. Once the queue runs, the "one moment" notice is posted once in
+    the review's channel and taken down, and Pro's and Am's opening standings and opening
+    attendance sheets are each posted, none of them twice."""
+    league = await _league_for(tmp_path, monkeypatch, results=True, attendance=True)
+    await _pressed(league)
+    await _run_through(league, "apply")
+    assert [job["name"] for job in await _jobs(league) if job["done_at"]] == ["apply"]
+
+    await league.restart()
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert league.texts(REVIEW_CHANNEL).count(BATCH_NOTICE) == 1
+    assert not any(str(message.content) == BATCH_NOTICE
+                   for message in league.review_channel.messages.values())
+    for chans in (PRO_CH, AM_CH):
+        _posted_once(league, chans.standings)
+        _posted_once(league, chans.attendance)
+
+
+async def test_a_restart_between_the_batch_notice_and_its_deletion_deletes_it_and_posts_nothing_twice(
+    tmp_path, monkeypatch,
+):
+    """Results and attendance on. Season 3's approval stops just after its "one moment" notice
+    is posted in the review's channel, and the bot restarts. Once the queue runs, that notice is
+    not posted again and is deleted, and each division's lineup, calendar, opening standings and
+    opening sheet are posted, none of them twice."""
+    league = await _league_for(tmp_path, monkeypatch, results=True, attendance=True)
+    await _pressed(league)
+    await _run_through(league, "post_batch_notice")
+    assert league.texts(REVIEW_CHANNEL).count(BATCH_NOTICE) == 1
+
+    await league.restart()
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert league.texts(REVIEW_CHANNEL).count(BATCH_NOTICE) == 1
+    assert not any(str(message.content) == BATCH_NOTICE
+                   for message in league.review_channel.messages.values())
+    for chans in (PRO_CH, AM_CH):
+        for cid in (chans.lineup, chans.calendar, chans.standings, chans.attendance):
+            _posted_once(league, cid)
 
 
 async def test_a_restart_while_the_approval_is_in_hand_does_not_say_nothing_was_confirmed(
@@ -713,6 +769,24 @@ async def test_a_test_driver_is_granted_nothing(tmp_path, monkeypatch):
     assert [job["name"] for job in await _jobs(league)].count("grant_roles") == 3
 
 
+async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path, monkeypatch):
+    """McLaren has no team role configured: Charles, seated there in Am, is granted Am's role
+    alone, and the queue runs on."""
+    from tests.support.season_league import MCLAREN
+
+    league = await _league_for(tmp_path, monkeypatch)
+    await league.write(
+        "DELETE FROM team_role_configs WHERE team_name = "
+        "(SELECT name FROM team_instances WHERE id = ?)", MCLAREN,
+    )
+    await _pressed(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert league.granted[CHARLES] == [AM_ROLE]
+
+
 @pytest.mark.parametrize(
     ("modules", "armed"),
     [
@@ -852,6 +926,40 @@ async def test_the_season_s_arming_cannot_be_discarded_and_once_retried_arms_eve
     assert await stopped_job(league.db_path) is None
     assert APPROVED in reply(press)
     assert "timed work was not armed" not in reply(press)
+
+
+#: The refusal of a Discard on letting go of the setup held in memory.
+CANNOT_DISCARD_FORGET = (
+    "⛔ This job can't be discarded: without it the bot would go on holding season 3's setup, and "
+    "`/round amend` would refuse its rounds until the bot restarts. Fix what stopped it and press "
+    "**Retry**."
+)
+
+
+async def test_letting_go_of_the_setup_cannot_be_discarded(tmp_path, monkeypatch):
+    """Letting go of the setup the bot holds in memory fails once season 3 is saved and stops the
+    queue. A league admin's Discard on it is refused, saying the bot would go on holding season
+    3's setup and `/round amend` would refuse its rounds until it restarts; the queue stays
+    stopped there. Once the fault is lifted, Retry lets the setup go and the approval goes on."""
+    league = await _league_for(tmp_path, monkeypatch, results=True)
+    press = await _pressed(league)
+    await _fail_forget(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "forget_setup"
+
+    discarding = await discard_job(league.bot)
+
+    assert CANNOT_DISCARD_FORGET in _said_to(discarding)
+    assert await _stopped_at(league) == "forget_setup"
+    assert league.cog._get_pending() is not None
+
+    del league.cog.clear_pending
+    await retry_job(league.bot)
+
+    assert league.cog._get_pending() is None
+    assert await stopped_job(league.db_path) is None
+    assert APPROVED in reply(press)
+    assert "could not be let go of" not in reply(press)
 
 
 async def test_the_setup_held_in_memory_is_let_go_of_once_the_season_is_saved(
@@ -1455,11 +1563,10 @@ async def _fail_sheet(league: Any) -> None:
     _refused(league, PRO_CH.attendance)
 
 
-#: Each job after the save, made to fail; the line naming it once discarded. The arming is not
-#: among them: it cannot be discarded (#439, slice 4b, amendment A).
+#: Each job after the save, made to fail; the line naming it once discarded. Neither the arming
+#: nor the letting go of the setup is among them: neither can be discarded (#439, slice 4b,
+#: amendment A; slice 8).
 _DISCARDED = {
-    "forget_setup": (_fail_forget, "The setup the bot held in memory could not be let go of: "
-                     "`/round amend` may refuse this season until the bot restarts."),
     "grant_roles": (_fail_grant, f"<@{LEWIS}> — their roles could not be granted. Give them "
                     "their division's and team's roles by hand."),
     "post_batch_notice": (_fail_the_notice_post, "The notice that the season's posts were being "
@@ -1954,9 +2061,8 @@ async def test_a_retried_save_refused_after_the_reply_expired_tells_the_review_s
 #
 # The owner's answer r1-2 ("Tell the review's channel"): every outcome of a season approval that
 # cannot reach the member is told in the review's channel, a Discard of the approval stopped at
-# its own check included. The hook that asks it is unbuilt and named here by analogy with the
-# refusal hook of plan 2.1b (`ChangeType.on_refused`): `ChangeType.on_discarded`. The channel is
-# told `CHANNEL_NOT_APPROVED`, plan 2.1's "Not approved (`apply` discarded…)" notice: a Discard at
+# its own check included. The hook that asks it is `ChangeType.on_discarded`, beside the refusal
+# hook `ChangeType.on_refused`. The channel is told `CHANNEL_NOT_APPROVED`, plan 2.1's "Not approved (`apply` discarded…)" notice: a Discard at
 # the check leaves what a discarded `apply` leaves, nothing approved and no refusal to quote, and
 # the log channel has the Discard's line for why. 2.1b's `LATE_REFUSAL_HEAD` frames a refusal's own
 # reply, which a Discard does not have.

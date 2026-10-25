@@ -11,8 +11,7 @@ a message already gone by its delete completes it, uncounted. The command runs o
 even in a channel the bot keeps for a conversation (decision 30).
 
 The league: `league_double`'s, the league admin Admin (4242) running the command in channel 700,
-which holds, newest first, messages of the bot and of a driver. Everything of the change is
-imported inside a test, so this file collects while it is unbuilt.
+which holds, newest first, messages of the bot and of a driver.
 """
 from __future__ import annotations
 

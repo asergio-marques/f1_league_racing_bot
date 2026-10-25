@@ -157,7 +157,17 @@ async def _flags(db_path: str) -> tuple[int, int, int]:
 
 
 async def test_the_new_results_replace_the_old_in_one_go(tmp_path):
+    """The round's Feature Race was posted as message 8800. Its results are replaced by a
+    resubmission's qualifying and race: both new sessions stand, scored, and the new race carries
+    message 8800 as the table it replaces, so that table comes down once the new one stands; the
+    new qualifying, which had no table, carries none (results :412; owner Q-E6)."""
     db_path = await _make_db(tmp_path, name="replace_swap")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE session_results SET results_message_id = 8800, results_message_ids = '[8800]' "
+            "WHERE id = 1"
+        )
+        await db.commit()
 
     await replace_round_results(db_path, ROUND_ID, DIVISION_ID, SEASON_ID, _collected())
 
@@ -166,6 +176,12 @@ async def test_the_new_results_replace_the_old_in_one_go(tmp_path):
         ("FEATURE_RACE", "ACTIVE"),
     ]
     assert await _race_points(db_path) == {NEW_A: 25, NEW_B: 18}
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT session_type, results_message_id, results_message_ids FROM session_results"
+        )
+        carried = {r[0]: (r[1], r[2]) for r in await cursor.fetchall()}
+    assert carried == {"FEATURE_QUALIFYING": (None, None), "FEATURE_RACE": (8800, "[8800]")}
 
 
 async def test_the_channel_stops_resubmitting_and_the_new_results_await_posting(tmp_path):

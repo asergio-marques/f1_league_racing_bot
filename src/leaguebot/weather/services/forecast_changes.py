@@ -94,7 +94,7 @@ def _occasion(phase: int) -> str:
 async def _round_row(db: aiosqlite.Connection, round_id: int) -> aiosqlite.Row | None:
     cursor = await db.execute(
         "SELECT r.id, r.round_number, r.format, r.scheduled_at, r.phase1_done, r.phase2_done, "
-        "       r.phase3_done, r.division_id, r.status AS round_status, "
+        "       r.phase3_done, r.division_id, r.status AS round_status, r.not_held, "
         "       d.status AS division_status, d.name AS division_name, "
         "       d.forecast_channel_id, d.mention_role_id "
         "FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
@@ -519,7 +519,10 @@ def _clean_up_doing(payload: dict[str, Any]) -> str:
 def forecast_clean_up_change(*, now: Callable[[], datetime]) -> ChangeType:
     """`weather.forecast.clean_up`: the bot's change that deletes a round's forecast a day after its
     race, whichever of Phases 1 to 3 still stands (a Phase 3 never posted leaves Phase 2 standing),
-    one `delete_forecast` job for each, planned by `plan_forecast_deletes`.
+    one `delete_forecast` job for each, planned by `plan_forecast_deletes`. A round called off, or
+    of a division called off, is owed none; a round that ended cancelled because every session was
+    entered as not held (`rounds.not_held`) is owed it as any round is, its forecasts having
+    stood until then.
 
     Not repeatable: a second request for a round still waiting is dropped by the queue's own
     rule, and one after the forecast is deleted finds nothing recorded and is not due.
@@ -535,8 +538,9 @@ def forecast_clean_up_change(*, now: Callable[[], datetime]) -> ChangeType:
             ])
         if row is None:
             return Verdict.not_due("the round is gone")
-        if row["round_status"] == RoundStatus.CANCELLED.value or row[
-                "division_status"] == "CANCELLED":
+        if (
+            row["round_status"] == RoundStatus.CANCELLED.value and not row["not_held"]
+        ) or row["division_status"] == "CANCELLED":
             return Verdict.not_due("the round or its division is cancelled")
         if not weather_on:
             return Verdict.not_due("the weather module is off")
@@ -673,10 +677,12 @@ def forecast_failure(view: StepView) -> tuple[str, str] | None:
     """What a league admin's discard of a forecast job leaves, as a core outcome names it: the
     thing and what to do, or None for a job that is not a forecast's.
 
-    Handed to core's amendment and season end through their hooks, so that each names a discarded
-    weather job without importing weather. A discarded draw is made when the bot next starts, while
-    its round is still to be run; a discarded post leaves the draw standing in the log channel and
-    nothing to post it again; a discarded deletion leaves the forecast to be deleted by hand.
+    Handed to core's amendment through its hooks, so that it names a discarded weather job without
+    importing weather. A discarded draw is made when the bot next starts, while its round is still
+    to be run; a discarded post leaves the draw standing in the log channel and nothing to post it
+    again; a discarded deletion of a part of any forecast posted in parts, which a `DELETE_FORECAST`
+    plans for each part before the last, is left to delete by hand, by its link. A discarded `DELETE_FORECAST` is not named here: the amendment names it itself, as a
+    forecast to delete by hand, before it asks this hook.
     """
     result = view.result or {}
     phase = view.payload.get("phase", result.get("phase"))
@@ -687,15 +693,6 @@ def forecast_failure(view: StepView) -> tuple[str, str] | None:
     if view.name == POST_FORECAST:
         return (occasion, "drawn but not posted, and a league admin discarded it; the draw "
                 "stands in the log channel, and nothing posts it again")
-    if view.name == DELETE_FORECAST:
-        message = result.get("message_id", view.payload.get("message_id"))
-        if "guild_id" in result and message is not None:
-            where = (f"https://discord.com/channels/{result['guild_id']}/"
-                     f"{result['channel_id']}/{message}")
-        else:
-            where = f"message {message} in <#{result.get('channel_id')}>"
-        return ("forecast channel", f"the Phase {phase} forecast could not be deleted, and a "
-                f"league admin discarded it; delete it by hand ({where})")
     if view.name == standing_posts.DELETE_REPLACED and "forecast" in str(
         view.payload.get("what", "")
     ):

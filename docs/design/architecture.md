@@ -165,14 +165,19 @@ after a round, for attendance), it does so through a hook too.
 
 **Results reaches attendance through one hook, handed in by the builder.** What attendance does
 after a round's review (recording the round's attendance and its pardons, recalculating after an
-amendment, posting the sheet, finding the drivers over a threshold, applying and announcing one
-driver's sanction, redrawing a lineup) is a protocol results declares, `AttendanceAfterReview`, and
-attendance implements it on its own functions. The builder makes it once, attaches it to the bot
-and hands it to the review's change types, so results imports nothing of attendance and the
-`.importlinter` exception for it is gone. Each method checks attendance's switch itself, on the
-connection it is handed where it writes, and does nothing while the module is off; a change type
-asks the hook without asking whether attendance is on. The placement service, which a sanction
-moves seats through, is handed to the hook by the builder and not looked up on the bot.
+amendment, posting the sheet, finding the drivers over a threshold, saying which pardons an
+amendment's review may offer, checking, saving, changing the roles of and announcing one driver's
+sanction, redrawing a lineup) is a protocol results declares, `AttendanceAfterReview`, and
+attendance implements it on its own functions. The builder makes it once, attaches it to the bot and
+hands it to the review's change types, so results imports nothing of attendance and the
+`.importlinter` exception for it is gone. Of its methods, `enabled` reports attendance's switch,
+`sync_hint` only words the hint naming the "attendance sync" command and reads no switch, and
+`change_sanction_roles` acts whatever the switch says, as the attendance specification's
+"Sanctions that do not apply" requires. Every other method checks the switch itself, on the
+connection it is handed where it writes, and does nothing while the module is off. A change type
+never reads the switch itself; one whose job serves attendance alone asks `enabled`. The placement
+service, which a sanction moves seats through, is handed to the hook by the builder and not looked
+up on the bot.
 
 *Rejected:* results calling attendance's functions directly and checking the switch itself, which
 is the dependency the table forbids and leaves each caller to remember the switch.
@@ -284,14 +289,15 @@ audit record, which is how some settings came to have none.
   waiting in its submission, are the core specification's ("How a change is carried out"). A change
   that ends a conversation marks it ended in its own save and does nothing else to the lane. Each
   change of that lane is then found no longer due when its turn comes (`conversation_open`), and
-  dropped with a line saying so; a closing change asked back by the league needs only its channel
-  to stand. A cancellation marks the submission closed and leaves its row, so `conversation_open`
-  still holds and each waiting paste reaches its turn, where its judging job refuses it; the
-  conversation ends when its channel's deletion removes the row. A job of that lane already
-  stopped stays stopped, with its notice, and the bot makes no try of its own on it (`_choose`
-  clears its `next_try_at`): a Retry runs a try that finds it no longer due and clears the stop, a
-  Discard drops it. A refused deletion of the conversation's channel stops the lane that asked: a
-  conversation ending itself stops its own, a league change ending it stops the league.
+  dropped with a line saying so; a closing change asked back by the league needs only its channel to
+  stand. A cancellation marks the submission closed and leaves its row, so `conversation_open` still
+  holds and each waiting paste reaches its turn, where its judging job refuses it; the conversation
+  ends when its channel's deletion removes the row. A job of that lane already stopped stays
+  stopped, with its notice, and the bot makes no try of its own on it (`_choose` clears its
+  `next_try_at`): a Retry runs a try that finds it no longer due and clears the stop, a Discard
+  drops it (unless the job cannot be discarded). A refused deletion of the conversation's channel
+  stops the lane that asked: a conversation ending itself stops its own, a league change ending it
+  stops the league.
 - **The same change is not queued twice in a row.** A change is named by what it does, what it acts
   on and the values it sets (approving a round's appeals, reposting a division's calendar, setting a
   division's channel to a given one), and that name is its key. A request's key is compared with the
@@ -388,32 +394,35 @@ audit record, which is how some settings came to have none.
 
   A job is cleared in one of three ways, which the core specification's "How a change is carried
   out" holds, with the schedule, who may press each button and the lines written; what follows is
-  the mechanism. *The bot's own tries:* it runs the job again, by running
-  the owning module's post again, as text where it would have been a picture (Constitution XIV,
-  rule 8), 1, 5, 10, 15, 30 and 60 minutes after the job first failed, so that the last falls at
-  the hour; a try that fails writes no line of its own but the last, which says the bot has
-  stopped trying on its own. *Retry,* a button a league manager or admin presses at any time but while that job is
-  being tried, and the only way on after the hour: the job is made due at once. *Discard,* a button a league admin
-  presses, drops that one job, which the log records with what was not done, and the request's
-  later jobs run on, each checking again whether it is still due. A change that had not yet begun,
-  because its check failed, is dropped whole. Where a discarded job leaves a review without what
-  it stands on, the change's closing job asks, as a bot's request in a save of its own, for the
-  review to open again (core specification, "How a change is carried out"; the results
-  specification says which jobs).
+  the mechanism. *The bot's own tries:* it runs the job again, by running the owning module's post
+  again, as text where it would have been a picture (Constitution XIV, rule 8), 1, 5, 10, 15, 30 and
+  60 minutes after the job first failed, so that the last falls at the hour; a try that fails writes
+  no line of its own but the last, which says the bot has stopped trying on its own. *Retry,* a
+  button a league manager or admin presses at any time but while that job is being tried, and the
+  only way on after the hour: the job is made due at once. *Discard,* a button a league admin
+  presses, drops that one job, which the log records with what was not done, and the request's later
+  jobs run on, each checking again whether it is still due. A change that had not yet begun, because
+  its check failed, is dropped whole, unless its first job cannot be discarded. Where a discarded
+  job leaves a review without what it stands on, the change's closing job asks, as a bot's request
+  in a save of its own, for the review to open again (core specification, "How a change is carried
+  out"; the results specification says which jobs).
 
   Which jobs cannot be discarded, and what the member and the log channel are told when Discard is
-  pressed on one, the core specification's "How a change is carried out" holds; what follows is
-  the mechanism. Such a step is marked `Step.undiscardable`, a reader rather than a flag: it gives
-  what would follow from dropping the job, in the job's own terms, so that the refusal can name
-  the round or the season. Discard on the job is refused as any refused press is, and saves
-  nothing else: no discarded mark, no Discard line, no audit record, no follow-on, and the job
-  stays the one its lane is stopped at. Retry, and the bot's own tries, clear it as they clear
-  any job. The notice keeps both buttons, and it is the button that refuses: the notice is one
-  persistent view with fixed identities, found again after a restart, and a notice without Discard
-  would need a second view, chosen for each notice and registered at start. *Rejected:* that second view; and a
-  discard that drops the job and names the loss, which leaves a league with nothing it can do to
-  put it right. A change stopped at its check, before any job of it ran, is still dropped whole,
-  since a stop at the check sits on the change's first job, and no arming is a first job.
+  pressed on one, the core specification's "How a change is carried out" holds; what follows is the
+  mechanism. Such a step is marked `Step.undiscardable`, a reader rather than a flag: it gives what
+  would follow from dropping the job, in the job's own terms, so that the refusal can name the round
+  or the season. Discard on the job is refused as any refused press is, and saves nothing else: no
+  discarded mark, no Discard line, no audit record, no follow-on, and the job stays the one its lane
+  is stopped at. Retry, and the bot's own tries, clear it as they clear any job. A step may be
+  marked undiscardable only where a Retry can always clear it: once its work is no longer owed, its
+  `still_due` drops it or it completes doing nothing, so that a job no league can discard is never
+  one that can only fail. The notice keeps both buttons, and it is the button that refuses: the
+  notice is one persistent view with fixed identities, found again after a restart, and a notice
+  without Discard would need a second view, chosen for each notice and registered at start.
+  *Rejected:* that second view; and a discard that drops the job and names the loss, which leaves a
+  league with nothing it can do to put it right. A change stopped at its check, before any job of it
+  ran, sits on the change's first job, so its Discard is refused where that job cannot be discarded,
+  and drops the whole change where it can.
 
   Both buttons are on the stop notice, the one log-channel message that says a lane is stopped
   and names the job, and the channel of a conversation's lane. Who a stop notice
@@ -592,21 +601,33 @@ moment a job was due, the handler its module provides for that kind of job (belo
 becomes of it: whether it runs late or is skipped, or whatever else its module's specification asks.
 The handler records a skip on its own module's record of the event (its own table, or its own
 columns on a core table), as a change on the queue like any other, so the late job, or the change it
-asks for, finds nothing due. Every job is armed with no limit on how late it may run
-(`misfire_grace_time=None`), so the scheduler never drops one on its own and its default never
-decides. What each kind does when missed is a rule a league notices, so it belongs to the
-specifications (the core specification's "When the bot stops", and the stewarding specification's
-[STW-RST-001] to [STW-RST-003]).
+asks for, finds nothing due. Every job is to be armed with no limit on how late it may run
+(`misfire_grace_time=None`), so that the scheduler never drops one on its own and its default
+grace never decides; the jobs armed otherwise are those the lateness check in
+`tests/repository/test_architecture_rules.py` lists. What each kind does when missed is a rule a
+league notices, so it belongs to the specifications (the core specification's "When the bot
+stops", and the stewarding specification's [STW-RST-001] to [STW-RST-003]).
 
 *Rejected:* declaring for each kind of job whether a missed one runs late or is skipped, for the
 sweep to apply, which puts a module's rule in core.
 
 **Jobs are made only through the scheduler service.** Nothing else arms, finds or removes a job. A
 round's job is named from the round and the event, so arming it again replaces the old one instead
-of adding a second (the `_round_job_suffix` docstring in the scheduler service). One function works
-out when each of a round's events falls, and one function arms them. Every path that arms a round (a
-season approved, a round amended, a restart, test mode) uses those two, so the timings cannot drift
-apart between copies.
+of adding a second (the `_round_job_suffix` docstring in the scheduler service). A round's timed
+work is armed by the scheduler service's own functions, which work out from the round's moment when
+each event falls: `schedule_round` its forecasts and results submission, `schedule_all_rounds` a
+season's rounds through it, `schedule_result_submission_jobs` the submission alone, and
+`schedule_attendance_round` its check-in. Beside them, `run_result_submission_now` runs at once
+the submission of a round whose moment has passed. Only three changes call them: a season's
+approval, the amendment of a round (`round_amend_change`), and the re-arming of a round whose timed
+work a refused cancellation took, a change of its own (`round_rearm_change`, `season.round.rearm`)
+built from the amendment's steps. The arming step those two share calls `run_result_submission_now`
+for a passed round. Every path arms through these functions. A restart arms nothing, the job store
+keeping the jobs and the start-up sweep catching up those missed (above), and neither does test
+mode, whose advance brings forward work already armed or found due in the database. A round's
+next-day clean-ups, which its weather and its attendance arming both owe, are armed by one function
+too (`schedule_round_cleanups`), which the re-arming calls alone for a round raced, or ended
+cancelled because every session was entered as not held.
 
 **A delay is a one-off timer that asks a change.** The queue holds no delay of its own. Where
 something must happen a set time after a job (a season review's, a correction's or an
@@ -614,9 +635,9 @@ amendment's five minutes running out, a signup left unanswered for a day, a held
 24 hours, the review channel's lock warning taken down after eight seconds), a job of its own,
 after the one whose record saved the row the timer is keyed to, arms a one-off timer through the
 scheduler service (`SchedulerService.arm_once`, named from its kind and its row, so that arming it
-again replaces it). It is armed with no lateness limit, like every job, so one missed while the bot
-was down fires when it starts. The builder registers each kind's callback before the scheduler
-starts (`register_timer`). When the timer fires, its callback reads the row again and asks its
+again replaces it). It is armed with no lateness limit, so one missed while the bot was down fires
+when it starts. The builder registers each kind's callback before the scheduler starts
+(`register_timer`). When the timer fires, its callback reads the row again and asks its
 change of the queue, as the bot's, or asks nothing where the work is no longer due; a callback that
 raises is logged on the host alone.
 
@@ -725,18 +746,27 @@ rule has two halves:
   named off the queue with its reason (see "How the rules are checked"). The router
   (`core/services/output_router.py`) is exempt from it whole (`POSTING_ALLOWED`), as it is from the
   check of posting outside the handlers: what it posts off the queue are the exceptions below, and
-  its forecast post carries the decorator all the same. Two calls that look like posts and are not
-  are named in `NOT_A_POST` with their reasons: the reply to the owner's own `!sync` command
-  (`guild_sync` in the entry point), and the queue's edit of a member's own acknowledgement
-  (`ChangeQueue._update_reply`), which answers the member and posts in no channel.
+  its forecast post carries the decorator all the same. Two functions whose sends look like posts
+  and are not are named in `NOT_A_POST` with their reasons. One is the owner's own `!sync` command
+  (`guild_sync` in the entry point): it deletes the owner's message and posts a note that deletes
+  itself, which is a prefix command's reply. The other is the queue's edit of a member's own
+  acknowledgement (`ChangeQueue._update_reply`), which answers the member and posts in no channel.
 
 The exceptions, each with its reason:
 
 - **A log line,** delivered by the router and sent again by its own retry (below), and **the stop
   notice,** which says that a lane is stopped and so cannot wait on one, with its buttons taken off
   once the job clears (`OutputRouter.strip_view`), which cannot wait on the lane either.
-- **A reply** to a member's command or press, the queue's update of its acknowledgement with the
-  outcome included: it answers the member and posts in no channel.
+- **A reply** to a member's command or press, and the queue's update of its acknowledgement with
+  the outcome included: it answers the member and posts in no channel. A press's own edit of the
+  message pressed is a reply too, though the message is one a job posted where a channel reads it:
+  the results picker's choice (`_ConfigSelectView`) replaces the text of a message in the
+  submission or amendment channel and takes its buttons down. It is the interaction's own response
+  to the press, Discord's one answer to it, and the buttons come down with it. A second press made
+  before they are down is refused by the view itself (results specification, "Submitting round
+  results"): the first press claims the choice before its edit, so the message names that press's
+  choice, and the press puts the message back, buttons and all, where the queue then refuses the
+  choice or fails on it. The `_ConfigSelectView` docstring says when the claim is released.
 - **The factory reset's clean-up and its progress.** The reset empties the database the queue
   lives in and leaves no log channel or roles for Retry and Discard, and its progress is the reply
   to the owner's own command.

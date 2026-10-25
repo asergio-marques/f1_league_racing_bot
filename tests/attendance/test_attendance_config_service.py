@@ -349,18 +349,6 @@ async def test_a_division_with_no_config_reads_as_none(tmp_path):
     assert await service.get_division_config(DIVISION_ID) is None
 
 
-async def test_deleting_a_server_s_division_configs_clears_them(tmp_path):
-    """Run when a season ends. A stale row would point the next season's division at the
-    previous one's channel."""
-    db_path = await _make_db(tmp_path)
-    service = AttendanceService(db_path)
-    await service.set_rsvp_channel(DIVISION_ID, 777001)
-
-    await service.delete_division_configs()
-
-    assert await service.get_division_config(DIVISION_ID) is None
-
-
 # ---------------------------------------------------------------------------
 # FR-028–FR-031 — recalculating an amended round
 # ---------------------------------------------------------------------------

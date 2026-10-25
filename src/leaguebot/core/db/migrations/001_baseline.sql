@@ -486,6 +486,8 @@ CREATE TABLE "rounds" (
     phase3_done     INTEGER NOT NULL DEFAULT 0,
     checkin_cleared INTEGER NOT NULL DEFAULT 0,  -- 1 once no call is owed: the check-in cleanup has run (#425),
                                                  -- or a restart gave up a call whose deadline had passed (#429)
+    not_held        INTEGER NOT NULL DEFAULT 0,  -- 1 where the round ended CANCELLED because every session
+                                                 -- was entered as not held, not because it was called off (#439)
     status          TEXT    NOT NULL DEFAULT 'NOT_RUN'
                         CHECK (status IN ('NOT_RUN', 'AWAITING_RESULTS',
                                           'AWAITING_REPORT_VERDICTS',

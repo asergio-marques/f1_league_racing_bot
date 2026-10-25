@@ -339,7 +339,11 @@ def window_open_change(
             moment = datetime.fromisoformat(close_at)
             armed = views.get(ARM_CLOSE)
             if armed is not None and "discarded" in (armed.result or {}):
-                text += " The auto-close was not scheduled: set it with `/signup close-time add`."
+                text += (
+                    " The auto-close was not scheduled: arm it again with `/signup close-time "
+                    "cancel` and then `/signup close-time add`; the bot also arms it when it "
+                    "next starts."
+                )
             else:
                 text += f" Auto-close scheduled for {_stamp(moment)} ({_stamp(moment, 'R')})."
         closed = views.get(DELETE_CLOSED)
@@ -392,8 +396,8 @@ def failed_jobs(steps: tuple[StepView, ...]) -> list[str]:
             failed.append(f"{who} was not told signups had closed.")
         elif view.name == CLOSE_SIGNUP:
             failed.append(
-                f"{who}'s signup channel could not be locked and will not delete itself: "
-                "delete it by hand."
+                f"{who}'s signup channel could not be locked: they can still type in it until it "
+                "deletes itself a day on, or delete it by hand sooner."
             )
         elif view.name == ARM_DELETION:
             failed.append(f"{who}'s signup channel will not delete itself: delete it by hand.")

@@ -2,11 +2,10 @@
 its own change, then asks the queue, as the bot's and repeatably, to post each lineup it touched
 (`lineup.post`); its reply is unchanged and the post follows on the queue.
 
-The league is `ongoing_league`'s: season 3 being raced, Pro (21) with its lineup channel 600 and
-Am (22) with 700, images off. Where a command is run, its cog stands on a bot whose services are
+The league is `ongoing_league`'s: season 3 being raced, Pro (21) with its lineup channel 600 and Am
+(22) with 700, images off. Where a command is run, its cog stands on a bot whose services are
 stubbed to say which divisions' lineups the change touched, and whose queue and database are the
-league's, so the asks are real and the queue run posts the lineups. Everything of the change is
-imported inside a test, so this file collects while it is unbuilt.
+league's, so the asks are real and the queue run posts the lineups.
 """
 from __future__ import annotations
 

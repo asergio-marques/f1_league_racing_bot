@@ -25,8 +25,7 @@ the queue"; decision 19):
 The factories are `season_review_take_down_change()` and `season_review_post_change(drawing=...,
 approve_view=..., scheduler=...)` in `leaguebot.core.services.season_review_changes`; the builder
 registers them with the image module's drawing, the season cog's view factory and the scheduler
-service, which `arm_expiry` arms its timer through (no step looks a service up on the bot). Everything of them is imported
-inside a test, so this file collects while it is unbuilt.
+service, which `arm_expiry` arms its timer through (no step looks a service up on the bot).
 
 The league: `league_double`'s, its review channel 700 found on the league's server, Alex (4242)
 the reviewer of season 1's placements.
@@ -37,7 +36,7 @@ import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
@@ -58,6 +57,7 @@ from tests.support.change_queue import (
     league_double,
     member_interaction,
     post_in,
+    retry_job,
     run_queue,
     seed_server,
     step_rows,
@@ -242,6 +242,45 @@ async def test_a_refused_delete_stops_the_queue_and_a_discard_names_it(standing)
     assert [m for m in channel.messages if m in (channel.q, channel.r1, channel.r2)] == [channel.r1]
     assert await _prompts(standing.db_path) == []
     assert str(channel.r1.id) in _log(standing) and "by hand" in _log(standing)
+    [change] = await _changes(standing, TAKE_DOWN)
+    assert change["state"] == "DONE"
+
+
+CANNOT_DISCARD_FORGET = (
+    f"⛔ This job can't be discarded: without it <@{REVIEWER}>'s review would stay on the bot's "
+    "record, and the next restart would tell them it expired and record it as lapsed. Fix what "
+    "stopped it and press **Retry**."
+)
+
+
+async def test_forgetting_a_taken_down_review_cannot_be_discarded(standing):
+    """Alex's review was approved and the bot asks for it to be taken down, confirmed. Its three
+    messages are deleted, then forgetting the review's record fails and stops the queue. A league
+    admin's Discard on it is refused, saying Alex's review would stay on the bot's record and the
+    next restart would tell them it expired; the queue stays stopped there and the prompt's row
+    stands. Once the fault is lifted, Retry forgets the review and the change is done."""
+    with patch(
+        "leaguebot.core.services.season_review_changes.mark_press",
+        side_effect=RuntimeError("the press register is locked"),
+    ):
+        await _take_down(standing, "confirmed")
+        await run_queue(standing.bot)
+        job = await stopped_job(standing.db_path)
+        assert job is not None and job["name"] == "forget"
+
+        discarding = await discard_job(standing.bot)
+
+        said = [str(call.args[0] if call.args else call.kwargs.get("content", ""))
+                for call in (discarding.response.send_message.await_args_list
+                             + discarding.followup.send.await_args_list)]
+        assert CANNOT_DISCARD_FORGET in said
+        job = await stopped_job(standing.db_path)
+        assert job is not None and job["name"] == "forget"
+        assert len(await _prompts(standing.db_path)) == 1
+
+    await retry_job(standing.bot)
+
+    assert await _prompts(standing.db_path) == []
     [change] = await _changes(standing, TAKE_DOWN)
     assert change["state"] == "DONE"
 

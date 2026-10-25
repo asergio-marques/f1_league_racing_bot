@@ -107,25 +107,18 @@ class SignupModuleService:
             )
             await db.commit()
 
-    async def delete_config(self) -> None:
-        """Forget the signup channel and the window state beside it, on a disable.
+    async def delete_config_on(self, db: aiosqlite.Connection) -> None:
+        """Forget the signup channel and the window state on *db*, committing nothing, so that
+        the module's switch-off saves it together with the flag coming down.
 
         The row holds what names a Discord object — the channel, the button and the
         closed-status message — and the window's state. A channel can be deleted or given
         another job while the module is off, so the disable clears it (constitution,
-        Principle X, rules 3 and 6).
-
-        The time slots and the three question settings are not in this row, and no key
-        joins their tables to it, so nothing cascades: they stand again when the module is
-        next enabled, as the signup specification requires (issue #127).
+        Principle X, rules 3 and 6). The time slots and the three question settings are not
+        in this row, and no key joins their tables to it, so nothing cascades: they stand
+        again when the module is next enabled, as the signup specification requires
+        (issue #127).
         """
-        async with get_connection(self._db_path) as db:
-            await self.delete_config_on(db)
-            await db.commit()
-
-    async def delete_config_on(self, db: aiosqlite.Connection) -> None:
-        """Forget the signup channel and the window state on *db*, committing nothing, so that
-        the module's switch-off saves it together with the flag coming down (`delete_config`)."""
         await db.execute("DELETE FROM signup_module_config")
 
     async def move_base_role_overwrite(
@@ -453,15 +446,6 @@ class SignupModuleService:
             "slots": json.loads(row["slots_json"]),
             "captured_at": row["captured_at"],
         }
-
-    async def save_selected_tracks(self, tracks: list[str]) -> None:
-        """Persist selected_tracks without changing the open/closed state."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE signup_module_config SET selected_tracks_json = ?",
-                (json.dumps(tracks),),
-            )
-            await db.commit()
 
     async def get_selected_tracks(self) -> list[str]:
         """Return the list of selected track IDs for the current signup window."""

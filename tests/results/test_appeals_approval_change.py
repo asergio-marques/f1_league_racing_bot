@@ -15,8 +15,7 @@ corrections as plain data (`to_payload`) and the appeals prompt pressed on.
 
 The league, its fake channels and the attendance hook's double are `tests.support.review_league`'s:
 round 3 of division 11 (Pro) awaits its appeal verdicts, the appeals prompt open in its submission
-channel. Everything of the change type is imported inside a test, so this file collects while it
-is unbuilt.
+channel.
 """
 from __future__ import annotations
 
@@ -41,6 +40,7 @@ from tests.support.change_queue import (
 from tests.support.review_league import (
     DIVISION_ID,
     LEWIS,
+    MAX,
     RESULTS_CHANNEL,
     ROUND_ID,
     SUBMISSION_CHANNEL,
@@ -58,6 +58,7 @@ from tests.support.review_league import (
     stopped_at,
     verdict_headings,
 )
+from tests.results.test_review_open_change import _refuse_the_job
 
 KIND = "results.appeals.approve"
 APPEALS_PROMPT = 8902
@@ -195,6 +196,50 @@ async def test_a_stop_after_the_corrections_are_saved_announces_the_appeals_and_
     assert appeals_prompts(league) == []
 
 
+async def test_a_stop_part_way_through_the_reposts_finishes_them_and_announces_each_appeal_once(
+    tmp_path,
+):
+    """Round 3's appeals approval, Lewis's 5-second penalty taken back, stops just after its
+    first Final Results repost; the bot restarts and the queue runs again. The results channel
+    holds exactly the reposts sent, the appeal is announced once under one heading, the
+    submission channel is deleted once, and the appeal is recorded once with its 5 seconds."""
+    league = await _league(tmp_path)
+    await _approve(league)
+    await run_until_done(league, "post_session_results")
+
+    await restart_queue(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    results = league.sent_to(RESULTS_CHANNEL)
+    assert set(league.channel(RESULTS_CHANNEL).messages) == set(results)
+    sent = league.sent_to(VERDICTS_CHANNEL)
+    assert verdict_headings(league) == sent[:1]
+    assert len(sent) == 2
+    assert _channel_deletions(league) == [SUBMISSION_CHANNEL]
+    assert await _appeal_records(league.db_path) == 1
+    assert await _appeal_penalty(league.db_path) == -5000
+
+
+async def test_a_restart_between_two_verdicts_announces_each_once_under_one_heading(tmp_path):
+    """Round 3's appeals approval carries two upheld appeals, Lewis's and Max's 5-second
+    penalties taken back, and stops just after the first verdict is announced; the bot restarts
+    and the queue runs again. One heading and two verdicts stand in the verdicts channel, and
+    each appeal is recorded once."""
+    league = await _league(tmp_path)
+    await _approve(league, staged=[penalty(LEWIS, seconds=-5), penalty(MAX, seconds=-5)])
+    await run_until_done(league, "announce_verdict")
+
+    await restart_queue(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    sent = league.sent_to(VERDICTS_CHANNEL)
+    assert verdict_headings(league) == sent[:1]
+    assert len(sent) == 3
+    assert await _appeal_records(league.db_path) == 2
+
+
 async def test_a_final_round_leaves_no_review_to_restore(tmp_path):
     league = await _league(tmp_path)
     await _approve(league)
@@ -294,6 +339,59 @@ async def test_a_discarded_appeals_apply_reopens_the_appeals_review(tmp_path):
     ) == prompts[0]
     assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
     assert "Nothing was changed" in updated_reply(interaction)
+
+
+@pytest.mark.parametrize("case, follows", [
+    pytest.param(
+        "approved", "the approval of round 3 in **Pro** would go unrecorded", id="approved",
+    ),
+    pytest.param(
+        "apply discarded", "round 3 in **Pro**'s appeals review could be left with no prompt, "
+        "never final, until the bot restarts", id="apply discarded",
+    ),
+])
+async def test_the_approval_s_closing_job_cannot_be_discarded(tmp_path, case, follows):
+    """Alex approves round 3's appeals in Pro, one upheld appeal taking Lewis's 5 seconds back.
+    Either the approval goes through, or its save fails and a league admin discards it. Then the
+    save of the approval's last job fails and stops the queue at `close`. A league admin's Discard
+    on it is refused, saying, where the approval went through, that the approval of round 3 in Pro
+    would go unrecorded, and, where it was discarded, that round 3's appeals review could be left
+    with no prompt, never final, until the bot restarts. The queue stays stopped there. Once the
+    fault is lifted, a Retry finishes it: the approval is logged, or the appeals review is opened
+    again with a fresh prompt."""
+    league = await _league(tmp_path)
+    await _refuse_the_job(league.db_path, KIND, True)
+    if case == "approved":
+        await _approve(league)
+        await run_queue(league.bot)
+    else:
+        with points_fail():
+            await _approve(league)
+            await run_queue(league.bot)
+        assert await stopped_at(league) == "apply"
+        await discard_job(league.bot)
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "close"
+
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it {follows}. Fix what stopped it and press "
+        "**Retry**."
+    )
+    assert (await stopped_job(league.db_path, "league"))["id"] == stopped["id"]
+    assert "APPEALS_REVIEW_APPROVED" not in league.log()
+    assert await changes_of(league.db_path, "results.appeals.open") == []
+
+    await _refuse_the_job(league.db_path, KIND, False)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    if case == "approved":
+        assert "APPEALS_REVIEW_APPROVED | Success" in league.log()
+    else:
+        assert len(await changes_of(league.db_path, "results.appeals.open")) == 1
+        assert len(appeals_prompts(league)) == 1
 
 
 # ---------------------------------------------------------------------------

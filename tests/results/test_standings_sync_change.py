@@ -9,8 +9,6 @@ Max 18. A manager runs the command, the queue is run, and the test reads the cha
 and what the manager was told. Each round's standings are recomputed when the job runs, as the
 command does today (decision 16), posted afresh, then the message they replace deleted by a job of
 its own; the sync's gates are checked again when it runs (core spec :125).
-
-Everything of the change is imported inside a test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

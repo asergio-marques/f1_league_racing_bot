@@ -469,9 +469,6 @@ async def test_attached_ordering_and_the_season_copy_word_a_fault_the_same_way(d
 # checks again, on that connection, that amendment mode is on and the staged table in order,
 # and refuses having written nothing where either fails: the backstop that keeps an approval
 # from an older panel from emptying the season's points (#507).
-#
-# `install_staged_points_on` and `StagedPointsNotApprovable` are imported inside each test, so
-# the file collects while they are unbuilt.
 # ---------------------------------------------------------------------------
 
 
@@ -651,8 +648,7 @@ async def test_installing_refuses_writing_nothing_where_amendment_mode_is_off_or
 # The approval copies the season's attached points configurations onto it inside its one save,
 # so the copy is written on the connection it is handed and committed by the save alone. It reads
 # results' own switch on that connection and writes nothing while results is off, so the save
-# need not ask whether results is on. Imported inside each test, so the file collects while it is
-# unbuilt.
+# need not ask whether results is on.
 # ---------------------------------------------------------------------------
 
 

@@ -6,8 +6,6 @@ grant raises where today's `_grant_roles` logs and carries on: a role no longer 
 Discord refusing it. Only a member Discord reports absent is passed over (README, "A driver who has
 left the server is simply passed over"). A lineup tried again after a failure goes as text
 (Constitution XIV rule 8), drawing nothing.
-
-The functions are reached inside each test, so this file collects while they are unbuilt.
 """
 from __future__ import annotations
 

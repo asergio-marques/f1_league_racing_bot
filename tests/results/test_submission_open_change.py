@@ -10,20 +10,18 @@ its results submitted, so Discard on it is refused and only Retry clears it (cor
 decision 12 of the slice). A round whose start falls while the queue is stopped stays not run, and
 so cancellable, until the stop clears and the queue reaches it (Q17).
 
-The league is `ongoing_league`'s, results on: Pro's round 3 is NOT_RUN, its results channel 606;
-the league's interaction channel stands in a category of the server's; the server creates each text channel asked of it as a channel
-double of the league's. The change is asked as its timer asks it; everything of the change is
-reached through the queue or imported inside a test, so this file collects while it is unbuilt.
+The league is `ongoing_league`'s, results on: Pro's round 3 is NOT_RUN, its results channel 606; the
+league's interaction channel stands in a category of the server's; the server creates each text
+channel asked of it as a channel double of the league's. The change is asked as its timer asks it.
 """
 from __future__ import annotations
 
 import inspect
 import itertools
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
-import pytest
 
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.results.services.result_submission_service import get_sessions_for_format
@@ -281,3 +279,64 @@ async def test_the_opening_of_a_submission_cannot_be_discarded(tmp_path):
     [made] = league.created
     assert await _submission(league) == [{"channel_id": made, "closed": 0}]
     assert "Results submission open for **Round 3** (Pro)" in league.texts(made)[0]
+
+
+CANNOT_DISCARD_START = (
+    "⛔ This job can't be discarded: without it round 3 in **Pro** would never open for results, "
+    "and its season could never be completed. Fix what stopped it and press **Retry**."
+)
+
+
+async def test_starting_the_round_cannot_be_discarded(tmp_path):
+    """Round 3 starts, and the save that moves it off NOT_RUN fails, stopping the queue at
+    `start_round`. A league admin presses Discard: it is refused, saying round 3 in Pro would never
+    open for results and its season could never be completed; the queue stays stopped there and
+    round 3 is still NOT_RUN, with no channel created. Once the fault is lifted, a Retry starts the
+    round: it awaits results and its submission channel is created and recorded."""
+    league = await _league(tmp_path)
+    with patch(
+        "leaguebot.results.services.submission_changes.set_round_status_on",
+        side_effect=RuntimeError("the rounds table is locked"),
+    ):
+        await _ask(league)
+        await run_queue(league.bot)
+        stopped = await stopped_job(league.db_path)
+        assert stopped is not None and stopped["name"] == "start_round"
+
+        refused = await discard_job(league.bot)
+
+        assert acknowledgement(refused) == CANNOT_DISCARD_START
+        assert (await stopped_job(league.db_path))["id"] == stopped["id"]
+        assert await _status(league) == "NOT_RUN"
+        assert league.created == []
+
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _status(league) == "AWAITING_RESULTS"
+    [made] = league.created
+    assert await _submission(league) == [{"channel_id": made, "closed": 0}]
+
+
+async def test_a_round_cancelled_while_its_start_stood_stopped_is_dropped_on_retry(tmp_path):
+    """Round 3 starts, and the save that moves it off NOT_RUN fails, stopping the queue at
+    `start_round`. While it stands stopped a league manager cancels round 3. Once the fault is
+    lifted, a Retry finds the round cancelled and drops the start as no longer due: the queue runs
+    on, no channel is created and round 3 stays CANCELLED."""
+    league = await _league(tmp_path)
+    with patch(
+        "leaguebot.results.services.submission_changes.set_round_status_on",
+        side_effect=RuntimeError("the rounds table is locked"),
+    ):
+        await _ask(league)
+        await run_queue(league.bot)
+        stopped = await stopped_job(league.db_path)
+        assert stopped is not None and stopped["name"] == "start_round"
+    await league.write("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", ROUND_3)
+
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.created == []
+    assert await _submission(league) == []
+    assert await _status(league) == "CANCELLED"

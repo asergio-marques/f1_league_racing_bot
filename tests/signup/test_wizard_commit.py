@@ -35,11 +35,24 @@ from __future__ import annotations
 import json
 import os
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 
-from tests.support.change_queue import change_rows, member_interaction, run_queue, typed_message
+from tests.support.change_queue import (
+    acknowledgement,
+    change_rows,
+    discard_job,
+    http_error,
+    member_interaction,
+    refuse_the_job,
+    retry_job,
+    run_queue,
+    step_rows,
+    stopped_job,
+    typed_message,
+)
 from tests.support.review_league import channel
 from tests.support.season_league import (
     SEASON_ID,
@@ -349,20 +362,192 @@ async def test_the_review_panel_notifies_no_group(tmp_path):
     assert (allowed.everyone, allowed.roles, allowed.users) == (False, False, True)
 
 
-async def test_a_missing_channel_still_commits_the_record(tmp_path):
-    """A channel deleted by hand must not cost the driver their signup. Kimi types his notes,
-    and his channel is deleted before the turn's panel is posted. Once the queue runs his
-    signup is saved, and no panel is posted."""
+async def test_the_review_panel_s_post_cannot_be_discarded(tmp_path):
+    """Kimi types his notes and his signup is saved, but Discord refuses the review panel in his
+    channel, so the queue stops at `post_panel` on his channel's lane. A league admin's Discard on
+    it is refused, saying Kimi would wait for approval with no review panel and the season's
+    placements could not be confirmed. The lane stays stopped there and no panel is posted. Once
+    Discord takes posts again, a Retry posts the one review panel."""
+    league = await _league(tmp_path)
+    lane = f"channel:{KIMI_CHANNEL}"
+    league.channel(KIMI_CHANNEL).fail_when = lambda _content, kwargs: kwargs.get("view") is not None
+
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path, lane)
+    assert stopped is not None and stopped["name"] == "post_panel"
+
+    refused = await discard_job(league.bot, lane=lane)
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}> would wait for approval with "
+        "no review panel, and the season's placements could not be confirmed. Fix what stopped "
+        "it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path, lane))["id"] == stopped["id"]
+    posted = league.channel(KIMI_CHANNEL).messages.values
+    assert not [m for m in posted() if type(m.view).__name__ == "AdminReviewView"]
+
+    league.channel(KIMI_CHANNEL).fail_when = None
+    await retry_job(league.bot, lane=lane)
+
+    assert await stopped_job(league.db_path) is None
+    assert len([m for m in posted() if type(m.view).__name__ == "AdminReviewView"]) == 1
+
+
+#: The line the ending writes in the log channel, naming Kimi and his gone channel.
+CHANNEL_GONE_LINE = (
+    f"Kimi (`<@{SIGNING_UP}>`) | Signup | Ended\n  channel: <#{KIMI_CHANNEL}>\n  Their signup "
+    "channel was gone when their review panel was due, so their signup ended. They may press "
+    "Sign Up again while signups are open."
+)
+
+
+def _admin_panels(chan: Any) -> list[Any]:
+    """The review panels standing in *chan*."""
+    return [m for m in chan.messages.values() if type(m.view).__name__ == "AdminReviewView"]
+
+
+def _delete_channel(league: SeasonLeague) -> Any:
+    """Kimi's channel 6405 is deleted from the server: neither the cache nor Discord's lookup
+    finds it, and taking the ⏳ off a message in it finds the message gone. Gives the channel."""
+    gone = league.channels.pop(KIMI_CHANNEL)
+    message = MagicMock()
+    message.remove_reaction = AsyncMock(side_effect=http_error(discord.NotFound, status=404))
+    league.bot.get_partial_messageable.return_value.get_partial_message.return_value = message
+    return gone
+
+
+def _out_of_cache(league: SeasonLeague, *, refusal: BaseException | None = None) -> None:
+    """Kimi's channel 6405 is missing from the bot's cache of the server; Discord's lookup of it
+    finds it standing, or fails with *refusal* where one is given."""
+    cached = league.guild.get_channel.side_effect
+    fetched = league.guild.fetch_channel.side_effect
+    league.guild.get_channel.side_effect = (
+        lambda cid: None if int(cid) == KIMI_CHANNEL else cached(cid)
+    )
+
+    async def _fetch(cid: int) -> Any:
+        if int(cid) == KIMI_CHANNEL and refusal is not None:
+            raise refusal
+        return await fetched(cid)
+
+    league.guild.fetch_channel.side_effect = _fetch
+
+
+async def test_a_channel_gone_when_the_panel_is_due_ends_the_signup_once_it_is_saved(tmp_path):
+    """A channel deleted by hand must not cost the driver their signup record, nor leave them
+    awaiting a review that can never be posted. Kimi types his notes, and his channel 6405 is
+    deleted before the turn's panel is posted. Once the queue runs his signup record is saved,
+    but his signup has ended: he is Not Signed Up, his wizard Unengaged, and no 24-hour
+    inactivity timer is armed for him. Nothing is sent to the gone channel, the queue is not
+    stopped, and the ending is one `signup.end` change on the league lane, done, whose single job
+    is `end`."""
     league = await _league(tmp_path)
 
     await _type(league, "See you there")
-    gone = league.channels.pop(KIMI_CHANNEL)
+    gone = _delete_channel(league)
     await run_queue(league.bot)
 
+    assert await stopped_job(league.db_path) is None
     record = await _record(league)
     assert record is not None and record.platform == "Steam"
-    assert not any(type(call.kwargs.get("view")).__name__ == "AdminReviewView"
-                   for call in gone.send.call_args_list)
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    [wizard] = await league.rows(
+        "SELECT wizard_state FROM signup_wizard_records WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    assert wizard["wizard_state"] == "UNENGAGED"
+    assert not any(call.args[:2] == (INACTIVITY_TIMER, str(SIGNING_UP))
+                   for call in league.bot.scheduler_service.arm_once.call_args_list)
+    gone.send.assert_not_awaited()
+    [ending] = [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
+    assert (ending["state"], ending["lane"]) == ("DONE", "league")
+    assert [job["name"] for job in await step_rows(league.db_path, ending["id"])] == ["end"]
+
+
+async def test_a_signup_ended_for_its_gone_channel_is_logged_naming_the_driver_and_the_channel(
+    tmp_path,
+):
+    """Kimi types his notes, and his channel 6405 is deleted before the turn's panel is posted.
+    Once the queue runs the log channel is told once, naming Kimi and the channel, that his
+    signup channel was gone when his review panel was due, so his signup ended, and that he may
+    press Sign Up again while signups are open."""
+    league = await _league(tmp_path)
+
+    await _type(league, "See you there")
+    _delete_channel(league)
+    await run_queue(league.bot)
+
+    assert league.log().count(CHANNEL_GONE_LINE) == 1
+
+
+async def test_a_server_out_of_cache_stops_the_panel_rather_than_passing_it_over(tmp_path):
+    """Kimi types his notes, and when his panel is due the league's server is missing from the
+    bot's cache, so his channel cannot be looked for at all. The queue stops at `post_panel` on
+    his channel's lane: his signup is saved, he still awaits approval, no panel is posted and his
+    signup is not ended. Once the server is back, a Retry posts the one review panel in his
+    channel."""
+    league = await _league(tmp_path)
+    lane = f"channel:{KIMI_CHANNEL}"
+
+    await _type(league, "See you there")
+    league.bot.get_guild.return_value = None
+    await run_queue(league.bot)
+
+    stopped = await stopped_job(league.db_path, lane)
+    assert stopped is not None and stopped["name"] == "post_panel"
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+    assert _admin_panels(league.channel(KIMI_CHANNEL)) == []
+    assert not [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
+
+    league.bot.get_guild.return_value = league.guild
+    await retry_job(league.bot, lane=lane)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(_admin_panels(league.channel(KIMI_CHANNEL))) == 1
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [http_error(), http_error(discord.Forbidden, status=403, text="Missing Access")],
+    ids=["server error", "forbidden"],
+)
+async def test_a_channel_the_lookup_cannot_confirm_gone_stops_the_panel(tmp_path, refusal):
+    """Kimi types his notes, and when his panel is due his channel 6405 is missing from the bot's
+    cache, and Discord's lookup of it fails with a server error, or is forbidden, so the bot
+    cannot tell whether it is gone. The queue stops at `post_panel` on his channel's lane: he
+    still awaits approval, nothing is posted and his signup is not ended."""
+    league = await _league(tmp_path)
+    lane = f"channel:{KIMI_CHANNEL}"
+    held = league.channel(KIMI_CHANNEL)
+    _out_of_cache(league, refusal=refusal)
+
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+
+    stopped = await stopped_job(league.db_path, lane)
+    assert stopped is not None and stopped["name"] == "post_panel"
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+    held.send.assert_not_awaited()
+    assert not [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
+
+
+async def test_a_channel_missing_from_the_cache_but_found_by_the_lookup_gets_its_panel(tmp_path):
+    """Kimi types his notes, and when his panel is due his channel 6405 is missing from the bot's
+    cache, but Discord's lookup finds it standing. Once the queue runs the one review panel is
+    posted in it, he awaits approval, his signup is not ended and the queue is not stopped."""
+    league = await _league(tmp_path)
+    _out_of_cache(league)
+
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(_admin_panels(league.channel(KIMI_CHANNEL))) == 1
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+    assert not [row for row in await change_rows(league.db_path) if row["kind"] == "signup.end"]
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +606,40 @@ async def test_a_button_answer_that_ends_a_correction_writes_only_correction_sub
     assert len(lines) == 1, lines
     assert "| Signup | Correction submitted" in lines[0], lines[0]
     assert "Platform: EA" not in lines[0]
+
+
+async def test_a_correction_s_commit_cannot_be_discarded(tmp_path):
+    """A league manager asked Kimi to correct his nationality, and he types "German". The save
+    that commits his signup on the league lane fails, so the queue stops at `commit`. A league
+    admin's Discard on it is refused, saying Kimi's signup would never be submitted and, while he
+    corrects it, the season's placements could not be confirmed until the bot restarts. Kimi is
+    still Pending Driver Correction, his signup still says British and the queue stays stopped
+    there. Once the fault is lifted, a Retry commits it: Kimi awaits approval and his signup
+    says German."""
+    league = await _correcting(tmp_path, "COLLECTING_NATIONALITY", FULL_DRAFT)
+    await refuse_the_job(league.db_path, "signup.submit", "commit", True)
+
+    await _type(league, "German")
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "commit"
+
+    refused = await discard_job(league.bot, lane="league")
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}>'s signup would never be "
+        "submitted, and while they correct it the season's placements could not be confirmed "
+        "until the bot restarts. Fix what stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path, "league"))["id"] == stopped["id"]
+    assert await _driver_state(league) == "PENDING_DRIVER_CORRECTION"
+    assert (await _record(league)).nationality == "British"
+
+    await refuse_the_job(league.db_path, "signup.submit", "commit", False)
+    await retry_job(league.bot, lane="league")
+
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+    assert (await _record(league)).nationality == "German"
 
 
 async def test_a_correction_amends_the_signup_it_was_asked_of(tmp_path):

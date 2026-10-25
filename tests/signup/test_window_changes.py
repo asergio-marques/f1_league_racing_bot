@@ -335,6 +335,38 @@ async def test_a_discarded_information_post_leaves_the_closed_notice_and_arms_no
     assert not (await league.config())["signups_open"]
 
 
+#: What a discarded arming of the auto-close says to do: `/signup close-time add` alone is
+#: refused while a close time is saved (#439, slice 8, W2).
+ARM_AGAIN = (
+    "The auto-close was not scheduled: arm it again with `/signup close-time cancel` and then "
+    "`/signup close-time add`; the bot also arms it when it next starts."
+)
+
+
+async def test_a_discarded_close_arming_names_the_commands_that_arm_it_again(tmp_path):
+    """Manager 77 runs `/signup open` with a close time, and arming the close fails, so the
+    change stops at `arm_close` with the information posted and signups open. A league admin
+    discards it: the reply says to arm it again with `/signup close-time cancel` and then
+    `/signup close-time add`, and that the bot arms it when it next starts, never to set it with
+    `/signup close-time add` alone."""
+    league = await _league(tmp_path)
+    league.bot.scheduler_service.schedule_signup_close_timer.side_effect = RuntimeError(
+        "the job store is locked"
+    )
+    interaction = await _open(league, close_time="2999-01-01T20:00:00")
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "arm_close"
+
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await league.config())["signups_open"]
+    assert ARM_AGAIN in updated_reply(interaction)
+    assert "set it with `/signup close-time add`" not in updated_reply(interaction)
+
+
 # ---------------------------------------------------------------------------
 # Closing the window: `signup.close` and `module.off:signup` (C69–C71)
 # ---------------------------------------------------------------------------
@@ -569,6 +601,42 @@ async def test_a_failed_close_step_stops_the_queue_and_a_discard_names_it(tmp_pa
     assert await stopped_job(league.db_path) is None
     said = updated_reply(press) + "\n" + league.log()
     assert f"<@{SIGNING_UP}>" in said
+
+
+#: What a discarded lock of a returned driver's signup channel says: its deletion a day on is
+#: still armed (#439, slice 8, W3; owner Q-D2).
+NOT_LOCKED = (
+    f"<@{SIGNING_UP}>'s signup channel could not be locked: they can still type in it until it "
+    "deletes itself a day on, or delete it by hand sooner."
+)
+
+
+async def test_a_discarded_lock_says_the_channel_stays_open_to_typing_until_it_deletes_itself(
+    tmp_path,
+):
+    """Kimi is still filling in the wizard, and Discord refuses to change the permissions of his
+    signup channel. Manager 77 confirms the close and the queue stops at Kimi's `close_signup`.
+    A league admin discards it: the channel's deletion a day on is armed all the same, and the
+    reply and the log channel say that Kimi can still type in it until it deletes itself a day
+    on, or that it may be deleted by hand sooner, never that it will not delete itself."""
+    league = await _close_league(tmp_path, SIGNING_UP)
+    league.channel(KIMI_CHANNEL).set_permissions = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+
+    press = await _confirm_close(league)
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "close_signup"
+
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert _deletion_armed(league)
+    said = updated_reply(press) + "\n" + league.log()
+    assert NOT_LOCKED in said
+    assert "will not delete itself" not in said
 
 
 async def test_a_close_that_could_not_record_the_window_closed_names_the_close_time_command_first(

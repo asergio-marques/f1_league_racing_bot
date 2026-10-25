@@ -1,8 +1,8 @@
 """The sessions a round's format creates, and the phase data an amendment clears.
 
-Issue #208. `create_sessions_for_round_on`, `get_sessions`, the two phase updaters and
-`clear_session_phase_data` are the whole session layer of `SeasonService`, and were uncovered.
-They are what the weather module's three phases are recorded against.
+Issue #208. `create_sessions_for_round_on` and `get_sessions` are the session layer of
+`SeasonService`, and were uncovered. They are what the weather module's three phases are recorded
+against.
 
 **A round's format decides its sessions, and nothing else does.** `SESSIONS_BY_FORMAT` is the
 single definition, so the tests read the mapping itself rather than restating it — a format
@@ -23,20 +23,9 @@ set its format defines now.
 **The order sessions are created in is the order they are raced in.** Qualifying before its
 race, sprint before feature. They are read back by insertion order, and a set or a sorted list
 would put a sprint's feature qualifying after its feature race.
-
-**Phase 2 and phase 3 are stored differently because they are different.** Phase 2 is one chosen
-slot type; phase 3 is a list of slots, so it is stored as JSON and read back as a list. Round
-tripping it is the test, because a list stored as its `str()` reads back as a string that still
-looks right in a log and is useless to anything else.
-
-**Clearing phase data is per round, not per session.** An amendment re-runs the whole round's
-forecasting, so a clear that missed a session would leave one session of a round holding slots
-chosen for a track the round no longer runs on. It clears both phases and leaves the sessions
-themselves standing, since the round is still the same round.
 """
 from __future__ import annotations
 
-import json
 import os
 
 import pytest
@@ -261,140 +250,5 @@ async def test_only_the_asked_rounds_sessions_come_back(tmp_path):
 async def test_a_round_with_no_sessions_reads_back_empty(tmp_path):
     """A mystery round is exactly this, and it must not raise at whatever reads the list."""
     db_path = await _make_db(tmp_path, name="read_empty")
-
-    assert await SeasonService(db_path).get_sessions(ROUND_ID) == []
-
-
-# ---------------------------------------------------------------------------
-# Phase 2 and phase 3
-# ---------------------------------------------------------------------------
-
-
-async def test_a_phase_two_slot_type_is_stored(tmp_path):
-    db_path = await _make_db(tmp_path, name="phase2")
-    service = SeasonService(db_path)
-    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
-
-    await service.update_session_phase2(created[0].id, "DRY")
-
-    assert (await service.get_sessions(ROUND_ID))[0].phase2_slot_type == "DRY"
-
-
-async def test_phase_two_is_set_on_one_session_only(tmp_path):
-    """The two sessions of a round are forecast separately — a qualifying may be dry and
-    its race wet, which is the interesting case rather than an unusual one."""
-    db_path = await _make_db(tmp_path, name="phase2_single")
-    service = SeasonService(db_path)
-    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
-
-    await service.update_session_phase2(created[0].id, "DRY")
-
-    assert (await service.get_sessions(ROUND_ID))[1].phase2_slot_type is None
-
-
-async def test_a_phase_three_slot_list_round_trips(tmp_path):
-    """Stored as JSON and read back as a list. A list stored as its `str()` reads back as a
-    string that still looks right in a log and is useless to anything else."""
-    db_path = await _make_db(tmp_path, name="phase3")
-    service = SeasonService(db_path)
-    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
-
-    await service.update_session_phase3(created[0].id, ["DRY", "LIGHT_RAIN", "DRY"])
-
-    assert (await service.get_sessions(ROUND_ID))[0].phase3_slots == [
-        "DRY",
-        "LIGHT_RAIN",
-        "DRY",
-    ]
-
-
-async def test_a_phase_three_list_is_stored_as_json(tmp_path):
-    """Explicitly, because the column is text and anything at all would go into it."""
-    db_path = await _make_db(tmp_path, name="phase3_json")
-    service = SeasonService(db_path)
-    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
-
-    await service.update_session_phase3(created[0].id, ["DRY", "WET"])
-
-    assert json.loads((await _raw_sessions(db_path))[0]["phase3_slots"]) == ["DRY", "WET"]
-
-
-async def test_an_empty_phase_three_list_is_kept_as_a_list(tmp_path):
-    """Distinct from never having been forecast, which is NULL — one is a session with no
-    slots and the other is a session nobody has reached yet."""
-    db_path = await _make_db(tmp_path, name="phase3_empty")
-    service = SeasonService(db_path)
-    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
-
-    await service.update_session_phase3(created[0].id, [])
-
-    assert (await service.get_sessions(ROUND_ID))[0].phase3_slots == []
-
-
-async def test_a_phase_three_list_may_be_replaced(tmp_path):
-    """A re-run of phase 3 rewrites the slots rather than appending to them."""
-    db_path = await _make_db(tmp_path, name="phase3_replace")
-    service = SeasonService(db_path)
-    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
-
-    await service.update_session_phase3(created[0].id, ["DRY"])
-    await service.update_session_phase3(created[0].id, ["WET", "WET"])
-
-    assert (await service.get_sessions(ROUND_ID))[0].phase3_slots == ["WET", "WET"]
-
-
-# ---------------------------------------------------------------------------
-# Clearing it for an amendment
-# ---------------------------------------------------------------------------
-
-
-async def test_clearing_removes_both_phases_from_every_session(tmp_path):
-    """An amendment re-runs the whole round's forecasting; a clear that missed a session
-    would leave it holding slots chosen for a track the round no longer runs on."""
-    db_path = await _make_db(tmp_path, name="clear_all")
-    service = SeasonService(db_path)
-    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.SPRINT)
-    for session in created:
-        await service.update_session_phase2(session.id, "DRY")
-        await service.update_session_phase3(session.id, ["DRY", "WET"])
-
-    await service.clear_session_phase_data(ROUND_ID)
-
-    for session in await service.get_sessions(ROUND_ID):
-        assert session.phase2_slot_type is None
-        assert session.phase3_slots is None
-
-
-async def test_clearing_leaves_the_sessions_standing(tmp_path):
-    """The round is still the same round, with the same format and the same sessions — only
-    the forecast against them is withdrawn."""
-    db_path = await _make_db(tmp_path, name="clear_keeps")
-    service = SeasonService(db_path)
-    await _create_sessions(db_path, ROUND_ID, RoundFormat.SPRINT)
-
-    await service.clear_session_phase_data(ROUND_ID)
-
-    assert len(await service.get_sessions(ROUND_ID)) == 4
-
-
-async def test_clearing_one_round_leaves_another_alone(tmp_path):
-    """Amendments are per round; clearing a division's whole calendar would throw away
-    forecasts for rounds nobody amended."""
-    db_path = await _make_db(tmp_path, name="clear_scope")
-    service = SeasonService(db_path)
-    other = await _create_sessions(db_path, OTHER_ROUND_ID, RoundFormat.NORMAL)
-    await service.update_session_phase2(other[0].id, "DRY")
-    await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
-
-    await service.clear_session_phase_data(ROUND_ID)
-
-    assert (await service.get_sessions(OTHER_ROUND_ID))[0].phase2_slot_type == "DRY"
-
-
-async def test_clearing_a_round_with_no_sessions_is_not_an_error(tmp_path):
-    """A mystery round amended to a normal one passes through exactly this."""
-    db_path = await _make_db(tmp_path, name="clear_none")
-
-    await SeasonService(db_path).clear_session_phase_data(ROUND_ID)
 
     assert await SeasonService(db_path).get_sessions(ROUND_ID) == []

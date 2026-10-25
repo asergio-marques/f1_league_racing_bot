@@ -9,6 +9,9 @@ own lane (``channel:<submission channel>``), the conversation it begins. Its job
    restart reads both), and writes the one line the log channel keeps of the press, naming the
    penalties and pardons the press discards: once they are gone it is the only record they were
    staged. The line is queued in the save, so a log channel that refuses it holds nothing up.
+   **It cannot be discarded** (#439, slice 8): dropped, the resubmission would run unrecorded, its
+   pastes refused and its review left with no prompt until the bot restarts, so a Discard on it is
+   refused (a change stopped at its check on it included) and only a Retry moves it.
 2. **`delete_prompt`** and **`delete_approval`** take the review's prompt and any approval message
    down, so that nobody can approve the results being replaced or start a second resubmission
    (#402); a message already gone completes the job.
@@ -49,6 +52,7 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
 )
+from leaguebot.core.services import season_service
 from leaguebot.results.services import result_submission_service as submissions
 from leaguebot.results.services import review_open_change
 from leaguebot.results.services.review_posting import DELETE_MESSAGE, posting_steps
@@ -202,6 +206,13 @@ def resubmission_start_change(*, queue: ChangeQueue) -> ChangeType:
     async def describe_first_prompt(_ctx: StepContext) -> str:
         return "working out the first session to ask for"
 
+    async def would_run_unrecorded(ctx: StepContext) -> str:
+        called = await season_service.round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        return (
+            f"{called}'s resubmission would run unrecorded: its pastes would be refused and its "
+            "review left with no prompt until the bot restarts"
+        )
+
     async def describe_mark(_ctx: StepContext) -> str:
         return "flagging the round's submission as being resubmitted"
 
@@ -243,7 +254,10 @@ def resubmission_start_change(*, queue: ChangeQueue) -> ChangeType:
         opening=(),
         plan=_plan,
         steps={
-            MARK: Step(MARK, StepKind.SAVE, mark, describe=describe_mark),
+            MARK: Step(
+                MARK, StepKind.SAVE, mark, describe=describe_mark,
+                undiscardable=would_run_unrecorded,
+            ),
             DELETE_PROMPT: dataclasses.replace(deletion, name=DELETE_PROMPT),
             DELETE_APPROVAL: dataclasses.replace(deletion, name=DELETE_APPROVAL),
             POST_ANNOUNCEMENT: announcement,
@@ -271,7 +285,9 @@ def resubmission_swap_change() -> ChangeType:
     resubmission's flag), the drafts deleted, and the next request asked in the same save. With a
     session held the review is asked again, publishing the new results as "Provisional Results
     (amended)"; with every session cancelled the cancelled sessions are asked posted and the
-    channel closed (`results.submission.all_cancelled`).
+    channel closed (`results.submission.all_cancelled`), told that it follows a resubmission, so
+    that the round's standings are withdrawn with it, and the tables of the earlier sessions the
+    resubmission does not enter, which the new rows could not carry, are taken down.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -290,7 +306,7 @@ def resubmission_swap_change() -> ChangeType:
         payload = ctx.payload
         round_id = int(payload["round_id"])
         held = await submissions.resubmission_drafts_on(db, round_id)
-        await submissions.replace_round_results_on(
+        unplaced = await submissions.replace_round_results_on(
             db, round_id, int(payload["division_id"]), int(payload["season_id"]), held
         )
         await db.execute("DELETE FROM resubmission_drafts WHERE round_id = ?", (round_id,))
@@ -312,6 +328,7 @@ def resubmission_swap_change() -> ChangeType:
                 {
                     "round_id": round_id, "channel_id": int(payload["channel_id"]),
                     "round_number": number, "sessions": sessions,
+                    "resubmission": True, "old_tables": unplaced,
                 },
                 f"posting round {number}'s cancelled sessions",
             )

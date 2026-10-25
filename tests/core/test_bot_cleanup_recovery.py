@@ -10,8 +10,10 @@ the wrong moment left those messages standing for good. The league decided both 
 **Only what is at least a day past is taken down.** A round that started under a day ago still
 has its job armed, which will run at its own moment.
 
-**A cancelled round or division is left alone**, as its cancellation removed both jobs and the
-weather module keeps the forecasts of a round called off. **A completed season is not**: the
+**A round called off, or a round of a cancelled division, is left alone**, as its cancellation
+removed both jobs and the weather module keeps the forecasts of a round called off. **A round
+whose every session was entered as not held is not**: it ends cancelled, but its clean-ups stay
+armed and come down a day after its start like any round raced (#439, slice 8, Part E). **A completed season is not**: the
 live jobs fire after a season completes, and the catch-up does what they would have.
 
 **Each module's gate applies.** Weather's is asked here; attendance's is the check-in
@@ -51,9 +53,12 @@ async def _make_db(
     check_in: bool = True,
     phases: tuple[int, ...] = (3,),
     round_format: str = "NORMAL",
+    not_held: int | None = None,
 ) -> str:
     """A round *hours_since_start* past its start, with a forecast of each of *phases* (Phase 3
-    alone unless given; 0 a mystery round's notice) and a call standing.
+    alone unless given; 0 a mystery round's notice) and a call standing. *not_held*, where given,
+    is written to the round's `not_held` flag, 1 marking a round whose every session was entered
+    as not held.
 
     Placed against the clock rather than pinned, because the recovery reads the clock itself.
     """
@@ -76,6 +81,8 @@ async def _make_db(
             "scheduled_at, status) VALUES (?, ?, 1, ?, 'Silverstone Circuit', ?, ?)",
             (ROUND_ID, DIVISION_ID, round_format, started.isoformat(), round_status),
         )
+        if not_held is not None:
+            await db.execute("UPDATE rounds SET not_held = ? WHERE id = ?", (not_held, ROUND_ID))
         for phase in phases if forecast else ():
             await db.execute(
                 "INSERT INTO forecast_messages "
@@ -181,6 +188,24 @@ async def test_a_round_a_day_past_with_an_earlier_phase_standing_has_its_forecas
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
+async def test_a_superseded_forecast_whose_deletion_was_discarded_is_caught_up_with_the_round(
+    tmp_path, caplog
+):
+    """Phase 3 of round 21 posted, but deleting the Phase 2 forecast it superseded failed and a
+    league admin discarded that job, so both forecasts are still recorded. The bot starts a day
+    after the race: the catch-up asks the round's forecast clean-up, naming Phase 2 among what it
+    deletes, so the discarded deletion is carried out with the round's clean-up (#439, slice 8,
+    W4)."""
+    db_path = await _make_db(tmp_path, phases=(2, 3))
+
+    with caplog.at_level("INFO", logger=bot_module.__name__):
+        assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
+
+    lines = [record.getMessage() for record in caplog.records]
+    assert (f"_recover_missed_cleanups: deleting the Phase 2 and 3 forecasts of "
+            f"round_id={ROUND_ID}") in lines, lines
+
+
 @pytest.mark.parametrize(
     "phases, named",
     [((3,), "the Phase 3 forecast"), ((2,), "the Phase 2 forecast"),
@@ -220,10 +245,21 @@ async def test_a_mystery_round_s_notice_asks_no_forecast_cleanup(tmp_path):
     ids=["cancelled-round", "cancelled-division"],
 )
 async def test_a_cancelled_round_is_left_alone(tmp_path, kwargs):
-    """Its cancellation removed both jobs, and a cancelled round keeps its forecasts."""
+    """A round called off, or one of a division cancelled, is left alone: its cancellation removed
+    both jobs, and a round called off keeps its forecasts."""
     db_path = await _make_db(tmp_path, **kwargs)
 
     assert await _recover(_bot(db_path)) == ([], [])
+
+
+async def test_a_round_whose_every_session_was_not_held_has_its_cleanups_caught_up(tmp_path):
+    """Round 21 started 25 hours ago, its Phase 3 forecast and its call standing, and ended
+    cancelled because every session of it was entered as not held. The bot starts again: the
+    catch-up asks both its forecast clean-up and its check-in clean-up, as for any round a day
+    past (attendance :75; weather :143)."""
+    db_path = await _make_db(tmp_path, round_status="CANCELLED", not_held=1)
+
+    assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
 async def test_weather_switched_off_keeps_its_forecasts(tmp_path):

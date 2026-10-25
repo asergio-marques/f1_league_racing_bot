@@ -9,20 +9,25 @@ hands the penalty review to the league (`results.review.open`) and says it is be
 job number (results spec :382). A message typed while a turn still waits in the channel is turned
 away at once with a note and deleted. A message from anyone but a league manager is ignored.
 
-The league is `ongoing_league`'s, results on: Pro's round 3 awaits results, its submission open
-in channel `SUBMISSION_CHANNEL`; the admin (77) holds the league managers' role. The division's
-seats, as the paste's validation reads them, are Lewis (101) and Max (102) at Ferrari, shorthand
-FER; Charles (103) races in Am. Everything of the change is reached through the cog and the queue,
-or imported inside a test, so this file collects while it is unbuilt.
+The league is `ongoing_league`'s, results on: Pro's round 3 awaits results, its submission open in
+channel `SUBMISSION_CHANNEL`; the admin (77) holds the league managers' role. The division's seats,
+as the paste's validation reads them, are Lewis (101) and Max (102) at Ferrari, shorthand FER;
+Charles (103) races in Am.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
+import sqlite3
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 
+from leaguebot.core.models.change import Verdict
 from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.services import result_submission_service
 from leaguebot.results.services.result_submission_service import (
     DivisionValidationData,
@@ -33,6 +38,7 @@ from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     MARK,
     change_rows,
+    http_error,
     member_interaction,
     queued_log_lines,
     retry_job,
@@ -47,6 +53,7 @@ from tests.support.season_league import (
     DIVISIONS,
     LEWIS,
     PRO,
+    SEASON_NUMBER,
     SUBMISSION_CHANNEL,
     SeasonLeague,
     accept_session,
@@ -145,12 +152,30 @@ async def test_a_paste_is_marked_at_once_and_saved_with_the_next_prompt_when_its
     assert MARK not in paste.marks
 
 
+async def _refused_lines(league: SeasonLeague) -> list[str]:
+    """Every `RESULT_SUBMISSION_REJECTED` line written to the log channel, queued or posted, its
+    mentions read without the backticks the log channel posts them in."""
+    lines = [*await queued_log_lines(league.db_path), *league.bot.log_channel.sent]
+    return [line.replace("`<@", "<@").replace(">`", ">") for line in lines
+            if "RESULT_SUBMISSION_REJECTED" in line]
+
+
+def _names_the_paste(line: str, *, reason: str, content: str,
+                     session: str = "FEATURE_QUALIFYING") -> None:
+    """*line* names season 3, Pro, round 3 and *session*, gives *reason* on a `reason:` line,
+    and quotes the paste *content* as typed."""
+    assert f"season: {SEASON_NUMBER}, division: 'Pro'" in line, line
+    assert f"round: 3, session: {session}" in line, line
+    assert "reason:" in line and reason in line, line
+    assert content in line, line
+
+
 async def test_a_paste_while_its_turn_waits_is_turned_away_with_a_note(tmp_path, monkeypatch):
     """The admin pastes the qualifying, then the race before the queue has reached the first.
     The second is deleted at once and a note in the channel says the earlier message is still
-    waiting its turn; the refusal is logged, one ⛔ line naming the admin, round 3 and the
-    qualifying still waited on (results :257); only one turn is asked, and only the qualifying is
-    saved when it runs."""
+    waiting its turn; the refusal is logged, one ⛔ line naming the admin, season 3, round 3 and
+    the qualifying still waited on (results :257; README :1781); only one turn is asked, and only
+    the qualifying is saved when it runs."""
     league = await _league(tmp_path, monkeypatch)
 
     await _type(league, QUALI_PASTE)
@@ -162,6 +187,7 @@ async def test_a_paste_while_its_turn_waits_is_turned_away_with_a_note(tmp_path,
     assert logged.count("⛔") == 1, logged
     line = logged[logged.index("⛔"):]
     assert f"<@{ADMIN_ID}>" in line and "Round 3" in line and QUALIFYING in line, line
+    assert f"season {SEASON_NUMBER}" in line.lower(), line
     assert len(await _turns(league)) == 1
     await run_queue(league.bot)
     assert await _sessions(league) == [("FEATURE_QUALIFYING", "ACTIVE")]
@@ -232,7 +258,8 @@ async def test_the_last_paste_asks_the_review_and_says_its_job_number(tmp_path, 
 async def test_every_session_cancelled_closes_the_channel_as_a_job(tmp_path, monkeypatch):
     """The qualifying was entered as cancelled; the admin types CANCELLED for the race too. When
     the queue runs, the channel says "⏭️", round 3's submission row is closed and its channel
-    deleted by a job, and no penalty review is asked."""
+    deleted by a job, no penalty review is asked, and round 3 ends cancelled, marked as not
+    held."""
     league = await _league(tmp_path, monkeypatch)
     await accept_session(league, ROUND_3, session="FEATURE_QUALIFYING", status="CANCELLED")
 
@@ -248,6 +275,8 @@ async def test_every_session_cancelled_closes_the_channel_as_a_job(tmp_path, mon
     assert any(event[0] == "delete_channel" and event[1] == SUBMISSION_CHANNEL
                for event in league.events)
     assert not [row for row in await change_rows(league.db_path) if row["kind"] == REVIEW_OPEN]
+    [ended] = await league.rows("SELECT status, not_held FROM rounds WHERE id = ?", ROUND_3)
+    assert (ended["status"], ended["not_held"]) == ("CANCELLED", 1)
 
 
 async def test_a_refused_prompt_stops_the_queue_with_the_session_saved(tmp_path, monkeypatch):
@@ -273,7 +302,9 @@ async def test_a_paste_in_a_channel_held_by_an_amendment_or_closed_by_a_cancella
 ):
     """The admin pastes the qualifying; before its turn comes, round 3's submission is closed by
     a cancellation, or round 2 of Pro is opened for amendment. When the turn runs nothing is
-    saved and no prompt is posted."""
+    saved and no prompt is posted, and one `RESULT_SUBMISSION_REJECTED` line is logged naming
+    season 3, Pro, round 3 and the qualifying, the reason the channel was given, and the paste
+    (results :261)."""
     league = await _league(tmp_path, monkeypatch)
 
     await _type(league, QUALI_PASTE)
@@ -291,6 +322,126 @@ async def test_a_paste_in_a_channel_held_by_an_amendment_or_closed_by_a_cancella
 
     assert await _sessions(league) == []
     assert "📋 Submit" not in _said(league)
+    [line] = await _refused_lines(league)
+    _names_the_paste(
+        line, content=QUALI_PASTE,
+        reason=("Round 3's results submission has been closed" if why == "closed by a cancellation"
+                else "Round 2 of this division is being amended"),
+    )
+
+
+async def test_a_paste_whose_round_is_cancelled_before_its_turn_is_logged(tmp_path, monkeypatch):
+    """The admin pastes round 3's qualifying; before its turn comes, round 3 is cancelled. When
+    the turn runs nothing is saved, the channel is told the round has been cancelled, and one
+    `RESULT_SUBMISSION_REJECTED` line is logged naming season 3, Pro, round 3 and the qualifying,
+    with that reason and the paste (results :261)."""
+    league = await _league(tmp_path, monkeypatch)
+
+    await _type(league, QUALI_PASTE)
+    await league.write("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", ROUND_3)
+    await run_queue(league.bot)
+
+    assert await _sessions(league) == []
+    assert "Round 3 has been cancelled" in _said(league)
+    [line] = await _refused_lines(league)
+    _names_the_paste(line, content=QUALI_PASTE, reason="Round 3 has been cancelled")
+
+
+async def test_a_fastest_lap_override_refused_is_logged(tmp_path, monkeypatch):
+    """The qualifying is saved; the admin pastes the race with "FL: <@103>", Charles, who is not
+    among its finishers. When its turn comes nothing is saved, the channel is told the override is
+    not in the submitted results, and one `RESULT_SUBMISSION_REJECTED` line is logged naming
+    season 3, Pro, round 3 and the race, with the reason "FL override <@103> is not in the
+    submitted results" and the paste (results :261; owner Q-G3a)."""
+    league = await _league(tmp_path, monkeypatch)
+    await accept_session(league, ROUND_3, session="FEATURE_QUALIFYING")
+    paste = f"FL: <@103>\n{RACE_PASTE}"
+
+    await _type(league, paste)
+    await run_queue(league.bot)
+
+    assert ("FEATURE_RACE", "ACTIVE") not in await _sessions(league)
+    assert "FL override <@103> is not in the submitted results" in _said(league)
+    [line] = await _refused_lines(league)
+    _names_the_paste(
+        line, content=paste, session="FEATURE_RACE",
+        reason="FL override <@103> is not in the submitted results",
+    )
+
+
+async def test_the_validation_refusal_s_line_is_unchanged(tmp_path, monkeypatch):
+    """The admin pastes a qualifying naming Charles, who races in Am. The one
+    `RESULT_SUBMISSION_REJECTED` line logged when its turn comes reads as before: the admin, then
+    season 3 and 'Pro', round 3 and the qualifying, then the paste quoted, with no `reason:` line
+    (results :257)."""
+    league = await _league(tmp_path, monkeypatch)
+
+    await _type(league, OUTSIDER_PASTE)
+    await run_queue(league.bot)
+
+    [line] = await _refused_lines(league)
+    assert (
+        f"{member_named('Admin', ADMIN_ID)} | RESULT_SUBMISSION_REJECTED | \n"
+        f"  season: {SEASON_NUMBER}, division: 'Pro'\n"
+        "  round: 3, session: FEATURE_QUALIFYING\n"
+        f"  input:\n```\n{OUTSIDER_PASTE}\n```"
+    ) in line, line
+    assert "reason:" not in line, line
+
+
+async def test_a_cancellation_saved_between_the_settling_and_the_save_saves_no_session(
+    tmp_path, monkeypatch,
+):
+    """The admin pastes round 3's qualifying. Its turn is judged and settled, finding the round
+    open, and its save is next; before the save runs, a cancellation's save records round 3
+    cancelled. The session's save then saves nothing and answers in the channel that round 3 has
+    been cancelled, so its results can no longer be entered, and no prompt for the race is
+    posted."""
+    league = await _league(tmp_path, monkeypatch)
+
+    await _type(league, QUALI_PASTE)
+    for _ in range(50):
+        turns = await _turns(league)
+        if turns and any(job["name"] == "settle" and job["done_at"]
+                         for job in await step_rows(league.db_path, turns[0]["id"])):
+            break
+        await run_queue(league.bot, steps=1)
+    else:
+        raise AssertionError("the turn was never settled")
+    await league.write("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", ROUND_3)
+
+    await run_queue(league.bot)
+
+    assert await _sessions(league) == []
+    assert ("⛔ Round 3 has been cancelled, so its results can no longer be entered. Nothing was "
+            "saved.") in _said(league)
+    assert "📋 Submit" not in _said(league)
+    assert await stopped_job(league.db_path) is None
+
+
+async def test_a_session_refused_at_its_save_for_a_cancellation_is_logged(tmp_path, monkeypatch):
+    """As above: round 3's qualifying is judged and settled, then a cancellation's save records
+    round 3 cancelled before the session's save runs. The save saves nothing, and one
+    `RESULT_SUBMISSION_REJECTED` line is logged naming season 3, Pro, round 3 and the qualifying,
+    with the reason that round 3 has been cancelled and the paste (results :261)."""
+    league = await _league(tmp_path, monkeypatch)
+
+    await _type(league, QUALI_PASTE)
+    for _ in range(50):
+        turns = await _turns(league)
+        if turns and any(job["name"] == "settle" and job["done_at"]
+                         for job in await step_rows(league.db_path, turns[0]["id"])):
+            break
+        await run_queue(league.bot, steps=1)
+    else:
+        raise AssertionError("the turn was never settled")
+    await league.write("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", ROUND_3)
+
+    await run_queue(league.bot)
+
+    assert await _sessions(league) == []
+    [line] = await _refused_lines(league)
+    _names_the_paste(line, content=QUALI_PASTE, reason="Round 3 has been cancelled")
 
 
 async def test_a_message_by_someone_other_than_a_league_manager_is_ignored(tmp_path, monkeypatch):
@@ -465,11 +616,12 @@ def _picker(league: SeasonLeague) -> Any:
     return picker
 
 
-def _choice(league: SeasonLeague, picker: Any) -> Any:
-    """The admin's press of "Heavy" on *picker*: its response, edits and follow-ups recorded;
-    the acknowledgement, where it is a follow-up, is a message whose edits are recorded."""
+def _choice(league: SeasonLeague, picker: Any, *, by: int = ADMIN_ID) -> Any:
+    """A press of a button on *picker* by *by*, the admin unless another is given: its
+    response, edits and follow-ups recorded; the acknowledgement, where it is a follow-up, is a
+    message whose edits are recorded."""
     press = member_interaction(
-        league.bot, user=league._member(ADMIN_ID), created_at=league.clock.now,
+        league.bot, user=league._member(by), created_at=league.clock.now,
     )
     press.guild = league.guild
     press.channel_id = SUBMISSION_CHANNEL
@@ -488,12 +640,18 @@ def _choice(league: SeasonLeague, picker: Any) -> Any:
     return press
 
 
-async def _press_heavy(league: SeasonLeague) -> Any:
-    """The admin presses "Heavy" on the configuration picker; gives the press."""
+def _button(picker: Any, label: str) -> Any:
+    """The button labelled *label* on *picker*."""
+    [button] = [item for item in picker.view.children if getattr(item, "label", None) == label]
+    return button
+
+
+async def _press(league: SeasonLeague, label: str = HEAVY, *, by: int = ADMIN_ID) -> Any:
+    """*by*, the admin unless another is given, presses *label*, "Heavy" unless another is given,
+    on the configuration picker; gives the press."""
     picker = _picker(league)
-    [button] = [item for item in picker.view.children if getattr(item, "label", None) == HEAVY]
-    press = _choice(league, picker)
-    await button.callback(press)
+    press = _choice(league, picker, by=by)
+    await _button(picker, label).callback(press)
     return press
 
 
@@ -525,7 +683,7 @@ async def test_a_configuration_choice_saves_the_session_and_moves_on(tmp_path, m
     assert await _configs(league) == []
     assert "📋 Submit" not in _said(league)
 
-    await _press_heavy(league)
+    await _press(league)
     [choice] = [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND]
     assert choice["lane"] == LANE
     await run_queue(league.bot)
@@ -533,6 +691,41 @@ async def test_a_configuration_choice_saves_the_session_and_moves_on(tmp_path, m
     assert await stopped_job(league.db_path) is None
     assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", HEAVY)]
     assert f"📋 Submit **{RACE}** results" in _said(league)
+
+
+#: A second league manager, who presses the picker the admin's paste posted.
+PRESSER = 78
+
+
+async def test_a_paste_held_once_its_configuration_is_chosen_is_logged_naming_the_presser(
+    tmp_path, monkeypatch,
+):
+    """The season has two points configurations attached. The admin pastes round 3's
+    qualifying and its turn offers the configurations; round 2 of Pro is then opened for
+    amendment, and a second league manager (78) presses "Heavy". When the choice runs nothing is
+    saved, and one `RESULT_SUBMISSION_REJECTED` line is logged naming the presser, not the admin,
+    with season 3, Pro, round 3 and the qualifying, the amendment as the reason, and the paste
+    (results :261)."""
+    league = await _league(tmp_path, monkeypatch)
+    league.roles_held[PRESSER] = {MANAGER_ROLE_ID}
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    await league.write(
+        "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at) "
+        "VALUES (?, 7700, '[\"FEATURE_RACE\"]', ?)",
+        round_id(PRO, 2), league.clock.now.isoformat(),
+    )
+
+    await _press(league, by=PRESSER)
+    await run_queue(league.bot)
+
+    assert await _configs(league) == []
+    [line] = await _refused_lines(league)
+    assert f"<@{PRESSER}>" in line.split(" | ")[0], line
+    assert f"<@{ADMIN_ID}>" not in line, line
+    _names_the_paste(line, content=QUALI_PASTE,
+                     reason="Round 2 of this division is being amended")
 
 
 async def test_the_picker_is_edited_by_the_press_s_own_response(tmp_path, monkeypatch):
@@ -545,7 +738,7 @@ async def test_the_picker_is_edited_by_the_press_s_own_response(tmp_path, monkey
     await run_queue(league.bot)
     picker = _picker(league)
 
-    press = await _press_heavy(league)
+    press = await _press(league)
     await run_queue(league.bot)
 
     [edit] = press.response.edit_message.await_args_list
@@ -567,7 +760,7 @@ async def test_a_configuration_choice_is_acknowledged_and_updated_and_kept_while
     await run_queue(league.bot)
     holder = await block_queue(league, lane=LANE)
 
-    press = await _press_heavy(league)
+    press = await _press(league)
     await run_queue(league.bot)
 
     [acknowledged] = _private_texts(press)
@@ -579,3 +772,343 @@ async def test_a_configuration_choice_is_acknowledged_and_updated_and_kept_while
 
     assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", HEAVY)]
     assert press.acknowledged.edit.await_args_list or press.edit_original_response.await_args_list
+
+
+#: The season's other points configuration, attached beside "Heavy".
+STANDARD = "Standard"
+
+
+def _presser_refusals(lines: list[str]) -> list[str]:
+    """The refusal lines among *lines* naming the second league manager, whose mention the log
+    channel writes in code."""
+    return [line for line in lines if line.startswith("⛔") and f"`<@{PRESSER}>`" in line]
+
+
+@pytest.mark.parametrize("ran_first", [False, True], ids=["waiting", "ran"])
+async def test_a_second_press_of_the_picker_is_refused_privately_and_the_first_choice_stands(
+    tmp_path, monkeypatch, ran_first,
+):
+    """The season has two points configurations attached. The admin pastes round 3's qualifying
+    and its turn offers the configurations; the admin presses "Heavy". Then — while the choice
+    waits its turn, or once it has run — a second league manager (78) presses "Standard" on the
+    same picker. His press does not touch the message: he is told, seen by him alone, that the
+    configuration has already been chosen, naming Heavy, and one refusal line names him. One
+    choice is asked, and the qualifying is saved scored by Heavy."""
+    league = await _league(tmp_path, monkeypatch)
+    league.roles_held[PRESSER] = {MANAGER_ROLE_ID}
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+
+    await _press(league, HEAVY)
+    if ran_first:
+        await run_queue(league.bot)
+    second = await _press(league, STANDARD, by=PRESSER)
+    await run_queue(league.bot)
+
+    second.response.edit_message.assert_not_awaited()
+    [told] = _private_texts(second)
+    assert told.startswith("⚠️"), told
+    assert "already been chosen" in told and HEAVY in told, told
+    assert len([row for row in await change_rows(league.db_path)
+                if row["kind"] == CONFIG_KIND]) == 1
+    assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", HEAVY)]
+    lines = [*await queued_log_lines(league.db_path), *league.bot.log_channel.sent]
+    assert len(_presser_refusals(lines)) == 1, lines
+
+
+async def test_a_press_made_while_the_first_press_s_edit_is_in_flight_is_refused(
+    tmp_path, monkeypatch,
+):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy", and while Discord has yet to answer that press's
+    edit of the message, a second league manager (78) presses "Standard". His press does not
+    touch the message and is refused, seen by him alone, saying the configuration is being
+    chosen, naming Heavy; one choice is asked, and the qualifying is saved scored by Heavy."""
+    league = await _league(tmp_path, monkeypatch)
+    league.roles_held[PRESSER] = {MANAGER_ROLE_ID}
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    picker = _picker(league)
+    first = _choice(league, picker)
+    begun, answered = asyncio.Event(), asyncio.Event()
+
+    async def _edit_in_flight(*_args: Any, **_kwargs: Any) -> None:
+        begun.set()
+        await answered.wait()
+
+    first.response.edit_message = AsyncMock(side_effect=_edit_in_flight)
+    pressing = asyncio.create_task(_button(picker, HEAVY).callback(first))
+    await asyncio.wait_for(begun.wait(), timeout=5)
+
+    second = await _press(league, STANDARD, by=PRESSER)
+    answered.set()
+    await pressing
+    await run_queue(league.bot)
+
+    second.response.edit_message.assert_not_awaited()
+    [told] = _private_texts(second)
+    assert told.startswith("⚠️") and "is being chosen" in told and HEAVY in told, told
+    assert len([row for row in await change_rows(league.db_path)
+                if row["kind"] == CONFIG_KIND]) == 1
+    assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", HEAVY)]
+
+
+async def test_a_picker_whose_edit_fails_can_be_pressed_again(tmp_path, monkeypatch):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy", but Discord refuses the press's edit of the
+    message: no choice is asked and the buttons stay up. He presses "Standard": that press edits
+    the message, its choice is asked, and the qualifying is saved scored by Standard."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    picker = _picker(league)
+    first = _choice(league, picker)
+    first.response.edit_message = AsyncMock(side_effect=http_error())
+
+    with pytest.raises(discord.HTTPException):
+        await _button(picker, HEAVY).callback(first)
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND] == []
+
+    second = await _press(league, STANDARD)
+    await run_queue(league.bot)
+
+    [edit] = second.response.edit_message.await_args_list
+    assert f"Config selected: **{STANDARD}**" in str(edit.kwargs.get("content"))
+    assert len([row for row in await change_rows(league.db_path)
+                if row["kind"] == CONFIG_KIND]) == 1
+    assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", STANDARD)]
+
+
+#: The picker's text as the qualifying paste's turn posts it.
+PICKER_TEXT = "🔧 Select the points configuration for this session:"
+
+
+def _failing_once(monkeypatch: Any, queue: Any, name: str, call: int, outcome: Any) -> None:
+    """The queue's *name* (``check`` or ``ask``) gives *outcome* on its *call*-th call — raising
+    it where it is an exception — and runs as it does otherwise."""
+    real = getattr(queue, name)
+    calls = {"made": 0}
+
+    async def _wrapped(*args: Any, **kwargs: Any) -> Any:
+        calls["made"] += 1
+        if calls["made"] == call:
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(queue, name, _wrapped)
+
+
+async def _chooses_again(league: SeasonLeague) -> None:
+    """The admin presses "Standard" on the picker: that press edits the message, its choice is
+    the one choice asked, and the qualifying is saved scored by Standard."""
+    second = await _press(league, STANDARD)
+    await run_queue(league.bot)
+
+    [edit] = second.response.edit_message.await_args_list
+    assert f"Config selected: **{STANDARD}**" in str(edit.kwargs.get("content"))
+    assert len([row for row in await change_rows(league.db_path)
+                if row["kind"] == CONFIG_KIND]) == 1
+    assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", STANDARD)]
+
+
+def _put_back(press: Any, picker: Any) -> None:
+    """*press*'s response was edited back to the picker: its text, and its buttons."""
+    [restored] = press.edit_original_response.await_args_list
+    assert restored.kwargs.get("content") == PICKER_TEXT, restored
+    view = restored.kwargs.get("view")
+    assert view is picker.view, restored
+    assert {getattr(item, "label", None) for item in view.children} == {HEAVY, STANDARD}
+
+
+async def test_a_picker_whose_check_fails_can_be_pressed_again(tmp_path, monkeypatch):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy", but the queue's check of the choice fails on a
+    fault in the bot (the database is locked): he is told the press stopped on a fault, no
+    choice is asked and the message is left alone. He presses "Standard": that press edits the
+    message, its choice is asked, and the qualifying is saved scored by Standard."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    _failing_once(monkeypatch, league.bot.change_queue, "check", 1,
+                  sqlite3.OperationalError("database is locked"))
+    picker = _picker(league)
+    first = _choice(league, picker)
+    button = _button(picker, HEAVY)
+
+    with pytest.raises(sqlite3.OperationalError) as raised:
+        await button.callback(first)
+    await picker.view.on_error(first, raised.value, button)
+
+    [told] = _private_texts(first)
+    assert told.startswith("❌"), told
+    first.response.edit_message.assert_not_awaited()
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND] == []
+    await _chooses_again(league)
+
+
+async def test_a_picker_whose_ask_is_refused_after_its_edit_is_put_back(tmp_path, monkeypatch):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy": the queue's check lets the choice through and
+    the press edits the message, but the ask, checking again, refuses it. He is told why, seen by
+    him alone; nothing is asked, and the message is put back to the picker, its text and its
+    buttons. He presses "Standard": that press edits the message, its choice is asked, and the
+    qualifying is saved scored by Standard."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    _failing_once(monkeypatch, league.bot.change_queue, "check", 2,
+                  Verdict.refuse("⛔ Not this time."))
+    picker = _picker(league)
+    first = _choice(league, picker)
+
+    await _button(picker, HEAVY).callback(first)
+
+    first.response.edit_message.assert_awaited_once()
+    assert any("Not this time." in text for text in _private_texts(first)), _private_texts(first)
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND] == []
+    _put_back(first, picker)
+    await _chooses_again(league)
+
+
+async def test_a_picker_whose_ask_fails_after_its_edit_is_put_back(tmp_path, monkeypatch):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy": the press edits the message, but the queue's
+    ask of the choice fails on a fault in the bot (the database is locked), which the press
+    raises. Nothing is asked, and the message is put back to the picker, its text and its
+    buttons. He presses "Standard": that press edits the message, its choice is asked, and the
+    qualifying is saved scored by Standard."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    _failing_once(monkeypatch, league.bot.change_queue, "ask", 1,
+                  sqlite3.OperationalError("database is locked"))
+    picker = _picker(league)
+    first = _choice(league, picker)
+
+    with pytest.raises(sqlite3.OperationalError):
+        await _button(picker, HEAVY).callback(first)
+
+    first.response.edit_message.assert_awaited_once()
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND] == []
+    _put_back(first, picker)
+    await _chooses_again(league)
+
+
+async def test_the_picker_s_claim_is_held_until_it_is_put_back(tmp_path, monkeypatch):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy": the press edits the message, but the queue's ask,
+    checking again, refuses the choice, and while the message is still being put back to the
+    picker a second league manager (78) presses "Standard". His press does not touch the message
+    and is told, seen by him alone, that the configuration is being chosen, naming Heavy. Once the
+    put-back lands the picker stands, its text and its buttons, and nothing has been asked."""
+    league = await _league(tmp_path, monkeypatch)
+    league.roles_held[PRESSER] = {MANAGER_ROLE_ID}
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    _failing_once(monkeypatch, league.bot.change_queue, "check", 2,
+                  Verdict.refuse("⛔ Not this time."))
+    picker = _picker(league)
+    first = _choice(league, picker)
+    begun, landed = asyncio.Event(), asyncio.Event()
+
+    async def _put_back_in_flight(*_args: Any, **_kwargs: Any) -> None:
+        begun.set()
+        await landed.wait()
+
+    first.edit_original_response = AsyncMock(side_effect=_put_back_in_flight)
+    pressing = asyncio.create_task(_button(picker, HEAVY).callback(first))
+    await asyncio.wait_for(begun.wait(), timeout=5)
+
+    second = await _press(league, STANDARD, by=PRESSER)
+    landed.set()
+    await pressing
+
+    second.response.edit_message.assert_not_awaited()
+    [told] = _private_texts(second)
+    assert told.startswith("⚠️") and "is being chosen" in told and HEAVY in told, told
+    _put_back(first, picker)
+    assert picker.view.selected is None
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND] == []
+
+
+def _put_back_failures(caplog: Any) -> list[Any]:
+    """The host's error records carrying the traceback of a put-back Discord refused."""
+    return [record for record in caplog.records
+            if record.levelno >= logging.ERROR and record.exc_info
+            and isinstance(record.exc_info[1], discord.HTTPException)]
+
+
+async def test_a_put_back_that_fails_keeps_the_original_fault_in_the_report(
+    tmp_path, monkeypatch, caplog,
+):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy": the press edits the message, but the queue's ask
+    fails on a fault in the bot (the database is locked), and Discord then refuses the edit that
+    would put the picker back. The press raises the database's fault, the one the choice failed
+    on, not Discord's; the put-back's failure is logged on the host with its traceback."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    _failing_once(monkeypatch, league.bot.change_queue, "ask", 1,
+                  sqlite3.OperationalError("database is locked"))
+    picker = _picker(league)
+    first = _choice(league, picker)
+    first.edit_original_response = AsyncMock(side_effect=http_error())
+
+    with caplog.at_level(logging.ERROR), pytest.raises(sqlite3.OperationalError):
+        await _button(picker, HEAVY).callback(first)
+
+    first.edit_original_response.assert_awaited_once()
+    assert _put_back_failures(caplog), caplog.records
+    assert picker.view.selected is None
+
+
+async def test_a_put_back_that_fails_after_a_refusal_gives_no_second_reply(
+    tmp_path, monkeypatch, caplog,
+):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy": the press edits the message, but the queue's ask,
+    checking again, refuses the choice, and Discord then refuses the edit that would put the
+    picker back. He is told of the refusal, seen by him alone, and of nothing else: the press does
+    not fail on the put-back, whose failure is logged on the host with its traceback."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    _failing_once(monkeypatch, league.bot.change_queue, "check", 2,
+                  Verdict.refuse("⛔ Not this time."))
+    picker = _picker(league)
+    first = _choice(league, picker)
+    first.edit_original_response = AsyncMock(side_effect=http_error())
+    button = _button(picker, HEAVY)
+
+    with caplog.at_level(logging.ERROR):
+        try:
+            await button.callback(first)
+        except Exception as error:  # noqa: BLE001 — answered as the view answers a fault
+            await picker.view.on_error(first, error, button)
+
+    first.edit_original_response.assert_awaited_once()
+    [told] = _private_texts(first)
+    assert "Not this time." in told, told
+    assert _put_back_failures(caplog), caplog.records
+    assert picker.view.selected is None
+
+
+async def test_a_picker_asking_the_queue_is_built_with_the_text_it_is_put_back_to():
+    """A submission's picker, which asks the queue, is put back to the text it was posted with,
+    so it cannot be built without one."""
+    with pytest.raises(TypeError):
+        result_submission_service._ConfigSelectView(
+            [HEAVY, STANDARD], None, ask=(CONFIG_KIND, {}),
+        )

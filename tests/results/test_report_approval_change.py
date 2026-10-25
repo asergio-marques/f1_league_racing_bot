@@ -15,7 +15,6 @@ the payload carrying the staged penalties and pardons as plain data (`to_payload
 
 The league, its fake channels and the attendance hook's double are `tests.support.review_league`'s.
 
-Everything of the change type is imported inside a test, so this file collects while it is unbuilt.
 What `test_repost_subsequent_standings.py::test_the_snapshots_are_recomputed_first` pinned is held
 here by `test_the_snapshots_of_this_round_and_every_later_one_are_saved_with_the_penalties`.
 """
@@ -79,8 +78,10 @@ from tests.support.review_league import (
     stopped_at,
     verdict_headings,
 )
+from tests.results.test_review_open_change import _refuse_the_job
 
 KIND = "results.reports.approve"
+
 
 
 def _payload(*, staged: Any = None, pardons: Any = (), prompt: int = PROMPT,
@@ -203,6 +204,59 @@ async def test_a_penalty_approval_posts_one_banner_across_its_verdicts_and_its_s
         league.db_path, "SELECT message_id FROM verdict_banner_messages WHERE round_id = ?",
         ROUND_ID,
     ) == str(sent[0])
+
+
+async def test_a_restart_between_the_attendance_sheet_and_the_sanctions_posts_one_sheet_and_sanctions_each_once(
+    tmp_path,
+):
+    """Lewis and Max are each over the autoreserve threshold in Pro. The approval stops just
+    after Pro's attendance sheet is posted, before either sanction, and the bot restarts. Once
+    the queue runs, the sheet before the sanctions is not posted again: Pro's sheet is posted
+    twice in all, once before the sanctions and once after them, and each driver is sanctioned
+    and announced once."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(LEWIS_PROFILE, LEWIS),
+                                    candidate(MAX_PROFILE, MAX)]
+    await _approve(league)
+    await run_until_done(league, "attendance_sheet")
+    assert league.attendance._calls("apply_sanction") == []
+
+    await restart_queue(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert [call[1] for call in league.attendance._calls("post_sheet")] == [
+        DIVISION_ID, DIVISION_ID,
+    ]
+    assert league.attendance._calls("apply_sanction") == [
+        ("apply_sanction", LEWIS_PROFILE), ("apply_sanction", MAX_PROFILE),
+    ]
+    assert sorted(league.attendance._calls("announce_sanction")) == [
+        ("announce_sanction", LEWIS_PROFILE), ("announce_sanction", MAX_PROFILE),
+    ]
+
+
+async def test_a_restart_between_two_sanctions_applies_each_once(tmp_path):
+    """Lewis and Max are each over the autoreserve threshold in Pro. The approval stops just
+    after Lewis's sanction is applied, before Max's, and the bot restarts. Once the queue runs,
+    Lewis is not sanctioned again, Max is sanctioned once, and each is announced once."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(LEWIS_PROFILE, LEWIS),
+                                    candidate(MAX_PROFILE, MAX)]
+    await _approve(league)
+    await run_until_done(league, "apply_sanction")
+    assert league.attendance._calls("apply_sanction") == [("apply_sanction", LEWIS_PROFILE)]
+
+    await restart_queue(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert league.attendance._calls("apply_sanction") == [
+        ("apply_sanction", LEWIS_PROFILE), ("apply_sanction", MAX_PROFILE),
+    ]
+    assert sorted(league.attendance._calls("announce_sanction")) == [
+        ("announce_sanction", LEWIS_PROFILE), ("announce_sanction", MAX_PROFILE),
+    ]
 
 
 async def test_an_approval_announcing_no_verdict_posts_no_heading(tmp_path):
@@ -527,6 +581,61 @@ async def test_a_discarded_appeals_prompt_is_posted_again_at_once(tmp_path):
     ) == prompts[0]
 
 
+@pytest.mark.parametrize("case, follows", [
+    pytest.param(
+        "approved", "round 3 in **Pro** could be left waiting for its appeals with no prompt, "
+        "never final, until the bot restarts", id="approved",
+    ),
+    pytest.param(
+        "apply discarded", "round 3 in **Pro** could be left in its penalty review with no "
+        "prompt, never final, until the bot restarts", id="apply discarded",
+    ),
+])
+async def test_the_approval_s_closing_job_cannot_be_discarded(tmp_path, case, follows):
+    """Alex approves round 3's reports in Pro. Either the approval goes through, or its save
+    fails and a league admin discards it. Then the save of the approval's last job, which
+    records it and asks for the next prompt, fails and stops the queue at `close`. A league
+    admin's Discard on it is refused, saying, where the approval went through, that round 3 in
+    Pro could be left waiting for its appeals with no prompt, and, where it was discarded, that
+    it could be left in its penalty review with no prompt, never final, until the bot restarts.
+    The queue stays stopped there and no prompt is asked for. Once the fault is lifted, a Retry
+    finishes it: the appeals prompt is posted and the approval logged, or the penalty review is
+    opened again."""
+    league = await review_league(tmp_path)
+    await _refuse_the_job(league.db_path, KIND, True)
+    if case == "approved":
+        await _approve(league)
+        await run_queue(league.bot)
+    else:
+        with points_fail():
+            await _approve(league)
+            await run_queue(league.bot)
+        assert await stopped_at(league) == "apply"
+        await discard_job(league.bot)
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "close"
+
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it {follows}. Fix what stopped it and press "
+        "**Retry**."
+    )
+    assert (await stopped_job(league.db_path, "league"))["id"] == stopped["id"]
+    assert appeals_prompts(league) == []
+    assert await changes_of(league.db_path, "results.review.open") == []
+
+    await _refuse_the_job(league.db_path, KIND, False)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    if case == "approved":
+        assert len(appeals_prompts(league)) == 1
+        assert "PENALTY_REVIEW_APPROVED | Success" in league.log()
+    else:
+        assert len(await changes_of(league.db_path, "results.review.open")) == 1
+
+
 async def test_a_discarded_batch_notice_is_named_and_the_republication_goes_ahead(tmp_path):
     league = await review_league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).fail_when = (
@@ -553,6 +662,9 @@ async def test_a_discarded_batch_notice_is_named_and_the_republication_goes_ahea
 async def test_each_driver_over_a_threshold_is_sanctioned_and_announced_in_jobs_of_their_own(
     tmp_path,
 ):
+    """Lewis and Max are each owed an autoreserve in Pro. Alex approves round 3's reports: each
+    driver's sanction is saved, their roles changed and their card posted, each a job of its own,
+    and Pro's lineup is posted once."""
     league = await review_league(tmp_path, attendance=True)
     league.attendance.candidates = [candidate(LEWIS_PROFILE, LEWIS),
                                     candidate(MAX_PROFILE, MAX)]
@@ -568,6 +680,10 @@ async def test_each_driver_over_a_threshold_is_sanctioned_and_announced_in_jobs_
     ]
     assert len(league.attendance._calls("announce_sanction")) == 2
     assert league.attendance._calls("refresh_lineup") == [("refresh_lineup", DIVISION_ID)]
+    assert len([row for row in steps if row["name"] == "sanction_roles"]) == 2
+    assert league.attendance.role_changes == [
+        (LEWIS_PROFILE, [5502], [5503]), (MAX_PROFILE, [5502], [5503]),
+    ]
 
 
 #: Round 4's banner, heading its own verdicts in the verdicts channel since it went final.
@@ -850,55 +966,88 @@ async def test_a_sanction_card_s_heading_retried_after_attendance_is_turned_off_
     assert await one(league.db_path, "SELECT COUNT(*) FROM verdict_banner_messages") == 0
 
 
-@pytest.mark.parametrize("line, headed", [(None, False), ("ATTENDANCE_AUTORESERVE | x", True)])
-async def test_a_sanction_the_hook_did_not_apply_plans_no_heading(tmp_path, line, headed):
-    """The hook answers `apply_sanction` with None only where attendance is off and nothing was
-    applied: no card follows, so the job plans no heading. Where it applied, on a clean round
-    with no banner recorded, the heading is planned."""
-    from leaguebot.results.services import review_verdicts
-
-    league = await review_league(tmp_path, attendance=True)
-    hook = MagicMock()
-    hook.apply_sanction = AsyncMock(return_value=line)
+def _apply_ctx(league: ReviewLeague) -> Any:
+    """A job's context for Max's autoreserve in Pro, on a round with no banner recorded."""
     ctx = MagicMock()
     ctx.db_path = league.db_path
     ctx.steps = ()
-    ctx.step_payload = {"round_id": ROUND_ID, "division_id": DIVISION_ID,
-                        "candidate": candidate(MAX_PROFILE, MAX)}
+    ctx.tries = 0
+    ctx.step_payload = {"round_id": ROUND_ID, "division_id": DIVISION_ID, "division": "Pro",
+                        "candidate": candidate(MAX_PROFILE, MAX),
+                        "hint": "Repair the cause, then run `/attendance sync`."}
+    return ctx
 
-    result = await review_verdicts._apply_sanction(ctx, hook)
 
-    assert [step.name for step in result.then] == (["announce_heading"] if headed else [])
+@pytest.mark.parametrize("applied, then", [
+    (None, []),
+    ({"line": "ATTENDANCE_AUTORESERVE | x",
+      "roles": {"user_id": MAX, "revoke": [5502], "grant": [5503]}},
+     ["sanction_roles", "announce_heading"]),
+    ({"line": "ATTENDANCE_AUTORESERVE | x", "roles": None}, ["announce_heading"]),
+])
+async def test_a_sanction_the_hook_did_not_apply_plans_no_heading(tmp_path, applied, then):
+    """Max's autoreserve is saved on the save the queue opens. The hook answers
+    `apply_sanction_on` with None only where attendance is off and nothing was applied: no role
+    job and no card follow, so the job plans nothing. Where it applied, on a clean round with no
+    banner recorded, the job plans the role change the hook named, then the heading over the
+    cards; a sanction naming no roles (a test driver's) plans the heading alone."""
+    from leaguebot.core.models.change import StepKind
+    from leaguebot.results.services import review_verdicts
+    from tests.support.review_league import NOW
+
+    league = await review_league(tmp_path, attendance=True)
+    hook = MagicMock()
+    hook.apply_sanction_on = AsyncMock(return_value=applied)
+    step = review_verdicts.verdict_steps(lambda: NOW, hook)[review_verdicts.APPLY_SANCTION]
+    assert step.kind is StepKind.SAVE, "the sanction is not applied on the queue's save"
+
+    async with get_connection(league.db_path) as db:
+        result = await step.run(db, _apply_ctx(league))
+
+    assert [planned.name for planned in result.then] == then
 
 
-async def test_a_fault_working_out_the_cards_heading_comes_before_the_sanction_is_applied(
+async def test_a_fault_working_out_the_cards_heading_rolls_the_sanction_back(
     tmp_path, monkeypatch,
 ):
-    """Whether the cards need a heading is worked out before the sanction is applied, so a
-    fault in reading the round's banners fails the job with nothing applied. Applied ahead of the
-    fault, the sanction would be found no longer owed on Retry, its job dropped and its card
-    never posted."""
+    """Max's autoreserve is saved on the save the queue opens, the hook writing it on that save,
+    and reading the round's banners for the cards' heading then fails. The job fails having
+    committed nothing, so the save is rolled back whole and the sanction is not applied: on Retry
+    it is still owed, and its card is not lost."""
+    from leaguebot.core.models.change import StepKind
     from leaguebot.results.services import review_verdicts
     from leaguebot.results.services import verdict_announcement_service
+    from tests.support.review_league import NOW
 
     league = await review_league(tmp_path, attendance=True)
+    async with get_connection(league.db_path) as db:
+        await db.execute("CREATE TABLE sanction_written (driver_profile_id INTEGER)")
+        await db.commit()
 
-    async def _unreadable(_db_path: str, _round_id: int) -> Any:
+    async def _apply_on(db: Any, _round_id: int, _division_id: int,
+                        owed: dict[str, Any]) -> dict[str, Any]:
+        await db.execute("INSERT INTO sanction_written VALUES (?)", (owed["driver_profile_id"],))
+        return {"line": "ATTENDANCE_AUTORESERVE | x", "roles": None}
+
+    async def _unreadable(*_args: Any, **_kwargs: Any) -> Any:
         raise RuntimeError("database is locked")
 
-    monkeypatch.setattr(verdict_announcement_service, "_banners_of", _unreadable)
+    for module, name in ((verdict_announcement_service, "_banners_of"),
+                         (verdict_announcement_service, "_banners_of_on"),
+                         (review_verdicts, "_sanction_heading_on")):
+        monkeypatch.setattr(module, name, _unreadable, raising=False)
     hook = MagicMock()
-    hook.apply_sanction = AsyncMock(return_value="ATTENDANCE_AUTORESERVE | x")
-    ctx = MagicMock()
-    ctx.db_path = league.db_path
-    ctx.steps = ()
-    ctx.step_payload = {"round_id": ROUND_ID, "division_id": DIVISION_ID,
-                        "candidate": candidate(MAX_PROFILE, MAX)}
+    hook.apply_sanction_on = AsyncMock(side_effect=_apply_on)
+    hook.sync_hint = AsyncMock(return_value="Repair the cause, then run `/attendance sync`.")
+    step = review_verdicts.verdict_steps(lambda: NOW, hook)[review_verdicts.APPLY_SANCTION]
+    assert step.kind is StepKind.SAVE, "the sanction is not applied on the queue's save"
 
-    with pytest.raises(RuntimeError, match="database is locked"):
-        await review_verdicts._apply_sanction(ctx, hook)
+    async with get_connection(league.db_path) as db:
+        with pytest.raises(Exception):
+            await step.run(db, _apply_ctx(league))
+        await db.rollback()
 
-    hook.apply_sanction.assert_not_awaited()
+    assert await one(league.db_path, "SELECT COUNT(*) FROM sanction_written") == 0
 
 
 #: What a league admin is told where the job working out who is owed a sanction was discarded.
@@ -1018,6 +1167,204 @@ async def test_a_retried_sanction_run_applies_only_what_is_owed(tmp_path):
     assert await stopped_at(league) is None
     applied = [c[1] for c in league.attendance.calls if c[0] == "apply_sanction"]
     assert applied == [LEWIS_PROFILE, MAX_PROFILE], "a sanction no longer owed was applied again"
+
+
+# ---------------------------------------------------------------------------
+# A sanction's check, save and roles, each a job (#439, Part C)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_sanction_s_roles_are_a_job_of_their_own_between_its_save_and_its_card(tmp_path):
+    """Max is owed an autoreserve in Pro. Alex approves round 3's reports: Max's sanction is saved
+    by one job, his roles are changed by the next (his team's role taken, the Reserve team's
+    given), and only then is his card posted (attendance spec :184)."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    await _approve(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    steps = await step_rows(league.db_path)
+    [saved] = _named(steps, "apply_sanction", MAX_PROFILE)
+    [roles] = _named(steps, "sanction_roles", MAX_PROFILE)
+    [card] = _named(steps, "announce_sanction", MAX_PROFILE)
+    assert saved < roles < card
+    assert league.attendance.role_changes == [(MAX_PROFILE, [5502], [5503])]
+
+
+async def test_a_role_change_discord_refuses_stops_the_queue_with_the_sanction_saved_and_its_card_waiting(
+    tmp_path,
+):
+    """Max is owed an autoreserve in Pro, and Discord refuses his role change. The queue stops at
+    the role job, named in its notice; his sanction stands saved and his card is not posted. A
+    league manager presses Retry: his roles are changed and his card posted, and he is
+    sanctioned once."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    league.attendance.roles_fails = {
+        MAX_PROFILE: StepFailedOnDiscord("Discord refused the role change"),
+    }
+    await _approve(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) == "sanction_roles"
+    assert league.attendance._calls("apply_sanction") == [("apply_sanction", MAX_PROFILE)]
+    assert league.attendance._calls("announce_sanction") == []
+    # The log channel wraps every mention in code, so that it names without notifying.
+    assert f"changing `<@{MAX}>`'s roles for their autoreserve in **Pro**" in league.log()
+
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert league.attendance.role_changes == [(MAX_PROFILE, [5502], [5503])] * 2
+    assert league.attendance._calls("apply_sanction") == [("apply_sanction", MAX_PROFILE)]
+    assert league.attendance._calls("announce_sanction") == [("announce_sanction", MAX_PROFILE)]
+
+
+#: What the reply and the log name for each sanction whose role job a league admin discarded.
+ROLES_NOT_TAKEN = (
+    f"⚠️ The autosack of <@{LEWIS}> was applied but their roles were not taken back. "
+    "Take <@&5501> and <@&5502> from them by hand."
+)
+ROLES_NOT_CHANGED = (
+    f"⚠️ The autoreserve of <@{MAX}> was applied but their roles were not changed. "
+    "Take <@&5502> from them and give them <@&5503> by hand."
+)
+#: The same, as the log channel writes them: every mention wrapped in code, naming without
+#: notifying. A reply is not rewritten, and keeps them bare.
+ROLES_NOT_TAKEN_LOGGED = (
+    f"⚠️ The autosack of `<@{LEWIS}>` was applied but their roles were not taken back. "
+    "Take `<@&5501>` and `<@&5502>` from them by hand."
+)
+ROLES_NOT_CHANGED_LOGGED = (
+    f"⚠️ The autoreserve of `<@{MAX}>` was applied but their roles were not changed. "
+    "Take `<@&5502>` from them and give them `<@&5503>` by hand."
+)
+
+
+async def test_a_discarded_role_change_names_the_roles_to_change_by_hand_and_the_card_still_posts(
+    tmp_path,
+):
+    """Lewis is owed an autosack and Max an autoreserve in Pro, and Discord refuses both role
+    changes. A league admin discards each role job as it stops the queue. Both sanctions stand,
+    both cards are posted, and the reply and the log name, for each driver, the roles to take or
+    give by hand, as role mentions: bare in the reply, wrapped in code in the log."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(LEWIS_PROFILE, LEWIS, "AUTOSACK"),
+                                    candidate(MAX_PROFILE, MAX)]
+    refused = StepFailedOnDiscord("Discord refused the role change")
+    league.attendance.roles_fails = {LEWIS_PROFILE: refused, MAX_PROFILE: refused}
+    interaction = await _approve(league)
+    await run_queue(league.bot)
+    stops = []
+    for _ in range(2):
+        assert await stopped_at(league) == "sanction_roles"
+        stops.append([line for line in league.bot.log_channel.sent
+                      if "The queue is stopped at job #" in line][-1])
+        await discard_job(league.bot)
+
+    assert any(f"taking back `<@{LEWIS}>`'s roles for their autosack" in stop for stop in stops), (
+        "the stop on Lewis's role job does not name it"
+    )
+    assert await stopped_at(league) is None
+    assert sorted(league.attendance._calls("announce_sanction")) == [
+        ("announce_sanction", LEWIS_PROFILE), ("announce_sanction", MAX_PROFILE),
+    ]
+    reply = updated_reply(interaction)
+    for line in (ROLES_NOT_TAKEN, ROLES_NOT_CHANGED):
+        assert line in reply
+    for line in (ROLES_NOT_TAKEN_LOGGED, ROLES_NOT_CHANGED_LOGGED):
+        assert line in league.log()
+
+
+async def test_an_autoreserve_is_checked_before_it_is_saved(tmp_path):
+    """Lewis is owed an autosack and Max an autoreserve in Pro. Alex approves round 3's reports:
+    Max's move to the Reserve team is checked by a job of its own ahead of the job that saves it;
+    Lewis's autosack has no check."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(LEWIS_PROFILE, LEWIS, "AUTOSACK"),
+                                    candidate(MAX_PROFILE, MAX)]
+    await _approve(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    steps = await step_rows(league.db_path)
+    [checked] = _named(steps, "check_sanction", MAX_PROFILE)
+    [saved] = _named(steps, "apply_sanction", MAX_PROFILE)
+    assert checked < saved
+    assert _named(steps, "check_sanction", LEWIS_PROFILE) == []
+    assert league.attendance.checks == [MAX_PROFILE]
+
+
+async def test_a_discarded_check_leaves_the_autoreserve_unapplied_and_named_with_attendance_sync(
+    tmp_path,
+):
+    """Max is owed an autoreserve in Pro, and its check finds Pro has no Reserve team, stopping
+    the queue at the check. A league admin discards it: Max is not sanctioned, no role is changed
+    and no card posted, and the reply and the log say his autoreserve was not applied, naming
+    `/attendance sync`."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    league.attendance.check_fails = {
+        MAX_PROFILE: StepFailedOnDiscord("Pro has no Reserve team"),
+    }
+    interaction = await _approve(league)
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "check_sanction"
+
+    await discard_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert league.attendance._calls("apply_sanction") == []
+    assert league.attendance.role_changes == []
+    assert league.attendance._calls("announce_sanction") == []
+    reply = updated_reply(interaction)
+    assert f"The autoreserve of <@{MAX}> was not applied" in reply
+    assert "/attendance sync" in reply
+    # The log channel wraps the mention in code, so that it names without notifying.
+    assert f"The autoreserve of `<@{MAX}>` was not applied" in league.log()
+
+
+async def test_a_test_driver_s_sanction_plans_no_role_job(tmp_path):
+    """Max, a test driver with no roles to change, is owed an autoreserve in Pro. Alex approves
+    round 3's reports: his sanction is saved and his card posted, and no role job is planned."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    league.attendance.no_roles = {MAX_PROFILE}
+    await _approve(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    steps = await step_rows(league.db_path)
+    assert _named(steps, "check_sanction", MAX_PROFILE), "the autoreserve was not checked"
+    assert _named(steps, "sanction_roles", MAX_PROFILE) == []
+    assert league.attendance.role_changes == []
+    assert league.attendance._calls("announce_sanction") == [("announce_sanction", MAX_PROFILE)]
+
+
+async def test_a_restart_between_a_sanction_s_save_and_its_roles_changes_the_roles_from_the_job(
+    tmp_path,
+):
+    """Max is owed an autoreserve in Pro. The approval stops just after his sanction is saved,
+    before his roles are changed, and the bot restarts. Once the queue runs, his roles are changed
+    from the role job, as the save named them, his card is posted once and he is not sanctioned
+    again."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    await _approve(league)
+    await run_until_done(league, "apply_sanction")
+    assert _named(await step_rows(league.db_path), "sanction_roles", MAX_PROFILE), (
+        "the save planned no role job"
+    )
+    assert league.attendance.role_changes == []
+
+    await restart_queue(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert league.attendance.role_changes == [(MAX_PROFILE, [5502], [5503])]
+    assert league.attendance._calls("apply_sanction") == [("apply_sanction", MAX_PROFILE)]
+    assert league.attendance._calls("announce_sanction") == [("announce_sanction", MAX_PROFILE)]
 
 
 #: Round 5 of the other division (Am), final, where its attendance totals were last recorded.
@@ -1217,6 +1564,8 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     placement = PlacementService(league.db_path, league.bot)
     placement._grant_roles = AsyncMock()
     placement._revoke_roles = AsyncMock()
+    placement.grant_roles = AsyncMock()
+    placement.revoke_roles = AsyncMock()
     # Pro has no lineup channel of its own here: the post is stood in for, as one posted.
     placement._refresh_lineup_post = AsyncMock(return_value=LineupPosted(
         message_id=9100, channel_id=9101, previous=None, division_name="Pro", form="text",
@@ -1244,9 +1593,10 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     "discarded",
 ])
 async def test_an_autosack_s_other_division_has_its_lineup_posted_as_a_job(tmp_path, case):
-    """Max, over the autosack threshold, also sat in division 12 (Am). Once his sack applies, the
-    review posts the lineup of Pro and of Am, each as a job of its own, since the sack itself no
-    longer posts them. Where his sack is discarded, nothing changed in either division, and
+    """Max, over the autosack threshold, also sat in division 12 (Am). Once his sack applies, his
+    division's and team's roles are taken back by a job of its own, and the review posts the
+    lineup of Pro and of Am, each as a job of its own, since the sack itself no longer posts them.
+    Where his sack is discarded, nothing changed in either division: no role is changed and
     neither lineup is posted."""
     league = await review_league(tmp_path, attendance=True)
     league.attendance.candidates = [
@@ -1267,8 +1617,10 @@ async def test_an_autosack_s_other_division_has_its_lineup_posted_as_a_job(tmp_p
             ("refresh_lineup", DIVISION_ID), ("refresh_lineup", OTHER_DIVISION_ID),
         ]
         assert len(lineups) == 2
+        assert league.attendance.role_changes == [(MAX_PROFILE, [5501, 5502], [])]
     else:
         assert league.attendance._calls("refresh_lineup") == []
+        assert league.attendance.role_changes == []
 
 
 # ---------------------------------------------------------------------------

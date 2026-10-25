@@ -1,6 +1,35 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-10-25 — v14.13.0 → v14.14.0: MINOR — Principles VIII, IX and XI: a signup ends when its channel is gone or deleted, and a team role a grant cannot give stops the change queue (issue #439)]
+  Version change    : 14.13.0 → 14.14.0
+  Bump rationale    : MINOR: a permitted transition is added, as v10.1.0 added one, and guidance
+                      is added within two principles, without removing or redefining any. A
+                      signup now ends where its channel is gone or deleted while it is under way,
+                      and every role a change of the queue grants or takes back is a job that
+                      stops the queue where Discord refuses it (owner, 2026-10-25, "Amend all
+                      three"; 2026-10-23, "End the signup"; 2026-10-24, "Any signup in progress";
+                      2026-10-23, "Fix it here" for a sanction's roles).
+
+  Modified sections :
+    - Principle VIII, Permitted Transitions — a new row: Pending Signup Completion, Pending Admin
+      Approval, Awaiting Correction Parameter, Pending Driver Correction → Not Signed Up, where the
+      driver's signup channel is deleted while the signup is under way, or is gone when their
+      review panel is due (on submission, or at a correction's lapse). The row "Awaiting
+      Correction Parameter → Pending Admin Approval" (the five-minute lapse, or a restart while
+      the window is open) now holds only where the signup channel still stands.
+    - Principle IX, "A grantable role" — "failing silently where it cannot be" becomes "stopping
+      the change queue until it is retried or discarded where it cannot be", as every grant
+      made by a change of the queue does.
+    - Principle XI, "Channel lifecycle" — a new bullet: a signup channel deleted while its signup
+      is under way, or gone when its review panel is due, ends the signup as leaving the server
+      does, the driver returning to Not Signed Up and the log channel told; a channel deleted
+      after its signup ended changes nothing.
+
+  Added sections    : none (one table row and one bullet within existing principles).
+  Removed sections  : none.
+  Deferred / TODO   : none.
+
 [2026-10-21 — v14.12.3 → v14.13.0: MINOR — Principles XI, XII and XIII say how signups, a round's submission channel and check-in answers run on the change queue's lanes (issue #439)]
   Version change    : 14.12.3 → 14.13.0
   Bump rationale    : MINOR: guidance is added within three principles without removing or
@@ -5788,7 +5817,7 @@ stewarding module, which will bring the bar together with the commands that impo
 | Pending Signup Completion | Not Signed Up | Driver withdraws; or 24 h inactivity timeout |
 | Pending Admin Approval | Awaiting Correction Parameter | League manager clicks "request changes" |
 | Awaiting Correction Parameter | Pending Driver Correction | League manager selects field to correct |
-| Awaiting Correction Parameter | Pending Admin Approval | 5-minute timeout with no field selected; or bot restart while the window is open |
+| Awaiting Correction Parameter | Pending Admin Approval | 5-minute timeout with no field selected; or bot restart while the window is open; in either case only where the driver's signup channel still stands |
 | Pending Driver Correction | Pending Admin Approval | Driver submits valid corrected field |
 | Pending Driver Correction | Not Signed Up | Driver withdraws; or 24 h inactivity timeout |
 | Pending Admin Approval | Unassigned | League manager approves signup |
@@ -5799,6 +5828,7 @@ stewarding module, which will bring the bar together with the commands that impo
 | Assigned | Not Signed Up | `/driver sack`, while the season is in an ongoing stage, of a driver whose placement is confirmed |
 | Unassigned, Assigned, Pending Signup Completion, Pending Admin Approval, Awaiting Correction Parameter, Pending Driver Correction | Not Signed Up | The season's end: its completion, cancellation or abort |
 | Unassigned, Assigned, Pending Admin Approval, Awaiting Correction Parameter, Pending Driver Correction | Not Signed Up | Every division of a season in Ongoing, signups open or Ongoing, placements is finished or cancelled: the season's signup window is closed, every unsettled signup and every driver whose placements are all uncommitted is turned down, and the season moves straight to Pending completion |
+| Pending Signup Completion, Pending Admin Approval, Awaiting Correction Parameter, Pending Driver Correction | Not Signed Up | The driver's signup channel is deleted while the signup is under way, or is gone when their review panel is due (on submission, or at a correction's lapse) |
 | Not Signed Up | Unassigned | Test mode: admin direct-assign |
 | Not Signed Up | Assigned | Test mode: admin direct-assign |
 
@@ -5907,7 +5937,8 @@ point:
   league enabling the module later would otherwise hold names it cannot clean up without losing
   that team's history.
 - **A grantable role**: A team's role MUST be one the bot can grant, being granted to every
-  driver placed in the team and failing silently where it cannot be. `@everyone`, a role managed
+  driver placed in the team and stopping the change queue until it is retried or discarded where it
+  cannot be. `@everyone`, a role managed
   by an integration, a role at or above the bot's own highest role, and every role while the bot
   holds no permission to manage roles MUST be refused at the moment the role is chosen, each
   saying why.
@@ -6072,6 +6103,10 @@ lifecycle state (Principle VIII). The following rules are non-negotiable:
     MUST be deleted as the first job of the new signup, ahead of the new channel's creation.
   - The deletion after the 24-hour hold runs on the driver's own lane, so that a stop on
     another lane does not hold it.
+  - A signup channel deleted while its signup is under way, or gone when its review panel is
+    due, MUST end the signup as the driver's leaving the server does, the driver returning to
+    Not Signed Up and the log channel told; a channel deleted after its signup ended changes
+    nothing.
   - League managers and league admins MAY write freely in any signup channel at any time.
 - **Sequential collection (normal flow)**: In the normal wizard (Pending Signup Completion),
   parameter collection MUST follow the exact order specified in the feature specification.
@@ -8974,4 +9009,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.13.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-21
+**Version**: 14.14.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-25

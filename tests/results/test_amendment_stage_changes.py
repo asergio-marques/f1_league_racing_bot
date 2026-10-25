@@ -25,9 +25,6 @@ closed, with an amendment of its Feature Race open in its own channel: stage one
 snapshot taken) and the report stage's prompt and approval message standing. A stage is asked for
 as its Approve control asks it, `bot.change_queue.ask(kind, payload, ...)`, the staged reports,
 corrections and pardons carried as plain data (`to_payload`).
-
-Everything of the change types is imported inside a test, so this file collects while it is
-unbuilt.
 """
 
 from __future__ import annotations
@@ -1197,3 +1194,43 @@ async def test_a_stage_approval_is_refused_while_a_staging_is_in_hand(tmp_path):
     assert await changes_of(league.db_path, REPORTS) == []
     assert "still being shown" in acknowledgement(interaction) + updated_reply(interaction)
     assert (await _amend_row(league))["reports_approved_at"] is None
+
+
+# ---------------------------------------------------------------------------
+# The report stage's pardons come from the builder's hook (#439 slice 8, G4)
+# ---------------------------------------------------------------------------
+
+
+async def test_the_report_stage_offers_the_pardons_the_builder_s_hook_gives(monkeypatch):
+    """The amendment's change types are built with an attendance hook. When the job that puts
+    round 3's report stage up runs, the review it opens is handed that same hook, so the hook
+    says which of the round's pardons the stage may offer; results asks nothing of attendance's
+    switch itself (architecture.md :172-178)."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from leaguebot.results.services import (
+        amendment_stage_changes as stages,
+        result_submission_service,
+        review_posting,
+    )
+
+    hook = MagicMock()
+    hook.pardons_to_review = AsyncMock(return_value=[])
+    *_, prompt = stages.amendment_stage_changes(attendance=hook, now=lambda: NOW)
+    review = AsyncMock(return_value=SimpleNamespace(prompt_message_id=8990))
+    monkeypatch.setattr(result_submission_service, "run_amendment_review_stages", review)
+    channel = SimpleNamespace(id=AMEND_CHANNEL)
+    monkeypatch.setattr(review_posting, "_league_guild", AsyncMock(return_value=MagicMock()))
+    monkeypatch.setattr(review_posting, "_channel", lambda *_args: channel)
+    ctx = SimpleNamespace(
+        db_path="unused.db", bot=MagicMock(), kept=None,
+        step_payload={"channel_id": AMEND_CHANNEL, "round_id": ROUND_ID,
+                      "division_id": DIVISION_ID, "round_number": 3,
+                      "division_name": "Pro", "session_types": ["FEATURE_RACE"]},
+    )
+
+    await prompt.steps[stages.POST_AMENDMENT_REPORTS_PROMPT].run(ctx)
+
+    [call] = review.await_args_list
+    assert call.kwargs.get("attendance") is hook

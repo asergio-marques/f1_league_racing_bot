@@ -4,8 +4,6 @@
 change types on a database built by the migrations, with "now" pinned, and a real `OutputRouter`
 whose log channel records what it is sent. What Discord makes fail, and the retries, are in
 `test_change_queue_retries.py`.
-
-Everything of the queue is imported inside a test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 
@@ -1050,6 +1048,52 @@ async def test_a_change_whose_acknowledgement_fails_still_runs_and_holds_nothing
     assert interaction.edit_original_response.await_count == 0
     assert interaction.followup.send.await_count == 0
     assert "Admin (`<@4242>`) | /dummy | Success" in "\n".join(await _lines(env))
+
+
+async def test_a_fault_acknowledging_a_saved_change_still_returns_its_id_and_runs_it(
+    env, caplog
+):
+    """A database fault while the saved change is acknowledged (here the look-up of a stopped job
+    the acknowledgement would name) is not the request's failure: `ask` still returns the change's
+    id and wakes the idle worker, which runs it; the member is answered that it is under way and
+    told of no failure; and the fault is logged on the host with its traceback."""
+    ran: list[str] = []
+    queue = _queue(env, _type(steps=[_act("a", ran)]))
+    looked_up = queue._stopped_jobs
+    faults = {"left": 1}
+
+    async def _stopped_jobs(*args, **kwargs):
+        # Only the acknowledgement's look-up, by lane, faults: the dispatcher's is left alone.
+        if faults["left"] and "lane" in kwargs and not kwargs.get("without_notice"):
+            faults["left"] -= 1
+            raise sqlite3.OperationalError("database is locked")
+        return await looked_up(*args, **kwargs)
+
+    queue._stopped_jobs = _stopped_jobs
+    interaction = member_interaction(env.bot)
+
+    await maybe_await(queue.start())
+    try:
+        await asyncio.sleep(0.05)  # the worker has found nothing to do and sleeps until woken
+        with caplog.at_level(logging.ERROR):
+            change_id = await _ask(env, interaction=interaction)
+
+        async def _done() -> bool:
+            return await _states(env) == ["DONE"]
+
+        await _eventually(_done)
+    finally:
+        await maybe_await(queue.stop())
+
+    [row] = await change_rows(env.db_path)
+    assert change_id == row["id"]
+    assert ran == ["a"]
+    assert faults["left"] == 0
+    assert _acknowledges(acknowledgement(interaction))
+    assert "fail" not in (acknowledgement(interaction) + updated_reply(interaction)).lower()
+    assert any(
+        isinstance(r.exc_info[1], sqlite3.OperationalError) for r in _host_errors(caplog)
+    )
 
 
 async def test_the_worker_does_not_take_a_change_before_its_acknowledgement_is_recorded(env):

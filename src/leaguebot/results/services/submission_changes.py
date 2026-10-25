@@ -7,9 +7,12 @@ row itself), create the round's submission channel beside the interaction channe
 the first session's prompt. Where results are off, the round has nothing to wait for: it ends
 FINAL and the change asks the season's wind-down, creating no channel.
 
-**The channel's creation cannot be discarded.** Without it the round would never have its results
-submitted, so Discard on that job is refused and only Retry clears it (core spec :130). The channel's
-posts are planned by the creation itself, which knows the channel they go in.
+**The round's start and the channel's creation cannot be discarded.** Without the start the round
+would never open for results and its season could never be completed; without the creation it would
+never have its results submitted. Discard on either is refused and only Retry clears it (core spec
+:137). A start dropped by Retry, because its round was cancelled meanwhile, leaves nothing owed
+(`still_due`). The channel's posts are planned by the creation itself, which knows the channel they
+go in.
 
 **A round whose start falls while the queue is stopped** is asked for all the same and waits its
 turn: it stays NOT_RUN, and so cancellable, until the queue reaches the opening (Q17). A round
@@ -27,23 +30,30 @@ The change runs on the league lane, whatever asked: a timer, the restart or test
 cleared (`clear`: the round's sessions and its submission row, which ends the old conversation), its
 channel deleted (`delete_channel`, whose refusal stops the league lane, the lane that asked) and
 `results.submission.open` asked afresh as a follow-on, whose channel creation cannot be discarded.
-The log line telling the league to re-submit is written in the clearing's save.
+The log line telling the league to re-submit is written in the clearing's save. The clearing cannot
+be discarded either: without it the round would take no results until the bot next restarts. It
+completes, doing nothing, where its round's row is gone.
 
 **`results.submission.all_cancelled`** is what a submission whose every session was entered as
-cancelled hands the league (results spec :363, :379): there are no Provisional Results to carry
-the sessions' notes, so it posts each session's "This session was cancelled." line in the
-division's results channel, in running order, each recorded as that session's results message
-(the posting job the review's tables use), and then asks **`results.submission.close_channel`**
-on the round's own lane. That says "⏭️" in the submission channel and deletes it, closing the
-round's row with the deletion: the conversation ending itself, so a refusal stops the round's lane
-alone and the channel keeps its row for the retry.
+cancelled hands the league (results spec :363, :379). **It ends the round cancelled** (`end_round`,
+its first job, which cannot be discarded: without it the round would never finish and its season
+could never be completed): the status, its audit, the division's finishing and the season's move on
+are one save of core's, and the round is marked as not held, which sets it apart from a round called
+off. There are no Provisional Results to carry the sessions' notes, so it then posts each session's
+"This session was cancelled." line in the division's results channel, in running order, each
+recorded as that session's results message (the posting job the review's tables use), and the
+round's calendar again, struck through, where one was posted; and asks
+**`results.submission.close_channel`** on the round's own lane. That says "⏭️" in the submission
+channel and deletes it, closing the round's row with the deletion: the conversation ending itself,
+so a refusal stops the round's lane alone and the channel keeps its row for the retry. One line in
+the log channel records the ending, with whatever a league admin discarded beneath it.
 """
 from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
@@ -68,19 +78,33 @@ from leaguebot.core.services.change_queue import (
     StepContext,
 )
 from leaguebot.core.services import season_service
+from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
+from leaguebot.core.services.cancellation_changes import (
+    check_in_record,
+    check_in_record_not_written,
+    not_notified,
+)
+from leaguebot.core.services.cancellation_notice_service import failure_log_lines
 from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
 from leaguebot.core.services.season_service import set_round_status_on
 from leaguebot.core.utils.league_server import league_guild
+from leaguebot.results.services import review_posting
 from leaguebot.results.services.review_posting import (
     DELETE_CHANNEL,
+    DELETE_MESSAGE,
+    NAMES,
     POST_SESSION_RESULTS,
+    POST_STANDINGS,
+    display_names,
     posting_steps,
+    withdraw_round_standings_on,
 )
 from leaguebot.results.services.result_submission_service import (
     _make_slug,
     expected_session_on,
     get_sessions_for_format,
 )
+from leaguebot.results.services.standings_service import cascade_recompute_from_round_on
 from leaguebot.results.services.submission_steps import (
     CREATE_CHANNEL,
     POST,
@@ -90,6 +114,9 @@ from leaguebot.results.services.submission_steps import (
     post_step,
 )
 from leaguebot.results.utils import results_formatter
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.season_service import SeasonService
 
 KIND = "results.submission.open"
 START_ROUND = "start_round"
@@ -105,6 +132,8 @@ CLEAR = "clear"
 ALL_CANCELLED_KIND = "results.submission.all_cancelled"
 CLOSE_KIND = "results.submission.close_channel"
 ASK_CLOSE = "ask_close"
+#: The first job of that change: the round ends cancelled.
+END_ROUND = "end_round"
 
 __all__ = [
     "ALL_CANCELLED_KIND", "CLOSE_KIND", "KIND", "RESTART_KIND", "ask_submission_open",
@@ -296,6 +325,10 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
             f"**{payload['division_name']}**"
         )
 
+    async def would_never_open(ctx: StepContext) -> str:
+        called = await season_service.round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        return f"{called} would never open for results, and its season could never be completed"
+
     async def describe_start(_ctx: StepContext) -> str:
         return "starting the round"
 
@@ -308,7 +341,7 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
         steps={
             START_ROUND: Step(
                 START_ROUND, StepKind.SAVE, start_round, still_due=not_cancelled,
-                describe=describe_start,
+                describe=describe_start, undiscardable=would_never_open,
             ),
             CREATE_CHANNEL: dataclasses.replace(
                 shared_create, run=create, still_due=not_cancelled, describe=describe_create,
@@ -349,7 +382,8 @@ def submission_restart_change() -> ChangeType:
     The payload is ``{"round_id": int, "channel_id": int}``, the channel the restart found the
     round's submission open in. It is due while the round's submission row stands open in that
     channel and in no review; a round cancelled, one whose row is gone and one whose submission
-    has since been opened in another channel are dropped.
+    has since been opened in another channel are dropped. A discarded deletion leaves the channel
+    standing with no row naming it, so the log channel is told, once, to delete it by hand.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -394,6 +428,8 @@ def submission_restart_change() -> ChangeType:
                         "round_id": round_id,
                         "channel_id": int(row["channel_id"]),
                         "reason": "Orphaned submission channel cleanup on restart",
+                        "what": "cut-short submission channel",
+                        "round_number": int(row["round_number"]),
                     },
                 ),
             ),
@@ -408,20 +444,41 @@ def submission_restart_change() -> ChangeType:
     async def describe_clear(_ctx: StepContext) -> str:
         return "clearing the results submission a restart cut short"
 
+    async def would_take_no_results(ctx: StepContext) -> str:
+        called = await season_service.round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        return f"{called} would take no results until the bot next restarts"
+
     def cleared(_ctx: OutcomeContext) -> str:
         return ""
+
+    def left_standing(ctx: OutcomeContext) -> tuple[str, ...]:
+        """One line for the channel a league admin discarded the deletion of: no row names it any
+        more, so the log channel is the only record of it."""
+        lines: list[str] = []
+        for view in ctx.steps:
+            if view.name == DELETE_CHANNEL and "discarded" in (view.result or {}):
+                lines.append(
+                    f"⚠️ The {view.payload['what']} <#{view.payload['channel_id']}> of round "
+                    f"{view.payload['round_number']} was not deleted, and no record of it is "
+                    "kept: delete it by hand."
+                )
+        return tuple(lines)
 
     return ChangeType(
         kind=RESTART_KIND,
         opening=(PlannedStep(CLEAR),),
         steps={
-            CLEAR: Step(CLEAR, StepKind.SAVE, clear, describe=describe_clear),
+            CLEAR: Step(
+                CLEAR, StepKind.SAVE, clear, describe=describe_clear,
+                undiscardable=would_take_no_results,
+            ),
             DELETE_CHANNEL: posting_steps()[DELETE_CHANNEL],
         },
         check=check,
         key=lambda payload: f"{RESTART_KIND}:{payload['round_id']}",
         doing=lambda _payload: "clearing a results submission a restart cut short",
         outcome=cleared,
+        finished_lines=left_standing,
     )
 
 
@@ -453,29 +510,135 @@ async def _submission_standing(ctx: CheckContext) -> Verdict:
     return Verdict.go() if row is not None else Verdict.not_due("the round's submission is gone")
 
 
-def submission_all_cancelled_change() -> ChangeType:
+def submission_all_cancelled_change(
+    *, seasons: "SeasonService", record: dict[str, Step], notices: dict[str, Step],
+    now: Callable[[], datetime],
+) -> ChangeType:
     """The `results.submission.all_cancelled` change type, for the builder to register, on the
     league lane.
 
     The payload is the last turn's: ``round_id``, ``channel_id``, ``round_number`` and
     ``sessions``, each ``{"session_id", "session_type"}`` of the round's cancelled sessions in
-    running order. Its jobs are one posting job for each (the line, in the results channel, saved
-    as the session's results message; a division with no results channel has none to post) and
-    ``ask_close``, which asks the closing of the channel of the round's lane in its own save. A
-    discarded line leaves the others and the closing to go on.
+    running order. A resubmission's adds ``resubmission`` and ``old_tables``, the ids of the
+    earlier results tables the new sessions could not carry. *seasons* posts the calendar, *record*
+    holds the job core builds that reads the round's check-in, *notices* the jobs core builds that
+    tell the round's cancellation, and *now* is the queue's clock, read when the round's ending is
+    audited.
+
+    Its first job, ``end_round`` (a save, **never to be discarded**: without it the round would
+    never finish and its season could never be completed), ends the round CANCELLED through core's
+    ``end_round_not_held_on``: the status and its audit, the division's refresh and the season's
+    move on, in one save. A resubmission leaves the standings its first submission posted, so that
+    save withdraws them too: their rows are deleted and the later rounds' worked out again without
+    the round, on the names the ``names`` job resolved first. It then plans, in this order, the
+    reading of the check-in, one posting job for each session (the line, in the results channel,
+    saved as the session's results message; a division with no results channel has none to post),
+    the deletion of the withdrawn standings' posts and of the old tables, the later rounds'
+    standings posted again, the notices, and the round's calendar again, struck through, where one
+    stands; its follow-on is the season's wind-down. Where the save finds a session not cancelled after all, or the round past
+    the point it can end from, it writes and plans nothing. ``ask_close`` asks the closing of the
+    channel of the round's lane in its own save either way. A discarded line leaves the others and
+    the closing to go on.
     """
 
-    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+    async def end_round(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        payload = ctx.payload
+        round_id = int(payload["round_id"])
+        statuses = [
+            each["status"]
+            for each in await (
+                await db.execute(
+                    "SELECT status FROM session_results WHERE round_id = ?", (round_id,)
+                )
+            ).fetchall()
+        ]
+        if (
+            not statuses
+            or any(status != "CANCELLED" for status in statuses)
+            or await expected_session_on(db, round_id) is not None
+        ):
+            return StepResult(result={"ended": False})
+        previous = await season_service.end_round_not_held_on(
+            db, round_id, actor_id=ctx.actor_id or 0, actor_name=ctx.actor_name or "System",
+            now=now(),
+        )
+        if previous is None:
+            return StepResult(result={"ended": False})
+        row = await (await db.execute(
+            "SELECT r.division_id, r.round_number, r.track_name, d.name AS division_name, "
+            "d.season_id, s.season_number, c.results_channel_id FROM rounds r "
+            "JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
+            "LEFT JOIN division_results_config c ON c.division_id = d.id WHERE r.id = ?",
+            (round_id,),
+        )).fetchone()
+        assert row is not None
+        # A resubmission leaves the standings its first submission posted: they are withdrawn
+        # with the round, and the later rounds' worked out again without it.
+        held, standings_channel, standings_posts = await withdraw_round_standings_on(db, round_id)
+        if held:
+            await cascade_recompute_from_round_on(
+                db, int(row["division_id"]), round_id, display_names(ctx)
+            )
         posts = tuple(
             PlannedStep(POST_SESSION_RESULTS, {
-                "session_id": int(session["session_id"]), "round_id": int(payload["round_id"]),
+                "session_id": int(session["session_id"]), "round_id": round_id,
                 "label": "Provisional Results", "round_number": payload["round_number"],
                 "session": f"{str(session['session_type']).replace('_', ' ').title()} results",
                 "remedy": "/results rounds sync",
             })
             for session in payload["sessions"]
         )
-        return (*posts, PlannedStep(ASK_CLOSE))
+        target = {
+            "round_id": round_id, "division_id": int(row["division_id"]), "division_name": str(row["division_name"]),
+            "season_id": int(row["season_id"]), "season_number": int(row["season_number"]),
+            "round_number": int(row["round_number"]), "track_name": row["track_name"],
+        }
+        results_channel = row["results_channel_id"]
+        deletions = tuple(
+            PlannedStep(DELETE_MESSAGE, {
+                "channel_id": int(channel), "message_id": int(message_id), "what": what,
+            })
+            for channel, ids, what in (
+                (standings_channel, standings_posts, "standings post"),
+                (results_channel, payload.get("old_tables") or [], "results table"),
+            )
+            if channel
+            for message_id in ids
+        )
+        reposts = (
+            await review_posting.plan_posts(db, round_id, label="", later_rounds=True)
+            if held else []
+        )
+        return StepResult(
+            result={"ended": True, "previous": previous, **target},
+            then=(
+                *(PlannedStep(name, target) for name in record),
+                *posts,
+                *deletions,
+                *reposts,
+                *(PlannedStep(name, target) for name in notices),
+                PlannedStep(POST_CALENDAR, {**target, "round_ids": [round_id], "only_if_posted": True}),
+            ),
+            follow_ons=(FollowOn(WIND_DOWN, {}, f"Winding the season down after {ctx.what}"),),
+        )
+
+    async def describe_end_round(_ctx: StepContext) -> str:
+        return "ending the round cancelled, every session being entered as not held"
+
+    async def would_never_finish(ctx: StepContext) -> str:
+        round_id = int(ctx.payload["round_id"])
+        called = await season_service.round_called(ctx.db_path, round_id)
+        async with get_connection(ctx.db_path) as db:
+            row = await (await db.execute(
+                "SELECT s.season_number FROM rounds r JOIN divisions d ON d.id = r.division_id "
+                "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?", (round_id,),
+            )).fetchone()
+        season = "its season" if row is None else f"season {row['season_number']}"
+        return f"{called} would never finish, and {season} could not be completed"
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        names = (PlannedStep(NAMES),) if payload.get("resubmission") else ()
+        return (*names, PlannedStep(END_ROUND), PlannedStep(ASK_CLOSE))
 
     async def ask_close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.payload
@@ -491,12 +654,42 @@ def submission_all_cancelled_change() -> ChangeType:
     async def describe_ask_close(_ctx: StepContext) -> str:
         return "asking for the submission channel to be closed"
 
+    def ended_lines(ctx: OutcomeContext) -> tuple[str, ...]:
+        """The one line recording the ending, with what a league admin discarded beneath it; none
+        where the ending found nothing to end."""
+        ended = next(
+            (view.result or {} for view in ctx.steps if view.name == END_ROUND), {}
+        )
+        if not ended.get("ended"):
+            return ()
+        line = (
+            f"{ctx.named} | ROUND_CANCELLED | Success\n"
+            f"  division: {ended['division_name']}\n"
+            f"  round: {ended['round_number']}\n"
+            "  reason: every session was entered as not held"
+            + check_in_record(ctx)
+            + failure_log_lines(not_notified(ctx))
+            + "".join(f"\n  {text}" for text in check_in_record_not_written(ctx))
+            + "".join(f"\n  {text}" for text in review_posting.not_done(ctx))
+        )
+        return (line,)
+
     return ChangeType(
         kind=ALL_CANCELLED_KIND,
         opening=(),
         plan=plan,
         steps={
+            END_ROUND: Step(
+                END_ROUND, StepKind.SAVE, end_round, describe=describe_end_round,
+                undiscardable=would_never_finish,
+            ),
+            NAMES: posting_steps()[NAMES],
             POST_SESSION_RESULTS: posting_steps()[POST_SESSION_RESULTS],
+            POST_STANDINGS: posting_steps()[POST_STANDINGS],
+            DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
+            **calendar_steps(seasons),
+            **record,
+            **notices,
             ASK_CLOSE: Step(ASK_CLOSE, StepKind.SAVE, ask_close, describe=describe_ask_close),
         },
         check=_submission_standing,
@@ -504,6 +697,7 @@ def submission_all_cancelled_change() -> ChangeType:
         doing=lambda payload: f"posting round {payload['round_number']}'s cancelled sessions",
         outcome=lambda _ctx: "",
         turn_channel=lambda payload: int(payload["channel_id"]),
+        finished_lines=ended_lines,
     )
 
 
@@ -513,7 +707,10 @@ def submission_close_change() -> ChangeType:
 
     The payload is ``round_id`` and ``channel_id``. It says "⏭️" in the channel and deletes it;
     the deletion's record closes the round's row, so a channel that could not be deleted keeps it
-    for the retry. The conversation stands while the row names the channel.
+    for the retry. The conversation stands while the row names the channel. A restart that finds a
+    round ended cancelled with its channel still open asks it with ``restart``: the line was
+    said when the round ended, so it only deletes the channel, which a channel already gone
+    completes.
     """
 
     def lane(payload: dict[str, Any]) -> str:
@@ -530,15 +727,18 @@ def submission_close_change() -> ChangeType:
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         channel_id = int(payload["channel_id"])
+        delete = PlannedStep(DELETE_CHANNEL, {
+            "channel_id": channel_id, "round_id": int(payload["round_id"]),
+            "what": "submission channel", "reason": "Results submission complete",
+        })
+        if payload.get("restart"):
+            return (delete,)
         return (
             PlannedStep(POST, {
                 "channel_id": channel_id,
                 "text": "⏭️ All sessions for this round were cancelled — no penalty review required.",
             }),
-            PlannedStep(DELETE_CHANNEL, {
-                "channel_id": channel_id, "round_id": int(payload["round_id"]),
-                "what": "submission channel", "reason": "Results submission complete",
-            }),
+            delete,
         )
 
     async def record_closed(

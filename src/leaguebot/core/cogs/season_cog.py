@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -39,20 +38,25 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
-from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks
-from leaguebot.core.services.channel_tell_change import KIND as CHANNEL_TELL
 from leaguebot.core.services.cancellation_changes import (
     DIVISION_CANCEL,
     ROUND_CANCEL,
     SEASON_CANCEL,
     cancellation_holding_amendment,
 )
-from leaguebot.core.services.lineup_posting import ask_lineup_posts
+from leaguebot.core.services.mid_season_confirm_change import (
+    ALREADY_BEING_CONFIRMED,
+    KIND as MID_SEASON_CONFIRM_KIND,
+    STAGE_REFUSAL as CONFIRM_STAGE_REFUSAL,
+    confirmation_in_hand,
+    every_division_done_in,
+    every_division_done_refusal,
+)
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.season_review_changes import (
     CONFIRMED,
@@ -81,7 +85,6 @@ from leaguebot.core.services.season_approval_change import (
     ALREADY_BEING_APPROVED,
     KIND as APPROVAL_KIND,
     approval_in_hand,
-    ungranted_line as _ungranted_line,
 )
 from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
 from leaguebot.results.services import season_points_service
@@ -525,48 +528,6 @@ async def _overflow_for(cog, _division_name: str, would_hold: int):
 #: The key a setup recovered after a restart is held under. No user began it in this
 #: process, and no Discord id is 0.
 _RECOVERED = 0
-
-
-async def _confirm_privately(
-    interaction: discord.Interaction, text: str, *, fallback: str
-) -> None:
-    """Tell the member *text* privately, or tell the channel *fallback* where that is refused.
-
-    For the confirmation of something already committed, so it never raises (issue #387).
-    Chunked, *text* being free to outgrow Discord's limit. And sent best effort, as
-    `/results rounds amend` sends its own (#345): the interaction's token lapses after fifteen
-    minutes, which an approval that waited on the backup question and then drew on the Pi can
-    outlast. Where the reply is refused, the channel the interaction came from is told
-    *fallback* instead, by a `channel.tell` change asked of the queue as the bot's (an interaction
-    only ever arises in a channel a member can write in, #228). *fallback* points
-    at the log channel, which the caller makes carry all that *text* said (decided
-    2026-09-22).
-    """
-    try:
-        for chunk in chunk_message(text):
-            if interaction.response.is_done():
-                await interaction.followup.send(chunk, ephemeral=True)
-            else:
-                await interaction.response.send_message(chunk, ephemeral=True)
-    except Exception:  # noqa: BLE001 — what is confirmed is committed
-        log.warning("could not send a confirmation privately", exc_info=True)
-        if interaction.channel is None:
-            return
-        # The line goes on the queue, as the bot's: a refusal of it stops the queue with Retry and
-        # Discard, and the confirmation, already committed, stands whatever becomes of it.
-        try:
-            await bot_of(interaction).change_queue.ask(
-                CHANNEL_TELL,
-                {
-                    "channel_id": interaction.channel.id,
-                    "text": fallback,
-                    "mention": interaction.user.id,
-                },
-                what="telling the channel what the confirmation said",
-                origin=ChangeOrigin.BOT,
-            )
-        except Exception:  # noqa: BLE001
-            log.exception("could not ask the queue to tell the channel what the confirmation said")
 
 
 async def _take_the_review_down(bot: LeagueBot, interaction: discord.Interaction) -> int | None:
@@ -2229,34 +2190,43 @@ class SeasonCog(commands.Cog):
         )
 
     async def _do_confirm_mid_season_placements(
-        self, interaction: discord.Interaction, *, what: str | None = None
+        self,
+        interaction: discord.Interaction,
+        *,
+        what: str | None = None,
+        fingerprint: dict | None = None,
     ) -> bool:
-        """Commit the new placements and return the season to Ongoing. Returns whether they
-        were committed: False where the press was refused, which leaves the button's review
-        standing (`_ApproveView._settle_press`).
+        """Ask the change queue to confirm the new placements, the review taken down ahead of
+        it (#439, slice 8, Part B). Returns whether the queue accepted the request: False where
+        the press was refused, which leaves the button's review standing
+        (`_ApproveView._settle_press`).
 
         A refusal is recorded under *what*, the button pressed, which the button passes in;
-        the review's own Confirm placements button where the caller names none.
+        the review's own Confirm placements button where the caller names none. *fingerprint*
+        is the review's own, the areas of the season as the report described it, which the
+        confirmation is judged against again when it runs; where it is not given the season is
+        fingerprinted as it stands.
 
-        **Nothing after the commit may raise out of here** (issue #387), as at approval. The
-        placements are committed by then, and a raise reaching the view's error handler would
-        tell the manager the confirmation did not finish and leave the review standing to
-        expire. So every step after it is guarded on its own. What was left undone — a driver
-        not given their roles, a lineup not posted, a season not returned to Ongoing — is
-        named in the reply and the log line, with its repair. A season not moved on to Pending completion is only
-        logged: `/season complete` moves it there itself.
+        **The press is not deferred:** the queue's acknowledgement is the press's own response
+        and the confirmation's outcome updates it. The refusals below answer the press at once
+        in the words the confirmation's own check uses (`mid_season_confirm_change`), which
+        judges them again when the confirmation runs: a season changed while it waited must
+        not be committed. Everything after the request, the placements and the season's return
+        to Ongoing in one save, each driver's roles, each lineup, the one line that records it,
+        is the change's, a job each, so that a stop leaves nothing undone for good.
         """
-        from leaguebot.core.models.season import InvalidStageTransition
-
         if what is None:
             what = _review_button("Confirm placements", "/season placements-review")
-        await interaction.response.defer(ephemeral=True)
         season = await self.bot.season_service.get_confirmed_season()
+        if season is not None and await confirmation_in_hand(self.bot.db_path, season.id):
+            await refuse(interaction, ALREADY_BEING_CONFIRMED, what=what)
+            return False
         if season is None or season.stage is not SeasonStage.ONGOING_PLACEMENTS:
+            await refuse(interaction, CONFIRM_STAGE_REFUSAL, what=what)
+            return False
+        if await every_division_done_in(self.bot.db_path, season.id):
             await refuse(
-                interaction,
-                "\u26d4 The season is no longer placing drivers. **Nothing has been confirmed.**",
-                what=what,
+                interaction, every_division_done_refusal(season.season_number), what=what
             )
             return False
         # Judged afresh, as the first confirmation judges Gate S (#374). The review withholds
@@ -2273,104 +2243,40 @@ class SeasonCog(commands.Cog):
             *await self._mid_season_configuration_faults(),
         ]
         if faults:
-            bullets = "\n".join(f"• {line}" for line in faults)
+            bullets = "\n".join(f"\u2022 {line}" for line in faults)
             await refuse(
                 interaction,
-                f"⛔ Placements cannot be confirmed:\n{bullets}\n"
+                f"\u26d4 Placements cannot be confirmed:\n{bullets}\n"
                 "**Nothing has been confirmed.**",
                 what=what,
                 reason="placements cannot be confirmed:\n" + "\n".join(faults),
             )
             return False
 
-        await _take_the_review_down(self.bot, interaction)
-        outcome = await self.bot.placement_service.commit_mid_season_placements(
-            season.id, interaction.guild
-        )
-        committed = outcome.placements
+        if fingerprint is None:
+            from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
-        # What the confirmation could not do, told to the manager and the log channel below.
-        not_done: list[str] = []
-        if outcome.ungranted:
-            not_done.append(_ungranted_line(outcome.ungranted))
-        # The lineups follow on the change queue; nothing after the commit raises (#387).
-        try:
-            await ask_lineup_posts(self.bot.change_queue, self.bot.db_path, outcome.lineups)
-        except Exception:  # noqa: BLE001 — the placements are committed
-            log.exception("mid-season placements: could not ask for the lineups")
-            not_done.append(
-                "The lineups of the confirmed placements could not be put on the change queue: "
-                "each is posted with the next change to its division's drivers."
-            )
-
-        returned = False
-        try:
-            await self.bot.season_service.set_stage(season.id, SeasonStage.ONGOING)
-        except InvalidStageTransition:
-            log.warning("mid-season placements: season %s had already moved on", season.id)
-            # Named as not done, with the stage it is in: confirming again cannot move it.
-            try:
-                moved_to = await self.bot.season_service.get_stage(season.id)
-            except sqlite3.Error:
-                # The stage only makes the line more exact: a read that fails leaves it unnamed.
-                log.exception("mid-season placements: could not read season %s's stage", season.id)
-                moved_to = None
-            where = (
-                f" and is now {moved_to.value.replace('_', ' ').lower()}"
-                if moved_to is not None
-                else ""
-            )
-            not_done.append(
-                "The season could not be returned to Ongoing \u2014 it had already moved on"
-                f"{where}."
-            )
-        except Exception:  # noqa: BLE001 — the placements are committed
-            # Confirming again repairs it: the review offers its button with nothing left
-            # to commit, and the confirmation then makes this move alone.
-            log.exception(
-                "mid-season placements: could not return season %s to Ongoing", season.id
-            )
-            not_done.append(
-                "The season could not be returned to Ongoing \u2014 run "
-                "`/season placements-review` and confirm again."
+            fingerprint = (await take_fingerprint(self.bot, season.id)).areas
+        # The review comes down ahead of the confirmation's own jobs, but only for a request
+        # the queue accepts: one it refuses at once leaves the review standing.
+        confirmation = {
+            "season_id": season.id,
+            "season_number": season.season_number,
+            "fingerprint": dict(fingerprint),
+            "channel_id": interaction.channel_id,
+        }
+        question = getattr(interaction.message, "id", None)
+        if isinstance(question, int):
+            change_id = await take_review_down_before(
+                self.bot.change_queue, self.bot.db_path, question, MID_SEASON_CONFIRM_KIND,
+                confirmation, interaction=interaction, what=what,
             )
         else:
-            returned = True
-            from leaguebot.core.services.season_lifecycle_service import advance_to_pending_completion
-
-            # Rounds may have finished every division while the new drivers were placed.
-            try:
-                await advance_to_pending_completion(self.bot.db_path, season.id)
-            except Exception:  # noqa: BLE001 — `/season complete` makes this move itself
-                log.exception(
-                    "mid-season placements: could not check whether season %s is done",
-                    season.id,
-                )
-
-        msg = f"\u2705 {len(committed)} placement(s) confirmed."
-        if returned:
-            msg += " The season is ongoing again."
-        await _confirm_privately(
-            interaction,
-            msg + approval_checks.not_done_section(not_done),
-            fallback=(
-                f"\u2705 <@{interaction.user.id}> \u2014 the placements are confirmed"
-                + (" and the season is ongoing again" if returned else "")
-                + ". Your confirmation could not be sent to you privately; the log channel "
-                "has what it said."
-            ),
-        )
-        try:
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-                f"/season placements-review | Confirmed\n"
-                f"  season: Season #{season.season_number}\n"
-                f"  placements: {len(committed)}"
-                + "".join(f"\n  not done: {line}" for line in not_done),
+            change_id = await self.bot.change_queue.ask(
+                MID_SEASON_CONFIRM_KIND, confirmation, interaction=interaction, what=what
             )
-        except Exception:  # noqa: BLE001 — the placements are committed and the manager told
-            log.exception("mid-season placements: could not log the confirmation")
-        return True
+        # None where the queue's own check refused the request and saved nothing.
+        return change_id is not None
 
     # ------------------------------------------------------------------
     # /season config-review — confirming the configuration (issue #220)
@@ -5606,10 +5512,20 @@ class _ApproveView(LeagueView):
         self,
         interaction: discord.Interaction,
         confirm: Callable[..., Awaitable[bool]],
+        *,
+        in_hand: tuple[Callable[[str, int], Awaitable[bool]], str] | None = None,
+        evidence_to_confirm: bool = False,
     ) -> None:
         """A confirming button's press, every one but the placements approval's alike: who may
         press, the five minutes, the claim, the evidence, then *confirm*, the confirmation's own
-        work, which takes the review down just before it commits."""
+        work, which takes the review down just before it commits.
+
+        *in_hand* is a reader of whether a confirmation of the season is already waiting,
+        running or stopped on the change queue, and the refusal it is answered with: such a
+        press is refused at once, naming no job, before the evidence is read, and leaves the
+        review standing, as the approval's does (#439). *evidence_to_confirm* hands the review's
+        own evidence to *confirm* as its `fingerprint`, for a confirmation the queue judges
+        again when it runs."""
         if not await self._may_approve(interaction):
             await refuse(
                 interaction,
@@ -5626,6 +5542,12 @@ class _ApproveView(LeagueView):
         if await self._refuse_if_under_way(interaction, review):
             return
         async with self._press_worked(review) as press:
+            if in_hand is not None:
+                reader, refusal = in_hand
+                if await reader(self._cog.bot.db_path, review.season_id):
+                    await refuse(interaction, refusal, what=self._button)
+                    press.leave_standing = True
+                    return
             changed = await self._changed_since_review()
             if changed:
                 bullets = "\n".join(f"• {area}" for area in changed)
@@ -5640,7 +5562,12 @@ class _ApproveView(LeagueView):
                 await take_review_down(self._cog.bot.change_queue, self._cog.bot.db_path,
                                        review.question_id, REFUSED)
                 return
-            press.went_through = await confirm(interaction, what=self._button)
+            if evidence_to_confirm:
+                press.went_through = await confirm(
+                    interaction, what=self._button, fingerprint=review.evidence
+                )
+            else:
+                press.went_through = await confirm(interaction, what=self._button)
 
 
 @dataclass
@@ -5705,7 +5632,12 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
     async def approve(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await self._confirm_press(interaction, self._cog._do_confirm_mid_season_placements)
+        await self._confirm_press(
+            interaction,
+            self._cog._do_confirm_mid_season_placements,
+            in_hand=(confirmation_in_hand, ALREADY_BEING_CONFIRMED),
+            evidence_to_confirm=True,
+        )
 
 
 class _ConfirmConfigurationView(_ApproveView):

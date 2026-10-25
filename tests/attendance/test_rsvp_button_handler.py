@@ -606,7 +606,7 @@ async def test_a_reserve_is_locked_out_once_the_round_has_started(tmp_path):
 #
 # `run_rsvp_notice` opens a `driver_round_attendance` row per driver of the division *at that
 # moment*, and nothing else in the bot opens one: not `assign_driver`, not `move_driver`, not
-# `commit_mid_season_placements`. So a driver who arrives while the call is standing has none
+# the mid-season confirmation of placements. So a driver who arrives while the call is standing has none
 # — and they are asked anyway, because the embed is rebuilt from the current roster on every
 # press and lists them with an empty bracket.
 #

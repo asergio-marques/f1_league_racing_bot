@@ -34,7 +34,9 @@ typed, `post_choices` posts the correction choices and **its record saves the ti
 posted** (`correction_offered_at`), and `arm_lapse`, a job of its own after them, arms the five
 minutes from that time, so the manager's five minutes start when the buttons appear and not when
 the reason was typed, however long the queue held it. A choices change whose conversation has
-ended is dropped.
+ended is dropped. `arm_lapse` cannot be discarded (#439, slice 8): dropped, nothing would end the
+correction request and the driver would stay awaiting a choice, an unsettled signup that refuses
+the season's placements; a Discard on it is refused and only a Retry moves it.
 
 **The choice of what to correct** asks `signup.correction.choose` (C86) when a manager presses one of
 the correction choices, acknowledged privately and updated. Its check refuses a request that has
@@ -45,7 +47,10 @@ time counts though the queue reaches it later, and a choice pressed late is refu
 lapse has not yet run. Its jobs are `name_driver`, `choose` (a save: Pending Driver Correction, the
 wizard moved to the step that re-collects the answer, the line written) and `arm_inactivity`, a
 job of its own after it, which takes the five minutes away and arms the driver's 24 hours from
-when it ran. The choice asks back `signup.recollect` on the driver's own lane for the permission
+when it ran. `choose` and `arm_inactivity` cannot be discarded
+(#439, slice 8): dropped, the driver would be left awaiting a choice nobody can make, or a
+correction that never times out, either an unsettled signup that refuses the season's placements;
+a Discard on either is refused and only a Retry moves it. The choice asks back `signup.recollect` on the driver's own lane for the permission
 and the prompt to re-submit, so that a channel Discord refuses stops that driver's lane alone.
 
 **The correction's lapse** asks `signup.correction.lapse` (C87), on the league lane, when the five
@@ -57,13 +62,17 @@ manager and the driver for the notice and the line (a save waits on no second co
 `lapse` (a save: back to Pending Admin Approval, the wizard unengaged and the correction's state,
 its reason, requester and offer time cleared), `post_lapse` (the notice mentioning the manager,
 worded for a restart where it was one) and `post_panel` (a fresh review panel, and the lapse
-written to the log, naming the panel where one was posted; where an admin discards `post_panel`
-the change's `finished_lines` write the lapse, saying no panel was posted, since the driver is back
-in the approval queue all the same).
+written to the log, naming the panel where one was posted). A signup channel confirmed gone (the
+strict lookup `post_lapse` and `post_panel` share, which stops the job where the league's server
+is missing from the cache or Discord cannot tell) posts nothing and ends the signup as a driver
+who leaves does, `post_panel` asking `signup.end` in its own save and the lapse's record saying
+so (#439, slice 8). `lapse` and `post_panel` cannot be
+discarded (#439, slice 8): dropped, the driver would be left awaiting a correction nobody can
+choose, or waiting for approval with no panel, and either leaves a signup unsettled, which refuses
+the season's placements; a Discard on either is refused and only a Retry moves it.
 
 **The lap sum is signup's own.** The sum is written on the signup record by this module, in the
-approval's save; core's `PlacementService.store_total_lap_ms`, which commits on a connection of
-its own, is not asked.
+approval's save, and nothing else computes it.
 
 A job that fails stops the queue (core specification, "How a change is carried out").
 """
@@ -114,7 +123,9 @@ from leaguebot.signup.services.wizard_answers import (
     INACTIVITY,
     _BUTTON_ONLY,
     _set_typing,
+    _signup_channel_or_gone,
     _text_channel,
+    channel_gone_ending,
 )
 from leaguebot.signup.services.wizard_service import (
     _CORRECTION_PARAMETER_STATES,
@@ -520,6 +531,13 @@ def choices_change(
     async def describe_reason(ctx: StepContext) -> str:
         return f"deleting the reason typed in <#{ctx.step_payload['channel_id']}>"
 
+    async def would_never_lapse(ctx: StepContext) -> str:
+        return (
+            f"nothing would end <@{ctx.step_payload['user_id']}>'s correction request once its "
+            "five minutes ran out, and the season's placements could not be confirmed until the "
+            "bot restarts"
+        )
+
     return ChangeType(
         kind=CHOICES,
         opening=(),
@@ -531,7 +549,10 @@ def choices_change(
             POST_CHOICES: Step(
                 POST_CHOICES, StepKind.ACT, post_choices, describe=describe_post, record=offered
             ),
-            ARM_LAPSE: Step(ARM_LAPSE, StepKind.ACT, arm_lapse, describe=describe_arm),
+            ARM_LAPSE: Step(
+                ARM_LAPSE, StepKind.ACT, arm_lapse, describe=describe_arm,
+                undiscardable=would_never_lapse,
+            ),
         },
         check=standing,
         key=lambda payload: f"{CHOICES}:{payload['user_id']}",
@@ -646,7 +667,6 @@ def choose_change(
     async def chosen(ctx: StepContext) -> bool:
         return any(
             view.name == CHOOSE_JOB and view.done and not (view.result or {}).get("ended")
-            and "discarded" not in (view.result or {})
             for view in ctx.steps
         )
 
@@ -665,11 +685,16 @@ def choose_change(
     async def describe_arm(ctx: StepContext) -> str:
         return f"arming the 24 hours of <@{ctx.step_payload['user_id']}>'s correction"
 
+    async def would_never_time_out(ctx: StepContext) -> str:
+        return (
+            f"<@{ctx.step_payload['user_id']}>'s signup would never time out if they stopped "
+            "answering, and while they correct it the season's placements could not be "
+            "confirmed until the bot restarts"
+        )
+
     def outcome(ctx: OutcomeContext) -> str:
         views = {view.name: view for view in ctx.steps}
         chose = views.get(CHOOSE_JOB)
-        if chose is not None and "discarded" in (chose.result or {}):
-            return "⚠️ No answer was sent back: the job was discarded."
         if chose is not None and (chose.result or {}).get("ended"):
             return f"⛔ {CORRECTION_ENDED}"
         return f"✅ Re-collecting **{str(ctx.payload['parameter']).replace('_', ' ')}**."
@@ -680,10 +705,13 @@ def choose_change(
         plan=plan,
         steps={
             NAME_DRIVER: Step(NAME_DRIVER, StepKind.ACT, name_driver, describe=describe_name),
-            CHOOSE_JOB: Step(CHOOSE_JOB, StepKind.SAVE, choose, describe=describe_choose),
+            CHOOSE_JOB: Step(
+                CHOOSE_JOB, StepKind.SAVE, choose, describe=describe_choose,
+                undiscardable=would_await_a_choice_nobody_can_make,
+            ),
             ARM_INACTIVITY: Step(
                 ARM_INACTIVITY, StepKind.ACT, arm_inactivity, still_due=chosen,
-                describe=describe_arm,
+                describe=describe_arm, undiscardable=would_never_time_out,
             ),
         },
         check=check,
@@ -808,6 +836,15 @@ async def ask_lapse(queue: "ChangeQueue", user_id: str, *, restart: bool = False
     )
 
 
+async def would_await_a_choice_nobody_can_make(ctx: StepContext) -> str:
+    """What a Discard of a job that moves a driver out of Awaiting Correction Parameter would
+    leave: the driver stuck there, an unsettled signup that refuses the season's placements."""
+    return (
+        f"<@{ctx.step_payload['user_id']}> would be left awaiting a correction nobody can "
+        "choose, and the season's placements could not be confirmed until the bot restarts"
+    )
+
+
 def lapse_change(
     *,
     modules: "ModuleService",
@@ -885,10 +922,9 @@ def lapse_change(
 
     async def lapsed(ctx: StepContext) -> bool:
         """Whether the lapse took place, for the notice and the panel that follow it: not where
-        the window had nothing left to lapse, nor where an admin discarded the `lapse` job."""
+        the window had nothing left to lapse."""
         return any(
             view.name == LAPSE_JOB and view.done and not (view.result or {}).get("ended")
-            and "discarded" not in (view.result or {})
             for view in ctx.steps
         )
 
@@ -907,7 +943,7 @@ def lapse_change(
         channel_id = lapse_result(ctx).get("channel_id")
         if channel_id is None:
             return StepResult(result={"no_channel": True})
-        channel = await _text_channel(ctx, int(channel_id))
+        channel = await _signup_channel_or_gone(ctx, int(channel_id))
         if channel is None:
             return StepResult(result={"no_channel": True})
         requested_by = lapse_result(ctx).get("requested_by")
@@ -932,11 +968,25 @@ def lapse_change(
     @posts_in_a_job
     async def post_panel(ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
-        posted = False
         channel_id = lapse_result(ctx).get("channel_id")
-        channel = None if channel_id is None else await _text_channel(ctx, int(channel_id))
-        record = await signup().get_record(user_id) if channel is not None else None
-        if channel is not None and record is not None:
+        channel = None if channel_id is None else await _signup_channel_or_gone(
+            ctx, int(channel_id)
+        )
+        if channel is None:
+            # The channel is gone, or the wizard names none: the signup ends as it does for a
+            # driver who leaves, since nothing else would ever settle a driver awaiting a review
+            # that cannot be posted.
+            ended = await channel_gone_ending(
+                ctx, user_id, None if channel_id is None else int(channel_id),
+            )
+            return StepResult(
+                result={"panel": False, "channel_gone": True},
+                lines=(lapse_line(ctx, False, gone=True),),
+                follow_ons=ended.follow_ons,
+            )
+        record = await signup().get_record(user_id)
+        posted = False
+        if record is not None:
             wizard = await signup().get_wizard(user_id)
             slot_labels = {
                 slot.slot_id: slot.display_label
@@ -956,9 +1006,10 @@ def lapse_change(
             posted = True
         return StepResult(result={"panel": posted}, lines=(lapse_line(ctx, posted),))
 
-    def lapse_line(ctx: OutcomeContext, posted: bool) -> str:
+    def lapse_line(ctx: OutcomeContext, posted: bool, gone: bool = False) -> str:
         """The log channel's record of the lapse, naming the manager who asked and the driver, and
-        whether a fresh review panel is in the driver's channel."""
+        whether a fresh review panel is in the driver's channel, or that the channel was gone and
+        the signup ended."""
         user_id = str(ctx.payload["user_id"])
         driver = named_result(ctx).get("driver") or f"<@{user_id}>"
         return abandoned_line(
@@ -966,24 +1017,13 @@ def lapse_change(
             f"the correction request for {driver}'s signup",
             lapsed=True,
             detail=(
+                f"{driver}'s signup channel was gone, so no fresh review panel could be posted "
+                "and their signup is ended."
+                if gone else
                 f"{driver} is back in the approval queue"
                 + ("; a fresh review panel is in their channel." if posted else ".")
             ),
         )
-
-    def finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
-        # The lapse is `post_panel`'s line; where an admin discarded that job the driver is back in
-        # the approval queue all the same, so the record is written as the change closes, saying
-        # no panel was posted.
-        views = {view.name: view for view in ctx.steps}
-        lapse_view, panel = views.get(LAPSE_JOB), views.get(POST_PANEL)
-        if (
-            lapse_view is None or not lapse_view.done or (lapse_view.result or {}).get("ended")
-            or "discarded" in (lapse_view.result or {})
-            or panel is None or "discarded" not in (panel.result or {})
-        ):
-            return ()
-        return (lapse_line(ctx, False),)
 
     async def describe_names(ctx: StepContext) -> str:
         return f"finding the names of <@{ctx.step_payload['user_id']}> and their manager for the record"
@@ -997,11 +1037,11 @@ def lapse_change(
     async def describe_panel(ctx: StepContext) -> str:
         return f"posting <@{ctx.step_payload['user_id']}>'s review panel again"
 
-    def outcome(ctx: OutcomeContext) -> str:
-        lapse_view = next((view for view in ctx.steps if view.name == LAPSE_JOB), None)
-        if lapse_view is not None and "discarded" in (lapse_view.result or {}):
-            return "⚠️ The driver was not returned to the approval queue: the job was discarded."
-        return ""
+    async def would_wait_unreviewed(ctx: StepContext) -> str:
+        return (
+            f"<@{ctx.step_payload['user_id']}> would wait for approval with no review panel, "
+            "and the season's placements could not be confirmed"
+        )
 
     return ChangeType(
         kind=LAPSE,
@@ -1009,18 +1049,21 @@ def lapse_change(
         plan=plan,
         steps={
             NAMES: Step(NAMES, StepKind.ACT, names, describe=describe_names),
-            LAPSE_JOB: Step(LAPSE_JOB, StepKind.SAVE, lapse, describe=describe_lapse),
+            LAPSE_JOB: Step(
+                LAPSE_JOB, StepKind.SAVE, lapse, describe=describe_lapse,
+                undiscardable=would_await_a_choice_nobody_can_make,
+            ),
             POST_LAPSE: Step(
                 POST_LAPSE, StepKind.ACT, post_lapse, still_due=lapsed,
                 describe=describe_post_lapse,
             ),
             POST_PANEL: Step(
-                POST_PANEL, StepKind.ACT, post_panel, still_due=lapsed, describe=describe_panel
+                POST_PANEL, StepKind.ACT, post_panel, still_due=lapsed, describe=describe_panel,
+                undiscardable=would_wait_unreviewed,
             ),
         },
         check=check,
         key=lambda payload: f"{LAPSE}:{payload['user_id']}",
         doing=lambda payload: "Returning a driver to the approval queue",
-        outcome=outcome,
-        finished_lines=finished_lines,
+        outcome=lambda _ctx: "",
     )

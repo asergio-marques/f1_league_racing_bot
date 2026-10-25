@@ -353,3 +353,43 @@ async def test_the_same_role_or_no_guild_changes_nothing(db_path):
 
     assert await service.swap_team_role("Alpha", 5, 5, _role_guild({})) == 0
     assert await service.swap_team_role("Alpha", 5, 6, None) == 0
+
+
+# ── A refused role change: /driver move keeps today's behaviour (#439 slice 8, Part C) ───────
+
+
+async def test_a_role_discord_refuses_is_logged_and_the_move_still_saved(db_path, caplog):
+    """`/driver move` keeps today's role behaviour until core's pass: the driver of Pro's Alpha
+    is moved to its Reserve team, Discord refuses every role change (Missing Permissions), each
+    refusal is logged on the host, and the move is saved all the same."""
+    import discord
+
+    await _seat(db_path, PRO, "Alpha")
+    service = PlacementService(db_path)
+    service._refresh_lineup_post = AsyncMock(return_value=None)
+    roles = {}
+    for role_id in (*ROLES.values(), 1001):
+        role = MagicMock()
+        role.id = role_id
+        roles[role_id] = role
+    guild = MagicMock()
+    guild.get_role = MagicMock(side_effect=roles.get)
+    member = MagicMock()
+    member.guild = guild
+    member.roles = [roles[ROLES["Alpha"]], roles[1001]]
+    refused = discord.Forbidden(MagicMock(status=403), "Missing Permissions")
+    member.add_roles = AsyncMock(side_effect=refused)
+    member.remove_roles = AsyncMock(side_effect=refused)
+    guild.get_member = MagicMock(return_value=member)
+    guild.fetch_member = AsyncMock(return_value=member)
+
+    with caplog.at_level("WARNING", logger="leaguebot.core.services.placement_service"):
+        await service.move_driver(
+            driver_profile_id=PROFILE_ID, season_id=SEASON_ID, from_division_id=PRO,
+            to_division_id=PRO, team_name="Reserve", acting_user_id=1,
+            acting_user_name="Manager", guild=guild, discord_user_id="4242",
+        )
+
+    assert member.add_roles.await_count + member.remove_roles.await_count > 0
+    assert any("failed to" in r.getMessage() for r in caplog.records)
+    assert await _where(db_path) == [(PRO, "Reserve")]

@@ -6,9 +6,8 @@ one helper, `season_end_changes.season_end_in_hand`, which gives the kind of the
 the number of the job it waits on, the one nearest its turn first; 0 where only its close is left;
 and nothing where it has finished, been refused, dropped or discarded, or is another season's.
 
-Each season's end is put on the queue straight through its tables (`seed_season_end`), so the
-helper is read alone, on a database built by the migrations. The helper is unbuilt until the
-build, so the test imports it inside itself and is marked to fail until then.
+Each season's end is put on the queue straight through its tables (`seed_season_end`), so the helper
+is read alone, on a database built by the migrations.
 """
 from __future__ import annotations
 

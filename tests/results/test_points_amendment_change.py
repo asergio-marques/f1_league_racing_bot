@@ -6,9 +6,8 @@ and the attendance are saved in one save; the reposts, their deletions and the a
 as jobs, each of which stops the queue when it fails. While the approval is in hand, the commands
 that stage points changes are refused, naming its job.
 
-Every test drives the cog and the real queue through `tests/support/points_league.py`, with
-"now" pinned. The change type is unbuilt until the build, so each is marked to fail until then:
-today the press approves on the spot, inside the button.
+Every test drives the cog and the real queue through `tests/support/points_league.py`, with "now"
+pinned.
 """
 from __future__ import annotations
 

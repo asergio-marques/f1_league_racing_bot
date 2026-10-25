@@ -55,9 +55,6 @@ HANDLERS = "#441"
 #: provides for the start-up sweep (architecture.md, "Timed work and restarts"). The missed
 #: post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
 CLEANUPS = f"{PASS['weather']} and {PASS['attendance']}"
-#: The slices of #439, each moving a set of flows onto the change queue.
-SLICE: dict[int | str, str] = {n: f"#439 slice {n}" for n in range(2, 8)}
-SLICE["6b"] = "#439 slice 6b"
 
 
 # ── Reading the source ──────────────────────────────────────────────────────────────────────
@@ -488,10 +485,11 @@ def _jobs_with_a_lateness_limit() -> Counter[tuple[str, str]]:
 
 KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/scheduler_service.py", "SchedulerService.schedule_amendment_sweep"): (1, PASS["core"]),
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_attendance_round"): (4, PASS["core"]),
+    ("core/services/scheduler_service.py", "SchedulerService.schedule_attendance_round"): (3, PASS["core"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_portrait_refresh"): (1, PASS["core"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_result_submission_jobs"): (1, PASS["core"]),
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (3, PASS["core"]),
+    ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (2, PASS["core"]),
+    ("core/services/scheduler_service.py", "SchedulerService.schedule_round_cleanups"): (2, PASS["core"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_signup_close_timer"): (1, PASS["core"]),
 }
 
@@ -833,7 +831,10 @@ def test_only_the_router_writes_the_log_channel():
 POSTING_ALLOWED = frozenset({"core/services/output_router.py"})
 #: A `.send` that is not a post, and why.
 NOT_A_POST = {
-    ("__main__.py", "main.guild_sync"): "the reply to the owner's own `!sync` command",
+    ("__main__.py", "main.guild_sync"): (
+        "the owner's own `!sync` command, which deletes the owner's message and posts a note "
+        "that deletes itself: a prefix command's reply"
+    ),
     ("core/services/change_queue.py", "ChangeQueue._update_reply"): (
         "edits the member's own ephemeral acknowledgement, a WebhookMessage the follow-up "
         "returned, which answers a member and posts in no channel"
@@ -993,10 +994,6 @@ POSTS_OFF_THE_QUEUE: dict[tuple[str, str], str] = {
     ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset.report"): (
         "the factory reset's progress, the reply to the owner's own command"
     ),
-    ("core/services/output_router.py", "OutputRouter.turn_away"): (
-        "the turn-away's note and deletion, made at once while an earlier turn waits; a "
-        "refusal of either is lost, not retried"
-    ),
     ("core/services/retry_service.py", "attempt_delivery"): (
         "the retry of a log line the log channel refused: it carries log lines alone, which stay "
         "off the queue (decision 1)"
@@ -1059,13 +1056,14 @@ def _posts_outside_a_job_among(nodes) -> Counter[tuple[str, str]]:
 def test_no_post_is_made_outside_a_job_but_those_named_off_the_queue():
     """The job check, absolute (slice 6b, C102): every message the bot posts, edits or deletes,
     and every channel it makes or deletes, is a job of a change on the change queue, but a log
-    line, a reply to a member's command or press, the stop notice, and the posts named in
-    `POSTS_OFF_THE_QUEUE` (architecture.md, "How a change is carried out" and "Posting to
-    Discord"). A function that posts carries `posts_in_a_job`, which raises where it runs outside
-    a job, or is named in `POSTS_OFF_THE_QUEUE` with its reason; no function anywhere posts
-    outside a job, with no list of exceptions left to grow. The router is excepted as the posting
-    check excepts it (`POSTING_ALLOWED`): its log lines and stop notice stay off the queue, and
-    its forecast post carries the decorator."""
+    line, a reply to a member's command or press, the stop notice, the turn-away's note and
+    deletion (made at once while an earlier turn waits, a refusal of either lost, not retried),
+    and the posts named in `POSTS_OFF_THE_QUEUE` (architecture.md, "How a change is carried out"
+    and "Posting to Discord"). A function that posts carries `posts_in_a_job`, which raises where
+    it runs outside a job, or is named in `POSTS_OFF_THE_QUEUE` with its reason; no function
+    anywhere posts outside a job, with no list of exceptions left to grow. The router is excepted as the posting
+    check excepts it (`POSTING_ALLOWED`): its log lines, stop notice and turn-away stay off the
+    queue, and its forecast post carries the decorator."""
     found = _posts_outside_a_job_among(_nodes())
 
     assert not found, sorted(found)
@@ -1197,10 +1195,8 @@ def _queue_reached_through_the_bot_among(nodes) -> Counter[tuple[str, str]]:
 
 #: Each callback of a view or form listed under results' pass reads the queue once and hands it
 #: on, binding it to a local where it asks twice (the penalty clear's staging and its approval
-#: message). Every read the slice adds is listed now, beside the commit that adds it, since the
-#: build may only delete or lower a line: the approve buttons (C9), the configuration picker
-#: (C48), Resubmit (C51), the two forms (C54), the Remove, clear-confirm and Make Changes buttons
-#: (C55) and No Penalties (C56).
+#: message). They are the approve buttons, the configuration picker, Resubmit, the two forms, the
+#: Remove, clear-confirm and Make Changes buttons, and No Penalties.
 KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "AddPenaltyModal.on_submit"): (1, PASS["results"]),
@@ -1224,9 +1220,9 @@ def test_no_service_reaches_the_change_queue_through_the_bot():
     """A service or a helper is handed the change queue by whoever builds or calls it, and never
     looks it up on the bot (architecture.md, "How modules and core fit together": "Services stay
     attached to the bot, and are built in one place"; #439 slice 6b, fold-in 6). A cog may read it
-    there, as every command and press asks the queue on the bot. Today's reads are listed under
-    the slice that hands the queue, and the callbacks of the views and forms in results' services
-    files under results' pass, which moves them (decision 20)."""
+    there, as every command and press asks the queue on the bot. Today's reads are the callbacks
+    of the views and forms in results' services files, listed under results' pass, which moves
+    them (decision 20)."""
     _check(
         "no service reaches the change queue through the bot",
         _queue_reached_through_the_bot_among(_nodes()),
@@ -1446,7 +1442,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
     ("results/services/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "_build_division_validation_data"): (2, PASS["results"]),
-    ("results/services/result_submission_service.py", "run_amendment_review_stages"): (1, PASS["results"]),
     ("signup/services/signup_views.py", "AdminReviewView._guard"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "AdminReviewView._resolve"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "CorrectionParameterView.__init__.make_callback.callback"): (1, PASS["signup"]),
@@ -1462,7 +1457,7 @@ def test_no_service_looks_another_service_up_on_the_bot():
     one up on the bot (architecture.md, "How modules and core fit together": "Services stay
     attached to the bot, and are built in one place"; #439 slice 6b, folded in at Gate 1). A cog
     may look a service up there. Today's lookups are listed under the pass of the module whose
-    file makes them; a lookup a slice of #439 removes deletes its line in that commit."""
+    file makes them; a lookup a design pass removes deletes its line in that commit."""
     _check(
         "no service looks another service up on the bot",
         _service_lookups_among(_nodes()),
@@ -1838,17 +1833,11 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, PASS["core"]),
     ("core/services/driver_service.py", "_merge"): (1, PASS["core"]),
-    ("core/services/module_service.py", "ModuleService.set_attendance_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_images_enabled"): (1, PASS["core"]),
-    ("core/services/module_service.py", "ModuleService.set_results_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_signup_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_weather_enabled"): (1, PASS["core"]),
     ("core/services/pack_service.py", "pack"): (6, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.store_total_lap_ms"): (1, PASS["core"]),
     ("core/services/season_lifecycle_service.py", "delete_driver_profiles"): (2, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.add_division"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.add_round"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.clear_session_phase_data"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_division"): (2, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_round"): (2, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_season"): (15, PASS["core"]),
@@ -1858,9 +1847,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/services/season_service.py", "SeasonService.set_division_results_channel"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.set_division_standings_channel"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.sync_pending_config"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.update_round_field"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.update_session_phase2"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.update_session_phase3"): (1, PASS["core"]),
     ("core/services/season_service.py", "_sync_division_rounds"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_ensure_single_config"): (4, PASS["core"]),
     ("results/services/result_submission_service.py", "recompute_former_drivers_for_round"): (1, PASS["results"]),
@@ -2025,11 +2011,6 @@ def _saves_outside_a_change() -> Counter[tuple[str, str]]:
 
 
 KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
-    # The penalty and appeals approvals
-    ("results/services/standings_service.py", "persist_snapshots"): (1, PASS["results"]),
-    ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
-    ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
-    # The standing posts
     # Core's pass
     ("core/cogs/bot_cog.py", "_audit"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (1, PASS["core"]),
@@ -2044,33 +2025,23 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog.division_calendar_channel"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_lineup_channel"): (1, PASS["core"]),
     ("core/services/audit_service.py", "record_change"): (1, PASS["core"]),
-    ("core/services/config_service.py", "ConfigService.release_claim"): (1, PASS["core"]),
     ("core/services/config_service.py", "ConfigService.save_server_config"): (2, PASS["core"]),
     ("core/services/config_service.py", "ConfigService.set_core_setting"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService._create_profile"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.transition"): (1, PASS["core"]),
-    ("core/services/module_service.py", "ModuleService.set_attendance_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_images_enabled"): (1, PASS["core"]),
-    ("core/services/module_service.py", "ModuleService.set_results_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_signup_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_weather_enabled"): (1, PASS["core"]),
     ("core/services/pack_service.py", "pack"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.assign_driver"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.commit_mid_season_placements"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.delete_team_role_config"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.move_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.rename_team_role_config"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.sack_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.set_team_role_config"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.store_total_lap_ms"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.unassign_driver"): (1, PASS["core"]),
-    ("core/services/season_lifecycle_service.py", "_move"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.add_division"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.add_round"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.clear_session_phase_data"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.create_season"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_division"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_round"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.duplicate_division"): (2, PASS["core"]),
@@ -2082,9 +2053,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/season_service.py", "SeasonService.set_division_standings_channel"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.set_stage"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.sync_pending_config"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.update_round_field"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.update_session_phase2"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.update_session_phase3"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.add_default_team"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.get_default_teams"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.get_teams_with_roles"): (1, PASS["core"]),
@@ -2099,13 +2067,13 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/test_roster_service.py", "add_test_drivers_in_bulk"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "clear_all_test_drivers"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "remove_test_driver"): (1, PASS["core"]),
-    # Results' pass
     # Attendance's pass
-    ("attendance/services/attendance_service.py", "AttendanceService.delete_division_configs"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.get_or_create_config"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.set_attendance_channel"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.set_rsvp_channel"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.set_setting"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # Signup's pass
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
@@ -2115,16 +2083,13 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.add_slot"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.delete_config"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.rekey_wizard"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.remove_slot_by_rank"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_config"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.save_selected_tracks"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_settings"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.set_close_at"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.snapshot_season_config"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.withdraw_approval"): (1, PASS["signup"]),
-    # Weather's pass
     # Image's pass
     ("image/services/driver_portrait_service.py", "_disown"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "_record"): (1, PASS["image"]),
@@ -2137,8 +2102,8 @@ def test_nothing_writes_to_the_database_outside_a_queued_change():
     """A change is carried out on the change queue, which saves each step with its mark, so a
     stop leaves nothing half-done that a restart cannot finish (architecture.md, "How a change is
     carried out"). Every commit and script outside it is counted per function, the saves allowed
-    for good excepted (`SAVES_ALLOWED`), and today's listed with the slice of #439 or the design
-    pass that moves its flow onto the queue."""
+    for good excepted (`SAVES_ALLOWED`), and today's listed under the design pass that moves its
+    flow onto the queue; a pass with none has no heading."""
     _check(
         "nothing writes to the database outside a queued change",
         _saves_outside_a_change(),

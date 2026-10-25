@@ -14,8 +14,6 @@ The last notice goes to the division's check-in channel as it stands when the jo
 in, so that the round's clean-up deletes it from there. One reached late is posted while the
 deadline is still ahead and dropped after it (Q6); one whose round has no call standing when it
 runs is dropped (fault 8). Discord refusing it stops the queue.
-
-Everything of the change is imported inside a test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

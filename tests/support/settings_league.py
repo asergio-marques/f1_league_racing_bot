@@ -86,10 +86,21 @@ async def settings_league(tmp_path: Any, *, modules: tuple[str, ...] = MODULES,
     return SettingsLeague(bot, db_path, bot.scheduler_service)
 
 
+async def _set_results_flag(db_path: str, on: bool) -> None:
+    """Results' flag written as `/module enable|disable results` leaves it, the change's own
+    save being what writes it in the bot."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, ?)",
+            (int(on),),
+        )
+        await db.commit()
+
+
 async def switch(bot: Any, modules: tuple[str, ...], *, on: bool) -> None:
     """Turn each of *modules* on or off, as `/module enable|disable` leaves its flag."""
     setters = {
-        "results": bot.module_service.set_results_enabled,
+        "results": lambda value: _set_results_flag(bot.db_path, value),
         "weather": bot.module_service.set_weather_enabled,
         "images": bot.module_service.set_images_enabled,
     }

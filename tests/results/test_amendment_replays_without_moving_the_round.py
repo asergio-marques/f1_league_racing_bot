@@ -111,7 +111,9 @@ PUBLISHING_JOBS = [
     "announce_verdict",
     "attendance_sheet",
     "plan_sanctions",
+    "check_sanction",
     "apply_sanction",
+    "sanction_roles",
     "announce_sanction",
     "refresh_lineup",
 ]
@@ -256,7 +258,7 @@ def test_stage_one_publishes_nothing_at_all():
     assert "repost_round_results" not in source
     assert "delete_and_repost_final_results" not in source
     # The championship is still recalculated — the database has to be right either way.
-    assert "cascade_recompute_from_round" in source
+    assert "cascade_recompute_from_round_on" in source
 
 
 def test_the_revert_publishes_nothing_either():
@@ -265,7 +267,7 @@ def test_the_revert_publishes_nothing_either():
     source = _code(_revert())
 
     assert "repost" not in source
-    assert "cascade_recompute_from_round" in source
+    assert "cascade_recompute_from_round_on" in source
 
 
 # ── The flags themselves ──────────────────────────────────────────────────

@@ -13,10 +13,8 @@ test-mode state is kept. Every failure stops the queue; a Discard is named in th
 beneath the closing line, which stays `| Success` with the drivers returned and deleted.
 
 Every test drives the real cog and the real queue through `tests/support/season_league.py`'s
-`setup_league`, with "now" pinned: season 3 (id 7) in Placements, Lewis, Max and Charles placed
-and not yet confirmed, the setup held in memory. Today `/season abort` aborts the season at the
-press, catching what fails, so every test of the queue is marked to fail until the build; the
-press's refusals in today's words pass as they stand.
+`setup_league`, with "now" pinned: season 3 (id 7) in Placements, Lewis, Max and Charles placed and
+not yet confirmed, the setup held in memory.
 """
 from __future__ import annotations
 
@@ -83,9 +81,10 @@ ONLY_BEFORE = (
     "ongoing season is cancelled with `/season cancel`."
 )
 END_DISCARDED = "Nothing was aborted: the season stands as it was. Run `/season abort` again."
-NOT_FORGOTTEN = (
-    "The setup the bot held in memory could not be let go of: `/round amend` may refuse this "
-    "season until the bot restarts."
+CANNOT_DISCARD_FORGET = (
+    "⛔ This job can't be discarded: without it the bot would go on holding the aborted season's "
+    "setup, and no new season could be set up until the bot restarts. Fix what stopped it and "
+    "press **Retry**."
 )
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
 WINDOW_OPEN = (
@@ -788,7 +787,12 @@ async def test_one_success_line_records_the_drivers_returned_and_deleted(tmp_pat
     assert jobs[-1]["name"] == "close" and all(job["done_at"] for job in jobs)
 
 
-async def test_a_discarded_setup_release_is_named(tmp_path):
+async def test_letting_go_of_the_setup_cannot_be_discarded_on_an_abort(tmp_path):
+    """Letting go of the setup the bot holds in memory fails once the season is deleted and stops
+    the queue. A league admin's Discard on it is refused, saying the bot would go on holding the
+    aborted season's setup and no new season could be set up until it restarts; the queue stays
+    stopped there. Once the fault is lifted, Retry lets the setup go and the abort reports
+    nothing left undone."""
     league = await setup_league(tmp_path)
     league.cog.clear_pending = MagicMock(side_effect=RuntimeError("the cog is reloading"))
     interaction = await _asked(league)
@@ -797,12 +801,20 @@ async def test_a_discarded_setup_release_is_named(tmp_path):
     assert await _stopped_at(league) == ("forget_setup", None)
     assert not await _season_stands(league)
 
-    await discard_job(league.bot)
+    discarding = await discard_job(league.bot)
 
+    assert CANNOT_DISCARD_FORGET in reply(discarding)
+    assert await _stopped_at(league) == ("forget_setup", None)
+    assert _success_lines(league) == []
+
+    del league.cog.clear_pending
+    await retry_job(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert league.cog._get_pending() is None
     assert ABORTED in reply(interaction)
-    assert NOT_FORGOTTEN in _not_done(reply(interaction))
     [line] = _success_lines(league)
-    assert f"  not done: {NOT_FORGOTTEN}" in line
+    assert "not done:" not in line
 
 
 async def _window_refused(tmp_path: Any, _monkeypatch: Any) -> Any:

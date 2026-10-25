@@ -39,9 +39,9 @@ production task never drain one lane at once. A due time the dispatcher cannot a
 lane has a task already or every conversation slot is taken, is not waited for
 (`_seconds_to_next_try`): the task ending wakes it, so it neither spins nor sleeps through.
 
-**One save at a time, across lanes.** SQLite has one writer, so the twelve saves the queue makes
+**One save at a time, across lanes.** SQLite has one writer, so every save the queue makes
 (the request's, its acknowledgement's mark, the restart's, a start, an end, a `SAVE` step's, a
-mark, a stop, the notice's id, a Retry, a Discard, a finish) each hold `ChangeQueue._writing`, an
+mark, a stop, the notice's id, a Retry, a Discard, a finish) holds `ChangeQueue._writing`, an
 in-process lock, for the length of the save and no longer. *Rejected:* one worker for every lane,
 which holds a conversation behind the league's Discord calls; and SQLite's own busy wait, which
 gives up after `_BUSY_TIMEOUT_SECONDS` where a save is held longer. No Discord call is made under
@@ -55,7 +55,8 @@ before every job, and again in the save of a `SAVE` step or of a record. A job w
 has ended is marked done as dropped, with a line saying so; what a job already sent stands. A job
 the lane is already stopped at stays stopped: the bot makes no scheduled try of it once its
 conversation has ended (`_choose` clears its `next_try_at`, as a restart does), and a Retry makes a
-try that finds it no longer due and clears the stop, a Discard dropping it. The conversation's other
+try that finds it no longer due and clears the stop, a Discard dropping it (unless the job cannot be
+discarded, which a Discard refuses all the same). The conversation's other
 changes are then found no longer due in turn.
 
 **A conversation's save may write only its conversation's own tables.** A change type of a
@@ -123,15 +124,21 @@ the queue's own records, never as changes of their own: the queue is stopped, so
 behind it could not run. Each is a press on the stop notice (`QueueStopView`) and is refused, with
 a line, where the presser may not use it or the notice's job no longer stops the queue.
 
-**A job without which a round would never run cannot be discarded** (`Step.undiscardable`): the
-arming of a season's timed work once it is approved, the arming of an amended round's, and the
-opening of a round's results submission. Dropping one would leave no repair a league could make,
-since nothing else arms a round again or opens its submission. Its Discard is refused
-and recorded as any refused press is, the job stays stopped, and only Retry, or the bot's own
-tries, clears it. The notice keeps its Discard button all the same: `QueueStopView` is one
+**A job whose loss could stop a season from being started or completed, or would leave the league
+no way to put it right, cannot be discarded** (`Step.undiscardable`; the core specification's
+"How a change is carried out"): the arming of a round's timed work, the opening of a round's
+results submission, a cancellation's save once its timed work is removed, the closing jobs of a
+review, the signup jobs that settle a driver, and the like. Dropping one would leave a round that
+never runs or never ends, a driver nobody can settle, or records the bot would go on holding
+wrongly, and nothing else puts it right. Its Discard is refused and recorded as any refused press
+is, the job stays stopped, and only Retry, or the bot's own tries, clears it. Every such job is one
+a Retry can always clear: where its work is no longer owed, its `still_due` drops it or it
+completes doing nothing, so that an undiscardable job is never one that can only fail. The notice keeps its Discard button all the same: `QueueStopView` is one
 persistent view with fixed `custom_id`s, found again after a restart, and a notice without the
 button would need a second view chosen per notice. A change stopped at its check, before any job
-ran, is still discarded whole, since none of those jobs can be its check.
+ran, sits on its first job, so its Discard is refused where that job cannot be discarded (a round's
+results submission opening, a restart's clearing, a signup's review panel), and drops the whole
+change where only a later job cannot.
 
 **The stop notice is one log-channel message** carrying the stop line and the buttons. It is
 posted by the router's `post_notice`, after the stop's save and never on the log-line retry queue
@@ -363,12 +370,15 @@ class Step:
     where a `DELETE` or `EDIT` completes because its message is gone, and not for a job found no
     longer due. A record that raises stops the queue at the job, and *result* is kept on it.
 
-    *undiscardable*, where set, marks a job that cannot be discarded because dropping it would
-    leave a round never to run (the arming of a season's timed work, of an amended round's). It
-    gives what would follow, in the job's own terms ("round 3 in **Pro** would never run"), which
+    *undiscardable*, where set, marks a job that cannot be discarded because dropping it could stop
+    a season from being started or completed, or leave the league no way to put it right (the
+    arming of a round's timed work, a cancellation's save once its timed work is removed). It gives
+    what would follow, in the job's own terms ("round 3 in **Pro** would never run"), which
     Discard's refusal quotes. A reader rather than a flag, so the refusal can name the round or
     the season; every other step is discardable. The mark never changes for a step, so a press
-    reads it before taking the queue's lock.
+    reads it before taking the queue's lock. Every such step must be one a Retry can always
+    clear: where its work is no longer owed, its *still_due* drops it or it completes doing
+    nothing.
 
     *on_fault*, where set, makes a fault in the step end the job instead of stopping the lane: it
     is handed the context and the error and returns the result the job is marked done with (see the
@@ -680,7 +690,10 @@ class ChangeQueue:
         has started, is refused at once through *interaction* (the line naming *refusal_what*,
         or *what*) and nothing is saved. Otherwise the change and its opening steps are saved
         in one transaction, the member is told it is under way, and the worker is woken. A fault
-        in the save raises to the caller.
+        in the save raises to the caller. A fault after the save does not: the change goes ahead,
+        so once it is saved its id is returned and the worker woken whatever the acknowledgement
+        meets (`_acknowledge_saved`). Pinned by
+        `test_a_fault_acknowledging_a_saved_change_still_returns_its_id_and_runs_it`.
         """
         change_type = self._type(kind)
         member = actor if actor is not None else (interaction.user if interaction else None)
@@ -725,11 +738,13 @@ class ChangeQueue:
                 )
                 return None
             change_id, first_job = saved
-            await self._acknowledge_saved(
-                change_id, change_type, payload, interaction=interaction, lane=lane,
-                first_job=first_job,
-            )
-            self._signal.set()
+            try:
+                await self._acknowledge_saved(
+                    change_id, change_type, payload, interaction=interaction, lane=lane,
+                    first_job=first_job,
+                )
+            finally:
+                self._signal.set()
             return change_id
 
     async def _insert(
@@ -826,16 +841,35 @@ class ChangeQueue:
         lane: str,
         first_job: int | None,
     ) -> None:
-        """Acknowledge a change just saved to *interaction*, or adopt the reply kept for it."""
-        if interaction is None:
-            self._adopt_kept_reply(change_id, change_type.kind, change_type.key(payload))
-            return
-        stopped = await self._stopped_jobs(lane=lane)
-        await self._acknowledge(
-            change_id, change_type, payload, interaction,
-            first_job=first_job, stopped_at=stopped[0][2]["id"] if stopped else None,
-            lane=lane,
-        )
+        """Acknowledge a change just saved to *interaction*, or adopt the reply kept for it.
+
+        The change is saved, so nothing here raises to the request, as `_acknowledge` holds for the
+        answer itself: a fault is logged on the host with its traceback and the change goes ahead.
+        A fault looking up whether its lane is stopped still answers the member, without naming
+        the stop, which the stop notice and the log channel already carry.
+        """
+        try:
+            if interaction is None:
+                self._adopt_kept_reply(change_id, change_type.kind, change_type.key(payload))
+                return
+            try:
+                stopped = await self._stopped_jobs(lane=lane)
+            except Exception:  # noqa: BLE001 — the change is saved and goes ahead whatever this does
+                log.error(
+                    "could not tell whether the queue is stopped ahead of change %s; it is "
+                    "acknowledged without saying so", change_id, exc_info=True,
+                )
+                stopped = []
+            await self._acknowledge(
+                change_id, change_type, payload, interaction,
+                first_job=first_job, stopped_at=stopped[0][2]["id"] if stopped else None,
+                lane=lane,
+            )
+        except Exception:  # noqa: BLE001 — the change is saved and goes ahead whatever this does
+            log.error(
+                "could not acknowledge change %s; it goes ahead all the same", change_id,
+                exc_info=True,
+            )
 
     async def ask_after(
         self,
@@ -903,17 +937,19 @@ class ChangeQueue:
                     what=what, refusal_what=refusal_what,
                 )
                 return None
-            if first is not None:
-                await self._acknowledge_saved(
-                    first[0], ahead_type, ahead.payload, interaction=None,
-                    lane=ahead_type.lane(ahead.payload), first_job=first[1],
-                )
             change_id, first_job = saved
-            await self._acknowledge_saved(
-                change_id, change_type, payload, interaction=interaction, lane=lane,
-                first_job=first_job,
-            )
-            self._signal.set()
+            try:
+                if first is not None:
+                    await self._acknowledge_saved(
+                        first[0], ahead_type, ahead.payload, interaction=None,
+                        lane=ahead_type.lane(ahead.payload), first_job=first[1],
+                    )
+                await self._acknowledge_saved(
+                    change_id, change_type, payload, interaction=interaction, lane=lane,
+                    first_job=first_job,
+                )
+            finally:
+                self._signal.set()
             return change_id
 
     def keep_reply(self, change_id: int, kind: str, key: str) -> None:

@@ -37,6 +37,7 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.season_service import commit_placements_on
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
@@ -102,14 +103,8 @@ async def live_season_stage_on(db: aiosqlite.Connection) -> tuple[int, SeasonSta
     return int(row["id"]), SeasonStage(row["stage"])
 
 
-async def count_unsettled_signups(db_path: str) -> int:
-    """How many drivers hold a signup not yet placed or turned down."""
-    async with get_connection(db_path) as db:
-        return await count_unsettled_signups_on(db)
-
-
 async def count_unsettled_signups_on(db: aiosqlite.Connection) -> int:
-    """`count_unsettled_signups` read on the caller's connection."""
+    """How many drivers hold a signup not yet placed or turned down, read on *db*."""
     placeholders = ",".join("?" for _ in UNSETTLED_STATES)
     cursor = await db.execute(
         f"SELECT COUNT(*) AS n FROM driver_profiles "
@@ -134,33 +129,12 @@ async def _move_on(
         )
 
 
-async def _move(db_path: str, season_id: int, current: SeasonStage, target: SeasonStage) -> None:
-    """Write the transition, conditioned on the stage that was read."""
-    async with get_connection(db_path) as db:
-        await _move_on(db, season_id, current, target)
-        await db.commit()
-
-
-async def advance_on_window_open(db_path: str) -> SeasonStage | None:
-    """Move the active season on for a signup window just opened.
-
-    Waiting becomes Signups; Ongoing becomes Ongoing, signups open. Returns the new stage,
-    or None where the season stood in neither and nothing was moved.
-    """
-    found = await live_season_stage(db_path)
-    if found is None:
-        return None
-    season_id, stage = found
-    target = WINDOW_OPENS_FROM.get(stage)
-    if target is None:
-        return None
-    await _move(db_path, season_id, stage, target)
-    return target
-
-
 async def advance_on_window_open_on(db: aiosqlite.Connection) -> SeasonStage | None:
-    """`advance_on_window_open` on the caller's connection, committing nothing, so that the
-    season's move is saved with the window's opening."""
+    """Move the active season on for a signup window just opened, on the caller's connection.
+
+    Commits nothing, so that the season's move is saved with the window's opening. Waiting
+    becomes Signups; Ongoing becomes Ongoing, signups open. Returns the new stage, or None
+    where the season stood in neither and nothing was moved."""
     found = await live_season_stage_on(db)
     if found is None:
         return None
@@ -169,29 +143,6 @@ async def advance_on_window_open_on(db: aiosqlite.Connection) -> SeasonStage | N
     if target is None:
         return None
     await _move_on(db, season_id, stage, target)
-    return target
-
-
-async def advance_on_window_close(db_path: str) -> SeasonStage | None:
-    """Move the active season on for a signup window just closed, committing the move.
-
-    The close off the queue's form of `advance_on_window_close_on`, which the queue's close uses
-    in the save that records the window closed; this one goes with the last close off the queue.
-    """
-    found = await live_season_stage(db_path)
-    if found is None:
-        return None
-    season_id, stage = found
-    if stage is SeasonStage.SIGNUPS:
-        target = SeasonStage.PLACEMENTS
-    elif stage is SeasonStage.ONGOING_SIGNUPS:
-        unsettled = await count_unsettled_signups(db_path)
-        target = SeasonStage.ONGOING_PLACEMENTS if unsettled else SeasonStage.ONGOING
-    else:
-        return None
-    await _move(db_path, season_id, stage, target)
-    if target is SeasonStage.ONGOING:
-        await advance_to_pending_completion(db_path, season_id)
     return target
 
 
@@ -890,17 +841,17 @@ async def _stage_and_whether_done_on(
     return row["stage"], row["divisions"] > 0 and row["outstanding"] == 0
 
 
-async def _stage_and_whether_done(db_path: str, season_id: int) -> tuple[str | None, bool]:
-    """The season's stage, and whether every one of its divisions is finished or cancelled."""
-    async with get_connection(db_path) as db:
-        return await _stage_and_whether_done_on(db, season_id)
-
-
 async def advance_to_pending_completion_on(db: aiosqlite.Connection, season_id: int) -> bool:
-    """:func:`advance_to_pending_completion` on *db*, committing nothing.
+    """Move a season in Ongoing to Pending completion once every division is done (issue #220).
 
-    The move is part of whatever save the caller makes, so that a division finishing and the
-    season it was the last of moving on are saved together or not at all (issue #439).
+    A division is done when it is finished or cancelled. Only a season in plain Ongoing is
+    moved here, this needing nothing but the database. A season with a signup window open or
+    placements still to confirm has signups to close and placements to turn down first, which
+    need Discord: :func:`wind_down_change` does that, on the change queue, from wherever a
+    division can finish. Returns True where this call moved it.
+
+    Commits nothing: the move is part of whatever save the caller makes, so that a division
+    finishing and the season it was the last of moving on are saved together or not at all.
     """
     stage, done = await _stage_and_whether_done_on(db, season_id)
     if stage != SeasonStage.ONGOING.value or not done:
@@ -913,24 +864,27 @@ async def advance_to_pending_completion_on(db: aiosqlite.Connection, season_id: 
     return True
 
 
-async def advance_to_pending_completion(db_path: str, season_id: int) -> bool:
-    """Move a season in Ongoing to Pending completion once every division is done (issue #220).
+@dataclass(frozen=True)
+class PlacementsConfirmed:
+    """What :func:`confirm_placements_on` did: how many placements it committed."""
 
-    A division is done when it is finished or cancelled. Only a season in plain Ongoing is
-    moved here, this needing nothing but the database. A season with a signup window open or
-    placements still to confirm has signups to close and placements to turn down first, which
-    need Discord: :func:`wind_down_change` does that, on the change queue, from wherever a division can finish.
-    Returns True where this call moved it.
+    committed: int
+
+
+async def confirm_placements_on(db: aiosqlite.Connection, season_id: int) -> PlacementsConfirmed:
+    """Commit a season's uncommitted placements and return it to Ongoing, on *db*, committing nothing.
+
+    The mid-season confirmation's one save holds this (issue #439): the placements and the
+    season's return from Ongoing, placements to Ongoing are saved together or not at all. The
+    stage is moved first, conditioned on the season still being in Ongoing, placements, so
+    that a season in any other stage raises :class:`InvalidStageTransition` with nothing
+    written. It never moves the season on to Pending completion: a season whose every
+    division is done is refused before the confirmation is carried out, and the wind-down
+    that moves it on discards the placements not yet committed (core specification, Pending
+    completion).
     """
-    stage, done = await _stage_and_whether_done(db_path, season_id)
-    if stage != SeasonStage.ONGOING.value or not done:
-        return False
-    try:
-        await _move(db_path, season_id, SeasonStage.ONGOING, SeasonStage.PENDING_COMPLETION)
-    except InvalidStageTransition:
-        return False
-    log.info("season %s is pending completion", season_id)
-    return True
+    await _move_on(db, season_id, SeasonStage.ONGOING_PLACEMENTS, SeasonStage.ONGOING)
+    return PlacementsConfirmed(committed=await commit_placements_on(db, season_id))
 
 
 #: The states the driver pass returns to Not Signed Up (issue #220). Season Banned and League

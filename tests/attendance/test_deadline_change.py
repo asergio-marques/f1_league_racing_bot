@@ -15,8 +15,6 @@ the announcement goes to the division's check-in channel as it stands when the j
 (attendance spec :106; decision 13 of the slice) and is recorded with that channel; a refused
 lock or announcement stops the queue, and a discarded announcement is named and not posted again
 (Q8).
-
-Everything of the change is imported inside a test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 
@@ -30,10 +28,13 @@ import pytest
 
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
+    acknowledgement,
     attach_queue,
     change_rows,
     discard_job,
     http_error,
+    refuse_the_job,
+    retry_job,
     run_queue,
     step_rows,
     stopped_job,
@@ -214,6 +215,42 @@ async def test_the_distribution_reads_the_answers_as_they_stood_at_the_deadline(
     assert await _placement(league, RHEA) == (FERRARI, 0)
     assert await _placement(league, SAM) == (None, 0)
     assert await stopped_job(league.db_path) is None
+
+
+async def test_placing_the_reserves_cannot_be_discarded(tmp_path):
+    """Rhea accepted round 3's call half an hour before its deadline. The deadline is asked, and
+    the save of its first job, which places the reserves, fails and stops the queue at
+    `distribute`. A league admin's Discard on it is refused, saying the reserves of round 3 in Pro
+    would never be placed; the queue stays stopped there, Rhea is not placed and the deadline is
+    not marked as run. Once the fault is lifted, a Retry places Rhea at Ferrari, takes the call's
+    buttons off and posts the announcement."""
+    league = await _league(tmp_path)
+    await _reserves(league, rhea=_deadline(league) - timedelta(minutes=30),
+                    sam=_deadline(league) + timedelta(minutes=10))
+    await refuse_the_job(league.db_path, KIND, "distribute", True)
+    await _ask(league)
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "distribute"
+
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == (
+        "⛔ This job can't be discarded: without it the reserves of round 3 in **Pro** would "
+        "never be placed. Fix what stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path))["id"] == stopped["id"]
+    assert await _placement(league, RHEA) == (None, 0)
+    assert (await _call_row(league))["deadline_run_at"] is None
+
+    await refuse_the_job(league.db_path, KIND, "distribute", False)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _placement(league, RHEA) == (FERRARI, 0)
+    assert _edited(league) == [CALL]
+    [posted] = _sent(league)
+    assert (await _call_row(league))["distribution_msg_id"] == str(posted)
 
 
 async def test_a_refused_lock_stops_the_queue_with_the_reserves_placed(tmp_path):

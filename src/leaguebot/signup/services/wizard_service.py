@@ -444,14 +444,21 @@ class WizardService:
         expiry (`signup.end`), before the queue starts; the change's check drops it where the
         driver has since moved on.
 
+        A signup whose channel was deleted while the bot was down is ended first
+        (:meth:`recover_gone_channels`), and neither its expiry nor its correction's lapse is
+        then asked.
+
         SC-005.
         """
-        await self.recover_correction_timeouts()
+        gone = await self.recover_gone_channels()
+        await self.recover_correction_timeouts(skip=gone)
 
         wizards = await self._signup_svc.get_all_active_wizards_all_servers()
         now = datetime.now(timezone.utc)
         for wizard in wizards:
             if wizard.wizard_state == WizardState.UNENGAGED:
+                continue
+            if wizard.discord_user_id in gone:
                 continue
             last_str = wizard.last_activity_at
             if last_str:
@@ -468,8 +475,82 @@ class WizardService:
             else:
                 await ask_expiry(self._change_queue, self._db_path, discord_user_id)
 
-    async def recover_correction_timeouts(self) -> None:
-        """Called from recover_wizards: release every driver awaiting a correction parameter.
+    async def recover_gone_channels(self) -> set[str]:
+        """Called first in recover_wizards: end the signup of every driver whose signup channel
+        was deleted while the bot was down (#439, slice 8).
+
+        Every driver whose signup is under way (`IN_PROGRESS_STATES`) and whose wizard names a
+        channel is looked at. A channel the cache lacks is confirmed with `fetch_channel`: not
+        found, or found as no text channel, is gone, and the restart asks the queue, as the bot
+        and before it starts, for the ending of that signup (`signup.end`, reason `CHANNEL_GONE`,
+        found at a restart), whose check drops it where the driver has since moved on. Any other
+        failure of the lookup is logged and the channel treated as standing: a sweep cannot stop
+        the queue, and the deletion listener or the next restart tries again. With no league
+        server in the cache nothing is ended, and a warning says so.
+
+        Gives the accounts it asked an ending of, which the rest of the recovery skips.
+        """
+        from leaguebot.core.utils.league_server import league_guild
+        from leaguebot.core.utils.log_lines import name_of_member
+        from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES
+        from leaguebot.signup.services.wizard_changes import RESTART, ask_channel_gone
+
+        asked: set[str] = set()
+        assert self._bot is not None, "WizardService.set_bot() not called"
+        placeholders = ", ".join("?" for _ in IN_PROGRESS_STATES)
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT d.discord_user_id, w.signup_channel_id "
+                "FROM driver_profiles d JOIN signup_wizard_records w "
+                "  ON w.discord_user_id = d.discord_user_id "
+                f"WHERE d.current_state IN ({placeholders}) "
+                "  AND w.signup_channel_id IS NOT NULL",
+                tuple(state.value for state in IN_PROGRESS_STATES),
+            )
+            rows = await cursor.fetchall()
+        if not rows:
+            return asked
+        guild = await league_guild(self._bot)
+        if guild is None:
+            log.warning(
+                "recover_gone_channels: the league's server is not in the cache, so no signup "
+                "channel was looked for"
+            )
+            return asked
+        for row in rows:
+            user_id = row["discord_user_id"]
+            channel_id = int(row["signup_channel_id"])
+            try:
+                if guild.get_channel(channel_id) is not None:
+                    continue
+                try:
+                    fetched = await guild.fetch_channel(channel_id)
+                except discord.NotFound:
+                    fetched = None
+                if isinstance(fetched, discord.TextChannel):
+                    continue
+                await ask_channel_gone(
+                    self._change_queue,
+                    user_id=user_id,
+                    channel_id=channel_id,
+                    named=await name_of_member(self._bot, int(user_id)),
+                    found=RESTART,
+                )
+                asked.add(user_id)
+            except discord.HTTPException:
+                log.warning(
+                    "recover_gone_channels: signup channel %s of %s could not be looked for; "
+                    "treated as standing", channel_id, user_id, exc_info=True,
+                )
+            except Exception:
+                log.exception(
+                    "recover_gone_channels: could not ask the ending of %s's signup", user_id,
+                )
+        return asked
+
+    async def recover_correction_timeouts(self, *, skip: frozenset[str] | set[str] = frozenset()) -> None:
+        """Called from recover_wizards: release every driver awaiting a correction parameter,
+        save those in *skip*, whose signup the restart has just ended for a channel gone.
 
         The five-minute selection window is a one-off timer, so a restart discards it and nothing
         re-creates it — which left the driver parked for good, shown in no listing and refused by
@@ -498,6 +579,8 @@ class WizardService:
             rows = await cursor.fetchall()
 
         for row in rows:
+            if row["discord_user_id"] in skip:
+                continue
             try:
                 await ask_lapse(self._change_queue, row["discord_user_id"], restart=True)
             except Exception:

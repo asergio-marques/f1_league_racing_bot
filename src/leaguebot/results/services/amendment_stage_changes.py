@@ -557,6 +557,7 @@ def amendment_stage_changes(
             ctx.db_path, int(payload["round_id"]), int(payload["division_id"]), channel, ctx.bot,
             round_number=int(payload["round_number"]), division_name=str(payload["division_name"]),
             session_types=[SessionType(value) for value in payload["session_types"]],
+            attendance=attendance,
         )
         return StepResult(result={"message_id": state.prompt_message_id, "channel_id": channel.id})
 

@@ -1,8 +1,7 @@
 """A real change queue for a test, on the test's own database, with "now" pinned (#439).
 
-The queue is the one the bot builds (`leaguebot.core.services.change_queue.ChangeQueue`), handed
-the router the test gives it, or the bot's own. Every import of the queue is made inside a function,
-so a test file using this module still collects while the queue is unbuilt.
+The queue is the one the bot builds (`leaguebot.core.services.change_queue.ChangeQueue`), handed the
+router the test gives it, or the bot's own.
 
 `run_queue` runs the worker until nothing can run *now*: a change waiting on a retry that is not
 yet due is left waiting, and the test moves the clock on (`Clock.advance`, or setting `now`) and
@@ -412,10 +411,12 @@ def league_double(db_path: str) -> Any:
     bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
     hook = MagicMock()
     for name in ("record_on", "rewrite_pardons_on", "recalculate_on", "post_sheet",
-                 "apply_sanction", "announce_sanction", "refresh_lineup", "record_sheet_on"):
+                 "apply_sanction", "announce_sanction", "refresh_lineup", "record_sheet_on",
+                 "check_sanction", "apply_sanction_on", "change_sanction_roles"):
         setattr(hook, name, AsyncMock(return_value=None))
     hook.sanction_candidates = AsyncMock(return_value=[])
     hook.sync_hint = AsyncMock(return_value="Repair the cause, then run `/attendance sync`.")
+    hook.pardons_to_review = AsyncMock(side_effect=lambda pardons: list(pardons))
     bot.attendance_after_review = hook
     return bot
 
@@ -522,6 +523,24 @@ async def stopped_job(db_path: str, lane: str | None = None) -> dict[str, Any] |
         and row["failing_since"] is not None
     ]
     return stopped[0] if stopped else None
+
+
+async def refuse_the_job(db_path: str, kind: str, job: str, refusing: bool) -> None:
+    """While *refusing*, a fault of the database refuses to save the job *job* of any change of
+    *kind* as done, so that its save fails and is rolled back and the queue stops at it; otherwise
+    the fault is lifted. A league admin's Discard of the job is still saved."""
+    async with get_connection(db_path) as db:
+        if refusing:
+            await db.execute(
+                "CREATE TRIGGER refuse_the_job BEFORE UPDATE OF done_at ON queued_change_steps "
+                f"WHEN NEW.name = '{job}' AND NEW.done_at IS NOT NULL "
+                "AND COALESCE(NEW.result, '') NOT LIKE '%\"discarded\"%' AND (SELECT kind FROM "
+                f"queued_changes WHERE id = NEW.change_id) = '{kind}' "
+                "BEGIN SELECT RAISE(ABORT, 'disk fault'); END"
+            )
+        else:
+            await db.execute("DROP TRIGGER refuse_the_job")
+        await db.commit()
 
 
 async def _press(bot: Any, action: str, user: Any, run: bool, lane: str | None = None) -> Any:

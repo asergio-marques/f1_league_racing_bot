@@ -18,10 +18,9 @@ drafts surviving until then; where the channel is gone the notice completes, pos
 the resubmission still ends (results spec :417).
 
 The league, its channels and its queue are `test_review_open_change.py`'s: round 3 of Pro, a Normal
-round, its Feature Race won by Lewis (101) ahead of Max (102), its review open in submission
-channel 702. The division's seats, as a paste's validation reads them, are Lewis and Max at team
-3001, shorthand FER. Everything of the change types is reached through the press, the cog and the
-queue, or imported inside a test, so this file collects while they are unbuilt.
+round, its Feature Race won by Lewis (101) ahead of Max (102), its review open in submission channel
+702. The division's seats, as a paste's validation reads them, are Lewis and Max at team 3001,
+shorthand FER.
 """
 from __future__ import annotations
 
@@ -40,18 +39,21 @@ from leaguebot.results.services.result_submission_service import (
 )
 from leaguebot.results.utils import results_formatter
 from tests.results.test_review_open_change import (
+    RESULTS_CHANNEL,
     SUBMISSION_CHANNEL,
     _league,
     _open,
     _prompt_view,
     _prompts,
     _recover,
+    _refuse_the_job,
 )
 from tests.support.change_queue import (
     MARK,
     MEMBER_ID,
     acknowledgement,
     change_rows,
+    discard_job,
     http_error,
     member_interaction,
     restart_queue,
@@ -222,6 +224,41 @@ async def test_the_announcement_s_id_is_saved_with_its_mark(tmp_path, monkeypatc
     [posted] = [step for step in await step_rows(league.db_path, change["id"])
                 if step["name"] == "post_announcement"]
     assert posted["done_at"] is not None
+
+
+async def test_marking_the_resubmission_cannot_be_discarded(tmp_path, monkeypatch):
+    """The manager Alex presses Resubmit on round 3's review prompt in Pro. The save of the
+    change's first job, which flags the submission channel as resubmitting and records who
+    started it, fails and stops round 3's lane at `mark`. A league admin's Discard on it is
+    refused, saying round 3 in Pro's resubmission would run unrecorded: its pastes would be
+    refused and its review left with no prompt until the bot restarts. The lane stays stopped
+    there, the review prompt still stands and the channel is not resubmitting. Once the fault is
+    lifted, a Retry flags the channel, takes the prompt down and posts the announcement."""
+    league = await _reviewing(tmp_path, monkeypatch)
+    [prompt] = _prompts(league)
+    await _refuse_the_job(league.db_path, START_KIND, True, job="mark")
+    await _press_resubmit(league)
+    stopped = await stopped_job(league.db_path, LANE)
+    assert stopped is not None and stopped["name"] == "mark"
+
+    refused = await discard_job(league.bot, lane=LANE)
+
+    assert acknowledgement(refused) == (
+        "⛔ This job can't be discarded: without it round 3 in **Pro**'s resubmission would run "
+        "unrecorded: its pastes would be refused and its review left with no prompt until the bot "
+        "restarts. Fix what stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path, LANE))["id"] == stopped["id"]
+    assert _prompts(league) == [prompt]
+    assert (await _row(league))["resubmitting"] == 0
+
+    await _refuse_the_job(league.db_path, START_KIND, False, job="mark")
+    await retry_job(league.bot, lane=LANE)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _row(league))["resubmitting"] == 1
+    assert _prompts(league) == []
+    assert _announcement(league).view is not None
 
 
 async def test_each_resubmitted_paste_is_a_draft_saved_by_its_turn(tmp_path, monkeypatch):
@@ -437,3 +474,32 @@ async def test_the_last_resubmitted_paste_hands_the_swap_to_the_league(tmp_path,
 
     assert (await _row(league))["resubmitting"] == 0
     assert MARK not in message.marks
+
+
+async def test_an_amended_resubmission_replaces_the_earlier_tables(tmp_path, monkeypatch):
+    """Round 3's provisional Feature Race table was posted in Pro's results channel when its
+    review opened. Alex resubmits, types CANCELLED for Qualifying and then Max ahead of Lewis for
+    the Feature Race. When the queue runs, the review opens again and posts the amended race
+    table, recorded as the race's results message, and only then is the earlier table deleted:
+    the amended table replaces the original rather than standing beside it (results :412; owner
+    Q-E6)."""
+    league = await _reviewing(tmp_path, monkeypatch)
+    earlier = league.sent_to(RESULTS_CHANNEL)
+    assert earlier
+    await _press_resubmit(league)
+
+    await _type(league, "CANCELLED")
+    await _type(league, RACE_PASTE)
+
+    assert await stopped_job(league.db_path) is None
+    [race] = await _rows(
+        league, "SELECT results_message_id FROM session_results "
+        "WHERE round_id = ? AND session_type = ?", ROUND_ID, RACE_TYPE.value,
+    )
+    amended = race["results_message_id"]
+    assert amended is not None and amended not in earlier
+    assert "(amended)" in str(league.channel(RESULTS_CHANNEL).messages[amended].content)
+    for message_id in earlier:
+        assert message_id not in league.channel(RESULTS_CHANNEL).messages
+        assert (league.events.index(("delete", RESULTS_CHANNEL, message_id))
+                > league.events.index(("send", RESULTS_CHANNEL, amended)))

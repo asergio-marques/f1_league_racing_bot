@@ -24,6 +24,16 @@ async def db_path(tmp_path):
     return path
 
 
+async def _set_flag(db_path: str, on: bool) -> None:
+    """Results' flag written as `/module enable|disable results` leaves it."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, ?)",
+            (int(on),),
+        )
+        await db.commit()
+
+
 # ---------------------------------------------------------------------------
 # is_results_enabled
 # ---------------------------------------------------------------------------
@@ -43,55 +53,16 @@ class TestIsResultsEnabled:
         assert await svc.is_results_enabled() is False
 
     async def test_returns_true_after_enable(self, db_path):
-        """After set_results_enabled(True), is_results_enabled returns True."""
+        """With the flag on, is_results_enabled returns True."""
         from leaguebot.core.services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_results_enabled(True)
+        await _set_flag(db_path, True)
         assert await svc.is_results_enabled() is True
 
     async def test_returns_false_after_disable(self, db_path):
-        """After enable then disable, returns False."""
+        """With the flag turned on and then off, returns False."""
         from leaguebot.core.services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_results_enabled(True)
-        await svc.set_results_enabled(False)
-        assert await svc.is_results_enabled() is False
-
-
-# ---------------------------------------------------------------------------
-# set_results_enabled
-# ---------------------------------------------------------------------------
-
-
-class TestSetResultsEnabled:
-    async def test_upsert_creates_row(self, db_path):
-        """set_results_enabled creates the row when it does not exist."""
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        await svc.set_results_enabled(True)
-        assert await svc.is_results_enabled() is True
-
-    async def test_idempotent_double_enable(self, db_path):
-        """Calling set_results_enabled(True) twice does not error."""
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        await svc.set_results_enabled(True)
-        await svc.set_results_enabled(True)
-        assert await svc.is_results_enabled() is True
-
-    async def test_idempotent_double_disable(self, db_path):
-        """Calling set_results_enabled(False) twice does not error."""
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        await svc.set_results_enabled(False)
-        await svc.set_results_enabled(False)
-        assert await svc.is_results_enabled() is False
-
-    async def test_toggle_true_then_false(self, db_path):
-        """Enable then disable cycles correctly."""
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        await svc.set_results_enabled(True)
-        assert await svc.is_results_enabled() is True
-        await svc.set_results_enabled(False)
+        await _set_flag(db_path, True)
+        await _set_flag(db_path, False)
         assert await svc.is_results_enabled() is False

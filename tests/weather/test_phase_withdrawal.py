@@ -7,8 +7,6 @@ results, and the session data it drew — is weather's own, so weather writes it
 
 Each test writes, reads the write back on the same connection, and then rolls back: what it finds
 afterwards on a fresh connection is what a failure later in the save would leave, which is nothing.
-
-The function is imported inside each test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
 

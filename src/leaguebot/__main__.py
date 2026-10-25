@@ -455,15 +455,23 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.attendance.services.sheet_posting import sheet_post_change
     from leaguebot.core.services.calendar_post_service import calendar_sync_change
     from leaguebot.core.services.cancellation_changes import (
+        check_in_record_steps,
         division_cancel_change,
+        notice_steps,
         round_cancel_change,
         season_cancel_change,
     )
+    from leaguebot.core.services.cancellation_notice_service import SCOPE_ROUND
     from leaguebot.core.services.channel_tell_change import channel_tell_change
     from leaguebot.core.services.clean_change import clean_change
     from leaguebot.core.services.hub_service import hub_refresh_change
     from leaguebot.core.services.lineup_posting import lineup_post_change
-    from leaguebot.core.services.round_amend_change import amendment_in_hand, round_amend_change
+    from leaguebot.core.services.round_amend_change import (
+        amendment_in_hand,
+        round_amend_change,
+        round_rearm_change,
+    )
+    from leaguebot.core.services.mid_season_confirm_change import mid_season_confirm_change
     from leaguebot.core.services.season_approval_change import (
         season_approval_change,
         season_approval_tell_change,
@@ -573,7 +581,16 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(submission_open_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(submission_restart_change())
-    bot.change_queue.register(submission_all_cancelled_change())
+    bot.change_queue.register(
+        submission_all_cancelled_change(
+            seasons=bot.season_service,
+            record=check_in_record_steps(modules=bot.module_service),
+            notices=notice_steps(
+                modules=bot.module_service, seasons=bot.season_service, scope=SCOPE_ROUND,
+            ),
+            now=lambda: bot.change_queue.now(),
+        )
+    )
     bot.change_queue.register(submission_close_change())
     bot.change_queue.register(resubmission_start_change(queue=bot.change_queue))
     bot.change_queue.register(resubmission_swap_change())
@@ -840,6 +857,9 @@ def register_change_types(bot: LeagueBot) -> None:
     # The season's approval is judged again as it runs: the clock is the queue's, the windows the
     # enabled modules', and the drawing program the host's, read through `converter_available`
     # when it is judged, so a test that patches it moves the judgement.
+    def rasteriser_fault() -> str | None:
+        return None if converter_available() else f"{CONVERTER_NAME} is not installed on this host."
+
     bot.change_queue.register(
         season_approval_change(
             modules=bot.module_service,
@@ -848,15 +868,22 @@ def register_change_types(bot: LeagueBot) -> None:
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
             windows=lambda: bot.approval_windows(),
-            rasteriser_fault=lambda: None
-            if converter_available()
-            else f"{CONVERTER_NAME} is not installed on this host.",
+            rasteriser_fault=rasteriser_fault,
             snapshot_points_on=snapshot_configs_to_season_on,
             forget_setup=lambda: _forget_setup(bot),
             now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(season_approval_tell_change())
+    # The mid-season confirmation of placements is judged again as it runs, the host's drawing
+    # program read when it is judged, as the approval's is.
+    bot.change_queue.register(
+        mid_season_confirm_change(
+            modules=bot.module_service,
+            placement=bot.placement_service,
+            rasteriser_fault=rasteriser_fault,
+        )
+    )
     bot.change_queue.register(season_review_take_down_change())
     bot.scheduler_service.register_timer(
         season_review_changes.TIMER,
@@ -888,6 +915,15 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(clean_change())
     bot.change_queue.register(
         round_amend_change(
+            modules=bot.module_service,
+            seasons=bot.season_service,
+            scheduler=bot.scheduler_service,
+            hooks=_amend_hooks(bot),
+            now=lambda: bot.change_queue.now(),
+        )
+    )
+    bot.change_queue.register(
+        round_rearm_change(
             modules=bot.module_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
@@ -1651,9 +1687,11 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     scheduler's misfire grace rather than run late, and nothing else would take those messages
     down: a forecast whose cleanup was missed used to stay for good.
 
-    A cancelled round or division is left alone. Its cancellation removed both jobs, and the
-    weather module keeps the forecasts of a round called off. The season's status is not asked,
-    since the live jobs fire after a season completes as well. Each module's own gate applies:
+    A round called off, or of a division called off, is left alone. Its cancellation removed both
+    jobs, and the weather module keeps the forecasts of a round called off. A round that ended
+    cancelled because every session was entered as not held (`rounds.not_held`) is not left alone:
+    its jobs were never removed, and its call and forecasts are owed their clean-up as any round's. The season's status is not
+    asked, since the live jobs fire after a season completes as well. Each module's own gate applies:
     weather's here, and attendance's inside its clean-up change's check.
 
     Running a cleanup a second time finds nothing left to take down, so a job the scheduler
@@ -1688,7 +1726,7 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
                   JOIN rounds r ON r.id = fm.round_id
                   JOIN divisions d ON d.id = r.division_id
                  WHERE fm.phase_number IN (1, 2, 3)
-                   AND r.status != 'CANCELLED'
+                   AND (r.status != 'CANCELLED' OR r.not_held = 1)
                    AND d.status != 'CANCELLED'
                  ORDER BY r.scheduled_at, fm.round_id, fm.phase_number
                 """
@@ -1704,7 +1742,7 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
                   FROM rsvp_embed_messages rem
                   JOIN rounds r ON r.id = rem.round_id
                   JOIN divisions d ON d.id = r.division_id
-                 WHERE r.status != 'CANCELLED'
+                 WHERE (r.status != 'CANCELLED' OR r.not_held = 1)
                    AND d.status != 'CANCELLED'
                  ORDER BY r.scheduled_at, rem.round_id
                 """

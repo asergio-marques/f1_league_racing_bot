@@ -19,6 +19,7 @@ is sent, his wizard asking for his nationality unless a test says otherwise.
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -29,8 +30,10 @@ from tests.support.change_queue import (
     MARK,
     acknowledgement,
     change_rows,
+    discard_job,
     http_error,
     member_interaction,
+    retry_job,
     run_queue,
     step_rows,
     stopped_job,
@@ -225,6 +228,49 @@ async def test_a_typed_answer_is_marked_and_saved_with_the_next_question_when_it
     assert (await _wizard(league))["wizard_state"] == "COLLECTING_PLATFORM"
     assert any("Step 2 — Platform" in text for text in _texts(league))
     assert MARK not in message.marks
+
+
+async def test_rearming_the_24_hours_cannot_be_discarded(tmp_path):
+    """Kimi types "British" at the nationality question. His answer is saved, but the scheduler
+    refuses to arm his 24 hours of inactivity again, so his channel's lane stops at
+    `arm_inactivity`. A league admin's Discard on it is refused, saying Kimi's signup would never
+    time out if he stopped answering and, while he corrects it, the season's placements could not
+    be confirmed until the bot restarts. The lane stays stopped there, his nationality saved and
+    the platform question not yet posted. Once the scheduler takes it, a Retry arms his 24 hours
+    from then and posts the platform question."""
+    league = await _league(tmp_path)
+    arm_once = league.bot.scheduler_service.arm_once
+
+    def refusing(name: str, *_args: Any, **_kwargs: Any) -> None:
+        if name == "signup_inactivity":
+            raise RuntimeError("the job store is unavailable")
+
+    arm_once.side_effect = refusing
+
+    await _type(league, "British")
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path, KIMI_LANE)
+    assert stopped is not None and stopped["name"] == "arm_inactivity"
+
+    refused = await discard_job(league.bot, lane=KIMI_LANE)
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}>'s signup would never time "
+        "out if they stopped answering, and while they correct it the season's placements could "
+        "not be confirmed until the bot restarts. Fix what stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path, KIMI_LANE))["id"] == stopped["id"]
+    assert (await _draft(league))["nationality"] == "British"
+    assert not any("Step 2 — Platform" in text for text in _texts(league))
+
+    arm_once.side_effect = None
+    await retry_job(league.bot, lane=KIMI_LANE)
+
+    assert await stopped_job(league.db_path) is None
+    assert arm_once.call_args.args == (
+        "signup_inactivity", str(SIGNING_UP), league.clock.now + timedelta(hours=24)
+    )
+    assert any("Step 2 — Platform" in text for text in _texts(league))
 
 
 async def test_a_typed_answer_while_its_turn_waits_is_turned_away_with_a_note_and_a_line(

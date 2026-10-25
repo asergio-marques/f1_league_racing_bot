@@ -32,8 +32,6 @@ runs, through the builder's reader of `converter_available`, which `season_leagu
 
 `post_review` posts a review's ✅ Approve prompt, with the season's fingerprint, in the review's
 channel; `press_approve` presses it, answering the backup question under test mode with *backup*.
-Every import of the change type is made inside a function, so a test file using this module still
-collects while it is unbuilt.
 
 `ongoing_league(tmp_path, ...)` builds the same season as ongoing, for the cancels of slice 4b:
 status ACTIVE, stage ONGOING, both divisions ACTIVE, every placement committed and no setup held
@@ -41,7 +39,8 @@ in memory. Pro's round 1 is FINAL (raced 30 days ago), round 2 AWAITING_REPORT_V
 days ago), rounds 3 and 4 NOT_RUN; Am's four rounds are NOT_RUN. Round 3's check-in call stands
 in Pro's check-in channel (603) as messages 7001 to 7003 (`CALL_MESSAGES`, recorded in
 `rsvp_embed_messages`), Lewis having accepted and Max not answered; Pro's calendar was posted as message 6001 in 601
-(`CALENDAR_MESSAGE`). The scheduler double records each `cancel_round` in `league.unarmed`, and a
+(`CALENDAR_MESSAGE`). The scheduler double records each round `cancel_round` or `cancel_rounds` is
+handed in `league.unarmed`, and gives the jobs it removed of each (`removed_jobs`), and a
 message id in `league.undeletable` is one Discord refuses to delete. `open_submission` opens a
 results submission for a round, its channel standing on the server; `cancel_round` and
 `cancel_division` run `/round cancel` and `/division cancel` as admin 77 and give the interaction;
@@ -176,7 +175,8 @@ class SeasonLeague:
         self.events: list[tuple[str, int, int]] = []
         #: Every exception a press raised, as the bot's error handler would have caught it.
         self.errors: list[BaseException] = []
-        #: Each `schedule_*` call: (which, the round ids it was handed).
+        #: Each `schedule_*` call: (which, the round ids it was handed). `"cleanups"` is a raced
+        #: round's two clean-ups armed alone (`schedule_round_cleanups`).
         self.armed: list[tuple[str, list[int]]] = []
         #: The roles each member was granted, in order.
         self.granted: dict[int, list[int]] = {}
@@ -187,7 +187,8 @@ class SeasonLeague:
         self._role_doubles: dict[int, Any] = {}
         self.arming_fails: BaseException | None = None
         self.rasteriser_on = True
-        #: The round ids `scheduler.cancel_round` was handed (`ongoing_league`), in order.
+        #: The round ids `scheduler.cancel_round` and `scheduler.cancel_rounds` were handed
+        #: (`ongoing_league`), in order.
         self.unarmed: list[int] = []
         #: Message ids Discord refuses to delete (`ongoing_league`'s check-in call).
         self.undeletable: set[int] = set()
@@ -257,6 +258,7 @@ class SeasonLeague:
         scheduler.schedule_result_submission_jobs = MagicMock(side_effect=self._arm("results"))
         scheduler.schedule_attendance_round = MagicMock(side_effect=self._arm("attendance"))
         scheduler.schedule_round = MagicMock(side_effect=self._arm("weather"))
+        scheduler.schedule_round_cleanups = MagicMock(side_effect=self._arm("cleanups"))
         bot.scheduler_service = scheduler
         bot.approval_windows = lambda: _approval_windows(self)
         bot.amendment_windows = lambda: _amendment_windows(self)
@@ -387,7 +389,7 @@ class SeasonLeague:
 
     async def switch(self, module: str, on: bool) -> None:
         """Turn *module* (weather, results, attendance, images or signup) on or off."""
-        await getattr(self.bot.module_service, f"set_{module}_enabled")(on)
+        await set_module_flag(self.db_path, self.bot.module_service, module, on)
         if module == "images":
             self.images_on = on
 
@@ -600,7 +602,7 @@ async def season_league(
     modules = ModuleService(db_path)
     for name, on in (("weather", weather), ("results", results), ("attendance", attendance),
                      ("images", images)):
-        await getattr(modules, f"set_{name}_enabled")(on)
+        await set_module_flag(db_path, modules, name, on)
     league = SeasonLeague(db_path, now, images=images)
     holder["league"] = league
     await league.set_test_mode(test_mode)
@@ -698,6 +700,76 @@ async def approval_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
+async def set_module_flag(db_path: str, modules: Any, name: str, on: bool) -> None:
+    """Turn module *name* on or off as `/module enable|disable` leaves its flag. Results' and
+    attendance's flags are written here, their change's own save being what writes them in the
+    bot (the module service holds no setter for either); weather's, images' and signup's through
+    *modules*, the module service."""
+    if name not in ("results", "attendance"):
+        await getattr(modules, f"set_{name}_enabled")(on)
+        return
+    async with get_connection(db_path) as db:
+        if name == "results":
+            await db.execute(
+                "INSERT OR REPLACE INTO results_module_config (id, module_enabled) "
+                "VALUES (1, ?)", (int(on),),
+            )
+        else:
+            await db.execute("UPDATE attendance_config SET module_enabled = ?", (int(on),))
+        await db.commit()
+
+
+#: The kind of a season's mid-season placements confirmation on the change queue (slice 8).
+PLACEMENTS_CONFIRM_KIND = "season.placements.confirm"
+
+
+async def placing_league(
+    tmp_path: Any, *, results: bool = True, attendance: bool = False, images: bool = False,
+    extra_drivers: bool = False, monkeypatch: Any = None,
+) -> SeasonLeague:
+    """The season of the module docstring placing drivers mid-season (#439, slice 8, Part B).
+
+    Season 3 is ongoing, placements: its divisions active and their rounds not run. Lewis's
+    placement at Ferrari in Pro is committed; Max's beside him and Charles's at McLaren in Am were
+    made by a mid-season window and are not yet committed (with *extra_drivers*, the test driver's
+    at McLaren too). The cog holds no setup in memory, as after the season's approval."""
+    league = await season_league(tmp_path, results=results, attendance=attendance,
+                                 images=images, extra_drivers=extra_drivers,
+                                 monkeypatch=monkeypatch)
+    await league.write(
+        "UPDATE seasons SET status = 'ACTIVE', stage = 'ONGOING' WHERE id = ?", SEASON_ID
+    )
+    await league.write("UPDATE seasons SET stage = 'ONGOING_PLACEMENTS' WHERE id = ?", SEASON_ID)
+    await league.write("UPDATE divisions SET status = 'ACTIVE' WHERE season_id = ?", SEASON_ID)
+    await league.write("UPDATE rounds SET status = 'NOT_RUN'")
+    await league.write("UPDATE driver_season_assignments SET committed = 1 "
+                       "WHERE driver_profile_id = ?", profile_id(LEWIS))
+    league.cog._pending = {}
+    return league
+
+
+async def post_mid_season_review(league: SeasonLeague) -> Review:
+    """Post a mid-season `/season placements-review` report and its ✅ Confirm placements
+    prompt in channel 610, recorded as `post_review` records an approval's."""
+    from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
+    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    from tests.support.review_prompts import store_review_prompt
+
+    view = _ConfirmMidSeasonPlacementsView(league.cog, ADMIN_ID)
+    report = [await league.review_channel.send("📋 Season 3 mid-season placements review")]
+    prompt = await league.review_channel.send("Confirm these placements?", view=view)
+    evidence = (await take_fingerprint(league.bot, SEASON_ID)).areas
+    async with get_connection(league.db_path) as db:
+        await store_review_prompt(
+            db, season_id=SEASON_ID, channel_id=REVIEW_CHANNEL, message_id=prompt.id,
+            reviewer_id=ADMIN_ID, posted_at=datetime.now(timezone.utc).isoformat(),
+            report_message_ids=[message.id for message in report], evidence=evidence,
+            verb="confirmed",
+        )
+        await db.commit()
+    return Review(view=view, prompt=prompt, report=report)
+
+
 # ---------------------------------------------------------------------------
 # An ongoing season, and its cancels (slice 4b)
 # ---------------------------------------------------------------------------
@@ -772,7 +844,16 @@ async def ongoing_league(
     league.bot.attendance_service.get_embed_message = AttendanceService(
         league.db_path
     ).get_embed_message
-    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=league.unarmed.append)
+    def _cancel_round(rid: int, **_kwargs: Any) -> list[str]:
+        league.unarmed.append(rid)
+        return removed_jobs(rid)
+
+    def _cancel_rounds(round_ids: Any, **_kwargs: Any) -> dict[int, list[str]]:
+        league.unarmed.extend(round_ids)
+        return {rid: removed_jobs(rid) for rid in round_ids}
+
+    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=_cancel_round)
+    league.bot.scheduler_service.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
     # Set up and approved: the cog holds no setup in memory, as after a restart.
     league.cog._pending = {}
     league.channel(DIVISIONS[PRO][3].calendar).seed(CALENDAR_MESSAGE, "Pro's calendar")
@@ -783,6 +864,12 @@ async def ongoing_league(
     await season_end_extras(league, tmp_path, test_mode=test_mode, signups_open=signups_open,
                             held=held)
     return league
+
+
+def removed_jobs(rid: int) -> list[str]:
+    """The jobs `ongoing_league`'s scheduler double says it removed of round *rid*: its results
+    submission and its two clean-ups, as a cancellation's removal of its timed work gives them."""
+    return [f"results_id{rid}", f"cleanup_id{rid}", f"rsvp_cleanup_id{rid}"]
 
 
 def _refusing_delete(league: SeasonLeague, message: Any) -> None:

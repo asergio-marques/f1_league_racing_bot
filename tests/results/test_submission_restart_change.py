@@ -15,8 +15,7 @@ turn is still in hand on the queue is left alone.
 The league is `ongoing_league`'s, results on: Pro's round 3 awaits results, its submission open in
 channel `SUBMISSION_CHANNEL` (690) with its first session accepted; the admin (77) holds the league
 managers' role; the server creates each text channel asked of it as a channel double of the
-league's. Everything of the change is reached through the restart and the queue, or imported
-inside a test, so this file collects while it is unbuilt.
+league's.
 """
 from __future__ import annotations
 
@@ -364,3 +363,166 @@ async def test_a_restart_s_clearing_ends_the_old_conversation_and_its_refused_de
     await ResultsCog(league.bot).on_message(message)
 
     assert TURN_KIND not in await _kinds(league)
+
+
+CANNOT_DISCARD_CLEAR = (
+    "⛔ This job can't be discarded: without it round 3 in **Pro** would take no results until "
+    "the bot next restarts. Fix what stopped it and press **Retry**."
+)
+
+
+async def test_the_restart_s_clearing_cannot_be_discarded(tmp_path):
+    """At the restart the save clearing round 3's cut-short submission fails (the database refuses
+    to delete its sessions), stopping the queue at `clear`. A league admin presses Discard: it is
+    refused, saying round 3 in Pro would take no results until the bot next restarts; the queue
+    stays stopped there, the accepted session and the submission row still stand and channel 690
+    is not deleted. Once the fault is lifted, a Retry clears them, deletes channel 690 and opens
+    round 3's submission afresh in a new channel."""
+    league = await _league(tmp_path)
+    await league.write(
+        "CREATE TRIGGER refuse_clearing BEFORE DELETE ON session_results "
+        "BEGIN SELECT RAISE(ABORT, 'the results are locked'); END"
+    )
+
+    await _restart(league)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "clear"
+
+    refused = await discard_job(league.bot)
+
+    assert acknowledgement(refused) == CANNOT_DISCARD_CLEAR
+    assert (await stopped_job(league.db_path))["id"] == stopped["id"]
+    assert await _sessions(league) == 1
+    assert await _submission(league) == [{"channel_id": SUBMISSION_CHANNEL, "closed": 0}]
+    assert not _deleted(league)
+
+    await league.write("DROP TRIGGER refuse_clearing")
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _sessions(league) == 0
+    assert _deleted(league)
+    [made] = league.created
+    assert await _submission(league) == [{"channel_id": made, "closed": 0}]
+
+
+CUT_SHORT_LEFT = (
+    f"⚠️ The cut-short submission channel <#{SUBMISSION_CHANNEL}> of round 3 was not deleted, and "
+    "no record of it is kept: delete it by hand."
+)
+
+
+async def test_a_discarded_deletion_at_a_restart_names_the_channel_to_delete_by_hand(tmp_path):
+    """Discord refuses to delete channel 690 at the restart, after round 3's cut-short submission
+    was cleared, so the queue stops at the deletion. A league admin discards it. The log channel
+    is told, once, that the cut-short submission channel 690 of round 3 was not deleted and that
+    no record of it is kept, to delete it by hand; round 3's submission is still opened afresh in a
+    new channel."""
+    league = await _league(tmp_path)
+    league.channel(SUBMISSION_CHANNEL).delete_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Permissions"
+    )
+
+    await _restart(league)
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "delete_channel"
+
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.log().count(CUT_SHORT_LEFT) == 1
+    assert not _deleted(league)
+    [made] = league.created
+    assert await _submission(league) == [{"channel_id": made, "closed": 0}]
+
+
+async def _ended_cancelled(league: SeasonLeague, *, in_review: bool = False) -> None:
+    """Round 3's every session was entered as not held and the round ended cancelled, but the
+    bot stopped before its submission channel 690 was closed: the round is CANCELLED, its one
+    session cancelled, its submission row still open, and, where *in_review*, the row still
+    flagged in penalty review, as a resubmission leaves it."""
+    await league.write(
+        "UPDATE session_results SET status = 'CANCELLED' WHERE round_id = ?", ROUND_3
+    )
+    await league.write("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", ROUND_3)
+    if in_review:
+        await league.write(
+            "UPDATE round_submission_channels SET in_penalty_review = 1 WHERE round_id = ?",
+            ROUND_3,
+        )
+
+
+async def _kinds_asked(league: SeasonLeague) -> list[str]:
+    return [row["kind"] for row in await change_rows(league.db_path)]
+
+
+async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_and_keeps_its_sessions(
+    tmp_path,
+):
+    """Round 3 ended cancelled, every session entered as not held, and the bot stopped before its
+    submission channel 690 was closed. At the restart the recovery asks the queue, as the bot,
+    only to close round 3's submission channel: no restart that would clear the cancelled
+    sessions and open the submission afresh. The queue then deletes channel 690, posting no
+    closing line in it, and closes the round's submission row; the cancelled session is kept, no
+    new channel is created, and the round stays cancelled."""
+    from leaguebot.results.services.submission_changes import CLOSE_KIND
+
+    league = await _league(tmp_path)
+    await _ended_cancelled(league)
+    before = list(league.texts(SUBMISSION_CHANNEL))
+
+    await _restart(league)
+
+    assert await _kinds_asked(league) == [CLOSE_KIND]
+    assert await stopped_job(league.db_path) is None
+    assert _deleted(league)
+    assert league.texts(SUBMISSION_CHANNEL) == before
+    assert await _submission(league) == [{"channel_id": SUBMISSION_CHANNEL, "closed": 1}]
+    assert await _sessions(league) == 1
+    assert league.created == []
+    [row] = await league.rows("SELECT status FROM rounds WHERE id = ?", ROUND_3)
+    assert row["status"] == "CANCELLED"
+
+
+async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_even_when_its_review_flag_stands(
+    tmp_path,
+):
+    """Round 3 ended cancelled after a resubmission that entered every session as not held, so its
+    submission row still carries the penalty review's flag, and the bot stopped before channel
+    690 was closed. At the restart the recovery asks only the closing of the channel: no penalty
+    review is put back for a round that has ended. The queue deletes channel 690 and closes the
+    row; the cancelled session is kept."""
+    from leaguebot.results.services.submission_changes import CLOSE_KIND
+
+    league = await _league(tmp_path)
+    await _ended_cancelled(league, in_review=True)
+
+    await _restart(league)
+
+    assert await _kinds_asked(league) == [CLOSE_KIND]
+    assert await stopped_job(league.db_path) is None
+    assert _deleted(league)
+    assert await _submission(league) == [{"channel_id": SUBMISSION_CHANNEL, "closed": 1}]
+    assert await _sessions(league) == 1
+
+
+async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_whose_channel_is_gone(
+    tmp_path,
+):
+    """Round 3 ended cancelled and its submission channel 690 was then deleted by hand while the
+    bot was stopped, its row still open. At the restart the recovery asks only the closing of the
+    channel; the queue finds the channel gone, completes without stopping, and closes the row. The
+    cancelled session is kept and no new channel is created."""
+    from leaguebot.results.services.submission_changes import CLOSE_KIND
+
+    league = await _league(tmp_path)
+    await _ended_cancelled(league)
+    del league.channels[SUBMISSION_CHANNEL]
+
+    await _restart(league)
+
+    assert await _kinds_asked(league) == [CLOSE_KIND]
+    assert await stopped_job(league.db_path) is None
+    assert await _submission(league) == [{"channel_id": SUBMISSION_CHANNEL, "closed": 1}]
+    assert await _sessions(league) == 1
+    assert league.created == []

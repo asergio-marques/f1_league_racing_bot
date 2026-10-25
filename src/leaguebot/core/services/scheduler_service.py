@@ -26,7 +26,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 from typing import TYPE_CHECKING, Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -662,17 +662,9 @@ class SchedulerService:
             log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
 
         # Post-race Phase 3 cleanup, a day after round start
-        cleanup_job_id = f"cleanup{_suffix}"
-        cleanup_fire_at = scheduled_at + POST_RACE_CLEANUP_DELAY
-        self._scheduler.add_job(
-            _forecast_cleanup_job,
-            trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
-            id=cleanup_job_id,
-            replace_existing=True,
-            name=f"Forecast cleanup s{season_number} d{division_tier} r{rnd.round_number}",
-            kwargs={"round_id": rnd.id},
+        self.schedule_round_cleanups(
+            rnd, season_number=season_number, division_tier=division_tier, check_in=False
         )
-        log.info("Scheduled %s at %s", cleanup_job_id, cleanup_fire_at.isoformat())
 
         # Result submission at round start time
         results_job_id = f"results{_suffix}"
@@ -774,23 +766,66 @@ class SchedulerService:
             log.info("Skipping %s — fire time %s is in the past", deadline_job_id, deadline_fire_at.isoformat())
 
         # Cleanup job, a day after the round
+        self.schedule_round_cleanups(
+            rnd, season_number=season_number, division_tier=division_tier, forecast=False
+        )
+
+    def schedule_round_cleanups(
+        self,
+        rnd: Round,
+        *,
+        season_number: int,
+        division_tier: int,
+        forecast: bool = True,
+        check_in: bool = True,
+    ) -> None:
+        """Register the clean-ups that take a round's posts down `POST_RACE_CLEANUP_DELAY` after its start.
+
+        ``cleanup`` deletes the round's weather forecasts and ``rsvp_cleanup`` its check-in call,
+        last notice and distribution message; *forecast* and *check_in* choose which are armed
+        (``schedule_round`` arms the first alone, ``schedule_attendance_round`` the second, and
+        a refused cancellation arms both for a round raced, or ended cancelled as not held,
+        #439). The forecast's is armed whatever the hour, as ever; the check-in's only while its
+        moment is still ahead, the restart's catch-up taking one already past
+        (`_recover_missed_cleanups`). Both replace a job of the same id.
+        """
+        scheduled_at = rnd.scheduled_at
+        if scheduled_at.tzinfo is None:
+            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+        suffix = _round_job_suffix(rnd, season_number, division_tier)
         cleanup_fire_at = scheduled_at + POST_RACE_CLEANUP_DELAY
-        cleanup_job_id = f"rsvp_cleanup{_suffix}"
-        if cleanup_fire_at > now:
+
+        if forecast:
+            cleanup_job_id = f"cleanup{suffix}"
             self._scheduler.add_job(
-                _rsvp_cleanup_job,
+                _forecast_cleanup_job,
                 trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
                 id=cleanup_job_id,
                 replace_existing=True,
-                name=f"RSVP cleanup s{season_number} d{division_tier} r{rnd.round_number}",
+                name=f"Forecast cleanup s{season_number} d{division_tier} r{rnd.round_number}",
                 kwargs={"round_id": rnd.id},
             )
             log.info("Scheduled %s at %s", cleanup_job_id, cleanup_fire_at.isoformat())
-        else:
-            log.info("Skipping %s — fire time %s is in the past", cleanup_job_id, cleanup_fire_at.isoformat())
 
-    def cancel_round(self, round_id: int, *, only: frozenset[str] | None = None) -> None:
-        """Remove scheduler jobs belonging to *round_id*.
+        if check_in:
+            rsvp_job_id = f"rsvp_cleanup{suffix}"
+            if cleanup_fire_at > datetime.now(timezone.utc):
+                self._scheduler.add_job(
+                    _rsvp_cleanup_job,
+                    trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
+                    id=rsvp_job_id,
+                    replace_existing=True,
+                    name=f"RSVP cleanup s{season_number} d{division_tier} r{rnd.round_number}",
+                    kwargs={"round_id": rnd.id},
+                )
+                log.info("Scheduled %s at %s", rsvp_job_id, cleanup_fire_at.isoformat())
+            else:
+                log.info("Skipping %s — fire time %s is in the past", rsvp_job_id, cleanup_fire_at.isoformat())
+
+    def cancel_round(self, round_id: int, *, only: frozenset[str] | None = None) -> list[str]:
+        """Remove scheduler jobs belonging to *round_id*, and give the ids of those that went.
+
+        The ids let a cancellation refused afterwards know what it took and arm it again (#439).
 
         Iterates the live jobstore and removes every job whose ``round_id``
         kwarg matches.  This is format-agnostic and works with both the
@@ -806,6 +841,7 @@ class SchedulerService:
                 A job whose ID does not carry the round suffix is left alone
                 while *only* is in force, since its owner cannot be read.
         """
+        removed: list[str] = []
         for job in self._scheduler.get_jobs():
             if job.kwargs.get("round_id") != round_id:
                 continue
@@ -815,6 +851,32 @@ class SchedulerService:
                     continue
             if self._remove_job(job.id):
                 log.info("Removed job %s", job.id)
+                removed.append(job.id)
+        return removed
+
+    def cancel_rounds(self, round_ids: Iterable[int], *, season_end: bool = False) -> dict[int, list[str]]:
+        """Remove the scheduler jobs of every round in *round_ids* in one pass.
+
+        Gives the ids of the jobs removed, by round; a round that had none is left out, and so
+        is a ``season_end*`` job taken with *season_end*.
+
+        The store is listed once, before anything is removed, and that listing is the only call
+        that can raise: a store that cannot be read removes nothing, so a division's or a
+        season's cancellation that unarms its rounds first stands as it was (#439, slice 8).
+        Each removal then goes through `_remove_job`, which never raises. With *season_end*,
+        any stale ``season_end*`` job the store still carries goes in the same pass.
+        """
+        wanted = set(round_ids)
+        removed: dict[int, list[str]] = {}
+        jobs = list(self._scheduler.get_jobs())
+        for job in jobs:
+            round_id = job.kwargs.get("round_id")
+            if round_id in wanted or (season_end and job.id.startswith("season_end")):
+                if self._remove_job(job.id):
+                    log.info("Removed job %s", job.id)
+                    if round_id in wanted:
+                        removed.setdefault(round_id, []).append(job.id)
+        return removed
 
     async def cancel_all_weather(self) -> None:
         """Cancel the weather module's jobs for every round in active/setup seasons.

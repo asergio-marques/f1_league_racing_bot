@@ -25,9 +25,7 @@ paste typed in time waits on the amendment's lane (Q18), nor while the stage-two
 The league is `review_league`'s: round 3 of Pro, FINAL, its Feature Race won by Lewis (101) ahead of
 Max (102), its submission channel closed. The server creates the amendment channel as channel 705,
 the league's channel double; the division's seats, as a paste's validation reads them, are Lewis and
-Max at team 3001, shorthand FER. The manager is Alex (4242). Everything of the change types is
-reached through the command, the cog, the queue or the timer the builder registers, or imported
-inside a test, so this file collects while they are unbuilt.
+Max at team 3001, shorthand FER. The manager is Alex (4242).
 """
 from __future__ import annotations
 
@@ -513,6 +511,64 @@ async def test_the_amendment_s_configuration_choice_is_a_turn(tmp_path, monkeypa
 
     assert await stopped_job(league.db_path) is None
     assert await _winner(league) == MAX
+    [session] = await _rows(league,
+        "SELECT config_name FROM session_results WHERE round_id = ? "
+        "AND session_type = 'FEATURE_RACE'", ROUND_ID)
+    assert session["config_name"] == HEAVY
+
+
+def _amendment_picker(league: ReviewLeague) -> Any:
+    """The message standing in the amendment channel that offers the configurations."""
+    [picker] = [message for message in league.channel(AMEND_CHANNEL).messages.values()
+                if message.view is not None
+                and "Select the points configuration" in str(message.content)]
+    return picker
+
+
+async def _press_choice(
+    league: ReviewLeague, picker: Any, label: str, *, after: timedelta = timedelta(0),
+) -> Any:
+    """Alex presses *label* on *picker*, *after* now; gives the press, its edit of the message and
+    its private answers recorded."""
+    button = next(item for item in picker.view.children if item.label == label)
+    press = member_interaction(league.bot, user=_alex(), created_at=NOW + after)
+    press.guild = league.guild
+    press.channel_id = AMEND_CHANNEL
+    press.message = picker
+    press.response.edit_message = AsyncMock()
+    await button.callback(press)
+    return press
+
+
+def _privately(press: Any) -> list[str]:
+    """Every message *press* was answered with, seen by its presser alone, in order."""
+    calls = [*press.response.send_message.await_args_list, *press.followup.send.await_args_list]
+    return [str(call.args[0] if call.args else call.kwargs.get("content", ""))
+            for call in calls if call.kwargs.get("ephemeral")]
+
+
+async def test_a_second_press_of_the_amendment_s_picker_is_refused_and_the_first_choice_holds(
+    tmp_path, monkeypatch,
+):
+    """The season has two points configurations attached and the Feature Race carries neither.
+    Alex pastes the Feature Race and its turn offers the configurations. He presses "Heavy", then
+    "Standard" on the same picker. The second press does not touch the message and is refused,
+    seen by him alone, naming Heavy; one configuration turn is asked, and when the queue runs the
+    amended Feature Race is written scored by Heavy."""
+    league = await _league(tmp_path, monkeypatch, configs=("Standard", HEAVY))
+    await _ask_open(league)
+    await _type(league)
+    picker = _amendment_picker(league)
+
+    await _press_choice(league, picker, HEAVY)
+    second = await _press_choice(league, picker, "Standard")
+    await run_queue(league.bot)
+
+    second.response.edit_message.assert_not_awaited()
+    [told] = _privately(second)
+    assert told.startswith("⚠️") and "already been chosen" in told and HEAVY in told, told
+    assert len(await _changes(league, CONFIG)) == 1
+    assert await stopped_job(league.db_path) is None
     [session] = await _rows(league,
         "SELECT config_name FROM session_results WHERE round_id = ? "
         "AND session_type = 'FEATURE_RACE'", ROUND_ID)
@@ -1017,6 +1073,32 @@ async def test_a_late_choice_of_configuration_is_not_taken(tmp_path, monkeypatch
 
     assert _deleted(league)
     assert await _winner(league) == LEWIS
+
+
+async def test_a_late_press_of_the_amendment_s_picker_leaves_the_message_alone(
+    tmp_path, monkeypatch,
+):
+    """The season has Standard and Heavy attached, and Alex pastes the Feature Race at once: the
+    picker appears. He presses Heavy six minutes later, before the lapse has run. The press does
+    not touch the message, which still offers the configurations: he is told, seen by him alone,
+    that it came too late, and no configuration turn is asked. Pressing Standard after it, he is
+    told the same, not that a configuration has been chosen."""
+    league = await _league(tmp_path, monkeypatch, configs=("Standard", HEAVY))
+    await _ask_open(league)
+    await _type(league)
+    picker = _amendment_picker(league)
+
+    late = await _press_choice(league, picker, HEAVY, after=timedelta(minutes=6))
+    again = await _press_choice(league, picker, "Standard", after=timedelta(minutes=6))
+    await run_queue(league.bot)
+
+    for press in (late, again):
+        press.response.edit_message.assert_not_awaited()
+        [told] = _privately(press)
+        assert told.startswith("⚠️") and "five minutes" in told, told
+        assert "already been chosen" not in told, told
+    assert await _changes(league, CONFIG) == []
+    assert await _drafts(league) == []
 
 
 async def test_a_lapse_queued_for_an_earlier_prompt_does_not_swallow_the_next_prompt_s(

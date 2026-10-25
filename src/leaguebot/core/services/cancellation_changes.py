@@ -20,7 +20,17 @@ channel is where a manager pastes.
 status it was cancelled from, its division finished and the season moved on where that was the
 last it waited on, reading nothing but the connection it is handed. The removal goes first, as the
 command did it, because a cancelled round whose weather jobs stood would have its forecasts
-posted; removing never raises, so a stop there means the scheduler itself failed. **Everything
+posted; a stop there means the scheduler itself failed, and the removal of a division's or a
+season's rounds lists every round before it takes any, so that a stopped removal has taken none.
+**The save cannot be discarded** (owner, 2026-10-23): with the timed work off, dropping it would
+leave the rounds neither cancelled nor ever run, so a stopped save can only be retried. **A save
+that refuses arms the timed work again** (owner, 2026-10-23): the check lies before the removal and
+the save after it, so a session accepted on a round's submission between them, or a round that
+moved on, refuses the save with the timed work already off. The refusal then asks, in its own save,
+one `season.round.rearm` (`round_amend_change`) for each round the removal took jobs from: the
+whole of its timed work for a round still to be run or awaiting its results, as it stood, and only
+the next-day clean-ups for one already raced. The reply and the refusal's log line name the rounds
+being armed again. A refusal at the check lies before the removal and owes none. **Everything
 else follows the save as a job of its own**, each of which stops the queue where it fails: each
 enabled module's notice, the check-in call's take-down, the calendar's repost, and a closing job
 that writes the one line. The wind-down is a change of its own, asked in the save where the
@@ -77,6 +87,7 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Awaitable, Callable, Iterable
 from datetime import datetime
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Protocol
 
 import aiosqlite
@@ -91,7 +102,12 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundStatus
+from leaguebot.core.models.round import (
+    ROUND_CANCELLABLE,
+    ROUND_RACED_AWAITING_VERDICTS,
+    Round,
+    RoundStatus,
+)
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.services import approval_checks
@@ -142,6 +158,7 @@ from leaguebot.core.services.season_lifecycle_service import (
 from leaguebot.core.services.season_service import (
     SeasonImmutableError,
     SeasonService,
+    round_called,
     cancel_division_on,
     cancel_round_on,
     cancel_season_divisions_on,
@@ -161,23 +178,37 @@ if TYPE_CHECKING:
 __all__ = [
     "DIVISION_CANCEL",
     "ROUND_CANCEL",
+    "ROUND_REARM",
     "SEASON_CANCEL",
+    "READ_CHECK_IN",
     "cancellation_holding_amendment",
     "cancellation_in_hand",
+    "check_in_record",
+    "check_in_record_not_written",
+    "check_in_record_steps",
     "division_cancel_change",
+    "notice_steps",
+    "not_notified",
     "round_cancel_change",
     "season_cancel_change",
 ]
 
 ROUND_CANCEL = "season.round.cancel"
 DIVISION_CANCEL = "season.division.cancel"
+#: The change a refused cancellation asks, for each round whose timed work it removed, to arm it
+#: again (`round_amend_change.round_rearm_change`). Named here because the amendment's module
+#: imports this one, so this one cannot import it.
+ROUND_REARM = "season.round.rearm"
 
 _COMMAND = "`/round cancel`"
+_ROUND_REARM_COMMAND = "/round cancel"
 NOT_ONGOING = f"❌ {_COMMAND} is available only while the season is ongoing."
 ARCHIVED = "❌ This season is archived (COMPLETED) and cannot be modified."
 DIVISION_COMMAND = "`/division cancel`"
+_DIVISION_REARM_COMMAND = "/division cancel"
 DIVISION_NOT_ONGOING = f"❌ {DIVISION_COMMAND} is available only while the season is ongoing."
 SEASON_COMMAND = "`/season cancel`"
+_SEASON_REARM_COMMAND = "/season cancel"
 SEASON_NO_SEASON = (
     "❌ No season is being raced, so there is none to cancel. A season whose placements are yet "
     "to be confirmed is abandoned with `/season abort`."
@@ -379,6 +410,8 @@ NOTIFY_CHECKIN = "notify_checkin"
 TAKE_DOWN_CALL = "take_down_call"
 NOTIFY_FORECAST = "notify_forecast"
 NOTIFY_RESULTS = "notify_results"
+#: A round that ends cancelled reads its check-in for the log (`check_in_record_steps`).
+READ_CHECK_IN = "read_check_in"
 CLOSE = "close"
 DELETE_CHANNEL = "delete_channel"
 
@@ -386,16 +419,8 @@ UNARM_DISCARDED = (
     "Nothing was cancelled: round {number} in **{division}** stands as it was. Run "
     "`/round cancel` again."
 )
-SAVE_DISCARDED = (
-    "Nothing was cancelled, but round {number} in **{division}** no longer has its timed work: "
-    "run `/round cancel` again."
-)
 DIVISION_UNARM_DISCARDED = (
     "Nothing was cancelled: **{division}** stands as it was. Run `/division cancel` again."
-)
-DIVISION_SAVE_DISCARDED = (
-    "Nothing was cancelled, but the rounds of **{division}** no longer have their timed work: "
-    "run `/division cancel` again."
 )
 _DISCARDED_NOTICE = "the notice could not be posted, and a league admin discarded it"
 _DISCARDED_CHANNEL = (
@@ -403,15 +428,17 @@ _DISCARDED_CHANNEL = (
 )
 _DISCARDED_CALENDAR = (
     "the calendar could not be posted, and a league admin discarded it; run "
-    "`/division calendar-sync`"
+    "`/division calendar-sync` while the season is still being raced"
+)
+#: The same once the season is cancelled, which `/division calendar-sync` refuses.
+_DISCARDED_CALENDAR_CANCELLED = (
+    "the calendar could not be posted, and a league admin discarded it; no command posts it "
+    "again now the season is cancelled; the earlier calendar stands, to delete by hand if it "
+    "should not"
 )
 
 SEASON_UNARM_DISCARDED = (
     "Nothing was cancelled: season {number} stands as it was. Run `/season cancel` again."
-)
-SEASON_SAVE_DISCARDED = (
-    "Nothing was cancelled, but the rounds of season {number} no longer have their timed work: "
-    "run `/season cancel` again."
 )
 SEASON_END_DISCARDED = (
     "Season {number}'s divisions and rounds are cancelled, but the season itself is not: the "
@@ -439,15 +466,120 @@ def _discarded(view: StepView) -> bool:
     return "discarded" in (view.result or {})
 
 
+def _season_ended(ctx: OutcomeContext) -> bool:
+    """Whether a season cancel's end was saved: `end` is done, and neither refused nor
+    discarded."""
+    view = _view(ctx, END)
+    return view.done and not (_discarded(view) or (view.result or {}).get("refused"))
+
+
 def _refusal_of(ctx: OutcomeContext) -> str | None:
     """What the save refused with as it ran, or None."""
     return (_view(ctx, APPLY).result or {}).get("refused")
 
 
+#: What a refused round's cancellation adds to its reply once its timed work is being armed again.
+_REARMING = "Its timed work, removed for the cancellation, is being armed again as it stood."
+_REARMING_ROUNDS = (
+    "The timed work of its rounds still to be run, removed for the cancellation, is being armed "
+    "again as it stood: {rounds}."
+)
+
+
+def _removed_by(ctx: OutcomeContext) -> dict[int, list[str]]:
+    """The jobs the unarming removed, by round id, as it recorded them; none where it was
+    discarded or removed nothing."""
+    recorded = (_view(ctx, UNARM).result or {}).get("removed") or {}
+    return {int(round_id): list(jobs) for round_id, jobs in recorded.items() if jobs}
+
+
+async def _rearm_on(
+    db: aiosqlite.Connection, ctx: OutcomeContext, command: str
+) -> tuple[tuple[FollowOn, ...], list[str]]:
+    """The re-armings a refused cancellation asks, and the rounds it names as armed again.
+
+    A cancellation's check lies before its first job, which removes timed work, and its save lies
+    after, so a save that refuses (a session accepted since, the round moved on) leaves rounds
+    with their timed work gone and nothing cancelled. One ``season.round.rearm`` is asked for each
+    round the unarming removed jobs from, in this save, so the refusal is never recorded without
+    it: a round still to be run or awaiting its results has all its timed work armed again, and
+    one already raced (final, or awaiting verdicts) or ended cancelled for every session being
+    entered as not held (`rounds.not_held`), which keeps its clean-ups, only its next-day
+    clean-ups. A round the save finds called off, or gone, is left alone. Returns the follow-ons and, as the reply names them,
+    the rounds armed in full ("round 3 in **Pro**"), by tier then round number.
+    """
+    removed = _removed_by(ctx)
+    if not removed:
+        return (), []
+    marks = ",".join("?" * len(removed))
+    cursor = await db.execute(
+        "SELECT r.id, r.round_number, r.status, r.not_held, d.id AS division_id, "
+        "d.name AS division_name "
+        f"FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id IN ({marks}) "  # noqa: S608
+        "ORDER BY d.tier, r.round_number",
+        list(removed),
+    )
+    follow_ons: list[FollowOn] = []
+    names: list[str] = []
+    for row in await cursor.fetchall():
+        cleanups_only = (
+            row["status"] in ROUND_RACED_AWAITING_VERDICTS
+            or row["status"] == RoundStatus.FINAL.value
+            or (row["status"] == RoundStatus.CANCELLED.value and bool(row["not_held"]))
+        )
+        if not cleanups_only and row["status"] not in ROUND_CANCELLABLE:
+            continue
+        called = f"round {row['round_number']} in **{row['division_name']}**"
+        payload: dict[str, Any] = {
+            "round_id": int(row["id"]),
+            "round_number": int(row["round_number"]),
+            "division_id": int(row["division_id"]),
+            "division_name": str(row["division_name"]),
+            "command": command,
+        }
+        if cleanups_only:
+            payload["cleanups_only"] = True
+            what = f"arming the next-day clean-ups of {called} again"
+        else:
+            names.append(called)
+            what = f"arming the timed work of {called} again"
+        follow_ons.append(FollowOn(ROUND_REARM, payload, what))
+    return tuple(follow_ons), names
+
+
+async def _refused_rearming(
+    db: aiosqlite.Connection, ctx: OutcomeContext, text: str, command: str
+) -> StepResult:
+    """A save's refusal, with the re-armings it asks (see `_rearm_on`) and the rounds it names."""
+    follow_ons, names = await _rearm_on(db, ctx, command)
+    return StepResult(result={"refused": text, "rearmed": names}, follow_ons=follow_ons)
+
+
+def _rearmed(ctx: OutcomeContext) -> list[str]:
+    """The rounds the refusing save named as armed again, as the reply writes them."""
+    return list((_view(ctx, APPLY).result or {}).get("rearmed") or [])
+
+
+def _rearming_detail(ctx: OutcomeContext) -> str | None:
+    """The line the log channel's refusal gains beneath it, naming the rounds armed again."""
+    names = _rearmed(ctx)
+    if not names:
+        return None
+    return "  timed work being armed again: " + ", ".join(name.replace("**", "") for name in names)
+
+
+def _rearming_sentence(ctx: OutcomeContext, *, one: bool = False) -> str:
+    """What a refusal's reply adds of the timed work being armed again; nothing where none is."""
+    names = _rearmed(ctx)
+    if not names:
+        return ""
+    return "\n" + (_REARMING if one else _REARMING_ROUNDS.format(rounds=", ".join(names)))
+
+
 def _saved_number(ctx: OutcomeContext) -> Any:
-    """The number of the round cancelled, as the closing job read it after a discarded save, else
-    as the save found it, else as the removal of its timed work did, else the press's: a
-    discarded save never read it, and the round may have been renumbered since each of them."""
+    """The number of the round cancelled, as the closing job read it after a discarded removal,
+    else as the save found it, else as the removal of its timed work did, else the press's: a
+    discarded removal never ran the save, and the round may have been renumbered since each."""
     for name in (CLOSE, APPLY, UNARM):
         number = (_view(ctx, name).result or {}).get("round_number")
         if number is not None:
@@ -496,7 +628,13 @@ def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
                 ))
         elif view.name == POST_CALENDAR:
             if _discarded(view):
-                failures.append(notices.NoticeFailure(name, "calendar", _DISCARDED_CALENDAR))
+                # A season cancelled for good is refused by `/division calendar-sync`; one whose
+                # end was discarded is not cancelled, and the command still works.
+                cancelled = ctx.kind == SEASON_CANCEL and _season_ended(ctx)
+                failures.append(notices.NoticeFailure(
+                    name, "calendar",
+                    _DISCARDED_CALENDAR_CANCELLED if cancelled else _DISCARDED_CALENDAR,
+                ))
             elif result.get("fell_back"):
                 failures.append(notices.NoticeFailure(
                     name, "calendar",
@@ -513,6 +651,57 @@ def checkin_audit(ctx: OutcomeContext) -> str:
         for view in ctx.steps
         if view.name == TAKE_DOWN_CALL
     )
+
+
+def check_in_record_steps(*, modules: "ModuleService") -> dict[str, Step]:
+    """The job that reads a round's check-in for the log channel, for a round that ends cancelled
+    without a command (every session entered as not held) to plan beside the notices.
+
+    It is an ACT on its own connection with no save open, due while attendance is on, and its
+    result is `{"record": text}` (the same record `/round cancel` writes, `checkin_record`; empty
+    where the round's call was never posted). It reads the round named by `round_id` in its own
+    payload beside the notices' (`division_id`, `division_name`, `round_number`). The call itself
+    is not taken down: it comes down a day after the start, as any round's. A discard loses the
+    record alone, and `check_in_record_not_written` names that.
+    """
+
+    async def read(ctx: StepContext) -> StepResult:
+        payload = ctx.step_payload
+        record = await notices.checkin_record(
+            ctx.db_path,
+            SimpleNamespace(id=int(payload["division_id"]), name=str(payload["division_name"])),
+            int(payload["round_id"]),
+        )
+        return StepResult(result={"record": record})
+
+    async def attendance_on(_ctx: StepContext) -> bool:
+        return await modules.is_attendance_enabled()
+
+    return {
+        READ_CHECK_IN: Step(
+            READ_CHECK_IN, StepKind.ACT, read, still_due=attendance_on,
+            describe=_named("reading the check-in record of round {number} in **{name}**"),
+        ),
+    }
+
+
+def check_in_record(ctx: OutcomeContext) -> str:
+    """The check-in record a round ending cancelled read, to write beneath its line, or ""."""
+    return "".join(
+        str((view.result or {}).get("record", ""))
+        for view in ctx.steps
+        if view.name == READ_CHECK_IN
+    )
+
+
+def check_in_record_not_written(ctx: OutcomeContext) -> list[str]:
+    """One line for each check-in record a league admin discarded the reading of."""
+    return [
+        f"not done: the check-in record of round {view.payload.get('round_number')} in "
+        f"**{view.payload.get('division_name')}** was not written"
+        for view in ctx.steps
+        if view.name == READ_CHECK_IN and _discarded(view)
+    ]
 
 
 def _round_id(ctx: StepContext) -> int:
@@ -555,26 +744,33 @@ def _named(
     return describe
 
 
-def _follow_steps(
-    *, modules: "ModuleService", seasons: SeasonService, scope: str, cancellation: CancellationHooks
-) -> dict[str, Step]:
-    """The jobs both cancellations carry out after the save: each module's notice, a check-in
-    call's take-down and the calendar's repost. *scope* is the notices' (`SCOPE_ROUND` or
-    `SCOPE_DIVISION`). A job reads its division from its own payload (`division_id`,
-    `division_name`, `season_id`), and a take-down its round from `round_id` there or, for a
-    round's cancellation, from the change's.
-    """
+async def _division_of(seasons: SeasonService, season_id: int, division_id: int) -> Division | None:
+    """The division a job is about, or None where it is no longer there."""
+    return next(
+        (each for each in await seasons.get_divisions(season_id) if each.id == division_id),
+        None,
+    )
 
-    async def division_of(season_id: int, division_id: int) -> Division | None:
-        return next(
-            (each for each in await seasons.get_divisions(season_id) if each.id == division_id),
-            None,
-        )
+
+def notice_steps(
+    *, modules: "ModuleService", seasons: SeasonService, scope: str
+) -> dict[str, Step]:
+    """Each module's "called off" notice as a job: the check-in channel's, the forecast channel's
+    and the results channel's, in the order they are posted. *scope* is the notices' (`SCOPE_ROUND`
+    or `SCOPE_DIVISION`).
+
+    Public so that a round that ends cancelled without a command, every session being entered as
+    not held, posts the notices `/round cancel` posts without the module that ends it importing a
+    kind of another module: the builder hands the steps over and the module plans each, whatever
+    it is called. A job reads its division from its own payload (`division_id`, `division_name`,
+    `season_id`, `round_number`, `track_name`) and drops itself, as it runs, where its module is
+    off.
+    """
 
     async def notify(ctx: StepContext, module: str) -> StepResult:
         guild = await _guild(ctx.bot)
-        division = await division_of(
-            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
+        division = await _division_of(
+            seasons, int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
         )
         if division is None:
             raise LookupError(f"division {ctx.step_payload['division_id']} is no longer there")
@@ -604,9 +800,38 @@ def _follow_steps(
     async def results_on(_ctx: StepContext) -> bool:
         return await modules.is_results_enabled()
 
+    return {
+        NOTIFY_CHECKIN: Step(
+            NOTIFY_CHECKIN, StepKind.ACT, notify_checkin, still_due=attendance_on,
+            describe=_named("posting the check-in notice for **{name}**"),
+        ),
+        NOTIFY_FORECAST: Step(
+            NOTIFY_FORECAST, StepKind.ACT, notify_forecast, still_due=weather_on,
+            describe=_named("posting the forecast note for **{name}**"),
+        ),
+        NOTIFY_RESULTS: Step(
+            NOTIFY_RESULTS, StepKind.ACT, notify_results, still_due=results_on,
+            describe=_named("posting the results note for **{name}**"),
+        ),
+    }
+
+
+def _follow_steps(
+    *, modules: "ModuleService", seasons: SeasonService, scope: str, cancellation: CancellationHooks
+) -> dict[str, Step]:
+    """The jobs both cancellations carry out after the save: each module's notice
+    (`notice_steps`), a check-in call's take-down and the calendar's repost. *scope* is the
+    notices' (`SCOPE_ROUND` or `SCOPE_DIVISION`). A job reads its division from its own payload
+    (`division_id`, `division_name`, `season_id`), and a take-down its round from `round_id` there
+    or, for a round's cancellation, from the change's.
+    """
+
+    async def attendance_on(_ctx: StepContext) -> bool:
+        return await modules.is_attendance_enabled()
+
     async def take_down(ctx: StepContext) -> StepResult:
-        division = await division_of(
-            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
+        division = await _division_of(
+            seasons, int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
         )
         if division is None:
             raise LookupError(f"division {ctx.step_payload['division_id']} is no longer there")
@@ -623,23 +848,15 @@ def _follow_steps(
                 db, _round_id(ctx), int(ctx.step_payload["division_id"])
             )
 
+    notifying = notice_steps(modules=modules, seasons=seasons, scope=scope)
     return {
-        NOTIFY_CHECKIN: Step(
-            NOTIFY_CHECKIN, StepKind.ACT, notify_checkin, still_due=attendance_on,
-            describe=_named("posting the check-in notice for **{name}**"),
-        ),
+        NOTIFY_CHECKIN: notifying[NOTIFY_CHECKIN],
         TAKE_DOWN_CALL: Step(
             TAKE_DOWN_CALL, StepKind.ACT, take_down, still_due=attendance_on, record=forget_call,
             describe=_named("taking down the check-in call of round {number} in **{name}**"),
         ),
-        NOTIFY_FORECAST: Step(
-            NOTIFY_FORECAST, StepKind.ACT, notify_forecast, still_due=weather_on,
-            describe=_named("posting the forecast note for **{name}**"),
-        ),
-        NOTIFY_RESULTS: Step(
-            NOTIFY_RESULTS, StepKind.ACT, notify_results, still_due=results_on,
-            describe=_named("posting the results note for **{name}**"),
-        ),
+        NOTIFY_FORECAST: notifying[NOTIFY_FORECAST],
+        NOTIFY_RESULTS: notifying[NOTIFY_RESULTS],
         **calendar_steps(seasons),
     }
 
@@ -725,13 +942,22 @@ def round_cancel_change(
         # The number is read first, so that nothing after the removal can stop this job: a
         # removal stopped and discarded would be named as nothing done.
         number = await _round_number_now(ctx)
-        scheduler.cancel_round(int(ctx.payload["round_id"]))
-        return StepResult(result={"unarmed": True, "round_number": number})
+        round_id = int(ctx.payload["round_id"])
+        removed = scheduler.cancel_round(round_id)
+        return StepResult(
+            result={"unarmed": True, "round_number": number, "removed": {str(round_id): removed}}
+        )
 
     async def unarmed(ctx: StepContext) -> bool:
         """The save is due only where the timed work was removed, not where that job was
         discarded."""
         return not _discarded(_view(ctx, UNARM))
+
+    async def would_be_left_unrun(ctx: StepContext) -> str:
+        """What dropping the save would leave: the timed work is off and nothing cancelled, so
+        the save is retried, never discarded."""
+        called = await round_called(ctx.db_path, int(ctx.payload["round_id"]))
+        return f"{called} would be left with no timed work, neither cancelled nor ever run"
 
     async def refusal_in_save(db: aiosqlite.Connection, payload: dict[str, Any]) -> str:
         """Why the guarded save moved nothing: the same words the check refuses in."""
@@ -765,19 +991,21 @@ def round_cancel_change(
         previous = None
         if division is not None:
             # A backstop for the check: `unarm` lies between them, and a session may have been
-            # accepted since. Nothing is written then.
+            # accepted since. Nothing is written then, and the timed work `unarm` took is armed again.
             for each in await submissions.open_submissions_on(db, [round_id]):
                 if each.accepted:
-                    return StepResult(result={"refused": _accepted(
+                    return await _refused_rearming(db, ctx, _accepted(
                         {**ctx.payload, "round_number": division["round_number"]},
                         each.channel_id,
-                    )})
+                    ), _ROUND_REARM_COMMAND)
             previous = await cancel_round_on(
                 db, round_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
             )
         if division is None or previous is None:
             # A backstop: the check passed, and something wrote the database after it.
-            return StepResult(result={"refused": await refusal_in_save(db, ctx.payload)})
+            return await _refused_rearming(
+                db, ctx, await refusal_in_save(db, ctx.payload), _ROUND_REARM_COMMAND
+            )
 
         cursor = await db.execute("SELECT status FROM divisions WHERE id = ?", (division["id"],))
         after = await cursor.fetchone()
@@ -835,11 +1063,11 @@ def round_cancel_change(
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """Write the one line that records the cancellation, or the refusal the save met.
 
-        Where the save was discarded, it never read the round's number: the round is read here,
-        the last job, so that the outcome names it by the number it bears now, which another
-        round's amended date may have changed while the save stood stopped."""
+        Where the removal was discarded, the save never ran and read no number: the round is read
+        here, the last job, so that the outcome names it by the number it bears now, which another
+        round's amended date may have changed while the removal stood stopped."""
         payload = ctx.payload
-        if _discarded(_view(ctx, UNARM)) or _discarded(_view(ctx, APPLY)):
+        if _discarded(_view(ctx, UNARM)):
             cursor = await db.execute(
                 "SELECT round_number FROM rounds WHERE id = ?", (int(payload["round_id"]),)
             )
@@ -852,7 +1080,9 @@ def round_cancel_change(
         if refused:
             return StepResult(
                 result={"closed": True},
-                lines=(refusal_line(ctx.named, _COMMAND, reply_reason(refused)),),
+                lines=(refusal_line(
+                    ctx.named, _COMMAND, reply_reason(refused), detail=_rearming_detail(ctx)
+                ),),
             )
         line = (
             f"{ctx.named} | /round cancel | Success\n"
@@ -871,9 +1101,7 @@ def round_cancel_change(
             return UNARM_DISCARDED.format(**words)
         refused = _refusal_of(ctx)
         if refused:
-            return refused
-        if _discarded(_view(ctx, APPLY)):
-            return SAVE_DISCARDED.format(**words)
+            return refused + _rearming_sentence(ctx, one=True)
         return (
             f"✅ Round **{words['number']}** in **{words['division']}** cancelled."
             + notices.failure_lines(not_notified(ctx))
@@ -896,6 +1124,7 @@ def round_cancel_change(
             describe=_named(
                 "cancelling round {number} in **{division}**", number_now=True
             ),
+            undiscardable=would_be_left_unrun,
         ),
         CLOSE: Step(
             CLOSE, StepKind.SAVE, close,
@@ -1004,14 +1233,26 @@ def division_cancel_change(
     async def unarm(ctx: StepContext) -> StepResult:
         """Remove the timed work of every round of the division, read as the job runs: a round
         whose results are in loses its jobs too, as the division it belongs to is called off."""
-        for each in await seasons.get_division_rounds(int(ctx.payload["division_id"])):
-            scheduler.cancel_round(each.id)
-        return StepResult(result={"unarmed": True})
+        round_ids = [
+            each.id for each in await seasons.get_division_rounds(int(ctx.payload["division_id"]))
+        ]
+        removed = scheduler.cancel_rounds(round_ids)
+        return StepResult(result={
+            "unarmed": True, "removed": {str(round_id): jobs for round_id, jobs in removed.items()},
+        })
 
     async def unarmed(ctx: StepContext) -> bool:
         """The save is due only where the timed work was removed, not where that job was
         discarded."""
         return not _discarded(_view(ctx, UNARM))
+
+    async def would_be_left_unrun(ctx: StepContext) -> str:
+        """What dropping the save would leave: the timed work is off and nothing cancelled, so
+        the save is retried, never discarded."""
+        return (
+            f"the rounds of **{ctx.payload['division_name']}** would be left with no timed work, "
+            "neither cancelled nor ever run"
+        )
 
     async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """The one save: the division and every round of it that may still be cancelled, each
@@ -1038,19 +1279,21 @@ def division_cancel_change(
             refusal = ARCHIVED
         if refusal is not None or division is None:
             # A backstop: the check passed, and something wrote the database after it.
-            return StepResult(result={"refused": refusal})
+            return await _refused_rearming(db, ctx, refusal or "", _DIVISION_REARM_COMMAND)
 
         cursor = await db.execute(
             "SELECT id, round_number FROM rounds WHERE division_id = ?", (division_id,)
         )
         numbers = {int(each["id"]): int(each["round_number"]) for each in await cursor.fetchall()}
         # A backstop for the check: `unarm` lies between them, and a session may have been
-        # accepted since. Nothing is written then.
+        # accepted since. Nothing is written then, and the timed work `unarm` took is armed again.
         found = await accepted_in(
             list(numbers.items()), lambda ids: submissions.open_submissions_on(db, ids)
         )
         if found is not None:
-            return StepResult(result={"refused": _division_accepted(payload, *found)})
+            return await _refused_rearming(
+                db, ctx, _division_accepted(payload, *found), _DIVISION_REARM_COMMAND
+            )
 
         called_off = await cancel_division_on(
             db, division_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
@@ -1107,13 +1350,15 @@ def division_cancel_change(
 
     async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """Write the one line that records the cancellation, or the refusal the save met."""
-        if _discarded(_view(ctx, UNARM)) or _discarded(_view(ctx, APPLY)):
+        if _discarded(_view(ctx, UNARM)):
             return StepResult(result={"closed": True})
         refused = _refusal_of(ctx)
         if refused:
             return StepResult(
                 result={"closed": True},
-                lines=(refusal_line(ctx.named, DIVISION_COMMAND, reply_reason(refused)),),
+                lines=(refusal_line(
+                    ctx.named, DIVISION_COMMAND, reply_reason(refused), detail=_rearming_detail(ctx)
+                ),),
             )
         line = (
             f"{ctx.named} | /division cancel | Success\n"
@@ -1129,9 +1374,7 @@ def division_cancel_change(
             return DIVISION_UNARM_DISCARDED.format(division=name)
         refused = _refusal_of(ctx)
         if refused:
-            return refused
-        if _discarded(_view(ctx, APPLY)):
-            return DIVISION_SAVE_DISCARDED.format(division=name)
+            return refused + _rearming_sentence(ctx)
         return f"✅ Division **{name}** cancelled." + notices.failure_lines(not_notified(ctx))
 
     steps: dict[str, Step] = {
@@ -1147,6 +1390,7 @@ def division_cancel_change(
         APPLY: Step(
             APPLY, StepKind.SAVE, apply, still_due=unarmed,
             describe=_named("cancelling **{division}**"),
+            undiscardable=would_be_left_unrun,
         ),
         CLOSE: Step(
             CLOSE, StepKind.SAVE, close,
@@ -1261,16 +1505,28 @@ def season_cancel_change(
     async def unarm(ctx: StepContext) -> StepResult:
         """Remove the timed work of every round of every division, read as the job runs, and the
         job that would end the season on its own."""
-        for division in await seasons.get_divisions(int(ctx.payload["season_id"])):
-            for each in await seasons.get_division_rounds(division.id):
-                scheduler.cancel_round(each.id)
-        scheduler.cancel_season_end()
-        return StepResult(result={"unarmed": True})
+        round_ids = [
+            each.id
+            for division in await seasons.get_divisions(int(ctx.payload["season_id"]))
+            for each in await seasons.get_division_rounds(division.id)
+        ]
+        removed = scheduler.cancel_rounds(round_ids, season_end=True)
+        return StepResult(result={
+            "unarmed": True, "removed": {str(round_id): jobs for round_id, jobs in removed.items()},
+        })
 
     async def unarmed(ctx: StepContext) -> bool:
         """The save is due only where the timed work was removed, not where that job was
         discarded."""
         return not _discarded(_view(ctx, UNARM))
+
+    async def would_be_left_unrun(ctx: StepContext) -> str:
+        """What dropping the save would leave: the timed work is off and nothing cancelled, so
+        the save is retried, never discarded."""
+        return (
+            f"the rounds of season {ctx.payload['season_number']} would be left with no timed "
+            "work, neither cancelled nor ever run"
+        )
 
     async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """The first save: the cancellation recorded, the season itself left ongoing; see the
@@ -1283,9 +1539,9 @@ def season_cancel_change(
         )
         season = await cursor.fetchone()
         if season is None or season["status"] != "ACTIVE":
-            return StepResult(result={"refused": SEASON_NO_SEASON})
+            return await _refused_rearming(db, ctx, SEASON_NO_SEASON, _SEASON_REARM_COMMAND)
         if SeasonStage(season["stage"]) not in ONGOING_STAGES:
-            return StepResult(result={"refused": SEASON_NOT_ONGOING})
+            return await _refused_rearming(db, ctx, SEASON_NOT_ONGOING, _SEASON_REARM_COMMAND)
 
         cursor = await db.execute(
             "SELECT d.name AS division_name, r.id AS round_id, r.round_number FROM rounds r "
@@ -1298,10 +1554,10 @@ def season_cancel_change(
             for row in await cursor.fetchall()
         }
         # A backstop for the check: `unarm` lies between them, and a session may have been
-        # accepted since. Nothing is written then.
+        # accepted since. Nothing is written then, and the timed work `unarm` took is armed again.
         refusal = _first_accepted(standing, await submissions.open_submissions_on(db, list(standing)))
         if refusal is not None:
-            return StepResult(result={"refused": refusal})
+            return await _refused_rearming(db, ctx, refusal, _SEASON_REARM_COMMAND)
 
         # The empty open submissions are closed first, then the placements not yet confirmed
         # discarded so that they earn no history, then the rounds raced and awaiting verdicts made
@@ -1436,11 +1692,6 @@ def season_cancel_change(
                 return str(refused)
         return None
 
-    def _ended(ctx: OutcomeContext) -> bool:
-        """Whether the season's end was saved: `end` is done, and neither refused nor discarded."""
-        view = _view(ctx, END)
-        return view.done and not (_discarded(view) or (view.result or {}).get("refused"))
-
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """Write the one line that records the cancellation, or the refusal a save met.
 
@@ -1454,12 +1705,26 @@ def season_cancel_change(
             return StepResult(
                 result=result,
                 lines=(
-                    refusal_line(ctx.named, SEASON_COMMAND, reply_reason(refused)),
+                    refusal_line(
+                        ctx.named, SEASON_COMMAND, reply_reason(refused),
+                        detail=_rearming_detail(ctx),
+                    ),
                     *untold_log(ctx.named, "/season cancel", untold),
                 ),
             )
-        if _discarded(_view(ctx, UNARM)) or _discarded(_view(ctx, APPLY)) or not _ended(ctx):
+        if _discarded(_view(ctx, UNARM)):
             return StepResult(result=result, lines=untold_log(ctx.named, "/season cancel", untold))
+        if not _season_ended(ctx):
+            # The season is not cancelled, but what was discarded on the way is still named.
+            failed = notices.failure_log_lines(not_notified(ctx))
+            if not failed:
+                return StepResult(
+                    result=result, lines=untold_log(ctx.named, "/season cancel", untold)
+                )
+            return StepResult(result=result, lines=(
+                f"{ctx.named} | /season cancel | Incomplete" + failed
+                + "".join(f"\n  not done: {each}" for each in untold_lines(untold)),
+            ))
         line = (
             f"{ctx.named} | /season cancel | Success"
             + checkin_audit(ctx)
@@ -1472,8 +1737,7 @@ def season_cancel_change(
         text = _outcome(ctx)
         if (
             not _discarded(_view(ctx, UNARM))
-            and not _discarded(_view(ctx, APPLY))
-            and _ended(ctx)
+            and _season_ended(ctx)
             and not _refused(ctx)
         ):
             return text
@@ -1485,11 +1749,11 @@ def season_cancel_change(
             return SEASON_UNARM_DISCARDED.format(number=number)
         refused = _refused(ctx)
         if refused:
-            return refused
-        if _discarded(_view(ctx, APPLY)):
-            return SEASON_SAVE_DISCARDED.format(number=number)
-        if not _ended(ctx):
-            return SEASON_END_DISCARDED.format(number=number)
+            return refused + _rearming_sentence(ctx)
+        if not _season_ended(ctx):
+            return SEASON_END_DISCARDED.format(number=number) + notices.failure_lines(
+                not_notified(ctx)
+            )
         return (
             SEASON_CANCELLED
             + notices.failure_lines(not_notified(ctx))
@@ -1518,6 +1782,7 @@ def season_cancel_change(
         APPLY: Step(
             APPLY, StepKind.SAVE, apply, still_due=unarmed,
             describe=describing("cancelling season {number}"),
+            undiscardable=would_be_left_unrun,
         ),
         END: Step(
             END, StepKind.SAVE, end,

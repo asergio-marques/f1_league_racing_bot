@@ -46,6 +46,8 @@ from tests.support.change_queue import (
     discard_job,
     http_error,
     member_interaction,
+    refuse_the_job,
+    retry_job,
     run_queue,
     step_rows,
     stopped_job,
@@ -76,7 +78,6 @@ NEW_CHANNEL = 6500
 OLD_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 KIMI_LANE = f"channel:{KIMI_CHANNEL}"
-
 
 
 async def _league(tmp_path: Any, *, manage_channels: bool = True,
@@ -834,28 +835,240 @@ async def test_an_expiry_asked_by_its_timer_ends_the_signup(tmp_path):
     assert "lapsed" in league.log().lower()
 
 
-async def test_an_expiry_whose_end_is_discarded_tells_and_locks_and_deletes_nothing(
-    tmp_path, monkeypatch
-):
-    """Kimi's 24 hours run out, and the `end` job of his expiry fails and is discarded by an
-    admin. He is still Pending Signup Completion, so his channel is not told his signup expired,
-    his typing there is not revoked and the channel's deletion is not armed: a day later the
-    bot would otherwise delete the channel of a driver it still holds mid-signup."""
+async def test_ending_a_signup_cannot_be_discarded(tmp_path):
+    """Kimi is correcting his signup (Pending Driver Correction), last active 24 hours and a
+    minute ago. His 24-hour timer fires, but the save ending his signup fails, so the league lane
+    stops at `end`. A league admin's Discard on it is refused, saying Kimi's signup would never
+    end and the season's placements could not be confirmed until the bot restarts. He is still
+    Pending Driver Correction, his channel is not told his signup expired, his typing there is
+    not revoked, the channel's deletion is not armed, and the queue stays stopped there. Once the
+    fault is lifted, a Retry ends it: he is Not Signed Up, told once, his typing revoked and the
+    deletion armed a day on."""
     league = await _league(tmp_path)
     await _idle(league, SIGNING_UP, league.clock.now - timedelta(hours=24, minutes=1))
-    refused = AsyncMock(side_effect=RuntimeError("the database refused"))
-    monkeypatch.setattr(league.bot.driver_service, "transition_on", refused)
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'PENDING_DRIVER_CORRECTION' "
+        "WHERE discord_user_id = ?", str(SIGNING_UP),
+    )
+    await refuse_the_job(league.db_path, END_KIND, "end", True)
 
     await _timer_callback(league, INACTIVITY_TIMER)(str(SIGNING_UP))
     await run_queue(league.bot)
-    job = await stopped_job(league.db_path, "league")
-    assert job is not None and job["name"] == "end"
-    await discard_job(league.bot)
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "end"
 
-    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    refused = await discard_job(league.bot, lane="league")
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}>'s signup would never end, "
+        "and the season's placements could not be confirmed until the bot restarts. Fix what "
+        "stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path, "league"))["id"] == stopped["id"]
+    assert await _driver_state(league) == "PENDING_DRIVER_CORRECTION"
     assert _expired(league) == []
     assert not _locked(league)
     assert _armed(league, DELETE_TIMER) == []
+
+    await refuse_the_job(league.db_path, END_KIND, "end", False)
+    await retry_job(league.bot, lane="league")
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert len(_expired(league)) == 1
+    assert _locked(league)
+    assert _armed(league, DELETE_TIMER) == [
+        (DELETE_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))
+    ]
+
+
+# ---------------------------------------------------------------------------
+# A signup whose channel is gone when its review panel is due (#439, slice 8, F1)
+# ---------------------------------------------------------------------------
+
+#: Kimi as the log channel shows him.
+KIMI_NAMED = f"Kimi (`<@{SIGNING_UP}>`)"
+#: Kimi as the panel's job names him, carried in the ending's payload; the log channel wraps the
+#: mention when it writes the line.
+KIMI_NAMED_IN_PAYLOAD = f"Kimi (<@{SIGNING_UP}>)"
+#: The line the ending writes in the log channel.
+CHANNEL_GONE_LINE = (
+    f"{KIMI_NAMED} | Signup | Ended\n  channel: <#{KIMI_CHANNEL}>\n  Their signup channel was "
+    "gone when their review panel was due, so their signup ended. They may press Sign Up again "
+    "while signups are open."
+)
+
+
+async def _ask_channel_gone(league: SeasonLeague) -> int | None:
+    """Ask the queue, as the bot, to end Kimi's signup because his signup channel (6405) was gone
+    when his review panel was due, as the panel's job does; gives the change's id, or None where
+    it was not due."""
+    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.signup.services.wizard_changes import CHANNEL_GONE
+
+    return await league.bot.change_queue.ask(
+        END_KIND,
+        {"user_id": str(SIGNING_UP), "reason": CHANNEL_GONE, "channel_id": KIMI_CHANNEL,
+         "named": KIMI_NAMED_IN_PAYLOAD},
+        what=f"ending <@{SIGNING_UP}>'s signup, their signup channel being gone",
+        origin=ChangeOrigin.BOT,
+    )
+
+
+async def _withdrew(league: SeasonLeague) -> None:
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'NOT_SIGNED_UP' WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED' WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+
+
+async def _left(league: SeasonLeague) -> None:
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'NOT_SIGNED_UP' WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    await league.write(
+        "DELETE FROM signup_wizard_records WHERE discord_user_id = ?", str(SIGNING_UP)
+    )
+
+
+async def _signed_up_again(league: SeasonLeague) -> None:
+    await league.write(
+        "UPDATE signup_wizard_records SET signup_channel_id = ? WHERE discord_user_id = ?",
+        NEW_CHANNEL, str(SIGNING_UP),
+    )
+
+
+@pytest.mark.parametrize(
+    ("moved_on", "state"),
+    [(_withdrew, "NOT_SIGNED_UP"), (_left, "NOT_SIGNED_UP"),
+     (_signed_up_again, "PENDING_ADMIN_APPROVAL")],
+    ids=["withdrew", "left", "signed up again"],
+)
+async def test_a_driver_moved_on_before_their_gone_channel_is_found_is_not_ended_again(
+    tmp_path, moved_on, state,
+):
+    """Kimi awaits approval, his signup channel 6405 deleted. Before the ending of his signup for
+    the gone channel is asked, he has withdrawn, or left the server (his wizard's row gone with
+    him), or signed up again and is awaiting approval with a new channel 6500. The ending is not
+    due: nothing is saved, he stays where he is, and nothing is written to the log channel."""
+    league = await _league(tmp_path)
+    await signing_up(league, SIGNING_UP, state="PENDING_ADMIN_APPROVAL")
+    league.remove_channel(KIMI_CHANNEL)
+    await moved_on(league)
+    wizard = await _wizard(league)
+
+    asked = await _ask_channel_gone(league)
+    await run_queue(league.bot)
+
+    assert asked is None
+    assert await _changes_of(league, END_KIND) == []
+    assert await _driver_state(league) == state
+    assert await _wizard(league) == wizard
+    assert "| Signup | Ended" not in league.log()
+
+
+async def test_ending_a_signup_whose_channel_is_gone_cannot_be_discarded(tmp_path):
+    """Kimi awaits approval, his signup channel 6405 deleted, and the ending of his signup for
+    the gone channel is asked with his name already found, so its one job is `end`. Its save
+    fails, stopping the league lane there. A league admin's Discard on it is refused, saying Kimi
+    would be left awaiting approval with no signup channel and no review panel, and the season's
+    placements could not be confirmed; he is still awaiting approval and the queue stays stopped.
+    Once the fault is lifted, a Retry ends his signup: he is Not Signed Up, his wizard ended, and
+    the log channel is told once, naming him and the channel, that his signup ended because his
+    signup channel was gone."""
+    league = await _league(tmp_path)
+    await signing_up(league, SIGNING_UP, state="PENDING_ADMIN_APPROVAL")
+    league.remove_channel(KIMI_CHANNEL)
+    await refuse_the_job(league.db_path, END_KIND, "end", True)
+
+    assert await _ask_channel_gone(league) is not None
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "end"
+    assert await _job_names(league, END_KIND) == ["end"]
+
+    refused = await discard_job(league.bot, lane="league")
+
+    assert acknowledgement(refused) == (
+        f"⛔ This job can't be discarded: without it <@{SIGNING_UP}> would be left awaiting "
+        "approval with no signup channel and no review panel, and the season's placements could "
+        "not be confirmed. Fix what stopped it and press **Retry**."
+    )
+    assert (await stopped_job(league.db_path, "league"))["id"] == stopped["id"]
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+
+    await refuse_the_job(league.db_path, END_KIND, "end", False)
+    await retry_job(league.bot, lane="league")
+
+    assert await stopped_job(league.db_path) is None
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert (await _wizard(league))["wizard_state"] == "UNENGAGED"
+    assert league.log().count(CHANNEL_GONE_LINE) == 1
+
+
+async def test_a_driver_whose_signup_ended_for_a_gone_channel_may_sign_up_again(tmp_path):
+    """Kimi's signup ended because his signup channel 6405 was gone when his review panel was due;
+    his wizard still names 6405. He presses Sign Up and the queue runs: the old channel is found
+    gone, a new channel 6500 is created, he is part-way through signing up in it, and the league
+    lane is not stopped."""
+    league = await _league(tmp_path)
+    await signing_up(league, SIGNING_UP, state="PENDING_ADMIN_APPROVAL")
+    league.remove_channel(KIMI_CHANNEL)
+    await _ask_channel_gone(league)
+    await run_queue(league.bot)
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+
+    await _press_sign_up(league)
+    await run_queue(league.bot)
+
+    assert league.created == [NEW_CHANNEL]
+    [change] = await _changes_of(league, START_KIND)
+    assert change["state"] == "DONE"
+    assert await stopped_job(league.db_path, "league") is None
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert (await _wizard(league))["signup_channel_id"] == NEW_CHANNEL
+
+
+@pytest.mark.parametrize("state", ["NOT_SIGNED_UP", "UNASSIGNED"],
+                         ids=["not signed up", "unassigned"])
+async def test_a_channel_gone_ending_is_not_due_once_the_driver_is_no_longer_signing_up(
+    tmp_path, state,
+):
+    """Kimi's signup has ended: he is Not Signed Up (it expired) or Unassigned (he was approved),
+    his wizard ended but still naming his signup channel 6405, which is then deleted. The ending
+    of his signup for a deleted channel is asked, as the bot sees the channel go. It is not due:
+    no change is taken up, he stays where he is, his wizard is untouched and nothing is written
+    to the log channel."""
+    from leaguebot.signup.services.wizard_changes import DELETED, ask_channel_gone
+
+    league = await _league(tmp_path)
+    await signing_up(league, SIGNING_UP, state="PENDING_ADMIN_APPROVAL")
+    await league.write(
+        "UPDATE driver_profiles SET current_state = ? WHERE discord_user_id = ?",
+        state, str(SIGNING_UP),
+    )
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED' WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    league.remove_channel(KIMI_CHANNEL)
+    wizard = await _wizard(league)
+
+    asked = await ask_channel_gone(
+        league.bot.change_queue, user_id=str(SIGNING_UP), channel_id=KIMI_CHANNEL,
+        named=KIMI_NAMED_IN_PAYLOAD, found=DELETED,
+    )
+    await run_queue(league.bot)
+
+    assert asked is None
+    assert await _changes_of(league, END_KIND) == []
+    assert await _driver_state(league) == state
+    assert await _wizard(league) == wizard
+    assert "| Signup | Ended" not in league.log()
 
 
 async def test_an_answer_typed_before_the_24_hours_counts_though_it_runs_after(tmp_path):
@@ -1127,7 +1340,6 @@ async def test_driver_reassign_asks_the_held_channel_s_deletion(tmp_path):
 MEMBER_LEFT_KIND = "signup.member_left"
 #: A change of the test's own on Kimi's lane, standing for one of his turns.
 KIMI_TURN = "test.kimi_turn"
-
 
 
 async def _leave(league: SeasonLeague, user_id: int = SIGNING_UP) -> None:

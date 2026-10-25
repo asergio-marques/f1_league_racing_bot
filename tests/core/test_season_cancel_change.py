@@ -20,9 +20,7 @@ Discard is named in the reply and beneath the closing line, which stays `| Succe
 Every test drives the real cog and the real queue through `tests/support/season_league.py`'s
 `ongoing_league`, with "now" pinned: Pro's round 1 final, round 2 awaiting its verdicts, rounds 3
 and 4 not run, round 3's check-in call standing and Pro's calendar posted; Am's four rounds not run
-and its calendar never posted. Today `/season cancel` cancels the season at the press, catching
-what fails, so every test of the queue is marked to fail until the build; the press's refusals in
-today's words pass as they stand.
+and its calendar never posted.
 """
 from __future__ import annotations
 
@@ -79,6 +77,7 @@ from tests.support.season_league import (
     ongoing_league,
     open_submission,
     profile_id,
+    removed_jobs,
     reply,
     round_id,
     season_end_changes,
@@ -124,9 +123,15 @@ def _accepted(number: int) -> str:
 
 
 UNARM_DISCARDED = "Nothing was cancelled: season 3 stands as it was. Run `/season cancel` again."
-SAVE_DISCARDED = (
-    "Nothing was cancelled, but the rounds of season 3 no longer have their timed work: run "
-    "`/season cancel` again."
+CANNOT_DISCARD = (
+    "⛔ This job can't be discarded: without it the rounds of season 3 would be left with no "
+    "timed work, neither cancelled nor ever run. Fix what stopped it and press **Retry**."
+)
+#: How a discarded calendar repost is named once the season is cancelled (W1).
+CALENDAR_DISCARDED = (
+    "**Pro** — calendar: the calendar could not be posted, and a league admin discarded it; no "
+    "command posts it again now the season is cancelled; the earlier calendar stands, to delete "
+    "by hand if it should not"
 )
 END_DISCARDED = (
     "Season 3's divisions and rounds are cancelled, but the season itself is not: the save that "
@@ -370,13 +375,17 @@ def _raising_while(failing: dict[str, bool], reading: Any) -> Any:
 
 
 def _unarming_fails(league: Any) -> None:
-    league.bot.scheduler_service.cancel_round = MagicMock(
+    league.bot.scheduler_service.cancel_rounds = MagicMock(
         side_effect=RuntimeError("the job store is locked")
     )
 
 
 def _unarming_works(league: Any) -> None:
-    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=league.unarmed.append)
+    def _cancel_rounds(round_ids: Any, **_kwargs: Any) -> dict[int, list[str]]:
+        league.unarmed.extend(round_ids)
+        return {rid: removed_jobs(rid) for rid in round_ids}
+
+    league.bot.scheduler_service.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
 
 
 async def _formers(league: Any, *user_ids: int) -> None:
@@ -611,6 +620,62 @@ async def test_a_calendar_discord_refuses_stops_the_queue_and_puts_nothing_on_th
     assert CANCELLED in reply(interaction)
 
 
+async def test_a_discarded_calendar_repost_says_no_command_posts_it_again_once_the_season_is_cancelled(
+    tmp_path,
+):
+    """Discord refuses Pro's calendar repost during a season cancel, and a league admin discards
+    it. The season ends cancelled, so `/division calendar-sync` would be refused: the reply and
+    the success line say no command posts it again and the earlier calendar stands."""
+    league = await ongoing_league(tmp_path)
+    league.channel(PRO_CH.calendar).send_fails = _forbidden()
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == ("post_calendar", PRO)
+    await discard_job(league.bot)
+
+    assert CANCELLED in reply(interaction)
+    assert CALENDAR_DISCARDED in _not_notified(reply(interaction))
+    [line] = _success_lines(league)
+    assert f"\n  not notified: {CALENDAR_DISCARDED}" in line
+    assert await _status(league) == "CANCELLED"
+
+
+#: How a discarded calendar repost is named once the season's end was discarded as well: the
+#: season is not cancelled, so `/division calendar-sync` still posts it (W1; core :495).
+CALENDAR_DISCARDED_NOT_ENDED = (
+    "**Pro** — calendar: the calendar could not be posted, and a league admin discarded it; run "
+    "`/division calendar-sync` while the season is still being raced"
+)
+
+
+async def test_a_discarded_calendar_repost_is_named_when_the_season_s_end_is_discarded_too(
+    tmp_path,
+):
+    """Discord refuses Pro's calendar repost during a season cancel, and a league admin discards
+    it; the save recording the season's end then fails, and the admin discards that too. Season 3
+    is not cancelled, and running `/season cancel` again tells no division twice, so the reply
+    and a line in the log channel both name the discarded calendar with `/division
+    calendar-sync`, which still works."""
+    league = await ongoing_league(tmp_path)
+    league.channel(PRO_CH.calendar).send_fails = _forbidden()
+    interaction = await _asked(league)
+
+    with _failing("cancel_season_on"):
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == ("post_calendar", PRO)
+        await discard_job(league.bot)
+        assert await _stopped_at(league) == ("end", None)
+        await discard_job(league.bot)
+
+    assert END_DISCARDED in reply(interaction)
+    assert CALENDAR_DISCARDED_NOT_ENDED in _not_notified(reply(interaction))
+    assert any(
+        f"\n  not notified: {CALENDAR_DISCARDED_NOT_ENDED}" in line for line in _log_lines(league)
+    ), _log_lines(league)
+    assert await _status(league) == "ACTIVE"
+
+
 async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
     tmp_path,
 ):
@@ -708,18 +773,38 @@ async def test_the_history_the_driver_pass_test_mode_and_the_season_s_cancellati
     assert await _status(league) == "CANCELLED"
 
 
+REARM_KIND = "season.round.rearm"
+REARMING_ROUNDS = (
+    "The timed work of its rounds still to be run, removed for the cancellation, is being armed "
+    "again as it stood: round 3 in **Pro**, round 4 in **Pro**, round 1 in **Am**, round 2 in "
+    "**Am**, round 3 in **Am**, round 4 in **Am**."
+)
+
+
 async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_writing_nothing(
     tmp_path,
 ):
+    """Attendance on. Pro's round 1 is final and round 2 awaits its report verdicts; round 3 awaits
+    its results, its submission open with nothing accepted; Pro's round 4 and Am's four rounds are
+    still to be run. `/season cancel` passes its check, but removing the timed work fails and stops
+    the queue; meanwhile round 3's submission accepts a session. Retried, the removal goes through
+    and the first save refuses, naming round 3, and writes nothing. Each round still to
+    be run or awaiting its results is armed again by a change of its own, the reply naming each in
+    order of tier and round; Pro's rounds 1 and 2 have their clean-ups armed again alone; no
+    season-end job is armed."""
     league = await ongoing_league(tmp_path, attendance=True)
     await _empty_submission(league)
     interaction = await _asked(league)
+    scheduler = league.bot.scheduler_service
+    unarming_one = scheduler.cancel_round
+    scheduler.cancel_round = MagicMock(side_effect=RuntimeError("the job store is locked"))
     _unarming_fails(league)
     await run_queue(league.bot)
     assert await _stopped_at(league) == ("unarm", None)
     await accept_session(league, R3)
     before = await _rounds(league)
 
+    scheduler.cancel_round = unarming_one
     _unarming_works(league)
     await retry_job(league.bot)
 
@@ -733,6 +818,22 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_w
     assert [cid for kind, cid, _ in league.events if kind == "delete_channel"] == []
     assert _posted(league) == [[]] * len(_POSTS)
     assert await _status(league) == "ACTIVE"
+    assert REARMING_ROUNDS in reply(interaction)
+    assert "\n  timed work being armed again: round 3 in Pro, round 4 in Pro, round 1 in Am" in (
+        _refusal_lines(league)[0])
+    rearmings = [row for row in await change_rows(league.db_path) if row["kind"] == REARM_KIND]
+    assert [row["state"] for row in rearmings] == ["DONE"] * len(rearmings)
+    payloads = [json.loads(row["payload"]) for row in rearmings]
+    still_to_run = [round_id(PRO, 3), round_id(PRO, 4)] + [round_id(AM, n) for n in range(1, 5)]
+    raced = [round_id(PRO, 1), round_id(PRO, 2)]
+    assert sorted(p["round_id"] for p in payloads if not p.get("cleanups_only")) == sorted(
+        still_to_run)
+    assert sorted(p["round_id"] for p in payloads if p.get("cleanups_only")) == sorted(raced)
+    armed_whole = {rid for which, ids in league.armed if which != "cleanups" for rid in ids}
+    assert armed_whole == set(still_to_run)
+    assert {rid for which, ids in league.armed if which == "cleanups" for rid in ids} == set(raced)
+    assert not [call for call in league.bot.scheduler_service.method_calls
+                if call[0].startswith("schedule") and "season_end" in call[0]]
 
 
 @pytest.mark.parametrize("how", [
@@ -915,12 +1016,53 @@ async def test_every_round_of_every_division_loses_its_timed_work_first(tmp_path
 
     await _run_through(league, "unarm")
     assert sorted(league.unarmed) == sorted(await _rounds(league))
-    league.bot.scheduler_service.cancel_season_end.assert_called_once()
+    scheduler = league.bot.scheduler_service
+    assert scheduler.cancel_rounds.call_count == 1
+    assert scheduler.cancel_rounds.call_args.kwargs.get("season_end") is True
+    scheduler.cancel_round.assert_not_called()
+    scheduler.cancel_season_end.assert_not_called()
     assert await _divisions(league) == {PRO: "ACTIVE", AM: "ACTIVE"}
 
     await run_queue(league.bot)
     assert (await _jobs(league))[0]["name"] == "unarm"
     assert await _status(league) == "CANCELLED"
+
+
+async def test_the_unarming_reads_every_division_s_rounds_before_removing_any(tmp_path):
+    """Pro's and Am's rounds are all read before any timed work is removed, and then removed in
+    one call to the scheduler with the season-end job, so a read that fails part-way removes
+    nothing: no round is removed on its own and the season-end job is not removed apart."""
+    league = await ongoing_league(tmp_path)
+    events: list[tuple[str, Any]] = []
+    seasons = league.bot.season_service
+    reading = seasons.get_division_rounds
+
+    async def _read(division_id: int, *args: Any, **kwargs: Any) -> Any:
+        events.append(("read", division_id))
+        return await reading(division_id, *args, **kwargs)
+
+    seasons.get_division_rounds = _read
+    scheduler = league.bot.scheduler_service
+    scheduler.cancel_round = MagicMock(
+        side_effect=lambda round_id, **_: events.append(("remove", [round_id]))
+    )
+    def _cancel_rounds(round_ids: Any, **kwargs: Any) -> dict[int, list[str]]:
+        events.append(("remove", sorted(round_ids), kwargs.get("season_end")))
+        return {rid: removed_jobs(rid) for rid in round_ids}
+
+    scheduler.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
+    await _asked(league)
+    events.clear()
+
+    await _run_through(league, "unarm")
+
+    removals = [event for event in events if event[0] == "remove"]
+    assert removals == [("remove", sorted(await _rounds(league)), True)]
+    assert events.index(removals[0]) > max(
+        i for i, event in enumerate(events) if event[0] == "read"
+    )
+    assert {event[1] for event in events if event[0] == "read"} == {PRO, AM}
+    scheduler.cancel_season_end.assert_not_called()
 
 
 async def test_every_division_still_running_is_told_in_the_season_s_words(tmp_path):
@@ -1154,7 +1296,11 @@ async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     assert await _status(league) == "ACTIVE"
 
 
-async def test_a_discarded_first_save_cancels_nothing_and_says_the_timed_work_is_gone(tmp_path):
+async def test_the_first_save_cannot_be_discarded_once_the_timed_work_is_removed(tmp_path):
+    """The first save stops on a fault after every round's timed work came off. A league admin's
+    Discard is refused, saying season 3's rounds would be left with no timed work; the queue stays
+    stopped at the save, nothing is cancelled and nothing posted. Once the fault is lifted, Retry
+    cancels the season."""
     league = await ongoing_league(tmp_path, attendance=True)
     rounds = await _rounds(league)
     interaction = await _asked(league)
@@ -1162,16 +1308,23 @@ async def test_a_discarded_first_save_cancels_nothing_and_says_the_timed_work_is
     with _failing("cancel_season_divisions_on"):
         await run_queue(league.bot)
         assert await _stopped_at(league) == ("apply", None)
-        await discard_job(league.bot)
+        discarding = await discard_job(league.bot)
 
-    assert SAVE_DISCARDED in reply(interaction)
-    assert CANCELLED not in reply(interaction)
-    assert sorted(league.unarmed) == sorted(rounds)
-    assert await _divisions(league) == {PRO: "ACTIVE", AM: "ACTIVE"}
-    assert await _rounds(league) == rounds
-    assert _success_lines(league) == []
-    assert _posted(league) == [[]] * len(_POSTS)
-    assert await _status(league) == "ACTIVE"
+        assert CANNOT_DISCARD in reply(discarding)
+        assert await _stopped_at(league) == ("apply", None)
+        assert CANCELLED not in reply(interaction)
+        assert sorted(league.unarmed) == sorted(rounds)
+        assert await _divisions(league) == {PRO: "ACTIVE", AM: "ACTIVE"}
+        assert await _rounds(league) == rounds
+        assert _success_lines(league) == []
+        assert _posted(league) == [[]] * len(_POSTS)
+        assert await _status(league) == "ACTIVE"
+
+    await retry_job(league.bot)
+
+    assert CANCELLED in reply(interaction)
+    assert await _divisions(league) == {PRO: "CANCELLED", AM: "CANCELLED"}
+    assert await _status(league) == "CANCELLED"
 
 
 @pytest.mark.parametrize("then", ["run again", "wound down meanwhile"])

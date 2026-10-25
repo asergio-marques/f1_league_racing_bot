@@ -50,6 +50,22 @@ async def _driver(db_path, uid: str, state: str) -> None:
         await db.commit()
 
 
+async def _open(db_path) -> SeasonStage | None:
+    """The window opened on a connection of its own, committed, as the opening's save does."""
+    async with get_connection(db_path) as db:
+        moved = await lifecycle.advance_on_window_open_on(db)
+        await db.commit()
+    return moved
+
+
+async def _close(db_path) -> SeasonStage | None:
+    """The window closed on a connection of its own, committed, as the closing's save does."""
+    async with get_connection(db_path) as db:
+        moved = await lifecycle.advance_on_window_close_on(db)
+        await db.commit()
+    return moved
+
+
 async def _stage(db_path) -> SeasonStage | None:
     found = await lifecycle.live_season_stage(db_path)
     return found[1] if found else None
@@ -68,7 +84,7 @@ async def _stage(db_path) -> SeasonStage | None:
 async def test_opening_the_window_moves_the_season_on(db_path, start, expected):
     await _season(db_path, start)
 
-    assert await lifecycle.advance_on_window_open(db_path) is expected
+    assert await _open(db_path) is expected
     assert await _stage(db_path) is expected
 
 
@@ -81,12 +97,12 @@ async def test_the_window_opens_from_no_other_stage(db_path, stage):
     await _season(db_path, stage)
 
     assert stage not in lifecycle.WINDOW_OPENS_FROM
-    assert await lifecycle.advance_on_window_open(db_path) is None
+    assert await _open(db_path) is None
     assert await _stage(db_path) is stage
 
 
 async def test_opening_with_no_season_moves_nothing(db_path):
-    assert await lifecycle.advance_on_window_open(db_path) is None
+    assert await _open(db_path) is None
 
 
 # ── Closing ────────────────────────────────────────────────────────────────────────
@@ -96,7 +112,7 @@ async def test_closing_signups_moves_the_season_to_placements(db_path):
     await _season(db_path, SeasonStage.SIGNUPS)
     await _driver(db_path, "1", "UNASSIGNED")
 
-    assert await lifecycle.advance_on_window_close(db_path) is SeasonStage.PLACEMENTS
+    assert await _close(db_path) is SeasonStage.PLACEMENTS
 
 
 @pytest.mark.parametrize("state", lifecycle.UNSETTLED_STATES)
@@ -104,7 +120,7 @@ async def test_a_mid_season_close_with_unsettled_signups_leaves_placements(db_pa
     await _season(db_path, SeasonStage.ONGOING_SIGNUPS)
     await _driver(db_path, "1", state)
 
-    target = await lifecycle.advance_on_window_close(db_path)
+    target = await _close(db_path)
 
     assert target is SeasonStage.ONGOING_PLACEMENTS
     assert await _stage(db_path) is SeasonStage.ONGOING_PLACEMENTS
@@ -115,7 +131,7 @@ async def test_a_mid_season_close_with_nothing_unsettled_returns_to_ongoing(db_p
     await _driver(db_path, "1", "ASSIGNED")
     await _driver(db_path, "2", "NOT_SIGNED_UP")
 
-    assert await lifecycle.advance_on_window_close(db_path) is SeasonStage.ONGOING
+    assert await _close(db_path) is SeasonStage.ONGOING
 
 
 @pytest.mark.parametrize(
@@ -124,7 +140,7 @@ async def test_a_mid_season_close_with_nothing_unsettled_returns_to_ongoing(db_p
 async def test_a_close_outside_a_window_stage_moves_nothing(db_path, stage):
     await _season(db_path, stage)
 
-    assert await lifecycle.advance_on_window_close(db_path) is None
+    assert await _close(db_path) is None
     assert await _stage(db_path) is stage
 
 
