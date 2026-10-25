@@ -1232,28 +1232,3 @@ async def test_a_delete_naming_no_division_for_a_round_that_is_gone_deletes_and_
     assert result.result == {"none": True}
     assert _events(league) == []
     assert await _forecasts(league) == {3: 9303}
-
-
-@pytest.mark.parametrize("result, where", [
-    pytest.param({"phase": 2, "channel_id": 605, "message_id": 9302, "guild_id": 1},
-                 "https://discord.com/channels/1/605/9302", id="server known"),
-    pytest.param({"phase": 2, "channel_id": 605, "message_id": 9302},
-                 "message 9302 in <#605>", id="server unknown"),
-])
-async def test_a_discarded_forecast_delete_names_the_forecast_to_delete_by_hand(result, where):
-    """A league admin discards the deletion of a superseded Phase 2 forecast (9302 in channel
-    605) that Discord refused: what is not done names the forecast channel, says it is deleted
-    with the round's clean-up a day after the race, or when the bot next starts once that has
-    passed, and offers deleting it by hand sooner if it should not stand, by its link where the
-    server was known when it failed and by its message and channel otherwise."""
-    from leaguebot.core.services.change_queue import StepView
-    from leaguebot.weather.services.forecast_changes import DELETE_FORECAST, forecast_failure
-
-    view = StepView(name=DELETE_FORECAST, payload={"phase": 2}, result=result, done=False)
-
-    assert forecast_failure(view) == (
-        "forecast channel",
-        "the Phase 2 forecast could not be deleted, and a league admin discarded it; it is "
-        "deleted with the round's clean-up a day after the race, or when the bot next starts "
-        f"once that has passed; delete it by hand sooner ({where}) if it should not stand",
-    )

@@ -677,12 +677,12 @@ def forecast_failure(view: StepView) -> tuple[str, str] | None:
     """What a league admin's discard of a forecast job leaves, as a core outcome names it: the
     thing and what to do, or None for a job that is not a forecast's.
 
-    Handed to core's amendment and season end through their hooks, so that each names a discarded
-    weather job without importing weather. A discarded draw is made when the bot next starts, while
-    its round is still to be run; a discarded post leaves the draw standing in the log channel and
-    nothing to post it again; a discarded deletion leaves the forecast to the round's clean-up a
-    day after the race (or the next start once that has passed), to be deleted by hand sooner if
-    it should not stand.
+    Handed to core's amendment through its hooks, so that it names a discarded weather job without
+    importing weather. A discarded draw is made when the bot next starts, while its round is still
+    to be run; a discarded post leaves the draw standing in the log channel and nothing to post it
+    again; a discarded deletion of part of a superseded forecast post is left to delete by hand, by
+    its link. A discarded `DELETE_FORECAST` is not named here: the amendment names it itself, as a
+    forecast to delete by hand, before it asks this hook.
     """
     result = view.result or {}
     phase = view.payload.get("phase", result.get("phase"))
@@ -693,17 +693,6 @@ def forecast_failure(view: StepView) -> tuple[str, str] | None:
     if view.name == POST_FORECAST:
         return (occasion, "drawn but not posted, and a league admin discarded it; the draw "
                 "stands in the log channel, and nothing posts it again")
-    if view.name == DELETE_FORECAST:
-        message = result.get("message_id", view.payload.get("message_id"))
-        if "guild_id" in result and message is not None:
-            where = (f"https://discord.com/channels/{result['guild_id']}/"
-                     f"{result['channel_id']}/{message}")
-        else:
-            where = f"message {message} in <#{result.get('channel_id')}>"
-        return ("forecast channel", f"the Phase {phase} forecast could not be deleted, and a "
-                f"league admin discarded it; it is deleted with the round's clean-up a day after "
-                f"the race, or when the bot next starts once that has passed; delete it by hand "
-                f"sooner ({where}) if it should not stand")
     if view.name == standing_posts.DELETE_REPLACED and "forecast" in str(
         view.payload.get("what", "")
     ):
