@@ -146,7 +146,6 @@ async def test_a_paste_is_marked_at_once_and_saved_with_the_next_prompt_when_its
     assert MARK not in paste.marks
 
 
-REFUSED_UNLOGGED = "#439: a results paste refused at its turn writes no line to the log channel"
 TURN_AWAY_SEASON_UNBUILT = "#439: the turn-away line does not name the season"
 
 
@@ -295,12 +294,7 @@ async def test_a_refused_prompt_stops_the_queue_with_the_session_saved(tmp_path,
     assert await stopped_job(league.db_path, "league") is None
 
 
-@pytest.mark.parametrize("why", [
-    pytest.param("closed by a cancellation",
-                 marks=pytest.mark.xfail(strict=True, reason=REFUSED_UNLOGGED)),
-    pytest.param("held by an amendment",
-                 marks=pytest.mark.xfail(strict=True, reason=REFUSED_UNLOGGED)),
-])
+@pytest.mark.parametrize("why", ["closed by a cancellation", "held by an amendment"])
 async def test_a_paste_in_a_channel_held_by_an_amendment_or_closed_by_a_cancellation_is_refused_when_it_runs(
     tmp_path, monkeypatch, why,
 ):
@@ -334,7 +328,6 @@ async def test_a_paste_in_a_channel_held_by_an_amendment_or_closed_by_a_cancella
     )
 
 
-@pytest.mark.xfail(strict=True, reason=REFUSED_UNLOGGED)
 async def test_a_paste_whose_round_is_cancelled_before_its_turn_is_logged(tmp_path, monkeypatch):
     """The admin pastes round 3's qualifying; before its turn comes, round 3 is cancelled. When
     the turn runs nothing is saved, the channel is told the round has been cancelled, and one
@@ -352,7 +345,6 @@ async def test_a_paste_whose_round_is_cancelled_before_its_turn_is_logged(tmp_pa
     _names_the_paste(line, content=QUALI_PASTE, reason="Round 3 has been cancelled")
 
 
-@pytest.mark.xfail(strict=True, reason=REFUSED_UNLOGGED)
 async def test_a_fastest_lap_override_refused_is_logged(tmp_path, monkeypatch):
     """The qualifying is saved; the admin pastes the race with "FL: <@103>", Charles, who is not
     among its finishers. When its turn comes nothing is saved, the channel is told the override is
@@ -705,7 +697,6 @@ async def test_a_configuration_choice_saves_the_session_and_moves_on(tmp_path, m
 PRESSER = 78
 
 
-@pytest.mark.xfail(strict=True, reason=REFUSED_UNLOGGED)
 async def test_a_paste_held_once_its_configuration_is_chosen_is_logged_naming_the_presser(
     tmp_path, monkeypatch,
 ):

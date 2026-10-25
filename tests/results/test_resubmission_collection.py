@@ -327,9 +327,6 @@ async def test_a_resubmitted_paste_is_refused_while_another_round_is_amended(
     assert await _drafts(league) == [(QUALIFYING_TYPE.value, "ACTIVE")]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: a resubmitted paste held by an amendment writes no line to the log",
-)
 async def test_a_resubmitted_paste_held_by_an_amendment_is_logged(tmp_path, monkeypatch):
     """Round 2 of Pro is being amended when Alex types Qualifying for round 3's resubmission:
     the paste is refused, and one `RESULT_SUBMISSION_REJECTED` line is logged naming season 1,

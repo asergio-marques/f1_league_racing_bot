@@ -11,7 +11,9 @@ and `results.submission.turn` is asked for it, as the member's, on the round's o
 (``channel:<submission channel>``). Nothing waits in memory for the next paste. When its turn comes
 the change judges the paste against the session the round then expects (`judge`): a refused one is
 answered with its errors, logged as rejected (results spec :257) and the session asked for again;
-an accepted one is held back while another round of the division is being amended, or the
+so is one whose round was cancelled or whose fastest-lap override is not among the finishers, and
+every paste held back or refused at its save is logged the same way, with a `reason:` line
+(results spec :261). An accepted one is held back while another round of the division is being amended, or the
 submission has been closed by a cancellation (`settle`), else saved scored by the season's points
 configuration (`save_session`), the channel told so and asked for the next session. The save reads
 again, inside itself, whether a cancellation's save has come since the turn was settled; where it
@@ -59,7 +61,7 @@ from leaguebot.core.services.change_queue import (
     StepContext,
 )
 from leaguebot.core.utils.channel_guard import is_league_manager
-from leaguebot.core.utils.log_lines import refusal_line
+from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import result_submission_service as submissions
@@ -195,6 +197,37 @@ def _say(channel_id: int, text: str) -> PlannedStep:
     return PlannedStep(POST, {"channel_id": channel_id, "text": text})
 
 
+def _refused_paste_line(
+    named: str, *, season_number: object, division_name: object, round_number: object,
+    session: str, content: str, reason: str | None = None,
+) -> str:
+    """The log channel's line for a results paste refused at its turn (results spec :261): who
+    pasted it, the season, division, round and session, the paste as typed (to 500 characters)
+    and, where *reason* is given, a `reason:` line beneath the round's.
+
+    A paste refused for its errors gives no reason, since the errors are its reason and the
+    channel was told them; every other refusal gives the first line of what the channel was told.
+    """
+    why = "" if reason is None else f"  reason: {reason}\n"
+    return (
+        f"{named} | RESULT_SUBMISSION_REJECTED | \n"
+        f"  season: {season_number}, division: {division_name!r}\n"
+        f"  round: {round_number}, session: {session}\n"
+        f"{why}"
+        f"  input:\n```\n{content[:500]}\n```"
+    )
+
+
+def _refusal_of(named: str, payload: dict[str, Any], told: str) -> str:
+    """The line for the paste a settled turn's *payload* carries, refused with what the channel
+    was *told*."""
+    return _refused_paste_line(
+        named, season_number=payload["season_number"], division_name=payload["division_name"],
+        round_number=payload["round_number"], session=str(payload["session_type"]),
+        content=str(payload["input"]), reason=reply_reason(told),
+    )
+
+
 def turn_steps(
     queue: ChangeQueue, server_config: ServerConfig, *, resubmission: bool = False
 ) -> dict[str, Step]:
@@ -222,18 +255,33 @@ def turn_steps(
             return StepResult(result={"judged": False}, then=clear)
         round_id = int(row["round_id"])
         label = _label(expected, row)
+        content = str(payload["content"]).strip()
+        session_value = expected.value
+        season_number, division_name = row["season_number"], row["division_name"]
+        round_number = row["round_number"]
+
+        def refused(reason: str | None = None) -> str:
+            return _refused_paste_line(
+                ctx.named, season_number=season_number, division_name=division_name,
+                round_number=round_number, session=session_value, content=content, reason=reason,
+            )
+
         closed = await submissions.closed_by_cancellation(ctx.db_path, round_id)
         if closed:
-            return StepResult(result={"refused": "closed"}, then=(_say(channel_id, closed), *clear))
-        content = str(payload["content"]).strip()
+            return StepResult(
+                result={"refused": "closed"}, lines=(refused(reply_reason(closed)),),
+                then=(_say(channel_id, closed), *clear),
+            )
         base: dict[str, Any] = {
             "channel_id": channel_id,
             "round_id": round_id,
             "division_id": int(row["division_id"]),
             "season_id": int(row["season_id"]),
+            "season_number": int(row["season_number"]),
             "round_number": int(row["round_number"]),
             "division_name": row["division_name"],
             "session_type": expected.value,
+            "input": content[:500],
             "label": label,
             "submitted_by": int(payload["author_id"]),
             "mark": mark,
@@ -276,14 +324,8 @@ def turn_steps(
         )
         if errors:
             error_list = "\n".join(f"• {e}" for e in errors)
-            rejected = (
-                f"{ctx.named} | RESULT_SUBMISSION_REJECTED | \n"
-                f"  season: {row['season_number']}, division: {row['division_name']!r}\n"
-                f"  round: {row['round_number']}, session: {expected.value}\n"
-                f"  input:\n```\n{content[:500]}\n```"
-            )
             return StepResult(
-                result={"refused": "validation"}, lines=(rejected,),
+                result={"refused": "validation"}, lines=(refused(),),
                 then=(
                     _say(channel_id, f"❌ Validation failed:\n{error_list}\nPlease correct and resubmit."),
                     again, *clear,
@@ -292,6 +334,7 @@ def turn_steps(
         if fl_override is not None and fl_override not in {r.driver_user_id for r in parsed}:
             return StepResult(
                 result={"refused": "fastest lap"},
+                lines=(refused(f"FL override <@{fl_override}> is not in the submitted results"),),
                 then=(
                     _say(
                         channel_id,
@@ -384,7 +427,10 @@ def turn_steps(
             )
         )
         if held:
-            return StepResult(result={"held": True}, then=(_say(channel_id, held),))
+            return StepResult(
+                result={"held": True}, lines=(_refusal_of(ctx.named, payload, held),),
+                then=(_say(channel_id, held),),
+            )
         return StepResult(
             result={"held": False},
             then=(PlannedStep(SAVE_DRAFT if resubmission else SAVE_SESSION, dict(payload)),),
