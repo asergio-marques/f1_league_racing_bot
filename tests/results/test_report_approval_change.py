@@ -1216,7 +1216,8 @@ async def test_a_role_change_discord_refuses_stops_the_queue_with_the_sanction_s
     assert await stopped_at(league) == "sanction_roles"
     assert league.attendance._calls("apply_sanction") == [("apply_sanction", MAX_PROFILE)]
     assert league.attendance._calls("announce_sanction") == []
-    assert f"changing <@{MAX}>'s roles for their autoreserve in **Pro**" in league.log()
+    # The log channel wraps every mention in code, so that it names without notifying.
+    assert f"changing `<@{MAX}>`'s roles for their autoreserve in **Pro**" in league.log()
 
     await retry_job(league.bot)
 
@@ -1235,6 +1236,16 @@ ROLES_NOT_CHANGED = (
     f"⚠️ The autoreserve of <@{MAX}> was applied but their roles were not changed. "
     "Take <@&5502> from them and give them <@&5503> by hand."
 )
+#: The same, as the log channel writes them: every mention wrapped in code, naming without
+#: notifying. A reply is not rewritten, and keeps them bare.
+ROLES_NOT_TAKEN_LOGGED = (
+    f"⚠️ The autosack of `<@{LEWIS}>` was applied but their roles were not taken back. "
+    "Take `<@&5501>` and `<@&5502>` from them by hand."
+)
+ROLES_NOT_CHANGED_LOGGED = (
+    f"⚠️ The autoreserve of `<@{MAX}>` was applied but their roles were not changed. "
+    "Take `<@&5502>` from them and give them `<@&5503>` by hand."
+)
 
 
 @pytest.mark.xfail(strict=True, reason=SANCTION_ROLE_JOBS_UNBUILT)
@@ -1244,7 +1255,7 @@ async def test_a_discarded_role_change_names_the_roles_to_change_by_hand_and_the
     """Lewis is owed an autosack and Max an autoreserve in Pro, and Discord refuses both role
     changes. A league admin discards each role job as it stops the queue. Both sanctions stand,
     both cards are posted, and the reply and the log name, for each driver, the roles to take or
-    give by hand, as role mentions."""
+    give by hand, as role mentions: bare in the reply, wrapped in code in the log."""
     league = await review_league(tmp_path, attendance=True)
     league.attendance.candidates = [candidate(LEWIS_PROFILE, LEWIS, "AUTOSACK"),
                                     candidate(MAX_PROFILE, MAX)]
@@ -1259,7 +1270,7 @@ async def test_a_discarded_role_change_names_the_roles_to_change_by_hand_and_the
                       if "The queue is stopped at job #" in line][-1])
         await discard_job(league.bot)
 
-    assert any(f"taking back <@{LEWIS}>'s roles for their autosack" in stop for stop in stops), (
+    assert any(f"taking back `<@{LEWIS}>`'s roles for their autosack" in stop for stop in stops), (
         "the stop on Lewis's role job does not name it"
     )
     assert await stopped_at(league) is None
@@ -1269,6 +1280,7 @@ async def test_a_discarded_role_change_names_the_roles_to_change_by_hand_and_the
     reply = updated_reply(interaction)
     for line in (ROLES_NOT_TAKEN, ROLES_NOT_CHANGED):
         assert line in reply
+    for line in (ROLES_NOT_TAKEN_LOGGED, ROLES_NOT_CHANGED_LOGGED):
         assert line in league.log()
 
 
@@ -1317,7 +1329,8 @@ async def test_a_discarded_check_leaves_the_autoreserve_unapplied_and_named_with
     reply = updated_reply(interaction)
     assert f"The autoreserve of <@{MAX}> was not applied" in reply
     assert "/attendance sync" in reply
-    assert f"The autoreserve of <@{MAX}> was not applied" in league.log()
+    # The log channel wraps the mention in code, so that it names without notifying.
+    assert f"The autoreserve of `<@{MAX}>` was not applied" in league.log()
 
 
 async def test_a_test_driver_s_sanction_plans_no_role_job(tmp_path):

@@ -847,4 +847,5 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
             "WHERE dsa.driver_profile_id = ?", (LEWIS_PROFILE,),
         )).fetchone()
     assert row["is_reserve"] == 1, "Lewis's autoreserve was not saved"
-    assert f"changing <@{LEWIS}>'s roles for their autoreserve in **Pro**" in _sheet_stop(league)
+    # The stop notice is a log line, whose mentions are wrapped in code to name without notifying.
+    assert f"changing `<@{LEWIS}>`'s roles for their autoreserve in **Pro**" in _sheet_stop(league)
