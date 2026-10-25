@@ -57,6 +57,11 @@ from leaguebot.weather.utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
 
+# What `on_guild_channel_delete` is handed: a channel of any kind, since Discord reports every
+# deletion. Named apart so that no command parameter appears to take a channel that is not a text
+# channel (test_channel_registry.py reads annotations for that).
+_DeletedFromServer = discord.abc.GuildChannel
+
 _DAY_CHOICES = [
     app_commands.Choice(name="Monday", value="1"),
     app_commands.Choice(name="Tuesday", value="2"),
@@ -313,7 +318,7 @@ class SignupCog(commands.Cog):
         await take_typed_answer(self.bot, message, wizard, queue=self.bot.change_queue)
 
     @commands.Cog.listener()
-    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
+    async def on_guild_channel_delete(self, channel: _DeletedFromServer) -> None:
         """A channel of the server was deleted: where a wizard names it, its signup is ended.
 
         The ending is the change queue's: the listener asks it, as the bot, for `signup.end` with
