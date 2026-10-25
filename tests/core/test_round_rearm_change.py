@@ -44,6 +44,10 @@ REARM_KIND = "season.round.rearm"
 ARMED_AGAIN = (
     "⏱️ The timed work of round 3 in **Pro** is armed again, `/round cancel` having been refused"
 )
+CLEAN_UPS_ARMED_AGAIN = (
+    "⏱️ The next-day clean-ups of round 3 in **Pro** are armed again, `/round cancel` having been "
+    "refused"
+)
 CANNOT_DISCARD = (
     "⛔ This job can't be discarded: without it round 3 in **Pro** would be left with no timed "
     "work, never run. Fix what stopped it and press **Retry**."
@@ -337,3 +341,22 @@ async def test_a_raced_round_s_clean_ups_already_due_run_at_once(tmp_path):
     assert all(mid not in checkin.messages for mid in CALL_MESSAGES)
     [row] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", R3)
     assert row["checkin_cleared"] == 1
+
+
+async def test_a_raced_round_s_clean_ups_log_line_reads_are_armed_again(tmp_path):
+    """Pro's round 3 is final, raced two hours ago, its timed work removed for a `/round cancel`
+    that was refused. Its re-arming, asked for its clean-ups alone, runs to its end, and the log
+    channel gets one line saying exactly that the next-day clean-ups of round 3 in **Pro** are
+    armed again, `/round cancel` having been refused."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    await league.write("UPDATE rounds SET status = 'FINAL' WHERE id = ?", R3)
+    await _place(league, hours=-2)
+
+    assert await _ask_rearm(league, cleanups_only=True) is not None
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
+    lines = [line.split("\n――", 1)[0]
+             for line in league.bot.log_channel.sent if "armed again" in line]
+    assert lines == [CLEAN_UPS_ARMED_AGAIN], league.bot.log_channel.sent
