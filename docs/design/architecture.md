@@ -601,11 +601,12 @@ moment a job was due, the handler its module provides for that kind of job (belo
 becomes of it: whether it runs late or is skipped, or whatever else its module's specification asks.
 The handler records a skip on its own module's record of the event (its own table, or its own
 columns on a core table), as a change on the queue like any other, so the late job, or the change it
-asks for, finds nothing due. Every job is armed with no limit on how late it may run
-(`misfire_grace_time=None`), so the scheduler never drops one on its own and its default never
-decides. What each kind does when missed is a rule a league notices, so it belongs to the
-specifications (the core specification's "When the bot stops", and the stewarding specification's
-[STW-RST-001] to [STW-RST-003]).
+asks for, finds nothing due. Every job is to be armed with no limit on how late it may run
+(`misfire_grace_time=None`), so that the scheduler never drops one on its own and its default
+grace never decides; the jobs armed otherwise are those the lateness check in
+`tests/repository/test_architecture_rules.py` lists. What each kind does when missed is a rule a
+league notices, so it belongs to the specifications (the core specification's "When the bot
+stops", and the stewarding specification's [STW-RST-001] to [STW-RST-003]).
 
 *Rejected:* declaring for each kind of job whether a missed one runs late or is skipped, for the
 sweep to apply, which puts a module's rule in core.
@@ -634,9 +635,9 @@ amendment's five minutes running out, a signup left unanswered for a day, a held
 24 hours, the review channel's lock warning taken down after eight seconds), a job of its own,
 after the one whose record saved the row the timer is keyed to, arms a one-off timer through the
 scheduler service (`SchedulerService.arm_once`, named from its kind and its row, so that arming it
-again replaces it). It is armed with no lateness limit, like every job, so one missed while the bot
-was down fires when it starts. The builder registers each kind's callback before the scheduler
-starts (`register_timer`). When the timer fires, its callback reads the row again and asks its
+again replaces it). It is armed with no lateness limit, so one missed while the bot was down fires
+when it starts. The builder registers each kind's callback before the scheduler starts
+(`register_timer`). When the timer fires, its callback reads the row again and asks its
 change of the queue, as the bot's, or asks nothing where the work is no longer due; a callback that
 raises is logged on the host alone.
 
