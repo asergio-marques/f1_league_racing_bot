@@ -822,8 +822,8 @@ async def test_a_press_made_while_the_first_press_s_edit_is_in_flight_is_refused
     """The season has two points configurations attached, and the admin's qualifying paste has
     posted the picker. The admin presses "Heavy", and while Discord has yet to answer that press's
     edit of the message, a second league manager (78) presses "Standard". His press does not
-    touch the message and is refused, seen by him alone; one choice is asked, and the qualifying
-    is saved scored by Heavy."""
+    touch the message and is refused, seen by him alone, saying the configuration is being
+    chosen, naming Heavy; one choice is asked, and the qualifying is saved scored by Heavy."""
     league = await _league(tmp_path, monkeypatch)
     league.roles_held[PRESSER] = {MANAGER_ROLE_ID}
     await _two_configs(league)
@@ -848,7 +848,7 @@ async def test_a_press_made_while_the_first_press_s_edit_is_in_flight_is_refused
 
     second.response.edit_message.assert_not_awaited()
     [told] = _private_texts(second)
-    assert told.startswith("⚠️") and "already been chosen" in told, told
+    assert told.startswith("⚠️") and "is being chosen" in told and HEAVY in told, told
     assert len([row for row in await change_rows(league.db_path)
                 if row["kind"] == CONFIG_KIND]) == 1
     assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", HEAVY)]

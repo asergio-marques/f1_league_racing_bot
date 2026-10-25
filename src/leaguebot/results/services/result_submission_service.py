@@ -2419,7 +2419,10 @@ class _ConfigSelectView(LeagueView):
         ask: tuple[str, dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(timeout=None)
+        #: The configuration claimed by the press in hand, or chosen.
         self.selected: str | None = None
+        #: Whether the claim is a choice made, not one still being made.
+        self._chosen = False
         self._config = config
         self._session = session
         self._ask = ask
@@ -2438,11 +2441,11 @@ class _ConfigSelectView(LeagueView):
                     )
                     return
                 if self.selected is not None:
+                    state = "has already been chosen" if self._chosen else "is being chosen"
                     await refuse(
                         interaction,
                         "⚠️ The points configuration for "
-                        f"{self._session or 'this session'} has already been chosen: "
-                        f"**{self.selected}**.",
+                        f"{self._session or 'this session'} {state}: **{self.selected}**.",
                         what=what,
                     )
                     return
@@ -2478,6 +2481,7 @@ class _ConfigSelectView(LeagueView):
                             chosen = await queue.ask(
                                 kind, payload, interaction=interaction, what=what
                             ) is not None
+                            self._chosen = chosen
                             return
                         await interaction.response.edit_message(
                             content=f"🔧 Config selected: **{_name}**", view=None
@@ -2486,8 +2490,10 @@ class _ConfigSelectView(LeagueView):
                     finally:
                         if not chosen:
                             self.selected = None
-                    await queue.ask(kind, payload, interaction=interaction, what=what)
+                    if await queue.ask(kind, payload, interaction=interaction, what=what):
+                        self._chosen = True
                     return
+                self._chosen = True
                 self.stop()
                 await interaction.response.defer()
                 await self._record_choice(interaction, what, _name)
