@@ -680,7 +680,9 @@ def forecast_failure(view: StepView) -> tuple[str, str] | None:
     Handed to core's amendment and season end through their hooks, so that each names a discarded
     weather job without importing weather. A discarded draw is made when the bot next starts, while
     its round is still to be run; a discarded post leaves the draw standing in the log channel and
-    nothing to post it again; a discarded deletion leaves the forecast to be deleted by hand.
+    nothing to post it again; a discarded deletion leaves the forecast to the round's clean-up a
+    day after the race (or the next start once that has passed), to be deleted by hand sooner if
+    it should not stand.
     """
     result = view.result or {}
     phase = view.payload.get("phase", result.get("phase"))
@@ -699,7 +701,9 @@ def forecast_failure(view: StepView) -> tuple[str, str] | None:
         else:
             where = f"message {message} in <#{result.get('channel_id')}>"
         return ("forecast channel", f"the Phase {phase} forecast could not be deleted, and a "
-                f"league admin discarded it; delete it by hand ({where})")
+                f"league admin discarded it; it is deleted with the round's clean-up a day after "
+                f"the race, or when the bot next starts once that has passed; delete it by hand "
+                f"sooner ({where}) if it should not stand")
     if view.name == standing_posts.DELETE_REPLACED and "forecast" in str(
         view.payload.get("what", "")
     ):

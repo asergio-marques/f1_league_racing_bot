@@ -1240,8 +1240,6 @@ async def test_a_delete_naming_no_division_for_a_round_that_is_gone_deletes_and_
     pytest.param({"phase": 2, "channel_id": 605, "message_id": 9302},
                  "message 9302 in <#605>", id="server unknown"),
 ])
-@pytest.mark.xfail(strict=True, reason="#439: a discarded forecast deletion still says only to "
-                   "delete it by hand, though the round's clean-up deletes it later")
 async def test_a_discarded_forecast_delete_names_the_forecast_to_delete_by_hand(result, where):
     """A league admin discards the deletion of a superseded Phase 2 forecast (9302 in channel
     605) that Discord refused: what is not done names the forecast channel, says it is deleted
