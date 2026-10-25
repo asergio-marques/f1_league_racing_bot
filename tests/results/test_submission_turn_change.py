@@ -611,7 +611,7 @@ def _picker(league: SeasonLeague) -> Any:
 
 
 def _choice(league: SeasonLeague, picker: Any, *, by: int = ADMIN_ID) -> Any:
-    """The press of "Heavy" on *picker* by *by*, the admin unless another is given: its
+    """A press of a button on *picker* by *by*, the admin unless another is given: its
     response, edits and follow-ups recorded; the acknowledgement, where it is a follow-up, is a
     message whose edits are recorded."""
     press = member_interaction(
@@ -634,13 +634,18 @@ def _choice(league: SeasonLeague, picker: Any, *, by: int = ADMIN_ID) -> Any:
     return press
 
 
-async def _press_heavy(league: SeasonLeague, *, by: int = ADMIN_ID) -> Any:
-    """*by*, the admin unless another is given, presses "Heavy" on the configuration picker;
-    gives the press."""
+def _button(picker: Any, label: str) -> Any:
+    """The button labelled *label* on *picker*."""
+    [button] = [item for item in picker.view.children if getattr(item, "label", None) == label]
+    return button
+
+
+async def _press(league: SeasonLeague, label: str = HEAVY, *, by: int = ADMIN_ID) -> Any:
+    """*by*, the admin unless another is given, presses *label*, "Heavy" unless another is given,
+    on the configuration picker; gives the press."""
     picker = _picker(league)
-    [button] = [item for item in picker.view.children if getattr(item, "label", None) == HEAVY]
     press = _choice(league, picker, by=by)
-    await button.callback(press)
+    await _button(picker, label).callback(press)
     return press
 
 
@@ -672,7 +677,7 @@ async def test_a_configuration_choice_saves_the_session_and_moves_on(tmp_path, m
     assert await _configs(league) == []
     assert "📋 Submit" not in _said(league)
 
-    await _press_heavy(league)
+    await _press(league)
     [choice] = [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND]
     assert choice["lane"] == LANE
     await run_queue(league.bot)
@@ -706,7 +711,7 @@ async def test_a_paste_held_once_its_configuration_is_chosen_is_logged_naming_th
         round_id(PRO, 2), league.clock.now.isoformat(),
     )
 
-    await _press_heavy(league, by=PRESSER)
+    await _press(league, by=PRESSER)
     await run_queue(league.bot)
 
     assert await _configs(league) == []
@@ -727,7 +732,7 @@ async def test_the_picker_is_edited_by_the_press_s_own_response(tmp_path, monkey
     await run_queue(league.bot)
     picker = _picker(league)
 
-    press = await _press_heavy(league)
+    press = await _press(league)
     await run_queue(league.bot)
 
     [edit] = press.response.edit_message.await_args_list
@@ -749,7 +754,7 @@ async def test_a_configuration_choice_is_acknowledged_and_updated_and_kept_while
     await run_queue(league.bot)
     holder = await block_queue(league, lane=LANE)
 
-    press = await _press_heavy(league)
+    press = await _press(league)
     await run_queue(league.bot)
 
     [acknowledged] = _private_texts(press)
@@ -761,3 +766,50 @@ async def test_a_configuration_choice_is_acknowledged_and_updated_and_kept_while
 
     assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", HEAVY)]
     assert press.acknowledged.edit.await_args_list or press.edit_original_response.await_args_list
+
+
+#: The season's other points configuration, attached beside "Heavy".
+STANDARD = "Standard"
+
+
+def _presser_refusals(lines: list[str]) -> list[str]:
+    """The refusal lines among *lines* naming the second league manager, whose mention the log
+    channel writes in code."""
+    return [line for line in lines if line.startswith("⛔") and f"`<@{PRESSER}>`" in line]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="a second press edits the picker to name its own choice before the queue refuses it",
+)
+@pytest.mark.parametrize("ran_first", [False, True], ids=["waiting", "ran"])
+async def test_a_second_press_of_the_picker_is_refused_privately_and_the_first_choice_stands(
+    tmp_path, monkeypatch, ran_first,
+):
+    """The season has two points configurations attached. The admin pastes round 3's qualifying
+    and its turn offers the configurations; the admin presses "Heavy". Then — while the choice
+    waits its turn, or once it has run — a second league manager (78) presses "Standard" on the
+    same picker. His press does not touch the message: he is told, seen by him alone, that the
+    configuration has already been chosen, naming Heavy, and one refusal line names him. One
+    choice is asked, and the qualifying is saved scored by Heavy."""
+    league = await _league(tmp_path, monkeypatch)
+    league.roles_held[PRESSER] = {MANAGER_ROLE_ID}
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+
+    await _press(league, HEAVY)
+    if ran_first:
+        await run_queue(league.bot)
+    second = await _press(league, STANDARD, by=PRESSER)
+    await run_queue(league.bot)
+
+    second.response.edit_message.assert_not_awaited()
+    [told] = _private_texts(second)
+    assert told.startswith("⚠️"), told
+    assert "already been chosen" in told and HEAVY in told, told
+    assert len([row for row in await change_rows(league.db_path)
+                if row["kind"] == CONFIG_KIND]) == 1
+    assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", HEAVY)]
+    lines = [*await queued_log_lines(league.db_path), *league.bot.log_channel.sent]
+    assert len(_presser_refusals(lines)) == 1, lines
