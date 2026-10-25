@@ -172,16 +172,6 @@ class ConfigService:
             await db.commit()
             return cursor.rowcount > 0
 
-    async def release_claim(self) -> None:
-        """Free the claim on the league's server: clear it and the four settings.
-
-        The row stays, and with it test mode and the module flags; see the module docstring.
-        `/bot pack` runs the same statement inside its own transaction.
-        """
-        async with get_connection(self._db_path) as db:
-            await db.execute(RELEASE_CLAIM_SQL)
-            await db.commit()
-
     # ------------------------------------------------------------------
     # Validation helpers (require a live guild object)
     # ------------------------------------------------------------------
