@@ -429,23 +429,60 @@ def test_as_text_channel_hands_back_the_channel_it_was_given():
     assert as_text_channel(None) is None
 
 
-def test_every_command_that_sets_a_channel_takes_a_text_channel():
-    """What makes `as_text_channel` true: a channel is only ever set as a text channel.
+def _is_listener(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Whether *node* is an event listener, whose parameters' types Discord fixes."""
+    return any(
+        ast.unparse(decorator).split("(")[0] == "commands.Cog.listener"
+        for decorator in node.decorator_list
+    )
 
-    A command taking any other kind of channel would store an id that `as_text_channel` then
-    calls a text channel, and the check would believe it.
-    """
-    offenders = sorted(
-        f"{path.relative_to(SRC).as_posix()}:{arg.lineno} {arg.arg}: {ast.unparse(arg.annotation)}"
-        for path in sorted(SRC.glob("leaguebot/*/cogs/*.py"))
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+
+def _channel_offenders(source: str, named: str) -> list[str]:
+    """Every parameter of a function in *source*, a cog named *named*, annotated as a channel but
+    not a text channel, an event listener's excepted."""
+    return sorted(
+        f"{named}:{arg.lineno} {arg.arg}: {ast.unparse(arg.annotation)}"
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not _is_listener(node)
         for arg in node.args.args + node.args.kwonlyargs
         if arg.annotation is not None
         and "Channel" in ast.unparse(arg.annotation)
         and ast.unparse(arg.annotation).replace(" | None", "") != "discord.TextChannel"
     )
+
+
+def test_every_command_that_sets_a_channel_takes_a_text_channel():
+    """What makes `as_text_channel` true: a channel is only ever set as a text channel.
+
+    A command taking any other kind of channel would store an id that `as_text_channel` then
+    calls a text channel, and the check would believe it. An event listener sets nothing and is
+    handed what Discord reports, so its parameters are not read: `on_guild_channel_delete` is
+    handed a channel of any kind.
+    """
+    offenders = [
+        offender
+        for path in sorted(SRC.glob("leaguebot/*/cogs/*.py"))
+        for offender in _channel_offenders(
+            path.read_text(encoding="utf-8"), path.relative_to(SRC).as_posix()
+        )
+    ]
     assert offenders == []
+
+
+def test_the_channel_check_passes_a_listener_and_no_command():
+    """The listener's exception reaches no command: a command taking a channel of any kind is
+    named, the same parameter on a listener is not."""
+    source = (
+        "class Cog(commands.Cog):\n"
+        "    @commands.Cog.listener()\n"
+        "    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel): ...\n"
+        "    @app_commands.command()\n"
+        "    async def set_channel(self, interaction, channel: discord.abc.GuildChannel): ...\n"
+        "    @app_commands.command()\n"
+        "    async def set_text(self, interaction, channel: discord.TextChannel | None): ...\n"
+    )
+
+    assert _channel_offenders(source, "cog.py") == ["cog.py:5 channel: discord.abc.GuildChannel"]
 
 
 def test_the_bot_makes_no_channel_but_a_text_channel():
