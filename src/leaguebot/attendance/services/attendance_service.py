@@ -222,11 +222,6 @@ class AttendanceService:
         assert result is not None
         return result
 
-    async def delete_division_configs(self) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute("DELETE FROM attendance_division_config")
-            await db.commit()
-
     async def switch_off_on(self, db: aiosqlite.Connection) -> bool:
         """Turn the module off on *db* without committing, and say whether it was on.
 
