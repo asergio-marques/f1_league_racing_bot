@@ -630,8 +630,9 @@ def _round_change(
         weather = judgement["windows"]["weather"]
         weather_on = await modules.is_weather_enabled()
         if rearm and ctx.payload.get("cleanups_only"):
-            # A round already raced: only the clean-ups of a day after it are owed, armed through
-            # the scheduler and, where the day has come, run as the restart's catch-up runs them.
+            # A round raced, or ended cancelled as not held: only the clean-ups of a day after it
+            # are owed, armed through the scheduler and, where the day has come, run as the
+            # restart's catch-up runs them.
             check_in_on = (
                 judgement["windows"]["attendance"] is not None
                 and await modules.is_attendance_enabled()

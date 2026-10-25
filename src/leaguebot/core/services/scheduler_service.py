@@ -784,10 +784,10 @@ class SchedulerService:
         ``cleanup`` deletes the round's weather forecasts and ``rsvp_cleanup`` its check-in call,
         last notice and distribution message; *forecast* and *check_in* choose which are armed
         (``schedule_round`` arms the first alone, ``schedule_attendance_round`` the second, and
-        a refused cancellation arms both for a round already raced, #439). The forecast's is
-        armed whatever the hour, as ever; the check-in's only while its moment is still ahead,
-        the restart's catch-up taking one already past (`_recover_missed_cleanups`).
-        Both replace a job of the same id.
+        a refused cancellation arms both for a round raced, or ended cancelled as not held,
+        #439). The forecast's is armed whatever the hour, as ever; the check-in's only while its
+        moment is still ahead, the restart's catch-up taking one already past
+        (`_recover_missed_cleanups`). Both replace a job of the same id.
         """
         scheduled_at = rnd.scheduled_at
         if scheduled_at.tzinfo is None:

@@ -6,11 +6,13 @@ imports nothing of attendance: the change types call these methods and attendanc
 `bot.attendance_after_review` and declared on `LeagueBot`.
 
 **Each method checks attendance's switch itself and does nothing while it is off**
-(architecture.md, "How modules and core fit together"), save `change_sanction_roles`, which acts
-whatever the switch says: a sanction already saved is owed its roles. The writers read the switch
-on the connection they are handed. **The writers write on the save they are handed and commit nothing**, so the round's
-attendance lands with the penalties and points or not at all. **The posting methods raise**
-`StepFailedOnDiscord` where they could not post, for the queue to stop on and try again.
+(architecture.md, "How modules and core fit together"), save three: `enabled` reports the switch,
+`sync_hint` reads none, and `change_sanction_roles` acts whatever it says, a sanction already saved
+being owed its roles (the attendance specification's "Sanctions that do not apply"). The writers
+read the switch on the connection they are handed. **The writers write on the save they are handed
+and commit nothing**, so the round's attendance lands with the penalties and points or not at all.
+**The posting methods raise** `StepFailedOnDiscord` where they could not post, for the queue to
+stop on and try again.
 """
 from __future__ import annotations
 
@@ -115,7 +117,8 @@ class AttendanceAfterReview(Protocol):
         """Change the roles of a driver whose sanction was saved: take *revoke* and give *grant*,
         less what the driver is entitled to as they stand now (so a retry after a manager
         placed them again keeps the roles they hold). **Acts whatever attendance's switch says**,
-        the one method that does: a sanction already saved is owed its roles. Raises
+        which `enabled` reports and `sync_hint` never reads: a sanction already saved is owed its
+        roles (the attendance specification's "Sanctions that do not apply"). Raises
         `StepFailedOnDiscord` where Discord refuses, where the member cannot be fetched for any
         reason but absence, or where a role to give is no longer on the server; returns
         ``{"absent": True}`` for a member who left the server."""

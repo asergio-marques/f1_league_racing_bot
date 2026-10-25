@@ -7,11 +7,11 @@ channel, posting) and never looks another service up on it: the placement servic
 was handed, and attendance's switch is read from the database, on the connection a writer is
 handed.
 
-**Each method does nothing while attendance is off**, save `change_sanction_roles`, which acts
-whatever the switch says because a sanction already saved is owed its roles, and `enabled` says
-whether it is, for the
-one job of results' own that serves attendance alone (the heading over the sanction cards). A
-writer writes on the save it is handed and commits nothing, so a fault in the attendance fails
+**Each method does nothing while attendance is off**, save three: `enabled` reports the switch,
+for the one job of results' own that serves attendance alone (the heading over the sanction cards);
+`sync_hint` reads none; and `change_sanction_roles` acts whatever it says, a sanction already saved
+being owed its roles (the attendance specification's "Sanctions that do not apply"). A writer
+writes on the save it is handed and commits nothing, so a fault in the attendance fails
 the approval whole. An amendment's recalculation rebuilds the amended round's attended flags both
 ways (FR-028); the first pass records upgrade-only (FR-003).
 
@@ -169,9 +169,9 @@ class AttendanceAfterReview:
     async def change_sanction_roles(
         self, user_id: int, profile_id: int, *, revoke: list[int], grant: list[int]
     ) -> dict[str, Any]:
-        # The one method that acts whatever attendance's switch says: a sanction already saved
-        # is owed its roles even once attendance is turned off (the attendance specification's
-        # "Sanctions that do not apply").
+        # Acts whatever attendance's switch says, which `enabled` reports and `sync_hint` never
+        # reads: a sanction already saved is owed its roles even once attendance is turned off
+        # (the attendance specification's "Sanctions that do not apply").
         guild = await self._guild()
         entitled = await self._placement.driver_role_ids(profile_id)
         to_revoke = [role_id for role_id in revoke if role_id not in entitled]
