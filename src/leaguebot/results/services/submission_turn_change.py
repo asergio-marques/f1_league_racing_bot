@@ -642,6 +642,7 @@ def turn_steps(
                 RESUBMISSION_CONFIG_KIND if resubmission else CONFIG_KIND,
                 dict(payload["settle"]),
             ),
+            text=str(payload["text"]),
         )
 
     async def describe_judge(_ctx: StepContext) -> str:

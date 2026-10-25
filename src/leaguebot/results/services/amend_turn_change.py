@@ -395,6 +395,7 @@ def turn_steps(
             list(payload["config_names"]), await server_config(),
             session=str(payload["session"]),
             ask=(CONFIG_KIND, dict(payload["draft"])),
+            text=str(payload["text"]),
         )
 
     async def describe_judge(_ctx: StepContext) -> str:

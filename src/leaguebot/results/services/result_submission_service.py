@@ -2400,14 +2400,20 @@ class _ConfigSelectView(LeagueView):
 
     **The first press chooses** (results spec, "Submitting round results"). It claims the
     choice (`selected`) before anything is awaited, so a later press — made while the first
-    press's edit of the message is still on its way to Discord, or on a client still showing the
-    buttons — is refused by the view itself, seen by its presser alone, naming the configuration
-    chosen, and never edits the message, which so names the configuration the queue is asked for.
-    The claim is released only where nothing was chosen and the buttons stay up: where the edit
-    fails, which the press raises, and where the queue's check refuses the choice. That check is
-    made before the edit, so that a press the queue would refuse (an amendment's, pressed after
-    its five minutes) leaves the message alone; the refusal is the queue's own, its ask checking
-    again. A claim refused by the queue after the edit is kept, the buttons being down by then.
+    press's check or edit is still on its way, or on a client still showing the buttons — is
+    refused by the view itself, seen by its presser alone, naming the configuration claimed, and
+    never edits the message. It is told the configuration is being chosen while the choice is
+    still being made, and that it has been chosen once it is (`_chosen`): the edit landed and the
+    queue took the choice. The message the press edits names the press's choice, and is put back
+    to the picker — its text, kept when the view is built, and its buttons — where the queue then
+    refuses the choice or fails on it.
+
+    The claim is released wherever the choice is not made, a fault included: where the queue's
+    check fails or refuses the choice, where the edit fails, and where the queue's ask, after the
+    edit, refuses the choice or fails. The check is made before the edit, so that a press the
+    queue would refuse (an amendment's, pressed after its five minutes) leaves the message alone;
+    the refusal is the queue's own, its ask checking again. The claim is released only once the
+    message is put back, so that no press chooses while the picker is being restored over it.
     """
 
     def __init__(
@@ -2417,12 +2423,15 @@ class _ConfigSelectView(LeagueView):
         *,
         session: str | None = None,
         ask: tuple[str, dict[str, Any]] | None = None,
+        text: str | None = None,
     ) -> None:
         super().__init__(timeout=None)
         #: The configuration claimed by the press in hand, or chosen.
         self.selected: str | None = None
         #: Whether the claim is a choice made, not one still being made.
         self._chosen = False
+        #: The text the picker is posted with, which a press puts back.
+        self._text = text
         self._config = config
         self._session = session
         self._ask = ask
@@ -2471,8 +2480,8 @@ class _ConfigSelectView(LeagueView):
                         ),
                     }
                     # Whether the choice was made. Until it is, the claim is released on every
-                    # way out, a fault included: the buttons are still up and nothing was
-                    # asked, so another press may choose.
+                    # way out, a fault included: the buttons are still up, or put back, and
+                    # nothing was asked, so another press may choose.
                     chosen = False
                     try:
                         if (await queue.check(kind, payload)).kind is not VerdictKind.GO:
@@ -2481,18 +2490,27 @@ class _ConfigSelectView(LeagueView):
                             chosen = await queue.ask(
                                 kind, payload, interaction=interaction, what=what
                             ) is not None
-                            self._chosen = chosen
                             return
                         await interaction.response.edit_message(
                             content=f"🔧 Config selected: **{_name}**", view=None
                         )
-                        chosen = True
-                    finally:
+                        try:
+                            chosen = await queue.ask(
+                                kind, payload, interaction=interaction, what=what
+                            ) is not None
+                        except Exception:
+                            await self._put_back(interaction)
+                            raise
                         if not chosen:
+                            await self._put_back(interaction)
+                        return
+                    finally:
+                        # Released only once the message is put back, so that no press chooses
+                        # while the picker is being restored over its edit.
+                        if chosen:
+                            self._chosen = True
+                        else:
                             self.selected = None
-                    if await queue.ask(kind, payload, interaction=interaction, what=what):
-                        self._chosen = True
-                    return
                 self._chosen = True
                 self.stop()
                 await interaction.response.defer()
@@ -2505,6 +2523,13 @@ class _ConfigSelectView(LeagueView):
                 on_press=_cb,
             )
             self.add_item(button)
+
+    async def _put_back(self, interaction: discord.Interaction) -> None:
+        """Edit the message pressed back to the picker, its text and its buttons, where the
+        press's edit took them down but the queue did not take the choice."""
+        message = getattr(interaction, "message", None)
+        content = self._text if self._text is not None else getattr(message, "content", None)
+        await interaction.edit_original_response(content=content, view=self)
 
     def _what(self, name: str) -> str:
         """The button as the log channel names it, with the choice it belongs to."""

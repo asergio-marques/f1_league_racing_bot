@@ -951,8 +951,6 @@ async def test_a_picker_whose_check_fails_can_be_pressed_again(tmp_path, monkeyp
     await _chooses_again(league)
 
 
-@pytest.mark.xfail(strict=True, reason="a choice the queue's ask refuses after the edit leaves "
-                                       "the message saying it was chosen, its buttons gone")
 async def test_a_picker_whose_ask_is_refused_after_its_edit_is_put_back(tmp_path, monkeypatch):
     """The season has two points configurations attached, and the admin's qualifying paste has
     posted the picker. The admin presses "Heavy": the queue's check lets the choice through and
@@ -978,8 +976,6 @@ async def test_a_picker_whose_ask_is_refused_after_its_edit_is_put_back(tmp_path
     await _chooses_again(league)
 
 
-@pytest.mark.xfail(strict=True, reason="a choice whose ask fails after the edit leaves the "
-                                       "message saying it was chosen, its buttons gone")
 async def test_a_picker_whose_ask_fails_after_its_edit_is_put_back(tmp_path, monkeypatch):
     """The season has two points configurations attached, and the admin's qualifying paste has
     posted the picker. The admin presses "Heavy": the press edits the message, but the queue's
