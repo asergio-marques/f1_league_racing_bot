@@ -583,3 +583,39 @@ async def test_a_lapse_whose_server_is_out_of_cache_stops_rather_than_passing_th
     assert f"<@{REVIEWER}>" in _posted(league)
     assert len(_review_panels_standing(league)) == 1
     assert CORRECTION_LAPSE in league.log(), league.log()
+
+
+async def test_a_lapse_whose_wizard_names_no_channel_ends_the_signup(tmp_path):
+    """Manager 77 asked for a correction of Kimi's signup, but Kimi's wizard names no signup
+    channel. The five minutes run out and the queue runs: with nowhere to post a fresh review
+    panel, the lapse ends his signup as it does for a gone channel, so he is Not Signed Up and
+    not left in Pending Admin Approval, his wizard Unengaged. Nothing is posted in his channel,
+    no record says he is back in the approval queue, and the ending is written once, naming Kimi
+    with no channel and saying his signup channel was gone. The queue is not stopped."""
+    league = await _league(tmp_path)
+    await league.write(
+        "UPDATE signup_wizard_records SET signup_channel_id = NULL WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+
+    await _fire_the_timer(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _state(league) == "NOT_SIGNED_UP"
+    [wizard] = await league.rows(
+        "SELECT wizard_state FROM signup_wizard_records WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    assert wizard["wizard_state"] == "UNENGAGED"
+    assert _panels(league) == []
+    assert _posted(league) == ""
+    log = league.log()
+    assert "back in the approval queue" not in log, log
+    assert log.count("| Signup | Ended") == 1, log
+    assert log.count(
+        f"Kimi (`<@{SIGNING_UP}>`) | Signup | Ended\n  Their signup channel was gone when their "
+        "review panel was due, so their signup ended. They may press Sign Up again while signups "
+        "are open."
+    ) == 1, log
+    assert "channel:" not in log, log
