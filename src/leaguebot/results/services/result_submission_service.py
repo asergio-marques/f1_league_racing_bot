@@ -37,6 +37,7 @@ from leaguebot.image.utils.tyre_compound import (
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.results.services.results_post_service import _parse_ids
 
 if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
@@ -2999,23 +3000,9 @@ async def replace_round_results_on(
     )
     unplaced: list[int] = []
     for each in earlier.values():
-        ids = _stored_message_ids(each["results_message_ids"]) or [int(each["results_message_id"])]
+        ids = _parse_ids(each["results_message_ids"]) or [int(each["results_message_id"])]
         unplaced.extend(ids)
     return unplaced
-
-
-def _stored_message_ids(raw: str | None) -> list[int]:
-    """The message ids a session's `results_message_ids` records; none where it holds nothing a
-    list of ids can be read from."""
-    if not raw:
-        return []
-    try:
-        ids = _json.loads(raw)
-    except (TypeError, ValueError):
-        return []
-    if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
-        return []
-    return ids
 
 
 async def resubmission_drafts_on(
