@@ -16,6 +16,7 @@ Charles (103) races in Am.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -813,3 +814,45 @@ async def test_a_second_press_of_the_picker_is_refused_privately_and_the_first_c
     assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", HEAVY)]
     lines = [*await queued_log_lines(league.db_path), *league.bot.log_channel.sent]
     assert len(_presser_refusals(lines)) == 1, lines
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="a press made while the first press's edit is in flight edits the picker and is asked",
+)
+async def test_a_press_made_while_the_first_press_s_edit_is_in_flight_is_refused(
+    tmp_path, monkeypatch,
+):
+    """The season has two points configurations attached, and the admin's qualifying paste has
+    posted the picker. The admin presses "Heavy", and while Discord has yet to answer that press's
+    edit of the message, a second league manager (78) presses "Standard". His press does not
+    touch the message and is refused, seen by him alone; one choice is asked, and the qualifying
+    is saved scored by Heavy."""
+    league = await _league(tmp_path, monkeypatch)
+    league.roles_held[PRESSER] = {MANAGER_ROLE_ID}
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    picker = _picker(league)
+    first = _choice(league, picker)
+    begun, answered = asyncio.Event(), asyncio.Event()
+
+    async def _edit_in_flight(*_args: Any, **_kwargs: Any) -> None:
+        begun.set()
+        await answered.wait()
+
+    first.response.edit_message = AsyncMock(side_effect=_edit_in_flight)
+    pressing = asyncio.create_task(_button(picker, HEAVY).callback(first))
+    await asyncio.wait_for(begun.wait(), timeout=5)
+
+    second = await _press(league, STANDARD, by=PRESSER)
+    answered.set()
+    await pressing
+    await run_queue(league.bot)
+
+    second.response.edit_message.assert_not_awaited()
+    [told] = _private_texts(second)
+    assert told.startswith("⚠️") and "already been chosen" in told, told
+    assert len([row for row in await change_rows(league.db_path)
+                if row["kind"] == CONFIG_KIND]) == 1
+    assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", HEAVY)]
