@@ -446,7 +446,9 @@ def turn_steps(
             # A cancellation's save came between the settling and this save: both hold the write
             # lock in turn, so it is read here and the session is not saved against its round.
             return StepResult(
-                result={"saved": False, "closed": True}, then=(_say(channel_id, closed),),
+                result={"saved": False, "closed": True},
+                lines=(_refusal_of(ctx.named, payload, closed),),
+                then=(_say(channel_id, closed),),
             )
         already = await (
             await db.execute(

@@ -417,13 +417,6 @@ async def test_a_cancellation_saved_between_the_settling_and_the_save_saves_no_s
     assert await stopped_job(league.db_path) is None
 
 
-SAVE_REFUSAL_UNLOGGED = (
-    "#439: a session's save neither reads again whether its round was cancelled nor logs the "
-    "refusal"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=SAVE_REFUSAL_UNLOGGED)
 async def test_a_session_refused_at_its_save_for_a_cancellation_is_logged(tmp_path, monkeypatch):
     """As above: round 3's qualifying is judged and settled, then a cancellation's save records
     round 3 cancelled before the session's save runs. The save saves nothing, and one
