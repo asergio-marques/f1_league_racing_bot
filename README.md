@@ -1197,7 +1197,7 @@ Name the driver by any of their accounts: `old_user` where it is still in the se
 
 Places an Unassigned driver into a specific team seat within a division. Available only while the season is in **placements**, or mid-season while the drivers of a closed signup window are being placed — and then only for a driver who holds no confirmed placement. A driver whose placement is confirmed is moved or released instead.
 
-**A placement stands outside the championship until placements are confirmed.** No role is granted and no lineup posted when you assign; the division and team roles are granted, and the lineups posted on the change queue, when placements are confirmed from the review.
+**A placement stands outside the championship until placements are confirmed.** No role is granted and no lineup posted when you assign; the division and team roles are granted (or the division's alone where the team has no role set), and the lineups posted on the change queue, when placements are confirmed from the review.
 
 A driver may hold at most one seat per division. Non-Reserve teams run out of seats; the Reserve team always has room.
 

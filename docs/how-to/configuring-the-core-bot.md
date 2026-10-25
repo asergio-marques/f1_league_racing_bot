@@ -526,7 +526,7 @@ The approval is acknowledged at once ("⏳ Approving season 3 …", naming its f
 
 1. **Saves the season** in one go — the calendar's sessions, the confirmed placements, the points configurations and the season's state. Either all of it is saved or none of it is.
 2. **Arms the season's timed work** — forecasts with weather on, every round's result collection whatever modules you run, and check-in calls with attendance on. It is done after the save, so a season that is not approved has nothing armed.
-3. **Confirms every placement's roles**: division and team roles are granted to every placed driver, one job each.
+3. **Confirms every placement's roles**: division and team roles are granted to every placed driver, or the division's alone where the team has no role set, one job each.
 4. **Posts the lineup** to each division's lineup channel.
 5. **Posts the calendar** to each division's calendar channel.
 6. **Posts the opening classification** to each division's standings channel, and the opening sheet to its attendance channel — every driver and team on zero, with the season's rounds drawn empty beside them.
