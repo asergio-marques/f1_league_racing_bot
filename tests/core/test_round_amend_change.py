@@ -58,6 +58,7 @@ from tests.support.season_league import (
     profile_id,
     round_id,
 )
+from tests.support.mentions import NOBODY, notified
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
@@ -511,6 +512,22 @@ async def test_a_withdrawn_forecast_discord_will_not_delete_stops_the_queue_keep
              "and a league admin discarded it; delete it by hand (")
     [bullet] = [line for line in outcome.splitlines() if named in line]
     assert "8001" in bullet
+
+
+@pytest.mark.xfail(strict=True, reason="#441: the invalidation notice leaves whom it notifies to the bot's default")
+async def test_the_invalidation_notice_notifies_nobody(tmp_path):
+    """Weather on; round 3's posted phase 1 forecast is withdrawn by moving the round ninety-one
+    days on. The notice in Pro's forecast channel that the forecasts no longer stand notifies
+    nobody."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await posted_forecast(league, R3, 1, 8001)
+    await _amended(league, scheduled_at=_at(league, days=91))
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    [call] = league.channel(PRO_CH.forecast).send.await_args_list
+    assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
 
 
 async def test_an_invalidation_notice_discord_refuses_stops_the_queue(tmp_path):

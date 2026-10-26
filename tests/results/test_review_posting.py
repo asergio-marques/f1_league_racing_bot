@@ -50,6 +50,7 @@ from tests.support.change_queue import (
     stopped_job,
     updated_reply,
 )
+from tests.support.mentions import NOBODY, notified
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 1
@@ -1246,6 +1247,18 @@ async def test_the_batch_notice_brackets_the_republication(tmp_path):
               if ch in (RESULTS_CHANNEL, STANDINGS_CHANNEL)]
     assert tables and first < min(tables) and max(tables) < last
     assert league.channel(SUBMISSION_CHANNEL).messages == {}
+
+
+@pytest.mark.xfail(strict=True, reason="#441: the drawing notice leaves whom it notifies to the bot's default")
+async def test_the_drawing_notice_notifies_nobody(tmp_path):
+    """A round's results are posted again with the drawing notice. The notice in the round's
+    results submission channel notifies nobody."""
+    league = await _league(tmp_path)
+    await _ask(league, notice=True)
+    await run_queue(league.bot)
+
+    [call] = league.channel(SUBMISSION_CHANNEL).send.await_args_list
+    assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
 
 
 async def test_a_batch_notice_discord_refuses_stops_the_queue_like_any_job(tmp_path):

@@ -57,6 +57,7 @@ from tests.support.season_league import (
     reply,
     round_id,
 )
+from tests.support.mentions import notified
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 CONFIRMED = "✅ 2 placement(s) confirmed. The season is ongoing again."
@@ -636,6 +637,27 @@ async def test_a_discarded_rejudgement_confirms_nothing(tmp_path, monkeypatch):
 
 
 # ── The review's channel ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.xfail(strict=True, reason="#441: the review channel's line leaves whom it notifies to the bot's default")
+async def test_the_confirmation_s_review_channel_line_notifies_only_the_member_it_names(
+    tmp_path, monkeypatch,
+):
+    """The league admin confirms season 3's mid-season placements, and the bot restarts before
+    their reply is updated. The line telling the review's channel the placements are confirmed
+    mentions the admin, and may notify them alone: no role, no other member, and not
+    @everyone."""
+    league = await _league(tmp_path, monkeypatch)
+    await _pressed(league)
+    await league.restart()
+
+    await run_queue(league.bot)
+
+    [call] = [call for call in league.channels[REVIEW_CHANNEL].send.await_args_list
+              if call.args and CHANNEL_CONFIRMED in str(call.args[0])]
+    assert notified(call.kwargs.get("allowed_mentions")) == {
+        "everyone": False, "users": {int(ADMIN_ID)}, "roles": set()
+    }
 
 
 @pytest.mark.parametrize("cut_off", ["fourteen minutes passed", "a restart"])
