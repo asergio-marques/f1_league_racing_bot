@@ -721,12 +721,14 @@ kind has its own rules for failures and for later changes:
 | **Bot-owned channel** | a results submission channel, a driver's own signup channel | deleted whole with its channel; only a post the bot must find again, such as a prompt it replaces, has its id kept |
 
 The code that makes a post still builds its own text, pictures and buttons, and saves the message id
-it is handed back. The handler does the sending and nothing else: the caller states who the post may mention (a
-required argument, so that no post leaves it to Discord's default), and the handler hands back the
-message or its id and deletes or edits a message when asked. It **raises what Discord raises**, a
-`NotFound` included, so that the queue's own handling of a message already gone, and a caller's
-reason of its own wrapped in `StepFailedOnDiscord`, work as they would for a call made directly.
-Retrying is the change queue's, except for log lines. Each handler is a service in core, in a file
+it is handed back. The notice, standing-post and bot-owned channel handlers do the sending and nothing
+else: the caller states who the post may mention (a required argument, so that no post leaves it to
+Discord's default), and the handler hands back the message or its id and deletes or edits a message
+when asked. They **raise what Discord raises**, a `NotFound` included, so that the queue's own
+handling of a message already gone, and a caller's reason of its own wrapped in `StepFailedOnDiscord`,
+work as they would for a call made directly. The log writer differs: it switches mentions off itself,
+splits a long line, and keeps its own failures, which it queues for its own retry rather than raising
+them. Retrying is the change queue's, except for log lines. Each handler is a service in core, in a file
 of its own:
 
 | Handler | File | Its functions |
