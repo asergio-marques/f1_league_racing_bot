@@ -69,6 +69,7 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.standing_post_handler import edit_standing, post_standing
 from leaguebot.core.services.standing_posts import delete_replaced_step, remove_kept
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
@@ -258,7 +259,8 @@ async def refresh_panel(
 ) -> dict[str, Any] | None:
     """Bring the panel in line with what is offered now: the body of the `hub.refresh` job.
 
-    Edits the panel where it stands; posts it where there is none or it has been deleted, and
+    Edits the panel where it stands; posts it where there is none or it has been deleted (both
+    through the standing-post handler, notifying nobody), and
     gives back `{"new": <id>, "channel_id": <id>}` for the job's record to save where it posted, and
     `{"edited": <id>, "channel_id": <id>}`, which saves nothing, where it edited. Gives None only
     where no hub channel is set. The panel's buttons are handed *queue*. *kept* is what the job's
@@ -279,8 +281,11 @@ async def refresh_panel(
     content, view = render_panel(await offered_options(bot), queue)
     if cfg.hub_message_id is not None:
         try:
-            await channel.get_partial_message(cfg.hub_message_id).edit(
-                content=content, view=view
+            await edit_standing(
+                channel.get_partial_message(cfg.hub_message_id),
+                mentions=discord.AllowedMentions.none(),
+                content=content,
+                view=view,
             )
             return {"edited": cfg.hub_message_id, "channel_id": channel.id}
         except discord.NotFound:
@@ -290,14 +295,14 @@ async def refresh_panel(
                 f"The hub panel in <#{channel.id}> could not be updated: {exc}"
             ) from exc
     try:
-        message = await channel.send(
-            content, view=view, allowed_mentions=discord.AllowedMentions.none()
+        message_id = await post_standing(
+            channel, content, mentions=discord.AllowedMentions.none(), view=view
         )
     except discord.HTTPException as exc:
         raise StepFailedOnDiscord(
             f"The hub panel could not be posted in <#{channel.id}>: {exc}"
         ) from exc
-    return {"new": message.id, "channel_id": channel.id}
+    return {"new": message_id, "channel_id": channel.id}
 
 
 #: The kind of the change that refreshes the panel.

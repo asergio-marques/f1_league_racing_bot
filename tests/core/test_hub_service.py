@@ -413,7 +413,6 @@ async def test_a_deleted_panel_is_posted_again(league):
     assert await _stored_panel(league) == league.hub.posted[0].id
 
 
-@pytest.mark.xfail(strict=True, reason="#441: the hub panel edited leaves whom it notifies to the bot's default")
 async def test_the_hub_panel_posted_or_edited_notifies_nobody(league):
     """The hub is set and no panel stands: a refresh posts it. An option is registered and the
     panel refreshed again: it is edited in place. Neither the post nor the edit notifies
