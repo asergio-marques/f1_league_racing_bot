@@ -6,13 +6,18 @@ graphic, a calendar or a results table never passes through here. The one messag
 that does is the change queue's stop notice, sent to the log channel (`post_notice`). The turn-away of a message typed while an earlier turn waits is also sent from here (`turn_away`), at once and off the queue. Which channels exist, and what each may carry, is Constitution Principle VII and
 `core/services/channel_registry_service.py`.
 
+The router is one of four output handlers (`docs/design/architecture.md`, "Posting to Discord"):
+the log writer. The others are the notice handler (`notice_handler.py`), the standing-post
+handler (`standing_post_handler.py`) and the bot-owned channel handler
+(`owned_channel_handler.py`), each a service in core beside it. `send_log_text` is the log
+writer's send for a caller that holds the channel already, which the retry worker is: it divides
+a late line and sends it mentioning nobody, and raises what Discord raises.
+
 What it holds, for its two kinds of post, are the rules for them: a mention in a log line
 names without notifying, a record longer than one message is split, both are sent with
 mentions switched off, and a log line that fails to post is queued for retry where the caller
 asks. A forecast's text that fails to post is not queued: it raises, for the change queue to
-stop on and try again as text. The log channel is written nowhere else, which `tests/repository/test_architecture_rules.py` checks. The
-target is one handler for each kind of post, of which this is the log writer
-(`docs/design/architecture.md`, "Posting to Discord").
+stop on and try again as text. The log channel is written nowhere else, which `tests/repository/test_architecture_rules.py` checks.
 """
 
 from __future__ import annotations

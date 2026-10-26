@@ -6,6 +6,10 @@ delivered. It carries log lines alone: the posts of a change (a calendar, a line
 a results table, a forecast) are jobs of the change queue, which stops on a post that fails and
 tries it again, as text, on its own schedule, so a late delivery never goes unrecorded here.
 
+The line is sent through the log writer (`output_router.send_log_text`), which divides it and
+mentions nobody, so a late line is sent as the router sends a fresh one. This module keeps the
+channel lookup, the lock, the count of tries and the lines recording a stuck or delivered entry.
+
 Constitution Principle V: successful and stuck-entry retry outcomes are posted
 to the calculation log channel for full observability.
 
