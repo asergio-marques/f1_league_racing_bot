@@ -15,7 +15,7 @@ A try after a `record` that failed removes the copy it sent first: each post job
 keeping what is left, where Discord refuses.
 
 The delete itself is the standing-post handler's (`standing_post_handler.delete_standing`),
-which `delete_replaced` and `remove_kept` both go through; this module keeps the jobs.
+which `_delete_replaced` and `remove_kept` both go through; this module keeps the jobs.
 
 There are three delete sites, and this is the generic one. `review_posting`'s `delete_message` is
 what a review uses for its tables, its sheet and its lineup, and weather's `delete_forecast` has a
