@@ -535,20 +535,29 @@ async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
 @pytest.mark.parametrize(
     "case",
     [
-        "second-part-refused",
-        "channel-unreachable",
-        "not-a-text-channel",
+        pytest.param("second-part-refused", marks=pytest.mark.xfail(
+            strict=True, reason="#441: a refused text part stops with no cause, so the stop "
+                                "notice quotes Discord's error")),
+        pytest.param("channel-gone", marks=pytest.mark.xfail(
+            strict=True, reason="#441: a text forecast whose channel is gone stops quoting "
+                                "Discord's error, not saying the channel is gone")),
+        pytest.param("not-a-text-channel", marks=pytest.mark.xfail(
+            strict=True, reason="#441: a text forecast to a voice channel stops in words of its "
+                                "own, not the graphic's")),
     ],
 )
 async def test_a_text_forecast_part_refused_keeps_the_parts_sent(tmp_path, monkeypatch, case):
-    """The Phase 2 forecast is posted as text to channel 999, letting role 1 notify, and fails:
-    - second-part-refused: it is two parts long and Discord refuses the second. The first went
-      through the standing-post handler, and the stop is raised keeping its id and the channel
-      (``new``, ``channel_id``) for the next try to remove, its reason Discord's refusal;
-    - channel-unreachable: the channel is not cached and Discord says it is not found;
-    - not-a-text-channel: the channel is a voice channel.
-    Each raises `StepFailedOnDiscord` in the words of today's stop notice, "the forecast could not
-    be posted to <#999>: {reason}", and with no cause, so that the stop notice shows those words."""
+    """The Phase 2 forecast is posted as text to channel 999, letting role 1 notify, and fails.
+    The stop notice is read as the change queue shows it (`ChangeQueue._fault_kind`), in plain
+    words and never Discord's error:
+    - second-part-refused: it is two parts long and Discord refuses the second. The stop notice
+      reads "Discord refused or failed a request from the bot", raised from Discord's fault. The
+      first part went through the standing-post handler, and the stop keeps its id and the channel
+      (``new``, ``channel_id``) for the next try to remove;
+    - channel-gone: the channel is not cached and Discord says it is not found: "the forecast
+      channel <#999> is no longer on the server";
+    - not-a-text-channel: the channel is a voice channel: "<#999> is not a text channel"."""
+    from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.core.services.output_router import OutputRouter
     from leaguebot.core.utils.messages import chunk_message
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
@@ -561,27 +570,25 @@ async def test_a_text_forecast_part_refused_keeps_the_parts_sent(tmp_path, monke
     if case == "second-part-refused":
         assert len(chunk_message(text)) == 2, "this forecast was meant to be two parts"
         _sending(channel, first_id=501, refuse_from=2)
-        reason = str(_refusal(discord.Forbidden, 403, "Missing Permissions"))
-    elif case == "channel-unreachable":
-        gone = _refusal(discord.NotFound, 404, "Unknown Channel")
+        words = "Discord refused or failed a request from the bot"
+    elif case == "channel-gone":
         bot.get_channel.return_value = None
-        bot.fetch_channel = AsyncMock(side_effect=gone)
-        reason = str(gone)
+        bot.fetch_channel = AsyncMock(
+            side_effect=_refusal(discord.NotFound, 404, "Unknown Channel")
+        )
+        words = "the forecast channel <#999> is no longer on the server"
     else:
         bot.get_channel.return_value = MagicMock(spec=discord.VoiceChannel)
-        reason = "channel 999 is not a text channel"
+        words = "<#999> is not a text channel"
 
     with pytest.raises(StepFailedOnDiscord) as err:
         with in_a_job():
             await post_phase_message(bot, division_id=1, channel_id=999, phase_number=2,
                                      text=text, mentions=ROLE_1)
 
-    assert str(err.value) == f"the forecast could not be posted to <#999>: {reason}"
-    # Raised with no cause, as the router raises it today: the stop notice shows a failure's own
-    # reason only where it has no cause (`ChangeQueue._fault_kind`), so a cause would change the
-    # words the log channel reads.
-    assert err.value.__cause__ is None
+    assert ChangeQueue._fault_kind(err.value) == words
     if case == "second-part-refused":
+        assert isinstance(err.value.__cause__, discord.Forbidden)
         assert err.value.result == {"new": [501], "channel_id": 999}
         assert [_content_of(call) for call in calls] == chunk_message(text)
 
@@ -615,35 +622,47 @@ async def test_a_graphic_forecast_goes_through_the_standing_post_handler(tmp_pat
     assert list(sent) == [222]
 
 
-@pytest.mark.parametrize("case", ["channel-unreachable", "not-a-text-channel", "refused"])
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param("channel-gone", marks=pytest.mark.xfail(
+            strict=True, reason="#441: a graphic forecast whose channel is gone stops as "
+                                "Discord's refusal, not saying the channel is gone")),
+        "not-a-text-channel",
+        "refused",
+    ],
+)
 async def test_a_graphic_forecast_that_fails_stops_in_today_s_words(tmp_path, case):
     """The Phase 2 forecast is posted as a graphic to channel 999, letting role 1 notify, and
-    fails. The stop notice keeps the words a graphic forecast's failure has today, though the
-    channel is now found once for both branches:
-    - channel-unreachable: the channel is not cached and Discord says it is not found: "the
-      forecast channel <#999> could not be reached: {reason}";
-    - not-a-text-channel: the channel is a voice channel: "<#999> is not a text channel";
-    - refused: Discord refuses the upload: "the Phase 2 forecast could not be posted to <#999>:
-      {reason}".
-    Each is raised from Discord's fault where there is one, and the graphic is discarded."""
+    fails. The stop notice is read as the change queue shows it (`ChangeQueue._fault_kind`), in
+    plain words and never Discord's error:
+    - channel-gone: the channel is not cached and Discord says it is not found: "the forecast
+      channel <#999> is no longer on the server";
+    - not-a-text-channel: the channel is a voice channel: "<#999> is not a text channel", as
+      today;
+    - refused: Discord refuses the upload: "Discord refused or failed a request from the bot", as
+      today.
+    The graphic is discarded in each."""
+    from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
     bot = _make_bot(await _make_db(str(tmp_path)))
     png = TestTheForecastGraphicIsDiscarded._artifact(tmp_path)
     attachment = TestTheForecastGraphicIsDiscarded._attachment(png)
-    if case == "channel-unreachable":
-        fault = _refusal(discord.NotFound, 404, "Unknown Channel")
+    if case == "channel-gone":
         bot.get_channel.return_value = None
-        bot.fetch_channel = AsyncMock(side_effect=fault)
-        words = f"the forecast channel <#999> could not be reached: {fault}"
+        bot.fetch_channel = AsyncMock(
+            side_effect=_refusal(discord.NotFound, 404, "Unknown Channel")
+        )
+        words = "the forecast channel <#999> is no longer on the server"
     elif case == "not-a-text-channel":
-        fault = None
         bot.get_channel.return_value = MagicMock(spec=discord.VoiceChannel)
         words = "<#999> is not a text channel"
     else:
-        fault = _refusal(discord.Forbidden, 403, "Missing Permissions")
-        bot.get_channel.return_value.send = AsyncMock(side_effect=fault)
-        words = f"the Phase 2 forecast could not be posted to <#999>: {fault}"
+        bot.get_channel.return_value.send = AsyncMock(
+            side_effect=_refusal(discord.Forbidden, 403, "Missing Permissions")
+        )
+        words = "Discord refused or failed a request from the bot"
 
     with pytest.raises(StepFailedOnDiscord) as err:
         with in_a_job():
@@ -652,6 +671,46 @@ async def test_a_graphic_forecast_that_fails_stops_in_today_s_words(tmp_path, ca
                 attachment=attachment, attachment_text="<@&1>", mentions=ROLE_1,
             )
 
-    assert str(err.value) == words
-    assert err.value.__cause__ is fault
+    assert ChangeQueue._fault_kind(err.value) == words
     assert not png.exists()
+
+
+@pytest.mark.parametrize(
+    "manner",
+    [
+        pytest.param("text", marks=pytest.mark.xfail(
+            strict=True, reason="#441: a text forecast whose channel Discord will not give stops "
+                                "quoting Discord's error")),
+        "graphic",
+    ],
+)
+async def test_a_forecast_whose_channel_discord_will_not_give_stops_as_discord_s_refusal(
+    tmp_path, manner
+):
+    """The Phase 2 forecast is posted to channel 999, letting role 1 notify, as text or as a
+    graphic. The channel is not cached, and Discord refuses to fetch it (403, Missing Access)
+    rather than saying it is gone. The stop notice, read as the change queue shows it
+    (`ChangeQueue._fault_kind`), says "Discord refused or failed a request from the bot", in both
+    manners; nothing is posted."""
+    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
+
+    bot = _make_bot(await _make_db(str(tmp_path)))
+    channel = bot.get_channel.return_value
+    channel.send = AsyncMock()
+    bot.get_channel.return_value = None
+    bot.fetch_channel = AsyncMock(side_effect=_refusal(discord.Forbidden, 403, "Missing Access"))
+    graphic = {}
+    if manner == "graphic":
+        png = TestTheForecastGraphicIsDiscarded._artifact(tmp_path)
+        graphic = {"attachment": TestTheForecastGraphicIsDiscarded._attachment(png),
+                   "attachment_text": "<@&1>"}
+
+    with pytest.raises(StepFailedOnDiscord) as err:
+        with in_a_job():
+            await post_phase_message(bot, division_id=1, channel_id=999, phase_number=2,
+                                     text="phase 2 forecast", mentions=ROLE_1, **graphic)
+
+    assert ChangeQueue._fault_kind(err.value) == "Discord refused or failed a request from the bot"
+    bot.fetch_channel.assert_awaited_once_with(999)
+    channel.send.assert_not_awaited()
