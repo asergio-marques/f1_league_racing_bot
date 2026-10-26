@@ -300,3 +300,30 @@ async def test_a_retried_line_is_sent_notifying_nobody(tmp_path):
     sent = channel.send.await_args.kwargs.get("allowed_mentions")
     assert sent is not None
     assert sent.to_dict() == discord.AllowedMentions.none().to_dict()
+
+
+@pytest.mark.xfail(strict=True, reason="#441: the retry sends the line itself, not through the log writer")
+async def test_attempt_delivery_sends_through_the_log_writer(tmp_path, monkeypatch):
+    """A log line for channel 555 that failed once (503) is retried. It is handed to the router's
+    log writer with its channel and its stored text, not sent by the retry itself, and the row is
+    marked delivered."""
+    from unittest.mock import AsyncMock
+
+    from leaguebot.core.services import output_router
+    from leaguebot.core.services.retry_service import attempt_delivery
+
+    db_path = await _make_db(str(tmp_path))
+    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503")
+    [entry] = await get_all_pending(db_path)
+    bot, channel = _delivering_bot(db_path)
+    writer = AsyncMock()
+    monkeypatch.setattr(output_router, "send_log_text", writer, raising=False)
+
+    assert await attempt_delivery(entry, bot) is True
+    await _settle()
+
+    writer.assert_awaited_once_with(
+        channel, "Admin (`<@4242>`) | /module disable results | Success"
+    )
+    channel.send.assert_not_awaited()
+    assert await _row_count(db_path) == 0

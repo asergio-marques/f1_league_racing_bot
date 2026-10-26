@@ -95,3 +95,24 @@ async def test_a_forecast_s_allowed_mentions_are_passed_to_every_part():
         assert _role_ids(allowed) == {DIVISION_ROLE_ID}
         assert not getattr(allowed, "users", False)
         assert not getattr(allowed, "everyone", False)
+
+
+@pytest.mark.xfail(strict=True, reason="#441: the router has no send_log_text for the retry to send through")
+async def test_send_log_text_divides_a_long_line_and_notifies_nobody():
+    """A log line too long for one message, mentioning member 4242, is handed to the log writer
+    for channel 555, as the retry worker hands it, outside any job of a change. It is sent in the
+    parts `chunk_message` divides it into, in order, each notifying nobody."""
+    from leaguebot.core.services.output_router import send_log_text
+    from leaguebot.core.utils.messages import chunk_message
+
+    channel = MagicMock(id=555)
+    channel.send = AsyncMock()
+    content = "<@4242> did something\n" + "\n".join(f"line {i}" * 40 for i in range(200))
+
+    await send_log_text(channel, content)
+
+    sends = channel.send.await_args_list
+    assert len(sends) > 1, "this content was meant to be split"
+    assert [send.args[0] for send in sends] == chunk_message(content)
+    for send in sends:
+        assert send.kwargs["allowed_mentions"].to_dict() == discord.AllowedMentions.none().to_dict()
