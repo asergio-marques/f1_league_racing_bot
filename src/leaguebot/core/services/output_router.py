@@ -69,6 +69,19 @@ class ForecastChannel:
     forecast_channel_id: int | None
 
 
+async def send_log_text(channel: discord.TextChannel, content: str) -> None:
+    """Send the log line *content* to the log *channel*, mentioning nobody.
+
+    A line longer than one message is divided through `chunk_message` and sent in order. It
+    raises whatever Discord raises, for the caller to answer: the retry worker
+    (`retry_service.attempt_delivery`) sends a late line through it and counts a failure as
+    another try. It does not run in a job of the change queue, and so does not carry
+    `posts_in_a_job`.
+    """
+    for chunk in chunk_message(content):
+        await channel.send(chunk, allowed_mentions=discord.AllowedMentions.none())
+
+
 class OutputRouter:
     """Writes the log channel and a forecast's text, each failure contained; see above."""
 

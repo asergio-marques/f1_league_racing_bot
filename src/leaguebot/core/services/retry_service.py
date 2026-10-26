@@ -193,7 +193,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
     """
     import discord
 
-    from leaguebot.core.utils.messages import chunk_message
+    from leaguebot.core.services.output_router import send_log_text
 
     db_path: str = bot.db_path
     async with delivery_lock():
@@ -240,8 +240,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
 
         # --- Attempt send ---
         try:
-            for chunk in chunk_message(entry.content):
-                await channel.send(chunk, allowed_mentions=discord.AllowedMentions.none())
+            await send_log_text(channel, entry.content)
         except Exception as exc:
             log.warning(
                 "attempt_delivery: send failed for entry id=%s channel=%s: %s",

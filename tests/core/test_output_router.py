@@ -97,7 +97,6 @@ async def test_a_forecast_s_allowed_mentions_are_passed_to_every_part():
         assert not getattr(allowed, "everyone", False)
 
 
-@pytest.mark.xfail(strict=True, reason="#441: the router has no send_log_text for the retry to send through")
 async def test_send_log_text_divides_a_long_line_and_notifies_nobody():
     """A log line too long for one message, mentioning member 4242, is handed to the log writer
     for channel 555, as the retry worker hands it, outside any job of a change. It is sent in the

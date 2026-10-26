@@ -302,7 +302,6 @@ async def test_a_retried_line_is_sent_notifying_nobody(tmp_path):
     assert sent.to_dict() == discord.AllowedMentions.none().to_dict()
 
 
-@pytest.mark.xfail(strict=True, reason="#441: the retry sends the line itself, not through the log writer")
 async def test_attempt_delivery_sends_through_the_log_writer(tmp_path, monkeypatch):
     """A log line for channel 555 that failed once (503) is retried. It is handed to the router's
     log writer with its channel and its stored text, not sent by the retry itself, and the row is

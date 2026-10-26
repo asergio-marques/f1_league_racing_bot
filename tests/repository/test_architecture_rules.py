@@ -994,10 +994,6 @@ POSTS_OFF_THE_QUEUE: dict[tuple[str, str], str] = {
     ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset.report"): (
         "the factory reset's progress, the reply to the owner's own command"
     ),
-    ("core/services/retry_service.py", "attempt_delivery"): (
-        "the retry of a log line the log channel refused: it carries log lines alone, which stay "
-        "off the queue (decision 1)"
-    ),
 }
 
 #: The calls that make a channel, which the job check counts beside the posts.
