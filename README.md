@@ -153,7 +153,7 @@ When inviting the bot, grant it the following OAuth2 bot permissions. All are us
 | **Manage Messages** | Deletes the old forecast message when a newer phase supersedes it (`forecast_cleanup_service`); deletes its own messages for `/clean-bot` and `/bot factory-reset` |
 | **Read Message History** | Reads back through a channel to find its own messages, for `/clean-bot` and `/bot factory-reset` |
 | **Manage Roles** | Grants the driver role on signup approval; grants/revokes division and team roles on driver placement, unassignment, and sacking |
-| **Mention @everyone, @here, and All Roles** | Pings the division role in weather forecast messages (phase 1–3) and round amendment notices, and the interaction role when a round's results submission channel opens. Required when those roles are not set to "Allow anyone to @mention this role" (the typical default for private league roles) |
+| **Mention @everyone, @here, and All Roles** | Pings the division role in a division's weather forecast messages (phase 1–3), in the check-in call (posted again when an amendment calls for it) and in the attendance cancellation notice, and the interaction role when a round's results submission channel opens. Required when those roles are not set to "Allow anyone to @mention this role" (the typical default for private league roles) |
 
 ### Privileged Gateway Intents
 
@@ -528,7 +528,7 @@ Divisions are built once the season is in **placements** — after its configura
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name (used to reference it in subsequent commands) |
-| `role` | Role | ✅ | Discord role mentioned when referencing this division |
+| `role` | Role | ✅ | Discord role pinged by this division's forecasts (phases 1–3), check-in call and attendance cancellation notice |
 | `tier` | Integer | ✅ | Tier number for this division (1 = top tier; must be 1 or higher, and unique within the season) |
 
 Tiers must additionally be **sequential from 1 with no gaps** across the whole season. That is checked at approval, not here, so a half-built season may hold a gap while you are still adding divisions.
