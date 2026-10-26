@@ -726,11 +726,11 @@ nothing else: the caller states who the post may mention (a required argument, s
 leaves it to Discord's default), and the handler hands back the message or its id and deletes or
 edits a message when asked. They **raise what Discord raises**, a `NotFound` included, so that the
 queue's own handling of a message already gone, and a caller's reason of its own wrapped in
-`StepFailedOnDiscord`, work as they would for a call made directly. The router's forecast post is
-like them: its caller states who it may mention, and its failure is raised, not queued. A log line
-differs: the writer switches its mentions off itself and splits a long one. The router keeps its
-failures and queues a failed send for its own retry where the log channel can still be found; one it
-cannot find is logged on the host. `send_log_text`, the retry's own send, raises what Discord
+`StepFailedOnDiscord`, work as they would for a call made directly. A forecast is a standing post
+like the rest, and goes through the standing-post handler. A log line differs: the writer switches
+its mentions off itself and splits a long one. The router keeps its failures and queues a failed
+send for its own retry where the log channel can still be found; one it cannot find is logged on
+the host. `send_log_text`, the retry's own send, raises what Discord
 raises to the retry worker, which counts it. Retrying is the change queue's, except for log lines.
 Each handler is a service in core, in a file of its own:
 
@@ -766,8 +766,7 @@ rule has two halves:
 - **The check.** A test fails on any function that posts without the decorator, unless it is
   named off the queue with its reason (see "How the rules are checked"). The router
   (`core/services/output_router.py`) alone is exempt from it whole (`JOB_CHECK_ALLOWED`): what it
-  posts off the queue are the exceptions below, and its forecast post carries the decorator all the
-  same. The other handlers are held to it. The check of posting outside the handlers passes over
+  posts off the queue are the exceptions below. The other handlers are held to it. The check of posting outside the handlers passes over
   the four handler files (`POSTING_ALLOWED`) and over a function named off the queue, which runs
   outside a job and so cannot go through a handler. Two functions whose sends look like posts
   and are not are named in `NOT_A_POST` with their reasons. One is the owner's own `!sync` command
