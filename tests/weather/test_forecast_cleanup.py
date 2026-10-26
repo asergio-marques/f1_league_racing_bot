@@ -479,6 +479,11 @@ def _spy_on_post_standing(monkeypatch) -> list[tuple[tuple, dict]]:
     return calls
 
 
+def _channel_of(call: tuple[tuple, dict]):
+    args, kwargs = call
+    return args[0] if args else kwargs.get("channel")
+
+
 def _content_of(call: tuple[tuple, dict]):
     args, kwargs = call
     return args[1] if len(args) > 1 else kwargs.get("content")
@@ -524,8 +529,8 @@ async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
         sent = await post_phase_message(bot, division_id=1, channel_id=999, phase_number=2,
                                         text=text, mentions=ROLE_1)
 
-    bot.get_channel.assert_called_with(999)
-    assert [call[0][0] for call in calls] == [channel] * len(parts)
+    bot.get_channel.assert_called_once_with(999)
+    assert [_channel_of(call) for call in calls] == [channel] * len(parts)
     assert [_content_of(call) for call in calls] == parts
     assert all(call[1]["mentions"] is ROLE_1 for call in calls)
     assert list(sent) == list(range(501, 501 + len(parts)))
@@ -550,7 +555,7 @@ async def test_a_text_forecast_part_refused_keeps_the_parts_sent(tmp_path, monke
     - channel-unreachable: the channel is not cached and Discord says it is not found;
     - not-a-text-channel: the channel is a voice channel.
     Each raises `StepFailedOnDiscord` in the words of today's stop notice, "the forecast could not
-    be posted to <#999>: {reason}"."""
+    be posted to <#999>: {reason}", and with no cause, so that the stop notice shows those words."""
     from leaguebot.core.services.output_router import OutputRouter
     from leaguebot.core.utils.messages import chunk_message
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
@@ -579,6 +584,10 @@ async def test_a_text_forecast_part_refused_keeps_the_parts_sent(tmp_path, monke
                                      text=text, mentions=ROLE_1)
 
     assert str(err.value) == f"the forecast could not be posted to <#999>: {reason}"
+    # Raised with no cause, as the router raises it today: the stop notice shows a failure's own
+    # reason only where it has no cause (`ChangeQueue._fault_kind`), so a cause would change the
+    # words the log channel reads.
+    assert err.value.__cause__ is None
     if case == "second-part-refused":
         assert err.value.result == {"new": [501], "channel_id": 999}
         assert [_content_of(call) for call in calls] == chunk_message(text)
@@ -607,7 +616,7 @@ async def test_a_graphic_forecast_goes_through_the_standing_post_handler(tmp_pat
 
     [call] = calls
     bot.get_channel.assert_called_once_with(999)
-    assert call[0][0] is channel
+    assert _channel_of(call) is channel
     assert _content_of(call) == "<@&1>"
     assert call[1]["file"] is attachment
     assert call[1]["mentions"] is ROLE_1
