@@ -524,6 +524,7 @@ async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
         sent = await post_phase_message(bot, division_id=1, channel_id=999, phase_number=2,
                                         text=text, mentions=ROLE_1)
 
+    bot.get_channel.assert_called_with(999)
     assert [call[0][0] for call in calls] == [channel] * len(parts)
     assert [_content_of(call) for call in calls] == parts
     assert all(call[1]["mentions"] is ROLE_1 for call in calls)
@@ -605,8 +606,51 @@ async def test_a_graphic_forecast_goes_through_the_standing_post_handler(tmp_pat
         )
 
     [call] = calls
+    bot.get_channel.assert_called_once_with(999)
     assert call[0][0] is channel
     assert _content_of(call) == "<@&1>"
     assert call[1]["file"] is attachment
     assert call[1]["mentions"] is ROLE_1
     assert list(sent) == [222]
+
+
+@pytest.mark.parametrize("case", ["channel-unreachable", "not-a-text-channel", "refused"])
+async def test_a_graphic_forecast_that_fails_stops_in_today_s_words(tmp_path, case):
+    """The Phase 2 forecast is posted as a graphic to channel 999, letting role 1 notify, and
+    fails. The stop notice keeps the words a graphic forecast's failure has today, though the
+    channel is now found once for both branches:
+    - channel-unreachable: the channel is not cached and Discord says it is not found: "the
+      forecast channel <#999> could not be reached: {reason}";
+    - not-a-text-channel: the channel is a voice channel: "<#999> is not a text channel";
+    - refused: Discord refuses the upload: "the Phase 2 forecast could not be posted to <#999>:
+      {reason}".
+    Each is raised from Discord's fault where there is one, and the graphic is discarded."""
+    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
+
+    bot = _make_bot(await _make_db(str(tmp_path)))
+    png = TestTheForecastGraphicIsDiscarded._artifact(tmp_path)
+    attachment = TestTheForecastGraphicIsDiscarded._attachment(png)
+    if case == "channel-unreachable":
+        fault = _refusal(discord.NotFound, 404, "Unknown Channel")
+        bot.get_channel.return_value = None
+        bot.fetch_channel = AsyncMock(side_effect=fault)
+        words = f"the forecast channel <#999> could not be reached: {fault}"
+    elif case == "not-a-text-channel":
+        fault = None
+        bot.get_channel.return_value = MagicMock(spec=discord.VoiceChannel)
+        words = "<#999> is not a text channel"
+    else:
+        fault = _refusal(discord.Forbidden, 403, "Missing Permissions")
+        bot.get_channel.return_value.send = AsyncMock(side_effect=fault)
+        words = f"the Phase 2 forecast could not be posted to <#999>: {fault}"
+
+    with pytest.raises(StepFailedOnDiscord) as err:
+        with in_a_job():
+            await post_phase_message(
+                bot, division_id=1, channel_id=999, phase_number=2, text="phase 2 forecast",
+                attachment=attachment, attachment_text="<@&1>", mentions=ROLE_1,
+            )
+
+    assert str(err.value) == words
+    assert err.value.__cause__ is fault
+    assert not png.exists()
