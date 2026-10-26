@@ -15,6 +15,7 @@ from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverProfile, DriverState
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
+from leaguebot.core.services.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.signup.models.signup_module import AvailabilitySlot
 from leaguebot.core.models.team import TeamRoleConfig
@@ -2136,6 +2137,9 @@ class PlacementService:
         module is enabled, the `lineup` aspect is on and a valid template is configured,
         ``image_lineup_post.try_post`` produces the PNG and posts it, and this method returns.
 
+        The text lineup goes through the standing-post handler and notifies nobody, though it
+        names its drivers.
+
         Either way the lineup is posted before the message it replaces is deleted, by a job after
         it (Constitution XIV rule 8; image spec :706): this method deletes nothing and saves
         nothing, and a refusal raises `StepFailedOnDiscord` for the queue to stop on. A picture
@@ -2249,12 +2253,14 @@ class PlacementService:
 
         # Post: the id is saved by the job's record, the old message deleted by the job after it
         try:
-            new_msg = await channel.send(embed=embed)
+            new_msg_id = await post_standing(
+                channel, mentions=discord.AllowedMentions.none(), embed=embed
+            )
         except discord.HTTPException as exc:
             log.error("_refresh_lineup_post: failed to post embed: %s", exc)
             raise StepFailedOnDiscord(f"the lineup could not be posted: {exc}") from exc
 
-        return LineupPosted(new_msg.id, lineup_channel_id, lineup_message_id, div_name, "text")
+        return LineupPosted(new_msg_id, lineup_channel_id, lineup_message_id, div_name, "text")
 
     async def resolve_division(
         self, season_id: int, division_input: str

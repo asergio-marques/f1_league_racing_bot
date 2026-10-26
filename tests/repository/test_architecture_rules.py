@@ -904,7 +904,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
     ("results/services/penalty_wizard.py", "_show_approval_step"): (1, PASS["results"]),
-    ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, HANDLERS),
     ("results/services/result_submission_service.py", "send_appeals_prompt"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "send_cancelled_line"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "send_review_prompt"): (1, PASS["results"]),

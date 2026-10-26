@@ -263,7 +263,6 @@ async def test_the_lineup_lists_each_team_and_its_drivers(tmp_path):
     assert "**Blue**: <@201>" in description
 
 
-@pytest.mark.xfail(strict=True, reason="#441: the lineup embed leaves whom it notifies to the bot's default")
 async def test_the_lineup_embed_notifies_nobody(tmp_path):
     """Pro's lineup, one driver at Red, is posted as the embed. It names the driver, and
     notifies nobody."""
