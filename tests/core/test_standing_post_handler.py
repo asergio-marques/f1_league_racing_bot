@@ -73,6 +73,27 @@ async def test_edit_standing_edits_with_the_mentions_given():
     assert call.kwargs["allowed_mentions"] is mentions
 
 
+async def test_edit_standing_takes_a_part_off_when_given_as_none_and_leaves_one_not_given():
+    """The hub panel loses its buttons when nothing is offered: a part given as None reaches
+    the edit and takes it off, while a part not given is left out and stays as it stands."""
+    from leaguebot.core.services.standing_post_handler import edit_standing
+
+    mentions = discord.AllowedMentions.none()
+    _channel_, message = _channel()
+    with in_a_job():
+        await edit_standing(message, mentions=mentions, content="x", view=None)
+    call = message.edit.await_args
+    assert call.kwargs["content"] == "x"
+    assert "view" in call.kwargs and call.kwargs["view"] is None
+
+    _channel_, message = _channel()
+    with in_a_job():
+        await edit_standing(message, mentions=mentions, content="x")
+    call = message.edit.await_args
+    assert call.kwargs["content"] == "x"
+    assert "view" not in call.kwargs
+
+
 @pytest.mark.parametrize("error", [http_error(), http_error(discord.NotFound, status=404)],
                          ids=["refused", "gone"])
 async def test_delete_standing_deletes_and_raises_what_discord_raises(error):
