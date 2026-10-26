@@ -918,8 +918,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/signup_posting.py", "delete_channel"): (1, PASS["signup"]),
     ("signup/services/signup_posting.py", "post"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.trigger_channel_hold"): (1, PASS["signup"]),
-    ("core/utils/batch_notice.py", "delete_notice"): (1, HANDLERS),
-    ("core/utils/batch_notice.py", "send_notice"): (1, HANDLERS),
     ("results/services/penalty_wizard.py", "_delete_review_message"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_refresh_appeals_prompt"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_refresh_prompt"): (1, PASS["results"]),

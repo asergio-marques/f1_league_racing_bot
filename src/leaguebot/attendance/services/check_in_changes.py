@@ -99,7 +99,7 @@ from leaguebot.core.services.change_queue import (
     StepContext,
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.utils.batch_notice import delete_notice
+from leaguebot.core.services.notice_handler import delete_notice
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 

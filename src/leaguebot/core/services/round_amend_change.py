@@ -73,7 +73,7 @@ from leaguebot.core.services.change_queue import (
 )
 from leaguebot.core.services.scheduler_service import POST_RACE_CLEANUP_DELAY
 from leaguebot.core.services.season_service import renumber_rounds_on, round_called
-from leaguebot.core.utils.batch_notice import send_notice
+from leaguebot.core.services.notice_handler import send_notice
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 

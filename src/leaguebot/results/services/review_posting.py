@@ -71,7 +71,7 @@ from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.change_queue import OutcomeContext, Step, StepContext
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.batch_notice import delete_notice, send_notice
+from leaguebot.core.services.notice_handler import delete_notice, send_notice
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.standings_snapshot import (

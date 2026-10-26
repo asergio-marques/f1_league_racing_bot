@@ -80,7 +80,7 @@ from leaguebot.core.services.season_service import (
     create_sessions_for_round_on,
     transition_to_active_on,
 )
-from leaguebot.core.utils.batch_notice import delete_notice, send_notice
+from leaguebot.core.services.notice_handler import delete_notice, send_notice
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 

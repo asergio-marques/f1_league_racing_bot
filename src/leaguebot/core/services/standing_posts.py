@@ -35,7 +35,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services.change_queue import Step, StepContext, StepView
 from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.utils.batch_notice import delete_notice
+from leaguebot.core.services.notice_handler import delete_notice
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
