@@ -14,8 +14,6 @@ import pytest
 
 from tests.support.change_queue import http_error, in_a_job
 
-NOT_BUILT = "#441: the bot-owned channel handler is not built yet"
-
 
 def _channel():
     message = MagicMock(id=5150)
@@ -25,7 +23,6 @@ def _channel():
     return channel, message
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_post_in_an_owned_channel_gives_the_id_and_notifies_only_whom_it_names():
     from leaguebot.core.services.owned_channel_handler import post_in_owned_channel
 
@@ -41,7 +38,6 @@ async def test_a_post_in_an_owned_channel_gives_the_id_and_notifies_only_whom_it
     assert call.kwargs["allowed_mentions"] is mentions
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_post_in_an_owned_channel_carries_its_buttons():
     from leaguebot.core.services.owned_channel_handler import post_in_owned_channel
 
@@ -55,7 +51,6 @@ async def test_a_post_in_an_owned_channel_carries_its_buttons():
     assert channel.send.await_args.kwargs["allowed_mentions"] is mentions
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_owned_channel_is_deleted_whole_with_its_reason():
     from leaguebot.core.services.owned_channel_handler import delete_owned_channel
 
@@ -66,7 +61,6 @@ async def test_an_owned_channel_is_deleted_whole_with_its_reason():
     channel.delete.assert_awaited_once_with(reason="Round 3 results approved")
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize("error", [http_error(), http_error(discord.NotFound, status=404)],
                          ids=["refused", "gone"])
 async def test_the_owned_channel_handler_raises_what_discord_raises(error):
@@ -88,7 +82,6 @@ async def test_the_owned_channel_handler_raises_what_discord_raises(error):
     assert posted.value is deleted.value is error
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_owned_channel_post_outside_a_job_is_refused_before_it_is_sent():
     from leaguebot.core.services.owned_channel_handler import (
         delete_owned_channel,
