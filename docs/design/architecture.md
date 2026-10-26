@@ -726,9 +726,10 @@ else: the caller states who the post may mention (a required argument, so that n
 Discord's default), and the handler hands back the message or its id and deletes or edits a message
 when asked. They **raise what Discord raises**, a `NotFound` included, so that the queue's own
 handling of a message already gone, and a caller's reason of its own wrapped in `StepFailedOnDiscord`,
-work as they would for a call made directly. The log writer differs: it switches mentions off itself,
-splits a long line, and keeps its own failures, which it queues for its own retry rather than raising
-them. Retrying is the change queue's, except for log lines. Each handler is a service in core, in a file
+work as they would for a call made directly. The router's forecast post is like them: its caller states
+who it may mention, and its failure is raised, not queued. A log line differs: the writer switches its
+mentions off itself, splits a long one, and queues its own failure for its own retry rather than raising
+it. Retrying is the change queue's, except for log lines. Each handler is a service in core, in a file
 of its own:
 
 | Handler | File | Its functions |
