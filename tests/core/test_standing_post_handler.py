@@ -14,8 +14,6 @@ import pytest
 
 from tests.support.change_queue import http_error, in_a_job
 
-NOT_BUILT = "#441: the standing-post handler is not built yet"
-
 
 def _channel():
     message = MagicMock(id=4242)
@@ -30,7 +28,6 @@ def _content(call):
     return call.args[0] if call.args else call.kwargs.get("content")
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_post_standing_sends_text_an_embed_or_a_file_with_the_mentions_given_and_gives_the_id():
     from leaguebot.core.services.standing_post_handler import post_standing
 
@@ -59,7 +56,6 @@ async def test_post_standing_sends_text_an_embed_or_a_file_with_the_mentions_giv
     assert call.kwargs["allowed_mentions"] is mentions
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_edit_standing_edits_with_the_mentions_given():
     from leaguebot.core.services.standing_post_handler import edit_standing
 
@@ -77,7 +73,6 @@ async def test_edit_standing_edits_with_the_mentions_given():
     assert call.kwargs["allowed_mentions"] is mentions
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize("error", [http_error(), http_error(discord.NotFound, status=404)],
                          ids=["refused", "gone"])
 async def test_delete_standing_deletes_and_raises_what_discord_raises(error):
@@ -108,7 +103,6 @@ async def test_delete_standing_deletes_and_raises_what_discord_raises(error):
     assert posted.value is edited.value is deleted.value is error
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_standing_post_cannot_be_made_without_saying_who_it_may_notify():
     from leaguebot.core.services.standing_post_handler import edit_standing, post_standing
 
@@ -123,7 +117,6 @@ async def test_a_standing_post_cannot_be_made_without_saying_who_it_may_notify()
     message.edit.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_standing_post_outside_a_job_is_refused_before_it_is_sent():
     from leaguebot.core.services.standing_post_handler import (
         delete_standing,
