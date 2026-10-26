@@ -1058,9 +1058,9 @@ def test_no_post_is_made_outside_a_job_but_those_named_off_the_queue():
     and "Posting to Discord"). A function that posts carries `posts_in_a_job`, which raises where
     it runs outside a job, or is named in `POSTS_OFF_THE_QUEUE` with its reason; no function
     anywhere posts outside a job, with no list of exceptions left to grow. The router alone is excepted
-    (`JOB_CHECK_ALLOWED`): its log lines, stop notice and turn-away stay off the queue, and its
-    forecast post carries the decorator. The other three handlers are not: each of their functions
-    carries `posts_in_a_job`, which this check holds them to."""
+    (`JOB_CHECK_ALLOWED`): its log lines, stop notice and turn-away stay off the queue, and it
+    posts nothing else. The other three handlers are not: each of their functions carries
+    `posts_in_a_job`, which this check holds them to."""
     found = _posts_outside_a_job_among(_nodes())
 
     assert not found, sorted(found)
