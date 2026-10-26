@@ -212,8 +212,8 @@ async def post_phase_message(
 
     **A transport failure stops the queue at the post job**, whose next try posts the text
     (XIV.8, FR-057): a message Discord refuses, a channel the bot cannot fetch and one that is
-    not a text channel raise `StepFailedOnDiscord` (from the Discord fault where there is one),
-    and the text is composed again when it is finally sent, never a picture kept for later. The
+    not a text channel raise `StepFailedOnDiscord`, a graphic's from the Discord fault where there
+    is one and a text forecast's with no cause, and the text is composed again when it is finally sent, never a picture kept for later. The
     post is the only thing that may fail here: the previous forecast stands until a job after
     this one deletes it (Constitution XIV.8, produce before destroy).
 
@@ -248,9 +248,9 @@ async def post_phase_message(
                 f"the Phase {phase_number} forecast could not be posted to <#{channel_id}>: {exc}"
             ) from exc
     finally:
-        # One `finally` around the whole graphic branch. Two of its three exits abandon the
-        # picture *before* the send — an unfetchable channel and one that is not a text
-        # channel — and those are the paths a per-send cleanup would miss.
+        # One `finally` around both manners, discarding the graphic where there is one. Two of
+        # its exits abandon the picture *before* the send — an unfetchable channel and one that
+        # is not a text channel — and those are the paths a per-send cleanup would miss.
         if attachment is not None:
             from leaguebot.image.services.image_render_service import discard_attachment
 
