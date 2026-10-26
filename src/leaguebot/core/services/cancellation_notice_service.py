@@ -34,6 +34,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.core.services.notice_handler import send_notice
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 
@@ -145,8 +146,11 @@ async def _module_channels(bot: LeagueBot, division_id: int) -> dict[str, int | 
 
 
 @posts_in_a_job
-async def _send(guild, channel_id, content: str, **kwargs) -> str | None:
-    """Send *content* to *channel_id*, as a job on the change queue. Returns what went wrong, or None.
+async def _send(
+    guild, channel_id, content: str, *, mentions: discord.AllowedMentions, **kwargs
+) -> str | None:
+    """Send *content* to *channel_id* through the notice handler, as a job on the change queue,
+    notifying only whom *mentions* names. Returns what went wrong, or None.
 
     A channel never set is returned as "no channel is set": there is nothing to retry. A channel
     that is set and no longer on the server raises `StepFailedOnDiscord` (no cause), and a send
@@ -159,7 +163,7 @@ async def _send(guild, channel_id, content: str, **kwargs) -> str | None:
     if channel is None:
         raise StepFailedOnDiscord(f"the channel <#{channel_id}> is no longer on the server")
     try:
-        await channel.send(content, **kwargs)
+        await send_notice(channel, content, mentions=mentions, **kwargs)
     except discord.HTTPException as exc:
         raise StepFailedOnDiscord(
             f"the message could not be posted to <#{channel_id}>: {exc}"
@@ -188,11 +192,18 @@ async def post_module_notice(
     if module == "attendance":
         role_id = getattr(division, "mention_role_id", None)
         ping = f"<@&{role_id}>\n" if role_id else ""
+        mentions = (
+            discord.AllowedMentions(
+                roles=[discord.Object(id=int(role_id))], users=False, everyone=False
+            )
+            if role_id
+            else discord.AllowedMentions.none()
+        )
         return await _send(
             guild,
             channels["attendance"],
             ping + attendance_notice(scope, division.name, **words),
-            allowed_mentions=discord.AllowedMentions(roles=bool(role_id)),
+            mentions=mentions,
         )
     if module == "weather":
         note = weather_note(scope, division.name, **words)
@@ -200,7 +211,9 @@ async def post_module_notice(
         note = results_note(scope, division.name, **words)
     else:
         raise ValueError(f"no cancellation notice for module {module!r}")
-    return await _send(guild, channels[module], note, silent=True)
+    return await _send(
+        guild, channels[module], note, mentions=discord.AllowedMentions.none(), silent=True
+    )
 
 
 #: The order the audit lists the answers in, and the words it lists them under.

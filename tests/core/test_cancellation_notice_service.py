@@ -129,10 +129,6 @@ async def test_the_check_in_channel_carries_the_notification(tmp_path):
     assert "no check-in to answer" in call.args[0]
 
 
-NOT_STATED = "#441: the cancellation notices leave whom they notify to the bot's default"
-
-
-@pytest.mark.xfail(strict=True, reason=NOT_STATED)
 async def test_the_attendance_notice_may_notify_the_division_role_and_nobody_else(tmp_path):
     """Pro, whose role is 555, has round 3 at Monza called off. The check-in channel's notice
     mentions the role, and may notify it alone: no member it might name, and not @everyone."""
@@ -145,7 +141,6 @@ async def test_the_attendance_notice_may_notify_the_division_role_and_nobody_els
     }
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_STATED)
 async def test_the_attendance_notice_of_a_division_with_no_role_notifies_nobody(tmp_path):
     """Pro has no role set. Its check-in channel's notice of round 3's cancellation mentions no
     role, and notifies nobody."""
@@ -162,7 +157,6 @@ async def test_the_attendance_notice_of_a_division_with_no_role_notifies_nobody(
     assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_STATED)
 async def test_the_results_note_notifies_nobody_and_is_silent(tmp_path):
     """Pro's results channel is told round 3 is called off: silently, and notifying nobody."""
     bot = _bot(await _make_db(tmp_path))
@@ -173,7 +167,6 @@ async def test_the_results_note_notifies_nobody_and_is_silent(tmp_path):
     assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_STATED)
 async def test_the_weather_note_notifies_nobody_and_is_silent(tmp_path):
     """Pro's forecast channel is told round 3 is called off: silently, and notifying nobody."""
     bot = _bot(await _make_db(tmp_path))
