@@ -720,17 +720,19 @@ kind has its own rules for failures and for later changes:
 | **Notice** | a cancellation notice, a verdict, a round's check-in call (edited in place as drivers answer) | its id is kept wherever it might later be edited or deleted |
 | **Bot-owned channel** | a results submission channel, a driver's own signup channel | deleted whole with its channel; only a post the bot must find again, such as a prompt it replaces, has its id kept |
 
-The code that makes a post still builds its own text, pictures and buttons, and saves the message id
-it is handed back. The notice, standing-post and bot-owned channel handlers do the sending and nothing
-else: the caller states who the post may mention (a required argument, so that no post leaves it to
-Discord's default), and the handler hands back the message or its id and deletes or edits a message
-when asked. They **raise what Discord raises**, a `NotFound` included, so that the queue's own
-handling of a message already gone, and a caller's reason of its own wrapped in `StepFailedOnDiscord`,
-work as they would for a call made directly. The router's forecast post is like them: its caller states
-who it may mention, and its failure is raised, not queued. A log line differs: the writer switches its
-mentions off itself, splits a long one, and queues its own failure for its own retry rather than raising
-it. Retrying is the change queue's, except for log lines. Each handler is a service in core, in a file
-of its own:
+The code that makes a post still builds its own text, pictures and buttons, and saves the message
+id it is handed back. The notice, standing-post and bot-owned channel handlers do the sending and
+nothing else: the caller states who the post may mention (a required argument, so that no post
+leaves it to Discord's default), and the handler hands back the message or its id and deletes or
+edits a message when asked. They **raise what Discord raises**, a `NotFound` included, so that the
+queue's own handling of a message already gone, and a caller's reason of its own wrapped in
+`StepFailedOnDiscord`, work as they would for a call made directly. The router's forecast post is
+like them: its caller states who it may mention, and its failure is raised, not queued. A log line
+differs: the writer switches its mentions off itself and splits a long one. The router keeps its
+failures and queues a failed send for its own retry where the log channel can still be found; one it
+cannot find is logged on the host. `send_log_text`, the retry's own send, raises what Discord
+raises to the retry worker, which counts it. Retrying is the change queue's, except for log lines.
+Each handler is a service in core, in a file of its own:
 
 | Handler | File | Its functions |
 |---|---|---|
@@ -739,9 +741,10 @@ of its own:
 | Standing-post handler | `core/services/standing_post_handler.py` | `post_standing`, `edit_standing` and `delete_standing` |
 | Bot-owned channel handler | `core/services/owned_channel_handler.py` | `post_in_owned_channel` and `delete_owned_channel` |
 
-Every function of the notice, standing-post and bot-owned channel handlers carries `posts_in_a_job`: they run in
-the jobs of a change, and a post off the queue cannot go through one. What the modules still post
-themselves is listed under each module's design pass.
+Every function of the notice, standing-post and bot-owned channel handlers carries
+`posts_in_a_job`: they run in the jobs of a change, and a post off the queue cannot go through one.
+The posting check lists what each module still posts itself, each under the module pass that moves
+it.
 
 *Rejected:* one gateway for every post, which would need to know every module's rules.
 *Rejected:* one handler per channel, which repeats the same rules a dozen times.
@@ -1000,7 +1003,8 @@ later on its own.
   `POSTS_OFF_THE_QUEUE`), a post made outside a job by a function that is neither decorated nor
   named off the queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with no
   reason or no function; the router is exempt, `JOB_CHECK_ALLOWED`, and `NOT_A_POST` names the two
-  calls that are not posts, under "Every post is made in a job"), a service or helper reaching the change queue through the bot, a service or helper
+  calls that are not posts, under "Every post is made in a job"), a service or helper reaching the
+  change queue through the bot, a service or helper
   looking another service up on the bot, a table written by a module that does not own it, and a
   save outside a queued change. The job check is absolute, with no list of breaches left to grow;
   the two checks on the bot list today's breaches, each under the module pass that removes it.
