@@ -1,7 +1,7 @@
-"""The standing-post handler: the one place core posts, edits and deletes a standing post.
+"""The standing-post handler: the one place a standing post is posted, edited and deleted.
 
 A standing post is one the bot keeps up to date in place: a calendar, a team lineup, the hub
-panel. It is one of the output handlers (`docs/design/architecture.md`, "Posting to Discord"),
+panel, a weather forecast. It is one of the output handlers (`docs/design/architecture.md`, "Posting to Discord"),
 and the handler sends and nothing else: **the caller says whom the post may notify**
 (*mentions*, required, so that no standing post leaves it to the bot's default), `post_standing`
 gives back the id of the message for the caller to keep, `edit_standing` edits it in place, and
