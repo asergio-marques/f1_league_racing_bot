@@ -451,7 +451,6 @@ async def test_a_post_as_text_draws_nothing(tmp_path, monkeypatch):
     assert result.posted_as_image is False
 
 
-@pytest.mark.xfail(strict=True, reason="#441: the calendar post leaves whom it notifies to the bot's default")
 @pytest.mark.parametrize("as_graphic", [False, True], ids=["text", "graphic"])
 async def test_the_calendar_post_notifies_nobody(tmp_path, as_graphic):
     """Elite's calendar is posted to its calendar channel, as text or as a graphic. The post

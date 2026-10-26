@@ -49,6 +49,7 @@ from leaguebot.core.services.change_queue import (
     StepContext,
     StepView,
 )
+from leaguebot.core.services.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
@@ -312,6 +313,8 @@ async def replace_calendar_message(
 ) -> int:
     """Post the calendar that replaces the division's last, and give the new message's id.
 
+    It goes through the standing-post handler and notifies nobody.
+
     Deleting the message replaced is the job after this one (`standing_posts`), and saving the
     id is the post job's `record`: this sends and nothing else, so a post Discord refuses can
     never have taken the old calendar down.
@@ -331,12 +334,12 @@ async def replace_calendar_message(
 
         attachment = discord.File(str(image_path), filename=image_path.name)
         try:
-            posted = await channel.send(content, file=attachment)
+            return await post_standing(
+                channel, content, mentions=discord.AllowedMentions.none(), file=attachment
+            )
         finally:
             discard_attachment(attachment)
-    else:
-        posted = await channel.send(content)
-    return posted.id
+    return await post_standing(channel, content, mentions=discord.AllowedMentions.none())
 
 
 async def post_division_calendar(
