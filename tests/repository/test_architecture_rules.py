@@ -49,8 +49,6 @@ PASS = {
 }
 #: One failure path for timed jobs, events and background tasks.
 BACKGROUND_FAILURES = "#453"
-#: The handlers for each kind of post, which move core's own posts onto them.
-HANDLERS = "#441"
 #: The start-up catch-up in the entry point: each module moves its own share into the handler it
 #: provides for the start-up sweep (architecture.md, "Timed work and restarts"). The missed
 #: post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
@@ -918,7 +916,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/penalty_wizard.py", "_refresh_appeals_prompt"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_refresh_prompt"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "take_down_cancel_message"): (1, PASS["results"]),
-    ("results/services/submission_steps.py", "_send"): (1, HANDLERS),
     ("results/services/results_post_service.py", "_delete_posting"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "delete_round_channel"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "produce_standings"): (1, PASS["results"]),
