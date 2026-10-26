@@ -46,6 +46,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.services.placement_service import PlacementService
 from tests.support.change_queue import in_a_job
+from tests.support.mentions import NOBODY, notified
 
 SERVER_ID = 12308
 SEASON_ID = 1
@@ -260,6 +261,19 @@ async def test_the_lineup_lists_each_team_and_its_drivers(tmp_path):
     description = _embed(channel).description
     assert "**Red**: <@101>, <@102>" in description
     assert "**Blue**: <@201>" in description
+
+
+@pytest.mark.xfail(strict=True, reason="#441: the lineup embed leaves whom it notifies to the bot's default")
+async def test_the_lineup_embed_notifies_nobody(tmp_path):
+    """Pro's lineup, one driver at Red, is posted as the embed. It names the driver, and
+    notifies nobody."""
+    db_path = await _make_db(tmp_path, name="lineup_quiet", drivers=ONE_DRIVER)
+    channel = _channel()
+
+    await _refresh(db_path, _guild(channel=channel))
+
+    assert "<@4242>" in _embed(channel).description
+    assert notified(channel.send.await_args.kwargs.get("allowed_mentions")) == NOBODY
 
 
 async def test_the_lineup_is_titled_with_the_divisions_name(tmp_path):

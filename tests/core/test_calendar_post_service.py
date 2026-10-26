@@ -22,6 +22,7 @@ import pytest
 
 import leaguebot.core.services.calendar_post_service as cps
 from tests.support.change_queue import in_a_job
+from tests.support.mentions import NOBODY, notified
 
 TRACKS = {
     "Silverstone Circuit": NS(
@@ -448,3 +449,22 @@ async def test_a_post_as_text_draws_nothing(tmp_path, monkeypatch):
     assert kwargs["image_path"] is None
     assert kwargs["content"] == cps.textual_calendar("Elite", _rounds())
     assert result.posted_as_image is False
+
+
+@pytest.mark.xfail(strict=True, reason="#441: the calendar post leaves whom it notifies to the bot's default")
+@pytest.mark.parametrize("as_graphic", [False, True], ids=["text", "graphic"])
+async def test_the_calendar_post_notifies_nobody(tmp_path, as_graphic):
+    """Elite's calendar is posted to its calendar channel, as text or as a graphic. The post
+    notifies nobody, and gives back the new message's id."""
+    png = tmp_path / "calendar.png"
+    png.write_bytes(b"\x89PNG")
+    channel, _ = _channel(message_id=555)
+    with in_a_job():
+        posted = await cps.replace_calendar_message(
+            channel,
+            content=None if as_graphic else cps.calendar_heading("Elite"),
+            image_path=png if as_graphic else None,
+        )
+
+    assert posted == 555
+    assert notified(channel.send.await_args.kwargs.get("allowed_mentions")) == NOBODY

@@ -52,6 +52,7 @@ from tests.support.change_queue import (
     stopped_job,
     text_channel,
 )
+from tests.support.mentions import NOBODY, notified
 
 
 @pytest.fixture(autouse=True)
@@ -410,6 +411,23 @@ async def test_a_deleted_panel_is_posted_again(league):
 
     assert len(league.hub.sent) == 1
     assert await _stored_panel(league) == league.hub.posted[0].id
+
+
+@pytest.mark.xfail(strict=True, reason="#441: the hub panel edited leaves whom it notifies to the bot's default")
+async def test_the_hub_panel_posted_or_edited_notifies_nobody(league):
+    """The hub is set and no panel stands: a refresh posts it. An option is registered and the
+    panel refreshed again: it is edited in place. Neither the post nor the edit notifies
+    anybody."""
+    await _ask_refresh(league)
+    await run_queue(league.bot)
+    panel = league.hub.posted[0]
+    register_option(_option("licence"))
+    await _ask_refresh(league)
+    await run_queue(league.bot)
+
+    assert len(league.hub.sent) == 1
+    assert notified(league.hub.send.await_args.kwargs.get("allowed_mentions")) == NOBODY
+    assert notified(panel.edit.await_args.kwargs.get("allowed_mentions")) == NOBODY
 
 
 async def test_a_refused_panel_stops_the_queue(league):
