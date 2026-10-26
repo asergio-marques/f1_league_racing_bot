@@ -720,19 +720,18 @@ kind has its own rules for failures and for later changes:
 | **Notice** | a cancellation notice, a verdict, a round's check-in call (edited in place as drivers answer) | its id is kept wherever it might later be edited or deleted |
 | **Bot-owned channel** | a results submission channel, a driver's own signup channel | deleted whole with its channel; only a post the bot must find again, such as a prompt it replaces, has its id kept |
 
-The code that makes a post still builds its own text, pictures and buttons, and saves the message
-id it is handed back. The notice, standing-post and bot-owned channel handlers do the sending and
+The code that makes a post still builds its own text, pictures and buttons, and saves the message id
+it is handed back. The notice, standing-post and bot-owned channel handlers do the sending and
 nothing else: the caller states who the post may mention (a required argument, so that no post
 leaves it to Discord's default), and the handler hands back the message or its id and deletes or
 edits a message when asked. They **raise what Discord raises**, a `NotFound` included, so that the
 queue's own handling of a message already gone, and a caller's reason of its own wrapped in
-`StepFailedOnDiscord`, work as they would for a call made directly. A forecast is a standing post
-like the rest, and goes through the standing-post handler. A log line differs: the writer switches
-its mentions off itself and splits a long one. The router keeps its failures and queues a failed
-send for its own retry where the log channel can still be found; one it cannot find is logged on
-the host. `send_log_text`, the retry's own send, raises what Discord
-raises to the retry worker, which counts it. Retrying is the change queue's, except for log lines.
-Each handler is a service in core, in a file of its own:
+`StepFailedOnDiscord`, work as they would for a call made directly. A log line differs: the writer
+switches its mentions off itself and splits a long one. The router keeps its failures and queues a
+failed send for its own retry where the log channel can still be found; one it cannot find is logged
+on the host. `send_log_text`, the retry's own send, raises what Discord raises to the retry worker,
+which counts it. Retrying is the change queue's, except for log lines. Each handler is a service in
+core, in a file of its own:
 
 | Handler | File | Its functions |
 |---|---|---|
