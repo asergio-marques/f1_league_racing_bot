@@ -639,7 +639,6 @@ async def test_a_discarded_rejudgement_confirms_nothing(tmp_path, monkeypatch):
 # ── The review's channel ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#441: the review channel's line leaves whom it notifies to the bot's default")
 async def test_the_confirmation_s_review_channel_line_notifies_only_the_member_it_names(
     tmp_path, monkeypatch,
 ):

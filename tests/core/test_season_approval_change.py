@@ -1489,7 +1489,6 @@ def _mentions_of(league: Any, cid: int, text: str) -> Any:
     return notified(call.kwargs.get("allowed_mentions"))
 
 
-@pytest.mark.xfail(strict=True, reason="#441: the drawing notice leaves whom it notifies to the bot's default")
 async def test_the_season_approval_drawing_notice_notifies_nobody(tmp_path, monkeypatch):
     """Season 3 is approved with results and attendance on. The notice that its lineups,
     calendars and opening classifications are being posted, in the review's channel, notifies
@@ -2242,7 +2241,6 @@ async def test_a_refused_opening_standings_picture_is_posted_as_text_in_the_same
     assert jobs and all(job["done_at"] and job["tries"] == 0 for job in jobs), jobs
 
 
-@pytest.mark.xfail(strict=True, reason="#441: the review channel's line leaves whom it notifies to the bot's default")
 @pytest.mark.parametrize("told_by", ["the approval", "the tell change"])
 async def test_the_review_channel_line_notifies_only_the_member_it_names(
     tmp_path, monkeypatch, told_by,

@@ -962,7 +962,11 @@ async def _post_batch_notice(ctx: StepContext) -> StepResult:
     guild = await _league_guild(ctx.bot)
     channel_id = int(ctx.step_payload["channel_id"])
     channel = _channel(guild, channel_id, "submission")
-    message = await send_notice(channel, ctx.step_payload.get("text") or DEFAULT_NOTICE)
+    message = await send_notice(
+        channel,
+        ctx.step_payload.get("text") or DEFAULT_NOTICE,
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
     return StepResult(
         result={"message_id": message.id, "channel_id": channel_id, "link": message.jump_url}
     )

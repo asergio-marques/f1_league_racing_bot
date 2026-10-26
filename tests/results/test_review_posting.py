@@ -1249,7 +1249,6 @@ async def test_the_batch_notice_brackets_the_republication(tmp_path):
     assert league.channel(SUBMISSION_CHANNEL).messages == {}
 
 
-@pytest.mark.xfail(strict=True, reason="#441: the drawing notice leaves whom it notifies to the bot's default")
 async def test_the_drawing_notice_notifies_nobody(tmp_path):
     """A round's results are posted again with the drawing notice. The notice in the round's
     results submission channel notifies nobody."""

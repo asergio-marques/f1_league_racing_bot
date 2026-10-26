@@ -514,7 +514,6 @@ async def test_a_withdrawn_forecast_discord_will_not_delete_stops_the_queue_keep
     assert "8001" in bullet
 
 
-@pytest.mark.xfail(strict=True, reason="#441: the invalidation notice leaves whom it notifies to the bot's default")
 async def test_the_invalidation_notice_notifies_nobody(tmp_path):
     """Weather on; round 3's posted phase 1 forecast is withdrawn by moving the round ninety-one
     days on. The notice in Pro's forecast channel that the forecasts no longer stand notifies

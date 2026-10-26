@@ -167,8 +167,11 @@ def channel_refused(actor_id: int | None, season_number: Any, reply: str) -> str
     )
 
 
-async def tell_channel(bot: Any, channel_id: int, text: str) -> None:
+async def tell_channel(bot: Any, channel_id: int, text: str, actor_id: int | None) -> None:
     """Post *text* in the review's channel, read from the league's server as the job runs.
+
+    The line names the member *actor_id*, and may notify them alone: no role, no other member
+    (a refusal reason can quote one), and not @everyone.
 
     Raises `StepFailedOnDiscord` where the channel is no longer there, and whatever Discord
     raises where the post is refused: the job that calls it stops the queue.
@@ -179,7 +182,12 @@ async def tell_channel(bot: Any, channel_id: int, text: str) -> None:
         raise StepFailedOnDiscord(
             f"the channel <#{channel_id}> no longer exists or cannot be posted in"
         )
-    await send_notice(channel, text)
+    mentioned = (
+        discord.AllowedMentions(users=[discord.Object(id=actor_id)], roles=False, everyone=False)
+        if actor_id is not None
+        else discord.AllowedMentions.none()
+    )
+    await send_notice(channel, text, allowed_mentions=mentioned)
 
 
 def ungranted_line(user_ids: list[str]) -> str:
@@ -525,7 +533,7 @@ def season_approval_change(
             raise StepFailedOnDiscord(
                 f"the channel <#{channel_id}> no longer exists or cannot be posted in"
             )
-        message = await send_notice(channel, NOTICE_TEXT)
+        message = await send_notice(channel, NOTICE_TEXT, allowed_mentions=discord.AllowedMentions.none())
         return StepResult(
             result={"message_id": message.id, "channel_id": channel_id, "link": message.jump_url}
         )
@@ -608,7 +616,7 @@ def season_approval_change(
             text = channel_refused(ctx.actor_id, number, str(refused))
         else:
             text = channel_not_approved(ctx.actor_id, number)
-        await tell_channel(ctx.bot, int(ctx.payload["channel_id"]), text)
+        await tell_channel(ctx.bot, int(ctx.payload["channel_id"]), text, ctx.actor_id)
         return StepResult(result={"told": True})
 
     async def reply_lost(ctx: StepContext) -> bool:
@@ -812,7 +820,9 @@ def season_approval_tell_change() -> ChangeType:
         return Verdict.go()
 
     async def tell(ctx: StepContext) -> StepResult:
-        await tell_channel(ctx.bot, int(ctx.payload["channel_id"]), str(ctx.payload["text"]))
+        await tell_channel(
+            ctx.bot, int(ctx.payload["channel_id"]), str(ctx.payload["text"]), ctx.actor_id
+        )
         return StepResult(result={"told": True})
 
     async def describe(ctx: StepContext) -> str:
