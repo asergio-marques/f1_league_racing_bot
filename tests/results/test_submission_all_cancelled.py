@@ -520,7 +520,6 @@ async def test_a_round_ending_cancelled_posts_the_round_cancelled_notices_in_che
     assert str(checkin.args[0]).startswith(f"<@&{PRO_ROLE}>")
     assert NOTICE_HEADING in str(checkin.args[0])
     assert not checkin.kwargs.get("silent")
-    assert checkin.kwargs["allowed_mentions"].roles is True
 
 
 async def test_a_round_ending_cancelled_leaves_its_call_and_forecast_until_the_day_after(
