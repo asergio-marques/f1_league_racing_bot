@@ -60,7 +60,6 @@ async def test_a_notice_s_role_mention_is_the_only_one_left_unwrapped():
     assert _role_ids(silent.kwargs["allowed_mentions"]) == set()
 
 
-@pytest.mark.xfail(strict=True, reason="#441: the router still posts a forecast")
 def test_the_router_posts_no_forecast():
     """The router writes log lines, the stop notice and the turn-away, and nothing else: it has
     no forecast post, nor the stand-ins for a division's forecast channel that only it read."""

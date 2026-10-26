@@ -1,9 +1,12 @@
-"""OutputRouter — the one writer of the log channel, and the poster of a forecast's text.
+"""OutputRouter — the one writer of the log channel: log lines, the stop notice and the turn-away.
 
-It is **not** the way every post leaves the bot. A graphic, an embed, and every post the bot
-later replaces in place are sent by the module that makes them, so a forecast drawn as a
-graphic, a calendar or a results table never passes through here. The one message with buttons
-that does is the change queue's stop notice, sent to the log channel (`post_notice`). The turn-away of a message typed while an earlier turn waits is also sent from here (`turn_away`), at once and off the queue. Which channels exist, and what each may carry, is Constitution Principle VII and
+It is **not** the way every post leaves the bot. A forecast, a calendar, a lineup and every
+other post the bot later replaces in place go through the other handlers or are sent by the
+module that makes them, so a forecast or a results table never passes through here. The one
+message with buttons that does is the change queue's stop notice, sent to the log channel
+(`post_notice`). The turn-away of a message typed
+while an earlier turn waits is also sent from here (`turn_away`), at once and off the queue.
+Which channels exist, and what each may carry, is Constitution Principle VII and
 `core/services/channel_registry_service.py`.
 
 The router is one of four output handlers (`docs/design/architecture.md`, "Posting to Discord"):
@@ -13,11 +16,10 @@ handler (`standing_post_handler.py`) and the bot-owned channel handler
 writer's send for a caller that holds the channel already, which the retry worker is: it divides
 a late line and sends it mentioning nobody, and raises what Discord raises.
 
-What it holds, for its two kinds of post, are the rules for them: a mention in a log line
-names without notifying, a record longer than one message is split, both are sent with
-mentions switched off, and a log line that fails to post is queued for retry where the caller
-asks. A forecast's text that fails to post is not queued: it raises, for the change queue to
-stop on and try again as text. The log channel is written nowhere else, which `tests/repository/test_architecture_rules.py` checks.
+What it holds are the rules for a log line: a mention in it names without notifying, a record
+longer than one message is split, both are sent with mentions switched off, and a line that
+fails to post is queued for retry where the caller asks. The log channel is written nowhere
+else, which `tests/repository/test_architecture_rules.py` checks.
 """
 
 from __future__ import annotations
@@ -26,17 +28,14 @@ import asyncio
 import logging
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Optional, Protocol
+from typing import TYPE_CHECKING, Optional
 
 import aiosqlite
 import discord
 
 from leaguebot.core.db.database import inserted_id
-from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.utils.answering import answering_now
-from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import ROLE_MENTION, USER_MENTION
 from leaguebot.core.utils.messages import chunk_message
 
@@ -55,25 +54,6 @@ log = logging.getLogger(__name__)
 ANSWERABLE_FOR = timedelta(minutes=14)
 
 
-class ForecastTarget(Protocol):
-    """What `OutputRouter.post_forecast` reads of a division: where its forecasts go.
-
-    A `leaguebot.core.models.division.Division` is one. So is the stand-in a caller holding only the channel
-    id builds, which is why this names the one attribute rather than asking for a whole
-    division (#228).
-    """
-
-    @property
-    def forecast_channel_id(self) -> int | None: ...
-
-
-@dataclass(frozen=True)
-class ForecastChannel:
-    """A `ForecastTarget` for a caller holding only the channel id, not a whole division."""
-
-    forecast_channel_id: int | None
-
-
 async def send_log_text(channel: discord.TextChannel, content: str) -> None:
     """Send the log line *content* to the log *channel*, mentioning nobody.
 
@@ -88,7 +68,7 @@ async def send_log_text(channel: discord.TextChannel, content: str) -> None:
 
 
 class OutputRouter:
-    """Writes the log channel and a forecast's text, each failure contained; see above."""
+    """Writes the log channel, each failure contained; see above."""
 
     def __init__(
         self,
@@ -110,53 +90,6 @@ class OutputRouter:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-
-    @posts_in_a_job
-    async def post_forecast(
-        self,
-        division: ForecastTarget,
-        content: str,
-        *,
-        mentions: discord.AllowedMentions,
-        parts: "Optional[list[discord.Message]]" = None,
-    ) -> "Optional[discord.Message]":
-        """Post *content* to the division's forecast channel, letting *mentions* notify.
-
-        *mentions* is the caller's to state, every part of the text is sent with it, and there is
-        no default: a forecast that names its division's role passes that role, and the mystery
-        round's notice passes `AllowedMentions.none()` (architecture.md, "Posting to Discord",
-        "Who it may mention, stated where it is sent").
-
-        Returns the ``discord.Message`` sent (the last, where the text is split), or ``None``
-        where the division has no forecast channel set; a caller that records every part passes a
-        list as *parts*, which is given each message sent, in order. A post Discord refuses, or to
-        a channel the bot cannot reach, raises `StepFailedOnDiscord` naming the channel: a
-        forecast is a job of the change queue, which stops on the failure and tries the text
-        again itself, so nothing is put on the old retry queue (#439). Where the failure comes
-        after a part was sent, the exception keeps the parts sent (``new``, in ``channel_id``),
-        for the next try to remove before it posts the forecast afresh.
-        """
-        channel_id = division.forecast_channel_id
-        if channel_id is None:
-            # Nothing to post to. It came to the same before — `_send` asked Discord for a
-            # channel with no id and logged the failure — less the request.
-            log.error("post_forecast: the division has no forecast channel")
-            return None
-        sent: list[discord.Message] = []
-        message, reason, _retryable = await self._try_send(
-            channel_id, content, "forecast", False, mentions=mentions, sent=sent
-        )
-        if message is None:
-            raise StepFailedOnDiscord(
-                f"the forecast could not be posted to <#{channel_id}>: {reason}",
-                result=(
-                    {"new": [each.id for each in sent], "channel_id": channel_id}
-                    if sent else None
-                ),
-            )
-        if parts is not None:
-            parts.extend(sent)
-        return message
 
     async def log_destination(self) -> "Optional[int]":
         """Where the log goes now: the log channel's id, or ``None`` before the bot is set up.
@@ -181,15 +114,13 @@ class OutputRouter:
         form it records is warned, seen by them alone, while their interaction can still be
         answered (:meth:`_warn_member`).
 
-        Returns the ``discord.Message`` on success, or ``None`` on failure — as
-        :meth:`post_forecast` already does. A caller that wants to point a reader at what
-        it just logged can take ``jump_url`` from it; every other caller ignores it.
+        Returns the ``discord.Message`` on success, or ``None`` on failure. A caller that
+        wants to point a reader at what it just logged can take ``jump_url`` from it; every
+        other caller ignores it.
 
         The **first** message is returned where the content had to be split across
         Discord's limit, because a link is meant to land a reader at the top of the block
-        rather than at its tail. This is the one respect in which it differs from
-        :meth:`post_forecast`, which returns the last because its callers store the id to
-        edit the message later.
+        rather than at its tail.
 
         *channel* sends to that channel id instead, wrapped, separated and split exactly as
         any other line, but **neither queued for retry nor told to any member** when it cannot
@@ -478,9 +409,7 @@ class OutputRouter:
         retry_db_path is configured and *enqueue_on_failure* is set.
 
         *return_first* returns the **first** message instead, for a caller linking a
-        reader to the start of what it wrote. It defaults to False because the forecast
-        callers store the returned id to edit that message later, and returning a
-        different one would repoint those edits.
+        reader to the start of what it wrote. It defaults to False, returning the last.
 
         *view* is sent with the last part, so that its buttons end the message.
         """
@@ -499,15 +428,10 @@ class OutputRouter:
         return_first: bool,
         view: "Optional[discord.ui.View]" = None,
         mention_role: int | None = None,
-        mentions: "Optional[discord.AllowedMentions]" = None,
-        sent: "Optional[list[discord.Message]]" = None,
     ) -> "tuple[Optional[discord.Message], str, bool]":
         """Send *content*, and say how it went: the message, or None with why and whether a
         retry could mend it (a refused or failed post can; a channel not found cannot).
-        Logs every failure and never raises.
-
-        *sent*, where given, is added each message sent, in order, so that a caller finds what
-        stands in the channel when a later part is refused."""
+        Logs every failure and never raises."""
         channel = self._bot.get_channel(channel_id)
         if channel is None:
             try:
@@ -530,7 +454,7 @@ class OutputRouter:
             # Discord messages have a 2000-char limit; chunk if needed
             first_msg: Optional[discord.Message] = None
             last_msg: Optional[discord.Message] = None
-            allowed = mentions if mentions is not None else (
+            allowed = (
                 discord.AllowedMentions.none() if mention_role is None
                 else discord.AllowedMentions(
                     everyone=False, users=False, roles=[discord.Object(id=mention_role)])
@@ -541,8 +465,6 @@ class OutputRouter:
                     last_msg = await channel.send(chunk, allowed_mentions=allowed, view=view)
                 else:
                     last_msg = await channel.send(chunk, allowed_mentions=allowed)
-                if sent is not None:
-                    sent.append(last_msg)
                 if first_msg is None:
                     first_msg = last_msg
             return (first_msg if return_first else last_msg), "", False
