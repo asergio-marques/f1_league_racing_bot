@@ -271,7 +271,7 @@ def season_review_take_down_change() -> ChangeType:
             )
         await send_notice(
             channel, text,
-            allowed_mentions=discord.AllowedMentions(
+            mentions=discord.AllowedMentions(
                 everyone=False, roles=False, users=[discord.Object(id=reviewer)]
             ),
         )
@@ -445,7 +445,7 @@ def season_review_post_change(
     async def post_drawing_notice(ctx: StepContext) -> StepResult:
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
         channel = await _channel_of(ctx)
-        message = await send_notice(channel, DRAWING_NOTICE, allowed_mentions=_NO_MENTIONS)
+        message = await send_notice(channel, DRAWING_NOTICE, mentions=_NO_MENTIONS)
         return StepResult(result={"new": message.id, "channel_id": channel.id})
 
     @posts_in_a_job
@@ -468,7 +468,7 @@ def season_review_post_change(
             try:
                 message = await send_notice(
                     channel, PICTURE_HEADINGS.get(str(picture["kind"]), str(picture["name"])),
-                    allowed_mentions=_NO_MENTIONS, file=attachment,
+                    mentions=_NO_MENTIONS, file=attachment,
                 )
             except discord.HTTPException as exc:
                 # Discord refused the picture: the text stands in, in the same try.
@@ -478,7 +478,7 @@ def season_review_post_change(
                 discard_drawn(drawn)
         if message is None:
             message = await send_notice(
-                channel, str(picture["text"]), allowed_mentions=_NO_MENTIONS
+                channel, str(picture["text"]), mentions=_NO_MENTIONS
             )
         result: dict[str, Any] = {"new": message.id, "channel_id": channel.id}
         if fault is None:
@@ -511,7 +511,7 @@ def season_review_post_change(
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
         channel = await _channel_of(ctx)
         message = await send_notice(
-            channel, str(ctx.step_payload["text"]), allowed_mentions=_NO_MENTIONS
+            channel, str(ctx.step_payload["text"]), mentions=_NO_MENTIONS
         )
         return StepResult(result={"new": message.id, "channel_id": channel.id})
 
@@ -525,7 +525,7 @@ def season_review_post_change(
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
         channel = await _channel_of(ctx)
         message = await send_notice(
-            channel, str(ctx.payload["question"]), allowed_mentions=_NO_MENTIONS,
+            channel, str(ctx.payload["question"]), mentions=_NO_MENTIONS,
             view=approve_view(dict(ctx.payload)),
         )
         line = f"{ctx.named} | {ctx.payload['review']} | Review posted"

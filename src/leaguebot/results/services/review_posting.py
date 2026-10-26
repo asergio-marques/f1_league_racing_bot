@@ -965,7 +965,7 @@ async def _post_batch_notice(ctx: StepContext) -> StepResult:
     message = await send_notice(
         channel,
         ctx.step_payload.get("text") or DEFAULT_NOTICE,
-        allowed_mentions=discord.AllowedMentions.none(),
+        mentions=discord.AllowedMentions.none(),
     )
     return StepResult(
         result={"message_id": message.id, "channel_id": channel_id, "link": message.jump_url}

@@ -15,8 +15,6 @@ import pytest
 
 from tests.support.change_queue import http_error, in_a_job
 
-NOT_BUILT = "#441: the notice handler is not built yet"
-
 
 def _channel():
     message = MagicMock(id=9001)
@@ -27,7 +25,6 @@ def _channel():
     return channel, message
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_send_notice_sends_the_text_with_the_mentions_given_and_gives_the_message():
     from leaguebot.core.services.notice_handler import send_notice
 
@@ -40,7 +37,6 @@ async def test_send_notice_sends_the_text_with_the_mentions_given_and_gives_the_
     channel.send.assert_awaited_once_with("Drawing the graphics…", allowed_mentions=mentions)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_send_notice_passes_on_a_file_a_view_and_silent():
     from leaguebot.core.services.notice_handler import send_notice
 
@@ -56,7 +52,6 @@ async def test_send_notice_passes_on_a_file_a_view_and_silent():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_send_notice_cannot_be_called_without_saying_who_it_may_notify():
     from leaguebot.core.services.notice_handler import send_notice
 
@@ -66,7 +61,6 @@ async def test_send_notice_cannot_be_called_without_saying_who_it_may_notify():
     channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_edit_notice_edits_the_message_with_the_mentions_given():
     from leaguebot.core.services.notice_handler import edit_notice
 
@@ -79,7 +73,6 @@ async def test_edit_notice_edits_the_message_with_the_mentions_given():
     message.edit.assert_awaited_once_with(content="Check-in closes soon", allowed_mentions=mentions)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize("error", [http_error(), http_error(discord.NotFound, status=404)],
                          ids=["refused", "gone"])
 async def test_a_notice_handler_raises_what_discord_raises(error):
@@ -101,7 +94,6 @@ async def test_a_notice_handler_raises_what_discord_raises(error):
     assert sent.value is edited.value is deleted.value is error
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_notice_outside_a_job_is_refused_before_it_is_sent():
     from leaguebot.core.services.notice_handler import delete_notice, edit_notice, send_notice
     from leaguebot.core.utils.in_a_job import PostedOutsideAJob

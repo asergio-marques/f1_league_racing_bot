@@ -47,7 +47,7 @@ async def _tell(ctx: StepContext) -> StepResult:
         if mention is not None
         else discord.AllowedMentions.none()
     )
-    await send_notice(channel, str(ctx.payload["text"]), allowed_mentions=allowed)
+    await send_notice(channel, str(ctx.payload["text"]), mentions=allowed)
     return StepResult(result={"told": True})
 
 

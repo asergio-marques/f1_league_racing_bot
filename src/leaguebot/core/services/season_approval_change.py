@@ -187,7 +187,7 @@ async def tell_channel(bot: Any, channel_id: int, text: str, actor_id: int | Non
         if actor_id is not None
         else discord.AllowedMentions.none()
     )
-    await send_notice(channel, text, allowed_mentions=mentioned)
+    await send_notice(channel, text, mentions=mentioned)
 
 
 def ungranted_line(user_ids: list[str]) -> str:
@@ -533,7 +533,7 @@ def season_approval_change(
             raise StepFailedOnDiscord(
                 f"the channel <#{channel_id}> no longer exists or cannot be posted in"
             )
-        message = await send_notice(channel, NOTICE_TEXT, allowed_mentions=discord.AllowedMentions.none())
+        message = await send_notice(channel, NOTICE_TEXT, mentions=discord.AllowedMentions.none())
         return StepResult(
             result={"message_id": message.id, "channel_id": channel_id, "link": message.jump_url}
         )

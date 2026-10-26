@@ -958,7 +958,7 @@ def _round_change(
             await send_notice(
                 channel,
                 hooks.invalidation_text(str(ctx.step_payload["track"])),
-                allowed_mentions=discord.AllowedMentions.none(),
+                mentions=discord.AllowedMentions.none(),
             )
         except discord.HTTPException as exc:
             raise StepFailedOnDiscord(
