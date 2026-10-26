@@ -458,9 +458,6 @@ class TestDiscordDelete:
 # the messages sent come back in order. A text forecast refused keeps the stop notice's words.
 # ---------------------------------------------------------------------------
 
-NOT_THROUGH_THE_HANDLER = "#441: a forecast is not yet sent through the standing-post handler"
-
-
 def _spy_on_post_standing(monkeypatch) -> list[tuple[tuple, dict]]:
     """Record every `post_standing` call, wherever the weather service takes it from, and let
     each through to the real handler."""
@@ -504,7 +501,6 @@ def _sending(channel: MagicMock, *, first_id: int, refuse_from: int | None = Non
     channel.send = AsyncMock(side_effect=send)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_THROUGH_THE_HANDLER)
 async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
     tmp_path, monkeypatch
 ):
@@ -539,10 +535,7 @@ async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
 @pytest.mark.parametrize(
     "case",
     [
-        pytest.param(
-            "second-part-refused",
-            marks=pytest.mark.xfail(strict=True, reason=NOT_THROUGH_THE_HANDLER),
-        ),
+        "second-part-refused",
         "channel-unreachable",
         "not-a-text-channel",
     ],
@@ -593,7 +586,6 @@ async def test_a_text_forecast_part_refused_keeps_the_parts_sent(tmp_path, monke
         assert [_content_of(call) for call in calls] == chunk_message(text)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_THROUGH_THE_HANDLER)
 async def test_a_graphic_forecast_goes_through_the_standing_post_handler(tmp_path, monkeypatch):
     """The Phase 2 forecast of division 1 is posted as a graphic to channel 999, on a message
     carrying role 1's mention and letting role 1 notify. It goes through the standing-post

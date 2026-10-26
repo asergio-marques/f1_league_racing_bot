@@ -262,7 +262,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             mentions=_forecast_mentions(phase, mention),
         )
         result = {
-            "new": [each.id for each in parts], "channel_id": int(row["forecast_channel_id"]),
+            "new": list(parts), "channel_id": int(row["forecast_channel_id"]),
             "phase": phase,
             "old": earlier, "division_id": row["division_id"],
         }

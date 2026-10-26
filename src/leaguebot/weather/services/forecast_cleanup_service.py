@@ -3,8 +3,8 @@
 Feature 007: Forecast Message Cleanup.
 
 Deletes are the inverse of writes: they use the channel and message ids stored when the
-forecast was posted, whether it went out as text through `OutputRouter` or as a graphic sent
-from here.
+forecast was posted, whether it went out as text or as a graphic, each sent from here through the standing-post
+handler.
 
 Public API:
   store_forecast_message_on — persist a message ID, on the save the post job's record has
@@ -27,7 +27,9 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord
+from leaguebot.core.services.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.core.utils.messages import chunk_message
 
 if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
@@ -201,7 +203,7 @@ async def post_phase_message(
     attachment=None,
     attachment_text: str = "",
     mentions: discord.AllowedMentions,
-) -> "list[discord.Message]":
+) -> list[int]:
     """Post one weather occasion, and nothing else: the job that calls it records the message and
     deletes the one it supersedes.
 
@@ -221,51 +223,21 @@ async def post_phase_message(
     caller and sent with the text or the picture alike: the division's role for a forecast,
     nobody for a mystery notice.
 
-    Returns every message the occasion took, in order: a forecast too long for one message is
-    sent in parts, and every part is recorded and deleted with it. A part sent before a later one
-    is refused is kept on the exception, for the next try to remove.
+    Both manners go through the standing-post handler (`post_standing`), the text divided by
+    `chunk_message` and one post for each part, the graphic as one.
+
+    Returns the id of every message the occasion took, in order: a forecast too long for one
+    message is sent in parts, and every part is recorded and deleted with it. A part sent before a
+    later one is refused is kept on the exception, for the next try to remove.
     """
-    if attachment is None:
-        # The textual path, unchanged: the router chunks it, and raises where Discord refuses.
-        from leaguebot.core.services.output_router import ForecastChannel
-
-        parts: list[discord.Message] = []
-        msg = await bot.output_router.post_forecast(
-            ForecastChannel(channel_id), text, mentions=mentions, parts=parts
-        )
-        if msg is None:
-            raise StepFailedOnDiscord(
-                f"the Phase {phase_number} forecast has no channel to be posted to"
-            )
-        return parts or [msg]
-
-    # One `finally` around the whole graphic branch. Two of its three exits abandon the
-    # picture *before* the send — an unfetchable channel and one that is not a text
-    # channel — and those are the paths a per-send cleanup would miss.
-    from leaguebot.image.services.image_render_service import discard_attachment
-
+    as_text = attachment is None
     try:
-        channel = bot.get_channel(channel_id)
-        if channel is None:
-            try:
-                channel = await bot.fetch_channel(channel_id)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-                log.error(
-                    "post_phase_message: cannot fetch forecast channel id=%s: %s",
-                    channel_id, exc,
-                )
-                raise StepFailedOnDiscord(
-                    f"the forecast channel <#{channel_id}> could not be reached: {exc}"
-                ) from exc
-        if not isinstance(channel, discord.TextChannel):
-            log.error("post_phase_message: channel id=%s is not a TextChannel", channel_id)
-            raise StepFailedOnDiscord(f"<#{channel_id}> is not a text channel")
-
+        channel = await _forecast_channel(bot, channel_id, as_text=as_text)
+        if attachment is None:
+            return await _post_text_parts(channel, channel_id, text, mentions)
         try:
-            return [await channel.send(
-                attachment_text,
-                file=attachment,
-                allowed_mentions=mentions,
+            return [await post_standing(
+                channel, attachment_text, file=attachment, mentions=mentions
             )]
         except discord.HTTPException as exc:
             log.warning(
@@ -276,4 +248,71 @@ async def post_phase_message(
                 f"the Phase {phase_number} forecast could not be posted to <#{channel_id}>: {exc}"
             ) from exc
     finally:
-        discard_attachment(attachment)
+        # One `finally` around the whole graphic branch. Two of its three exits abandon the
+        # picture *before* the send — an unfetchable channel and one that is not a text
+        # channel — and those are the paths a per-send cleanup would miss.
+        if attachment is not None:
+            from leaguebot.image.services.image_render_service import discard_attachment
+
+            discard_attachment(attachment)
+
+
+async def _forecast_channel(
+    bot: "LeagueBot", channel_id: int, *, as_text: bool
+) -> discord.TextChannel:
+    """The text channel *channel_id*, found once for either manner of forecast, or the stop.
+
+    A forecast drawn as text stops in the words "the forecast could not be posted to <#id>:
+    {reason}", raised with no cause so that the stop notice shows those words; one drawn as a
+    graphic keeps its own words and is raised from Discord's fault where there is one.
+    """
+    channel = bot.get_channel(channel_id)
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(channel_id)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+            log.error(
+                "post_phase_message: cannot fetch forecast channel id=%s: %s",
+                channel_id, exc,
+            )
+            if as_text:
+                raise StepFailedOnDiscord(
+                    f"the forecast could not be posted to <#{channel_id}>: {exc}"
+                ) from None
+            raise StepFailedOnDiscord(
+                f"the forecast channel <#{channel_id}> could not be reached: {exc}"
+            ) from exc
+    if not isinstance(channel, discord.TextChannel):
+        log.error("post_phase_message: channel id=%s is not a TextChannel", channel_id)
+        if as_text:
+            raise StepFailedOnDiscord(
+                f"the forecast could not be posted to <#{channel_id}>: "
+                f"channel {channel_id} is not a text channel"
+            )
+        raise StepFailedOnDiscord(f"<#{channel_id}> is not a text channel")
+    return channel
+
+
+async def _post_text_parts(
+    channel: discord.TextChannel, channel_id: int, text: str, mentions: discord.AllowedMentions
+) -> list[int]:
+    """Send *text* to *channel* in the parts `chunk_message` divides it into, each through the
+    standing-post handler, and give the ids sent, in order.
+
+    A part Discord refuses stops the post, raised with no cause and keeping the ids already sent
+    (``new``, in ``channel_id``) for the next try to remove before it posts the forecast afresh.
+    """
+    sent: list[int] = []
+    for part in chunk_message(text):
+        try:
+            sent.append(await post_standing(channel, part, mentions=mentions))
+        except discord.HTTPException as exc:
+            log.error(
+                "post_phase_message: HTTP error posting to forecast channel id=%s: %s",
+                channel_id, exc,
+            )
+            raise StepFailedOnDiscord(
+                f"the forecast could not be posted to <#{channel_id}>: {exc}",
+                result={"new": sent, "channel_id": channel_id} if sent else None,
+            ) from None
+    return sent
