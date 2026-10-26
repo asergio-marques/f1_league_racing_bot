@@ -19,6 +19,7 @@ cannot go through it.
 from __future__ import annotations
 
 import discord
+from discord.utils import MISSING
 
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 
@@ -54,20 +55,19 @@ async def edit_standing(
     message,
     *,
     mentions: discord.AllowedMentions,
-    content: str | None = None,
-    embed: discord.Embed | None = None,
-    view: discord.ui.View | None = None,
+    content: str | None = MISSING,
+    embed: discord.Embed | None = MISSING,
+    view: discord.ui.View | None = MISSING,
 ) -> None:
     """Edit the standing post *message* in place with whichever of *content*, *embed* and *view*
     are given, notifying only whom *mentions* names, raising whatever Discord raises, a message
-    already gone (``discord.NotFound``) included."""
-    parts: dict = {}
-    if content is not None:
-        parts["content"] = content
-    if embed is not None:
-        parts["embed"] = embed
-    if view is not None:
-        parts["view"] = view
+    already gone (``discord.NotFound``) included.
+
+    A part left out is left as it stands; a part given as ``None`` is taken off the post, as the
+    hub panel's buttons are when nothing is offered.
+    """
+    given = {"content": content, "embed": embed, "view": view}
+    parts = {name: part for name, part in given.items() if part is not MISSING}
     await message.edit(allowed_mentions=mentions, **parts)
 
 
