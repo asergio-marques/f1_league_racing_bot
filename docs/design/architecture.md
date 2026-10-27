@@ -728,12 +728,16 @@ edits or deletes a message or deletes a bot-owned channel whole. They **raise wh
 a `NotFound` included, so that the queue's own handling of a message already gone, and a caller's
 reason of its own wrapped in `StepFailedOnDiscord`, work as they would for a call made directly. A
 log line differs: the writer switches its mentions off itself, splits a long one, and contains its
-own failures rather than raising them. A line posted on its own (`post_log`) is queued for its own
-retry where the send fails and the log channel can still be found, and one whose channel cannot be
-found is logged on the host; a line a change saves is on the retry queue before it is sent (see "How
-a change is carried out"), and stays there whatever the failure. `send_log_text`, the retry's own
-send, raises what Discord raises to the retry worker, which counts it. Retrying is the change
-queue's, except for log lines. Each handler is a service in core, in a file of its own:
+own failures rather than raising them. Every log line is kept until it is delivered, whatever keeps
+the log channel from taking it: a line posted on its own (`post_log`) is put on the retry queue
+where it cannot be posted, its channel gone, refused or no text channel included, and a line a
+change saves is on that queue before it is sent (see "How a change is carried out"). Two kinds of
+line are never queued, each going to the host's log where it cannot be posted: the factory reset's
+closing line (below), and the retry worker's own lines, so that a row stuck while the channel is
+unreachable cannot queue a warning about itself on every try. The stop notice is posted again its
+own way (below). `send_log_text`, the retry's own send, raises what Discord raises to the retry
+worker, which counts it. Retrying is the change queue's, except for log lines. Each handler is a
+service in core, in a file of its own:
 
 | Handler | File | Its functions |
 |---|---|---|
