@@ -256,6 +256,8 @@ def _delivering_bot(db_path: str):
     bot.db_path = db_path
     bot.get_channel = MagicMock(return_value=channel)
     bot.output_router.post_log = AsyncMock()
+    # The worker's own lines go to the log channel the router names (`_post_own_line`).
+    bot.output_router.log_destination = AsyncMock(return_value=99)
     return bot, channel
 
 

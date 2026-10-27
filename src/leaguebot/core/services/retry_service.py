@@ -275,18 +275,31 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
 # ---------------------------------------------------------------------------
 
 def _safe_post_log(bot: "LeagueBot", message: str) -> None:
-    """Schedule a fire-and-forget post_log call.
+    """Schedule a fire-and-forget post of the worker's own *message* (`_post_own_line`).
 
     Uses asyncio.ensure_future so the caller does not need to await it.
-    Failures are swallowed and written to the application log at WARNING level
-    only (T018).
     """
     import asyncio
 
-    async def _post() -> None:
-        try:
-            await bot.output_router.post_log(message)
-        except Exception as exc:
-            log.warning("_safe_post_log: failed to post log notification: %s", exc, exc_info=True)
+    asyncio.ensure_future(_post_own_line(bot, message))
 
-    asyncio.ensure_future(_post())
+
+async def _post_own_line(bot: "LeagueBot", message: str) -> None:
+    """Post one of the worker's own lines, the "Stuck retry entry" warning or the "Retry delivery
+    succeeded" line, to the log channel, **never queueing it** (FR-009).
+
+    It goes through the router's path that neither queues nor warns a member (`post_log` with
+    *channel*, the log channel read from `log_destination`). Queued, a line the log channel could
+    not take would wait beside the row it reports on, and a stuck row would queue a fresh warning
+    on every cycle, each of them a stuck row of its own, for as long as the channel stayed
+    unreachable. A line that cannot be posted, or written before the bot is set up, goes to the
+    host's log at WARNING instead. Never raises.
+    """
+    router = bot.output_router
+    try:
+        channel = await router.log_destination()
+        if channel is not None and await router.post_log(message, channel=channel) is not None:
+            return
+    except Exception:
+        log.warning("_post_own_line: failed to post the retry worker's line", exc_info=True)
+    log.warning("retry worker line not posted to the log channel: %s", message)

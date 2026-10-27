@@ -323,3 +323,87 @@ class TestRetryWarningThreshold:
             await attempt_delivery(entry, bot)
 
         mock_safe_log.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# The retry worker's own lines are never queued (FR-009)
+#
+# The "Stuck retry entry" warning and the "Retry delivery succeeded" line are the worker's own.
+# Queued where the log channel could not take them, each would wait on the queue beside the row it
+# reports on, and a stuck row would queue a fresh warning on every cycle, each warning becoming a
+# stuck row of its own: the queue would grow for as long as the log channel stayed unreachable.
+# They go to the log channel where it can take them, and to the host's log where it cannot.
+# ---------------------------------------------------------------------------
+
+def _worker_bot(db_path: str, channel, *, configured: bool = True) -> MagicMock:
+    """A bot whose router is the real one, writing the retry queue in *db_path*, with the log
+    channel 99 answered by *channel*."""
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.get_channel.return_value = channel
+    bot.config_service.get_server_config = AsyncMock(
+        return_value=MagicMock(log_channel_id=99) if configured else None
+    )
+    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
+    return bot
+
+
+class TestTheRetryWorkersOwnLinesAreNotQueued:
+
+    @pytest.mark.asyncio
+    async def test_its_own_line_goes_to_the_log_channel(self, tmp_path):
+        from leaguebot.core.services.retry_service import _post_own_line
+
+        db_path = await _make_db(str(tmp_path))
+        channel = _make_text_channel_mock()
+        bot = _worker_bot(db_path, channel)
+
+        await _post_own_line(bot, "✅ Retry delivery succeeded for channel <#99>")
+
+        [call] = channel.send.await_args_list
+        assert "Retry delivery succeeded" in call.args[0]
+        assert await _row_count(db_path) == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("fault", ["refused", "channel-gone", "not-a-text-channel"])
+    async def test_its_own_line_the_log_channel_cannot_take_is_not_queued(
+        self, tmp_path, caplog, fault
+    ):
+        """The log channel refuses the line, is gone, or is no text channel: no row is queued,
+        and the line is written to the host's log."""
+        from leaguebot.core.services.retry_service import _post_own_line
+
+        db_path = await _make_db(str(tmp_path))
+        if fault == "refused":
+            channel = _make_text_channel_mock(
+                send_side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access")
+            )
+        elif fault == "channel-gone":
+            channel = None
+        else:
+            channel = MagicMock(spec=discord.VoiceChannel)
+        bot = _worker_bot(db_path, channel)
+        bot.fetch_channel = AsyncMock(
+            side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel")
+        )
+
+        with caplog.at_level("WARNING"):
+            await _post_own_line(bot, "⚠️ Stuck retry entry id=7")
+
+        assert await _row_count(db_path) == 0
+        assert "Stuck retry entry id=7" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_its_own_line_before_the_bot_is_set_up_goes_to_the_host_log(
+        self, tmp_path, caplog
+    ):
+        from leaguebot.core.services.retry_service import _post_own_line
+
+        db_path = await _make_db(str(tmp_path))
+        bot = _worker_bot(db_path, _make_text_channel_mock(), configured=False)
+
+        with caplog.at_level("WARNING"):
+            await _post_own_line(bot, "⚠️ Stuck retry entry id=8")
+
+        assert await _row_count(db_path) == 0
+        assert "Stuck retry entry id=8" in caplog.text
