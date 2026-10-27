@@ -764,16 +764,17 @@ rule has two halves:
   Discord to be tried again as one. *Rejected:* a flag on the bot or on the queue, which one
   lane's job would set for every other lane's code to see; and the job's number passed down to
   each posting function, which a caller outside a job could invent.
-- **The check.** A test fails on any function that posts without the decorator, unless it is
-  named off the queue with its reason (see "How the rules are checked"). The router
+- **The check.** A test fails on any function that posts without the decorator, unless it is named
+  off the queue with its reason (see "How the rules are checked"). The router
   (`core/services/output_router.py`) alone is exempt from it whole (`JOB_CHECK_ALLOWED`): what it
-  posts off the queue are the exceptions below. The other handlers are held to it. The check of posting outside the handlers passes over
-  the four handler files (`POSTING_ALLOWED`) and over a function named off the queue, which runs
-  outside a job and so cannot go through a handler. Two functions whose sends look like posts
-  and are not are named in `NOT_A_POST` with their reasons. One is the owner's own `!sync` command
-  (`guild_sync` in the entry point): it deletes the owner's message and posts a note that deletes
-  itself, which is a prefix command's reply. The other is the queue's edit of a member's own
-  acknowledgement (`ChangeQueue._update_reply`), which answers the member and posts in no channel.
+  posts off the queue are the exceptions below. The other handlers are held to it. The check of
+  posting outside the handlers passes over the four handler files (`POSTING_ALLOWED`) and over a
+  function named off the queue, which runs outside a job and so cannot go through a handler. Two
+  functions whose sends look like posts and are not are named in `NOT_A_POST` with their reasons.
+  One is the owner's own `!sync` command (`guild_sync` in the entry point): it deletes the owner's
+  message and posts a note that deletes itself, which is a prefix command's reply. The other is the
+  queue's edit of a member's own acknowledgement (`ChangeQueue._update_reply`), which answers the
+  member and posts in no channel.
 
 The exceptions, each with its reason:
 
