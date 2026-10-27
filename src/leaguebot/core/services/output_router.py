@@ -356,9 +356,10 @@ class OutputRouter:
         Each is read again under the retry loop's lock, and one already gone (the loop delivered it
         first) is skipped. A line is divided through `chunk_message` and sent mentioning nobody, as
         :meth:`post_log` sends it, to the log channel as it is now. One that is delivered leaves the
-        retry queue. One that cannot be is left to the retry loop with its reason, and
-        *interaction*, where given and still answerable, is told as :meth:`post_log` tells the
-        member, once; with none, the failure is the host's log's alone. Never raises.
+        retry queue. One that cannot be is left to the retry loop with its reason (with none where
+        the log channel could not be read), and *interaction*, where given and still answerable, is
+        told as :meth:`post_log` tells the member, once; with none, the failure is the host's log's
+        alone. Never raises.
         """
         from leaguebot.core.services import retry_service
 
