@@ -828,15 +828,14 @@ The exceptions, each with its reason:
   records the one a task is answering, or takes the one the change queue holds, and the host's log
   alone records the failure where none can still be answered.
 
-  One log line is not queued: the factory reset's closing line (the core specification's "Factory
-  reset" section holds the rule for what it says and when). It is posted after the reset has wiped
-  the database, so it is neither queued nor told to anyone, for two reasons. A queued row would sit
-  in the fresh database of a bot serving no server (`OutputRouter.post_log`'s docstring). And the
-  member's notice says the line is kept and delivered later (the core specification's "The record
-  of what changed"), which this one never is, so the core specification's "Factory reset" has a line
-  that cannot be posted written to the host's log. The cog learns the log channel from the router
-  before the wipe, and hands it to the router's `post_log`, which posts the line there and queues
-  nothing.
+  The factory reset's closing line is not queued (the core specification's "Factory reset" section
+  holds the rule for what it says and when). It is posted after the reset has wiped the database, so
+  it is neither queued nor told to anyone, for two reasons. A queued row would sit in the fresh
+  database of a bot serving no server (`OutputRouter.post_log`'s docstring). And the member's notice
+  says the line is kept and delivered later (the core specification's "The record of what changed"),
+  which this one never is, so the core specification's "Factory reset" has a line that cannot be
+  posted written to the host's log. The cog learns the log channel from the router before the wipe,
+  and hands it to the router's `post_log`, which posts the line there and queues nothing.
 
 **A failed post is sent again by its owning module, on the queue's schedule.** A post that fails
 is a job that fails, and stops its lane (see "How a change is carried out"): the
