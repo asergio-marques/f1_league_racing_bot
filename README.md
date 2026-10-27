@@ -308,7 +308,8 @@ told, by a reply only you can see, *"⚠️ Failed to write to log channel … P
 permissions."* It is not posted in the channel where you gave the command. You are told once,
 however many of your lines fail, and after the reply to your command where it has not been
 answered yet. Where nobody's command can still be answered, such as a timed job, only the host's
-log records it.
+log records it. A line waiting is delivered to the log channel as it is set when it goes out, so a
+log channel that was deleted can be set again and receives the lines that waited for it.
 
 **Changes are acknowledged at once and carried out in order, one at a time on each lane.** You are told the change
 is under way, naming the number of its first job ("job #12"), that message is updated with what
