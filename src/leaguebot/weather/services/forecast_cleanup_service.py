@@ -212,10 +212,13 @@ async def post_phase_message(
 
     **A transport failure stops the queue at the post job**, whose next try posts the text
     (XIV.8, FR-057): a message Discord refuses, a channel the bot cannot fetch and one that is
-    not a text channel raise `StepFailedOnDiscord`, a graphic's from the Discord fault where there
-    is one and a text forecast's with no cause, and the text is composed again when it is finally sent, never a picture kept for later. The
-    post is the only thing that may fail here: the previous forecast stands until a job after
-    this one deletes it (Constitution XIV.8, produce before destroy).
+    not a text channel raise `StepFailedOnDiscord`, text or graphic alike, from the Discord fault
+    where there is one, and the text is composed again when it is finally sent, never a picture
+    kept for later. The post is the only thing that may fail here: the previous forecast stands
+    until a job after this one deletes it (Constitution XIV.8, produce before destroy). The stop
+    notice says so in plain words (core specification, "How a change is carried out"): that the
+    channel is no longer on the server, that Discord refused or failed a request from the bot, or
+    that the channel is not a text channel.
 
     *attachment* is a ``discord.File`` where the league draws a graphic; *attachment_text* is
     the message it rides on, which for a forecast is the division role mention and nothing
@@ -230,9 +233,8 @@ async def post_phase_message(
     message is sent in parts, and every part is recorded and deleted with it. A part sent before a
     later one is refused is kept on the exception, for the next try to remove.
     """
-    as_text = attachment is None
     try:
-        channel = await _forecast_channel(bot, channel_id, as_text=as_text)
+        channel = await _forecast_channel(bot, channel_id)
         if attachment is None:
             return await _post_text_parts(channel, channel_id, text, mentions)
         try:
@@ -257,14 +259,12 @@ async def post_phase_message(
             discard_attachment(attachment)
 
 
-async def _forecast_channel(
-    bot: "LeagueBot", channel_id: int, *, as_text: bool
-) -> discord.TextChannel:
+async def _forecast_channel(bot: "LeagueBot", channel_id: int) -> discord.TextChannel:
     """The text channel *channel_id*, found once for either manner of forecast, or the stop.
 
-    A forecast drawn as text stops in the words "the forecast could not be posted to <#id>:
-    {reason}", raised with no cause so that the stop notice shows those words; one drawn as a
-    graphic keeps its own words and is raised from Discord's fault where there is one.
+    A channel Discord reports not found raises "the forecast channel <#id> is no longer on the
+    server", with no cause, so that the stop notice says the channel is gone. Any other failure to
+    fetch it raises from Discord's fault, and a channel that is no text channel says so.
     """
     channel = bot.get_channel(channel_id)
     if channel is None:
@@ -275,20 +275,15 @@ async def _forecast_channel(
                 "post_phase_message: cannot fetch forecast channel id=%s: %s",
                 channel_id, exc,
             )
-            if as_text:
+            if isinstance(exc, discord.NotFound):
                 raise StepFailedOnDiscord(
-                    f"the forecast could not be posted to <#{channel_id}>: {exc}"
+                    f"the forecast channel <#{channel_id}> is no longer on the server"
                 ) from None
             raise StepFailedOnDiscord(
                 f"the forecast channel <#{channel_id}> could not be reached: {exc}"
             ) from exc
     if not isinstance(channel, discord.TextChannel):
         log.error("post_phase_message: channel id=%s is not a TextChannel", channel_id)
-        if as_text:
-            raise StepFailedOnDiscord(
-                f"the forecast could not be posted to <#{channel_id}>: "
-                f"channel {channel_id} is not a text channel"
-            )
         raise StepFailedOnDiscord(f"<#{channel_id}> is not a text channel")
     return channel
 
@@ -299,8 +294,9 @@ async def _post_text_parts(
     """Send *text* to *channel* in the parts `chunk_message` divides it into, each through the
     standing-post handler, and give the ids sent, in order.
 
-    A part Discord refuses stops the post, raised with no cause and keeping the ids already sent
-    (``new``, in ``channel_id``) for the next try to remove before it posts the forecast afresh.
+    A part Discord refuses stops the post, raised from Discord's fault and keeping the ids already
+    sent (``new``, in ``channel_id``) for the next try to remove before it posts the forecast
+    afresh.
     """
     sent: list[int] = []
     for part in chunk_message(text):
@@ -314,5 +310,5 @@ async def _post_text_parts(
             raise StepFailedOnDiscord(
                 f"the forecast could not be posted to <#{channel_id}>: {exc}",
                 result={"new": sent, "channel_id": channel_id} if sent else None,
-            ) from None
+            ) from exc
     return sent

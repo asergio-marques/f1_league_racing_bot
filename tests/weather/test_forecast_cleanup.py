@@ -535,15 +535,9 @@ async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
 @pytest.mark.parametrize(
     "case",
     [
-        pytest.param("second-part-refused", marks=pytest.mark.xfail(
-            strict=True, reason="#441: a refused text part stops with no cause, so the stop "
-                                "notice quotes Discord's error")),
-        pytest.param("channel-gone", marks=pytest.mark.xfail(
-            strict=True, reason="#441: a text forecast whose channel is gone stops quoting "
-                                "Discord's error, not saying the channel is gone")),
-        pytest.param("not-a-text-channel", marks=pytest.mark.xfail(
-            strict=True, reason="#441: a text forecast to a voice channel stops in words of its "
-                                "own, not the graphic's")),
+        "second-part-refused",
+        "channel-gone",
+        "not-a-text-channel",
     ],
 )
 async def test_a_text_forecast_part_refused_keeps_the_parts_sent(tmp_path, monkeypatch, case):
@@ -625,9 +619,7 @@ async def test_a_graphic_forecast_goes_through_the_standing_post_handler(tmp_pat
 @pytest.mark.parametrize(
     "case",
     [
-        pytest.param("channel-gone", marks=pytest.mark.xfail(
-            strict=True, reason="#441: a graphic forecast whose channel is gone stops as "
-                                "Discord's refusal, not saying the channel is gone")),
+        "channel-gone",
         "not-a-text-channel",
         "refused",
     ],
@@ -678,9 +670,7 @@ async def test_a_graphic_forecast_that_fails_stops_in_today_s_words(tmp_path, ca
 @pytest.mark.parametrize(
     "manner",
     [
-        pytest.param("text", marks=pytest.mark.xfail(
-            strict=True, reason="#441: a text forecast whose channel Discord will not give stops "
-                                "quoting Discord's error")),
+        "text",
         "graphic",
     ],
 )
