@@ -228,9 +228,9 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
         # is set up, the row's own channel is tried.
         target = entry.channel_id
         try:
-            current = await bot.output_router.log_destination()
-            if current is not None:
-                target = current
+            named = await bot.output_router.log_destination()
+            if named is not None:
+                target = named
             channel = bot.get_channel(target)
             if channel is None:
                 channel = await bot.fetch_channel(target)
