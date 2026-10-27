@@ -829,7 +829,8 @@ The exceptions, each with its reason:
   member's notice says the line is kept and delivered later (the core specification's "The record
   of what changed"), which this one never is, so the core specification's "Factory reset" has a line
   that cannot be posted written to the host's log. The cog learns the log channel from the router
-  before the wipe and posts to it directly.
+  before the wipe, and hands it to the router's `post_log`, which posts the line there and queues
+  nothing.
 
 **A failed post is sent again by its owning module, on the queue's schedule.** A post that fails
 is a job that fails, and stops its lane (see "How a change is carried out"): the
