@@ -514,7 +514,7 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
         assert after.retry_count == 1
 
     @pytest.mark.asyncio
-    async def test_a_change_s_line_that_cannot_be_delivered_warns_about_the_log_channel_as_it_is_now(
+    async def test_a_change_s_undelivered_line_warns_about_the_log_channel_as_it_is_now(
         self, tmp_path
     ):
         """A change's line queued for 555 cannot be delivered to the log channel as it is now, 99:
