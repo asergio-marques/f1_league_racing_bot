@@ -451,3 +451,81 @@ async def test_an_interaction_the_league_s_check_admits_is_the_one_its_lines_ans
     assert len(_warnings(first)) == 1
     assert len(_warnings(second)) == 1
     assert bot.interaction_channel.sent == []
+
+
+# ── A line the log channel cannot take is kept, whatever the cause ─────────────────────────────
+#
+# The core specification ("The record of what changed"): a line the log channel cannot take shall
+# be kept and delivered later. A line posted on its own is put on the retry queue where the send
+# fails, and so too where the log channel cannot be fetched or is no text channel: the channel may
+# be set again, or the bot given back its access, and the line is delivered then. The member is
+# warned as for any other failure.
+
+
+async def _retry_db(tmp_path) -> str:
+    from leaguebot.core.db.database import run_migrations
+
+    db_path = str(tmp_path / "retry.db")
+    await run_migrations(db_path)
+    return db_path
+
+
+async def _queued(db_path: str) -> list[tuple[int, str]]:
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT channel_id, content FROM pending_messages")
+        return [(row[0], row[1]) for row in await cursor.fetchall()]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", [
+    discord.NotFound(MagicMock(status=404), "Unknown Channel"),
+    discord.Forbidden(MagicMock(status=403), "Missing Access"),
+    discord.HTTPException(MagicMock(status=503), "Service Unavailable"),
+], ids=["not-found", "forbidden", "http-error"])
+async def test_a_line_whose_log_channel_cannot_be_fetched_is_kept_and_the_member_warned(
+    tmp_path, fault
+):
+    db_path = await _retry_db(tmp_path)
+    bot = _bot(None)
+    bot.fetch_channel = AsyncMock(side_effect=fault)
+    router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
+    router._warn_member = AsyncMock()
+
+    assert await router.post_log("Admin | /module enable weather | Success") is None
+
+    [(channel_id, content)] = await _queued(db_path)
+    assert channel_id == 99
+    assert content.startswith("Admin | /module enable weather | Success")
+    router._warn_member.assert_awaited_once_with(99)
+
+
+@pytest.mark.asyncio
+async def test_a_line_whose_log_channel_is_no_text_channel_is_kept_and_the_member_warned(tmp_path):
+    db_path = await _retry_db(tmp_path)
+    bot = _bot(MagicMock(spec=discord.VoiceChannel))
+    router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
+    router._warn_member = AsyncMock()
+
+    assert await router.post_log("Admin | /module enable weather | Success") is None
+
+    [(channel_id, _content)] = await _queued(db_path)
+    assert channel_id == 99
+    router._warn_member.assert_awaited_once_with(99)
+
+
+@pytest.mark.asyncio
+async def test_a_line_to_a_given_channel_that_cannot_be_fetched_is_not_kept(tmp_path):
+    """The factory reset's closing line, and the retry worker's own lines, go to a channel the
+    caller names: neither queued nor told to a member, whatever the failure."""
+    db_path = await _retry_db(tmp_path)
+    bot = _bot(None)
+    bot.fetch_channel = AsyncMock(side_effect=discord.NotFound(MagicMock(status=404), "gone"))
+    router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
+    router._warn_member = AsyncMock()
+
+    assert await router.post_log("Owner | /bot factory-reset | Success", channel=99) is None
+
+    assert await _queued(db_path) == []
+    router._warn_member.assert_not_awaited()

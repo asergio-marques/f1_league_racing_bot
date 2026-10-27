@@ -125,10 +125,12 @@ class OutputRouter:
         *channel* sends to that channel id instead, wrapped, separated and split exactly as
         any other line, but **neither queued for retry nor told to any member** when it cannot
         be posted: it returns ``None`` and the caller puts the line in the host's log. It
-        exists for the factory reset's closing line, written after the wipe, when a queued row
-        would sit in the fresh database of a bot serving no server. A line that cannot be
-        posted is written to the host's log (core specification, "Factory reset"). Get the id
-        from :meth:`log_destination` before the wipe.
+        exists for two callers. The factory reset's closing line is written after the wipe, when
+        a queued row would sit in the fresh database of a bot serving no server; a line that
+        cannot be posted is written to the host's log (core specification, "Factory reset"), and
+        the id is got from :meth:`log_destination` before the wipe. The retry worker's own lines
+        (`retry_service._post_own_line`) are never queued, so that a stuck row cannot queue a
+        fresh warning about itself on every cycle.
         """
         content = self._as_log_line(content)
         if channel is not None:
@@ -368,7 +370,7 @@ class OutputRouter:
                     entry = await retry_service.get_pending(db_path, entry_id)
                     if entry is None:
                         continue
-                    message, reason, _retryable = await self._try_send(
+                    message, reason = await self._try_send(
                         entry.channel_id, entry.content, "log", False
                     )
                     if message is not None:
@@ -405,18 +407,20 @@ class OutputRouter:
         """Attempt to send *content* to *channel_id*.
 
         Returns the last ``discord.Message`` sent on success, ``None`` on failure.
-        Never raises. On HTTP/Forbidden failure, enqueues for retry when
-        retry_db_path is configured and *enqueue_on_failure* is set.
+        Never raises. On any failure, a channel that cannot be fetched or is no text channel
+        included, enqueues for retry when retry_db_path is configured and *enqueue_on_failure* is
+        set: a line the log channel cannot take is kept and delivered later (core specification,
+        "The record of what changed"), the channel being set again or the bot's access restored.
 
         *return_first* returns the **first** message instead, for a caller linking a
         reader to the start of what it wrote. It defaults to False, returning the last.
 
         *view* is sent with the last part, so that its buttons end the message.
         """
-        message, reason, retryable = await self._try_send(
+        message, reason = await self._try_send(
             channel_id, content, fallback_label, return_first, view, mention_role
         )
-        if message is None and retryable:
+        if message is None:
             await self._enqueue_if_configured(enqueue_on_failure, channel_id, content, reason)
         return message
 
@@ -428,9 +432,8 @@ class OutputRouter:
         return_first: bool,
         view: "Optional[discord.ui.View]" = None,
         mention_role: int | None = None,
-    ) -> "tuple[Optional[discord.Message], str, bool]":
-        """Send *content*, and say how it went: the message, or None with why and whether a
-        retry could mend it (a refused or failed post can; a channel not found cannot).
+    ) -> "tuple[Optional[discord.Message], str]":
+        """Send *content*, and say how it went: the message, or None with why.
         Logs every failure and never raises."""
         channel = self._bot.get_channel(channel_id)
         if channel is None:
@@ -441,14 +444,14 @@ class OutputRouter:
                     "_send: cannot fetch %s channel id=%s: %s",
                     fallback_label, channel_id, exc,
                 )
-                return None, str(exc), False
+                return None, str(exc)
 
         if not isinstance(channel, discord.TextChannel):
             log.error(
                 "_send: channel id=%s is not a TextChannel (got %s)",
                 channel_id, type(channel).__name__,
             )
-            return None, f"channel {channel_id} is not a text channel", False
+            return None, f"channel {channel_id} is not a text channel"
 
         try:
             # Discord messages have a 2000-char limit; chunk if needed
@@ -467,19 +470,19 @@ class OutputRouter:
                     last_msg = await channel.send(chunk, allowed_mentions=allowed)
                 if first_msg is None:
                     first_msg = last_msg
-            return (first_msg if return_first else last_msg), "", False
+            return (first_msg if return_first else last_msg), ""
         except discord.Forbidden as exc:
             log.error(
                 "_send: missing permissions for %s channel id=%s: %s",
                 fallback_label, channel_id, exc,
             )
-            return None, str(exc), True
+            return None, str(exc)
         except discord.HTTPException as exc:
             log.error(
                 "_send: HTTP error posting to %s channel id=%s: %s",
                 fallback_label, channel_id, exc,
             )
-            return None, str(exc), True
+            return None, str(exc)
 
     async def _enqueue_if_configured(
         self,
