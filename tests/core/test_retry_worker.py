@@ -410,6 +410,36 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
         assert await _row_count(db_path) == 0
         assert "Stuck retry entry id=8" in caplog.text
 
+    @pytest.mark.asyncio
+    async def test_a_stuck_line_whose_log_channel_cannot_take_it_queues_nothing_more(
+        self, tmp_path, caplog
+    ):
+        """Through the real router: a row retried RETRY_WARN_THRESHOLD times, the log channel
+        refusing everything. The try fails, the stuck warning is tried and cannot be posted, and
+        goes to the host's log; the queue still holds the one row."""
+        import asyncio
+
+        from leaguebot.core.services.retry_service import attempt_delivery as deliver
+
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 99, "Admin | /module enable weather | Success", "503")
+        [entry] = await get_all_pending(db_path)
+        for _ in range(RETRY_WARN_THRESHOLD):
+            await mark_failed(db_path, entry.id)
+        [entry] = await get_all_pending(db_path)
+        refusing = _make_text_channel_mock(
+            send_side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access")
+        )
+        bot = _worker_bot(db_path, refusing)
+
+        with caplog.at_level("WARNING"):
+            assert await deliver(entry, bot) is False
+            for _ in range(5):
+                await asyncio.sleep(0)
+
+        assert f"Stuck retry entry id={entry.id}" in caplog.text
+        assert await _row_count(db_path) == 1
+
 
 # ---------------------------------------------------------------------------
 # A waiting line goes to the log channel as it is now
@@ -463,26 +493,44 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
         assert await _row_count(db_path) == 0
 
     @pytest.mark.asyncio
-    async def test_a_stuck_line_whose_log_channel_cannot_take_it_queues_nothing_more(self, tmp_path):
-        """Through the real router: a row retried RETRY_WARN_THRESHOLD times, the log channel
-        refusing everything. The try fails, the stuck warning cannot be posted either, and the
-        queue still holds the one row."""
-        import asyncio
+    async def test_a_log_channel_that_cannot_be_read_leaves_the_row_and_raises_nothing(
+        self, tmp_path
+    ):
+        """The configuration cannot be read as the row is tried: the row stays, one try counted,
+        and the retry loop that called goes on."""
+        import sqlite3
 
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 99, "Admin | /module enable weather | Success", "503")
+        await enqueue(db_path, 555, "Admin | /module enable weather | Success", "503")
         [entry] = await get_all_pending(db_path)
-        for _ in range(RETRY_WARN_THRESHOLD):
-            await mark_failed(db_path, entry.id)
+        bot = _worker_bot(db_path, _make_text_channel_mock())
+        bot.config_service.get_server_config = AsyncMock(
+            side_effect=sqlite3.OperationalError("database is locked")
+        )
+
+        assert await attempt_delivery(entry, bot) is False
+
+        [after] = await get_all_pending(db_path)
+        assert after.retry_count == 1
+
+    @pytest.mark.asyncio
+    async def test_a_change_s_line_that_cannot_be_delivered_warns_about_the_log_channel_as_it_is_now(
+        self, tmp_path
+    ):
+        """A change's line queued for 555 cannot be delivered to the log channel as it is now, 99:
+        the member is warned about 99."""
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 555, "Admin | /module enable weather | Success", "")
         [entry] = await get_all_pending(db_path)
         refusing = _make_text_channel_mock(
             send_side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access")
         )
         bot = _worker_bot(db_path, refusing)
+        bot.output_router._warn_member = AsyncMock()
+        interaction = MagicMock()
 
-        assert await attempt_delivery(entry, bot) is False
-        for _ in range(5):
-            await asyncio.sleep(0)
+        await bot.output_router.deliver_queued([entry.id], interaction=interaction)
 
+        bot.output_router._warn_member.assert_awaited_once_with(99, interaction)
         assert await _row_count(db_path) == 1
 

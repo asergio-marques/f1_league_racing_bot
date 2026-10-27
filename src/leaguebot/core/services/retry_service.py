@@ -212,25 +212,36 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
         # A row never tried has no reason, and gains the one of its first failure here.
         first_failure = not entry.failure_reason
 
+        # --- The channel: the log channel as it is now ---
+        # A row holds a log line, delivered to the log channel set when it is tried, so that one
+        # set again after the old was deleted takes the lines that waited for it. Before the bot
+        # is set up, the row's own channel is tried. The worker's own lines name this channel,
+        # the one tried, which is the one a reader should look at.
+        target = entry.channel_id
+        try:
+            named = await bot.output_router.log_destination()
+        except Exception as exc:
+            log.warning(
+                "attempt_delivery: cannot read the log channel for entry id=%s: %s",
+                entry.id, exc, exc_info=True,
+            )
+            await mark_failed(db_path, entry.id, reason=str(exc) if first_failure else None)
+            return False
+        if named is not None:
+            target = named
+
         # --- Warn before attempt if threshold already crossed (T017) ---
         if entry.retry_count >= RETRY_WARN_THRESHOLD:
             warn_msg = (
                 f"⚠️ Stuck retry entry id={entry.id}: message to channel "
-                f"<#{entry.channel_id}> (id={entry.channel_id}) has failed "
+                f"<#{target}> (id={target}) has failed "
                 f"{entry.retry_count} time(s) since {discord_ts(entry.enqueued_at)}. "
                 f"Original failure: {entry.failure_reason}"
             )
             _safe_post_log(bot, warn_msg)
 
-        # --- Resolve channel: the log channel as it is now ---
-        # A row holds a log line, delivered to the log channel set when it is tried, so that one
-        # set again after the old was deleted takes the lines that waited for it. Before the bot
-        # is set up, the row's own channel is tried.
-        target = entry.channel_id
+        # --- Resolve channel ---
         try:
-            named = await bot.output_router.log_destination()
-            if named is not None:
-                target = named
             channel = bot.get_channel(target)
             if channel is None:
                 channel = await bot.fetch_channel(target)
@@ -259,7 +270,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
         except Exception as exc:
             log.warning(
                 "attempt_delivery: send failed for entry id=%s channel=%s: %s",
-                entry.id, entry.channel_id, exc, exc_info=True,
+                entry.id, target, exc, exc_info=True,
             )
             await mark_failed(db_path, entry.id, reason=str(exc) if first_failure else None)
             return False
@@ -271,8 +282,8 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
         return True
     now_str = datetime.now(timezone.utc)
     success_msg = (
-        f"\u2705 Retry delivery succeeded for channel <#{entry.channel_id}> "
-        f"(id={entry.channel_id}). "
+        f"\u2705 Retry delivery succeeded for channel <#{target}> "
+        f"(id={target}). "
         f"Original failure: {entry.failure_reason}. "
         f"Retries taken: {entry.retry_count}. "
         f"Delivered at: {discord_ts(now_str)}."
