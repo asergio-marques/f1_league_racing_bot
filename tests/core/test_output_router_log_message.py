@@ -12,6 +12,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
+import aiohttp
 import discord
 import pytest
 
@@ -529,3 +530,34 @@ async def test_a_line_to_a_given_channel_that_cannot_be_fetched_is_not_kept(tmp_
 
     assert await _queued(db_path) == []
     router._warn_member.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("where", ["send", "fetch"])
+@pytest.mark.parametrize("fault", [
+    OSError("Network is unreachable"),
+    aiohttp.ClientConnectionError("Cannot connect to host discord.com"),
+    asyncio.TimeoutError(),
+], ids=["os-error", "client-error", "timeout"])
+async def test_a_line_that_cannot_reach_discord_is_kept_and_the_member_warned(
+    tmp_path, fault, where
+):
+    """The host's network is down: the send, or the fetch of a log channel not in the cache,
+    raises what aiohttp raises rather than a Discord error. The line is kept all the same, and
+    the member warned, as for any other failure."""
+    db_path = await _retry_db(tmp_path)
+    if where == "send":
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.send = AsyncMock(side_effect=fault)
+        bot = _bot(channel)
+    else:
+        bot = _bot(None)
+        bot.fetch_channel = AsyncMock(side_effect=fault)
+    router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
+    router._warn_member = AsyncMock()
+
+    assert await router.post_log("Admin | /module enable weather | Success") is None
+
+    [(channel_id, _content)] = await _queued(db_path)
+    assert channel_id == 99
+    router._warn_member.assert_awaited_once_with(99)

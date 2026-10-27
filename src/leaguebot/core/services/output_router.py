@@ -31,6 +31,7 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Optional
 
+import aiohttp
 import aiosqlite
 import discord
 
@@ -352,12 +353,12 @@ class OutputRouter:
     ) -> None:
         """Send the lines :meth:`queue_log_on` wrote, once their save has been committed.
 
-        Each is read again under the retry loop's lock, and one already gone (the loop
-        delivered it first) is skipped. A line is divided through `chunk_message` and sent
-        mentioning nobody, as :meth:`post_log` sends it, to the log channel as it is now. One that is delivered leaves the
+        Each is read again under the retry loop's lock, and one already gone (the loop delivered it
+        first) is skipped. A line is divided through `chunk_message` and sent mentioning nobody, as
+        :meth:`post_log` sends it, to the log channel as it is now. One that is delivered leaves the
         retry queue. One that cannot be is left to the retry loop with its reason, and
-        *interaction*, where given and still answerable, is told as :meth:`post_log` tells
-        the member, once; with none, the failure is the host's log's alone. Never raises.
+        *interaction*, where given and still answerable, is told as :meth:`post_log` tells the
+        member, once; with none, the failure is the host's log's alone. Never raises.
         """
         from leaguebot.core.services import retry_service
 
@@ -440,7 +441,9 @@ class OutputRouter:
         if channel is None:
             try:
                 channel = await self._bot.fetch_channel(channel_id)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+            except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
+                # A network down raises what aiohttp raises (a timeout among them, an OSError),
+                # not a Discord error; the line is kept all the same.
                 log.error(
                     "_send: cannot fetch %s channel id=%s: %s",
                     fallback_label, channel_id, exc,
@@ -478,7 +481,7 @@ class OutputRouter:
                 fallback_label, channel_id, exc,
             )
             return None, str(exc)
-        except discord.HTTPException as exc:
+        except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
             log.error(
                 "_send: HTTP error posting to %s channel id=%s: %s",
                 fallback_label, channel_id, exc,
