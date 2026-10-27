@@ -412,7 +412,7 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
 
     @pytest.mark.asyncio
     async def test_a_stuck_line_whose_log_channel_cannot_take_it_queues_nothing_more(
-        self, tmp_path, caplog
+        self, tmp_path, caplog, monkeypatch
     ):
         """Through the real router: a row retried RETRY_WARN_THRESHOLD times, the log channel
         refusing everything. The try fails, the stuck warning is tried and cannot be posted, and
@@ -431,11 +431,23 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
             send_side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access")
         )
         bot = _worker_bot(db_path, refusing)
+        # The worker's own line is posted in a task of its own: each is kept here and awaited,
+        # so that a line queued by it would be on the queue before the count is read.
+        scheduled: list = []
+        schedule = asyncio.ensure_future
+
+        def keep(awaitable):
+            task = schedule(awaitable)
+            scheduled.append(task)
+            return task
+
+        monkeypatch.setattr(asyncio, "ensure_future", keep)
 
         with caplog.at_level("WARNING"):
             assert await deliver(entry, bot) is False
-            for _ in range(5):
-                await asyncio.sleep(0)
+            await asyncio.gather(*scheduled)
+
+        assert scheduled, "the stuck warning was meant to be tried"
 
         assert f"Stuck retry entry id={entry.id}" in caplog.text
         assert await _row_count(db_path) == 1
