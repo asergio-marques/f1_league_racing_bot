@@ -1005,16 +1005,15 @@ later on its own.
   named off the queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with no
   reason or no function; the router is exempt, `JOB_CHECK_ALLOWED`, and `NOT_A_POST` names the two
   calls that are not posts, under "Every post is made in a job"), a service or helper reaching the
-  change queue through the bot, a service or helper
-  looking another service up on the bot, a table written by a module that does not own it, and a
-  save outside a queued change. The job check is absolute, with no list of breaches left to grow;
-  the two checks on the bot list today's breaches, each under the module pass that removes it.
-  The check of a save outside a queued change counts each function's `.commit()` and `.executescript()` calls, and a function
-  writing on a handed connection commits nothing and is not counted. It allows for good the
-  migrations run at start-up (`run_migrations` and `_enable_wal`, the journal mode set on the
-  database file itself), the queue's own records, the retry queue for log lines, and
-  `backup_service._write_empty_database`, which writes the scheduler's empty file and not the
-  league's.
+  change queue through the bot, a service or helper looking another service up on the bot, a table
+  written by a module that does not own it, and a save outside a queued change. The job check is
+  absolute, with no list of breaches left to grow; every other check lists today's breaches, each
+  under the work that removes it. The check of a save outside a queued change counts each function's
+  `.commit()` and `.executescript()` calls, and a function writing on a handed connection commits
+  nothing and is not counted. It allows for good the migrations run at start-up (`run_migrations`
+  and `_enable_wal`, the journal mode set on the database file itself), the queue's own records, the
+  retry queue for log lines, and `backup_service._write_empty_database`, which writes the
+  scheduler's empty file and not the league's.
 - **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
   **`tests/repository/test_import_roots.py`** check the one-league rule, the schema's own rules,
   and that the bot is imported from one place: the installed package, never through `src`.
