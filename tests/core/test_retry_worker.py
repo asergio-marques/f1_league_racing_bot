@@ -569,3 +569,31 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
 
         bot.output_router._warn_member.assert_awaited_once_with(555, interaction)
         assert await _row_count(db_path) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_change_s_line_whose_failure_cannot_be_counted_still_warns_the_member(
+        self, tmp_path, monkeypatch
+    ):
+        """The log channel refuses a change's line, and the failure cannot then be written to the
+        queue: the member is warned all the same, about the log channel as it is now."""
+        import sqlite3
+
+        from leaguebot.core.services import retry_service
+
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 555, "Admin | /module enable weather | Success", "")
+        [entry] = await get_all_pending(db_path)
+        refusing = _make_text_channel_mock(
+            send_side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access")
+        )
+        bot = _worker_bot(db_path, refusing)
+        bot.output_router._warn_member = AsyncMock()
+        monkeypatch.setattr(
+            retry_service, "mark_failed",
+            AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
+        )
+        interaction = MagicMock()
+
+        await bot.output_router.deliver_queued([entry.id], interaction=interaction)
+
+        bot.output_router._warn_member.assert_awaited_once_with(99, interaction)
