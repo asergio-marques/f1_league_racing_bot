@@ -300,3 +300,80 @@ async def test_a_retried_line_is_sent_notifying_nobody(tmp_path):
     sent = channel.send.await_args.kwargs.get("allowed_mentions")
     assert sent is not None
     assert sent.to_dict() == discord.AllowedMentions.none().to_dict()
+
+
+async def test_attempt_delivery_sends_through_the_log_writer(tmp_path, monkeypatch):
+    """A log line for channel 555 that failed once (503) is retried. It is handed to the router's
+    log writer with its channel and its stored text, not sent by the retry itself, and the row is
+    marked delivered."""
+    from unittest.mock import AsyncMock
+
+    from leaguebot.core.services import output_router
+    from leaguebot.core.services.retry_service import attempt_delivery
+
+    db_path = await _make_db(str(tmp_path))
+    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503")
+    [entry] = await get_all_pending(db_path)
+    bot, channel = _delivering_bot(db_path)
+    writer = AsyncMock()
+    monkeypatch.setattr(output_router, "send_log_text", writer, raising=False)
+
+    assert await attempt_delivery(entry, bot) is True
+    await _settle()
+
+    writer.assert_awaited_once_with(
+        channel, "Admin (`<@4242>`) | /module disable results | Success"
+    )
+    channel.send.assert_not_awaited()
+    assert await _row_count(db_path) == 0
+
+
+async def test_a_late_log_line_delivered_on_retry_reports_its_delivery_as_today(tmp_path):
+    """A log line for channel 555 that failed once (503) is delivered on its first retry. The log
+    channel gets exactly one line, saying the delivery succeeded, why it first failed and how many
+    retries it took."""
+    from leaguebot.core.services.retry_service import attempt_delivery
+
+    db_path = await _make_db(str(tmp_path))
+    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503")
+    [entry] = await get_all_pending(db_path)
+    bot, _channel = _delivering_bot(db_path)
+
+    assert await attempt_delivery(entry, bot) is True
+    await _settle()
+
+    [call] = bot.output_router.post_log.await_args_list
+    assert call.args[0].startswith(
+        "\N{WHITE HEAVY CHECK MARK} Retry delivery succeeded for channel <#555> (id=555). "
+        "Original failure: 503. Retries taken: 0. Delivered at: "
+    )
+
+
+async def test_a_stuck_late_log_line_warns_before_its_retry_as_today(tmp_path):
+    """A log line for channel 555 that failed with 503 and has been retried
+    RETRY_WARN_THRESHOLD times is retried once more and delivered. The log channel is first
+    warned that the entry is stuck, naming the channel, how often it failed and why, and then
+    told the delivery succeeded after that many retries."""
+    from leaguebot.core.services.retry_service import attempt_delivery
+
+    db_path = await _make_db(str(tmp_path))
+    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503")
+    [entry] = await get_all_pending(db_path)
+    for _ in range(RETRY_WARN_THRESHOLD):
+        await mark_failed(db_path, entry.id)
+    [entry] = await get_all_pending(db_path)
+    bot, _channel = _delivering_bot(db_path)
+
+    assert await attempt_delivery(entry, bot) is True
+    await _settle()
+
+    warning, success = (call.args[0] for call in bot.output_router.post_log.await_args_list)
+    assert warning.startswith(
+        f"\N{WARNING SIGN}\N{VARIATION SELECTOR-16} Stuck retry entry id={entry.id}: message to "
+        f"channel <#555> (id=555) has failed {RETRY_WARN_THRESHOLD} time(s) since "
+    )
+    assert warning.endswith("Original failure: 503")
+    assert success.startswith(
+        "\N{WHITE HEAVY CHECK MARK} Retry delivery succeeded for channel <#555> (id=555). "
+        f"Original failure: 503. Retries taken: {RETRY_WARN_THRESHOLD}. Delivered at: "
+    )

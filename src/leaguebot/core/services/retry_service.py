@@ -6,6 +6,10 @@ delivered. It carries log lines alone: the posts of a change (a calendar, a line
 a results table, a forecast) are jobs of the change queue, which stops on a post that fails and
 tries it again, as text, on its own schedule, so a late delivery never goes unrecorded here.
 
+The line is sent through the log writer (`output_router.send_log_text`), which divides it and
+mentions nobody, so a late line is sent as the router sends a fresh one. This module keeps the
+channel lookup, the lock, the count of tries and the lines recording a stuck or delivered entry.
+
 Constitution Principle V: successful and stuck-entry retry outcomes are posted
 to the calculation log channel for full observability.
 
@@ -193,7 +197,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
     """
     import discord
 
-    from leaguebot.core.utils.messages import chunk_message
+    from leaguebot.core.services.output_router import send_log_text
 
     db_path: str = bot.db_path
     async with delivery_lock():
@@ -240,8 +244,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
 
         # --- Attempt send ---
         try:
-            for chunk in chunk_message(entry.content):
-                await channel.send(chunk, allowed_mentions=discord.AllowedMentions.none())
+            await send_log_text(channel, entry.content)
         except Exception as exc:
             log.warning(
                 "attempt_delivery: send failed for entry id=%s channel=%s: %s",

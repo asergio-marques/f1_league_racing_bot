@@ -52,6 +52,7 @@ from tests.support.change_queue import (
     stopped_job,
     text_channel,
 )
+from tests.support.mentions import NOBODY, notified
 
 
 @pytest.fixture(autouse=True)
@@ -410,6 +411,42 @@ async def test_a_deleted_panel_is_posted_again(league):
 
     assert len(league.hub.sent) == 1
     assert await _stored_panel(league) == league.hub.posted[0].id
+
+
+async def test_the_hub_panel_posted_or_edited_notifies_nobody(league):
+    """The hub is set and no panel stands: a refresh posts it. An option is registered and the
+    panel refreshed again: it is edited in place. Neither the post nor the edit notifies
+    anybody."""
+    await _ask_refresh(league)
+    await run_queue(league.bot)
+    panel = league.hub.posted[0]
+    register_option(_option("licence"))
+    await _ask_refresh(league)
+    await run_queue(league.bot)
+
+    assert len(league.hub.sent) == 1
+    assert notified(league.hub.send.await_args.kwargs.get("allowed_mentions")) == NOBODY
+    assert notified(panel.edit.await_args.kwargs.get("allowed_mentions")) == NOBODY
+
+
+async def test_a_hub_panel_emptied_of_options_loses_its_buttons(league):
+    """An option is registered and the panel posted with its button; the option then stops
+    being offered and the panel is refreshed through the queue. The panel says nothing is
+    offered and carries no view, so no old button is left under it."""
+    offered = _offered(True)
+    register_option(_option("licence", offered=offered))
+    await _ask_refresh(league)
+    await run_queue(league.bot)
+    panel = league.hub.posted[0]
+    assert panel.view is not None
+    offered.return_value = False
+
+    await _ask_refresh(league)
+    await run_queue(league.bot)
+
+    assert "Nothing is offered here yet." in panel.content
+    assert panel.view is None
+    assert len(league.hub.sent) == 1
 
 
 async def test_a_refused_panel_stops_the_queue(league):

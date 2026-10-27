@@ -26,6 +26,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services import cancellation_notice_service as cns
 from tests.support.change_queue import in_a_job
+from tests.support.mentions import NOBODY, notified
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -124,9 +125,56 @@ async def test_the_check_in_channel_carries_the_notification(tmp_path):
     call = channels[RSVP].send.await_args
     assert not call.kwargs.get("silent")
     assert call.args[0].startswith(f"<@&{ROLE_ID}>")
-    assert call.kwargs["allowed_mentions"].roles is True
     assert "Round 3 Cancelled: Pro" in call.args[0]
     assert "no check-in to answer" in call.args[0]
+
+
+async def test_the_attendance_notice_may_notify_the_division_role_and_nobody_else(tmp_path):
+    """Pro, whose role is 555, has round 3 at Monza called off. The check-in channel's notice
+    mentions the role, and may notify it alone: no member it might name, and not @everyone."""
+    bot = _bot(await _make_db(tmp_path))
+    guild, channels = _guild()
+    await _post_notice(bot, guild, "attendance")
+    call = channels[RSVP].send.await_args
+    assert notified(call.kwargs.get("allowed_mentions")) == {
+        "everyone": False, "users": set(), "roles": {ROLE_ID}
+    }
+
+
+async def test_the_attendance_notice_of_a_division_with_no_role_notifies_nobody(tmp_path):
+    """Pro has no role set. Its check-in channel's notice of round 3's cancellation mentions no
+    role, and notifies nobody."""
+    bot = _bot(await _make_db(tmp_path))
+    guild, channels = _guild()
+    division = NS(id=DIVISION_ID, name="Pro", mention_role_id=None, calendar_message_id=None)
+    with in_a_job():
+        await cns.post_module_notice(
+            bot, guild, division, "attendance", scope=cns.SCOPE_ROUND, round_number=3,
+            track_name="Monza",
+        )
+    call = channels[RSVP].send.await_args
+    assert not call.args[0].startswith("<@&")
+    assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
+
+
+async def test_the_results_note_notifies_nobody_and_is_silent(tmp_path):
+    """Pro's results channel is told round 3 is called off: silently, and notifying nobody."""
+    bot = _bot(await _make_db(tmp_path))
+    guild, channels = _guild()
+    await _post_notice(bot, guild, "results")
+    call = channels[RESULTS].send.await_args
+    assert call.kwargs.get("silent") is True
+    assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
+
+
+async def test_the_weather_note_notifies_nobody_and_is_silent(tmp_path):
+    """Pro's forecast channel is told round 3 is called off: silently, and notifying nobody."""
+    bot = _bot(await _make_db(tmp_path))
+    guild, channels = _guild()
+    await _post_notice(bot, guild, "weather")
+    call = channels[FORECAST].send.await_args
+    assert call.kwargs.get("silent") is True
+    assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
 
 
 @pytest.mark.parametrize("scope", [cns.SCOPE_ROUND, cns.SCOPE_DIVISION, cns.SCOPE_SEASON])

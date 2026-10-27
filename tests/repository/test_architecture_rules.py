@@ -49,8 +49,6 @@ PASS = {
 }
 #: One failure path for timed jobs, events and background tasks.
 BACKGROUND_FAILURES = "#453"
-#: The handlers for each kind of post, which move core's own posts onto them.
-HANDLERS = "#441"
 #: The start-up catch-up in the entry point: each module moves its own share into the handler it
 #: provides for the start-up sweep (architecture.md, "Timed work and restarts"). The missed
 #: post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
@@ -826,9 +824,18 @@ def test_only_the_router_writes_the_log_channel():
 
 # ── 10. Posts go through the output handlers ────────────────────────────────────────────────
 
-#: Where a post is made today, the router's own excepted. See the module docstring of
-#: `core/services/output_router.py`.
-POSTING_ALLOWED = frozenset({"core/services/output_router.py"})
+#: The four output handlers, whose posts the posting check passes over: the log writer (the router),
+#: the notice handler, the standing-post handler and the bot-owned channel handler (architecture.md,
+#: "Posting to Discord").
+POSTING_ALLOWED = frozenset({
+    "core/services/output_router.py",
+    "core/services/notice_handler.py",
+    "core/services/standing_post_handler.py",
+    "core/services/owned_channel_handler.py",
+})
+#: The one file the job check passes over: the router, whose log lines, stop notice and turn-away
+#: stay off the queue. Every other handler's functions carry `posts_in_a_job`.
+JOB_CHECK_ALLOWED = frozenset({"core/services/output_router.py"})
 #: A `.send` that is not a post, and why.
 NOT_A_POST = {
     ("__main__.py", "main.guild_sync"): (
@@ -869,10 +876,13 @@ def _is_a_post(call: ast.Call) -> bool:
 
 
 def _direct_posts_among(nodes) -> Counter[tuple[str, str]]:
-    """The posts among *nodes*, each ``(file, function, node)``, counted by file and function."""
+    """The posts among *nodes*, each ``(file, function, node)``, counted by file and function. A
+    handler's file, a call that is no post and a post named off the queue are passed over: a post
+    off the queue runs outside a job, and so cannot go through a handler, which runs in jobs only."""
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in nodes:
-        if path in POSTING_ALLOWED or (path, function) in NOT_A_POST:
+        key = (path, function)
+        if path in POSTING_ALLOWED or key in NOT_A_POST or key in POSTS_OFF_THE_QUEUE:
             continue
         if isinstance(node, ast.Call) and _is_a_post(node):
             found[(path, function)] += 1
@@ -884,40 +894,27 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/cogs/bot_cog.py", "_open_progress"): (1, HANDLERS),
     ("attendance/services/attendance_service.py", "post_attendance_sheet"): (2, PASS["attendance"]),
-    ("core/services/calendar_post_service.py", "replace_calendar_message"): (2, HANDLERS),
-    ("core/services/cancellation_notice_service.py", "_send"): (1, HANDLERS),
-    ("weather/services/forecast_cleanup_service.py", "post_phase_message"): (1, PASS["weather"]),
-    ("core/services/hub_service.py", "refresh_panel"): (2, HANDLERS),
     ("image/services/image_lineup_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
     ("results/services/penalty_wizard.py", "_show_approval_step"): (1, PASS["results"]),
-    ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, HANDLERS),
     ("results/services/result_submission_service.py", "send_appeals_prompt"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "send_cancelled_line"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "send_review_prompt"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "run_amendment_review_stages"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "_send_chunked"): (2, PASS["results"]),
-    ("core/services/retry_service.py", "attempt_delivery"): (1, HANDLERS),
     ("attendance/services/check_in_changes.py", "edit_check_in_message"): (1, PASS["attendance"]),
     ("attendance/services/check_in_changes.py", "post_check_in_message"): (1, PASS["attendance"]),
     ("results/services/verdict_announcement_service.py", "_send_verdict"): (2, PASS["results"]),
     ("signup/services/signup_posting.py", "delete_channel"): (1, PASS["signup"]),
     ("signup/services/signup_posting.py", "post"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.trigger_channel_hold"): (1, PASS["signup"]),
-    ("core/utils/batch_notice.py", "delete_notice"): (1, HANDLERS),
-    ("core/utils/batch_notice.py", "send_notice"): (1, HANDLERS),
-    ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset.report"): (1, HANDLERS),
-    ("core/services/factory_reset_service.py", "_delete_own_messages"): (3, HANDLERS),
-    ("core/services/factory_reset_service.py", "clean_discord"): (1, HANDLERS),
     ("results/services/penalty_wizard.py", "_delete_review_message"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_refresh_appeals_prompt"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_refresh_prompt"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "take_down_cancel_message"): (1, PASS["results"]),
-    ("results/services/submission_steps.py", "_send"): (1, HANDLERS),
     ("results/services/results_post_service.py", "_delete_posting"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "delete_round_channel"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "produce_standings"): (1, PASS["results"]),
@@ -928,9 +925,11 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
 def test_posts_go_through_the_output_handlers():
     """A post to a channel goes through the handler for its kind: log line, standing post, notice
     or bot-owned channel (architecture.md, "Posting to Discord"). A post is a message sent, deleted
-    or edited, a batch of messages deleted, or a channel deleted (`_is_a_post`). The handlers are
-    still to be built, so today every such call outside the router is listed: core's under the
-    handlers' own issue, which moves them, and each module's under its pass."""
+    or edited, a batch of messages deleted, or a channel deleted (`_is_a_post`). The four handlers'
+    own files are passed over (`POSTING_ALLOWED`), as is a post named off the queue
+    (`POSTS_OFF_THE_QUEUE`), which runs outside a job and so cannot go through a handler; every
+    other such call is listed under the pass of the module that makes it, which moves it onto
+    its handler."""
     _check("posts go through the output handlers", _direct_posts(), KNOWN_DIRECT_POSTS)
 
 
@@ -994,10 +993,6 @@ POSTS_OFF_THE_QUEUE: dict[tuple[str, str], str] = {
     ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset.report"): (
         "the factory reset's progress, the reply to the owner's own command"
     ),
-    ("core/services/retry_service.py", "attempt_delivery"): (
-        "the retry of a log line the log channel refused: it carries log lines alone, which stay "
-        "off the queue (decision 1)"
-    ),
 }
 
 #: The calls that make a channel, which the job check counts beside the posts.
@@ -1044,7 +1039,7 @@ def _posts_outside_a_job_among(nodes) -> Counter[tuple[str, str]]:
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in nodes:
         key = (path, function)
-        if path in POSTING_ALLOWED or key in NOT_A_POST or key in POSTS_OFF_THE_QUEUE:
+        if path in JOB_CHECK_ALLOWED or key in NOT_A_POST or key in POSTS_OFF_THE_QUEUE:
             continue
         if key in guarded:
             continue
@@ -1061,9 +1056,10 @@ def test_no_post_is_made_outside_a_job_but_those_named_off_the_queue():
     and the posts named in `POSTS_OFF_THE_QUEUE` (architecture.md, "How a change is carried out"
     and "Posting to Discord"). A function that posts carries `posts_in_a_job`, which raises where
     it runs outside a job, or is named in `POSTS_OFF_THE_QUEUE` with its reason; no function
-    anywhere posts outside a job, with no list of exceptions left to grow. The router is excepted as the posting
-    check excepts it (`POSTING_ALLOWED`): its log lines, stop notice and turn-away stay off the
-    queue, and its forecast post carries the decorator."""
+    anywhere posts outside a job, with no list of exceptions left to grow. The router alone is excepted
+    (`JOB_CHECK_ALLOWED`): its log lines, stop notice and turn-away stay off the queue, and it
+    posts nothing else. The other three handlers are not: each of their functions carries
+    `posts_in_a_job`, which this check holds them to."""
     found = _posts_outside_a_job_among(_nodes())
 
     assert not found, sorted(found)
@@ -1115,6 +1111,27 @@ def test_the_job_check_passes_a_decorated_post_and_a_post_off_the_queue_with_its
 
     assert (path, "clean_discord") in POSTS_OFF_THE_QUEUE
     assert _posts_outside_a_job_among(nodes) == Counter({(path, "post_the_calendar"): 1})
+
+
+def test_the_posting_check_passes_over_posts_named_off_the_queue(monkeypatch):
+    """The factory reset's clean-up runs outside a job, so it cannot go through a handler, which
+    runs in jobs only. A function named in `POSTS_OFF_THE_QUEUE` is passed over by the posting
+    check as by the job check, while the same post in a function not named there is counted."""
+    path = "core/services/sample_service.py"
+    monkeypatch.setattr(
+        sys.modules[__name__], "POSTS_OFF_THE_QUEUE",
+        {(path, "clean_up"): "a stand-in clean-up, off the queue"},
+    )
+    nodes = _sample(
+        "async def clean_up(channel, message):\n"
+        "    await message.delete()\n"
+        "    await channel.send('cleaned')\n"
+        "async def post_the_calendar(channel):\n"
+        "    await channel.send('calendar')\n",
+        path,
+    )
+
+    assert _direct_posts_among(nodes) == Counter({(path, "post_the_calendar"): 1})
 
 
 def test_a_not_a_post_entry_is_not_counted_by_the_job_check():

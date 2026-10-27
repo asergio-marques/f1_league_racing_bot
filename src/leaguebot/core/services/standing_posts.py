@@ -14,6 +14,9 @@ A try after a `record` that failed removes the copy it sent first: each post job
 `remove_kept`, which deletes the ids in the job's kept result and raises `StepFailedOnDiscord`,
 keeping what is left, where Discord refuses.
 
+The delete itself is the standing-post handler's (`standing_post_handler.delete_standing`),
+which `_delete_replaced` and `remove_kept` both go through; this module keeps the jobs.
+
 There are three delete sites, and this is the generic one. `review_posting`'s `delete_message` is
 what a review uses for its tables, its sheet and its lineup, and weather's `delete_forecast` has a
 `record` of its own, since a forecast's row is keyed by phase and is forgotten with its message.
@@ -35,7 +38,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services.change_queue import Step, StepContext, StepView
 from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.utils.batch_notice import delete_notice
+from leaguebot.core.services.standing_post_handler import delete_standing
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
@@ -78,7 +81,7 @@ async def _delete_replaced(ctx: StepContext) -> StepResult:
         return StepResult(result={"gone": True})
     message = channel.get_partial_message(int(payload["message_id"]))
     try:
-        await delete_notice(message)
+        await delete_standing(message)
     except discord.NotFound:
         raise
     except discord.HTTPException as exc:
@@ -128,7 +131,7 @@ async def remove_kept(bot: LeagueBot, kept: Mapping[str, Any] | None) -> None:
     failure: discord.HTTPException | None = None
     for message_id in ids:
         try:
-            await delete_notice(channel.get_partial_message(message_id))
+            await delete_standing(channel.get_partial_message(message_id))
         except discord.NotFound:
             continue
         except discord.HTTPException as exc:

@@ -348,7 +348,7 @@ def mid_season_confirm_change(
             text = channel_refused(ctx.actor_id, number, str(refused))
         else:
             text = channel_not_confirmed(ctx.actor_id, number)
-        await tell_channel(ctx.bot, int(ctx.payload["channel_id"]), text)
+        await tell_channel(ctx.bot, int(ctx.payload["channel_id"]), text, ctx.actor_id)
         return StepResult(result={"told": True})
 
     async def reply_lost(ctx: StepContext) -> bool:

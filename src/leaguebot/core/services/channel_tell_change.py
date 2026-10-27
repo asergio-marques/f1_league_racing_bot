@@ -21,7 +21,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.services.change_queue import ChangeType, CheckContext, Step, StepContext
-from leaguebot.core.utils.batch_notice import send_notice
+from leaguebot.core.services.notice_handler import send_notice
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 
 KIND = "channel.tell"
@@ -47,7 +47,7 @@ async def _tell(ctx: StepContext) -> StepResult:
         if mention is not None
         else discord.AllowedMentions.none()
     )
-    await send_notice(channel, str(ctx.payload["text"]), allowed_mentions=allowed)
+    await send_notice(channel, str(ctx.payload["text"]), mentions=allowed)
     return StepResult(result={"told": True})
 
 

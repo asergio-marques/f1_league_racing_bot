@@ -71,7 +71,7 @@ from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.change_queue import OutcomeContext, Step, StepContext
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.batch_notice import delete_notice, send_notice
+from leaguebot.core.services.notice_handler import delete_notice, send_notice
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.standings_snapshot import (
@@ -962,7 +962,11 @@ async def _post_batch_notice(ctx: StepContext) -> StepResult:
     guild = await _league_guild(ctx.bot)
     channel_id = int(ctx.step_payload["channel_id"])
     channel = _channel(guild, channel_id, "submission")
-    message = await send_notice(channel, ctx.step_payload.get("text") or DEFAULT_NOTICE)
+    message = await send_notice(
+        channel,
+        ctx.step_payload.get("text") or DEFAULT_NOTICE,
+        mentions=discord.AllowedMentions.none(),
+    )
     return StepResult(
         result={"message_id": message.id, "channel_id": channel_id, "link": message.jump_url}
     )

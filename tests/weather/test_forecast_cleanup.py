@@ -450,16 +450,257 @@ class TestDiscordDelete:
         assert err.value is refusal
 
 
-async def test_a_text_forecast_with_no_channel_to_post_to_raises(tmp_path):
-    """The router finds no forecast channel to post a forecast's text to: the post raises for the
-    change queue to stop on, naming the phase."""
+# ---------------------------------------------------------------------------
+# post_phase_message sends through the standing-post handler (#441)
+#
+# A forecast is a standing post: its text, in parts where it is too long for one message, and its
+# graphic go through `post_standing`, each with the mentions the caller states, and the ids of
+# the messages sent come back in order. A text forecast refused keeps the stop notice's words.
+# ---------------------------------------------------------------------------
+
+def _spy_on_post_standing(monkeypatch) -> list[tuple[tuple, dict]]:
+    """Record every `post_standing` call, wherever the weather service takes it from, and let
+    each through to the real handler."""
+    from leaguebot.core.services import standing_post_handler
+    from leaguebot.weather.services import forecast_cleanup_service
+
+    real = standing_post_handler.post_standing
+    calls: list[tuple[tuple, dict]] = []
+
+    async def spy(*args, **kwargs):
+        calls.append((args, kwargs))
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(standing_post_handler, "post_standing", spy)
+    monkeypatch.setattr(forecast_cleanup_service, "post_standing", spy, raising=False)
+    return calls
+
+
+def _channel_of(call: tuple[tuple, dict]):
+    args, kwargs = call
+    return args[0] if args else kwargs.get("channel")
+
+
+def _content_of(call: tuple[tuple, dict]):
+    args, kwargs = call
+    return args[1] if len(args) > 1 else kwargs.get("content")
+
+
+def _sending(channel: MagicMock, *, first_id: int, refuse_from: int | None = None) -> None:
+    """*channel* answers each send with a message whose id counts up from *first_id*, and
+    refuses the send numbered *refuse_from* (from 1) and every one after it."""
+    count = 0
+
+    async def send(*_args, **_kwargs):
+        nonlocal count
+        count += 1
+        if refuse_from is not None and count >= refuse_from:
+            raise _refusal(discord.Forbidden, 403, "Missing Permissions")
+        return _make_mock_message(first_id + count - 1)
+
+    channel.send = AsyncMock(side_effect=send)
+
+
+async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
+    tmp_path, monkeypatch
+):
+    """The Phase 2 forecast of division 1, too long for one message, is posted as text to channel
+    999, letting role 1 notify. Each part `chunk_message` divides it into goes through the
+    standing-post handler, in order, to that channel and with role 1's mentions; the ids of the
+    messages sent come back in order."""
+    from leaguebot.core.services.output_router import OutputRouter
+    from leaguebot.core.utils.messages import chunk_message
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
     bot = _make_bot(await _make_db(str(tmp_path)))
-    bot.output_router.post_forecast = AsyncMock(return_value=None)
+    bot.output_router = OutputRouter(bot, bot.config_service)
+    channel = bot.get_channel.return_value
+    _sending(channel, first_id=501)
+    calls = _spy_on_post_standing(monkeypatch)
+    text = "\n".join(f"line {i}" * 40 for i in range(200))
+    parts = chunk_message(text)
+    assert len(parts) > 1, "this forecast was meant to be divided"
 
-    with pytest.raises(StepFailedOnDiscord, match="the Phase 2 forecast has no channel to be "
-                                                  "posted to"):
+    with in_a_job():
+        sent = await post_phase_message(bot, division_id=1, channel_id=999, phase_number=2,
+                                        text=text, mentions=ROLE_1)
+
+    bot.get_channel.assert_called_once_with(999)
+    assert [_channel_of(call) for call in calls] == [channel] * len(parts)
+    assert [_content_of(call) for call in calls] == parts
+    assert all(call[1]["mentions"] is ROLE_1 for call in calls)
+    assert list(sent) == list(range(501, 501 + len(parts)))
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "second-part-refused",
+        "channel-gone",
+        "not-a-text-channel",
+    ],
+)
+async def test_a_text_forecast_part_refused_keeps_the_parts_sent(tmp_path, monkeypatch, case):
+    """The Phase 2 forecast is posted as text to channel 999, letting role 1 notify, and fails.
+    The stop notice is read as the change queue shows it (`ChangeQueue._fault_kind`), in plain
+    words and never Discord's error:
+    - second-part-refused: it is two parts long and Discord refuses the second. The stop notice
+      reads "Discord refused or failed a request from the bot", raised from Discord's fault. The
+      first part went through the standing-post handler, and the stop keeps its id and the channel
+      (``new``, ``channel_id``) for the next try to remove;
+    - channel-gone: the channel is not cached and Discord says it is not found: "the forecast
+      channel <#999> is no longer on the server";
+    - not-a-text-channel: the channel is a voice channel: "<#999> is not a text channel"."""
+    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.output_router import OutputRouter
+    from leaguebot.core.utils.messages import chunk_message
+    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
+
+    bot = _make_bot(await _make_db(str(tmp_path)))
+    bot.output_router = OutputRouter(bot, bot.config_service)
+    channel = bot.get_channel.return_value
+    calls = _spy_on_post_standing(monkeypatch)
+    text = "a" * 1500 + "\n" + "b" * 1500
+    if case == "second-part-refused":
+        assert len(chunk_message(text)) == 2, "this forecast was meant to be two parts"
+        _sending(channel, first_id=501, refuse_from=2)
+        words = "Discord refused or failed a request from the bot"
+    elif case == "channel-gone":
+        bot.get_channel.return_value = None
+        bot.fetch_channel = AsyncMock(
+            side_effect=_refusal(discord.NotFound, 404, "Unknown Channel")
+        )
+        words = "the forecast channel <#999> is no longer on the server"
+    else:
+        bot.get_channel.return_value = MagicMock(spec=discord.VoiceChannel)
+        words = "<#999> is not a text channel"
+
+    with pytest.raises(StepFailedOnDiscord) as err:
         with in_a_job():
             await post_phase_message(bot, division_id=1, channel_id=999, phase_number=2,
-                                     text="phase 2 forecast", mentions=ROLE_1)
+                                     text=text, mentions=ROLE_1)
+
+    assert ChangeQueue._fault_kind(err.value) == words
+    if case == "second-part-refused":
+        assert isinstance(err.value.__cause__, discord.Forbidden)
+        assert err.value.result == {"new": [501], "channel_id": 999}
+        assert [_content_of(call) for call in calls] == chunk_message(text)
+
+
+async def test_a_graphic_forecast_goes_through_the_standing_post_handler(tmp_path, monkeypatch):
+    """The Phase 2 forecast of division 1 is posted as a graphic to channel 999, on a message
+    carrying role 1's mention and letting role 1 notify. It goes through the standing-post
+    handler once, to that channel, with the mention as its text, the graphic as its file and role
+    1's mentions; the id of the message sent comes back alone."""
+    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
+
+    bot = _make_bot(await _make_db(str(tmp_path)))
+    channel = bot.get_channel.return_value
+    channel.send = AsyncMock(return_value=_make_mock_message(222))
+    calls = _spy_on_post_standing(monkeypatch)
+    png = TestTheForecastGraphicIsDiscarded._artifact(tmp_path)
+    attachment = TestTheForecastGraphicIsDiscarded._attachment(png)
+
+    with in_a_job():
+        sent = await post_phase_message(
+            bot, division_id=1, channel_id=999, phase_number=2, text="phase 2 forecast",
+            attachment=attachment, attachment_text="<@&1>", mentions=ROLE_1,
+        )
+
+    [call] = calls
+    bot.get_channel.assert_called_once_with(999)
+    assert _channel_of(call) is channel
+    assert _content_of(call) == "<@&1>"
+    assert call[1]["file"] is attachment
+    assert call[1]["mentions"] is ROLE_1
+    assert list(sent) == [222]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "channel-gone",
+        "not-a-text-channel",
+        "refused",
+    ],
+)
+async def test_a_graphic_forecast_that_fails_stops_in_today_s_words(tmp_path, case):
+    """The Phase 2 forecast is posted as a graphic to channel 999, letting role 1 notify, and
+    fails. The stop notice is read as the change queue shows it (`ChangeQueue._fault_kind`), in
+    plain words and never Discord's error:
+    - channel-gone: the channel is not cached and Discord says it is not found: "the forecast
+      channel <#999> is no longer on the server";
+    - not-a-text-channel: the channel is a voice channel: "<#999> is not a text channel", as
+      today;
+    - refused: Discord refuses the upload: "Discord refused or failed a request from the bot", as
+      today.
+    The graphic is discarded in each."""
+    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
+
+    bot = _make_bot(await _make_db(str(tmp_path)))
+    png = TestTheForecastGraphicIsDiscarded._artifact(tmp_path)
+    attachment = TestTheForecastGraphicIsDiscarded._attachment(png)
+    if case == "channel-gone":
+        bot.get_channel.return_value = None
+        bot.fetch_channel = AsyncMock(
+            side_effect=_refusal(discord.NotFound, 404, "Unknown Channel")
+        )
+        words = "the forecast channel <#999> is no longer on the server"
+    elif case == "not-a-text-channel":
+        bot.get_channel.return_value = MagicMock(spec=discord.VoiceChannel)
+        words = "<#999> is not a text channel"
+    else:
+        bot.get_channel.return_value.send = AsyncMock(
+            side_effect=_refusal(discord.Forbidden, 403, "Missing Permissions")
+        )
+        words = "Discord refused or failed a request from the bot"
+
+    with pytest.raises(StepFailedOnDiscord) as err:
+        with in_a_job():
+            await post_phase_message(
+                bot, division_id=1, channel_id=999, phase_number=2, text="phase 2 forecast",
+                attachment=attachment, attachment_text="<@&1>", mentions=ROLE_1,
+            )
+
+    assert ChangeQueue._fault_kind(err.value) == words
+    assert not png.exists()
+
+
+@pytest.mark.parametrize(
+    "manner",
+    [
+        "text",
+        "graphic",
+    ],
+)
+async def test_a_forecast_whose_channel_discord_will_not_give_stops_as_discord_s_refusal(
+    tmp_path, manner
+):
+    """The Phase 2 forecast is posted to channel 999, letting role 1 notify, as text or as a
+    graphic. The channel is not cached, and Discord refuses to fetch it (403, Missing Access)
+    rather than saying it is gone. The stop notice, read as the change queue shows it
+    (`ChangeQueue._fault_kind`), says "Discord refused or failed a request from the bot", in both
+    manners; nothing is posted."""
+    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
+
+    bot = _make_bot(await _make_db(str(tmp_path)))
+    channel = bot.get_channel.return_value
+    channel.send = AsyncMock()
+    bot.get_channel.return_value = None
+    bot.fetch_channel = AsyncMock(side_effect=_refusal(discord.Forbidden, 403, "Missing Access"))
+    graphic = {}
+    if manner == "graphic":
+        png = TestTheForecastGraphicIsDiscarded._artifact(tmp_path)
+        graphic = {"attachment": TestTheForecastGraphicIsDiscarded._attachment(png),
+                   "attachment_text": "<@&1>"}
+
+    with pytest.raises(StepFailedOnDiscord) as err:
+        with in_a_job():
+            await post_phase_message(bot, division_id=1, channel_id=999, phase_number=2,
+                                     text="phase 2 forecast", mentions=ROLE_1, **graphic)
+
+    assert ChangeQueue._fault_kind(err.value) == "Discord refused or failed a request from the bot"
+    bot.fetch_channel.assert_awaited_once_with(999)
+    channel.send.assert_not_awaited()

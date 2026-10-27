@@ -63,6 +63,7 @@ from tests.support.season_league import (
     round_id,
     season_league,
 )
+from tests.support.mentions import NOBODY, notified
 from tests.support.undecorate import undecorate
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
@@ -1481,6 +1482,25 @@ async def test_the_batch_notice_brackets_the_posts_in_the_review_s_channel(
     assert posts and posted < min(posts) and deleted > max(posts)
 
 
+def _mentions_of(league: Any, cid: int, text: str) -> Any:
+    """Whom the one post to channel *cid* holding *text* was let notify."""
+    [call] = [call for call in league.channels[cid].send.await_args_list
+              if text in str(call.args[0] if call.args else call.kwargs.get("content", ""))]
+    return notified(call.kwargs.get("allowed_mentions"))
+
+
+async def test_the_season_approval_drawing_notice_notifies_nobody(tmp_path, monkeypatch):
+    """Season 3 is approved with results and attendance on. The notice that its lineups,
+    calendars and opening classifications are being posted, in the review's channel, notifies
+    nobody."""
+    league = await _league_for(tmp_path, monkeypatch, results=True, attendance=True)
+    await _pressed(league)
+
+    await run_queue(league.bot)
+
+    assert _mentions_of(league, REVIEW_CHANNEL, "🎨 Posting lineups") == NOBODY
+
+
 async def _fail_the_notice_post(league: Any) -> None:
     _refuse_starting(league, REVIEW_CHANNEL, "🎨")
 
@@ -2220,3 +2240,28 @@ async def test_a_refused_opening_standings_picture_is_posted_as_text_in_the_same
     jobs = [job for job in await _jobs(league) if job["name"] == "opening_standings"]
     assert jobs and all(job["done_at"] and job["tries"] == 0 for job in jobs), jobs
 
+
+@pytest.mark.parametrize("told_by", ["the approval", "the tell change"])
+async def test_the_review_channel_line_notifies_only_the_member_it_names(
+    tmp_path, monkeypatch, told_by,
+):
+    """The league admin approves season 3, and their reply can no longer be updated. Told by
+    the approval: the bot restarts, and the approval tells the review's channel it went
+    through. Told by the tell change: a round is edited while the approval waits fifteen
+    minutes, and the refusal is told in the channel. Either line mentions the admin, and may
+    notify them alone: no role, no other member, and not @everyone."""
+    league = await _league_for(tmp_path, monkeypatch, attendance=True)
+    await _pressed(league)
+    if told_by == "the approval":
+        await league.restart()
+        line = CHANNEL_APPROVED
+    else:
+        league.clock.advance(minutes=15)
+        await _edit_round(league)
+        line = LATE_REFUSAL_HEAD
+
+    await run_queue(league.bot)
+
+    assert _mentions_of(league, REVIEW_CHANNEL, line) == {
+        "everyone": False, "users": {int(ADMIN_ID)}, "roles": set()
+    }

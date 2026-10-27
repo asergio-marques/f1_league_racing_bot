@@ -66,7 +66,8 @@ Core holds what every module shares: the database connection and the migrations,
 (`LeagueBot`), the change queue, the scheduler service and the start-up sweep, the base classes
 for the command tree, buttons and forms, the failure paths (`report_failure`, the job runner, the
 bot's error handler for events, the helper that starts background work), and the handlers for
-each kind of post, the log line's among them.
+each kind of post: the log writer, the notice handler, the standing-post handler and the
+bot-owned channel handler, each a service of its own in `core/services/`.
 
 **The entry point** (`__main__.py`) sits above core and the modules, and is the one place that
 imports every module at run time. It holds the builder, which makes every service, loads every
@@ -101,7 +102,7 @@ hooks without importing a module.
   autocomplete) reach core's own services through the bot, as a cog does. Plain helpers
   (formatting, parsing, time) use no service at all. Neither imports a service, and core uses no
   module; the one exception to both is the bot's type, which names every service for the type
-  checker (below). The log line's handler is a service in core, not a helper.
+  checker (below). Each handler for a kind of post is a service in core, not a helper.
 - **A module's own helpers** sit in its `utils/` folder, beside its services, under the same rules.
 - **A model** is plain data. It uses no Discord and no database, and no service or cog.
 - **The database code in core** opens connections and applies migrations, and imports nothing else
@@ -720,10 +721,29 @@ kind has its own rules for failures and for later changes:
 | **Bot-owned channel** | a results submission channel, a driver's own signup channel | deleted whole with its channel; only a post the bot must find again, such as a prompt it replaces, has its id kept |
 
 The code that makes a post still builds its own text, pictures and buttons, and saves the message id
-it is handed back. The handler does the sending: it applies who the post may mention, hands back the
-message id, deletes or edits a message when asked, and says whether a failure was Discord's.
-Retrying is the change queue's, except for log lines. The log line's handler is today's router,
-`core/services/output_router.py`.
+it is handed back. The notice, standing-post and bot-owned channel handlers do the sending and
+nothing else: the caller states who the post may mention (a required argument, so that no post
+leaves it to Discord's default), and the handler hands back the message or its id and deletes or
+edits a message when asked. They **raise what Discord raises**, a `NotFound` included, so that the
+queue's own handling of a message already gone, and a caller's reason of its own wrapped in
+`StepFailedOnDiscord`, work as they would for a call made directly. A log line differs: the writer
+switches its mentions off itself and splits a long one. The router keeps its failures and queues a
+failed send for its own retry where the log channel can still be found; one it cannot find is logged
+on the host. `send_log_text`, the retry's own send, raises what Discord raises to the retry worker,
+which counts it. Retrying is the change queue's, except for log lines. Each handler is a service in
+core, in a file of its own:
+
+| Handler | File | Its functions |
+|---|---|---|
+| Log writer | `core/services/output_router.py` | the router, and `send_log_text`, which divides a line and sends it mentioning nobody, for the retry of a late one |
+| Notice handler | `core/services/notice_handler.py` | `send_notice`, `edit_notice` and `delete_notice` |
+| Standing-post handler | `core/services/standing_post_handler.py` | `post_standing`, `edit_standing` and `delete_standing` |
+| Bot-owned channel handler | `core/services/owned_channel_handler.py` | `post_in_owned_channel` and `delete_owned_channel` |
+
+Every function of the notice, standing-post and bot-owned channel handlers carries
+`posts_in_a_job`: they run in the jobs of a change, and a post off the queue cannot go through one.
+The posting check lists what each module still posts itself, each under the module pass that moves
+it.
 
 *Rejected:* one gateway for every post, which would need to know every module's rules.
 *Rejected:* one handler per channel, which repeats the same rules a dozen times.
@@ -744,9 +764,10 @@ rule has two halves:
   each posting function, which a caller outside a job could invent.
 - **The check.** A test fails on any function that posts without the decorator, unless it is
   named off the queue with its reason (see "How the rules are checked"). The router
-  (`core/services/output_router.py`) is exempt from it whole (`POSTING_ALLOWED`), as it is from the
-  check of posting outside the handlers: what it posts off the queue are the exceptions below, and
-  its forecast post carries the decorator all the same. Two functions whose sends look like posts
+  (`core/services/output_router.py`) alone is exempt from it whole (`JOB_CHECK_ALLOWED`): what it
+  posts off the queue are the exceptions below. The other handlers are held to it. The check of posting outside the handlers passes over
+  the four handler files (`POSTING_ALLOWED`) and over a function named off the queue, which runs
+  outside a job and so cannot go through a handler. Two functions whose sends look like posts
   and are not are named in `NOT_A_POST` with their reasons. One is the owner's own `!sync` command
   (`guild_sync` in the entry point): it deletes the owner's message and posts a note that deletes
   itself, which is a prefix command's reply. The other is the queue's edit of a member's own
@@ -976,10 +997,12 @@ later on its own.
   that lose the error details, background tasks nobody keeps, code reaching past the scheduler
   service, jobs armed with a lateness limit, private names used across modules, a new place naming
   the log channel (the check lists the six allowed, with their reasons), posting outside the
-  handlers, a post made outside a job by a function that is neither decorated nor named off the
-  queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with no reason or no
-  function; the router is exempt, `POSTING_ALLOWED`, and `NOT_A_POST` names the two calls that are
-  not posts, under "Every post is made in a job"), a service or helper reaching the change queue through the bot, a service or helper
+  handlers (the four handler files are passed over, `POSTING_ALLOWED`, as is a function named in
+  `POSTS_OFF_THE_QUEUE`), a post made outside a job by a function that is neither decorated nor
+  named off the queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with no
+  reason or no function; the router is exempt, `JOB_CHECK_ALLOWED`, and `NOT_A_POST` names the two
+  calls that are not posts, under "Every post is made in a job"), a service or helper reaching the
+  change queue through the bot, a service or helper
   looking another service up on the bot, a table written by a module that does not own it, and a
   save outside a queued change. The job check is absolute, with no list of breaches left to grow;
   the two checks on the bot list today's breaches, each under the module pass that removes it.

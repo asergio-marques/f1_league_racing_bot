@@ -1,14 +1,9 @@
 """`OutputRouter.post_log` returns the message it posted.
 
-It always held one and discarded it, while its sibling `post_forecast` returned one. A
-caller that has just written a block to the log can now point a reader at it — which is
-what `/images test` does with its notices.
-
-The **first** message is returned where the content had to be split across Discord's
-limit: a link is meant to land a reader at the top of the block, not at its tail. That is
-the one respect in which it differs from `post_forecast`, whose callers store the returned
-id to edit that message later — returning a different one there would repoint those edits,
-so the difference is opt-in rather than a change to the shared sender.
+A caller that has just written a block to the log can point a reader at it, which is what
+`/images test` does with its notices. The **first** message is returned where the content had
+to be split across Discord's limit: a link is meant to land a reader at the top of the block,
+not at its tail.
 """
 from __future__ import annotations
 
@@ -21,10 +16,6 @@ import discord
 import pytest
 
 from leaguebot.core.services.output_router import OutputRouter
-from tests.support.change_queue import in_a_job
-
-#: The mentions a forecast of a division with role 801 is sent with.
-ROLE_801 = discord.AllowedMentions(everyone=False, users=False, roles=[discord.Object(801)])
 
 
 def _channel(sent):
@@ -74,24 +65,6 @@ async def test_a_split_block_returns_its_first_message():
 
 
 @pytest.mark.asyncio
-async def test_post_forecast_still_returns_its_last_message():
-    """Its callers store the id to edit that message later (calendar, constructor
-    standings). Returning a different one would repoint those edits."""
-    sent = []
-    bot = _bot(_channel(sent))
-    router = OutputRouter(bot, bot.config_service)
-    division = MagicMock(forecast_channel_id=99)
-
-    with in_a_job():
-        message = await router.post_forecast(
-            division, "\n".join(f"line {i}" * 40 for i in range(200)), mentions=ROLE_801
-        )
-
-    assert len(sent) > 1, "this content was meant to be split"
-    assert message.jump_url == f"http://j/{len(sent) - 1}"
-
-
-@pytest.mark.asyncio
 async def test_post_log_returns_none_when_the_server_has_no_config():
     bot = MagicMock()
     bot.config_service.get_server_config = AsyncMock(return_value=None)
@@ -127,45 +100,6 @@ async def test_every_mention_in_a_log_line_is_written_as_code(mention):
     await router.post_log(f"{mention} did something")
 
     assert f"`{mention}`" in sent[0]
-
-
-async def test_a_forecast_for_a_division_with_no_forecast_channel_posts_nothing():
-    """Nothing to post to. It came to the same before — the router asked Discord for a channel
-    with no id and logged the failure — less the request (#228)."""
-    from leaguebot.core.services.output_router import ForecastChannel
-
-    bot = MagicMock()
-    bot.fetch_channel = AsyncMock()
-    router = OutputRouter(bot, bot.config_service)
-
-    with in_a_job():
-        assert await router.post_forecast(
-            ForecastChannel(None), "forecast", mentions=ROLE_801
-        ) is None
-    bot.get_channel.assert_not_called()
-    bot.fetch_channel.assert_not_awaited()
-
-
-async def test_a_forecast_the_channel_refuses_raises_for_the_queue_and_queues_nothing(
-    tmp_path, monkeypatch
-):
-    """A forecast is a job of the change queue, which stops on the failure and tries it again
-    itself: the router raises `StepFailedOnDiscord` naming the channel, and puts nothing on the
-    old retry queue, which carries log lines alone (#439, slice 6)."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.core.services import retry_service
-    from leaguebot.core.services.output_router import ForecastChannel
-
-    enqueue = AsyncMock()
-    monkeypatch.setattr(retry_service, "enqueue", enqueue)
-    bot = _bot(_refusing_channel())
-    router = OutputRouter(bot, bot.config_service, retry_db_path=str(tmp_path / "retry.db"))
-
-    with pytest.raises(StepFailedOnDiscord, match="<#605>"):
-        with in_a_job():
-            await router.post_forecast(ForecastChannel(605), "forecast", mentions=ROLE_801)
-
-    enqueue.assert_not_awaited()
 
 
 # ── The factory reset's closing line (#482) ───────────────────────────────

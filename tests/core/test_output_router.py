@@ -1,6 +1,7 @@
 """The output router's stop notice, and the one mention it lets notify (#439, 6b).
 
-The router's forecast post is made in the forecast's job, and refuses to run outside one.
+The router posts no forecast: a forecast is a standing post, sent through the standing-post
+handler (#441).
 
 A log line names members and roles without notifying them: the router wraps every mention in code
 and sends it with no mention allowed. The queue's stop notice is the one exception: it mentions
@@ -14,12 +15,10 @@ import discord
 import pytest
 
 from leaguebot.core.services.output_router import OutputRouter
-from tests.support.change_queue import in_a_job, text_channel
+from tests.support.change_queue import text_channel
 
 LOG_CHANNEL_ID = 101
 ADMIN_ROLE_ID = 901
-
-DIVISION_ROLE_ID = 801
 
 
 def _router() -> tuple[OutputRouter, MagicMock]:
@@ -61,37 +60,31 @@ async def test_a_notice_s_role_mention_is_the_only_one_left_unwrapped():
     assert _role_ids(silent.kwargs["allowed_mentions"]) == set()
 
 
-async def test_the_router_s_forecast_post_is_made_in_a_job():
-    """The router is asked, outside every job, to post a forecast to division channel 701: it
-    raises `PostedOutsideAJob` and sends nothing. A forecast is posted by its change's job, and
-    only there."""
-    from leaguebot.core.utils.in_a_job import PostedOutsideAJob
+def test_the_router_posts_no_forecast():
+    """The router writes log lines, the stop notice and the turn-away, and nothing else: it has
+    no forecast post, nor the stand-ins for a division's forecast channel that only it read."""
+    from leaguebot.core.services import output_router
 
-    router, channel = _router()
-
-    with pytest.raises(PostedOutsideAJob, match="post_forecast"):
-        await router.post_forecast(MagicMock(forecast_channel_id=701), "☀️ Sunny")
-
-    channel.send.assert_not_awaited()
+    assert not hasattr(OutputRouter, "post_forecast")
+    assert not hasattr(output_router, "ForecastTarget")
+    assert not hasattr(output_router, "ForecastChannel")
 
 
-async def test_a_forecast_s_allowed_mentions_are_passed_to_every_part():
-    """The router is asked, in a job, to post a forecast too long for one message to division
-    channel 701, letting the division's role 801 notify. It is sent in more than one part, and
-    every part is sent with those mentions: role 801 allowed, no member and not everyone."""
-    router, channel = _router()
-    mentions = discord.AllowedMentions(
-        everyone=False, users=False, roles=[discord.Object(DIVISION_ROLE_ID)]
-    )
-    content = "\n".join(f"line {i}" * 40 for i in range(200))
+async def test_send_log_text_divides_a_long_line_and_notifies_nobody():
+    """A log line too long for one message, mentioning member 4242, is handed to the log writer
+    for channel 555, as the retry worker hands it, outside any job of a change. It is sent in the
+    parts `chunk_message` divides it into, in order, each notifying nobody."""
+    from leaguebot.core.services.output_router import send_log_text
+    from leaguebot.core.utils.messages import chunk_message
 
-    with in_a_job():
-        await router.post_forecast(MagicMock(forecast_channel_id=701), content, mentions=mentions)
+    channel = MagicMock(id=555)
+    channel.send = AsyncMock()
+    content = "<@4242> did something\n" + "\n".join(f"line {i}" * 40 for i in range(200))
+
+    await send_log_text(channel, content)
 
     sends = channel.send.await_args_list
     assert len(sends) > 1, "this content was meant to be split"
+    assert [send.args[0] for send in sends] == chunk_message(content)
     for send in sends:
-        allowed = send.kwargs["allowed_mentions"]
-        assert _role_ids(allowed) == {DIVISION_ROLE_ID}
-        assert not getattr(allowed, "users", False)
-        assert not getattr(allowed, "everyone", False)
+        assert send.kwargs["allowed_mentions"].to_dict() == discord.AllowedMentions.none().to_dict()

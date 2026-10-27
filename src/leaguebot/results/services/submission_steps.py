@@ -25,7 +25,6 @@ the dialogue that plans the step says, and `core` keeps no table of a module's r
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 import aiosqlite
 import discord
@@ -34,6 +33,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord, StepKind, StepResult
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.change_queue import Step, StepContext
+from leaguebot.core.services.owned_channel_handler import post_in_owned_channel
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.image.utils.tyre_compound import tyre_compound_list
@@ -156,11 +156,9 @@ async def _send(
     every post states who it may notify. *view*, where given, is the buttons the line carries.
     Raises `StepFailedOnDiscord` with *refused* where Discord refuses it."""
     try:
-        shown: dict[str, Any] = {} if view is None else {"view": view}
-        message = await channel.send(text, allowed_mentions=mentions, **shown)
+        return await post_in_owned_channel(channel, text, mentions=mentions, view=view)
     except discord.HTTPException as error:
         raise StepFailedOnDiscord(refused) from error
-    return message.id
 
 
 def post_step(
