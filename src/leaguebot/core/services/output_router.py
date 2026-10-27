@@ -497,8 +497,9 @@ class OutputRouter:
     ) -> None:
         """Persist a failed message for retry, where *wanted* and retry_db_path is set.
 
-        *wanted* is False for a line sent to a given channel, the factory reset's, which would
-        otherwise leave a row in the fresh database of a bot serving no server.
+        *wanted* is False for a line sent to a given channel: the factory reset's, which would
+        otherwise leave a row in the fresh database of a bot serving no server, and the retry
+        worker's own lines (:meth:`post_log`); and for the stop notice, posted again its own way.
         """
         if self._retry_db_path and wanted:
             try:
