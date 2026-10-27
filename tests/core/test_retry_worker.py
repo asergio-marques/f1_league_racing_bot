@@ -61,6 +61,8 @@ def _make_bot(db_path: str, channel: "discord.TextChannel | None" = None) -> Mag
     bot.get_channel.return_value = channel
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
+    # No log channel named now, so a row goes where it was queued for.
+    bot.output_router.log_destination = AsyncMock(return_value=None)
     return bot
 
 
@@ -407,3 +409,80 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
 
         assert await _row_count(db_path) == 0
         assert "Stuck retry entry id=8" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# A waiting line goes to the log channel as it is now
+#
+# The retry queue holds log lines alone, and a line is delivered to the log channel set when it is
+# tried: one set again after the old was deleted takes the lines that waited, which would otherwise
+# never be delivered, a stuck warning about each of them posted in the new channel every cycle.
+# ---------------------------------------------------------------------------
+
+def _channels(**by_id) -> "MagicMock":
+    """`get_channel` answering each id given, and None for any other."""
+    return MagicMock(side_effect=lambda channel_id: by_id.get(f"c{channel_id}"))
+
+
+class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
+
+    @pytest.mark.asyncio
+    async def test_a_line_queued_for_a_deleted_channel_is_delivered_to_the_new_one(self, tmp_path):
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 555, "Admin | /module enable weather | Success", "Unknown Channel")
+        [entry] = await get_all_pending(db_path)
+        new = _make_text_channel_mock()
+        bot = _worker_bot(db_path, None)
+        bot.get_channel = _channels(c99=new)
+        bot.fetch_channel = AsyncMock(
+            side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel")
+        )
+
+        assert await attempt_delivery(entry, bot) is True
+
+        assert new.send.await_args_list[0].args[0] == "Admin | /module enable weather | Success"
+        assert await _row_count(db_path) == 0
+
+    @pytest.mark.asyncio
+    async def test_a_line_a_change_saved_is_delivered_to_the_log_channel_set_since(self, tmp_path):
+        """A change's line is queued in its save for the log channel of the moment, 555, and
+        delivered once the save commits: the log channel is 99 by then, and takes it."""
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 555, "Admin | /module enable weather | Success", "")
+        [entry] = await get_all_pending(db_path)
+        new = _make_text_channel_mock()
+        bot = _worker_bot(db_path, None)
+        bot.get_channel = _channels(c99=new)
+        bot.fetch_channel = AsyncMock(
+            side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel")
+        )
+
+        await bot.output_router.deliver_queued([entry.id])
+
+        assert new.send.await_count == 1
+        assert await _row_count(db_path) == 0
+
+    @pytest.mark.asyncio
+    async def test_a_stuck_line_whose_log_channel_cannot_take_it_queues_nothing_more(self, tmp_path):
+        """Through the real router: a row retried RETRY_WARN_THRESHOLD times, the log channel
+        refusing everything. The try fails, the stuck warning cannot be posted either, and the
+        queue still holds the one row."""
+        import asyncio
+
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 99, "Admin | /module enable weather | Success", "503")
+        [entry] = await get_all_pending(db_path)
+        for _ in range(RETRY_WARN_THRESHOLD):
+            await mark_failed(db_path, entry.id)
+        [entry] = await get_all_pending(db_path)
+        refusing = _make_text_channel_mock(
+            send_side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access")
+        )
+        bot = _worker_bot(db_path, refusing)
+
+        assert await attempt_delivery(entry, bot) is False
+        for _ in range(5):
+            await asyncio.sleep(0)
+
+        assert await _row_count(db_path) == 1
+

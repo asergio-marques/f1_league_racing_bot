@@ -180,7 +180,11 @@ async def mark_failed(db_path: str, entry_id: int, *, reason: str | None = None)
 # ---------------------------------------------------------------------------
 
 async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
-    """Attempt to post entry.content to entry.channel_id, under :func:`delivery_lock`.
+    """Attempt to post entry.content to the log channel as it is now, under :func:`delivery_lock`.
+
+    The log channel set when the row is tried takes it, so that a channel set again after the
+    old was deleted receives the lines that waited for it; before the bot is set up, the row's
+    own channel (``entry.channel_id``) is tried.
 
     The row is read again under the lock, and a row already delivered is left alone (True).
 
@@ -218,23 +222,30 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
             )
             _safe_post_log(bot, warn_msg)
 
-        # --- Resolve channel ---
-        channel = bot.get_channel(entry.channel_id)
-        if channel is None:
-            try:
-                channel = await bot.fetch_channel(entry.channel_id)
-            except Exception as exc:
-                log.warning(
-                    "attempt_delivery: cannot fetch channel id=%s for entry id=%s: %s",
-                    entry.channel_id, entry.id, exc, exc_info=True,
-                )
-                await mark_failed(db_path, entry.id, reason=str(exc) if first_failure else None)
-                return False
+        # --- Resolve channel: the log channel as it is now ---
+        # A row holds a log line, delivered to the log channel set when it is tried, so that one
+        # set again after the old was deleted takes the lines that waited for it. Before the bot
+        # is set up, the row's own channel is tried.
+        target = entry.channel_id
+        try:
+            current = await bot.output_router.log_destination()
+            if current is not None:
+                target = current
+            channel = bot.get_channel(target)
+            if channel is None:
+                channel = await bot.fetch_channel(target)
+        except Exception as exc:
+            log.warning(
+                "attempt_delivery: cannot fetch channel id=%s for entry id=%s: %s",
+                target, entry.id, exc, exc_info=True,
+            )
+            await mark_failed(db_path, entry.id, reason=str(exc) if first_failure else None)
+            return False
 
         if not isinstance(channel, discord.TextChannel):
             log.warning(
                 "attempt_delivery: channel id=%s is not a TextChannel for entry id=%s",
-                entry.channel_id, entry.id,
+                target, entry.id,
             )
             await mark_failed(
                 db_path, entry.id,

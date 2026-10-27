@@ -354,7 +354,7 @@ class OutputRouter:
 
         Each is read again under the retry loop's lock, and one already gone (the loop
         delivered it first) is skipped. A line is divided through `chunk_message` and sent
-        mentioning nobody, as :meth:`post_log` sends it. One that is delivered leaves the
+        mentioning nobody, as :meth:`post_log` sends it, to the log channel as it is now. One that is delivered leaves the
         retry queue. One that cannot be is left to the retry loop with its reason, and
         *interaction*, where given and still answerable, is told as :meth:`post_log` tells
         the member, once; with none, the failure is the host's log's alone. Never raises.
@@ -370,15 +370,16 @@ class OutputRouter:
                     entry = await retry_service.get_pending(db_path, entry_id)
                     if entry is None:
                         continue
-                    message, reason = await self._try_send(
-                        entry.channel_id, entry.content, "log", False
-                    )
+                    # To the log channel as it is now, as the retry loop delivers it.
+                    current = await self.log_destination()
+                    target = entry.channel_id if current is None else current
+                    message, reason = await self._try_send(target, entry.content, "log", False)
                     if message is not None:
                         await retry_service.mark_delivered(db_path, entry_id)
                         continue
                     await retry_service.mark_failed(db_path, entry_id, reason=reason)
                 if interaction is not None:
-                    await self._warn_member(entry.channel_id, interaction)
+                    await self._warn_member(target, interaction)
             except Exception:
                 log.error("deliver_queued: could not deliver line id=%s", entry_id, exc_info=True)
 
