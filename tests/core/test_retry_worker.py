@@ -546,3 +546,26 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
         bot.output_router._warn_member.assert_awaited_once_with(99, interaction)
         assert await _row_count(db_path) == 1
 
+
+    @pytest.mark.asyncio
+    async def test_a_change_s_line_kept_when_the_log_channel_cannot_be_read_warns_the_member(
+        self, tmp_path
+    ):
+        """The configuration cannot be read as a change's line queued for 555 is delivered: the
+        line stays kept, and the member is warned all the same, about 555."""
+        import sqlite3
+
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 555, "Admin | /module enable weather | Success", "")
+        [entry] = await get_all_pending(db_path)
+        bot = _worker_bot(db_path, _make_text_channel_mock())
+        bot.config_service.get_server_config = AsyncMock(
+            side_effect=sqlite3.OperationalError("database is locked")
+        )
+        bot.output_router._warn_member = AsyncMock()
+        interaction = MagicMock()
+
+        await bot.output_router.deliver_queued([entry.id], interaction=interaction)
+
+        bot.output_router._warn_member.assert_awaited_once_with(555, interaction)
+        assert await _row_count(db_path) == 1

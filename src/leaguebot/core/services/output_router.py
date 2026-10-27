@@ -366,23 +366,30 @@ class OutputRouter:
         if not db_path:
             return
         for entry_id in ids:
+            # The channel the member is told about where the line, once read, is not delivered,
+            # whatever stops it: the log channel as it is now, or the line's own where that
+            # cannot be read. None once there is nothing to tell.
+            warn_about: "Optional[int]" = None
             try:
                 async with retry_service.delivery_lock():
                     entry = await retry_service.get_pending(db_path, entry_id)
                     if entry is None:
                         continue
+                    warn_about = entry.channel_id
                     # To the log channel as it is now, as the retry loop delivers it.
                     current = await self.log_destination()
                     target = entry.channel_id if current is None else current
+                    warn_about = target
                     message, reason = await self._try_send(target, entry.content, "log", False)
                     if message is not None:
+                        warn_about = None
                         await retry_service.mark_delivered(db_path, entry_id)
                         continue
                     await retry_service.mark_failed(db_path, entry_id, reason=reason)
-                if interaction is not None:
-                    await self._warn_member(target, interaction)
             except Exception:
                 log.error("deliver_queued: could not deliver line id=%s", entry_id, exc_info=True)
+            if warn_about is not None and interaction is not None:
+                await self._warn_member(warn_about, interaction)
 
     @staticmethod
     def _as_log_line(content: str, *, keep_role: int | None = None) -> str:
