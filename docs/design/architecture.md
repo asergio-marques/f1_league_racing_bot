@@ -1022,8 +1022,8 @@ later on its own.
   connection commits nothing and is not counted. It allows for good the migrations run at start-up
   (`run_migrations` and `_enable_wal`, the journal mode set on the database file itself), the
   queue's own records, the retry queue for log lines, and `backup_service._write_empty_database`,
-  which writes the scheduler's empty file and not the league's. -
-  **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
+  which writes the scheduler's empty file and not the league's.
+- **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
   **`tests/repository/test_import_roots.py`** check the one-league rule, the schema's own rules, and
   that the bot is imported from one place: the installed package, never through `src`.
 
