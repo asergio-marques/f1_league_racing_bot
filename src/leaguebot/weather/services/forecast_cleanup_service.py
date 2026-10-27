@@ -212,9 +212,10 @@ async def post_phase_message(
 
     **A transport failure stops the queue at the post job**, whose next try posts the text
     (XIV.8, FR-057): a message Discord refuses, a channel the bot cannot fetch and one that is
-    not a text channel raise `StepFailedOnDiscord`, text or graphic alike, from the Discord fault
-    where there is one, and the text is composed again when it is finally sent, never a picture
-    kept for later. The post is the only thing that may fail here: the previous forecast stands
+    not a text channel raise `StepFailedOnDiscord`, text or graphic alike: a channel Discord
+    reports gone with no cause, so that the stop notice says it is gone, and every other failure
+    from the Discord fault where there is one. The text is composed again when it is finally sent,
+    never a picture kept for later. The post is the only thing that may fail here: the previous forecast stands
     until a job after this one deletes it (Constitution XIV.8, produce before destroy). The stop
     notice says so in plain words (core specification, "How a change is carried out"): that the
     channel is no longer on the server, that Discord refused or failed a request from the bot, or
