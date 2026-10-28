@@ -256,7 +256,8 @@ async def test_a_press_by_someone_who_may_not_answer_is_recorded(
     tmp_path, view_class, label, review, helper, verb
 ):
     """Alex's review stands in channel 700, its question Q posted a moment ago. Sam, a league
-    manager who is neither the reviewer nor a league admin, presses Alex's button.
+    manager who is neither the reviewer nor a league admin, presses Alex's button: the case a
+    public review creates, for only the reviewer or a league admin may answer it.
 
     Sam is answered as today, privately, and the review is left alone: nothing is deleted or
     posted, and no take-down is asked of the queue. The log channel gets one refusal line naming
@@ -295,11 +296,12 @@ async def test_a_press_refused_because_the_season_changed_is_recorded_once(
     its row records the evidence its report was computed from, Pro's rounds "as reviewed". Pro's
     rounds have changed since. Alex presses his own button.
 
-    He is refused as today, privately, and nothing is approved (or confirmed). The button deletes
-    and posts nothing itself: it asks the queue to take the review down, ending refused. Once the
-    queue runs, the review ends as an expired one does: Q, R1 and R2 deleted and the public
-    notice pinging Alex posted, once. The log holds exactly one line for the press, the refusal,
-    naming the button, the review and what changed; no lapse is recorded beside it.
+    He is refused as today, privately, the reply naming what changed and the review's command to
+    run again, and nothing is approved (or confirmed). The button deletes and posts nothing
+    itself: it asks the queue to take the review down, ending refused. Once the queue runs, the
+    review ends as an expired one does: Q, R1 and R2 deleted and the public notice pinging Alex
+    posted, once. The log holds exactly one line for the press, the refusal, naming the button,
+    the review and what changed; no lapse is recorded beside it.
     """
     from tests.support.change_queue import acknowledgement, run_queue
 
@@ -315,6 +317,8 @@ async def test_a_press_refused_because_the_season_changed_is_recorded_once(
     reply = acknowledgement(interaction)
     assert "has changed since this review" in reply
     assert f"**Nothing has been {verb}.**" in reply
+    assert f"• {AREA}" in reply
+    assert f"`{review}`" in reply
     assert channel.deleted == [] and channel.sent == []
     [payload] = await _take_downs(env)
     assert (payload["ending"], payload["question_id"]) == ("refused", channel.q.id)
@@ -343,9 +347,9 @@ async def test_a_review_left_for_its_five_minutes_records_its_lapse(
     """Alex runs a review and nobody presses its button; its five minutes run out, and the
     review's expiry timer fires for its question. The timer deletes and posts nothing itself: it
     asks the queue to take the review down. Once the queue runs, the question and its report are
-    deleted and today's public notice pinging Alex posted, and the log gets one lapse line naming
-    the review and Alex as the member who started it, with beneath it what became of it (nothing
-    done) and what to do next (run the review again)."""
+    deleted and today's public notice pinging Alex and naming the review's command posted, and the
+    log gets one lapse line naming the review and Alex as the member who started it, with beneath
+    it what became of it (nothing done) and what to do next (run the review again)."""
     env = await _standing(tmp_path, review)
     channel = env.channel
 
@@ -359,6 +363,7 @@ async def test_a_review_left_for_its_five_minutes_records_its_lapse(
     assert {m.id for m in channel.deleted} == {channel.q.id, channel.r1.id, channel.r2.id}
     [notice] = channel.sent
     assert "<@4242> your review has expired" in notice
+    assert f"`{review}`" in notice
     lines = [line for line in _queue_lines(env) if line.startswith("⌛ ")]
     assert len(lines) == 1, _queue_lines(env)
     head, *beneath = lines[0].splitlines()
