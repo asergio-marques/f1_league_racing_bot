@@ -198,10 +198,10 @@ async def test_a_line_for_a_given_channel_that_fails_is_neither_queued_nor_redir
     router = OutputRouter(bot, bot.config_service, retry_db_path=str(tmp_path / "retry.db"))
     router._warn_member = AsyncMock()
 
-    assert await router.post_log("the league was reset", channel=555) is None
+    assert await router.post_log("the league was reset", channel=99) is None
 
     enqueue.assert_not_awaited()
-    assert [call.args[0] for call in bot.get_channel.call_args_list] == [555]
+    assert [call.args[0] for call in bot.get_channel.call_args_list] == [99]
     router._warn_member.assert_not_awaited()
 
 
