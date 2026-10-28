@@ -133,14 +133,14 @@ the tests and the settings files that pin them.
   and the suite is run. A change reported complete without a run, or leaving tests that no longer
   exercise the new behaviour, is not complete. Every implementation task is covered by a test that
   passes before the next task begins; coverage is never deferred to a polish phase.
-- **A test that repeats another is not added** (decided 2026-10-28, #526). A test repeats another
-  where an existing test already makes its assertion, at the same layer, for the same case: the
-  same outcome checked, through the same entry point (a service, a handler, a command, a run through
-  the change queue), from the same state and input. A test that runs the same lines but checks
-  another outcome, or checks the same outcome for another case or at another layer, is not a
-  repeat. Before adding a test, look for one that pins the same outcome, and extend it where it can
-  take the new outcome (a further case of a parametrised test, or a further assertion) rather than
-  add another. A repeat is dropped, or merged into the test it repeats.
+- **A test that repeats another is not added.** A test repeats another where an existing test
+  already makes its assertion, at the same layer, for the same case: the same outcome checked,
+  through the same entry point (a service, a handler, a command, a run through the change queue),
+  from the same state and input. A test that runs the same lines but checks another outcome, or
+  checks the same outcome for another case or at another layer, is not a repeat. Before adding a
+  test, look for one that pins the same outcome, and extend it where it can take the new outcome (a
+  further case of a parametrised test, or a further assertion) rather than add another. A repeat is
+  dropped, or merged into the test it repeats.
 - **No test may require a live Discord bot** — tests stub Discord. Full system testing is by hand.
 - **Scripts in `tools/` are not unit-tested,** and no tests are added for them, except those a
   workflow runs: `coverage_by_module.py`, `check_pr_labels.py`, `next_version.py` and
