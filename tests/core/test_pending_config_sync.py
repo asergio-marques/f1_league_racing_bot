@@ -163,6 +163,9 @@ async def _two_division_season(db_path: str):
 
 
 async def test_a_first_sync_creates_the_season_and_returns_every_division(db_path):
+    """`/season setup` begins a season in Configuration (issue #220): a first sync on an empty
+    league writes the season row, numbered one, in the stage it is given, with every division
+    written beneath it and returned for seeding."""
     svc = SeasonService(db_path)
     season_id, number, new_ids = await _sync(
         svc, 0, [_division("Pro", 1), _division("Am", 2)],
@@ -173,6 +176,9 @@ async def test_a_first_sync_creates_the_season_and_returns_every_division(db_pat
     assert seasons[0]["stage"] == "CONFIGURATION"
     assert number == 1
     assert len(new_ids) == 2
+    assert {
+        d["id"] for d in await _dump(db_path, "divisions") if d["season_id"] == season_id
+    } == set(new_ids)
 
 
 async def test_a_season_with_no_divisions_is_just_its_row(db_path):
@@ -188,19 +194,6 @@ async def test_a_season_with_no_divisions_is_just_its_row(db_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_round_add_keeps_every_division_team_seat_and_assignment(db_path):
-    svc, season_id, divisions, _ = await _two_division_season(db_path)
-    before = {t: await _dump(db_path, t) for t in
-              ("divisions", "team_instances", "team_seats", "driver_season_assignments")}
-
-    divisions[0]["rounds"].append(_round(4))
-    _, _, new_ids = await _sync(svc, season_id, divisions)
-
-    assert new_ids == []
-    for table, rows in before.items():
-        assert await _dump(db_path, table) == rows, f"{table} was rewritten"
-
-
 async def test_rounds_of_an_untouched_division_keep_their_ids(db_path):
     svc, season_id, divisions, (pro_id, am_id) = await _two_division_season(db_path)
     am_before = [r for r in await _dump(db_path, "rounds") if r["division_id"] == am_id]
@@ -212,23 +205,13 @@ async def test_rounds_of_an_untouched_division_keep_their_ids(db_path):
     assert am_after == am_before
 
 
-async def test_a_placed_driver_is_untouched_by_a_setup_command(db_path):
-    svc, season_id, divisions, _ = await _two_division_season(db_path)
-    await _count_writes(db_path)
-
-    divisions[1]["rounds"].append(_round(4))
-    await _sync(svc, season_id, divisions)
-
-    touched = {table for table, _ in await _writes(db_path)}
-    assert touched == {"rounds"}
-
-
 # ---------------------------------------------------------------------------
 # Only the difference is written
 # ---------------------------------------------------------------------------
 
 
 async def test_an_unchanged_config_writes_nothing(db_path):
+    """Rounds the DB already holds are matched, not inserted again — nor replaced."""
     svc, season_id, divisions, _ = await _two_division_season(db_path)
     await _count_writes(db_path)
 
@@ -238,13 +221,16 @@ async def test_an_unchanged_config_writes_nothing(db_path):
 
 
 async def test_a_round_added_at_the_end_is_one_insert(db_path):
+    """A round add keeps every division, team, seat and assignment, since none of their tables
+    is written, and returns no division for seeding."""
     svc, season_id, divisions, _ = await _two_division_season(db_path)
     await _count_writes(db_path)
 
     divisions[0]["rounds"].append(_round(4))
-    await _sync(svc, season_id, divisions)
+    _, _, new_ids = await _sync(svc, season_id, divisions)
 
     assert await _writes(db_path) == [("rounds", "INSERT")]
+    assert new_ids == []
 
 
 async def test_the_writes_do_not_grow_with_the_number_of_divisions(db_path):
@@ -424,12 +410,6 @@ async def test_sync_refuses_a_season_that_does_not_exist(db_path):
 # ---------------------------------------------------------------------------
 # A new season's number
 # ---------------------------------------------------------------------------
-
-
-async def test_a_new_season_on_an_empty_league_is_number_one(db_path):
-    _, season_number, _ = await _sync(SeasonService(db_path), 0, [])
-
-    assert season_number == 1
 
 
 async def test_a_new_season_follows_the_latest_number_across_a_gap(db_path):

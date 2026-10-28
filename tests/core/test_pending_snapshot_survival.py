@@ -99,17 +99,6 @@ async def _row(db_path: str, table: str, where: str, params: tuple):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_first_setup_command_creates_the_season(tmp_path):
-    db_path = await _make_db(tmp_path)
-    service = SeasonService(db_path)
-
-    season_id, number = await _snapshot(service)
-
-    assert season_id > 0
-    assert number == 1
-    assert await _division_id(db_path, season_id) > 0
-
-
 async def test_a_setup_command_keeps_the_season_row(tmp_path):
     """One live season per server, and it keeps its id and stage (issue #220).
 
@@ -183,22 +172,6 @@ async def test_the_rounds_are_written_from_the_pending_config(tmp_path):
             (await _division_id(db_path, season_id),),
         )
         assert (await cursor.fetchone())["n"] == 3
-
-
-async def test_a_second_setup_command_does_not_duplicate_the_rounds(tmp_path):
-    """Rounds the DB already holds are matched, not inserted again — nor replaced."""
-    db_path = await _make_db(tmp_path)
-    service = SeasonService(db_path)
-    first, _ = await _snapshot(service, divisions=[_division(rounds=2)])
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT id FROM rounds ORDER BY id")
-        before = [r["id"] for r in await cursor.fetchall()]
-
-    await _snapshot(service, existing=first, divisions=[_division(rounds=2)])
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT id FROM rounds ORDER BY id")
-        assert [r["id"] for r in await cursor.fetchall()] == before
 
 
 # ---------------------------------------------------------------------------
@@ -356,20 +329,6 @@ async def test_a_division_s_settings_stay_on_its_own_row(tmp_path):
     )
     assert challenger["lineup_channel_id"] == 7301
     assert premier["lineup_channel_id"] is None
-
-
-async def test_a_first_setup_command_begins_in_the_stage_it_is_given(tmp_path):
-    """`/season setup` begins a season in Configuration (issue #220)."""
-    from leaguebot.core.models.season import SeasonStage
-
-    db_path = await _make_db(tmp_path)
-    service = SeasonService(db_path)
-
-    season_id, _, _ = await service.sync_pending_config(
-        START, 0, [], initial_stage=SeasonStage.CONFIGURATION
-    )
-
-    assert await service.get_stage(season_id) is SeasonStage.CONFIGURATION
 
 
 async def test_a_later_setup_command_ignores_the_initial_stage(tmp_path):
