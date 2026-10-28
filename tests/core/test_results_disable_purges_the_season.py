@@ -430,6 +430,7 @@ async def test_each_state_only_results_could_move_is_closed(tmp_path) -> None:
         await _disable(_make_cog(db_path))
 
         assert await _round_status(db_path, round_id) == "FINAL", status
+        assert await _count(db_path, "session_results") == 0, status
         assert await _division_status(db_path, division_id) == "FINISHED", status
         assert await _open_divisions(db_path) == 0, status
 
@@ -640,6 +641,7 @@ async def test_a_verdict_left_standing_is_linked_not_counted(tmp_path) -> None:
 
     assert discarded == 1
     assert "1 verdict(s) removed" in reply
+    assert "1 message(s) could not be removed" in reply
     assert _left_standing(reply) == [_link(VERDICTS_CHANNEL_ID, 5001)]
     assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == [6001]
 
@@ -676,21 +678,6 @@ async def test_a_standings_message_left_standing_is_linked(tmp_path) -> None:
     assert _left_standing(reply) == [_link(STANDINGS_CHANNEL_ID, 3000)]
     assert "2 results and standings message(s)" in reply
     assert cog.bot.channels[STANDINGS_CHANNEL_ID].deleted_messages == [2000]
-
-
-async def test_the_reply_links_a_verdict_left_standing(tmp_path) -> None:
-    """End to end: the verdict the bot could not remove is the one the reply links."""
-    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
-    await _announce(db_path, "penalty_records", 5001)
-    cog = _make_cog(db_path)
-    cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {5001}
-
-    interaction, discarded = await _disable_discarding(cog)
-
-    reply = updated_reply(interaction)
-    assert discarded == 1
-    assert "1 message(s) could not be removed" in reply
-    assert _link(VERDICTS_CHANNEL_ID, 5001) in reply
 
 
 async def test_a_message_deleted_by_hand_counts_as_removed(tmp_path) -> None:
@@ -857,21 +844,6 @@ async def test_the_warning_says_verdicts_are_taken_down(tmp_path) -> None:
     assert "cannot take those back" not in warning
 
 
-async def test_confirming_erases_the_season(tmp_path) -> None:
-    db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    cog = _make_cog(db_path)
-    attach_queue(cog.bot, db_path, now=NOW)
-    view = _ConfirmDisableResultsView(
-        cog, ACTOR_ID, cascade_attendance=False
-    )
-
-    await view.confirm.callback(member_interaction(cog.bot, user=member(ACTOR_ID)))
-    await run_queue(cog.bot)
-
-    assert await _round_status(db_path, round_id) == "FINAL"
-    assert await _count(db_path, "session_results") == 0
-
-
 async def test_cancelling_erases_nothing(tmp_path) -> None:
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     cog = _make_cog(db_path)
@@ -894,16 +866,6 @@ async def test_the_reply_names_what_was_destroyed(tmp_path) -> None:
     reply = updated_reply(interaction)
     assert "This season's results are gone" in reply
     assert "1 round(s) closed with no results" in reply
-
-
-async def test_the_reply_names_the_verdicts_removed(tmp_path) -> None:
-    """End to end: the verdict the purge takes down is the one the reply counts."""
-    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
-    await _announce(db_path, "penalty_records", 5001)
-    interaction = await _disable(_make_cog(db_path))
-
-    reply = updated_reply(interaction)
-    assert "1 verdict(s) removed" in reply
 
 
 async def test_an_open_amendment_is_closed_with_the_season(tmp_path) -> None:

@@ -46,12 +46,6 @@ class TestIsResultsEnabled:
         svc = ModuleService(db_path)
         assert await svc.is_results_enabled() is False
 
-    async def test_default_false_unknown_server(self, db_path):
-        """Server with no config row at all → False."""
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        assert await svc.is_results_enabled() is False
-
     async def test_returns_true_after_enable(self, db_path):
         """With the flag on, is_results_enabled returns True."""
         from leaguebot.core.services.module_service import ModuleService
