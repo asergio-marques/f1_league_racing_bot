@@ -145,13 +145,20 @@ async def test_every_command_refuses_outside_test_mode(live, command):
     assert not bs.staged_path(live.db).exists(), "a restore was staged outside test mode"
 
 
-async def test_a_server_with_no_configuration_is_refused(live):
-    """No row means the bot was never set up here, which is not test mode either."""
+@pytest.mark.parametrize(
+    "command",
+    [Cog.backup_save, Cog.backup_lock, Cog.backup_restore,
+     Cog.backup_status],
+)
+async def test_a_server_with_no_configuration_is_refused(live, command):
+    """No row means the bot was never set up here, which is not test mode either: the flag
+    cannot be read, and assuming test mode would be assuming the most dangerous of the two
+    states."""
     cog = _cog(live)
     cog.bot.config_service.get_server_config = AsyncMock(return_value=None)
     interaction = _interaction()
 
-    await _body(Cog.backup_save)(cog, interaction)
+    await _body(command)(cog, interaction)
 
     assert "test mode" in _reply(interaction)
     assert not bs.backup_path(live.db).exists()
@@ -360,6 +367,7 @@ async def test_status_with_no_backup_says_so(live):
     await _body(Cog.backup_status)(cog, interaction)
 
     assert "no saved backup" in _reply(interaction)
+    assert "/test-mode backup save" in _reply(interaction)
 
 
 async def test_status_reports_an_unreadable_backup(live):
@@ -394,7 +402,8 @@ async def test_restore_without_a_backup_is_refused(live):
 
     await _body(Cog.backup_restore)(cog, interaction)
 
-    assert "no saved backup" in _reply(interaction)
+    assert "no saved backup to restore" in _reply(interaction)
+    assert "/test-mode backup save" in _reply(interaction)
 
 
 async def test_restore_of_an_unreadable_backup_is_refused(live):

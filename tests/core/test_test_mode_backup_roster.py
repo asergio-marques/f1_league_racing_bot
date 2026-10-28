@@ -9,7 +9,8 @@ the command rather than trusted from earlier — the flag can be turned off betw
 and the next, and a restore is not something to run on the strength of a stale reading. Every
 one of the four is tested for the refusal, individually, because the guard is a call at the top
 of each rather than a decorator shared between them: one missing it would let a restore run on
-a live league.
+a live league. Those tests are in `tests/core/test_test_mode_backup.py`, which runs the commands
+over real files, and the refusal's own words in `tests/core/test_test_mode_cog_refusals.py`.
 
 **The refusal has to say why, not just no.** It names the risk and the command that enables
 test mode, because a maintainer meeting it has usually just forgotten which mode they are in.
@@ -30,8 +31,6 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 
 # Aliased on import: pytest tries to collect any module-level name starting with `Test`
 # as a test class, and warns that it cannot because the cog has an `__init__`.
@@ -47,13 +46,13 @@ ACTOR_ID = 77
 # ---------------------------------------------------------------------------
 
 
-def _make_cog(*, test_mode: bool = True, config_missing: bool = False) -> _Cog:
+def _make_cog(*, test_mode: bool = True) -> _Cog:
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
     bot.config_service = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(
-        return_value=None if config_missing else SimpleNamespace(test_mode_active=test_mode)
+        return_value=SimpleNamespace(test_mode_active=test_mode)
     )
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
@@ -107,46 +106,9 @@ def _backup_state(
     )
 
 
-#: Every command in the `/test-mode backup` group, by the name a maintainer types.
-BACKUP_COMMANDS = [
-    ("save", _Cog.backup_save),
-    ("lock", _Cog.backup_lock),
-    ("status", _Cog.backup_status),
-    ("restore", _Cog.backup_restore),
-]
-
-
 # ---------------------------------------------------------------------------
 # The test-mode guard
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "name,command", BACKUP_COMMANDS, ids=[n for n, _ in BACKUP_COMMANDS]
-)
-async def test_every_backup_command_is_refused_outside_test_mode(name, command):
-    """The guard is a call at the top of each command rather than a shared decorator, so
-    one missing it would let a restore run on a live league."""
-    cog = _make_cog(test_mode=False)
-    interaction = _interaction()
-
-    await undecorate(command)(cog, interaction)
-
-    assert "only while the server is in **test mode**" in _replied(interaction)
-
-
-@pytest.mark.parametrize(
-    "name,command", BACKUP_COMMANDS, ids=[n for n, _ in BACKUP_COMMANDS]
-)
-async def test_a_server_with_no_configuration_is_refused_too(name, command):
-    """No configuration means the flag cannot be read, and assuming test mode would be
-    assuming the most dangerous of the two states."""
-    cog = _make_cog(config_missing=True)
-    interaction = _interaction()
-
-    await undecorate(command)(cog, interaction)
-
-    assert "test mode" in _replied(interaction)
 
 
 async def test_the_refusal_says_why_and_how_to_proceed(tmp_path):
@@ -173,20 +135,6 @@ async def test_the_guard_passes_in_test_mode(tmp_path):
 # ---------------------------------------------------------------------------
 # /test-mode backup status
 # ---------------------------------------------------------------------------
-
-
-async def test_no_backup_says_so_and_names_the_command_that_takes_one():
-    cog = _make_cog()
-    interaction = _interaction()
-
-    with patch(
-        "leaguebot.core.services.backup_service.state", return_value=_backup_state(exists=False)
-    ):
-        await undecorate(_Cog.backup_status)(cog, interaction)
-
-    replied = _replied(interaction)
-    assert "no saved backup" in replied
-    assert "/test-mode backup save" in replied
 
 
 async def test_a_saved_backup_reports_when_it_was_taken_and_how_big():
@@ -256,20 +204,6 @@ async def test_an_unlocked_backup_reports_no_lock():
 # ---------------------------------------------------------------------------
 
 
-async def test_restoring_with_no_backup_is_refused():
-    cog = _make_cog()
-    interaction = _interaction()
-
-    with patch(
-        "leaguebot.core.services.backup_service.state", return_value=_backup_state(exists=False)
-    ):
-        await undecorate(_Cog.backup_restore)(cog, interaction)
-
-    replied = _replied(interaction)
-    assert "no saved backup to restore" in replied
-    assert "/test-mode backup save" in replied
-
-
 # ---------------------------------------------------------------------------
 # /test-mode roster remove
 # ---------------------------------------------------------------------------
@@ -314,27 +248,6 @@ async def test_removing_a_driver_names_them_and_their_team():
     replied = _replied(interaction)
     assert "Test Lewis" in replied
     assert "Alpha" in replied
-
-
-async def test_a_refusal_from_the_roster_service_reaches_the_maintainer():
-    """The service returns a string to refuse, which the command has to recognise as a
-    refusal rather than treat as a result; the refusal is recorded in the log channel
-    (#482)."""
-    cog = _make_cog()
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "test-mode roster remove"
-
-    with patch(
-        "leaguebot.core.services.test_roster_service.remove_test_driver",
-        new=AsyncMock(return_value="No test driver with that id."),
-    ):
-        await _remove(cog, interaction)
-
-    assert "No test driver with that id." in _replied(interaction)
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        "⛔ `/test-mode roster remove` refused for Maintainer (<@77>) — No test driver with that id."
-    )
 
 
 async def test_a_successful_removal_is_logged_with_the_id_as_well_as_the_name():
