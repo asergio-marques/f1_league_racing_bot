@@ -282,11 +282,6 @@ def _with_attendance(bot):
     return bot
 
 
-async def _rows(db_path, table):
-    async with get_connection(db_path) as db:
-        return await (await db.execute(f"SELECT * FROM {table}")).fetchall()  # noqa: S608
-
-
 # ── The check-in is audited in the log before the call comes down ──────────
 
 
