@@ -262,10 +262,11 @@ The builder makes every change to `tests/` the work needs, and no production cod
 tests the plan says fail before the fix, changes the existing tests the fix alters, deletes those
 it makes obsolete, and changes the fixtures and helpers they need. It adds no test that repeats
 another, by `CLAUDE.md`'s rule: it looks for an existing test first and extends that where it can,
-and the issue reviewer flags a repeat as material, to be dropped or merged before Gate 2. Each test that fails before the
-fix is marked `xfail(strict=True)`, so that every commit stays green; one that passes already, as
-after a rejection at Gate 3, is left unmarked, and the tester checks that it passes. The ratchet
-lines the plan names are the one thing left to the build, which deletes each with its breach.
+and the issue reviewer flags a repeat as material, to be dropped or merged before Gate 2. Each
+test that fails before the fix is marked `xfail(strict=True)`, so that every commit stays green;
+one that passes already, as after a rejection at Gate 3, is left unmarked, and the tester checks
+that it passes. The ratchet lines the plan names are the one thing left to the build, which deletes
+each with its breach.
 
 The builder lists every test it adds, modifies, deletes or moves, each with the scenario it sets
 up, what it expects, what it did before where it is modified, and why it goes where it is deleted;
