@@ -201,13 +201,18 @@ async def test_only_the_horizons_that_have_passed_fire(tmp_path):
     assert [p for p, _ in fired] == [1]
 
 
-async def test_a_phase_already_done_is_not_fired_again(tmp_path):
-    """Otherwise every restart would republish the whole season's forecasts."""
-    db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, True, True, False, "NORMAL"),))
+@pytest.mark.parametrize("done, expected", [
+    pytest.param((True, True, False), [3], id="phases 1 and 2 done"),
+    pytest.param((False, False, True), [1, 2], id="phase 3 done"),
+])
+async def test_a_phase_already_done_is_not_fired_again(tmp_path, done, expected):
+    """Otherwise every restart would republish the whole season's forecasts: each phase's own
+    flag holds it back, and the phases not done still fire."""
+    db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, *done, "NORMAL"),))
 
     fired = await _recover(_bot(db_path))
 
-    assert [p for p, _ in fired] == [3]
+    assert sorted(p for p, _ in fired) == expected
 
 
 async def test_every_overdue_round_is_recovered(tmp_path):
@@ -349,7 +354,8 @@ async def test_a_round_not_to_be_run_recovers_nothing(tmp_path, status):
 async def test_a_naive_timestamp_is_read_as_utc(tmp_path):
     """Rows written before the timestamps carried a zone still exist. Read as local time
     the horizon would move by the host's offset, so the same database would recover
-    differently on the Pi than on a developer's machine."""
+    differently on the Pi than on a developer's machine; and compared with an aware "now" it
+    would raise, aborting the sweep partway through a season."""
     db_path = await _make_db(tmp_path)
     naive = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(tzinfo=None)
     async with get_connection(db_path) as db:
