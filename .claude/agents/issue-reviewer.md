@@ -93,6 +93,9 @@ Check the branch against:
   code the plan has not written yet, an `ImportError` or `AttributeError` is that reason, since such
   a test imports it inside its body; a `NameError` from a typo, a missing fixture or a syntax error
   is not. The one exception is a test listed as already passing: it is unmarked, and must pass.
+  In the tests stage, too, no added test, nor a case or assertion added to an extended one, repeats
+  an existing test or another added one, by CLAUDE.md's rule on repeats: search `tests/` for each.
+  A repeat is material, its fix to drop it or merge it into the test it repeats.
 - **The list of test changes,** in the tests stage. The owner approves the tests from it at Gate 2,
   before any code is written, so it must say what the tests do. The workflow holds the list to the
   diff itself; you hold each entry to its code. Its scenario, its expectation and, for a modified

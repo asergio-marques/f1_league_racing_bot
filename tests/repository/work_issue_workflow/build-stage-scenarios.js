@@ -14,6 +14,8 @@ module.exports = {
       if (label.endsWith(':builder')) { if (!prompt.includes('This is the build') || !prompt.includes('CRIT')) throw new Error('builder prompt'); return builder({ tests: [] }) }
       if (label.endsWith(':tester') && !prompt.includes('/p/.venv/bin/mypy')) throw new Error('tester lacks mypy path')
       if (label.endsWith(':code') && !prompt.includes('diff b0...HEAD')) throw new Error('code reviewer lacks the diff')
+      // The build adds no test, so its issue reviewer is not given the rule on repeats (#526).
+      if (label.endsWith(':issue') && prompt.includes('already makes its assertion')) throw new Error('build reviewer given the rule on repeats')
       return lanesClean(label)
     },
     expect: r => r.status === 'passed' && r.summary === 'ACCEPTANCE' && r.lastRound === 1,
