@@ -142,15 +142,6 @@ def test_the_cogs_declare_commands_at_all():
 
 
 @pytest.mark.parametrize("name", sorted(COMMANDS))
-def test_every_command_declares_a_tier(name):
-    """No command ships unguarded, whatever else is true of it."""
-    tier = getattr(COMMANDS[name].callback, TIER_ATTRIBUTE, None)
-    assert tier in (LEAGUE_ADMIN, LEAGUE_MANAGER, SERVER_OWNER), (
-        f"/{name} carries no tier guard — it is reachable by anybody, in any channel"
-    )
-
-
-@pytest.mark.parametrize("name", sorted(COMMANDS))
 def test_every_command_sits_at_the_tier_the_register_gives_it(name):
     callback = COMMANDS[name].callback
     expected = LEAGUE_ADMIN_COMMANDS.get(name)

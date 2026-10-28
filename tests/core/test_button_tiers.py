@@ -191,13 +191,10 @@ async def _is_lm(member, config):
     return await _is_league_manager(_interaction(member), ":memory:", bot)
 
 
-async def test_a_league_admin_may_press_a_penalty_review_button():
-    """Refused before issue #116: the gate read the interaction role alone."""
-    assert await _is_lm(_member(ADMIN_ROLE), _config()) is True
-
-
-async def test_a_league_manager_may_press_a_penalty_review_button():
-    assert await _is_lm(_member(MANAGER_ROLE), _config()) is True
+@pytest.mark.parametrize("roles", [(MANAGER_ROLE,), (ADMIN_ROLE,)], ids=["manager", "admin"])
+async def test_either_tier_may_press_a_penalty_review_button(roles):
+    """The admin was refused before issue #116: the gate read the interaction role alone."""
+    assert await _is_lm(_member(*roles), _config()) is True
 
 
 async def test_a_bystander_may_not_press_a_penalty_review_button():

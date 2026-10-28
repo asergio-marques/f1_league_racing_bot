@@ -108,18 +108,19 @@ async def _create_wizard_channel(*, league_admin_role_id):
     return created["overwrites"]
 
 
-async def test_the_wizard_channel_is_open_to_both_roles():
-    """The admin review panel is posted here, so a league admin has to be able to read it."""
-    overwrites = await _create_wizard_channel(league_admin_role_id=ADMIN_ROLE)
+@pytest.mark.parametrize(
+    "admin_role_id,expected",
+    [(ADMIN_ROLE, {MANAGER_ROLE, ADMIN_ROLE}), (None, {MANAGER_ROLE})],
+    ids=["admin role set", "admin role unset"],
+)
+async def test_the_wizard_channel_is_open_to_both_roles(admin_role_id, expected):
+    """The admin review panel is posted here, so a league admin has to be able to read it; an
+    admin role that is not set is left out."""
+    overwrites = await _create_wizard_channel(league_admin_role_id=admin_role_id)
 
-    assert {MANAGER_ROLE, ADMIN_ROLE} <= _overwrite_role_ids(overwrites)
-
-
-async def test_the_wizard_channel_omits_an_admin_role_that_is_not_set():
-    overwrites = await _create_wizard_channel(league_admin_role_id=None)
-
-    assert MANAGER_ROLE in _overwrite_role_ids(overwrites)
-    assert ADMIN_ROLE not in _overwrite_role_ids(overwrites)
+    assert expected <= _overwrite_role_ids(overwrites)
+    if admin_role_id is None:
+        assert ADMIN_ROLE not in _overwrite_role_ids(overwrites)
 
 
 # ── The signup channel ────────────────────────────────────────────────────

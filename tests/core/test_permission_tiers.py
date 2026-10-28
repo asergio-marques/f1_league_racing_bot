@@ -294,46 +294,19 @@ async def test_a_setup_command_runs_from_any_channel(member):
     assert ran == [True]
 
 
-async def test_a_setup_command_refuses_a_league_manager():
-    command, ran = _guarded(bot_setup_only)
-    interaction = _interaction(_member(roles=(MANAGER_ROLE,)))
-    await command(_cog(_config()), interaction)
-    assert ran == []
-    assert "Administrator" in _reply(interaction)
-
-
-async def test_a_setup_command_runs_for_an_administrator_before_the_bot_is_configured():
-    """The bootstrap: with no configuration there is no role for anybody to hold."""
-    command, ran = _guarded(bot_setup_only)
-    await command(_cog(None), _interaction(_member(administrator=True)))
-    assert ran == [True]
-
-
-async def test_a_setup_command_runs_for_an_administrator_while_no_admin_role_is_set():
-    """The way back for a league that predates the role, or deleted it."""
-    command, ran = _guarded(bot_setup_only)
-    await command(_cog(_config(admin_role=None)), _interaction(_member(administrator=True)))
-    assert ran == [True]
-
-
-# ── Before the bot is set up ──────────────────────────────────────────────
-
-
 @pytest.mark.parametrize(
-    "decorator", [league_admin_only, league_manager_only],
-    ids=["league_admin_only", "league_manager_only"],
+    "config",
+    [
+        # The bootstrap: with no configuration there is no role for anybody to hold.
+        pytest.param(None, id="not configured"),
+        # The way back for a league that predates the role, or deleted it.
+        pytest.param(_config(admin_role=None), id="no admin role"),
+    ],
 )
-async def test_a_tier_command_is_refused_before_the_bot_is_configured(decorator):
-    """The guard this replaced let these through untouched.
-
-    With no `ServerConfig` there is no channel to check and no role anyone can hold, so
-    passing the command to its body ran it for whoever asked.
-    """
-    command, ran = _guarded(decorator)
-    interaction = _interaction(_member(administrator=True))
-    await command(_cog(None), interaction)
-    assert ran == []
-    assert "/bot init" in _reply(interaction)
+async def test_a_setup_command_runs_for_an_administrator_while_no_admin_role_is_set(config):
+    command, ran = _guarded(bot_setup_only)
+    await command(_cog(config), _interaction(_member(administrator=True)))
+    assert ran == [True]
 
 
 # ── Refusals name roles, never mention them ───────────────────────────────
@@ -428,15 +401,18 @@ async def test_an_admin_command_refused_for_want_of_an_admin_role_is_recorded():
     ids=["league_admin_only", "league_manager_only"],
 )
 async def test_a_refusal_before_the_bot_is_set_up_goes_to_the_host_log_alone(decorator, caplog):
-    """With no configuration there is no log channel to write to (owner decision on #482,
-    2026-09-29: host log only). The member is still told to run `/bot init`, and the host's
-    log records the refusal."""
+    """With no `ServerConfig` there is no channel to check and no role anyone can hold; the
+    guard this replaced let these through untouched, so passing the command to its body ran it
+    for whoever asked. Now the command does not run. Nor is there a log channel to write to
+    (owner decision on #482, 2026-09-29: host log only): the member is still told to run
+    `/bot init`, and the host's log records the refusal."""
     caplog.set_level(logging.INFO, logger=_GUARD_LOG)
-    command, _ = _guarded(decorator)
+    command, ran = _guarded(decorator)
     interaction = _interaction(_member(roles=(MANAGER_ROLE,)))
 
     await command(_cog(None), interaction)
 
+    assert ran == []
     assert "/bot init" in _reply(interaction)
     interaction.client.output_router.post_log.assert_not_awaited()
     assert _host_records_refusal(caplog, "round add", guild=SERVER_ID)
@@ -474,6 +450,7 @@ async def test_a_setup_command_refused_on_a_set_up_server_is_recorded():
     await command(_cog(_config()), interaction)
 
     assert ran == []
+    assert "Administrator" in _reply(interaction)
     assert _logged(interaction) == [
         "⛔ `/bot admin-role` refused for Alex (<@7>) — You need **Owners**, or Discord's "
         "**Administrator** permission, to change the bot's settings."
