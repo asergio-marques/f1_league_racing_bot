@@ -140,15 +140,21 @@ async def _recover(
 # ---------------------------------------------------------------------------
 
 
-async def test_a_round_a_day_past_has_both_its_cleanups_run(tmp_path):
-    db_path = await _make_db(tmp_path, hours_since_start=25)
-
-    assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
-
-
-async def test_a_round_exactly_a_day_past_is_due(tmp_path):
-    """The live jobs fire at the round's start plus a day, so that moment is already due."""
-    db_path = await _make_db(tmp_path, hours_since_start=24)
+@pytest.mark.parametrize("seed", [
+    pytest.param({"hours_since_start": 25}, id="a day past"),
+    # The live jobs fire at the round's start plus a day, so that moment is already due.
+    pytest.param({"hours_since_start": 24}, id="exactly a day past"),
+    # The live jobs outlive the season's completion, and the catch-up does as they would.
+    pytest.param({"season_status": "COMPLETED"}, id="a completed season"),
+    # Round 21 started 25 hours ago, its Phase 3 forecast and its call standing, and ended
+    # cancelled because every session of it was entered as not held: the catch-up asks both its
+    # clean-ups, as for any round a day past (#439, slice 8, Part E; attendance :75; weather :143).
+    pytest.param({"round_status": "CANCELLED", "not_held": 1}, id="every session not held"),
+])
+async def test_a_round_a_day_past_has_both_its_cleanups_run(tmp_path, seed):
+    """A round at least a day past its start, its forecast and its call standing, has both its
+    forecast clean-up and its check-in clean-up asked when the bot starts again."""
+    db_path = await _make_db(tmp_path, **seed)
 
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
@@ -157,13 +163,6 @@ async def test_a_round_under_a_day_past_is_left_to_its_own_job(tmp_path):
     db_path = await _make_db(tmp_path, hours_since_start=23)
 
     assert await _recover(_bot(db_path)) == ([], [])
-
-
-async def test_a_completed_season_is_still_cleaned_up(tmp_path):
-    """The live jobs outlive the season's completion, and the catch-up does as they would."""
-    db_path = await _make_db(tmp_path, season_status="COMPLETED")
-
-    assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
 async def test_only_what_is_standing_is_cleaned(tmp_path):
@@ -250,16 +249,6 @@ async def test_a_cancelled_round_is_left_alone(tmp_path, kwargs):
     db_path = await _make_db(tmp_path, **kwargs)
 
     assert await _recover(_bot(db_path)) == ([], [])
-
-
-async def test_a_round_whose_every_session_was_not_held_has_its_cleanups_caught_up(tmp_path):
-    """Round 21 started 25 hours ago, its Phase 3 forecast and its call standing, and ended
-    cancelled because every session of it was entered as not held. The bot starts again: the
-    catch-up asks both its forecast clean-up and its check-in clean-up, as for any round a day
-    past (attendance :75; weather :143)."""
-    db_path = await _make_db(tmp_path, round_status="CANCELLED", not_held=1)
-
-    assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
 async def test_weather_switched_off_keeps_its_forecasts(tmp_path):

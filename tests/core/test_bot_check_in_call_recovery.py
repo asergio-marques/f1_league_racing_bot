@@ -234,54 +234,29 @@ async def test_a_zero_deadline_lets_a_call_post_late_until_the_round(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_no_late_call_is_posted_before_the_call_is_due(tmp_path):
-    """Its job is still to come, and posting early would override the league's lead time: the
-    restart asks for no call."""
-    db_path = await _make_db(tmp_path, until_round=timedelta(days=6))
+@pytest.mark.parametrize("seed", [
+    # Its job is still to come, and posting early would override the league's lead time.
+    pytest.param({"until_round": timedelta(days=6)}, id="the call not yet due"),
+    # The call went out; a second beside it would divide the division's answers.
+    pytest.param({"call_standing": True}, id="a call standing"),
+    # A round whose check-in has been taken down has no call owed (#425).
+    pytest.param({"checkin_cleared": True}, id="the check-in over"),
+    pytest.param({"round_status": "CANCELLED"}, id="a cancelled round"),
+    # The module-output rule, by the restart path (#114).
+    pytest.param({"attendance_enabled": False}, id="attendance disabled"),
+    # A season still in setup has no check-ins owed.
+    pytest.param({"season_status": "SETUP"}, id="a season in setup"),
+    # Decided 2026-09-24, and kept by #439 (slice 6b, decision 15). `/test-mode advance` posts a
+    # test season's calls in their turn, and a restored save's rounds have all gone by.
+    pytest.param({"test_mode": True}, id="test mode on"),
+])
+async def test_no_late_call_for_a_round_left_alone(tmp_path, seed):
+    """A round with no call owed, or one the restart must not post, is left alone: the restart
+    asks for no call."""
+    db_path = await _make_db(tmp_path, **seed)
 
-    assert await _late_calls(db_path) == 0
-
-
-async def test_no_late_call_while_a_call_stands(tmp_path):
-    """The call went out; a second beside it would divide the division's answers."""
-    db_path = await _make_db(tmp_path, call_standing=True)
-
-    assert await _late_calls(db_path) == 0
-
-
-async def test_no_late_call_for_a_round_whose_check_in_is_over(tmp_path):
-    """A round whose check-in has been taken down has no call owed (#425)."""
-    db_path = await _make_db(tmp_path, checkin_cleared=True)
-
-    assert await _late_calls(db_path) == 0
-
-
-async def test_no_late_call_for_a_cancelled_round(tmp_path):
-    db_path = await _make_db(tmp_path, round_status="CANCELLED")
-
-    assert await _late_calls(db_path) == 0
-
-
-async def test_no_late_call_while_attendance_is_disabled(tmp_path):
-    """The module-output rule, by the restart path (#114)."""
-    db_path = await _make_db(tmp_path, attendance_enabled=False)
-
-    assert await _late_calls(db_path, attendance_enabled=False) == 0
-
-
-async def test_no_late_call_outside_an_ongoing_season(tmp_path):
-    """A season still in setup has no check-ins owed."""
-    db_path = await _make_db(tmp_path, season_status="SETUP")
-
-    assert await _late_calls(db_path) == 0
-
-
-async def test_no_late_call_while_test_mode_is_on(tmp_path):
-    """Decided 2026-09-24, and kept by #439 (slice 6b, decision 15). `/test-mode advance` posts a
-    test season's calls in their turn, and a restored save's rounds have all gone by."""
-    db_path = await _make_db(tmp_path, test_mode=True)
-
-    assert await _late_calls(db_path) == 0
+    attendance_enabled = seed.get("attendance_enabled", True)
+    assert await _late_calls(db_path, attendance_enabled=attendance_enabled) == 0
 
 
 # ---------------------------------------------------------------------------
