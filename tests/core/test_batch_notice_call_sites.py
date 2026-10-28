@@ -257,28 +257,29 @@ def _assert_plain_text(text: object) -> None:
         assert forbidden not in text
 
 
-def test_every_notice_carries_plain_text_for_a_league():
-    """The season review's drawing notice, now its job's text: today's words, a league's to read.
-    The confirmation's is read below, and the results review's as they are sent, above."""
+@pytest.mark.parametrize(
+    "source, notice",
+    [
+        pytest.param(
+            _REVIEW_CHANGES,
+            "\U0001f3a8 Drawing the graphics for this review — one moment.",
+            id="season review",
+        ),
+        pytest.param(
+            _APPROVAL,
+            "\U0001f3a8 Posting lineups, calendars and opening classifications — one moment.",
+            id="confirmation",
+        ),
+    ],
+)
+def test_every_notice_carries_plain_text_for_a_league(source, notice):
+    """The season review's drawing notice and the confirmation's, now their jobs' text: today's
+    words, a league's to read. The results review's is read as it is sent, above."""
     texts = [
         sub.value
-        for sub in ast.walk(_tree(_REVIEW_CHANGES))
+        for sub in ast.walk(_tree(source))
         if isinstance(sub, ast.Constant) and isinstance(sub.value, str)
         and "one moment" in sub.value
     ]
-    notice = "\U0001f3a8 Drawing the graphics for this review — one moment."
-    assert notice in texts, texts
-    _assert_plain_text(notice)
-
-
-def test_the_confirmation_s_notice_carries_plain_text_for_a_league():
-    """The confirmation's notice, now its jobs' text: today's words, a league's to read."""
-    texts = [
-        sub.value
-        for sub in ast.walk(_tree(_APPROVAL))
-        if isinstance(sub, ast.Constant) and isinstance(sub.value, str)
-        and "one moment" in sub.value
-    ]
-    notice = "\U0001f3a8 Posting lineups, calendars and opening classifications — one moment."
     assert notice in texts, texts
     _assert_plain_text(notice)
