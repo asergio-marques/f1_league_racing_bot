@@ -652,7 +652,7 @@ async def test_set_core_setting_refuses_a_column_of_the_callers_choosing(tmp_pat
     assert (await _row(db_path))["test_mode_active"] == 1
 
 
-# ── The league's two roles (issue #276) ───────────────────────────────────
+# ── The league's two roles and the hub's two settings (issues #276, #279) ─
 
 
 @pytest.mark.parametrize("column, value", [
@@ -661,7 +661,7 @@ async def test_set_core_setting_refuses_a_column_of_the_callers_choosing(tmp_pat
     pytest.param("hub_channel_id", 6060, id="hub_channel_id"),
     pytest.param("hub_message_id", 6060, id="hub_message_id"),
 ])
-async def test_a_league_role_is_written_alone_and_read_back(tmp_path, column, value):
+async def test_a_league_role_or_hub_setting_is_written_alone_and_read_back(tmp_path, column, value):
     """The league's roles are core settings, written a column at a time like the four beside
     them, so setting one cannot carry a stale value over the other or over anything else. The
     hub's channel and its panel (issue #279) are written a column at a time too."""
