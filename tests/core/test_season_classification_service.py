@@ -181,19 +181,6 @@ async def test_the_opening_is_drawn_against_the_divisions_first_round(db_path):
     assert attendance.await_args.args[3] == opener
 
 
-async def test_the_opening_carries_no_lifecycle_label(db_path):
-    _season_id, division_ids = await _seed(db_path)
-    standings = AsyncMock(return_value=[])
-
-    first, second, third = _opening_posts(standings)
-    with first, second, third:
-        await service.post_opening_standings(
-            _bot(db_path), _guild(), db_path, division_ids[0], as_text=False
-        )
-
-    assert standings.await_args.args[10] == ""
-
-
 async def test_a_division_with_no_rounds_is_skipped(db_path):
     _season_id, division_ids = await _seed(db_path)
     async with get_connection(db_path) as db:
@@ -237,6 +224,7 @@ async def test_the_opening_standings_post_reads_the_division_s_standings_channel
     assert args[6], "the drivers' championship"
     assert args[7] is not None, "the constructors' championship"
     assert standings.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_OPENING
+    assert args[10] == "", "the opening carries no lifecycle label"
 
 
 async def test_an_opening_standings_channel_set_and_gone_raises(db_path):

@@ -1592,7 +1592,8 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     reply and the closing line say the window was not closed, to be closed with `/signup close`,
     and never name 105 as returned but not told; the window is still recorded open, with no
     audit of its close and no "🔒 Signups closed" line, the season completed, and 105 is owed
-    nothing more."""
+    nothing more. The closing line reads "| Incomplete" for the window alone, and nothing not
+    done, there or in the reply, names 105."""
     from tests.support.season_league import SIGNUP_CHANNEL
 
     league = await pending_completion_league(tmp_path, signups_open=True)
@@ -1621,9 +1622,16 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     ]
     assert WINDOW_OPEN in _not_done(reply(interaction))
     assert RETURNED_NOT_TOLD not in reply(interaction)
+    # The window alone is not done, in the reply as in the closing line, which reads
+    # "| Incomplete".
+    assert _not_done(reply(interaction)) == [WINDOW_OPEN]
     [line] = _closing_lines(league)
     assert f"  not done: {_logged(WINDOW_OPEN)}" in line
     assert _logged(RETURNED_NOT_TOLD) not in line
+    assert line.startswith(INCOMPLETE)
+    not_done = [each.split("  not done: ", 1)[1] for each in line.splitlines()
+                if each.startswith("  not done: ")]
+    assert not_done == [_logged(WINDOW_OPEN)]
     assert await window_open(league)
     assert await _window_close_audits(league) == []
     assert await _closed_lines(league) == []
@@ -1756,8 +1764,9 @@ async def test_a_driver_with_no_signup_channel_left_is_named_and_nothing_is_lock
     window's close returned them and their channel was deleted before `signup_notice` ran, or
     the driver pass returned them from review with no channel. Nothing is locked or set for
     deletion, and they are named: "<@105> had no signup channel left to tell", in the reply, under
-    no warning heading as nothing was discarded, and, with the mention backticked, under
-    `not done:` in the closing line."""
+    no warning heading as nothing was discarded, on a line of its own beneath "✅ Season marked
+    as complete.", and, with the mention backticked, under `not done:` in the closing line,
+    which reads "| Success" with that the only line beneath it."""
     if whose == "in review":
         league = await pending_completion_league(tmp_path)
         await signing_up(league)
@@ -1776,8 +1785,13 @@ async def test_a_driver_with_no_signup_channel_left_is_named_and_nothing_is_lock
     assert ("signup_notice", SIGNING_UP) in await _names(league)
     assert NO_CHANNEL in reply(interaction)
     assert NOT_EVERYTHING not in reply(interaction)
+    # The completion still succeeds: the reply says so, with the driver on a line of its own,
+    # and the closing line reads "| Success" with the driver the only line beneath it.
+    assert COMPLETED in reply(interaction)
+    assert NO_CHANNEL in reply(interaction).splitlines()
     [line] = _closing_lines(league)
     assert f"  not done: {_logged(NO_CHANNEL)}" in line
+    assert line.startswith(f"{SUCCESS}\n  not done: {_logged(NO_CHANNEL)}")
     assert _locks_asked(league) == []
     assert SIGNING_UP not in league.locked
     assert not _deletion_armed_for(league)
@@ -1793,29 +1807,6 @@ async def _in_review_with_no_channel(league: Any) -> None:
         str(SIGNING_UP),
     )
     _channel_gone(league)
-
-
-async def test_a_completion_whose_only_line_beneath_is_a_driver_with_no_channel_left_reads_success(
-    tmp_path,
-):
-    """Driver 105, in review, has no signup channel left when the completion comes to tell them,
-    and a league admin discards nothing. The closing line reads "| Success", with "not done:
-    `<@105>` had no signup channel left to tell" beneath it; the reply reads "✅ Season marked as
-    complete." with "<@105> had no signup channel left to tell" on a line of its own, and no
-    "Not everything could be done" heading."""
-    league = await pending_completion_league(tmp_path)
-    await _in_review_with_no_channel(league)
-    interaction = await _asked(league)
-
-    await run_queue(league.bot)
-
-    [line] = _closing_lines(league)
-    assert line.startswith(f"{SUCCESS}\n  not done: {_logged(NO_CHANNEL)}")
-    text = reply(interaction)
-    assert COMPLETED in text
-    assert NO_CHANNEL in text.splitlines()
-    assert NOT_EVERYTHING not in text
-    assert await _status(league) == "COMPLETED"
 
 
 async def test_a_completion_with_a_discard_and_a_driver_with_no_channel_left_reads_incomplete(
@@ -1841,31 +1832,6 @@ async def test_a_completion_with_a_discard_and_a_driver_with_no_channel_left_rea
     assert f"  not done: {_logged(NO_CHANNEL)}" in line
     assert {ROLES_KEPT, NO_CHANNEL} <= set(_not_done(reply(interaction)))
     assert await _status(league) == "COMPLETED"
-
-
-async def test_a_completion_whose_closed_notice_was_discarded_reads_incomplete_for_the_window_alone(
-    tmp_path,
-):
-    """The signup window's close returns driver 105, then `post_closed`, whose record writes the
-    window closed, fails, and a league admin discards it. 105 is still told by their own job
-    (b15-2), so the closing line reads "| Incomplete" for the window alone: beneath it the window
-    is named as not closed, and nothing not done names 105; the reply says the same."""
-    league = await pending_completion_league(tmp_path, signups_open=True)
-    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
-    league.close_fails = RuntimeError("the window could not be recorded closed")
-    interaction = await _asked(league)
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == ("post_closed", None)
-
-    await discard_job(league.bot)
-
-    [line] = _closing_lines(league)
-    assert line.startswith(INCOMPLETE)
-    not_done = [each.split("  not done: ", 1)[1] for each in line.splitlines()
-                if each.startswith("  not done: ")]
-    assert not_done == [_logged(WINDOW_OPEN)]
-    assert _not_done(reply(interaction)) == [WINDOW_OPEN]
-    assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED)]
 
 
 #: Work in hand that is not an end of the season, as a request about it would find it: each kind,
