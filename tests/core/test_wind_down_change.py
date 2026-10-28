@@ -130,25 +130,6 @@ async def test_the_turn_down_and_the_move_to_pending_completion_are_one_save(tmp
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
-async def test_a_window_that_cannot_be_closed_stops_the_queue(tmp_path):
-    """The signup window is open and the wind-down asked; recording the window closed fails. The
-    queue stops at `post_closed`, whose record writes the window's close, with the season still
-    in Ongoing, signups open, and both pending placements standing; retried, the window closes
-    and the season moves on to Pending completion."""
-    league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
-    league.close_fails = RuntimeError("the window could not be recorded closed")
-    await _ask(league)
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == ("post_closed", None)
-    assert await _stage(league) == "ONGOING_SIGNUPS"
-    assert await _pending(league) == 2
-
-    league.close_fails = None
-    await retry_job(league.bot)
-    assert not await window_open(league)
-    assert await _stage(league) == "PENDING_COMPLETION"
-
-
 async def test_a_signup_channel_that_cannot_be_held_stops_the_queue_at_its_driver(tmp_path):
     league = await _league(tmp_path)
     await signing_up(league)
@@ -385,8 +366,9 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
     tmp_path, failures,
 ):
     """The wind-down's close returns driver 105, still filling in the wizard, then recording the
-    window closed fails: the queue stops at `post_closed`, with the window still open and 105 Not
-    Signed Up, told nothing, and does so again where the first Retry fails the same way. Once the
+    window closed fails: the queue stops at `post_closed`, with the window still open, the season
+    still in Ongoing, signups open, both pending placements standing, and 105 Not Signed Up, told
+    nothing, and does so again where the first Retry fails the same way. Once the
     record goes through, 105 is told, then their channel closed, each once, and the season is
     moved on to Pending completion."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
@@ -402,6 +384,8 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
         assert await window_open(league)
         assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
         assert league.notices == [] and league.locked == []
+        assert await _stage(league) == "ONGOING_SIGNUPS"
+        assert await _pending(league) == 2
 
     league.close_fails = None
     await retry_job(league.bot)
