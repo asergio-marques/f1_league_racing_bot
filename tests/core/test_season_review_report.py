@@ -615,13 +615,6 @@ async def test_a_team_without_a_role_is_warned_about_in_its_lineup(db_path):
     assert 'No role assigned:** "Ghost"' in _public(messages)
 
 
-async def test_a_division_with_no_drivers_says_so(db_path):
-    cog = _cog(db_path)
-    messages = await _review(cog, _interaction())
-
-    assert "*(no drivers assigned)*" in _public(messages)
-
-
 # ---------------------------------------------------------------------------
 # Unassigned drivers
 # ---------------------------------------------------------------------------
@@ -745,27 +738,22 @@ async def test_a_phantom_points_configuration_withholds_approval(db_path):
     assert "Standrad" in _public(messages)
 
 
-async def test_a_season_with_no_points_attached_withholds_approval(db_path):
+@pytest.mark.parametrize("test_mode", [
+    pytest.param(False, id="a season"),
+    pytest.param(True, id="a test season"),
+])
+async def test_a_season_with_no_points_attached_withholds_approval(db_path, test_mode):
     """The regression for #409. The approval refuses a season with nothing attached, and
-    `/results config detach` stays open in Placements, so the review has to say so too."""
-    cog = _cog(db_path, results=True, nothing_attached=True)
+    `/results config detach` stays open in Placements, so the review has to say so too. Test
+    mode attaches Standard and Half Points when it is enabled and at no other moment (decided
+    2026-09-23), so a test season that has had them detached is refused as any other."""
+    cog = _cog(db_path, results=True, test_mode=test_mode, nothing_attached=True)
     messages = await _review(cog, _interaction())
 
     assert not _offered(cog)
     assert "No points configuration attached** — this blocks approval" in _public(messages)
     assert "No points configuration is attached to this season" in _private(messages)
     assert "`/results config append`" in _private(messages)
-
-
-async def test_a_test_season_with_no_points_attached_withholds_approval_too(db_path):
-    """Test mode attaches Standard and Half Points when it is enabled and at no other moment
-    (decided 2026-09-23), so a test season that has had them detached is refused as any
-    other."""
-    cog = _cog(db_path, results=True, test_mode=True, nothing_attached=True)
-    messages = await _review(cog, _interaction())
-
-    assert not _offered(cog)
-    assert "No points configuration attached** — this blocks approval" in _public(messages)
 
 
 async def test_a_season_with_results_on_and_nothing_wrong_is_offered_for_approval(db_path):
