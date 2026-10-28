@@ -34,7 +34,7 @@ Run it in two steps, the first under the suite's lock where other runs may start
 the Raspberry Pi (`tools/coverage_by_module.py`): `sysmon` stops reporting a line once any test has
 run it, so every test after the first to reach a line is recorded without it, and the containment
 this tool rests on comes out wrong. `list` prints JSON: `candidates`, each with its line
-count, the lines no other test runs, and its containers; `identical`, the groups of tests with the
+count and its containers; `identical`, the groups of tests with the
 same lines; and `noSource`, the tests that run none. `--scope` keeps candidates to the tests whose
 node ids start with the prefix given, while still finding containers anywhere in the data.
 
@@ -187,11 +187,9 @@ def listing(data: str, scope: str, collected: set[str] | None = None) -> dict:
             containers,
             key=lambda c: (_file_of(c) != own_file, len(by_test[c]), c),
         )
-        unique = sum(1 for line in lines if len(by_line[line]) == 1)
         candidates.append({
             "test": test,
             "lines": len(lines),
-            "unique": unique,
             "containers": [
                 {"test": c, "lines": len(by_test[c]), "same": by_test[c] == lines}
                 for c in ranked[:MAX_CONTAINERS]
