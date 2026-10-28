@@ -119,28 +119,31 @@ async def test_a_duplicate_carries_its_own_name_role_and_tier(tmp_path):
     assert copy.season_id == SEASON_ID
 
 
-async def test_the_offset_moves_every_round(tmp_path):
+@pytest.mark.parametrize(
+    "offsets,expected",
+    [
+        pytest.param(
+            {"day_offset": 1, "hour_offset": 1.5},
+            datetime(2026, 3, 2, 19, 30, tzinfo=timezone.utc),
+            id="forward",
+        ),
+        pytest.param(
+            {"day_offset": -2},
+            datetime(2026, 2, 27, 18, tzinfo=timezone.utc),
+            id="a-negative-offset-moves-rounds-back",
+        ),
+    ],
+)
+async def test_the_offset_moves_every_round(tmp_path, offsets, expected):
     db_path = await _make_db(tmp_path, name="dup_offset")
     service = SeasonService(db_path)
     source = await _source(db_path)
 
-    copy = await service.duplicate_division(source, "Am", 556, day_offset=1, hour_offset=1.5)
+    copy = await service.duplicate_division(source, "Am", 556, **offsets)
 
     first = (await service.get_division_rounds(copy.id))[0]
-    assert first.scheduled_at.replace(tzinfo=timezone.utc) == datetime(
-        2026, 3, 2, 19, 30, tzinfo=timezone.utc
-    )
-
-
-async def test_a_negative_offset_moves_rounds_back(tmp_path):
-    db_path = await _make_db(tmp_path, name="dup_back")
-    service = SeasonService(db_path)
-    source = await _source(db_path)
-
-    copy = await service.duplicate_division(source, "Am", 556, day_offset=-2)
-
-    first = (await service.get_division_rounds(copy.id))[0]
-    assert first.scheduled_at.date() == date(2026, 2, 27)
+    assert first.scheduled_at.date() == expected.date()
+    assert first.scheduled_at.replace(tzinfo=timezone.utc) == expected
 
 
 async def test_the_copys_phase_flags_start_clear(tmp_path):

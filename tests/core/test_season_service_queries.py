@@ -234,24 +234,23 @@ async def test_a_setup_season_counts_as_existing(tmp_path):
     assert await SeasonService(db_path).has_existing_season() is True
 
 
-async def test_a_setup_season_alone_is_not_active_or_completed(tmp_path):
+@pytest.mark.parametrize(
+    "status,record,live",
+    [
+        pytest.param("SETUP", False, True, id="setup"),
+        pytest.param("COMPLETED", True, False, id="completed"),
+    ],
+)
+async def test_only_a_raced_or_completed_season_counts_as_a_record(tmp_path, status, record, live):
     """`/bot init` and the reset command turn on this distinction: a season being built
-    has never been raced, so it is not a record to protect."""
+    has never been raced, so it is not a record to protect, though it is live; a completed
+    season is a record, and no longer live."""
     db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "SETUP")
+    await _seed_season(db_path, 1, status)
     service = SeasonService(db_path)
 
-    assert await service.has_active_or_completed_season() is False
-    assert await service.has_active_or_setup_season() is True
-
-
-async def test_a_completed_season_is_not_setup_or_active(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "COMPLETED")
-    service = SeasonService(db_path)
-
-    assert await service.has_active_or_completed_season() is True
-    assert await service.has_active_or_setup_season() is False
+    assert await service.has_active_or_completed_season() is record
+    assert await service.has_active_or_setup_season() is live
 
 
 async def test_completed_seasons_are_counted(tmp_path):
