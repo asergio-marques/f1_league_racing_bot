@@ -170,7 +170,7 @@ def test_a_filled_file_dates_the_version_without_asking_git(tmp_path, git):
         pytest.param("v0.5.0\n", id="a file with no date line"),
     ],
 )
-def test_a_clone_asks_git_when_the_version_was_made(tmp_path, git, text):
+def test_a_file_with_no_usable_date_asks_git_when_the_version_was_made(tmp_path, git, text):
     """A file whose date line is a placeholder, or which has none, asks git when the version
     was made."""
     git.answer(stdout="2026-09-22T12:20:06+01:00\n")
