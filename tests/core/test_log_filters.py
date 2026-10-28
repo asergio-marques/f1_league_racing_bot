@@ -79,6 +79,7 @@ def test_the_rewrite_survives_either_libraries_message_shape(log_filter):
     # Neither raises, and both still name the command.
     assert "images test lineup" in old.getMessage()
     assert "images test lineup" in new.getMessage()
+    # The rewrite says the interaction expired.
     assert "expired" in old.getMessage()
     # The 2.7 form keeps the detail it carries.
     assert "123" in new.getMessage() and "456" in new.getMessage()
