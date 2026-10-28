@@ -117,6 +117,8 @@ async def _count(db_path: str, table: str) -> int:
     [s.value for s in SeasonStage if s not in (SeasonStage.COMPLETED, SeasonStage.CANCELLED)],
 )
 async def test_pack_is_refused_while_a_season_is_current(db_path, stage):
+    """Nothing is cleared, and nothing is recorded: the audit entry shares the pack's
+    transaction, so a pack that did not happen is not audited as though it had."""
     await _seed(db_path, stage=stage)
     scheduler = _scheduler()
 
@@ -128,6 +130,8 @@ async def test_pack_is_refused_while_a_season_is_current(db_path, stage):
     scheduler.cancel_all.assert_not_called()
     assert (await _one(db_path, "SELECT server_id FROM server_configs"))[0] == SERVER
     assert await _count(db_path, "team_role_configs") == 1
+    rows = await _all(db_path, "SELECT change_type FROM audit_entries")
+    assert [r["change_type"] for r in rows] == ["X"]
 
 
 @pytest.mark.parametrize("stage", ["COMPLETED", "CANCELLED"])
@@ -337,18 +341,6 @@ async def test_pack_is_audited_with_every_setting_and_role_it_cleared(db_path):
         "signup_channel_id": None,
         "team_roles": {},
     }
-
-
-async def test_a_refused_pack_records_nothing(db_path):
-    """The entry shares the pack's transaction, so a pack that did not happen is not audited
-    as though it had."""
-    await _seed(db_path, stage="CONFIGURATION")
-
-    with pytest.raises(PackRefused):
-        await pack(db_path, _scheduler(), **ACTOR)
-
-    rows = await _all(db_path, "SELECT change_type FROM audit_entries")
-    assert [r["change_type"] for r in rows] == ["X"]
 
 
 # ── The change queue (#439) ────────────────────────────────────────────────

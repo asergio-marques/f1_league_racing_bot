@@ -184,8 +184,9 @@ def _refusing_channel() -> MagicMock:
 async def test_a_line_for_a_given_channel_that_fails_is_neither_queued_nor_redirected(
     tmp_path, monkeypatch, where
 ):
-    """No retry row, no notice in the interaction channel, and no member answered either: the
-    caller puts the line in the host's log instead."""
+    """The factory reset's closing line, and the retry worker's own lines, go to a channel the
+    caller names. No retry row, no notice in the interaction channel, and no member answered
+    either, whatever the failure: the caller puts the line in the host's log instead."""
     from leaguebot.core.services import retry_service
 
     enqueue = AsyncMock()
@@ -195,11 +196,13 @@ async def test_a_line_for_a_given_channel_that_fails_is_neither_queued_nor_redir
         bot.get_channel = MagicMock(return_value=None)
         bot.fetch_channel = AsyncMock(side_effect=discord.NotFound(MagicMock(), "gone"))
     router = OutputRouter(bot, bot.config_service, retry_db_path=str(tmp_path / "retry.db"))
+    router._warn_member = AsyncMock()
 
     assert await router.post_log("the league was reset", channel=555) is None
 
     enqueue.assert_not_awaited()
     assert [call.args[0] for call in bot.get_channel.call_args_list] == [555]
+    router._warn_member.assert_not_awaited()
 
 
 # ── A line written in a caller's save (#439) ──────────────────────────────
@@ -514,22 +517,6 @@ async def test_a_line_whose_log_channel_is_no_text_channel_is_kept_and_the_membe
     [(channel_id, _content)] = await _queued(db_path)
     assert channel_id == 99
     router._warn_member.assert_awaited_once_with(99)
-
-
-@pytest.mark.asyncio
-async def test_a_line_to_a_given_channel_that_cannot_be_fetched_is_not_kept(tmp_path):
-    """The factory reset's closing line, and the retry worker's own lines, go to a channel the
-    caller names: neither queued nor told to a member, whatever the failure."""
-    db_path = await _retry_db(tmp_path)
-    bot = _bot(None)
-    bot.fetch_channel = AsyncMock(side_effect=discord.NotFound(MagicMock(status=404), "gone"))
-    router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
-    router._warn_member = AsyncMock()
-
-    assert await router.post_log("Owner | /bot factory-reset | Success", channel=99) is None
-
-    assert await _queued(db_path) == []
-    router._warn_member.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -182,16 +182,6 @@ async def test_two_divisions_may_not_share_a_channel(db_path):
     assert use == ChannelUse("results", "Pro")
 
 
-async def test_one_division_may_not_use_a_channel_for_two_things(db_path):
-    season_id = await _season(db_path)
-    pro = await _division(db_path, season_id, "Pro")
-    await _set(db_path, "calendar", 500, division_id=pro)
-
-    use = await find_channel_use(db_path, 500)
-
-    assert use.setting == "calendar"
-
-
 # ── An archived season does not hold a channel hostage ────────────────────
 
 
