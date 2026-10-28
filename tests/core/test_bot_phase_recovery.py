@@ -202,6 +202,8 @@ async def test_only_the_horizons_that_have_passed_fire(tmp_path):
 
 
 @pytest.mark.parametrize("done, expected", [
+    pytest.param((True, False, False), [2, 3], id="phase 1 done"),
+    pytest.param((False, True, False), [1, 3], id="phase 2 done"),
     pytest.param((True, True, False), [3], id="phases 1 and 2 done"),
     pytest.param((False, False, True), [1, 2], id="phase 3 done"),
 ])
