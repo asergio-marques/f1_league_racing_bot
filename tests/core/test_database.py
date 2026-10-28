@@ -217,8 +217,9 @@ async def test_the_schema_template_is_copied_in_wal_mode() -> None:
 
     Nearly every fixture in this suite hands `run_migrations` an empty path, so it receives
     a byte copy of a prebuilt template rather than a freshly migrated database. WAL lives in
-    the file header, so it survives the copy; this pins that, because if it ever stopped
-    being true the whole suite would quietly test the wrong journal mode.
+    the file header, so it survives the copy, and a later, independent connection reads it
+    without re-applying it; this pins that, because if it ever stopped being true the whole
+    suite would quietly test the wrong journal mode.
     """
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
@@ -226,24 +227,6 @@ async def test_the_schema_template_is_copied_in_wal_mode() -> None:
     try:
         await run_migrations(db_path)  # empty target -> template copy
 
-        async with get_connection(db_path) as db:
-            cursor = await db.execute("PRAGMA journal_mode")
-            (mode,) = await cursor.fetchone()
-        assert mode.lower() == "wal"
-    finally:
-        _remove_database(db_path)
-
-
-@pytest.mark.asyncio
-async def test_a_later_connection_inherits_wal_from_the_file() -> None:
-    """WAL is a property of the file, so nothing has to re-apply it per connection."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-
-    try:
-        await run_migrations(db_path)
-
-        # A second, entirely independent connection, setting nothing itself.
         async with get_connection(db_path) as db:
             cursor = await db.execute("PRAGMA journal_mode")
             (mode,) = await cursor.fetchone()

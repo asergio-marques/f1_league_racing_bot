@@ -83,18 +83,20 @@ async def test_an_archived_season_does_not_block_a_live_one(db_path, archived):
 
 
 async def test_a_league_keeps_every_season_of_its_history(db_path):
-    """The rule constrains the live season only — the archive is unbounded."""
+    """The rule constrains the live season only — the archive is unbounded, and an archived
+    season is still written while one is live."""
     for number, status in enumerate(
         ["COMPLETED", "COMPLETED", "CANCELLED", "COMPLETED"], start=1
     ):
         await _add_season(db_path, status, number)
     await _add_season(db_path, "ACTIVE", 5)
+    await _add_season(db_path, "CANCELLED", 6)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT COUNT(*) FROM seasons"
         )
-        assert (await cursor.fetchone())[0] == 5
+        assert (await cursor.fetchone())[0] == 6
 
 
 async def test_the_migration_is_idempotent(tmp_path):
