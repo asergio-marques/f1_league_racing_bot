@@ -134,12 +134,15 @@ async def _enable(cog, interaction, *, rasteriser: bool = True):
 # ---------------------------------------------------------------------------
 
 
-async def test_the_module_is_enabled(tmp_path):
+@pytest.mark.parametrize("rasteriser", [True, False], ids=["with a rasteriser", "without"])
+async def test_the_module_is_enabled(tmp_path, rasteriser):
+    """With or without a rasteriser (FR-007 / FR-008). Refusing would leave a league unable to
+    set up the module they are installing the rasteriser for."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
     interaction = _interaction()
 
-    await _enable(cog, interaction)
+    await _enable(cog, interaction, rasteriser=rasteriser)
 
     cog.bot.module_service.set_images_enabled.assert_awaited_once_with(True)
     assert "enabled" in _replied(interaction)
@@ -195,33 +198,11 @@ async def test_enabling_twice_does_no_work(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_the_module_enables_without_a_rasteriser(tmp_path):
-    """FR-007 / FR-008. Refusing would leave a league unable to set up the module they are
-    installing the rasteriser for."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _enable(cog, interaction, rasteriser=False)
-
-    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(True)
-    assert "enabled" in _replied(interaction)
-
-
-async def test_a_missing_rasteriser_is_said_rather_than_left_to_be_discovered(tmp_path):
-    """Otherwise the first graphic a league expects simply does not arrive, with nothing
-    connecting that to a program nobody told them about."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _enable(cog, interaction, rasteriser=False)
-
-    assert len(_replied(interaction)) > len("✅ Image module enabled.")
-
-
 async def test_a_present_rasteriser_adds_no_notice(tmp_path):
-    """Nothing to warn about, and a notice every time would be noise on the common path."""
+    """A missing rasteriser is said, and a present one adds nothing. Otherwise the first graphic
+    a league expects simply does not arrive, with nothing connecting that to a program nobody
+    told them about; and with nothing to warn about, a notice every time would be noise on the
+    common path."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
     with_rasteriser = _interaction()
