@@ -79,8 +79,13 @@ ONE_TEST = dedent("""
 """)
 
 
-def test_a_test_in_a_new_file_is_added(repo):
-    result = _changes(repo, {"README": "x"}, {FILE: ONE_TEST})
+@pytest.mark.parametrize(
+    "source",
+    [ONE_TEST, "async def test_a():\n    assert 1\n"],
+    ids=["a test", "an async test"],
+)
+def test_a_test_in_a_new_file_is_added(repo, source):
+    result = _changes(repo, {"README": "x"}, {FILE: source})
     assert _tests(result) == [(f"{FILE}::test_a", "added")]
 
 
@@ -259,15 +264,17 @@ CASES = dedent("""
 """)
 
 
-def test_losing_a_case_s_marker_is_a_marker_removed(repo):
+@pytest.mark.parametrize(
+    "marker",
+    [
+        ', marks=pytest.mark.xfail(strict=True, reason="#42: two not yet built")',
+        ', pytest.mark.xfail(strict=True, reason="#42: nor three")',
+    ],
+    ids=["a lone mark", "a mark in a list of marks"],
+)
+def test_losing_a_case_s_marker_is_a_marker_removed(repo, marker):
     """A new failing case of a parametrised test is marked on the case alone."""
-    after = CASES.replace(', marks=pytest.mark.xfail(strict=True, reason="#42: two not yet built")', "")
-    result = _changes(repo, {FILE: CASES}, {FILE: after}, issue="42")
-    assert result["markersRemoved"] == [f"{FILE}::test_a"] and result["tests"] == []
-
-
-def test_losing_a_case_s_marker_from_a_list_of_marks_is_a_marker_removed(repo):
-    after = CASES.replace(', pytest.mark.xfail(strict=True, reason="#42: nor three")', "")
+    after = CASES.replace(marker, "")
     result = _changes(repo, {FILE: CASES}, {FILE: after}, issue="42")
     assert result["markersRemoved"] == [f"{FILE}::test_a"] and result["tests"] == []
 
@@ -375,20 +382,10 @@ def test_losing_the_marker_and_changing_the_test_is_a_modification(repo):
     assert result["markersRemoved"] == []
 
 
-def test_losing_another_issue_s_marker_is_a_modification(repo):
-    result = _changes(repo, {FILE: MARKED}, {FILE: "import pytest\n" + ONE_TEST}, issue="4")
+@pytest.mark.parametrize("issue", ["4", None], ids=["another issue", "no issue"])
+def test_losing_another_issue_s_marker_is_a_modification(repo, issue):
+    result = _changes(repo, {FILE: MARKED}, {FILE: "import pytest\n" + ONE_TEST}, issue=issue)
     assert _tests(result) == [(f"{FILE}::test_a", "modified")]
-
-
-def test_without_an_issue_a_lost_marker_is_a_modification(repo):
-    result = _changes(repo, {FILE: MARKED}, {FILE: "import pytest\n" + ONE_TEST})
-    assert _tests(result) == [(f"{FILE}::test_a", "modified")]
-
-
-def test_an_async_test_is_a_test(repo):
-    async_test = "async def test_a():\n    assert 1\n"
-    result = _changes(repo, {"README": "x"}, {FILE: async_test})
-    assert _tests(result) == [(f"{FILE}::test_a", "added")]
 
 
 def test_what_a_test_class_declares_beside_its_methods_is_support(repo):
