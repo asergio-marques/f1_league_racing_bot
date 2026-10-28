@@ -1,10 +1,11 @@
 """`/clean-bot` deletes what it was asked for, and stops there.
 
 The command took no parameter and swept five hundred messages. It now asks how many and
-refuses more than ten, and these pin the part that makes that meaningful: it stops at the
-count, it counts *deletions* rather than messages looked at, and it never touches a
-message somebody else wrote. Deletion on Discord has no undo, so a command that overshoots
-by one is a message a league does not get back.
+refuses more than ten, and these pin the part that makes that meaningful: it never touches a
+message somebody else wrote, and the count is required and bounded. That it stops at the count,
+newest first, and counts *deletions* rather than messages looked at is pinned through the queue
+in `test_clean_change.py`. Deletion on Discord has no undo, so a command that overshoots by one
+is a message a league does not get back.
 
 This is the file the command never had — which is how a five-hundred-message sweep with
 no confirmation went unremarked for as long as it did.
@@ -26,14 +27,12 @@ from tests.support.change_queue import (
     LOG_CHANNEL_ID,
     Clock,
     attach_queue,
-    http_error,
     history_channel,
     league_double,
     member_interaction,
     post_in,
     run_queue,
     seed_server,
-    stopped_job,
 )
 from tests.support.undecorate import undecorate
 
@@ -124,27 +123,6 @@ def _reply(interaction) -> str:
     return interaction.followup.send.await_args.args[0]
 
 
-async def test_it_deletes_exactly_the_number_asked_for(league):
-    """Channel 700 holds ten of the bot's messages; Admin cleans 3. Three are deleted."""
-    for _ in range(10):
-        post_in(league.channel, BOT_USER)
-
-    await _clean(league, 3)
-
-    assert len(league.channel.deleted) == 3
-
-
-async def test_it_deletes_the_most_recent_first(league):
-    """Five of the bot's messages stand; Admin cleans 2. The two newest go, the rest stand:
-    the tail of a command just run is what goes."""
-    messages = [post_in(league.channel, BOT_USER) for _ in range(5)]
-
-    await _clean(league, 2)
-
-    assert league.channel.deleted == [messages[4], messages[3]]
-    assert league.channel.messages == [messages[2], messages[1], messages[0]]
-
-
 async def test_it_never_deletes_a_message_somebody_else_wrote(league):
     """The bot's message, then Kimi's, newest. Admin cleans 5: the bot's goes, Kimi's stands."""
     ours = post_in(league.channel, BOT_USER)
@@ -154,19 +132,6 @@ async def test_it_never_deletes_a_message_somebody_else_wrote(league):
 
     assert league.channel.deleted == [ours]
     assert league.channel.messages == [theirs]
-
-
-async def test_a_person_s_messages_do_not_consume_the_count(league):
-    """Oldest first: the bot's, Kimi's, the bot's, Kimi's. Admin cleans 2: both of the bot's go,
-    the count being of deletions, not of messages looked at."""
-    first = post_in(league.channel, BOT_USER)
-    post_in(league.channel, SOMEONE_ELSE)
-    second = post_in(league.channel, BOT_USER)
-    post_in(league.channel, SOMEONE_ELSE)
-
-    await _clean(league, 2)
-
-    assert league.channel.deleted == [second, first]
 
 
 async def test_fewer_bot_messages_than_asked_for_is_reported_not_failed(league):
@@ -179,42 +144,6 @@ async def test_fewer_bot_messages_than_asked_for_is_reported_not_failed(league):
     reply = _last_said(interaction)
     assert "Deleted 1" in reply
     assert "Only 1" in reply
-
-
-async def test_a_message_already_gone_does_not_consume_the_count(league):
-    """The bot's survivor, then its newest message. Admin cleans 1; the clean chooses the newest,
-    which is deleted by hand before its delete runs. Its delete completes, the queue does not
-    stop, the survivor is not taken in its place, and the reply says none was deleted."""
-    survivor = post_in(league.channel, BOT_USER)
-    gone = post_in(league.channel, BOT_USER)
-    cog = CleanCog.__new__(CleanCog)
-    cog.bot = league.bot
-    interaction = member_interaction(league.bot)
-    interaction.channel = league.channel
-    interaction.channel_id = 700
-    interaction.command = SimpleNamespace(qualified_name="clean-bot")
-    interaction.followup.send.return_value = MagicMock(edit=AsyncMock())
-    await undecorate(CleanCog.clean_bot)(cog, interaction, 1)
-    await run_queue(league.bot, steps=1)
-    league.channel.messages.remove(gone)
-    await run_queue(league.bot)
-
-    assert await stopped_job(league.db_path) is None
-    assert league.channel.messages == [survivor]
-    assert "Deleted 0" in _last_said(interaction)
-
-
-async def test_a_refused_delete_stops_the_queue(league):
-    """One of the bot's messages stands, and Discord refuses to delete it. Admin cleans 1: the
-    queue stops at its delete job, and the message stands."""
-    refused = post_in(league.channel, BOT_USER,
-                      fails=http_error(discord.Forbidden, status=403, text="Missing Permissions"))
-
-    await _clean(league, 1)
-
-    job = await stopped_job(league.db_path)
-    assert job is not None and job["name"] == "delete_message"
-    assert league.channel.messages == [refused]
 
 
 async def test_the_reply_is_ephemeral(league):
