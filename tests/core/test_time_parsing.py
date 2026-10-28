@@ -66,16 +66,16 @@ def test_accepted_spellings_normalise_to_hh_mm(raw, expected):
         "half past 3",
         "3pm-4pm",
         "-3",
+        # Free text a person typed into a modal; a crash there is a failed command.
+        "\x00",
+        pytest.param("9" * 500, id="five hundred nines"),
+        ":::",
+        "am",
+        "pm",
     ],
 )
 def test_rejected_inputs_return_none(raw):
     assert parse_time_of_day(raw) is None
-
-
-def test_the_parser_never_raises():
-    # It reads free text a person typed into a modal; a crash there is a failed command.
-    for raw in ["", "\x00", "9" * 500, ":::", "am", "pm"]:
-        assert parse_time_of_day(raw) in (None, "09:00") or True
 
 
 def test_the_signup_cog_reads_the_same_parser():
