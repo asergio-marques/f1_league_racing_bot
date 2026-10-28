@@ -397,18 +397,27 @@ async def test_an_admin_command_refused_for_want_of_an_admin_role_is_recorded():
 
 
 @pytest.mark.parametrize(
+    "member_kwargs",
+    [{"roles": (MANAGER_ROLE,)}, {"administrator": True}],
+    ids=["manager", "administrator"],
+)
+@pytest.mark.parametrize(
     "decorator", [league_admin_only, league_manager_only],
     ids=["league_admin_only", "league_manager_only"],
 )
-async def test_a_refusal_before_the_bot_is_set_up_goes_to_the_host_log_alone(decorator, caplog):
+async def test_a_refusal_before_the_bot_is_set_up_goes_to_the_host_log_alone(
+    decorator, member_kwargs, caplog
+):
     """With no `ServerConfig` there is no channel to check and no role anyone can hold; the
     guard this replaced let these through untouched, so passing the command to its body ran it
     for whoever asked. Now the command does not run. Nor is there a log channel to write to
     (owner decision on #482, 2026-09-29: host log only): the member is still told to run
-    `/bot init`, and the host's log records the refusal."""
+    `/bot init`, and the host's log records the refusal. A Discord Administrator is refused
+    like anybody else: the set-up guard's Administrator bypass is not the tier guards', so an
+    unconfigured server runs no manager command for one."""
     caplog.set_level(logging.INFO, logger=_GUARD_LOG)
     command, ran = _guarded(decorator)
-    interaction = _interaction(_member(roles=(MANAGER_ROLE,)))
+    interaction = _interaction(_member(**member_kwargs))
 
     await command(_cog(None), interaction)
 
