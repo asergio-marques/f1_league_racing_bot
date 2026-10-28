@@ -655,41 +655,29 @@ async def test_set_core_setting_refuses_a_column_of_the_callers_choosing(tmp_pat
 # ── The league's two roles (issue #276) ───────────────────────────────────
 
 
-@pytest.mark.parametrize("column", ["base_role_id", "driver_role_id"])
-async def test_a_league_role_is_written_alone_and_read_back(tmp_path, column):
+@pytest.mark.parametrize("column, value", [
+    pytest.param("base_role_id", 5150, id="base_role_id"),
+    pytest.param("driver_role_id", 5150, id="driver_role_id"),
+    pytest.param("hub_channel_id", 6060, id="hub_channel_id"),
+    pytest.param("hub_message_id", 6060, id="hub_message_id"),
+])
+async def test_a_league_role_is_written_alone_and_read_back(tmp_path, column, value):
     """The league's roles are core settings, written a column at a time like the four beside
-    them, so setting one cannot carry a stale value over the other or over anything else."""
+    them, so setting one cannot carry a stale value over the other or over anything else. The
+    hub's channel and its panel (issue #279) are written a column at a time too."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     service = ConfigService(db_path)
     before = await _row(db_path)
 
-    assert await service.set_core_setting(column, 5150) is True
+    assert await service.set_core_setting(column, value) is True
 
     after = await _row(db_path)
-    assert after[column] == 5150
+    assert after[column] == value
     assert {k: v for k, v in after.items() if k != column} == {
         k: v for k, v in before.items() if k != column
     }
-    assert getattr(await service.get_server_config(), column) == 5150
-
-
-@pytest.mark.parametrize("column", ["hub_channel_id", "hub_message_id"])
-async def test_the_hub_is_written_alone_and_read_back(tmp_path, column):
-    """The hub's channel and its panel (issue #279) are written a column at a time too."""
-    db_path = await _make_db(tmp_path)
-    await _seed_config(db_path)
-    service = ConfigService(db_path)
-    before = await _row(db_path)
-
-    assert await service.set_core_setting(column, 6060) is True
-
-    after = await _row(db_path)
-    assert after[column] == 6060
-    assert {k: v for k, v in after.items() if k != column} == {
-        k: v for k, v in before.items() if k != column
-    }
-    assert getattr(await service.get_server_config(), column) == 6060
+    assert getattr(await service.get_server_config(), column) == value
 
 
 async def test_a_league_that_has_set_neither_role_reads_none(tmp_path):
