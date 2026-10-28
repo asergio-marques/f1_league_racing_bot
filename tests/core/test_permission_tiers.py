@@ -303,7 +303,7 @@ async def test_a_setup_command_runs_from_any_channel(member):
         pytest.param(_config(admin_role=None), id="no admin role"),
     ],
 )
-async def test_a_setup_command_runs_for_an_administrator_while_no_admin_role_is_set(config):
+async def test_a_setup_command_runs_for_an_administrator_where_no_admin_role_can_be_held(config):
     command, ran = _guarded(bot_setup_only)
     await command(_cog(config), _interaction(_member(administrator=True)))
     assert ran == [True]
