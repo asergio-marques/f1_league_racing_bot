@@ -273,7 +273,7 @@ async def test_the_line_names_the_member_the_command_and_the_values_beneath(env)
     pytest.param(5, id="the value held when asked"),
     pytest.param(7, id="another value"),
 ])
-async def test_a_value_held_when_asked_is_set_when_a_change_ahead_moved_it(env, value):
+async def test_a_value_asked_while_a_change_is_ahead_is_queued_behind_it_and_set(env, value):
     """Held 5: 6 is asked, then *value* while 6 waits, and it is queued behind it. 5 is not
     refused for being held when asked, and once 6 has run it sets 5 again; another value, 7, is
     set the same way."""
