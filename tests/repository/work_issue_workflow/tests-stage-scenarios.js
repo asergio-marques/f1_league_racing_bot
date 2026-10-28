@@ -3,8 +3,9 @@ const { q, builder, review, testsCheck, suite, finding, base, round, changes } =
 const scenarios = {
   passFirst: {
     args: { ...base, stage: 'tests' },
-    respond(label) {
-      if (label.endsWith(':builder')) return builder()
+    respond(label, prompt) {
+      // The builder looks for an existing test before adding one, by the rule on repeats (#526).
+      if (label.endsWith(':builder')) { if (!prompt.includes('already makes its assertion') || !prompt.includes('search tests/ for one that already pins')) throw new Error('builder not given the rule on repeats'); return builder() }
       if (label.endsWith(':tester')) return testsCheck()
       if (label.endsWith(':issue')) return review()
       if (label.endsWith(':product')) return review({ summary: 'TESTS SUMMARY' })
