@@ -277,13 +277,6 @@ def test_the_format_may_still_be_amended_after_phase_one_alone():
     assert judge_amendment(rnd, {"format": RoundFormat.SPRINT}, now=NOW).allowed
 
 
-def test_neither_may_be_amended_once_the_round_has_started():
-    rnd = _round(scheduled_at=NOW - timedelta(hours=1))
-    verdict = judge_amendment(rnd, {"track_name": "Silverstone Circuit"}, now=NOW)
-    assert not verdict.allowed
-    assert any("already started" in r for r in verdict.refusals)
-
-
 def test_moving_a_round_forward_lets_its_track_be_amended_in_the_same_change():
     """The league's remedy, and the reason a change set is judged as one change.
 
@@ -306,22 +299,10 @@ def test_moving_a_round_forward_lets_its_track_be_amended_in_the_same_change():
 # ---------------------------------------------------------------------------
 
 
-def test_a_round_may_not_be_moved_into_the_past():
-    """The rule on its own, with no module enabled to refuse it for another reason.
-
-    Driven with both modules off deliberately: the check-in deadline rule refuses a backwards
-    move too, and a test that let it answer would pass whether or not this rule existed.
-    """
-    rnd = _round(scheduled_at=NOW + timedelta(days=30))
-    verdict = judge_amendment(rnd, {"scheduled_at": NOW - timedelta(hours=1)}, now=NOW)
-    assert not verdict.allowed
-    assert any("cannot be moved into the past" in r for r in verdict.refusals)
-
-
 @pytest.mark.parametrize(
     "attendance,weather",
     [
-        (None, None),
+        pytest.param(None, None, id="no_module"),
         (DEFAULT_ATTENDANCE, None),
         (None, DEFAULT_WEATHER),
         (DEFAULT_ATTENDANCE, DEFAULT_WEATHER),
@@ -332,6 +313,9 @@ def test_moving_a_round_into_the_past_is_refused_whatever_the_modules(attendance
 
     The round's result submission is armed against its moment whatever the modules, so a
     backwards move costs the same round the same thing in every one of these combinations.
+    The case with no module enabled is the rule on its own: the check-in deadline rule refuses
+    a backwards move too, and a test that let it answer would pass whether or not this rule
+    existed.
     """
     rnd = _round(scheduled_at=NOW + timedelta(days=30))
     verdict = judge_amendment(
@@ -370,7 +354,8 @@ def test_the_past_refusal_is_silent_when_the_moment_is_not_amended():
     """A track change on a round already past is refused by the started gate, not by this one.
 
     The round is not being *moved* anywhere, so a refusal telling the manager not to move it
-    into the past would name a thing they did not ask for.
+    into the past would name a thing they did not ask for. It also pins the started gate's own
+    refusal, so the "already started" check is not merely a precondition here.
     """
     rnd = _round(scheduled_at=NOW - timedelta(hours=1))
     verdict = judge_amendment(rnd, {"track_name": "Silverstone Circuit"}, now=NOW)
