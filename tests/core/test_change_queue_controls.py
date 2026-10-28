@@ -119,42 +119,32 @@ def _buttons(message: Any) -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-async def test_retry_by_a_league_manager_tries_the_job_at_once(env):
+@pytest.mark.parametrize("presser, named", [
+    pytest.param(_manager, MANAGER_NAMED, id="a league manager"),
+    pytest.param(_admin, ADMIN_NAMED, id="a league admin"),
+])
+async def test_retry_by_a_league_manager_or_admin_tries_the_job_at_once(env, presser, named):
     """Before the job's next try is due, a league manager's Retry tries it at once: it goes
     through, the request and the change behind it run, the manager is told privately, the log
-    channel names them and says the job went through, and the notice loses its buttons."""
+    channel names them and says the job went through, and the notice loses its buttons. A league
+    admin holds the manager's tier within theirs, and their Retry does the same."""
     holder = {"fail": RuntimeError("boom")}
     ran: list[str] = []
     job = await _stop(env, holder, ran)
     notice = _notice(env, job)
     holder["fail"] = None
 
-    interaction = await retry_job(env.bot, user=_manager())
+    interaction = await retry_job(env.bot, user=presser())
 
     assert ran == ["post", "post", "after", "later"]
     assert await _states(env) == ["DONE", "DONE"]
     assert _private(interaction)
     lines = await _lines(env)
-    assert any(MANAGER_NAMED in line and f"job #{job['id']}" in line and "Retr" in line
+    assert any(named in line and f"job #{job['id']}" in line and "Retr" in line
                for line in lines)
     went = WENT_THROUGH.format(id=job["id"], job="posting the dummy")
     assert [line.split("\n")[0] for line in lines if "went through" in line] == [went]
     assert _buttons(notice) == set()
-
-
-async def test_retry_by_a_league_admin_tries_the_job_at_once(env):
-    """A league admin holds the manager's tier within theirs: their Retry tries the job at once."""
-    holder = {"fail": RuntimeError("boom")}
-    ran: list[str] = []
-    job = await _stop(env, holder, ran)
-    holder["fail"] = None
-
-    interaction = await retry_job(env.bot, user=_admin())
-
-    assert ran == ["post", "post", "after", "later"]
-    assert await _states(env) == ["DONE", "DONE"]
-    assert _private(interaction)
-    assert any(ADMIN_NAMED in line and f"job #{job['id']}" in line for line in await _lines(env))
 
 
 async def test_retry_after_the_hour_is_the_only_way_on_and_a_failed_retry_leaves_it_stopped(env):
