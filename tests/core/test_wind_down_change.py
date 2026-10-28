@@ -189,6 +189,11 @@ async def test_the_turned_down_line_is_written_with_the_save(tmp_path):
 
 
 async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
+    """Every division is done with Max's and Charles's placements pending, a driver (105) in
+    review, and signups already shut: the driver in review is told and has their channel locked,
+    the two approved drivers turned down lose the driver role while Lewis keeps it, and the line
+    says only that the pending placements were turned down, with no claim that signups
+    closed."""
     league = await _league(tmp_path)
     await signing_up(league)
     await _ask(league)
@@ -207,6 +212,11 @@ async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     for user_id in (SIGNING_UP, MAX, CHARLES):
         assert await driver_state(league, user_id) == "NOT_SIGNED_UP"
     assert await _stage(league) == "PENDING_COMPLETION"
+    assert not league.errors, league.errors
+    lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+    assert any("System | Every division is done | Pending placements turned down: 3" in line
+               for line in lines), lines
+    assert not any("Signups closed" in line for line in lines)
 
 
 async def test_a_plain_ongoing_season_is_moved_on_with_no_driver_job(tmp_path):
