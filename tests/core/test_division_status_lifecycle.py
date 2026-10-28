@@ -190,7 +190,8 @@ async def test_a_cancelled_division_is_not_marked_finished(tmp_path):
 
 
 async def test_a_division_still_in_setup_is_not_marked_finished(tmp_path):
-    """It has not started. Finishing it would let a season be completed before it ran."""
+    """It has not started. Finishing it would let a season be completed before it ran, however
+    empty its round list looks: with no rounds, nothing is outstanding, and that is no finish."""
     db_path = await _make_db(tmp_path)
     await _add_division(db_path, 11, status="SETUP")
 

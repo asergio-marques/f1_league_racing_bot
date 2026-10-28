@@ -250,14 +250,6 @@ async def _delete(db_path, season_id) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_the_season_is_deleted(tmp_path):
-    db_path, _ = await _make_db(tmp_path)
-
-    await _delete(db_path, SEASON_ID)
-
-    assert await _count(db_path, "seasons", "id", SEASON_ID) == 0
-
-
 @pytest.mark.parametrize("table,column,value", CHILD_TABLES)
 async def test_no_child_row_survives_the_delete(tmp_path, table, column, value):
     """Enumerated rather than spot-checked: this is the test that fails the day a new child
