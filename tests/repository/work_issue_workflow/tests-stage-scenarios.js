@@ -7,8 +7,9 @@ const scenarios = {
       // The builder looks for an existing test before adding one, by the rule on repeats (#526).
       if (label.endsWith(':builder')) { if (!prompt.includes('already makes its assertion') || !prompt.includes('search tests/ for one that already pins')) throw new Error('builder not given the rule on repeats'); return builder() }
       if (label.endsWith(':tester')) return testsCheck()
-      if (label.endsWith(':issue')) return review()
-      if (label.endsWith(':product')) return review({ summary: 'TESTS SUMMARY' })
+      // Its issue reviewer flags a test that repeats another, and the product owner is not its judge.
+      if (label.endsWith(':issue')) { if (!prompt.includes('already makes its assertion') || !prompt.includes('is a material finding, whose fix is to drop it or merge it')) throw new Error('issue reviewer not given the rule on repeats'); return review() }
+      if (label.endsWith(':product')) { if (prompt.includes('already makes its assertion')) throw new Error('product owner given the rule on repeats'); return review({ summary: 'TESTS SUMMARY' }) }
     },
     expect: r => r.status === 'passed' && r.summary === 'TESTS SUMMARY' && r.lastRound === 1,
   },
