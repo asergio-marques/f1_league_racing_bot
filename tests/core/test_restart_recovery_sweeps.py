@@ -7,14 +7,14 @@ bot comes back. The third, `_recover_missed_phases`, is pinned in `test_bot_phas
 
 **Every standing review prompt is expired by definition.** The approve button's five minutes are
 a `discord.ui.View` timeout held in memory; the bot was down, so they cannot have been served,
-and no view exists to serve them now. Each row is therefore cleared unconditionally — there is
-no "still valid" case to preserve, and a reader who added one would leave a button nothing is
-listening to standing for ever.
-
-**The review channel is *fetched*, not only read from the cache.** A cache miss and a deleted
-channel are indistinguishable to `get_channel`, and the row is cleared either way — so a miss
-would drop the only record of a message still standing, which is exactly what the sweep exists
-to prevent.
+and no view exists to serve them now. Each row's take-down is therefore asked of the change queue
+(`season.review.take_down`, ending `restart`), as the bot, before the queue starts — there is no
+"still valid" case to preserve, and a reader who added one would leave a button nothing is
+listening to standing for ever. The sweep deletes, posts and writes nothing itself, and leaves
+alone a review whose take-down is already in hand: the queue's jobs delete the question and the
+report above it and drop the row, so a deletion Discord refuses stops the queue with the row
+standing rather than losing the only record of a message still up. Those cases are pinned in
+`test_review_prompt_sweep.py`.
 
 **An abandoned amendment's lapse is asked of the change queue** (#439, slice 6b, C64). The sweep
 puts nothing back, deletes nothing and writes nothing itself: it asks `results.amend.lapse` as the
