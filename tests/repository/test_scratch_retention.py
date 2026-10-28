@@ -45,20 +45,14 @@ def test_pytest_keeps_no_scratch_between_runs():
 def test_a_passing_test_s_scratch_goes_as_soon_as_it_passes():
     """The retention count above only acts when a session *ends*, so without this the peak
     within one run is every test's scratch at once — which is how a full suite filled the
-    Pi's tmpfs mid-run and failed as a mass regression across unrelated modules."""
-    parser = configparser.ConfigParser()
-    parser.read(REPO_ROOT / "pytest.ini", encoding="utf-8")
+    Pi's tmpfs mid-run and failed as a mass regression across unrelated modules.
 
-    assert parser.get("pytest", "tmp_path_retention_policy") == "failed"
-
-
-def test_a_failing_test_s_scratch_is_kept_as_evidence():
-    """`none` would clear it and would look like the tidier choice. A failure's scratch is
+    `failed` rather than `none`, which would look like the tidier choice: a failure's scratch is
     the only record of what the test wrote, and a red run is exactly when it is wanted."""
     parser = configparser.ConfigParser()
     parser.read(REPO_ROOT / "pytest.ini", encoding="utf-8")
 
-    assert parser.get("pytest", "tmp_path_retention_policy") != "none"
+    assert parser.get("pytest", "tmp_path_retention_policy") == "failed"
 
 
 def test_a_killed_run_s_template_scratch_is_swept(monkeypatch, tmp_path):

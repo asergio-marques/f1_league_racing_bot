@@ -47,19 +47,16 @@ def _coveragerc() -> configparser.ConfigParser:
 
 def test_coverage_measures_src_only():
     """The whole of #208. Without this the gate measures `tests/` too, which is ~98%
-    covered by construction and hides production code sitting below the floor."""
+    covered by construction and hides production code sitting below the floor.
+
+    `coverage run` and `coverage json` both read `.coveragerc` from the working directory
+    automatically, which is why the workflow's commands needed no change. A scope moved into
+    a file coverage does not read by default would be silently ignored."""
+    assert COVERAGERC.is_file()
     parser = _coveragerc()
 
     assert parser.has_section("run")
     assert parser.get("run", "source").strip() == "src"
-
-
-def test_the_scope_is_where_both_commands_will_find_it():
-    """`coverage run` and `coverage json` both read `.coveragerc` from the working directory
-    automatically, which is why the workflow's commands needed no change. A scope moved into
-    a file coverage does not read by default would be silently ignored."""
-    assert COVERAGERC.is_file()
-    assert COVERAGERC.parent == REPO_ROOT
 
 
 def test_nothing_else_configures_the_scope():
