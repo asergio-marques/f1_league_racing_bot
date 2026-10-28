@@ -409,11 +409,12 @@ async def _forecasts_asked(league) -> list[tuple[int, int]]:
 async def test_a_missed_mystery_notice_is_asked_for_when_the_bot_starts(
     tmp_path, hours_until_race, notice_posted, expected,
 ):
-    """Pro's round 3 is a mystery round whose Phase 1 horizon passed while the bot was stopped.
-    The bot starts: with the notice not yet posted and the race still ahead, one forecast change
-    is on the queue, of the notice (phase 0), and none of phases 2 or 3; with the notice posted
-    already, or the race run, none (folded defect 5; weather spec :158 as amended). Thirty days
-    out, before its Phase 1 horizon, none either: its notice is left to its own timer."""
+    """Pro's round 3 is a mystery round, and the bot starts after being stopped. Where its Phase 1
+    horizon passed while the bot was down, with the notice not yet posted and the race still
+    ahead, one forecast change is on the queue, of the notice (phase 0), and none of phases 2 or
+    3; with the notice posted already, or the race run, none (folded defect 5; weather spec :158
+    as amended). Thirty days out, its Phase 1 horizon not yet reached, none either: its notice is
+    left to its own timer."""
     league = await _mystery_league(tmp_path, hours_until_race=hours_until_race,
                                    notice_posted=notice_posted)
 
