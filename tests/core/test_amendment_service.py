@@ -1098,8 +1098,11 @@ async def test_an_amendment_is_refused_when_a_division_channel_is_gone(db_path):
 
     assert "standings channel" in _reply(press)
     assert "Alpha" in _reply(press)
+    assert "could not be published" in _reply(press)
     assert await _nothing_queued(path), "a refused approval was queued"
     assert reposted == [], "a refused amendment posted to the league's channels"
+    # The staged changes and amendment mode stand: a manager repairs the channel and
+    # approves again, and the work must still be there.
     assert await _season_state(path, season_id) == before, (
         "a refused amendment changed the season"
     )
@@ -1128,34 +1131,6 @@ async def test_a_refused_amendment_keeps_the_season_points(db_path):
             )
         ).fetchone()
     assert row is not None and row["points"] == 25, "the season's own points were lost"
-
-
-@pytest.mark.asyncio
-async def test_a_refused_amendment_leaves_the_staged_changes_to_repair(db_path):
-    """A manager repairs the channel and approves again; the work must still be there."""
-    path, season_id = db_path
-    await _seed_season_points(path, season_id)
-    await _seed_division_with_rounds(path, season_id)
-    await _staged_amendment(path, season_id)
-
-    press = await _approve(
-        path, season_id, _bot_recording_reposts(path, [], missing=(502,))
-    )
-
-    assert "could not be published" in _reply(press)
-    assert await _nothing_queued(path), "a refused approval was queued"
-    state = await get_amendment_state(path, season_id)
-    assert state is not None
-    assert state.amendment_active, "amendment mode was switched off by a refusal"
-    async with get_connection(path) as db:
-        row = await (
-            await db.execute(
-                "SELECT points FROM season_modification_entries WHERE season_id = ? "
-                "AND position = 1",
-                (season_id,),
-            )
-        ).fetchone()
-    assert row is not None and row["points"] == 30
 
 
 @pytest.mark.asyncio
@@ -1513,26 +1488,6 @@ async def test_validate_modification_ordering_judges_each_session_on_its_own(db_
 
 
 @pytest.mark.asyncio
-async def test_approve_amendment_refuses_a_table_out_of_order(db_path):
-    """The regression. Before the fix this amendment was applied without a word."""
-    path, season_id = db_path
-    await _seed_two_position_table(path, season_id)
-    await _seed_division_with_rounds(path, season_id)
-    await enable_amendment_mode(path, season_id)
-    await modify_session_points(
-        path, season_id, "STD", "FEATURE_RACE", [(2, 30)], **ACTOR
-    )
-
-    press = await _approve(path, season_id, _bot_recording_reposts(path, []))
-
-    assert _reply(press).startswith(
-        "❌ Amendment not approved — the points would be out of order:"
-    ), _reply(press)
-    assert "STD" in _reply(press), "the refusal must carry what is wrong with it"
-    assert await _nothing_queued(path), "a refused approval was queued"
-
-
-@pytest.mark.asyncio
 async def test_a_table_both_out_of_order_and_undeliverable_refuses_on_the_ordering(db_path):
     """Both checks apply; the ordering one is reached first, and nothing is written (#187).
 
@@ -1573,7 +1528,8 @@ async def test_a_refused_amendment_leaves_the_season_exactly_as_it_stood(db_path
     """Nothing written: not the points, not the store, not the mode, and nothing reposted.
 
     This function's first act is to delete the season's points. A guard placed even one
-    statement late would leave a running championship with no points table at all.
+    statement late would leave a running championship with no points table at all. The
+    regression: before the fix this amendment was applied without a word.
     """
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
@@ -1586,7 +1542,10 @@ async def test_a_refused_amendment_leaves_the_season_exactly_as_it_stood(db_path
     reposted: list[tuple] = []
     press = await _approve(path, season_id, _bot_recording_reposts(path, reposted))
 
-    assert "out of order" in _reply(press), _reply(press)
+    assert _reply(press).startswith(
+        "❌ Amendment not approved — the points would be out of order:"
+    ), _reply(press)
+    assert "STD" in _reply(press), "the refusal must carry what is wrong with it"
     assert await _nothing_queued(path), "a refused approval was queued"
     assert await _season_points(path, season_id) == {1: 25, 2: 18}, "the season's points moved"
     assert not reposted, "a refused amendment reposted a standings table"
@@ -1609,38 +1568,29 @@ async def test_a_refused_amendment_leaves_the_season_exactly_as_it_stood(db_path
 
 
 @pytest.mark.asyncio
-async def test_a_well_ordered_amendment_still_applies(db_path):
-    """The other half: a guard that refuses everything is no better than none at all."""
+@pytest.mark.parametrize(
+    "staged,expected",
+    [
+        pytest.param([[(1, 30)]], {1: 30, 2: 18}, id="a-raised-win"),
+        pytest.param([[(3, 0)], [(4, 0)]], {1: 25, 2: 18, 3: 0, 4: 0}, id="trailing-zeros"),
+    ],
+)
+async def test_a_well_ordered_amendment_still_applies(db_path, staged, expected):
+    """The other half: a guard that refuses everything is no better than none at all.
+    Trailing zeros, paying nothing below the points, are the ordinary shape of a table,
+    mid-season as at the start."""
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
     await _seed_division_with_rounds(path, season_id)
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(
-        path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
-    )
+    for changes in staged:
+        await modify_session_points(
+            path, season_id, "STD", "FEATURE_RACE", changes, **ACTOR
+        )
 
     await _approve(path, season_id, _bot_recording_reposts(path, []))
 
-    assert await _season_points(path, season_id) == {1: 30, 2: 18}
-
-
-@pytest.mark.asyncio
-async def test_an_amendment_paying_nothing_below_the_points_still_applies(db_path):
-    """Trailing zeros are the ordinary shape of a table, mid-season as at the start."""
-    path, season_id = db_path
-    await _seed_two_position_table(path, season_id)
-    await _seed_division_with_rounds(path, season_id)
-    await enable_amendment_mode(path, season_id)
-    await modify_session_points(
-        path, season_id, "STD", "FEATURE_RACE", [(3, 0)], **ACTOR
-    )
-    await modify_session_points(
-        path, season_id, "STD", "FEATURE_RACE", [(4, 0)], **ACTOR
-    )
-
-    await _approve(path, season_id, _bot_recording_reposts(path, []))
-
-    assert await _season_points(path, season_id) == {1: 25, 2: 18, 3: 0, 4: 0}
+    assert await _season_points(path, season_id) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -2162,37 +2112,28 @@ async def test_a_round_in_review_is_rescored_and_reposted_under_its_own_label(db
     assert "**30 pts**" in posts[-1], posts[-1]
 
 
-async def test_a_cancelled_division_is_rescored(db_path):
-    """Beta was cancelled after two rounds; what it raced is scored under the new table too
-    (decided 2026-09-26)."""
+@pytest.mark.parametrize(
+    "division_status",
+    [
+        pytest.param("CANCELLED", id="cancelled"),
+        pytest.param("FINISHED", id="finished-while-another-races"),
+    ],
+)
+async def test_a_cancelled_division_is_rescored(db_path, division_status):
+    """Beta was cancelled after two rounds, or finished its season with its last round
+    cancelled while Alpha still has a round to race; what it raced is scored under the new
+    table too (decided 2026-09-26)."""
     path, season_id = db_path
     await _seed_points_config(path, season_id)
     await _seed_raced_division(path, season_id, "Alpha", channels=(501, 502))
-    _division, _raced, cancelled_sessions, _q, _unraced = await _seed_raced_division(
+    _division, _raced, beta_sessions, _q, _unraced = await _seed_raced_division(
         path, season_id, "Beta", channels=(511, 512), driver_offset=1000,
-        division_status="CANCELLED", unraced_status="CANCELLED",
+        division_status=division_status, unraced_status="CANCELLED",
     )
 
     await _approve_raised_win(path, season_id)
 
-    for session_id in cancelled_sessions:
-        assert (await _race_points(path, session_id))[_WINNER + 1000] == (30, 0)
-
-
-async def test_a_finished_division_is_rescored_while_another_races(db_path):
-    """Beta finished its season, its last round cancelled, while Alpha still has a round to
-    race; what Beta raced is scored under the new table too."""
-    path, season_id = db_path
-    await _seed_points_config(path, season_id)
-    await _seed_raced_division(path, season_id, "Alpha", channels=(501, 502))
-    _division, _raced, finished_sessions, _q, _unraced = await _seed_raced_division(
-        path, season_id, "Beta", channels=(511, 512), driver_offset=1000,
-        division_status="FINISHED", unraced_status="CANCELLED",
-    )
-
-    await _approve_raised_win(path, season_id)
-
-    for session_id in finished_sessions:
+    for session_id in beta_sessions:
         assert (await _race_points(path, session_id))[_WINNER + 1000] == (30, 0)
 
 
