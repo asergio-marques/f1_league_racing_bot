@@ -241,26 +241,25 @@ async def test_the_stage_refusal_is_the_command_s_own_words(stage, stages, refus
 # How it answers
 # ---------------------------------------------------------------------------
 
-async def test_a_command_that_has_not_deferred_is_answered_through_the_response():
-    interaction = _interaction(done=False)
+@pytest.mark.parametrize("done", [
+    pytest.param(False, id="not deferred, through the response"),
+    pytest.param(True, id="deferred, through the followup"),
+])
+async def test_a_command_is_answered_through_the_response_or_the_followup(done):
+    """A command that has not deferred is answered through the response; one that has, through
+    the followup, and never through both."""
+    interaction = _interaction(done=done)
 
     await season_for_command(
         interaction, _service(_season(SeasonStage.PENDING_COMPLETION)), "team role"
     )
 
-    interaction.response.send_message.assert_awaited_once()
-    interaction.followup.send.assert_not_awaited()
-
-
-async def test_a_command_that_has_deferred_is_answered_through_the_followup():
-    interaction = _interaction(done=True)
-
-    await season_for_command(
-        interaction, _service(_season(SeasonStage.PENDING_COMPLETION)), "team role"
+    used, unused = (
+        (interaction.followup.send, interaction.response.send_message) if done
+        else (interaction.response.send_message, interaction.followup.send)
     )
-
-    interaction.followup.send.assert_awaited_once()
-    interaction.response.send_message.assert_not_awaited()
+    used.assert_awaited_once()
+    unused.assert_not_awaited()
 
 
 @pytest.mark.parametrize("done", [False, True])
