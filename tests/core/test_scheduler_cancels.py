@@ -39,6 +39,8 @@ CANCELS = [
     ("cancel_portrait_refresh", ()),
     ("cancel_signup_close_timer", ()),
     ("cancel_rounds", ([5],)),
+    # A wizard's timer, which the signup switch-off disarms whether or not it has fired.
+    ("disarm", ("signup_inactivity", "101")),
 ]
 
 CANCEL_CASES = [pytest.param(name, args, id=name) for name, args in CANCELS]

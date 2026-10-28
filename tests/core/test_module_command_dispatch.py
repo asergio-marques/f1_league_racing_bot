@@ -13,8 +13,8 @@ its own handler and no other.
 choices and not to the dispatch would be treated as signup — the parametrisation below reads the
 choice list itself, so such a module fails here rather than silently enabling signup.
 
-**The attendance disable takes no server id.** It reads it from the interaction, unlike the
-other four; pinned so a tidy-up that passes one does not break it.
+**Each handler is given the interaction and nothing else.** It reads the server from the
+interaction; pinned so a tidy-up that passes a server id as well does not break one.
 """
 from __future__ import annotations
 
@@ -78,17 +78,8 @@ async def test_disable_reaches_the_modules_own_handler(module):
 
     await undecorate(ModuleCog.disable)(cog, interaction, _choice(module))
 
-    handler = getattr(cog, f"_disable_{module}")
-    handler.assert_awaited_once()
-    assert handler.await_args.args[0] is interaction
+    getattr(cog, f"_disable_{module}").assert_awaited_once_with(interaction)
     for other in HANDLED - {module}:
         getattr(cog, f"_disable_{other}").assert_not_awaited()
 
 
-async def test_the_attendance_disable_takes_no_server_id():
-    cog = _cog()
-    interaction = _interaction()
-
-    await undecorate(ModuleCog.disable)(cog, interaction, _choice("attendance"))
-
-    assert cog._disable_attendance.await_args.args == (interaction,)
