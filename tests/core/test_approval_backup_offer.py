@@ -130,7 +130,7 @@ async def test_a_league_not_in_test_mode_is_not_asked():
     interaction = _interaction()
 
     assert await _offer(cog, interaction) is True
-    assert _replied(interaction) == ""
+    interaction.followup.send.assert_not_awaited()
 
 
 async def test_a_server_with_no_configuration_is_not_asked():
@@ -277,18 +277,6 @@ async def test_cancelling_stops_the_approval():
     assert "Nothing has been approved, and nothing has been saved" in _replied(interaction)
 
 
-async def test_an_unanswered_question_expires_the_approval():
-    """The review is stale by then, so holding it open would approve a season the report
-    no longer describes."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    proceed = await _offer(cog, interaction, answer=None)
-
-    assert proceed is False
-    assert "expired while the backup question went" in _replied(interaction)
-
-
 async def test_silence_and_cancelling_are_reported_differently():
     """One is a decision, the other is a review that expired while nobody was looking —
     and a maintainer needs to know which happened before they re-run the review."""
@@ -354,28 +342,6 @@ def _press(view, name, interaction):
     return getattr(type(view), name)(view, interaction, MagicMock())
 
 
-async def test_saving_takes_a_backup_and_continues():
-    view = await _view()
-    interaction = _button_interaction()
-
-    with patch("leaguebot.core.services.backup_service.save") as save:
-        await _press(view, "save", interaction)
-
-    save.assert_called_once()
-    assert view.answer == "save"
-
-
-async def test_a_saved_backup_names_how_to_restore_it():
-    """A save nobody knows how to undo is not the safety net it was offered as."""
-    view = await _view()
-    interaction = _button_interaction()
-
-    with patch("leaguebot.core.services.backup_service.save"):
-        await _press(view, "save", interaction)
-
-    assert "/test-mode backup restore" in str(interaction.followup.send.await_args.args[0])
-
-
 async def test_the_scheduler_is_paused_for_the_copy():
     """Exactly as `/test-mode backup save` pauses it: the job store is written on the event
     loop, and a job added mid-copy tears."""
@@ -437,29 +403,6 @@ async def test_a_backup_that_cannot_be_taken_still_approves():
 
     assert view.answer == "skip"
     assert "no room" in str(interaction.followup.send.await_args.args[0])
-
-
-async def test_an_unexpected_failure_also_still_approves():
-    """Same reasoning, and the fault is logged rather than shown — a manager cannot act on
-    a traceback, and the season is not the thing that went wrong.
-
-    The reply takes the standard failure form, its outcome saying the backup was not taken and
-    the season is being approved anyway (the core specification's "Saving a season before its
-    placements are confirmed": "The manager shall be told that it was not taken and the
-    confirmation shall continue")."""
-    view = await _view()
-    interaction = _button_interaction()
-
-    with patch("leaguebot.core.services.backup_service.save", side_effect=OSError("truncated")):
-        await _press(view, "save", interaction)
-
-    assert view.answer == "skip"
-    replied = str(interaction.followup.send.await_args.args[0])
-    assert replied.startswith("❌ "), replied
-    assert "stopped on a fault in the bot" in replied
-    assert "not taken" in replied and "anyway" in replied
-    assert "may have been partly done" not in replied
-    assert "truncated" not in replied
 
 
 async def test_approving_without_saving_asks_for_no_backup():
@@ -589,7 +532,8 @@ async def test_cancelling_the_backup_question_is_recorded():
 async def test_a_backup_question_that_lapses_is_recorded(minutes_left, answer, said):
     """Alex approves a test-mode season and the review runs out: either the backup question is
     left unanswered until the review's five minutes are up, or they were already up before it
-    could be asked.
+    could be asked. The review is stale by then, so holding it open would approve a season the
+    report no longer describes.
 
     Nothing is approved, as today, and the log gets one lapse line naming Alex as the member who
     started the approval, with the reply's own words beneath it.
@@ -613,16 +557,18 @@ async def test_a_backup_question_that_lapses_is_recorded(minutes_left, answer, s
 async def test_a_backup_saved_before_approving_writes_its_own_line():
     """Alex presses 💾 Save, then approve, and the backup is written.
 
-    He is told it was saved and how to restore it, as today, and the log gets a success line of
-    its own for the backup, so the record holds it whatever the approval then does.
+    He is told it was saved and how to restore it, as today — a save nobody knows how to undo
+    is not the safety net it was offered as — and the log gets a success line of its own for the
+    backup, so the record holds it whatever the approval then does.
     """
     cog = _recording_cog()
     view = await _view(cog)
     interaction = _alex_pressing(cog)
 
-    with patch("leaguebot.core.services.backup_service.save"):
+    with patch("leaguebot.core.services.backup_service.save") as save:
         await _press(view, "save", interaction)
 
+    save.assert_called_once()
     assert view.answer == "save"
     assert "/test-mode backup restore" in str(interaction.followup.send.await_args.args[0])
     lines = _logged(cog)
@@ -668,8 +614,11 @@ async def test_a_backup_stopped_by_a_fault_is_recorded_and_the_approval_goes_on(
     """Alex presses 💾 Save, then approve, and the copy stops on a fault in the bot.
 
     He gets the standard failure reply saying the backup was not taken and the season is being
-    approved anyway, never the fault's own text; the approval goes on; and the log gets one
-    failure line naming Alex and the save button.
+    approved anyway, never the fault's own text — a manager cannot act on a traceback, and the
+    season is not the thing that went wrong; the approval goes on; and the log gets one failure
+    line naming Alex and the save button. The reply's outcome is the core specification's
+    "Saving a season before its placements are confirmed": "The manager shall be told that it was
+    not taken and the confirmation shall continue".
     """
     from leaguebot.core.services import backup_service
 
@@ -689,6 +638,7 @@ async def test_a_backup_stopped_by_a_fault_is_recorded_and_the_approval_goes_on(
     replied = str(interaction.followup.send.await_args.args[0])
     assert replied.startswith("❌ ") and "stopped on a fault in the bot" in replied, replied
     assert "not taken" in replied and "anyway" in replied, replied
+    assert "may have been partly done" not in replied, replied
     assert str(error) not in replied
     lines = _logged(cog)
     assert len(lines) == 1, lines
