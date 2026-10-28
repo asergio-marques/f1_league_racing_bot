@@ -256,6 +256,8 @@ def _delivering_bot(db_path: str):
     bot.db_path = db_path
     bot.get_channel = MagicMock(return_value=channel)
     bot.output_router.post_log = AsyncMock()
+    # The worker's own lines go to the log channel the router names (`_post_own_line`).
+    bot.output_router.log_destination = AsyncMock(return_value=99)
     return bot, channel
 
 
@@ -329,9 +331,9 @@ async def test_attempt_delivery_sends_through_the_log_writer(tmp_path, monkeypat
 
 
 async def test_a_late_log_line_delivered_on_retry_reports_its_delivery_as_today(tmp_path):
-    """A log line for channel 555 that failed once (503) is delivered on its first retry. The log
-    channel gets exactly one line, saying the delivery succeeded, why it first failed and how many
-    retries it took."""
+    """A log line queued for channel 555 that failed once (503) is delivered on its first retry, to
+    the log channel as it is now, 99. The log channel gets exactly one line, saying the delivery to
+    99 succeeded, why it first failed and how many retries it took."""
     from leaguebot.core.services.retry_service import attempt_delivery
 
     db_path = await _make_db(str(tmp_path))
@@ -344,16 +346,16 @@ async def test_a_late_log_line_delivered_on_retry_reports_its_delivery_as_today(
 
     [call] = bot.output_router.post_log.await_args_list
     assert call.args[0].startswith(
-        "\N{WHITE HEAVY CHECK MARK} Retry delivery succeeded for channel <#555> (id=555). "
+        "\N{WHITE HEAVY CHECK MARK} Retry delivery succeeded for channel <#99> (id=99). "
         "Original failure: 503. Retries taken: 0. Delivered at: "
     )
 
 
 async def test_a_stuck_late_log_line_warns_before_its_retry_as_today(tmp_path):
-    """A log line for channel 555 that failed with 503 and has been retried
-    RETRY_WARN_THRESHOLD times is retried once more and delivered. The log channel is first
-    warned that the entry is stuck, naming the channel, how often it failed and why, and then
-    told the delivery succeeded after that many retries."""
+    """A log line queued for channel 555 that failed with 503 and has been retried
+    RETRY_WARN_THRESHOLD times is retried once more and delivered to the log channel as it is now,
+    99. The log channel is first warned that the entry is stuck, naming 99, the channel tried, how
+    often it failed and why, and then told the delivery to 99 succeeded after that many retries."""
     from leaguebot.core.services.retry_service import attempt_delivery
 
     db_path = await _make_db(str(tmp_path))
@@ -370,10 +372,10 @@ async def test_a_stuck_late_log_line_warns_before_its_retry_as_today(tmp_path):
     warning, success = (call.args[0] for call in bot.output_router.post_log.await_args_list)
     assert warning.startswith(
         f"\N{WARNING SIGN}\N{VARIATION SELECTOR-16} Stuck retry entry id={entry.id}: message to "
-        f"channel <#555> (id=555) has failed {RETRY_WARN_THRESHOLD} time(s) since "
+        f"channel <#99> (id=99) has failed {RETRY_WARN_THRESHOLD} time(s) since "
     )
     assert warning.endswith("Original failure: 503")
     assert success.startswith(
-        "\N{WHITE HEAVY CHECK MARK} Retry delivery succeeded for channel <#555> (id=555). "
+        "\N{WHITE HEAVY CHECK MARK} Retry delivery succeeded for channel <#99> (id=99). "
         f"Original failure: 503. Retries taken: {RETRY_WARN_THRESHOLD}. Delivered at: "
     )

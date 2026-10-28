@@ -31,6 +31,7 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Optional
 
+import aiohttp
 import aiosqlite
 import discord
 
@@ -125,10 +126,12 @@ class OutputRouter:
         *channel* sends to that channel id instead, wrapped, separated and split exactly as
         any other line, but **neither queued for retry nor told to any member** when it cannot
         be posted: it returns ``None`` and the caller puts the line in the host's log. It
-        exists for the factory reset's closing line, written after the wipe, when a queued row
-        would sit in the fresh database of a bot serving no server. A line that cannot be
-        posted is written to the host's log (core specification, "Factory reset"). Get the id
-        from :meth:`log_destination` before the wipe.
+        exists for two callers. The factory reset's closing line is written after the wipe, when
+        a queued row would sit in the fresh database of a bot serving no server; a line that
+        cannot be posted is written to the host's log (core specification, "Factory reset"), and
+        the id is got from :meth:`log_destination` before the wipe. The retry worker's own lines
+        (`retry_service._post_own_line`) are never queued, so that a stuck row cannot queue a
+        fresh warning about itself on every cycle.
         """
         content = self._as_log_line(content)
         if channel is not None:
@@ -350,12 +353,13 @@ class OutputRouter:
     ) -> None:
         """Send the lines :meth:`queue_log_on` wrote, once their save has been committed.
 
-        Each is read again under the retry loop's lock, and one already gone (the loop
-        delivered it first) is skipped. A line is divided through `chunk_message` and sent
-        mentioning nobody, as :meth:`post_log` sends it. One that is delivered leaves the
-        retry queue. One that cannot be is left to the retry loop with its reason, and
-        *interaction*, where given and still answerable, is told as :meth:`post_log` tells
-        the member, once; with none, the failure is the host's log's alone. Never raises.
+        Each is read again under the retry loop's lock, and one already gone (the loop delivered it
+        first) is skipped. A line is divided through `chunk_message` and sent mentioning nobody, as
+        :meth:`post_log` sends it, to the log channel as it is now. One that is delivered leaves the
+        retry queue. One that cannot be is left to the retry loop with its reason (with none where
+        the log channel could not be read), and *interaction*, where given and still answerable, is
+        told as :meth:`post_log` tells the member, once; with none, the failure is the host's log's
+        alone. Never raises.
         """
         from leaguebot.core.services import retry_service
 
@@ -363,22 +367,30 @@ class OutputRouter:
         if not db_path:
             return
         for entry_id in ids:
+            # The channel the member is told about where the line, once read, is not delivered,
+            # whatever stops it: the log channel as it is now, or the line's own where that
+            # cannot be read. None once there is nothing to tell.
+            warn_about: "Optional[int]" = None
             try:
                 async with retry_service.delivery_lock():
                     entry = await retry_service.get_pending(db_path, entry_id)
                     if entry is None:
                         continue
-                    message, reason, _retryable = await self._try_send(
-                        entry.channel_id, entry.content, "log", False
-                    )
+                    warn_about = entry.channel_id
+                    # To the log channel as it is now, as the retry loop delivers it.
+                    current = await self.log_destination()
+                    target = entry.channel_id if current is None else current
+                    warn_about = target
+                    message, reason = await self._try_send(target, entry.content, "log", False)
                     if message is not None:
+                        warn_about = None
                         await retry_service.mark_delivered(db_path, entry_id)
                         continue
                     await retry_service.mark_failed(db_path, entry_id, reason=reason)
-                if interaction is not None:
-                    await self._warn_member(entry.channel_id, interaction)
             except Exception:
                 log.error("deliver_queued: could not deliver line id=%s", entry_id, exc_info=True)
+            if warn_about is not None and interaction is not None:
+                await self._warn_member(warn_about, interaction)
 
     @staticmethod
     def _as_log_line(content: str, *, keep_role: int | None = None) -> str:
@@ -405,18 +417,20 @@ class OutputRouter:
         """Attempt to send *content* to *channel_id*.
 
         Returns the last ``discord.Message`` sent on success, ``None`` on failure.
-        Never raises. On HTTP/Forbidden failure, enqueues for retry when
-        retry_db_path is configured and *enqueue_on_failure* is set.
+        Never raises. On any failure, a channel that cannot be fetched or is no text channel
+        included, enqueues for retry when retry_db_path is configured and *enqueue_on_failure* is
+        set: a line the log channel cannot take is kept and delivered later (core specification,
+        "The record of what changed"), the channel being set again or the bot's access restored.
 
         *return_first* returns the **first** message instead, for a caller linking a
         reader to the start of what it wrote. It defaults to False, returning the last.
 
         *view* is sent with the last part, so that its buttons end the message.
         """
-        message, reason, retryable = await self._try_send(
+        message, reason = await self._try_send(
             channel_id, content, fallback_label, return_first, view, mention_role
         )
-        if message is None and retryable:
+        if message is None:
             await self._enqueue_if_configured(enqueue_on_failure, channel_id, content, reason)
         return message
 
@@ -428,27 +442,28 @@ class OutputRouter:
         return_first: bool,
         view: "Optional[discord.ui.View]" = None,
         mention_role: int | None = None,
-    ) -> "tuple[Optional[discord.Message], str, bool]":
-        """Send *content*, and say how it went: the message, or None with why and whether a
-        retry could mend it (a refused or failed post can; a channel not found cannot).
+    ) -> "tuple[Optional[discord.Message], str]":
+        """Send *content*, and say how it went: the message, or None with why.
         Logs every failure and never raises."""
         channel = self._bot.get_channel(channel_id)
         if channel is None:
             try:
                 channel = await self._bot.fetch_channel(channel_id)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+            except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
+                # A network down raises what aiohttp raises (a timeout among them, an OSError),
+                # not a Discord error; the line is kept all the same.
                 log.error(
                     "_send: cannot fetch %s channel id=%s: %s",
                     fallback_label, channel_id, exc,
                 )
-                return None, str(exc), False
+                return None, str(exc)
 
         if not isinstance(channel, discord.TextChannel):
             log.error(
                 "_send: channel id=%s is not a TextChannel (got %s)",
                 channel_id, type(channel).__name__,
             )
-            return None, f"channel {channel_id} is not a text channel", False
+            return None, f"channel {channel_id} is not a text channel"
 
         try:
             # Discord messages have a 2000-char limit; chunk if needed
@@ -467,19 +482,19 @@ class OutputRouter:
                     last_msg = await channel.send(chunk, allowed_mentions=allowed)
                 if first_msg is None:
                     first_msg = last_msg
-            return (first_msg if return_first else last_msg), "", False
+            return (first_msg if return_first else last_msg), ""
         except discord.Forbidden as exc:
             log.error(
                 "_send: missing permissions for %s channel id=%s: %s",
                 fallback_label, channel_id, exc,
             )
-            return None, str(exc), True
-        except discord.HTTPException as exc:
+            return None, str(exc)
+        except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
             log.error(
                 "_send: HTTP error posting to %s channel id=%s: %s",
                 fallback_label, channel_id, exc,
             )
-            return None, str(exc), True
+            return None, str(exc)
 
     async def _enqueue_if_configured(
         self,
@@ -490,8 +505,9 @@ class OutputRouter:
     ) -> None:
         """Persist a failed message for retry, where *wanted* and retry_db_path is set.
 
-        *wanted* is False for a line sent to a given channel, the factory reset's, which would
-        otherwise leave a row in the fresh database of a bot serving no server.
+        *wanted* is False for a line sent to a given channel: the factory reset's, which would
+        otherwise leave a row in the fresh database of a bot serving no server, and the retry
+        worker's own lines (:meth:`post_log`); and for the stop notice, posted again its own way.
         """
         if self._retry_db_path and wanted:
             try:

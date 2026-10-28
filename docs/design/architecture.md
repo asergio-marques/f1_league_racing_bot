@@ -723,15 +723,23 @@ kind has its own rules for failures and for later changes:
 The code that makes a post still builds its own text, pictures and buttons, and saves the message id
 it is handed back. The notice, standing-post and bot-owned channel handlers do the sending and
 nothing else: the caller states who the post may mention (a required argument, so that no post
-leaves it to Discord's default), and the handler hands back the message or its id and deletes or
-edits a message when asked. They **raise what Discord raises**, a `NotFound` included, so that the
-queue's own handling of a message already gone, and a caller's reason of its own wrapped in
-`StepFailedOnDiscord`, work as they would for a call made directly. A log line differs: the writer
-switches its mentions off itself and splits a long one. The router keeps its failures and queues a
-failed send for its own retry where the log channel can still be found; one it cannot find is logged
-on the host. `send_log_text`, the retry's own send, raises what Discord raises to the retry worker,
-which counts it. Retrying is the change queue's, except for log lines. Each handler is a service in
-core, in a file of its own:
+leaves it to Discord's default), and the handler hands back the message or its id and, when asked,
+edits or deletes a message or deletes a bot-owned channel whole. They **raise what Discord raises**,
+a `NotFound` included, so that the queue's own handling of a message already gone, and a caller's
+reason of its own wrapped in `StepFailedOnDiscord`, work as they would for a call made directly. A
+log line differs: the writer switches its mentions off itself, splits a long one, and contains its
+own failures rather than raising them. Every log line but two is kept until it is delivered,
+whatever keeps the log channel from taking it (the core specification's "The record of what
+changed"): a line posted on its own (`post_log`) is put on the retry queue where it cannot be
+posted, its channel gone, refused or no text channel included, and a line a change saves is on that
+queue before it is sent (see "How a change is carried out"). A waiting line is delivered to the log
+channel as it is when it is tried, so that a channel set again after the old was deleted takes the
+lines that waited for it. Two kinds of line are never queued, each going to the host's log where it
+cannot be posted: the factory reset's closing line (below), and the retry worker's own lines, so
+that a row stuck while the channel is unreachable cannot queue a warning about itself on every try.
+The stop notice is posted again its own way (below). `send_log_text`, the retry's own send, raises
+what Discord raises to the retry worker, which counts it. Retrying is the change queue's, except for
+log lines. Each handler is a service in core, in a file of its own:
 
 | Handler | File | Its functions |
 |---|---|---|
@@ -762,16 +770,18 @@ rule has two halves:
   Discord to be tried again as one. *Rejected:* a flag on the bot or on the queue, which one
   lane's job would set for every other lane's code to see; and the job's number passed down to
   each posting function, which a caller outside a job could invent.
-- **The check.** A test fails on any function that posts without the decorator, unless it is
-  named off the queue with its reason (see "How the rules are checked"). The router
-  (`core/services/output_router.py`) alone is exempt from it whole (`JOB_CHECK_ALLOWED`): what it
-  posts off the queue are the exceptions below. The other handlers are held to it. The check of posting outside the handlers passes over
-  the four handler files (`POSTING_ALLOWED`) and over a function named off the queue, which runs
-  outside a job and so cannot go through a handler. Two functions whose sends look like posts
-  and are not are named in `NOT_A_POST` with their reasons. One is the owner's own `!sync` command
-  (`guild_sync` in the entry point): it deletes the owner's message and posts a note that deletes
-  itself, which is a prefix command's reply. The other is the queue's edit of a member's own
-  acknowledgement (`ChangeQueue._update_reply`), which answers the member and posts in no channel.
+- **The check.** A test fails on any function that posts without the decorator, unless it is named
+  off the queue with its reason (see "How the rules are checked"). The router
+  (`core/services/output_router.py`) alone is exempt from it whole (`JOB_CHECK_ALLOWED`): it writes
+  log lines, the stop notice and the turn-away, and nothing else, and what it posts off the queue
+  are the exceptions below. The other handlers are held to it. The check of posting outside the
+  handlers passes over the four handler files (`POSTING_ALLOWED`) and over a function named off the
+  queue, which runs outside a job and so cannot go through a handler. Two functions whose sends look
+  like posts and are not are named in `NOT_A_POST` with their reasons. One is the owner's own
+  `!sync` command (`guild_sync` in the entry point): it deletes the owner's message and posts a note
+  that deletes itself, which is a prefix command's reply. The other is the queue's edit of a
+  member's own acknowledgement (`ChangeQueue._update_reply`), which answers the member and posts in
+  no channel.
 
 The exceptions, each with its reason:
 
@@ -819,14 +829,14 @@ The exceptions, each with its reason:
   records the one a task is answering, or takes the one the change queue holds, and the host's log
   alone records the failure where none can still be answered.
 
-  One log line is not queued: the factory reset's closing line (the core specification's "Factory
-  reset" section holds the rule for what it says and when). It is posted after the reset has wiped
-  the database, so it is neither queued nor told to anyone, for two reasons. A queued row would sit
-  in the fresh database of a bot serving no server (`OutputRouter.post_log`'s docstring). And the
-  member's notice says the line is kept and delivered later (the core specification's "The record
-  of what changed"), which this one never is, so the core specification's "Factory reset" has a line
-  that cannot be posted written to the host's log. The cog learns the log channel from the router
-  before the wipe and posts to it directly.
+  The factory reset's closing line is not queued (the core specification's "Factory reset" section
+  holds the rule for what it says and when). It is posted after the reset has wiped the database, so
+  it is neither queued nor told to anyone, for two reasons. A queued row would sit in the fresh
+  database of a bot serving no server (`OutputRouter.post_log`'s docstring). And the member's notice
+  says the line is kept and delivered later (the core specification's "The record of what changed"),
+  which this one never is, so the core specification's "Factory reset" has a line that cannot be
+  posted written to the host's log. The cog learns the log channel from the router before the wipe,
+  and hands it to the router's `post_log`, which posts the line there and queues nothing.
 
 **A failed post is sent again by its owning module, on the queue's schedule.** A post that fails
 is a job that fails, and stops its lane (see "How a change is carried out"): the
@@ -885,12 +895,13 @@ to name its member from, reaches the league's server through `league_guild`, and
 beside it so that each standard line is formed in one place. Like
 `report_failure`, neither raises, and `refuse` attempts its reply and its line each on its own.
 
-**Every line for the log channel goes through `OutputRouter`** (`post_log`, or `queue_log_on` and
-`deliver_queued` for a line a change's step saves), which divides a record too long for one
+**Every line for the log channel goes through the log writer** (`OutputRouter.post_log`, or
+`queue_log_on` and `deliver_queued` for a line a change's step saves, `post_notice` for the stop
+notice, and `send_log_text` for the retry of a late one), which divides a record too long for one
 message on its line breaks where it can, and at the limit where one line alone is too long; a reply
 too long for one message is sent in parts through `chunk_message` (`core/utils/messages.py`), which
-does the dividing for all three. That is how a record meets the core
-specification's "The record of what changed" on length.
+does the dividing for each of them. That is how a record meets the core specification's "The record
+of what changed" on length.
 
 **No cog handles its own errors, and there is no shared base class for cogs.** Every failure a
 command does not catch itself reaches `report_failure` through the command tree. The tree steps
@@ -1002,19 +1013,19 @@ later on its own.
   named off the queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with no
   reason or no function; the router is exempt, `JOB_CHECK_ALLOWED`, and `NOT_A_POST` names the two
   calls that are not posts, under "Every post is made in a job"), a service or helper reaching the
-  change queue through the bot, a service or helper
-  looking another service up on the bot, a table written by a module that does not own it, and a
-  save outside a queued change. The job check is absolute, with no list of breaches left to grow;
-  the two checks on the bot list today's breaches, each under the module pass that removes it.
-  The check of a save outside a queued change counts each function's `.commit()` and `.executescript()` calls, and a function
-  writing on a handed connection commits nothing and is not counted. It allows for good the
-  migrations run at start-up (`run_migrations` and `_enable_wal`, the journal mode set on the
-  database file itself), the queue's own records, the retry queue for log lines, and
-  `backup_service._write_empty_database`, which writes the scheduler's empty file and not the
-  league's.
+  change queue through the bot, a service or helper looking another service up on the bot, a table
+  written by a module that does not own it, and a save outside a queued change. The job check and
+  the check of cogs handling their own errors are absolute, with no list of breaches left to grow,
+  and the log channel's check holds its six places for good; every other check lists today's
+  breaches, each under the work that removes it. The check of a save outside a queued change counts
+  each function's `.commit()` and `.executescript()` calls, and a function writing on a handed
+  connection commits nothing and is not counted. It allows for good the migrations run at start-up
+  (`run_migrations` and `_enable_wal`, the journal mode set on the database file itself), the
+  queue's own records, the retry queue for log lines, and `backup_service._write_empty_database`,
+  which writes the scheduler's empty file and not the league's.
 - **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
-  **`tests/repository/test_import_roots.py`** check the one-league rule, the schema's own rules,
-  and that the bot is imported from one place: the installed package, never through `src`.
+  **`tests/repository/test_import_roots.py`** check the one-league rule, the schema's own rules, and
+  that the bot is imported from one place: the installed package, never through `src`.
 
 How the checks run, and how to work with the lists of today's breaches they hold, is CLAUDE.md's,
 under "Testing".

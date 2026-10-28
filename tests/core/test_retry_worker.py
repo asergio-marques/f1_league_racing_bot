@@ -61,6 +61,8 @@ def _make_bot(db_path: str, channel: "discord.TextChannel | None" = None) -> Mag
     bot.get_channel.return_value = channel
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
+    # No log channel named now, so a row goes where it was queued for.
+    bot.output_router.log_destination = AsyncMock(return_value=None)
     return bot
 
 
@@ -323,3 +325,275 @@ class TestRetryWarningThreshold:
             await attempt_delivery(entry, bot)
 
         mock_safe_log.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# The retry worker's own lines are never queued (FR-009)
+#
+# The "Stuck retry entry" warning and the "Retry delivery succeeded" line are the worker's own.
+# Queued where the log channel could not take them, each would wait on the queue beside the row it
+# reports on, and a stuck row would queue a fresh warning on every cycle, each warning becoming a
+# stuck row of its own: the queue would grow for as long as the log channel stayed unreachable.
+# They go to the log channel where it can take them, and to the host's log where it cannot.
+# ---------------------------------------------------------------------------
+
+def _worker_bot(db_path: str, channel, *, configured: bool = True) -> MagicMock:
+    """A bot whose router is the real one, writing the retry queue in *db_path*, with the log
+    channel 99 answered by *channel*."""
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.get_channel.return_value = channel
+    bot.config_service.get_server_config = AsyncMock(
+        return_value=MagicMock(log_channel_id=99) if configured else None
+    )
+    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
+    return bot
+
+
+class TestTheRetryWorkersOwnLinesAreNotQueued:
+
+    @pytest.mark.asyncio
+    async def test_its_own_line_goes_to_the_log_channel(self, tmp_path):
+        from leaguebot.core.services.retry_service import _post_own_line
+
+        db_path = await _make_db(str(tmp_path))
+        channel = _make_text_channel_mock()
+        bot = _worker_bot(db_path, channel)
+
+        await _post_own_line(bot, "✅ Retry delivery succeeded for channel <#99>")
+
+        [call] = channel.send.await_args_list
+        assert "Retry delivery succeeded" in call.args[0]
+        assert await _row_count(db_path) == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("fault", ["refused", "channel-gone", "not-a-text-channel"])
+    async def test_its_own_line_the_log_channel_cannot_take_is_not_queued(
+        self, tmp_path, caplog, fault
+    ):
+        """The log channel refuses the line, is gone, or is no text channel: no row is queued,
+        and the line is written to the host's log."""
+        from leaguebot.core.services.retry_service import _post_own_line
+
+        db_path = await _make_db(str(tmp_path))
+        if fault == "refused":
+            channel = _make_text_channel_mock(
+                send_side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access")
+            )
+        elif fault == "channel-gone":
+            channel = None
+        else:
+            channel = MagicMock(spec=discord.VoiceChannel)
+        bot = _worker_bot(db_path, channel)
+        bot.fetch_channel = AsyncMock(
+            side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel")
+        )
+
+        with caplog.at_level("WARNING"):
+            await _post_own_line(bot, "⚠️ Stuck retry entry id=7")
+
+        assert await _row_count(db_path) == 0
+        assert "Stuck retry entry id=7" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_its_own_line_before_the_bot_is_set_up_goes_to_the_host_log(
+        self, tmp_path, caplog
+    ):
+        from leaguebot.core.services.retry_service import _post_own_line
+
+        db_path = await _make_db(str(tmp_path))
+        bot = _worker_bot(db_path, _make_text_channel_mock(), configured=False)
+
+        with caplog.at_level("WARNING"):
+            await _post_own_line(bot, "⚠️ Stuck retry entry id=8")
+
+        assert await _row_count(db_path) == 0
+        assert "Stuck retry entry id=8" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_stuck_line_whose_log_channel_cannot_take_it_queues_nothing_more(
+        self, tmp_path, caplog, monkeypatch
+    ):
+        """Through the real router: a row retried RETRY_WARN_THRESHOLD times, the log channel
+        refusing everything. The try fails, the stuck warning is tried and cannot be posted, and
+        goes to the host's log; the queue still holds the one row."""
+        import asyncio
+
+        from leaguebot.core.services.retry_service import attempt_delivery as deliver
+
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 99, "Admin | /module enable weather | Success", "503")
+        [entry] = await get_all_pending(db_path)
+        for _ in range(RETRY_WARN_THRESHOLD):
+            await mark_failed(db_path, entry.id)
+        [entry] = await get_all_pending(db_path)
+        refusing = _make_text_channel_mock(
+            send_side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access")
+        )
+        bot = _worker_bot(db_path, refusing)
+        # The worker's own line is posted in a task of its own: each is kept here and awaited,
+        # so that a line queued by it would be on the queue before the count is read.
+        scheduled: list = []
+        schedule = asyncio.ensure_future
+
+        def keep(awaitable):
+            task = schedule(awaitable)
+            scheduled.append(task)
+            return task
+
+        monkeypatch.setattr(asyncio, "ensure_future", keep)
+
+        with caplog.at_level("WARNING"):
+            assert await deliver(entry, bot) is False
+            await asyncio.gather(*scheduled)
+
+        assert scheduled, "the stuck warning was meant to be tried"
+
+        assert f"Stuck retry entry id={entry.id}" in caplog.text
+        assert await _row_count(db_path) == 1
+
+
+# ---------------------------------------------------------------------------
+# A waiting line goes to the log channel as it is now
+#
+# The retry queue holds log lines alone, and a line is delivered to the log channel set when it is
+# tried: one set again after the old was deleted takes the lines that waited, which would otherwise
+# never be delivered, a stuck warning about each of them posted in the new channel every cycle.
+# ---------------------------------------------------------------------------
+
+def _channels(**by_id) -> "MagicMock":
+    """`get_channel` answering each id given, and None for any other."""
+    return MagicMock(side_effect=lambda channel_id: by_id.get(f"c{channel_id}"))
+
+
+class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
+
+    @pytest.mark.asyncio
+    async def test_a_line_queued_for_a_deleted_channel_is_delivered_to_the_new_one(self, tmp_path):
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 555, "Admin | /module enable weather | Success", "Unknown Channel")
+        [entry] = await get_all_pending(db_path)
+        new = _make_text_channel_mock()
+        bot = _worker_bot(db_path, None)
+        bot.get_channel = _channels(c99=new)
+        bot.fetch_channel = AsyncMock(
+            side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel")
+        )
+
+        assert await attempt_delivery(entry, bot) is True
+
+        assert new.send.await_args_list[0].args[0] == "Admin | /module enable weather | Success"
+        assert await _row_count(db_path) == 0
+
+    @pytest.mark.asyncio
+    async def test_a_line_a_change_saved_is_delivered_to_the_log_channel_set_since(self, tmp_path):
+        """A change's line is queued in its save for the log channel of the moment, 555, and
+        delivered once the save commits: the log channel is 99 by then, and takes it."""
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 555, "Admin | /module enable weather | Success", "")
+        [entry] = await get_all_pending(db_path)
+        new = _make_text_channel_mock()
+        bot = _worker_bot(db_path, None)
+        bot.get_channel = _channels(c99=new)
+        bot.fetch_channel = AsyncMock(
+            side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel")
+        )
+
+        await bot.output_router.deliver_queued([entry.id])
+
+        assert new.send.await_count == 1
+        assert await _row_count(db_path) == 0
+
+    @pytest.mark.asyncio
+    async def test_a_log_channel_that_cannot_be_read_leaves_the_row_and_raises_nothing(
+        self, tmp_path
+    ):
+        """The configuration cannot be read as the row is tried: the row stays, one try counted,
+        and the retry loop that called goes on."""
+        import sqlite3
+
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 555, "Admin | /module enable weather | Success", "503")
+        [entry] = await get_all_pending(db_path)
+        bot = _worker_bot(db_path, _make_text_channel_mock())
+        bot.config_service.get_server_config = AsyncMock(
+            side_effect=sqlite3.OperationalError("database is locked")
+        )
+
+        assert await attempt_delivery(entry, bot) is False
+
+        [after] = await get_all_pending(db_path)
+        assert after.retry_count == 1
+
+    @pytest.mark.asyncio
+    async def test_a_change_s_undelivered_line_warns_about_the_log_channel_as_it_is_now(
+        self, tmp_path
+    ):
+        """A change's line queued for 555 cannot be delivered to the log channel as it is now, 99:
+        the member is warned about 99."""
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 555, "Admin | /module enable weather | Success", "")
+        [entry] = await get_all_pending(db_path)
+        refusing = _make_text_channel_mock(
+            send_side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access")
+        )
+        bot = _worker_bot(db_path, refusing)
+        bot.output_router._warn_member = AsyncMock()
+        interaction = MagicMock()
+
+        await bot.output_router.deliver_queued([entry.id], interaction=interaction)
+
+        bot.output_router._warn_member.assert_awaited_once_with(99, interaction)
+        assert await _row_count(db_path) == 1
+
+
+    @pytest.mark.asyncio
+    async def test_a_change_s_line_kept_when_the_log_channel_cannot_be_read_warns_the_member(
+        self, tmp_path
+    ):
+        """The configuration cannot be read as a change's line queued for 555 is delivered: the
+        line stays kept, and the member is warned all the same, about 555."""
+        import sqlite3
+
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 555, "Admin | /module enable weather | Success", "")
+        [entry] = await get_all_pending(db_path)
+        bot = _worker_bot(db_path, _make_text_channel_mock())
+        bot.config_service.get_server_config = AsyncMock(
+            side_effect=sqlite3.OperationalError("database is locked")
+        )
+        bot.output_router._warn_member = AsyncMock()
+        interaction = MagicMock()
+
+        await bot.output_router.deliver_queued([entry.id], interaction=interaction)
+
+        bot.output_router._warn_member.assert_awaited_once_with(555, interaction)
+        assert await _row_count(db_path) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_change_s_line_whose_failure_cannot_be_counted_still_warns_the_member(
+        self, tmp_path, monkeypatch
+    ):
+        """The log channel refuses a change's line, and the failure cannot then be written to the
+        queue: the member is warned all the same, about the log channel as it is now."""
+        import sqlite3
+
+        from leaguebot.core.services import retry_service
+
+        db_path = await _make_db(str(tmp_path))
+        await enqueue(db_path, 555, "Admin | /module enable weather | Success", "")
+        [entry] = await get_all_pending(db_path)
+        refusing = _make_text_channel_mock(
+            send_side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access")
+        )
+        bot = _worker_bot(db_path, refusing)
+        bot.output_router._warn_member = AsyncMock()
+        monkeypatch.setattr(
+            retry_service, "mark_failed",
+            AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
+        )
+        interaction = MagicMock()
+
+        await bot.output_router.deliver_queued([entry.id], interaction=interaction)
+
+        bot.output_router._warn_member.assert_awaited_once_with(99, interaction)

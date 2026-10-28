@@ -180,7 +180,11 @@ async def mark_failed(db_path: str, entry_id: int, *, reason: str | None = None)
 # ---------------------------------------------------------------------------
 
 async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
-    """Attempt to post entry.content to entry.channel_id, under :func:`delivery_lock`.
+    """Attempt to post entry.content to the log channel as it is now, under :func:`delivery_lock`.
+
+    The log channel set when the row is tried takes it, so that a channel set again after the
+    old was deleted receives the lines that waited for it; before the bot is set up, the row's
+    own channel (``entry.channel_id``) is tried.
 
     The row is read again under the lock, and a row already delivered is left alone (True).
 
@@ -208,33 +212,51 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
         # A row never tried has no reason, and gains the one of its first failure here.
         first_failure = not entry.failure_reason
 
+        # --- The channel: the log channel as it is now ---
+        # A row holds a log line, delivered to the log channel set when it is tried, so that one
+        # set again after the old was deleted takes the lines that waited for it. Before the bot
+        # is set up, the row's own channel is tried. The worker's own lines name this channel,
+        # the one tried, which is the one a reader should look at.
+        target = entry.channel_id
+        try:
+            named = await bot.output_router.log_destination()
+        except Exception as exc:
+            log.warning(
+                "attempt_delivery: cannot read the log channel for entry id=%s: %s",
+                entry.id, exc, exc_info=True,
+            )
+            await mark_failed(db_path, entry.id, reason=str(exc) if first_failure else None)
+            return False
+        if named is not None:
+            target = named
+
         # --- Warn before attempt if threshold already crossed (T017) ---
         if entry.retry_count >= RETRY_WARN_THRESHOLD:
             warn_msg = (
                 f"⚠️ Stuck retry entry id={entry.id}: message to channel "
-                f"<#{entry.channel_id}> (id={entry.channel_id}) has failed "
+                f"<#{target}> (id={target}) has failed "
                 f"{entry.retry_count} time(s) since {discord_ts(entry.enqueued_at)}. "
                 f"Original failure: {entry.failure_reason}"
             )
             _safe_post_log(bot, warn_msg)
 
         # --- Resolve channel ---
-        channel = bot.get_channel(entry.channel_id)
-        if channel is None:
-            try:
-                channel = await bot.fetch_channel(entry.channel_id)
-            except Exception as exc:
-                log.warning(
-                    "attempt_delivery: cannot fetch channel id=%s for entry id=%s: %s",
-                    entry.channel_id, entry.id, exc, exc_info=True,
-                )
-                await mark_failed(db_path, entry.id, reason=str(exc) if first_failure else None)
-                return False
+        try:
+            channel = bot.get_channel(target)
+            if channel is None:
+                channel = await bot.fetch_channel(target)
+        except Exception as exc:
+            log.warning(
+                "attempt_delivery: cannot fetch channel id=%s for entry id=%s: %s",
+                target, entry.id, exc, exc_info=True,
+            )
+            await mark_failed(db_path, entry.id, reason=str(exc) if first_failure else None)
+            return False
 
         if not isinstance(channel, discord.TextChannel):
             log.warning(
                 "attempt_delivery: channel id=%s is not a TextChannel for entry id=%s",
-                entry.channel_id, entry.id,
+                target, entry.id,
             )
             await mark_failed(
                 db_path, entry.id,
@@ -248,7 +270,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
         except Exception as exc:
             log.warning(
                 "attempt_delivery: send failed for entry id=%s channel=%s: %s",
-                entry.id, entry.channel_id, exc, exc_info=True,
+                entry.id, target, exc, exc_info=True,
             )
             await mark_failed(db_path, entry.id, reason=str(exc) if first_failure else None)
             return False
@@ -260,8 +282,8 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
         return True
     now_str = datetime.now(timezone.utc)
     success_msg = (
-        f"\u2705 Retry delivery succeeded for channel <#{entry.channel_id}> "
-        f"(id={entry.channel_id}). "
+        f"\u2705 Retry delivery succeeded for channel <#{target}> "
+        f"(id={target}). "
         f"Original failure: {entry.failure_reason}. "
         f"Retries taken: {entry.retry_count}. "
         f"Delivered at: {discord_ts(now_str)}."
@@ -275,18 +297,31 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
 # ---------------------------------------------------------------------------
 
 def _safe_post_log(bot: "LeagueBot", message: str) -> None:
-    """Schedule a fire-and-forget post_log call.
+    """Schedule a fire-and-forget post of the worker's own *message* (`_post_own_line`).
 
     Uses asyncio.ensure_future so the caller does not need to await it.
-    Failures are swallowed and written to the application log at WARNING level
-    only (T018).
     """
     import asyncio
 
-    async def _post() -> None:
-        try:
-            await bot.output_router.post_log(message)
-        except Exception as exc:
-            log.warning("_safe_post_log: failed to post log notification: %s", exc, exc_info=True)
+    asyncio.ensure_future(_post_own_line(bot, message))
 
-    asyncio.ensure_future(_post())
+
+async def _post_own_line(bot: "LeagueBot", message: str) -> None:
+    """Post one of the worker's own lines, the "Stuck retry entry" warning or the "Retry delivery
+    succeeded" line, to the log channel, **never queueing it** (FR-009).
+
+    It goes through the router's path that neither queues nor warns a member (`post_log` with
+    *channel*, the log channel read from `log_destination`). Queued, a line the log channel could
+    not take would wait beside the row it reports on, and a stuck row would queue a fresh warning
+    on every cycle, each of them a stuck row of its own, for as long as the channel stayed
+    unreachable. A line that cannot be posted, or written before the bot is set up, goes to the
+    host's log at WARNING instead. Never raises.
+    """
+    router = bot.output_router
+    try:
+        channel = await router.log_destination()
+        if channel is not None and await router.post_log(message, channel=channel) is not None:
+            return
+    except Exception:
+        log.warning("_post_own_line: failed to post the retry worker's line", exc_info=True)
+    log.warning("retry worker line not posted to the log channel: %s", message)
