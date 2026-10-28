@@ -383,7 +383,7 @@ def test_losing_the_marker_and_changing_the_test_is_a_modification(repo):
 
 
 @pytest.mark.parametrize("issue", ["4", None], ids=["another issue", "no issue"])
-def test_losing_another_issue_s_marker_is_a_modification(repo, issue):
+def test_losing_a_marker_not_of_the_issue_is_a_modification(repo, issue):
     result = _changes(repo, {FILE: MARKED}, {FILE: "import pytest\n" + ONE_TEST}, issue=issue)
     assert _tests(result) == [(f"{FILE}::test_a", "modified")]
 
