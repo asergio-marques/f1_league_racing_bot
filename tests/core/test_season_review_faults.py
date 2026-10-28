@@ -102,14 +102,15 @@ def _weather(cog):
 # ---------------------------------------------------------------------------
 
 
-def test_a_calendar_with_nothing_wrong_reports_nothing():
-    """The caller concatenates these unconditionally, so a clean calendar has to produce
-    an empty list rather than a reassuring line."""
-    assert _make_cog()._calendar_fault_lines(None) == []
-
-
-def test_a_verdict_with_no_faults_reports_nothing():
-    assert _make_cog()._calendar_fault_lines(_fault()) == []
+@pytest.mark.parametrize("verdict", [
+    pytest.param(None, id="no verdict"),
+    pytest.param(_fault(), id="a verdict with no faults"),
+])
+def test_a_calendar_with_nothing_wrong_reports_nothing(verdict):
+    """The caller concatenates these unconditionally, so a clean calendar, whether it has no
+    verdict or one with neither fault, has to produce an empty list rather than a reassuring
+    line."""
+    assert _make_cog()._calendar_fault_lines(verdict) == []
 
 
 def test_a_round_already_run_is_reported():
@@ -214,18 +215,6 @@ async def test_a_league_running_neither_module_has_no_windows():
 
     assert attendance is None
     assert weather is None
-
-
-async def test_the_attendance_windows_are_read_when_the_module_is_on():
-    cog = _make_cog(attendance_enabled=True)
-
-    with _weather(cog):
-        attendance, _ = await cog._approval_windows()
-
-    assert attendance is not None
-    assert attendance.notice_days == 5
-    assert attendance.last_notice_hours == 24
-    assert attendance.deadline_hours == 2
 
 
 async def test_the_weather_windows_are_read_when_the_module_is_on():

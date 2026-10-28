@@ -501,12 +501,6 @@ def test_a_window_alone_yields_the_window_line_alone():
     assert "already inside its check-in call" in lines[0]
 
 
-def test_no_fault_at_all_is_no_lines():
-    from leaguebot.core.cogs.season_cog import SeasonCog
-
-    assert SeasonCog.__new__(SeasonCog)._calendar_fault_lines(None) == []
-
-
 def test_a_naive_now_is_read_as_utc_too():
     """`overdue_windows` normalises its ``now``; this half must not diverge from it.
 

@@ -79,31 +79,27 @@ DIVISIONS = [
 # ── 1. Divisions may differ in composition (FR-019) ───────────────────────
 
 
-@pytest.mark.asyncio
-async def test_divisions_fielding_different_teams_pass(tmp_path):
-    bot = _bot(
-        tmp_path,
-        DIVISIONS,
+@pytest.mark.parametrize("teams_by_division", [
+    pytest.param(
         {
             10: [_team("Red Bull", 2), _team("Ferrari", 2)],
             20: [_team("Haas", 2), _team("Alpine", 2)],
         },
-    )
-
-    assert await _problems(bot) == []
-
-
-@pytest.mark.asyncio
-async def test_divisions_fielding_different_numbers_of_teams_pass(tmp_path):
-    """The very thing the withdrawn uniformity rule refused."""
-    bot = _bot(
-        tmp_path,
-        DIVISIONS,
+        id="different team names",
+    ),
+    pytest.param(
         {
             10: [_team("Red Bull", 2), _team("Ferrari", 2), _team("Haas", 2)],
             20: [_team("Alpine", 1)],
         },
-    )
+        id="different numbers of teams",
+    ),
+])
+@pytest.mark.asyncio
+async def test_divisions_fielding_different_teams_pass(tmp_path, teams_by_division):
+    """Divisions may field teams of other names, or another number of them: the second is the
+    very thing the withdrawn uniformity rule refused."""
+    bot = _bot(tmp_path, DIVISIONS, teams_by_division)
 
     assert await _problems(bot) == []
 
