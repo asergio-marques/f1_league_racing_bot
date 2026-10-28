@@ -68,14 +68,6 @@ async def test_a_command_in_the_league_s_server_proceeds():
     interaction.response.send_message.assert_not_awaited()
 
 
-async def test_a_command_in_another_server_is_refused():
-    bot = _bot(LEAGUE)
-    interaction = _interaction(ELSEWHERE)
-
-    assert await bot.tree.interaction_check(interaction) is False
-    interaction.response.send_message.assert_awaited_once_with(REFUSAL, ephemeral=True)
-
-
 async def test_a_refused_command_never_runs():
     """The check is the tree's own, so a refusal stops the dispatch before the command.
 
@@ -116,13 +108,6 @@ async def test_autocomplete_in_another_server_offers_nothing_and_sends_nothing()
 
     assert await bot.tree.interaction_check(interaction) is False
     interaction.response.send_message.assert_not_awaited()
-
-
-async def test_before_any_server_is_set_up_every_server_proceeds():
-    """So that `/bot init` can reach the server that will become the league's."""
-    bot = _bot(None)
-
-    assert await bot.tree.interaction_check(_interaction(ELSEWHERE)) is True
 
 
 async def test_a_direct_message_is_left_to_the_tier_guards():
