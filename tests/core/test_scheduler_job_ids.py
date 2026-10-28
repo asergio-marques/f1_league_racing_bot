@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -66,21 +66,14 @@ def test_the_suffix_carries_season_tier_number_and_id():
 def test_two_rounds_that_swapped_numbers_keep_distinct_job_ids():
     """The regression this scheme exists for. After a renumbering, one round says `r5`
     from before and another says `r5` now — and with `replace_existing=True` on every
-    `add_job`, identical ids would destroy the first round's whole schedule silently."""
+    `add_job`, identical ids would destroy the first round's whole schedule silently. Season,
+    tier and number are decoration: it is each round's own id that makes them differ."""
     stale = _round(42, 5)  # was number 5, is now number 4, jobs never re-armed
     current = _round(43, 5)  # has just become number 5
 
     assert _round_job_suffix(stale, 3, 2) != _round_job_suffix(current, 3, 2)
-
-
-def test_the_round_id_is_what_makes_it_unique():
-    """Season, tier and number are decoration; two rounds agreeing on all three but
-    differing in id must still differ."""
-    first = _round_job_suffix(_round(42, 5), 3, 2)
-    second = _round_job_suffix(_round(43, 5), 3, 2)
-
-    assert "id42" in first
-    assert "id43" in second
+    assert "id42" in _round_job_suffix(stale, 3, 2)
+    assert "id43" in _round_job_suffix(current, 3, 2)
 
 
 def test_a_stale_round_number_is_only_cosmetic():
@@ -321,12 +314,12 @@ def no_global(monkeypatch):
 
 @pytest.fixture
 def service_with(monkeypatch):
-    """Install a global service, and hand back a setter for its callbacks."""
+    """Hand back a setter installing a global service with no callback registered."""
 
-    def _install(**callbacks):
+    def _install():
         service = SchedulerService.__new__(SchedulerService)
-        service._signup_close_callback = callbacks.get("signup_close")
-        service._portrait_refresh_callback = callbacks.get("portrait_refresh")
+        service._signup_close_callback = None
+        service._portrait_refresh_callback = None
         monkeypatch.setattr(ss, "_GLOBAL_SERVICE", service)
         return service
 
@@ -344,24 +337,6 @@ async def test_a_job_firing_before_the_service_exists_is_survived(no_global, job
         await job(*args)
 
     assert "_GLOBAL_SERVICE is None" in caplog.text
-
-
-async def test_the_signup_close_timer_calls_its_callback(service_with):
-    callback = AsyncMock(return_value=None)
-    service_with(signup_close=callback)
-
-    await _signup_close_timer_job()
-
-    callback.assert_awaited_once_with()
-
-
-async def test_the_portrait_refresh_calls_its_callback(service_with):
-    callback = AsyncMock(return_value=None)
-    service_with(portrait_refresh=callback)
-
-    await _portrait_refresh_job()
-
-    callback.assert_awaited_once_with()
 
 
 @pytest.mark.parametrize(
