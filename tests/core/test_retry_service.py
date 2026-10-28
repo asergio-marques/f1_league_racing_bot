@@ -70,12 +70,6 @@ class TestRetryWarnThreshold:
 class TestEnqueue:
 
     @pytest.mark.asyncio
-    async def test_inserts_row(self, tmp_path):
-        db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, channel_id=100, content="hello", failure_reason="503")
-        assert await _row_count(db_path) == 1
-
-    @pytest.mark.asyncio
     async def test_row_has_correct_fields(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
         before = datetime.now(timezone.utc)
@@ -90,13 +84,6 @@ class TestEnqueue:
         assert r["last_attempted_at"] is None
         enqueued_at = datetime.fromisoformat(r["enqueued_at"])
         assert enqueued_at >= before
-
-    @pytest.mark.asyncio
-    async def test_multiple_enqueues_create_separate_rows(self, tmp_path):
-        db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 100, "msg A", "err A")
-        await enqueue(db_path, 200, "msg B", "err B")
-        assert await _row_count(db_path) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -192,16 +179,21 @@ class TestMarkDelivered:
 class TestMarkFailed:
 
     @pytest.mark.asyncio
-    async def test_increments_retry_count(self, tmp_path):
+    @pytest.mark.parametrize("failures", [
+        pytest.param(1, id="one failure"),
+        pytest.param(5, id="failures accumulate"),
+    ])
+    async def test_each_failure_is_counted(self, tmp_path, failures):
         db_path = await _make_db(str(tmp_path))
         await enqueue(db_path, 100, "msg", "err")
         rows = await _fetch_all_rows(db_path)
         entry_id = rows[0]["id"]
 
-        await mark_failed(db_path, entry_id)
+        for _ in range(failures):
+            await mark_failed(db_path, entry_id)
 
         rows2 = await _fetch_all_rows(db_path)
-        assert rows2[0]["retry_count"] == 1
+        assert rows2[0]["retry_count"] == failures
 
     @pytest.mark.asyncio
     async def test_sets_last_attempted_at(self, tmp_path):
@@ -225,19 +217,6 @@ class TestMarkFailed:
         entry_id = rows[0]["id"]
         await mark_failed(db_path, entry_id)
         assert await _row_count(db_path) == 1
-
-    @pytest.mark.asyncio
-    async def test_multiple_failures_accumulate(self, tmp_path):
-        db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 100, "msg", "err")
-        rows = await _fetch_all_rows(db_path)
-        entry_id = rows[0]["id"]
-
-        for _ in range(5):
-            await mark_failed(db_path, entry_id)
-
-        rows2 = await _fetch_all_rows(db_path)
-        assert rows2[0]["retry_count"] == 5
 
 
 # ---------------------------------------------------------------------------

@@ -73,18 +73,20 @@ def _make_bot(db_path: str, channel: "discord.TextChannel | None" = None) -> Mag
 class TestOutputRouterEnqueuesOnFailure:
 
     @pytest.mark.asyncio
-    async def test_http_exception_enqueues_row(self, tmp_path):
-        """A discord.HTTPException in _send should enqueue a pending_messages row."""
+    @pytest.mark.parametrize("error", [
+        pytest.param(discord.HTTPException(MagicMock(status=503), "upstream overflow"),
+                     id="http exception"),
+        pytest.param(discord.Forbidden(MagicMock(status=403), "missing access"), id="forbidden"),
+    ])
+    async def test_an_http_exception_or_forbidden_enqueues_row(self, tmp_path, error):
+        """A discord.HTTPException in _send should enqueue a pending_messages row, and a
+        discord.Forbidden should too."""
         db_path = await _make_db(str(tmp_path))
 
         mock_bot = MagicMock()
         router = OutputRouter(mock_bot, mock_bot.config_service, retry_db_path=db_path)
 
-        mock_channel = _make_text_channel_mock(
-            send_side_effect=discord.HTTPException(
-                MagicMock(status=503), "upstream overflow"
-            )
-        )
+        mock_channel = _make_text_channel_mock(send_side_effect=error)
         mock_bot.get_channel.return_value = mock_channel
 
         result = await router._send(1234, "hello", enqueue_on_failure=True, fallback_label="forecast")
@@ -93,53 +95,32 @@ class TestOutputRouterEnqueuesOnFailure:
         assert await _row_count(db_path) == 1
 
     @pytest.mark.asyncio
-    async def test_forbidden_enqueues_row(self, tmp_path):
-        """A discord.Forbidden in _send should also enqueue."""
+    @pytest.mark.parametrize("with_retry_db, enqueue_on_failure, label", [
+        # Without retry_db_path, failures are logged but not enqueued.
+        pytest.param(False, True, "forecast", id="no retry_db_path"),
+        # The factory reset's line to a given channel asks for no retry, and gets none.
+        pytest.param(True, False, "log", id="the caller wants none"),
+    ])
+    async def test_no_enqueue_without_a_retry_db_path_or_when_the_caller_wants_none(
+        self, tmp_path, with_retry_db, enqueue_on_failure, label
+    ):
+        """A failed send queues nothing where the router has no retry_db_path, or where the
+        caller asks for no retry."""
         db_path = await _make_db(str(tmp_path))
 
         mock_bot = MagicMock()
-        router = OutputRouter(mock_bot, mock_bot.config_service, retry_db_path=db_path)
-
-        mock_channel = _make_text_channel_mock(
-            send_side_effect=discord.Forbidden(MagicMock(status=403), "missing access")
+        router = OutputRouter(
+            mock_bot, mock_bot.config_service, retry_db_path=db_path if with_retry_db else None
         )
-        mock_bot.get_channel.return_value = mock_channel
-
-        await router._send(1234, "hello", enqueue_on_failure=True, fallback_label="forecast")
-
-        assert await _row_count(db_path) == 1
-
-    @pytest.mark.asyncio
-    async def test_no_enqueue_when_retry_db_path_is_none(self, tmp_path):
-        """Without retry_db_path, failures are logged but not enqueued."""
-        db_path = await _make_db(str(tmp_path))
-
-        mock_bot = MagicMock()
-        router = OutputRouter(mock_bot, mock_bot.config_service, retry_db_path=None)
 
         mock_channel = _make_text_channel_mock(
             send_side_effect=discord.HTTPException(MagicMock(status=503), "error")
         )
         mock_bot.get_channel.return_value = mock_channel
 
-        await router._send(1234, "hello", enqueue_on_failure=True, fallback_label="forecast")
-
-        assert await _row_count(db_path) == 0
-
-    @pytest.mark.asyncio
-    async def test_no_enqueue_when_the_caller_does_not_want_one(self, tmp_path):
-        """The factory reset's line to a given channel asks for no retry, and gets none."""
-        db_path = await _make_db(str(tmp_path))
-
-        mock_bot = MagicMock()
-        router = OutputRouter(mock_bot, mock_bot.config_service, retry_db_path=db_path)
-
-        mock_channel = _make_text_channel_mock(
-            send_side_effect=discord.HTTPException(MagicMock(status=503), "error")
+        await router._send(
+            1234, "hello", enqueue_on_failure=enqueue_on_failure, fallback_label=label
         )
-        mock_bot.get_channel.return_value = mock_channel
-
-        await router._send(1234, "hello", enqueue_on_failure=False, fallback_label="log")
 
         assert await _row_count(db_path) == 0
 
@@ -367,12 +348,14 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
         assert await _row_count(db_path) == 0
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("fault", ["refused", "channel-gone", "not-a-text-channel"])
+    @pytest.mark.parametrize(
+        "fault", ["refused", "channel-gone", "not-a-text-channel", "no-server-config"]
+    )
     async def test_its_own_line_the_log_channel_cannot_take_is_not_queued(
         self, tmp_path, caplog, fault
     ):
-        """The log channel refuses the line, is gone, or is no text channel: no row is queued,
-        and the line is written to the host's log."""
+        """The log channel refuses the line, is gone, or is no text channel, or the bot is not
+        yet set up: no row is queued, and the line is written to the host's log."""
         from leaguebot.core.services.retry_service import _post_own_line
 
         db_path = await _make_db(str(tmp_path))
@@ -382,9 +365,11 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
             )
         elif fault == "channel-gone":
             channel = None
-        else:
+        elif fault == "not-a-text-channel":
             channel = MagicMock(spec=discord.VoiceChannel)
-        bot = _worker_bot(db_path, channel)
+        else:
+            channel = _make_text_channel_mock()
+        bot = _worker_bot(db_path, channel, configured=fault != "no-server-config")
         bot.fetch_channel = AsyncMock(
             side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel")
         )
@@ -394,21 +379,6 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
 
         assert await _row_count(db_path) == 0
         assert "Stuck retry entry id=7" in caplog.text
-
-    @pytest.mark.asyncio
-    async def test_its_own_line_before_the_bot_is_set_up_goes_to_the_host_log(
-        self, tmp_path, caplog
-    ):
-        from leaguebot.core.services.retry_service import _post_own_line
-
-        db_path = await _make_db(str(tmp_path))
-        bot = _worker_bot(db_path, _make_text_channel_mock(), configured=False)
-
-        with caplog.at_level("WARNING"):
-            await _post_own_line(bot, "⚠️ Stuck retry entry id=8")
-
-        assert await _row_count(db_path) == 0
-        assert "Stuck retry entry id=8" in caplog.text
 
     @pytest.mark.asyncio
     async def test_a_stuck_line_whose_log_channel_cannot_take_it_queues_nothing_more(
