@@ -39,9 +39,9 @@ same lines; and `noSource`, the tests that run none. `--scope` keeps candidates 
 node ids start with the prefix given, while still finding containers anywhere in the data.
 
 **One run serves a prune worked in steps.** Where tests have been deleted since the run, pass
-`--collected` a file of the node ids the suite now collects (`pytest --collect-only -q`): a test
-missing from it is neither listed nor offered as a container, so no candidate is judged against a
-test already gone. Removing tests only takes containers away, so the rest of the data still holds.
+`--collected` a file of the node ids the suite now collects (`pytest --collect-only -q`): a test,
+or a case of one, missing from it is neither listed nor offered as a container, so no candidate is
+judged against a test already gone. Removing tests only takes containers away, so the rest of the data still holds.
 
 This is a tool for pruning the suite by hand, and is not unit-tested (`CLAUDE.md`, "Testing").
 """
@@ -114,12 +114,17 @@ def _function_of(nodeid: str) -> str:
     return nodeid.split("[", 1)[0]
 
 
-def _lines_by_test(data: str) -> dict[str, frozenset[tuple[str, int]]]:
+def _lines_by_test(
+    data: str, collected: set[str] | None = None
+) -> dict[str, frozenset[tuple[str, int]]]:
     """Read the lines each test function's calls ran, as `(file, line)` pairs, keyed by its id.
 
     A parametrised test is read as one: its cases are meant to run the same lines with other
     values, and as cases they would contain each other and fill the listing with the very repeats
     parametrising was written to make. Its lines are those any of its cases ran.
+
+    Where *collected* is given, only the cases it holds are read, case by case before they are
+    grouped: a case dropped since the run must not leave its lines with a test that kept others.
     """
     from coverage import CoverageData
 
@@ -128,6 +133,8 @@ def _lines_by_test(data: str) -> dict[str, frozenset[tuple[str, int]]]:
     root = str(Path.cwd()) + os.sep
     lines: dict[str, set[tuple[str, int]]] = defaultdict(set)
     tests = {c for c in covdata.measured_contexts() if c and not c.startswith((SETUP, TEARDOWN))}
+    if collected is not None:
+        tests &= collected
     for path in covdata.measured_files():
         short = path[len(root):] if path.startswith(root) else path
         for lineno, contexts in covdata.contexts_by_lineno(path).items():
@@ -136,7 +143,8 @@ def _lines_by_test(data: str) -> dict[str, frozenset[tuple[str, int]]]:
                     lines[_function_of(context)].add((short, lineno))
     called = _called_path(data)
     if called.exists():
-        tests |= set(json.loads(called.read_text()))
+        called_tests = set(json.loads(called.read_text()))
+        tests |= called_tests if collected is None else called_tests & collected
     return {test: frozenset(lines.get(test, ())) for test in {_function_of(t) for t in tests}}
 
 
@@ -147,12 +155,9 @@ def _file_of(nodeid: str) -> str:
 def listing(data: str, scope: str, collected: set[str] | None = None) -> dict:
     """Return the candidate list for the tests under *scope*. See the module docstring.
 
-    Where *collected* is given, only the test functions it holds a case of are read.
+    Where *collected* is given, only the cases it holds are read.
     """
-    by_test = _lines_by_test(data)
-    if collected is not None:
-        present = {_function_of(t) for t in collected}
-        by_test = {t: lines for t, lines in by_test.items() if t in present}
+    by_test = _lines_by_test(data, collected)
     by_line: dict[tuple[str, int], set[str]] = defaultdict(set)
     for test, lines in by_test.items():
         for line in lines:
