@@ -469,48 +469,6 @@ async def test_a_command_with_a_file_defers_and_imports(tmp_path):
     assert ("FEATURE_RACE", 1, 25) in await _rows(league.db_path)
 
 
-async def test_an_oversized_file_is_refused_before_it_is_parsed(tmp_path):
-    """A points config is a few hundred rows; anything past 100 KB is the wrong file rather
-    than a big one, and parsing it first is how a wrong file becomes a slow failure."""
-    league = await _league(tmp_path)
-
-    asked = await _xml_import_command(league, file=_attachment(b"<config/>" + b"x" * 100_001))
-
-    assert "too large" in _replied(asked)
-    assert await _rows(league.db_path) == []
-
-
-async def test_an_empty_file_is_named_as_empty(tmp_path):
-    """Rather than as an XML syntax error at byte 0, which sends a manager looking for a
-    fault in a file that has nothing in it at all."""
-    league = await _league(tmp_path)
-
-    asked = await _xml_import_command(league, file=_attachment(b""))
-
-    assert "empty" in _replied(asked)
-
-
-async def test_a_file_that_is_not_utf8_is_named_as_such(tmp_path):
-    """A config exported from a Windows editor in the wrong encoding is a real thing to
-    meet, and "could not be decoded" is what tells a manager to re-save it."""
-    league = await _league(tmp_path)
-
-    asked = await _xml_import_command(league, file=_attachment(b"\xff\xfe<config/>"))
-
-    assert "UTF-8" in _replied(asked)
-
-
-async def test_the_command_is_refused_while_the_module_is_off(tmp_path):
-    """Importing points into a module nobody is running configures something no code reads,
-    and the gate runs before either path is chosen."""
-    league = await _league(tmp_path, enabled=False)
-
-    asked = await _import(league)
-
-    asked.response.send_modal.assert_not_awaited()
-    assert await _rows(league.db_path) == []
-
-
 async def test_the_modal_defers_before_importing(tmp_path):
     """The modal path cannot defer in the command — `send_modal` has to be the first
     response — so the deferral moves into `on_submit`, where the slow read is; the queue's
@@ -551,11 +509,20 @@ async def test_every_xml_import_refusal_reaches_the_log_channel(
     tmp_path, raw, with_config, enabled, said_
 ):
     """Each refusal answers the manager at once as before, queues and saves nothing, and writes
-    exactly one line in the standard refusal form, its detail as the reason."""
+    exactly one line in the standard refusal form, its detail as the reason.
+
+    A file past 100 KB is refused before it is parsed, since parsing it first is how a wrong
+    file becomes a slow failure. An empty file is named as empty, rather than as an XML syntax
+    error at byte 0 that sends a manager looking for a fault in a file with nothing in it. A
+    file exported in the wrong encoding, as a Windows editor can, is named as not UTF-8, which
+    is what tells a manager to re-save it. With the module off an import would configure
+    something no code reads, and the gate runs before either path is chosen, so a file
+    attached opens no form."""
     league = await _league(tmp_path, with_config=with_config, enabled=enabled)
 
     asked = await _xml_import_command(league, file=_attachment(raw))
 
+    asked.response.send_modal.assert_not_awaited()
     assert said_ in _replied(asked)
     assert await _rows(league.db_path) == []
     assert await change_rows(league.db_path) == []
