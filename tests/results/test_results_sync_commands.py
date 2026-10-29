@@ -229,10 +229,10 @@ async def _league(tmp_path, *, results: bool = True, status: str = "ACTIVE",
     return league
 
 
-async def _toggled(league, *, division="Pro"):
-    """Run `/results reserves toggle` for *division* as Admin on *league*, then the queue."""
+async def _toggled(league):
+    """Run `/results reserves toggle` for Pro as Admin on *league*, then the queue."""
     asked = member_asks(league.bot, "results reserves toggle")
-    await _toggle(ResultsCog(league.bot), asked, division=division)
+    await _toggle(ResultsCog(league.bot), asked, division="Pro")
     return asked
 
 
