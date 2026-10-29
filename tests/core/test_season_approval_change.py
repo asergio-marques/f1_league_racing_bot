@@ -1535,7 +1535,11 @@ async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
     await discard_job(league.bot)
 
     assert APPROVED in reply(press)
-    assert any(bullet.startswith(line) for bullet in _not_done(reply(press)))
+    if job == "delete_batch_notice":
+        # The bullet goes on to link the notice that stands, so it is matched as far as the link.
+        assert any(bullet.startswith(line) for bullet in _not_done(reply(press)))
+    else:
+        assert line in _not_done(reply(press))
     confirmed = _confirmed_lines(league)
     logged = line.replace(f"<@{LEWIS}>", f"`<@{LEWIS}>`")  # the log's mentions are in backticks
     assert len(confirmed) == 1 and f"\n  not done: {logged}" in confirmed[0]
