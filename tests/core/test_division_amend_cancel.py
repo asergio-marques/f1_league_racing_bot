@@ -9,8 +9,8 @@ simply go. Once the season is ACTIVE that is no longer true, and `/division canc
 irreversible, confirmation-guarded alternative: it stands the division down, cancels every
 scheduled job it owns and tells the drivers, rather than removing rows that results and
 standings now point at. Each command's own refusal names itself, so a manager who reached for
-the wrong one is told which one they are in — four separate tests, because a reader collapsing
-them into one shared guard would lose exactly that.
+the wrong one is told which one they are in — each pinned word for word by a case of its own,
+because a reader collapsing them into one shared guard would lose exactly that.
 
 **A name is a division's identity in every command that follows.** They all resolve a division
 by name, since a slash command takes a name and not an id, so rename and amend both refuse a
@@ -393,30 +393,32 @@ async def test_a_division_may_be_renamed_to_a_variant_of_its_own_name(tmp_path):
     cog.bot.season_service.rename_division.assert_awaited_once_with(DIVISION_ID, "PRO")
 
 
-async def test_the_rename_reaches_the_pending_config(tmp_path):
+@pytest.mark.parametrize(
+    "divisions, renamed",
+    [
+        pytest.param(
+            lambda: [PendingDivision(name="Pro", tier=1), PendingDivision(name="Am", tier=2)],
+            ["Elite", "Am"],
+            id="another_division",
+        ),
+        pytest.param(
+            lambda: [PendingDivision(name="Pro"), PendingDivision(name="Pro Am")],
+            ["Elite", "Pro Am"],
+            id="a_name_containing_the_old_one",
+        ),
+    ],
+)
+async def test_the_rename_reaches_the_pending_config(tmp_path, divisions, renamed):
     """Renamed in place rather than reloaded, because the pending division carries rounds a
-    manager may have typed and not yet committed."""
+    manager may have typed and not yet committed. Only the renamed division changes: another
+    division, even one whose name contains the old one, is left alone."""
     db_path = await _make_db(tmp_path)
-    cfg = PendingConfig(
-        divisions=[PendingDivision(name="Pro", tier=1), PendingDivision(name="Am", tier=2)],
-    )
+    cfg = PendingConfig(divisions=divisions())
     cog = _make_cog(db_path, cfg=cfg)
 
     await _rename(cog, _interaction())
 
-    assert [d.name for d in cfg.divisions] == ["Elite", "Am"]
-
-
-async def test_only_the_renamed_division_changes_in_the_pending_config(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cfg = PendingConfig(
-        divisions=[PendingDivision(name="Pro"), PendingDivision(name="Pro Am")],
-    )
-    cog = _make_cog(db_path, cfg=cfg)
-
-    await _rename(cog, _interaction())
-
-    assert [d.name for d in cfg.divisions] == ["Elite", "Pro Am"]
+    assert [d.name for d in cfg.divisions] == renamed
 
 
 async def test_the_rename_is_logged_with_both_names(tmp_path):
@@ -639,19 +641,6 @@ async def test_cancelling_asks_the_queue_with_the_division(tmp_path):
     cog.bot.scheduler_service.cancel_round.assert_not_called()
     cog.bot.scheduler_service.cancel_rounds.assert_not_called()
     cog.bot.season_service.cancel_division.assert_not_awaited()
-
-
-async def test_cancelling_needs_an_active_season(tmp_path):
-    """There is no running division to stand down; in setup `/division delete` is the one
-    that applies."""
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_noseason")
-    cog = _make_cog(db_path, season=None)
-    interaction = _interaction()
-
-    await _cancel(cog, interaction)
-
-    assert "only while the season is ongoing" in _replied(interaction)
-    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_an_archived_season_cannot_be_cancelled_into(tmp_path):
@@ -1135,7 +1124,8 @@ async def _cancel_elite(cog, interaction):
 async def test_every_division_cancel_refusal_is_recorded(tmp_path, run, arranged, reply):
     """A season being raced holds division Pro, unless the case says otherwise. The admin (the
     manager here, id 77) runs /division cancel on Pro and is refused before the change queue is
-    asked, in five cases: typing 'confirm' rather than CONFIRM; with no season being raced; on a
+    asked, in five cases: typing 'confirm' rather than CONFIRM; with no season being raced (there
+    is no running division to stand down; in setup `/division delete` is the one that applies); on a
     season whose divisions are all done (pending completion); on a season archived as completed;
     and naming division Elite, which does not exist. The member gets today's reply word for word
     and nothing else; nothing is deferred and nothing asked of the queue. The log channel gets
