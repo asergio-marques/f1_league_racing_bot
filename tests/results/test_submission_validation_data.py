@@ -422,6 +422,7 @@ async def test_a_round_with_no_other_sessions_yields_nothing(tmp_path):
         ("PRO", "pro"),
         ("Pro & Am", "pro--am"),
         ("Division #1", "division-1"),
+        ("Division 1", "division-1"),
         ("Am/Pro", "ampro"),
     ],
 )

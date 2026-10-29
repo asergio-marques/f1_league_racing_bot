@@ -40,7 +40,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.services.result_submission_service import (
-    _make_slug,
     is_channel_in_penalty_review,
     is_submission_open,
 )
@@ -170,12 +169,6 @@ async def _pro_rows(league: SeasonLeague) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # The name
 # ---------------------------------------------------------------------------
-
-
-def test_the_channel_name_carries_the_season_division_and_round():
-    """A league runs several of these at once and they are only distinguishable by name in
-    the channel list."""
-    assert _make_slug("Division 1")
 
 
 async def test_the_division_is_slugged_into_the_name(tmp_path):
