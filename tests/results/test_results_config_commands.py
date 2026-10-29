@@ -168,7 +168,9 @@ async def test_removing_is_refused_while_the_module_is_disabled(tmp_path):
 
 async def test_a_configuration_is_created(tmp_path):
     """Admin adds 100%: acknowledged at once, nothing created until the change runs; then the
-    configuration stands and the reply names it."""
+    configuration stands and the reply names it and says its positions start at zero — a
+    manager who did not know would think the command had half-worked, and would go looking for
+    the points it had invented."""
     league = await _league(tmp_path, config=False)
 
     asked = await _add(league)
@@ -177,41 +179,7 @@ async def test_a_configuration_is_created(tmp_path):
     assert await _held(league.db_path) == []
     await run_queue(league.bot)
     assert await _held(league.db_path) == [CONFIG]
-    assert CONFIG in last_said(asked)
-
-
-async def test_a_new_configuration_says_its_positions_start_at_zero(tmp_path):
-    """A manager who did not know would think the command had half-worked, and would go
-    looking for the points it had invented."""
-    league = await _league(tmp_path, config=False)
-
-    asked = await _add(league)
-    await run_queue(league.bot)
-
     assert last_said(asked) == f"✅ Config **{CONFIG}** created. All positions default to 0 points."
-
-
-async def test_a_duplicate_name_is_refused(tmp_path):
-    """100% already exists: refused at once, nothing queued."""
-    league = await _league(tmp_path)
-
-    asked = await _add(league)
-
-    assert said(asked) == [f"❌ A config named **{CONFIG}** already exists on this server."]
-    assert await change_rows(league.db_path) == []
-
-
-async def test_a_refused_creation_is_recorded_as_a_refusal(tmp_path):
-    """Nothing changed, so the log records the refusal and its reason, never a creation."""
-    league = await _league(tmp_path)
-
-    await _add(league)
-    await run_queue(league.bot)
-
-    assert await log_lines(league) == [
-        f"⛔ `/results config add` refused for {NAMED} — "
-        f"A config named **{CONFIG}** already exists on this server."
-    ]
 
 
 async def test_a_created_configuration_is_logged_by_name(tmp_path):

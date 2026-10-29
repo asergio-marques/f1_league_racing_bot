@@ -100,6 +100,10 @@ def _case(case_id, command, run, reply, *, season_status="SETUP", at_once=True, 
             f"❌ A config named **{CONFIG}** already exists on this server.",
         ),
         _case(
+            "add-duplicate-no-season", "results config add", _run("config_add", CONFIG),
+            f"❌ A config named **{CONFIG}** already exists on this server.", season_status=None,
+        ),
+        _case(
             "remove-not-found", "results config remove", _run("config_remove", MISSING),
             f"❌ Config **{MISSING}** not found.",
         ),
