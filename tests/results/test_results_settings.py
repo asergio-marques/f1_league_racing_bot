@@ -1030,15 +1030,21 @@ async def test_an_xml_form_submitted_after_the_module_was_turned_off_is_refused(
          "ℹ️ Nothing changed: every position pasted already stands"),
         (_form("xml", XML_HELD), {}, "/results config xml-import",
          "ℹ️ Nothing changed: every value imported already stands"),
+        (_form("amend", "1, 25"), AMENDING, "/results amend bulk-session",
+         "ℹ️ Nothing changed: every position pasted already stands"),
     ],
-    ids=["config-bulk-session", "amend-bulk-session", "config-xml-import"],
+    ids=[
+        "config-bulk-session", "amend-bulk-session", "config-xml-import",
+        "amend-bulk-session-one-line",
+    ],
 )
 async def test_a_paste_or_import_of_values_already_held_changes_nothing_and_says_so(
     tmp_path, ask, setup, command, reply
 ):
-    """A bulk paste, an amend bulk paste and an XML import of P1 25 and P2 18, which Standard
-    already pays (or the store already stages): answered that nothing changed, recorded with a
-    "Nothing changed" line, and no audit entry written."""
+    """A bulk paste, an amend bulk paste and an XML import of P1 25 and P2 18, or an amend bulk
+    paste of P1 25 alone, which Standard already pays (or the store already stages): answered
+    that nothing changed, recorded with a "Nothing changed" line, and no audit entry written; an
+    amend bulk paste leaves the modified flag clear."""
     league = await _league(tmp_path, **setup)
 
     asked = await ask(league)
@@ -1048,6 +1054,7 @@ async def test_a_paste_or_import_of_values_already_held_changes_nothing_and_says
     lines = await log_lines(league)
     assert len(lines) == 1 and lines[0].startswith(f"{NAMED} | {command} | Nothing changed")
     assert await audit_rows(league.db_path) == []
+    assert await _rows(league.db_path, MODE) == ([(1, 0)] if setup else [])
 
 
 async def test_attaching_a_configuration_already_attached_changes_nothing_and_says_so(tmp_path):
@@ -1066,18 +1073,6 @@ async def test_attaching_a_configuration_already_attached_changes_nothing_and_sa
     assert lines[0].startswith(f"{NAMED} | /results config append | Nothing changed")
     assert await audit_rows(league.db_path) == []
     assert await _rows(league.db_path, LINKS) == [(SEASON_ID, CONFIG)]
-
-
-async def test_an_amend_bulk_paste_of_values_already_staged_leaves_the_modified_flag(tmp_path):
-    """The amend bulk form pasting P1 25, which the store already stages, with the modified flag
-    clear: the flag stays clear and no audit entry is written."""
-    league = await _league(tmp_path, **AMENDING)
-
-    await _form("amend", "1, 25")(league)
-    await run_queue(league.bot)
-
-    assert await _rows(league.db_path, MODE) == [(1, 0)]
-    assert await audit_rows(league.db_path) == []
 
 
 @pytest.mark.parametrize(
