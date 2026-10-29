@@ -321,25 +321,12 @@ async def test_the_review_prompt_is_refreshed(tmp_path):
     refresh.assert_awaited_once()
 
 
-async def test_the_justification_is_logged(tmp_path):
-    """A pardon is a steward's decision about one driver, and the reasoning belongs with the
-    audit rather than in a channel the division reads."""
-    db_path = await _make_db(tmp_path, name="pardon_log")
-    state = _state(db_path)
-
-    await _submit(state, justification="Power cut on the night")
-
-    logged = _logged(state)[-1]
-    assert "ATTENDANCE_PARDON_STAGED" in logged
-    assert "Power cut on the night" in logged
-    assert "Pro" in logged
-    assert str(STEWARD_ID) in logged
-
-
 async def test_the_pardon_line_names_the_steward(tmp_path):
     """The steward Alex stages a NO_RSVP pardon for round 3 (Pro). The one line it writes names
     Alex by display name and mention, as every record does (#482), and keeps its token, the
-    pardon, the driver and the justification."""
+    pardon, the driver, the division and the justification. A pardon is a steward's decision
+    about one driver, and the reasoning belongs with the audit rather than in a channel the
+    division reads."""
     db_path = await _make_db(tmp_path, name="pardon_names_steward")
     state = _state(db_path)
 
@@ -350,6 +337,7 @@ async def test_the_pardon_line_names_the_steward(tmp_path):
     assert lines[0].startswith(f"Alex (<@{STEWARD_ID}>) | ATTENDANCE_PARDON_STAGED"), lines[0]
     assert "NO_RSVP" in lines[0]
     assert f"<@{DRIVER_USER_ID}>" in lines[0]
+    assert "Pro" in lines[0]
     assert "justification: Power cut on the night" in lines[0]
 
 
@@ -402,18 +390,25 @@ async def test_no_show_is_refused_for_a_driver_who_did_not_accept(tmp_path, rsvp
 
 
 @pytest.mark.parametrize(
-    "pardon_type,rsvp_status",
-    [("ABSENT", "DECLINED"), ("NO_SHOW", "ACCEPTED")],
+    "pardon_type,rsvp_status,in_results",
+    [
+        ("ABSENT", "DECLINED", "race"),
+        ("NO_SHOW", "ACCEPTED", "race"),
+        ("NO_SHOW", "ACCEPTED", "qualifying"),
+    ],
+    ids=["absent-raced", "no-show-raced", "qualifying-only"],
 )
 async def test_a_driver_in_the_results_cannot_be_pardoned_for_missing(
-    tmp_path, pardon_type, rsvp_status
+    tmp_path, pardon_type, rsvp_status, in_results
 ):
-    """The fault is not one they have — they were there."""
+    """The fault is not one they have — they were there. A driver who qualified and then
+    retired was present; reading only the race results would pardon them for an absence that
+    did not happen."""
     db_path = await _make_db(
         tmp_path,
-        name=f"refuse_present_{pardon_type}",
+        name=f"refuse_present_{pardon_type}_{in_results}",
         rsvp_status=rsvp_status,
-        in_results="race",
+        in_results=in_results,
     )
     state = _state(db_path)
 
@@ -421,19 +416,6 @@ async def test_a_driver_in_the_results_cannot_be_pardoned_for_missing(
 
     assert "present in session results" in _replied(interaction)
     assert state.staged_pardons == []
-
-
-async def test_qualifying_alone_counts_as_being_there(tmp_path):
-    """A driver who qualified and then retired was present; reading only the race results
-    would pardon them for an absence that did not happen."""
-    db_path = await _make_db(
-        tmp_path, name="refuse_quali_only", rsvp_status="ACCEPTED", in_results="qualifying"
-    )
-    state = _state(db_path)
-
-    interaction, _ = await _submit(state, pardon_type="NO_SHOW")
-
-    assert "present in session results" in _replied(interaction)
 
 
 async def test_a_superseded_result_does_not_count_as_being_there(tmp_path):

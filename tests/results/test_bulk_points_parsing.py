@@ -43,28 +43,49 @@ def test_a_clean_table_is_read_in_full():
     assert errors == []
 
 
-def test_whitespace_around_the_comma_is_forgiven():
+@pytest.mark.parametrize(
+    ("paste", "expected"),
+    [
+        ("  1 ,   25  \n2,18", [(1, 25), (2, 18)]),
+        ("  1 ,  25  ", [(1, 25)]),
+    ],
+    ids=["two-lines", "one-padded-line"],
+)
+def test_whitespace_around_the_comma_is_forgiven(paste, expected):
     """A pasted table carries it, and refusing over spacing would refuse most real input."""
-    valid, errors, _overrides = _parse_bulk_lines("  1 ,   25  \n2,18")
+    valid, errors, _overrides = _parse_bulk_lines(paste)
 
-    assert valid == [(1, 25), (2, 18)]
+    assert valid == expected
     assert errors == []
 
 
-def test_blank_lines_are_skipped():
+@pytest.mark.parametrize(
+    ("paste", "expected"),
+    [
+        ("\n1, 25\n\n\n2, 18\n\n", [(1, 25), (2, 18)]),
+        ("1, 25\n\n2, 18\n\n3, 15", [(1, 25), (2, 18), (3, 15)]),
+    ],
+    ids=["leading-trailing-and-between", "between-only"],
+)
+def test_blank_lines_are_skipped(paste, expected):
     """A paste picks up trailing newlines and blank separators between blocks."""
-    valid, errors, _overrides = _parse_bulk_lines("\n1, 25\n\n\n2, 18\n\n")
+    valid, errors, _overrides = _parse_bulk_lines(paste)
 
-    assert valid == [(1, 25), (2, 18)]
+    assert valid == expected
     assert errors == []
 
 
-def test_points_of_zero_are_accepted():
+@pytest.mark.parametrize(
+    ("paste", "expected"),
+    [("11, 0", [(11, 0)]), ("1, 0", [(1, 0)])],
+    ids=["p11", "p1"],
+)
+def test_points_of_zero_are_accepted(paste, expected):
     """Most of a table is zero — only the top positions score — so refusing zero would
     make the common case impossible."""
-    valid, errors, _overrides = _parse_bulk_lines("11, 0")
+    valid, errors, _overrides = _parse_bulk_lines(paste)
 
-    assert valid == [(11, 0)]
+    assert valid == expected
     assert errors == []
 
 
@@ -83,46 +104,53 @@ def test_a_line_with_more_than_one_comma_keeps_the_rest_as_points():
 # ---------------------------------------------------------------------------
 
 
-def test_a_line_with_no_comma_is_malformed():
-    valid, errors, _overrides = _parse_bulk_lines("1 25")
+@pytest.mark.parametrize("line", ["1 25", "not a valid line"], ids=["numbers", "words"])
+def test_a_line_with_no_comma_is_malformed(line):
+    valid, errors, _overrides = _parse_bulk_lines(line)
 
     assert valid == []
+    assert len(errors) == 1
     assert "Malformed line" in errors[0]
-    assert "1 25" in errors[0]
+    assert line in errors[0]
 
 
-@pytest.mark.parametrize("position", ["first", "1.5", "one", "", "+1"])
-def test_a_position_that_is_not_a_plain_integer_is_refused(position):
+@pytest.mark.parametrize(
+    ("position", "points"),
+    [*((position, "25") for position in ["first", "1.5", "one", "", "+1"]), ("1.5", "10")],
+    ids=["first", "1.5", "one", "", "+1", "1.5-on-10-points"],
+)
+def test_a_position_that_is_not_a_plain_integer_is_refused(position, points):
     """The round-trip check catches what `int()` alone would accept or truncate."""
-    valid, errors, _overrides = _parse_bulk_lines(f"{position}, 25")
+    valid, errors, _overrides = _parse_bulk_lines(f"{position}, {points}")
 
     assert valid == []
+    assert len(errors) == 1
     assert any("position" in e.lower() for e in errors)
 
 
-@pytest.mark.parametrize("points", ["twenty-five", "25.5", "", "+25"])
+@pytest.mark.parametrize("points", ["twenty-five", "25.5", "", "+25", "10.5"])
 def test_points_that_are_not_a_plain_integer_are_refused(points):
     valid, errors, _overrides = _parse_bulk_lines(f"1, {points}")
 
     assert valid == []
+    assert len(errors) == 1
     assert any("points" in e.lower() for e in errors)
 
 
-def test_a_float_position_is_refused_rather_than_truncated():
-    """`int(1.5)` would be 1 — silently scoring position 1 from a line that said 1.5, with
-    the manager never knowing which line had been reinterpreted."""
-    valid, errors, _overrides = _parse_bulk_lines("1.5, 25")
+@pytest.mark.parametrize(
+    ("paste", "refused", "first_position"),
+    [("0, 25\n-1, 25", 2, 0), ("0, 10", 1, 0), ("-1, 10", 1, -1)],
+    ids=["zero-and-negative", "zero", "negative"],
+)
+def test_a_position_below_one_is_refused(paste, refused, first_position):
+    """There is no position zero, and a negative one would sort above the winner. The error
+    names the position it refused."""
+    valid, errors, _overrides = _parse_bulk_lines(paste)
 
     assert valid == []
-
-
-def test_a_position_below_one_is_refused():
-    """There is no position zero, and a negative one would sort above the winner."""
-    valid, errors, _overrides = _parse_bulk_lines("0, 25\n-1, 25")
-
-    assert valid == []
-    assert len(errors) == 2
+    assert len(errors) == refused
     assert all(">= 1" in e for e in errors)
+    assert f"got {first_position}" in errors[0]
 
 
 def test_negative_points_are_refused():
@@ -130,7 +158,9 @@ def test_negative_points_are_refused():
     valid, errors, _overrides = _parse_bulk_lines("1, -5")
 
     assert valid == []
+    assert len(errors) == 1
     assert ">= 0" in errors[0]
+    assert "-5" in errors[0]
 
 
 def test_every_error_quotes_the_line_it_came_from():
@@ -167,13 +197,18 @@ def test_several_bad_lines_are_all_reported():
 # ---------------------------------------------------------------------------
 
 
-def test_a_repeated_position_keeps_the_last_value_and_says_so():
+@pytest.mark.parametrize(
+    ("paste", "expected"),
+    [("1, 25\n1, 30", [(1, 30)]), ("1, 25\n1, 10", [(1, 10)])],
+    ids=["raised", "lowered"],
+)
+def test_a_repeated_position_keeps_the_last_value_and_says_so(paste, expected):
     """A manager correcting themselves mid-paste means the second value — and discarding
     both would be the one outcome neither reading supports. The note is what stops the
     change being silent."""
-    valid, errors, overrides = _parse_bulk_lines("1, 25\n1, 30")
+    valid, errors, overrides = _parse_bulk_lines(paste)
 
-    assert valid == [(1, 30)]
+    assert valid == expected
     assert errors == [], "an override is reported, never counted as a bad line"
     assert len(overrides) == 1
     assert "Duplicate position 1" in overrides[0]
@@ -203,8 +238,11 @@ def test_an_empty_paste_yields_nothing_and_complains_about_nothing():
     assert errors == []
 
 
-def test_a_paste_of_only_whitespace_is_the_same():
-    valid, errors, _overrides = _parse_bulk_lines("\n   \n\t\n")
+@pytest.mark.parametrize(
+    "paste", ["\n   \n\t\n", "   \n\n   "], ids=["with-a-tab", "spaces-only"]
+)
+def test_a_paste_of_only_whitespace_is_the_same(paste):
+    valid, errors, _overrides = _parse_bulk_lines(paste)
 
     assert valid == []
     assert errors == []

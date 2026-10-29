@@ -43,7 +43,6 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -251,8 +250,12 @@ async def test_a_driver_may_be_named_by_mention_or_by_id(tmp_path, typed):
     assert len(state.staged) == 1
 
 
-@pytest.mark.parametrize("typed", ["Lewis", "", "<@abc>", "not-a-driver"])
+@pytest.mark.parametrize(
+    "typed", ["Lewis", "", "<@abc>", "not-a-driver", "-4001", "+4001", "<@&4001>"]
+)
 async def test_an_unparseable_driver_is_refused(tmp_path, typed):
+    """The signed ids are read by the shared parser (#362), which takes digits alone: `int()`
+    took `-4001` and `+4001` as ids. A role mention was refused before and is refused still."""
     state = _state(await _make_db(tmp_path))
 
     interaction = await _submit(state, driver=typed)
@@ -351,7 +354,8 @@ async def test_the_reply_names_what_was_staged(tmp_path):
 
 async def test_an_appeal_correction_is_staged_on_the_appeals_list(tmp_path):
     """Staged onto the penalty list it would be applied a pass too early, against the very
-    results the appeal was lodged about."""
+    results the appeal was lodged about. The appeals review is the stage the round has moved on
+    *to*, so the check that closes the penalty review must not close it."""
     state = _state(await _make_db(tmp_path, round_status="AWAITING_APPEAL_VERDICTS"))
 
     interaction = await _submit(state, penalty="+3s", appeals=True)
@@ -359,28 +363,6 @@ async def test_an_appeal_correction_is_staged_on_the_appeals_list(tmp_path):
     assert state.staged == []
     assert len(state.staged_appeals) == 1
     assert "Staged Correction" in _replied(interaction)
-
-
-async def test_a_penalty_is_not_staged_once_the_review_has_moved_on(tmp_path):
-    """**The form can outlive its review** (#402). Submitted once the round's reports were
-    approved, it staged a penalty onto a list nothing would ever apply, and said it had."""
-    state = _state(await _make_db(tmp_path, round_status="AWAITING_APPEAL_VERDICTS"))
-
-    interaction = await _submit(state)
-
-    assert state.staged == []
-    assert "already been approved" in _replied(interaction)
-    assert "Staged" not in _replied(interaction)
-
-
-async def test_a_correction_is_staged_while_the_round_awaits_appeals(tmp_path):
-    """The appeals review is the stage the round has moved on *to*, so the check that closes the
-    penalty review must not close it."""
-    state = _state(await _make_db(tmp_path, round_status="AWAITING_APPEAL_VERDICTS"))
-
-    await _submit(state, penalty="+3s", appeals=True)
-
-    assert len(state.staged_appeals) == 1
 
 
 async def test_the_prompt_is_refreshed_for_the_pass_being_staged_into(tmp_path):
@@ -439,38 +421,31 @@ async def test_a_reduction_within_the_remaining_headroom_is_accepted(tmp_path):
     assert len(state.staged) == 2
 
 
-async def test_another_driver_s_staged_penalty_does_not_count(tmp_path):
-    """The sum is filtered by driver; counting somebody else's would refuse a legal
-    penalty for reasons the steward could not see."""
+@pytest.mark.parametrize(
+    "already_staged",
+    [
+        _penalty(-4, driver=STRANGER),
+        _penalty(-4, session=SessionType.FEATURE_QUALIFYING),
+        _penalty(None, penalty_type="DSQ"),
+        _penalty(None, penalty_type="NFA"),
+    ],
+    ids=["another-driver", "another-session", "disqualification", "no-further-action"],
+)
+async def test_a_staged_penalty_the_sum_filters_out_does_not_count(tmp_path, already_staged):
+    """The sum is filtered by driver, session and penalty type.
+
+    - By driver: counting somebody else's would refuse a legal penalty for reasons the steward
+      could not see.
+    - By session too: a qualifying correction has nothing to do with the race time being
+      reduced.
+    - By penalty type: a DSQ carries no seconds, and including it would either raise or
+      silently skew the headroom.
+    - No further action carries no seconds, as a DSQ does, so it neither raises nor uses up
+      headroom.
+    """
     state = _state(
         await _make_db(tmp_path, ingame_ms=6_000),
-        staged=[_penalty(-4, driver=STRANGER)],
-    )
-
-    await _submit(state, penalty="-4s")
-
-    assert len(state.staged) == 2
-
-
-async def test_another_session_s_staged_penalty_does_not_count(tmp_path):
-    """Filtered by session too — a qualifying correction has nothing to do with the race
-    time being reduced."""
-    state = _state(
-        await _make_db(tmp_path, ingame_ms=6_000),
-        staged=[_penalty(-4, session=SessionType.FEATURE_QUALIFYING)],
-    )
-
-    await _submit(state, penalty="-4s")
-
-    assert len(state.staged) == 2
-
-
-async def test_a_staged_disqualification_does_not_distort_the_arithmetic(tmp_path):
-    """Filtered by penalty type. A DSQ carries no seconds, and including it would either
-    raise or silently skew the headroom."""
-    state = _state(
-        await _make_db(tmp_path, ingame_ms=6_000),
-        staged=[_penalty(None, penalty_type="DSQ")],
+        staged=[already_staged],
     )
 
     await _submit(state, penalty="-4s")
@@ -556,18 +531,6 @@ async def test_a_penalty_of_no_seconds_is_refused_pointing_to_no_further_action(
     assert "NFA" in replied
 
 
-async def test_a_staged_no_further_action_does_not_distort_the_arithmetic(tmp_path):
-    """It carries no seconds, as a DSQ does, so it neither raises nor uses up headroom."""
-    state = _state(
-        await _make_db(tmp_path, ingame_ms=6_000),
-        staged=[_penalty(None, penalty_type="NFA")],
-    )
-
-    await _submit(state, penalty="-4s")
-
-    assert len(state.staged) == 2
-
-
 # ---------------------------------------------------------------------------
 # Any account names the driver (issue #243)
 # ---------------------------------------------------------------------------
@@ -624,18 +587,6 @@ async def test_the_prompt_names_the_staged_driver_by_the_current_account(tmp_pat
 # ---------------------------------------------------------------------------
 
 ROLE_MENTION = "<@&987654321098765432>"
-
-
-async def test_a_group_mention_in_the_description_is_refused(tmp_path):
-    """Both texts are published in the verdict, where a role or `@everyone` would notify the
-    whole group it names."""
-    state = _state(await _make_db(tmp_path))
-
-    interaction = await _submit(state, description="@everyone look at turn one")
-
-    assert state.staged == []
-    assert "description" in _replied(interaction)
-    assert "Staged" not in _replied(interaction)
 
 
 async def test_a_group_mention_in_the_justification_is_refused(tmp_path):
@@ -697,18 +648,6 @@ async def test_formatting_in_the_justification_is_refused(tmp_path):
     assert "formatting" in _replied(interaction)
 
 
-@pytest.mark.parametrize("typed", ["-4001", "+4001", "<@&4001>"])
-async def test_a_signed_id_or_a_role_is_not_a_driver(tmp_path, typed):
-    """Read by the shared parser (#362), which takes digits alone: `int()` took `-4001` and
-    `+4001` as ids. A role mention was refused before and is refused still."""
-    state = _state(await _make_db(tmp_path))
-
-    interaction = await _submit(state, driver=typed)
-
-    assert state.staged == []
-    assert "Could not parse driver" in _replied(interaction)
-
-
 
 # ---------------------------------------------------------------------------
 # Every refusal is recorded (#482)
@@ -746,7 +685,10 @@ async def test_every_refused_penalty_or_correction_form_is_recorded(tmp_path, ap
     moved on to appeals, the driver cannot be read or is not in the session's results, the
     penalty is of no seconds, or the description mentions @everyone. The reply is today's,
     nothing is staged, and exactly one line records the refusal, naming the form, Alex and the
-    reason."""
+    reason. **The form can outlive its review** (#402): submitted once the round's reports were
+    approved, it staged a penalty onto a list nothing would ever apply, and said it had. Both
+    texts are published in the verdict, where a role or `@everyone` would notify the whole
+    group it names, so a refusal of the description names it."""
     moved_on = not appeals and not typed
     round_status = (
         "AWAITING_APPEAL_VERDICTS" if appeals or moved_on else "AWAITING_REPORT_VERDICTS"
@@ -760,6 +702,8 @@ async def test_every_refused_penalty_or_correction_form_is_recorded(tmp_path, ap
     assert "Staged" not in replied
     if moved_on:
         assert "already been approved" in replied
+    if "description" in typed:
+        assert "description" in replied
     reason = replied.splitlines()[0].split(" ", 1)[1]
     title = f"{'Add Correction' if appeals else 'Add Penalty'} — Feature Race"
     (line,) = _lines(interaction)

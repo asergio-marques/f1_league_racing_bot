@@ -33,31 +33,30 @@ async def db_path(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_list_configs_returns_bare_names(db_path):
-    """The server store's names, which nothing called before #200."""
-    await create_config(db_path, "Standard")
-    await create_config(db_path, "Half Points")
-
-    configs = await list_configs(db_path)
-
-    assert [c.config_name for c in configs] == ["Half Points", "Standard"]
-
-
 async def test_list_configs_is_empty_on_a_fresh_server(db_path):
     assert await list_configs(db_path) == []
 
 
-async def test_list_configs_orders_by_name(db_path):
-    """Ordered by name, so a manager reads the same list twice running.
+@pytest.mark.parametrize(
+    ("created", "expected"),
+    [
+        (("Zeta", "Alpha", "Mid"), ["Alpha", "Mid", "Zeta"]),
+        (("Standard", "Half Points"), ["Half Points", "Standard"]),
+    ],
+    ids=["three-names", "two-names"],
+)
+async def test_list_configs_orders_by_name(db_path, created, expected):
+    """The server store's bare names, which nothing called before #200, ordered by name, so a
+    manager reads the same list twice running.
 
     Never assert on insertion order here — the ordering is the point.
     """
-    for name in ("Zeta", "Alpha", "Mid"):
+    for name in created:
         await create_config(db_path, name)
 
     configs = await list_configs(db_path)
 
-    assert [c.config_name for c in configs] == ["Alpha", "Mid", "Zeta"]
+    assert [c.config_name for c in configs] == expected
 
 
 async def test_list_configs_names_a_config_that_carries_no_entries(db_path):

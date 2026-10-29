@@ -20,28 +20,20 @@ from tests.support.change_queue import in_a_job
 # ---------------------------------------------------------------------------
 
 class TestLabelFromStatus:
-    def test_provisional_label(self):
-        assert _label_from_status("AWAITING_REPORT_VERDICTS") == "Provisional Results"
-
-    def test_post_race_penalty_label(self):
-        assert _label_from_status("AWAITING_APPEAL_VERDICTS") == "Post-Race Penalty Results"
-
-    def test_final_label(self):
-        assert _label_from_status("FINAL") == "Final Results"
-
-    def test_unknown_fallback(self):
-        assert _label_from_status("UNKNOWN") == "Results"
-
-    def test_empty_string_fallback(self):
-        assert _label_from_status("") == "Results"
-
-    def test_all_three_values_are_distinct(self):
-        labels = {
-            _label_from_status("AWAITING_REPORT_VERDICTS"),
-            _label_from_status("AWAITING_APPEAL_VERDICTS"),
-            _label_from_status("FINAL"),
-        }
-        assert len(labels) == 3
+    @pytest.mark.parametrize(
+        ("status", "expected"),
+        [
+            ("AWAITING_REPORT_VERDICTS", "Provisional Results"),
+            ("AWAITING_APPEAL_VERDICTS", "Post-Race Penalty Results"),
+            ("FINAL", "Final Results"),
+            ("UNKNOWN", "Results"),
+            ("", "Results"),
+        ],
+        ids=["provisional", "post-race-penalty", "final", "unknown-fallback", "empty-fallback"],
+    )
+    def test_each_status_has_its_label(self, status, expected):
+        """The three status labels are distinct, and anything else falls back to "Results"."""
+        assert _label_from_status(status) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -495,20 +487,6 @@ def _bot_with_images(*, enabled=False, toggles=None):
 
 
 @pytest.mark.asyncio
-async def test_repost_channel_faults_passes_a_healthy_division(tmp_path):
-    """Nothing is wrong, so nothing is reported and the amendment may proceed (#187)."""
-    from leaguebot.results.services.results_post_service import repost_channel_faults
-
-    db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
-
-    faults = await repost_channel_faults(
-        db_path, season_id, _guild_for_faults(), _bot_with_images()
-    )
-
-    assert faults == []
-
-
-@pytest.mark.asyncio
 async def test_repost_channel_faults_names_a_deleted_channel(tmp_path):
     """The first of the issue's two reproduction paths, caught before anything is written."""
     from leaguebot.results.services.results_post_service import repost_channel_faults
@@ -666,7 +644,8 @@ async def test_repost_channel_faults_refuses_when_the_bot_member_is_unknown(tmp_
 
 @pytest.mark.asyncio
 async def test_repost_channel_faults_resolves_the_bot_member_from_the_cache(tmp_path):
-    """The bot's own member is looked up by id, never taken from ``guild.me`` (#187)."""
+    """The bot's own member is looked up by id, never taken from ``guild.me`` (#187). In a
+    healthy division nothing is wrong, so nothing is reported and the amendment may proceed."""
     from leaguebot.results.services.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])

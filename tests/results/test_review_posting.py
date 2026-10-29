@@ -746,25 +746,32 @@ async def _qualifying_ids(db_path: str) -> tuple[int | None, list[int] | None]:
     return row["results_message_id"], ids
 
 
+@pytest.mark.parametrize(
+    "label", [LABEL, "Provisional Results (amended)"], ids=["first-posting", "resubmission"]
+)
 async def test_a_cancelled_session_s_line_is_posted_in_its_place_among_the_provisional_results_and_recorded(
-    tmp_path,
+    tmp_path, label,
 ):
     """Round 3's Feature Qualifying was cancelled and its Feature Race submitted. When the
     round's tables are posted, the results channel gets the qualifying's line, "Round 3 —
     Qualifying: This session was cancelled.", in the qualifying's place, before the race's table;
     the line's message is recorded as the qualifying's results message, so a later posting
-    replaces it."""
-    league = await _league(tmp_path)
-    label = await _cancel_round_3_s_qualifying(league)
+    replaces it.
 
-    await _ask(league)
+    A resubmission of round 3 entering its Feature Qualifying as cancelled and its Feature Race
+    again leaves the qualifying's row cancelled with no message recorded, and its tables are
+    posted as "Provisional Results (amended)"; the line is posted and recorded the same way."""
+    league = await _league(tmp_path)
+    session_label = await _cancel_round_3_s_qualifying(league)
+
+    await _ask(league, label=label)
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
     line, table = league.sent_to(RESULTS_CHANNEL)
     content = league.channel(RESULTS_CHANNEL).messages[line].content
     assert "This session was cancelled" in content
-    assert "Round 3" in content and label in content
+    assert "Round 3" in content and session_label in content
     assert "This session was cancelled" not in league.channel(RESULTS_CHANNEL).messages[table].content
     assert await _qualifying_ids(league.db_path) == (line, [line])
 
@@ -789,28 +796,6 @@ async def test_a_cancelled_session_s_line_stands_in_its_place_when_the_tables_ar
     assert OLD_CANCELLED_LINE in league.deleted_in(RESULTS_CHANNEL)
     assert league.events.index(("send", RESULTS_CHANNEL, line)) < league.events.index(
         ("delete", RESULTS_CHANNEL, OLD_CANCELLED_LINE))
-
-
-async def test_a_resubmission_s_cancelled_session_is_posted_with_the_amended_provisional_results(
-    tmp_path,
-):
-    """A resubmission of round 3 entered its Feature Qualifying as cancelled and its Feature Race
-    again, so the qualifying's row is cancelled with no message recorded. When the round's tables
-    are posted as "Provisional Results (amended)", the results channel gets the qualifying's line,
-    "This session was cancelled.", in the qualifying's place, before the race's table, and the
-    line is recorded as the qualifying's results message."""
-    league = await _league(tmp_path)
-    label = await _cancel_round_3_s_qualifying(league)
-
-    await _ask(league, label="Provisional Results (amended)")
-    await run_queue(league.bot)
-
-    assert await stopped_job(league.db_path) is None
-    line, table = league.sent_to(RESULTS_CHANNEL)
-    content = league.channel(RESULTS_CHANNEL).messages[line].content
-    assert "This session was cancelled" in content and label in content
-    assert "This session was cancelled" not in league.channel(RESULTS_CHANNEL).messages[table].content
-    assert await _qualifying_ids(league.db_path) == (line, [line])
 
 
 async def test_an_old_message_already_gone_completes_its_delete(tmp_path):
@@ -1464,7 +1449,7 @@ async def test_a_drawn_table_whose_old_message_will_not_delete_stops_the_queue(t
 # ---------------------------------------------------------------------------
 
 
-def _standings_drawn(league: _League, tmp_path: Any, *, championships: tuple[str, ...] = (
+def _standings_drawn(tmp_path: Any, *, championships: tuple[str, ...] = (
     "drivers", "constructors",
 )) -> Any:
     """Image generation on for the standings, each of *championships* drawing as a picture and
@@ -1516,7 +1501,7 @@ async def test_a_standings_picture_s_old_message_is_deleted_by_a_job_of_its_own(
     pictures were sent."""
     league = await _league(tmp_path)
     standings = league.channel(STANDINGS_CHANNEL)
-    with _standings_drawn(league, tmp_path):
+    with _standings_drawn(tmp_path):
         await _ask(league)
         await _run_until_done(league, "post_standings")
 
@@ -1562,7 +1547,7 @@ async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keep
     standings.seed(CONSTRUCTORS_GRAPHIC, "constructors' standings graphic")
     old_link = standings.messages[DRIVERS_GRAPHIC].jump_url
     standings.delete_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
-    with _standings_drawn(league, tmp_path):
+    with _standings_drawn(tmp_path):
         interaction = await _ask(league)
         await run_queue(league.bot)
 
@@ -1594,7 +1579,7 @@ async def test_a_standings_picture_s_id_is_saved_with_its_mark(tmp_path):
 
     league = await _league(tmp_path)
     own_save = AsyncMock()
-    with _standings_drawn(league, tmp_path), patch.object(
+    with _standings_drawn(tmp_path), patch.object(
         results_post_service, "_set_standings_message_id", new=own_save, create=True,
     ):
         await _ask(league)
@@ -1616,7 +1601,7 @@ async def test_a_picture_sent_before_a_later_failure_is_removed_before_the_next_
     league = await _league(tmp_path)
     standings = league.channel(STANDINGS_CHANNEL)
     standings.fail_send_at = 2
-    with _standings_drawn(league, tmp_path, championships=("drivers",)):
+    with _standings_drawn(tmp_path, championships=("drivers",)):
         await _ask(league)
         await run_queue(league.bot)
         assert (await stopped_job(league.db_path))["name"] == "post_standings"

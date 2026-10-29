@@ -39,7 +39,8 @@ without one and warned about, rather than refusing a round whose drivers have ju
 **Anything missing before the channel exists opens nothing.** A cancelled round, or one that
 does not exist, is no longer due and its opening is dropped. A division without a results
 channel, or one whose results channel has since been deleted, stops the queue naming
-`/results channel results`, as a bot's change lacking its channel does (#439, slice 6b).
+`/results channel results`, as a bot's change lacking its channel does (#439, slice 6b); the
+first, and a channel Discord refuses to create, are pinned in `test_submission_open_change.py`.
 
 **The last paste asks the change queue to open the penalty review** (#439, slice 2):
 `results.review.open` is asked rather than the review opened in place, and, since a paste
@@ -52,7 +53,6 @@ import itertools
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import discord
 import pytest
 
 from leaguebot.core.models.round import RoundFormat
@@ -66,7 +66,6 @@ from tests.support.change_queue import (
     ADMIN_ROLE_ID,
     MANAGER_ROLE_ID,
     change_rows,
-    http_error,
     member_interaction,
     queued_log_lines,
     run_queue,
@@ -238,21 +237,6 @@ async def test_a_guild_the_bot_is_not_in_opens_nothing(tmp_path):
     assert await _submissions(league) == []
 
 
-async def test_a_division_without_a_results_channel_opens_nothing(tmp_path):
-    """Pro has no results channel set when round 3 starts: the queue stops, its notice naming
-    `/results channel results`, and no channel is created."""
-    league = await _opening_league(tmp_path)
-    await league.write(
-        "UPDATE division_results_config SET results_channel_id = NULL WHERE division_id = ?", PRO,
-    )
-
-    await _open(league)
-
-    assert await stopped_job(league.db_path) is not None
-    assert "/results channel results" in league.log()
-    assert league.created == []
-
-
 async def test_a_results_channel_since_deleted_opens_nothing(tmp_path):
     """Pro's results channel (606) is set but has been deleted from the server when round 3
     starts: the queue stops, its notice naming `/results channel results`, and no channel is
@@ -265,20 +249,6 @@ async def test_a_results_channel_since_deleted_opens_nothing(tmp_path):
     assert await stopped_job(league.db_path) is not None
     assert "/results channel results" in league.log()
     assert league.created == []
-
-
-async def test_a_channel_discord_refuses_to_create_stops_the_job(tmp_path):
-    """Discord refuses to create round 3's channel (Missing Permissions): the queue stops at the
-    channel's creation, no submission is recorded, and no penalty review is asked."""
-    league = await _opening_league(tmp_path)
-    league.create_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
-
-    await _open(league)
-
-    job = await stopped_job(league.db_path)
-    assert job is not None and job["name"] == "create_channel"
-    assert await _submissions(league) == []
-    assert [row for row in await change_rows(league.db_path) if row["kind"] == REVIEW_OPEN] == []
 
 
 async def test_the_channel_is_opened_to_both_league_roles(tmp_path):
@@ -296,19 +266,6 @@ async def test_the_channel_is_opened_to_both_league_roles(tmp_path):
 # ---------------------------------------------------------------------------
 # The opening message
 # ---------------------------------------------------------------------------
-
-
-async def test_the_opening_message_names_the_round_and_its_sessions(tmp_path):
-    """The opening the queue posts in round 3's new channel names Round 3, Pro, and its
-    sessions, Qualifying and Race."""
-    league = await _opening_league(tmp_path)
-
-    await _open(league)
-
-    opening = _opening(league)
-    assert "Round 3" in opening
-    assert "Pro" in opening
-    assert "Qualifying" in opening and "Race" in opening
 
 
 @pytest.mark.parametrize(

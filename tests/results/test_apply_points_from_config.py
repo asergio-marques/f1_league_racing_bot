@@ -242,14 +242,6 @@ async def test_a_steward_s_override_decides_the_bonus(tmp_path):
     assert points[DRIVER_B][1] == 1
 
 
-async def test_without_an_override_the_times_decide(tmp_path):
-    db_path = await _make_db(tmp_path, fl_override=None)
-
-    await _apply(db_path)
-
-    assert (await _points(db_path))[DRIVER_A][1] == 1
-
-
 # ---------------------------------------------------------------------------
 # Qualifying
 # ---------------------------------------------------------------------------

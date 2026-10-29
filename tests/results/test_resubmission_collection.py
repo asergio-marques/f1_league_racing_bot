@@ -129,20 +129,6 @@ async def _review_asked(league: ReviewLeague) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-async def test_each_session_is_saved_again(tmp_path, monkeypatch):
-    """Alex presses Resubmit on round 3 (Pro, Normal) and types Qualifying's results, then the
-    Feature Race's. Once the queue has run, the round holds both sessions anew."""
-    league = await _reviewing(tmp_path, monkeypatch)
-    await _press_resubmit(league)
-
-    await _type(league, QUALI_PASTE)
-    await _type(league, RACE_PASTE)
-
-    assert await _sessions(league) == [
-        (QUALIFYING_TYPE.value, "ACTIVE"), (RACE_TYPE.value, "ACTIVE"),
-    ]
-
-
 async def test_a_sprint_round_asks_for_all_four_sessions(tmp_path, monkeypatch):
     """Round 3 is a Sprint round. Alex resubmits and types each of its four sessions in racing
     order: the round then holds all four, in that order."""
@@ -209,26 +195,6 @@ async def test_a_fastest_lap_override_naming_a_non_finisher_is_refused(tmp_path,
     assert await _drafts(league) == [(QUALIFYING_TYPE.value, "ACTIVE")]
 
 
-async def test_every_session_cancelled_closes_the_channel(tmp_path, monkeypatch):
-    """Alex types CANCELLED for both sessions. The resubmission closes channel 702 rather than
-    asking the review again, and round 3 ends CANCELLED from awaiting its report verdicts, marked
-    as not held (#439, slice 8, Part E; core :232-234)."""
-    league = await _reviewing(tmp_path, monkeypatch)
-    await _press_resubmit(league)
-    asked_before = len(await _changes(league, REVIEW_OPEN))
-
-    await _type(league, "CANCELLED")
-    await _type(league, "CANCELLED")
-
-    assert ("delete_channel", SUBMISSION_CHANNEL, SUBMISSION_CHANNEL) in league.events
-    assert len(await _changes(league, REVIEW_OPEN)) == asked_before
-    async with get_connection(league.db_path) as db:
-        [row] = await (await db.execute(
-            "SELECT status, not_held FROM rounds WHERE id = ?", (ROUND_ID,)
-        )).fetchall()
-    assert (row["status"], row["not_held"]) == ("CANCELLED", 1)
-
-
 # ---------------------------------------------------------------------------
 # The earlier results stand until the new ones replace them
 # ---------------------------------------------------------------------------
@@ -237,7 +203,7 @@ async def test_every_session_cancelled_closes_the_channel(tmp_path, monkeypatch)
 async def test_the_earlier_results_stand_until_the_last_session_is_in(tmp_path, monkeypatch):
     """**Issue #210.** A resubmission supersedes the round's results rather than deleting them
     first. With Qualifying typed, the round still holds exactly its earlier Feature Race, and
-    Qualifying is a draft; once the race is in, the round holds both."""
+    Qualifying is a draft; once the race is in, the round holds both anew, each ACTIVE."""
     league = await _reviewing(tmp_path, monkeypatch)
     await _press_resubmit(league)
 
@@ -248,8 +214,8 @@ async def test_the_earlier_results_stand_until_the_last_session_is_in(tmp_path, 
 
     await _type(league, RACE_PASTE)
 
-    assert [session for session, _status in await _sessions(league)] == [
-        QUALIFYING_TYPE.value, RACE_TYPE.value,
+    assert await _sessions(league) == [
+        (QUALIFYING_TYPE.value, "ACTIVE"), (RACE_TYPE.value, "ACTIVE"),
     ]
 
 

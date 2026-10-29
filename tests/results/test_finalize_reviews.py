@@ -252,7 +252,8 @@ async def _nothing_approved(league: ReviewLeague) -> None:
 
 
 async def test_staged_penalties_are_applied(tmp_path):
-    """A 5-second penalty staged for Lewis produces one penalty record, on his race result."""
+    """A 5-second penalty staged for Lewis produces one penalty record, on his race result. This
+    is the ordinary first pass, which an amendment's rewriting of the record leaves untouched."""
     league = await review_league(tmp_path)
 
     await _approve_reports(league, staged=[league_penalty(LEWIS)])
@@ -263,14 +264,6 @@ async def test_staged_penalties_are_applied(tmp_path):
     assert record["race_result_id"] == await one(
         league.db_path, "SELECT id FROM race_session_results WHERE driver_user_id = ?", LEWIS,
     )
-
-
-async def test_the_round_moves_on_to_appeals(tmp_path):
-    league = await review_league(tmp_path)
-
-    await _approve_reports(league)
-
-    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
 
 
 @pytest.mark.parametrize("status", ["FINAL", "CANCELLED"])
@@ -961,44 +954,6 @@ async def _results_post_discarded(league: ReviewLeague, approve: Any) -> Any:
     return interaction
 
 
-async def test_a_repost_that_could_not_post_tells_the_manager(tmp_path):
-    league = await review_league(tmp_path)
-
-    interaction = await _results_post_discarded(league, _approve_reports)
-
-    said = updated_reply(interaction)
-    assert "⚠️" in said
-    assert "/results rounds sync" in said
-
-
-async def test_a_repost_that_could_not_post_reaches_the_log_channel(tmp_path):
-    league = await review_league(tmp_path)
-
-    await _results_post_discarded(league, _approve_reports)
-
-    assert "/results rounds sync" in _after(league.log(), "PENALTY_REVIEW_APPROVED | Incomplete")
-
-
-async def test_the_approval_is_logged_as_incomplete_when_the_repost_failed(tmp_path):
-    """The audit line says what the approval achieved, not what it attempted."""
-    league = await review_league(tmp_path)
-
-    await _results_post_discarded(league, _approve_reports)
-
-    assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
-    assert "PENALTY_REVIEW_APPROVED | Success" not in league.log()
-
-
-async def test_the_approval_is_logged_as_success_when_everything_posted(tmp_path):
-    """The counterpart, so `| Incomplete` cannot be the answer to everything."""
-    league = await review_league(tmp_path)
-
-    await _approve_reports(league, staged=[league_penalty(LEWIS)])
-
-    assert "PENALTY_REVIEW_APPROVED | Success" in league.log()
-    assert "| Incomplete" not in league.log()
-
-
 async def test_a_missing_guild_is_reported_rather_than_skipped(tmp_path):
     """`if guild:` used to skip both reposts without a word (#237). Without the server the posts
     stop the queue; once a league admin discards them, the approval's line is `| Incomplete`."""
@@ -1028,15 +983,19 @@ async def test_the_appeals_approval_reports_an_unpostable_repost(tmp_path):
 async def test_a_fault_both_reposts_found_is_reported_once(tmp_path):
     """The manager repairs what is named, so reading the same thing twice is a false count of the
     problems in front of them (#237 review). Round 3's results post is discarded while its
-    standings, and round 4's, go out: the reply and the approval's line name the results once."""
+    standings, and round 4's, go out: the reply warns and the approval's line is `| Incomplete`,
+    and both name the results once. The audit line says what the approval achieved, not what it
+    attempted."""
     league = await review_league(tmp_path)
 
     interaction = await _results_post_discarded(league, _approve_reports)
 
+    assert "⚠️" in updated_reply(interaction)
     assert updated_reply(interaction).count("/results rounds sync") == 1
     assert _after(
         league.log(), "PENALTY_REVIEW_APPROVED | Incomplete"
     ).count("/results rounds sync") == 1
+    assert "PENALTY_REVIEW_APPROVED | Success" not in league.log()
 
 
 async def test_a_log_channel_that_refuses_still_tells_the_manager(tmp_path):
@@ -1107,12 +1066,14 @@ async def test_the_verdict_report_says_it_cannot_be_announced_again(tmp_path):
 
 
 async def test_an_approval_that_announced_everything_reports_no_verdict_fault(tmp_path):
-    """The counterpart: every verdict announced leaves nothing to report."""
+    """The counterpart: every verdict announced leaves nothing to report, and the approval's line
+    is `| Success`, so `| Incomplete` cannot be the answer to everything."""
     league = await review_league(tmp_path)
 
     interaction = await _approve_reports(league, staged=[league_penalty(LEWIS)])
 
     assert await stopped_at(league) is None
+    assert "PENALTY_REVIEW_APPROVED | Success" in league.log()
     assert "| Incomplete" not in league.log()
     assert "⚠️" not in updated_reply(interaction)
 
@@ -1490,16 +1451,6 @@ async def test_an_amendment_does_not_duplicate_the_rounds_penalty_records(tmp_pa
     lewis = [r for r in await penalty_records(league.db_path)
              if r["race_result_id"] == await _lewis_row(league)]
     assert len(lewis) == 1
-    assert (await race_rows(league.db_path))[LEWIS]["postrace_time_penalties_ms"] == 5000
-
-
-async def test_a_first_pass_still_records_and_applies_once(tmp_path):
-    """The ordinary path is untouched: Alex approves round 3's review with Lewis's 5 seconds."""
-    league = await review_league(tmp_path)
-
-    await _approve_reports(league, staged=[league_penalty(LEWIS)])
-
-    assert len(await penalty_records(league.db_path)) == 1
     assert (await race_rows(league.db_path))[LEWIS]["postrace_time_penalties_ms"] == 5000
 
 

@@ -298,13 +298,17 @@ async def test_a_malformed_file_is_never_ordering_checked(tmp_path):
 
 async def test_importing_into_a_config_that_does_not_exist_is_refused(tmp_path):
     """`xml-import` fills a configuration; it does not create one. A typo in the name would
-    otherwise quietly make a second config nobody attached to a season."""
+    otherwise quietly make a second config nobody attached to a season. The refusal is audited
+    in the standard refusal form, the configuration named."""
     league = await _league(tmp_path, with_config=False)
 
     asked = await _import(league)
 
     assert "not found" in _replied(asked)
     assert CONFIG in _replied(asked)
+    [audited] = await log_lines(league)
+    assert CONFIG in audited
+    assert "FAILED (" not in audited
 
 
 async def _break_the_points_table(db_path: str) -> None:
@@ -322,10 +326,12 @@ async def _nothing_saved(db_path: str) -> None:
             assert (await cursor.fetchone())[0] == 0, f"the import saved into {table}"
 
 
-async def test_a_database_failure_is_reported_without_its_text(tmp_path):
+async def test_an_xml_import_database_fault_names_the_config_in_one_failure_line(tmp_path):
     """Neither a traceback nor the database's own words are actionable at a manager. The
     standard failure reply says the fault is the bot's, that nothing from the import was
-    saved, and that the import can be run again."""
+    saved, and that the import can be run again. One failure makes one line: the member, the
+    import, the configuration and the kind of fault, and never the database's own words, which
+    go to the host's log alone."""
     league = await _league(tmp_path)
     await _break_the_points_table(league.db_path)
 
@@ -335,23 +341,8 @@ async def test_a_database_failure_is_reported_without_its_text(tmp_path):
     assert "stopped on a fault in the bot, not on anything you entered" in replied
     assert "Nothing from the import was saved." in replied
     assert "Run the import again to retry." in replied
-    assert "Database error" not in replied
-    assert "no such table" not in replied
-    await _nothing_saved(league.db_path)
-
-
-async def test_an_xml_import_database_fault_names_the_config_in_one_failure_line(tmp_path):
-    """One failure makes one line: the member, the import, the configuration and the kind of
-    fault, and never the database's own words, which go to the host's log alone."""
-    league = await _league(tmp_path)
-    await _break_the_points_table(league.db_path)
-
-    asked = await _import(league)
-
-    replied = _replied(asked)
-    assert "stopped on a fault in the bot" in replied
-    assert "Nothing from the import was saved." in replied
     assert "Database error" not in replied and "no such table" not in replied
+    await _nothing_saved(league.db_path)
     [line] = await log_lines(league)
     assert f"<@{MEMBER_ID}>" in line
     assert "/results config xml-import" in line
@@ -370,7 +361,7 @@ async def test_an_xml_import_database_fault_names_the_config_in_one_failure_line
     [
         pytest.param(
             VALID_XML,
-            [f"{NAMED} | /results config xml-import | Success"],
+            [f"{NAMED} | /results config xml-import | Success", CONFIG],
             id="success",
         ),
         pytest.param(
@@ -388,7 +379,9 @@ async def test_an_xml_import_database_fault_names_the_config_in_one_failure_line
 async def test_the_outcome_reaches_the_log(tmp_path, xml, fragments):
     """An import that failed is exactly the event a league asks about later — the points did
     not change and nobody remembers why. A refusal is written in the standard refusal form,
-    its detail as the reason."""
+    its detail as the reason. A success names the configuration and the manager: two managers
+    importing different configs on the same evening is ordinary, and a line naming neither
+    cannot be read back to either."""
     league = await _league(tmp_path)
 
     await _import(league, xml)
@@ -397,46 +390,6 @@ async def test_the_outcome_reaches_the_log(tmp_path, xml, fragments):
     for fragment in fragments:
         assert fragment in audited
     assert "FAILED (" not in audited
-
-
-async def test_an_import_into_a_missing_config_is_audited(tmp_path):
-    """In the standard refusal form, the configuration named."""
-    league = await _league(tmp_path, with_config=False)
-
-    await _import(league)
-
-    [audited] = await log_lines(league)
-    assert audited.startswith("⛔ ")
-    assert f"refused for {NAMED}" in audited
-    assert "not found" in audited
-    assert CONFIG in audited
-    assert "FAILED (" not in audited
-
-
-async def test_the_log_names_the_config_and_the_manager(tmp_path):
-    """Two managers importing different configs on the same evening is ordinary, and a log
-    line naming neither cannot be read back to either."""
-    league = await _league(tmp_path)
-
-    await _import(league)
-
-    audited = await _audited(league)
-    assert CONFIG in audited
-    assert "Admin" in audited
-    assert "/results config xml-import" in audited
-
-
-async def test_a_successful_import_counts_what_it_wrote_in_the_log(tmp_path):
-    """The line states beneath it the values that were set: each session, and each position's
-    points, and the fastest-lap bonus with its limit."""
-    league = await _league(tmp_path)
-
-    await _import(league)
-
-    audited = await _audited(league)
-    values = audited.split("\n", 1)[1] if "\n" in audited else ""
-    for expected in ("Feature Race", "Sprint Race", "25", "18", "8", "7", "10"):
-        assert expected in values, f"{expected!r} is not among the values logged"
 
 
 # ---------------------------------------------------------------------------
@@ -467,48 +420,6 @@ async def test_a_command_with_a_file_defers_and_imports(tmp_path):
     asked.response.send_modal.assert_not_awaited()
     assert said(asked)[0].startswith("⏳ ")
     assert ("FEATURE_RACE", 1, 25) in await _rows(league.db_path)
-
-
-async def test_an_oversized_file_is_refused_before_it_is_parsed(tmp_path):
-    """A points config is a few hundred rows; anything past 100 KB is the wrong file rather
-    than a big one, and parsing it first is how a wrong file becomes a slow failure."""
-    league = await _league(tmp_path)
-
-    asked = await _xml_import_command(league, file=_attachment(b"<config/>" + b"x" * 100_001))
-
-    assert "too large" in _replied(asked)
-    assert await _rows(league.db_path) == []
-
-
-async def test_an_empty_file_is_named_as_empty(tmp_path):
-    """Rather than as an XML syntax error at byte 0, which sends a manager looking for a
-    fault in a file that has nothing in it at all."""
-    league = await _league(tmp_path)
-
-    asked = await _xml_import_command(league, file=_attachment(b""))
-
-    assert "empty" in _replied(asked)
-
-
-async def test_a_file_that_is_not_utf8_is_named_as_such(tmp_path):
-    """A config exported from a Windows editor in the wrong encoding is a real thing to
-    meet, and "could not be decoded" is what tells a manager to re-save it."""
-    league = await _league(tmp_path)
-
-    asked = await _xml_import_command(league, file=_attachment(b"\xff\xfe<config/>"))
-
-    assert "UTF-8" in _replied(asked)
-
-
-async def test_the_command_is_refused_while_the_module_is_off(tmp_path):
-    """Importing points into a module nobody is running configures something no code reads,
-    and the gate runs before either path is chosen."""
-    league = await _league(tmp_path, enabled=False)
-
-    asked = await _import(league)
-
-    asked.response.send_modal.assert_not_awaited()
-    assert await _rows(league.db_path) == []
 
 
 async def test_the_modal_defers_before_importing(tmp_path):
@@ -551,11 +462,20 @@ async def test_every_xml_import_refusal_reaches_the_log_channel(
     tmp_path, raw, with_config, enabled, said_
 ):
     """Each refusal answers the manager at once as before, queues and saves nothing, and writes
-    exactly one line in the standard refusal form, its detail as the reason."""
+    exactly one line in the standard refusal form, its detail as the reason.
+
+    A file past 100 KB is refused before it is parsed, since parsing it first is how a wrong
+    file becomes a slow failure. An empty file is named as empty, rather than as an XML syntax
+    error at byte 0 that sends a manager looking for a fault in a file with nothing in it. A
+    file exported in the wrong encoding, as a Windows editor can, is named as not UTF-8, which
+    is what tells a manager to re-save it. With the module off an import would configure
+    something no code reads, and the gate runs before either path is chosen, so a file
+    attached opens no form."""
     league = await _league(tmp_path, with_config=with_config, enabled=enabled)
 
     asked = await _xml_import_command(league, file=_attachment(raw))
 
+    asked.response.send_modal.assert_not_awaited()
     assert said_ in _replied(asked)
     assert await _rows(league.db_path) == []
     assert await change_rows(league.db_path) == []
@@ -607,7 +527,8 @@ FL_ONLY_XML = """
 async def test_an_xml_import_records_each_change_from_what_to_what(tmp_path, case):
     """An import changes a configuration, so each change is recorded as an audit entry: who,
     when, and each position's points — or the fastest-lap bonus and its limit — from what to
-    what. The log line states the values set."""
+    what. The log line states the values set: each session, each position's points, and the
+    fastest-lap bonus with its limit."""
     from datetime import datetime
 
     from leaguebot.results.models.points_config import SessionType
@@ -618,8 +539,8 @@ async def test_an_xml_import_records_each_change_from_what_to_what(tmp_path, cas
         await _import(league)
         audited = await _audited(league)
         values = audited.split("\n", 1)[1] if "\n" in audited else ""
-        for expected in ("Feature Race", "Sprint Race", "25", "18", "8", "7"):
-            assert expected in values
+        for expected in ("Feature Race", "Sprint Race", "25", "18", "8", "7", "10"):
+            assert expected in values, f"{expected!r} is not among the values logged"
         return
 
     if case == "positions":

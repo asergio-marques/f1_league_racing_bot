@@ -18,38 +18,24 @@ from leaguebot.results.services.verdict_announcement_service import (
 # ---------------------------------------------------------------------------
 
 class TestTranslatePenalty:
-    def test_positive_with_sign_and_s(self):
-        assert translate_penalty("+5s") == "5 seconds added"
-
-    def test_positive_no_sign_with_s(self):
-        assert translate_penalty("5s") == "5 seconds added"
-
-    def test_positive_no_sign_no_s(self):
-        assert translate_penalty("5") == "5 seconds added"
-
-    def test_negative_with_s(self):
-        assert translate_penalty("-3s") == "3 seconds removed"
-
-    def test_negative_no_s(self):
-        assert translate_penalty("-10") == "10 seconds removed"
-
-    def test_dsq_uppercase(self):
-        assert translate_penalty("DSQ") == "Disqualified"
-
-    def test_dsq_lowercase(self):
-        assert translate_penalty("dsq") == "Disqualified"
-
-    def test_dsq_mixed_case(self):
-        assert translate_penalty("Dsq") == "Disqualified"
-
-    def test_dsq_with_whitespace(self):
-        assert translate_penalty("  DSQ  ") == "Disqualified"
-
-    def test_large_penalty(self):
-        assert translate_penalty("+30s") == "30 seconds added"
-
-    def test_single_second_removed(self):
-        assert translate_penalty("-1s") == "1 seconds removed"
+    @pytest.mark.parametrize(
+        "typed, expected",
+        [
+            pytest.param("+5s", "5 seconds added", id="positive_with_sign_and_s"),
+            pytest.param("5s", "5 seconds added", id="positive_no_sign_with_s"),
+            pytest.param("5", "5 seconds added", id="positive_no_sign_no_s"),
+            pytest.param("-3s", "3 seconds removed", id="negative_with_s"),
+            pytest.param("-10", "10 seconds removed", id="negative_no_s"),
+            pytest.param("DSQ", "Disqualified", id="dsq_uppercase"),
+            pytest.param("dsq", "Disqualified", id="dsq_lowercase"),
+            pytest.param("Dsq", "Disqualified", id="dsq_mixed_case"),
+            pytest.param("  DSQ  ", "Disqualified", id="dsq_with_whitespace"),
+            pytest.param("+30s", "30 seconds added", id="large_penalty"),
+            pytest.param("-1s", "1 seconds removed", id="single_second_removed"),
+        ],
+    )
+    def test_the_typed_value_is_worded(self, typed, expected):
+        assert translate_penalty(typed) == expected
 
     @pytest.mark.parametrize("typed", ["NFA", "nfa", "  Nfa  "])
     def test_no_further_action_says_no_penalty_follows(self, typed):

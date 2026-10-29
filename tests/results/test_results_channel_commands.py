@@ -74,15 +74,14 @@ async def _make_db(tmp_path) -> str:
     return db_path
 
 
-def _division(name: str = "Division 1"):
-    return SimpleNamespace(id=DIVISION_ID, name=name, tier=1)
+def _division():
+    return SimpleNamespace(id=DIVISION_ID, name="Division 1", tier=1)
 
 
 def _make_cog(
     db_path: str,
     *,
     season=SimpleNamespace(id=SEASON_ID),
-    divisions=None,
 ) -> ResultsCog:
     bot = MagicMock()
     bot.db_path = db_path
@@ -91,9 +90,7 @@ def _make_cog(
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.season_service = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
-    bot.season_service.get_divisions = AsyncMock(
-        return_value=divisions if divisions is not None else [_division()]
-    )
+    bot.season_service.get_divisions = AsyncMock(return_value=[_division()])
     bot.season_service.set_division_results_channel = AsyncMock(return_value=None)
     bot.season_service.set_division_standings_channel = AsyncMock(return_value=None)
     bot.season_service.set_division_penalty_channel = AsyncMock(return_value=None)
@@ -105,9 +102,9 @@ def _make_cog(
     return cog
 
 
-def _channel(channel_id: int = CHANNEL_ID, name: str = "forecasts", *, may_post: bool = True):
+def _channel(name: str = "forecasts", *, may_post: bool = True):
     channel = MagicMock(spec=discord.TextChannel)
-    channel.id = channel_id
+    channel.id = CHANNEL_ID
     channel.name = name
     channel.mention = f"#{name}"
     channel.permissions_for = MagicMock(return_value=SimpleNamespace(send_messages=may_post))
@@ -115,13 +112,13 @@ def _channel(channel_id: int = CHANNEL_ID, name: str = "forecasts", *, may_post:
 
 
 def _interaction(
-    *, done: bool = False, guild: bool = True, cog: ResultsCog | None = None,
+    *, guild: bool = True, cog: ResultsCog | None = None,
     command: str | None = None,
 ):
     """The manager's interaction, answering as Discord's does: done once responded to or
     deferred. Given *cog*, a refusal's line reaches that cog's log; given *command*, the
     interaction names that command."""
-    state = {"done": done}
+    state = {"done": False}
 
     async def _answer(*_args, **_kwargs):
         state["done"] = True
@@ -196,18 +193,6 @@ async def test_the_live_season_is_the_one_whose_channels_are_set(tmp_path, monke
     await cog._set_division_channel(interaction, "Division 1", _channel(), "results")
 
     cog.bot.season_service.get_setup_or_active_season.assert_awaited_once()
-    assert "No season is live" in _replied(interaction)
-
-
-async def test_a_server_with_no_season_is_refused(tmp_path, monkeypatch):
-    """Channels hang off divisions, which hang off a season."""
-    _free(monkeypatch)
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, season=None)
-    interaction = _interaction()
-
-    await cog._set_division_channel(interaction, "Division 1", _channel(), "results")
-
     assert "No season is live" in _replied(interaction)
 
 
@@ -299,18 +284,6 @@ async def test_a_refused_assignment_writes_nothing(tmp_path, monkeypatch):
     assert await _audit(db_path) == []
 
 
-async def test_a_free_channel_is_accepted(tmp_path, monkeypatch):
-    _free(monkeypatch)
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await cog._set_division_channel(interaction, "Division 1", _channel(), "results")
-
-    cog.bot.season_service.set_division_results_channel.assert_awaited_once()
-    assert "set to" in _replied(interaction)
-
-
 @pytest.mark.parametrize(
     "channel_type, setter",
     [
@@ -359,6 +332,7 @@ async def test_each_channel_type_writes_its_own_column(
 
     getattr(cog.bot.season_service, setter).assert_awaited_once()
     assert label in _replied(interaction)
+    assert "set to" in _replied(interaction)
 
 
 @pytest.mark.parametrize("channel_type", ["results", "standings"])
@@ -394,66 +368,6 @@ async def test_the_audit_records_the_channel_being_replaced(tmp_path, monkeypatc
     assert json.loads(entry["old_value"])["channel_id"] == 660000
 
 
-async def test_a_successful_assignment_is_logged(tmp_path, monkeypatch):
-    _free(monkeypatch)
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-
-    await cog._set_division_channel(_interaction(), "Division 1", _channel(), "results")
-
-    logged = cog.bot.output_router.post_log.await_args.args[0]
-    assert "Division 1" in logged
-    assert "#forecasts" in logged
-
-
-# ---------------------------------------------------------------------------
-# Each command checks its own module first, in its own words
-# ---------------------------------------------------------------------------
-
-
-async def _run_command(cog, command: str, interaction) -> None:
-    """Run the body of one of the two commands `_set_division_channel` serves."""
-    await undecorate(getattr(ResultsCog, command))(
-        cog, interaction, "Division 1", _channel()
-    )
-
-
-def _assert_nothing_done(cog, interaction, refused: str, command: str) -> None:
-    """Refused before the season is read: nothing written, and one line recording the
-    refusal of *command* (#482)."""
-    assert _replied(interaction) == refused
-    cog.bot.season_service.get_setup_or_active_season.assert_not_awaited()
-    cog.bot.season_service.set_division_results_channel.assert_not_awaited()
-    cog.bot.season_service.set_division_standings_channel.assert_not_awaited()
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        f"⛔ `/{command}` refused for Manager (<@{ACTOR_ID}>) — "
-        + refused.removeprefix("❌ ")
-    )
-
-
-@pytest.mark.parametrize(
-    "command", ["channel_results", "channel_standings"]
-)
-async def test_the_results_channels_are_refused_while_results_is_off(
-    tmp_path, monkeypatch, command
-):
-    """The words are the commands' own, not the results cog's gate. The refusal is
-    recorded (#482)."""
-    _free(monkeypatch)
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
-    qualified = "results channel " + command.removeprefix("channel_")
-    interaction = _interaction(cog=cog, command=qualified)
-
-    await _run_command(cog, command, interaction)
-
-    _assert_nothing_done(
-        cog, interaction, "❌ The Results & Standings module is not enabled.", qualified
-    )
-    assert await _audit(db_path) == []
-
-
 # ---------------------------------------------------------------------------
 # The log line names the command by its module's group (#462)
 # ---------------------------------------------------------------------------
@@ -485,32 +399,10 @@ async def test_the_results_channels_are_logged_under_results_channel(
 # ---------------------------------------------------------------------------
 
 
-async def _verdicts(cog, interaction, *, name: str = "Division 1", channel=None) -> None:
+async def _verdicts(cog, interaction, *, name: str = "Division 1") -> None:
     await undecorate(ResultsCog.channel_verdicts)(
-        cog, interaction, name, channel or _channel(name="verdicts")
+        cog, interaction, name, _channel(name="verdicts")
     )
-
-
-async def test_the_verdicts_channel_is_refused_while_results_is_off(tmp_path, monkeypatch):
-    """Word for word: the results cog's own gate is worded differently, and the command keeps
-    the words it had before it moved. Nothing is deferred or written; one line records the
-    refusal (#482)."""
-    _free(monkeypatch)
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
-    interaction = _interaction(cog=cog, command="results channel verdicts")
-
-    await _verdicts(cog, interaction)
-
-    assert _replied(interaction) == "❌ The Results & Standings module is not enabled."
-    interaction.response.defer.assert_not_awaited()
-    cog.bot.season_service.set_division_penalty_channel.assert_not_awaited()
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        f"⛔ `/results channel verdicts` refused for Manager (<@{ACTOR_ID}>) — "
-        "The Results & Standings module is not enabled."
-    )
-    assert await _audit(db_path) == []
 
 
 async def test_the_verdicts_channel_is_not_refused_while_attendance_is_off(tmp_path, monkeypatch):
@@ -541,22 +433,6 @@ async def test_the_verdicts_channel_defers_before_working(tmp_path, monkeypatch)
     interaction.followup.send.assert_awaited()
 
 
-async def test_a_verdicts_channel_the_bot_cannot_post_in_is_refused(tmp_path, monkeypatch):
-    """Checked before the write rather than discovered at the first verdict."""
-    _free(monkeypatch)
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _verdicts(cog, interaction, channel=_channel(name="verdicts", may_post=False))
-
-    assert _replied(interaction) == (
-        "❌ Cannot access that channel. Ensure the bot has permission to post there."
-    )
-    cog.bot.season_service.get_setup_or_active_season.assert_not_awaited()
-    assert await _audit(db_path) == []
-
-
 async def test_the_verdicts_channel_outside_a_guild_is_refused(tmp_path, monkeypatch):
     """`permissions_for(guild.me)` needs a guild, so the absence is answered rather than
     raising an `AttributeError` at a manager."""
@@ -568,30 +444,6 @@ async def test_the_verdicts_channel_outside_a_guild_is_refused(tmp_path, monkeyp
     await _verdicts(cog, interaction)
 
     assert "Cannot access that channel" in _replied(interaction)
-
-
-async def test_the_verdicts_channel_needs_a_live_season(tmp_path, monkeypatch):
-    _free(monkeypatch)
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, season=None)
-    interaction = _interaction()
-
-    await _verdicts(cog, interaction)
-
-    assert "No season is live" in _replied(interaction)
-    assert await _audit(db_path) == []
-
-
-async def test_the_verdicts_channel_refuses_an_unknown_division_by_name(tmp_path, monkeypatch):
-    _free(monkeypatch)
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _verdicts(cog, interaction, name="Division 9")
-
-    assert _replied(interaction) == '❌ Division "Division 9" not found.'
-    assert await _audit(db_path) == []
 
 
 async def test_the_verdicts_division_is_matched_regardless_of_case(tmp_path, monkeypatch):
@@ -618,28 +470,6 @@ async def test_a_verdicts_channel_already_doing_another_job_is_refused(tmp_path,
     assert "#verdicts is already the results channel for **Division 2**" in _replied(interaction)
     interaction.response.send_message.assert_not_awaited()
     cog.bot.season_service.set_division_penalty_channel.assert_not_awaited()
-    assert await _audit(db_path) == []
-
-
-async def test_re_setting_the_verdicts_channel_is_refused_as_unchanged(tmp_path, monkeypatch):
-    """The command's body names its own setting to the check, so the channel the division's
-    verdicts already go to is refused in its own words, not as a clash a manager would go
-    looking for. Nothing is written; the refusal is recorded (#482)."""
-    _in_use(monkeypatch, ChannelUse("verdicts", "Division 1"))
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction(cog=cog, command="results channel verdicts")
-
-    await _verdicts(cog, interaction)
-
-    assert _replied(interaction) == (
-        "ℹ️ #verdicts is already the verdicts channel for **Division 1**. Nothing was changed."
-    )
-    cog.bot.season_service.set_division_penalty_channel.assert_not_awaited()
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        f"⛔ `/results channel verdicts` refused for Manager (<@{ACTOR_ID}>) — "
-        "#verdicts is already the verdicts channel for **Division 1**. Nothing was changed."
-    )
     assert await _audit(db_path) == []
 
 
@@ -759,7 +589,14 @@ async def test_every_channel_refusal_is_recorded(tmp_path, monkeypatch, command,
     and is turned away: the module is off, no season is live, the division is not in the
     season, the channel already does another job or already does this one, or (verdicts) the
     bot may not post in it. The manager is answered as today, nothing is written, and exactly
-    one line records the refusal and its reason."""
+    one line records the refusal and its reason.
+
+    The module-off words are each command's own, not the results cog's gate, which is worded
+    differently: the commands keep the words they had before they moved, and are refused before
+    the season is read or anything deferred. A verdicts channel the bot cannot post in is
+    checked before the season is read, rather than discovered at the first verdict. The
+    verdicts command names its own setting to the check, so the channel a division's verdicts
+    already go to is refused in its own words, not as a clash a manager would go looking for."""
     use = setup.get("use")
     if use is None:
         _free(monkeypatch)
@@ -786,3 +623,11 @@ async def test_every_channel_refusal_is_recorded(tmp_path, monkeypatch, command,
         + reply.removeprefix("❌ ").removeprefix("ℹ️ ")
     )
     assert await _audit(db_path) == []
+    season_service = cog.bot.season_service
+    season_service.set_division_results_channel.assert_not_awaited()
+    season_service.set_division_standings_channel.assert_not_awaited()
+    season_service.set_division_penalty_channel.assert_not_awaited()
+    if setup.get("results_off") or setup.get("may_post") is False:
+        season_service.get_setup_or_active_season.assert_not_awaited()
+    if setup.get("results_off"):
+        interaction.response.defer.assert_not_awaited()

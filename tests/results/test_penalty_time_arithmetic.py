@@ -177,25 +177,28 @@ def test_a_gap_survives_the_round_trip(raw):
 # ---------------------------------------------------------------------------
 
 
-def test_a_penalty_is_added_to_the_finishing_time():
-    """The whole point: a steward types five seconds and the driver moves down the order."""
-    assert _apply_time_penalty("1:23.456", 5) == "1:28.456"
+@pytest.mark.parametrize(
+    "raw, seconds, expected",
+    [
+        ("1:23.456", 5, "1:28.456"),
+        ("1:57.000", 5, "2:02.000"),
+        ("59:58.000", 5, "1:00:03.000"),
+        ("1:28.456", -5, "1:23.456"),
+        ("1:23.456", 0, "1:23.456"),
+    ],
+    ids=["added", "across-the-minute", "across-the-hour", "given-back-on-appeal", "nothing"],
+)
+def test_a_penalty_is_applied_to_the_finishing_time(raw, seconds, expected):
+    """The whole point: a steward types five seconds and the driver moves down the order.
 
-
-def test_a_penalty_carries_across_the_minute():
-    """The arithmetic is done in milliseconds rather than on the string, so a penalty that
-    pushes a time past a minute rolls over rather than producing `1:63.456`."""
-    assert _apply_time_penalty("1:57.000", 5) == "2:02.000"
-
-
-def test_a_penalty_carries_across_the_hour():
-    """And changes the shape of the string it comes back in."""
-    assert _apply_time_penalty("59:58.000", 5) == "1:00:03.000"
-
-
-def test_a_penalty_given_back_on_appeal_is_subtracted():
-    """An appeal that succeeds reduces a penalty, so negative values are a real case."""
-    assert _apply_time_penalty("1:28.456", -5) == "1:23.456"
+    - across-the-minute: the arithmetic is done in milliseconds rather than on the string, so a
+      penalty that pushes a time past a minute rolls over rather than producing `1:63.456`.
+    - across-the-hour: and changes the shape of the string it comes back in.
+    - given-back-on-appeal: an appeal that succeeds reduces a penalty, so negative values are a
+      real case.
+    - nothing: a penalty of nothing changes nothing.
+    """
+    assert _apply_time_penalty(raw, seconds) == expected
 
 
 def test_no_floor_is_applied_here():
@@ -205,10 +208,6 @@ def test_no_floor_is_applied_here():
     result = _apply_time_penalty("0:03.000", -5)
 
     assert result != "0:03.000"
-
-
-def test_a_penalty_of_nothing_changes_nothing():
-    assert _apply_time_penalty("1:23.456", 0) == "1:23.456"
 
 
 @pytest.mark.parametrize("raw", ["", "-", "N/A", "DNF", "quick"])

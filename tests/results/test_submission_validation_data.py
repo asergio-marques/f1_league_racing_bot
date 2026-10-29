@@ -303,16 +303,23 @@ async def test_a_team_recorded_by_another_session_is_returned(tmp_path):
     assert found == {101: (PRO_ROLE, "FEATURE_QUALIFYING")}
 
 
-async def test_the_session_being_submitted_is_excluded(tmp_path):
+@pytest.mark.parametrize(
+    "session_type, table",
+    [
+        (SessionType.FEATURE_RACE, "race_session_results"),
+        (SessionType.FEATURE_QUALIFYING, "qualifying_session_results"),
+    ],
+    ids=["race", "qualifying"],
+)
+async def test_the_session_being_submitted_is_excluded(
+    tmp_path, session_type: SessionType, table: str
+):
     """Checking a submission against itself would find agreement every time and catch
     nothing — the whole check is a cross-session one."""
     db_path = await _make_db(tmp_path, name="validation_exclude")
-    await _seed_session(db_path, SessionType.FEATURE_RACE, [(101, PRO_ROLE)],
-                        table="race_session_results")
+    await _seed_session(db_path, session_type, [(101, PRO_ROLE)], table=table)
 
-    found = await other_active_team_assignments(
-        db_path, ROUND_ID, SessionType.FEATURE_RACE
-    )
+    found = await other_active_team_assignments(db_path, ROUND_ID, session_type)
 
     assert found == {}
 
@@ -415,6 +422,7 @@ async def test_a_round_with_no_other_sessions_yields_nothing(tmp_path):
         ("PRO", "pro"),
         ("Pro & Am", "pro--am"),
         ("Division #1", "division-1"),
+        ("Division 1", "division-1"),
         ("Am/Pro", "ampro"),
     ],
 )

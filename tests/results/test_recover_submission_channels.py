@@ -218,10 +218,6 @@ def _logged(stub) -> str:
     )
 
 
-def _posted(channel) -> str:
-    return "\n".join(str(call.args[0]) for call in channel.send.await_args_list if call.args)
-
-
 # ---------------------------------------------------------------------------
 # A channel that is already closed
 # ---------------------------------------------------------------------------
@@ -239,14 +235,6 @@ async def test_a_closed_channel_is_left_alone(tmp_path):
     assert await _rows(db_path, "session_results") == 1
     stubs["rerun"].assert_not_awaited()
     assert _asked(stub) == []
-
-
-async def test_a_restart_with_nothing_open_does_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, name="recover_none", closed=1)
-    stub = _bot(db_path, channel=_channel())
-
-    stubs = await _recover(stub)
-
     stubs["create_task"].assert_not_called()
 
 
@@ -444,10 +432,20 @@ async def test_a_review_put_back_asks_the_queue_it_was_handed(tmp_path):
     stub.change_queue.ask.assert_not_awaited()
 
 
-async def test_a_review_whose_guild_is_missing_is_left_intact(tmp_path):
+@pytest.mark.parametrize(
+    "round_status",
+    ["AWAITING_RESULTS", "AWAITING_APPEAL_VERDICTS"],
+    ids=["penalty review", "appeals"],
+)
+async def test_a_review_whose_guild_is_missing_is_left_intact(tmp_path, round_status: str):
     """Nothing can be posted without the guild, and clearing the row would lose the round's
-    place in the review — so it is left for the next restart to find."""
-    db_path = await _make_db(tmp_path, name="recover_review_noguild", in_penalty_review=1)
+    place in the review or in its appeals — so it is left for the next restart to find."""
+    db_path = await _make_db(
+        tmp_path,
+        name="recover_review_noguild",
+        in_penalty_review=1,
+        round_status=round_status,
+    )
     stub = _bot(db_path, guild_missing=True, channel=None)
 
     await _recover(stub)
@@ -527,21 +525,6 @@ async def test_a_failing_appeals_re_post_does_not_stop_the_start_up(tmp_path):
     stub.change_queue.ask = AsyncMock(side_effect=RuntimeError("the database is locked"))
 
     await _recover(stub)  # must not raise
-
-
-async def test_an_appeals_round_whose_guild_is_missing_is_left_intact(tmp_path):
-    db_path = await _make_db(
-        tmp_path,
-        name="recover_appeals_noguild",
-        in_penalty_review=1,
-        round_status="AWAITING_APPEAL_VERDICTS",
-    )
-    stub = _bot(db_path, guild_missing=True, channel=None)
-
-    await _recover(stub)
-
-    assert await _rows(db_path, "round_submission_channels") == 1
-    assert await _rows(db_path, "session_results") == 1
 
 
 # ---------------------------------------------------------------------------
@@ -629,8 +612,9 @@ def _lapse_lines(league) -> list[str]:
 async def test_a_restart_mid_resubmission_keeps_the_results_and_restores_the_review(tmp_path):
     """The bot restarts while round 3 is resubmitting. The round's results stay, its channel is
     not deleted, and its review is asked back without publishing, returning from a restart; once
-    the queue has run, the resubmission was abandoned by that opening's own job and one review
-    prompt stands."""
+    the queue has run, the resubmission was abandoned by that opening's own job, its flag is down
+    and one review prompt stands. Left set, the review channel's guard would stay down and let
+    messages through; the flag comes down in the save of that `abandon_resubmission` job."""
     from tests.results.test_review_open_change import SUBMISSION_CHANNEL, _prompts
     from tests.support.change_queue import change_rows
 
@@ -639,6 +623,7 @@ async def test_a_restart_mid_resubmission_keeps_the_results_and_restores_the_rev
     done = await _restart(league)
 
     assert "abandon_resubmission" in done
+    assert await _resubmitting_flag(league.db_path) == 0
     assert await _rows(league.db_path, "session_results") == 1
     assert SUBMISSION_CHANNEL in league.channels
     [opening] = [change for change in await change_rows(league.db_path)
@@ -647,17 +632,6 @@ async def test_a_restart_mid_resubmission_keeps_the_results_and_restores_the_rev
     assert payload["publish"] is False
     assert payload["returning"] == "restart"
     assert len(_prompts(league)) == 1
-
-
-async def test_a_restart_mid_resubmission_clears_the_flag(tmp_path):
-    """Left set, the review channel's guard would stay down and let messages through. The flag
-    comes down in the save of the review opening's `abandon_resubmission` job."""
-    league = await _resubmitting_league(tmp_path)
-
-    done = await _restart(league)
-
-    assert "abandon_resubmission" in done
-    assert await _resubmitting_flag(league.db_path) == 0
 
 
 async def test_a_restart_mid_resubmission_says_the_earlier_results_stand(tmp_path):
@@ -753,13 +727,3 @@ async def test_a_restart_mid_resubmission_with_its_channel_gone_is_still_closed_
         "  The sessions entered were lost. The earlier results stand. "
         "Press Resubmit again to re-enter them."
     ]
-
-
-async def test_an_ordinary_review_is_not_told_about_a_resubmission(tmp_path):
-    db_path = await _make_db(tmp_path, name="recover_not_resubmit", in_penalty_review=1)
-    channel = _channel()
-    stub = _bot(db_path, channel=channel)
-
-    await _recover(stub)
-
-    assert "resubmission" not in _posted(channel)

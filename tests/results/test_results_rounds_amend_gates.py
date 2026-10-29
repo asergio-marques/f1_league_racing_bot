@@ -52,7 +52,6 @@ from leaguebot.core.services.season_service import SeasonService
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.results.models.points_config import SessionType
 from tests.support.change_queue import (
-    SERVER_ID,
     attach_queue,
     change_rows,
     league_double,
@@ -218,20 +217,6 @@ async def test_the_results_module_must_be_on(tmp_path):
     assert [row for row in await change_rows(db_path) if row["kind"] == OPEN] == []
 
 
-async def test_a_server_with_no_season_is_refused(tmp_path):
-    db_path = await _make_db(tmp_path, name="amend_noseason")
-    cog = await _make_cog(db_path, season=None)
-    interaction = _interaction(cog)
-
-    await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
-
-    # The refusal names the archive rule (issue #224): a server whose only season is
-    # completed or cancelled reaches this same branch, because the command now asks for
-    # the *live* season and an archived one is never returned.
-    assert "there is none" in _replied(interaction)
-    assert "archive" in _replied(interaction)
-
-
 async def test_the_no_season_refusal_names_results_rounds_amend(tmp_path):
     """The season gate quotes back the name the command hands it, so a refusal naming a
     command that no longer exists sends a league admin looking for it. The repository's
@@ -246,6 +231,10 @@ async def test_the_no_season_refusal_names_results_rounds_amend(tmp_path):
         "❌ `/results rounds amend` acts on the season this server is building or racing, "
         "and there is none."
     )
+    # The refusal names the archive rule (issue #224): a server whose only season is
+    # completed or cancelled reaches this same branch, because the command now asks for
+    # the *live* season and an archived one is never returned.
+    assert "archive" in _replied(interaction)
 
 
 async def test_an_unknown_division_is_refused_by_name(tmp_path):

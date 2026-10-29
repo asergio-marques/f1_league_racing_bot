@@ -213,15 +213,24 @@ async def test_missing_attached_configs_names_every_phantom_in_order(db_path):
 
 
 @pytest.mark.asyncio
-async def test_validate_monotonic_valid(db_path):
+@pytest.mark.parametrize(
+    ("config_name", "rows"),
+    [
+        ("X", [(1, 25), (2, 18), (3, 15)]),
+        ("ZEROS", [(1, 0), (2, 0)]),
+    ],
+    ids=["falling", "trailing-zeros"],
+)
+async def test_validate_monotonic_valid(db_path, config_name, rows):
+    """A table falling with position passes, and so do equal zeros: P1=0, P2=0 is not a
+    violation."""
     season_id = await _make_season(db_path)
-    # Manually insert monotonic entries: P1=25, P2=18, P3=15
     async with get_connection(db_path) as db:
-        for pos, pts in [(1, 25), (2, 18), (3, 15)]:
+        for pos, pts in rows:
             await db.execute(
                 "INSERT INTO season_points_entries (season_id, config_name, session_type, position, points) "
-                "VALUES (?, 'X', 'FEATURE_RACE', ?, ?)",
-                (season_id, pos, pts),
+                "VALUES (?, ?, 'FEATURE_RACE', ?, ?)",
+                (season_id, config_name, pos, pts),
             )
         await db.commit()
     errors = await validate_monotonic_ordering(db_path, season_id)
@@ -229,53 +238,29 @@ async def test_validate_monotonic_valid(db_path):
 
 
 @pytest.mark.asyncio
-async def test_validate_monotonic_invalid(db_path):
+@pytest.mark.parametrize(
+    ("config_name", "rows"),
+    [
+        ("BAD", [(1, 10), (2, 18)]),
+        ("EQ", [(1, 25), (2, 25)]),
+    ],
+    ids=["rising", "equal-nonzero"],
+)
+async def test_validate_monotonic_invalid(db_path, config_name, rows):
+    """A lower position worth more is a violation, and so is an equal non-zero one: P1=25,
+    P2=25. The error names the configuration."""
     season_id = await _make_season(db_path)
-    # P1=10, P2=18 — non-monotonic!
     async with get_connection(db_path) as db:
-        for pos, pts in [(1, 10), (2, 18)]:
+        for pos, pts in rows:
             await db.execute(
                 "INSERT INTO season_points_entries (season_id, config_name, session_type, position, points) "
-                "VALUES (?, 'BAD', 'FEATURE_RACE', ?, ?)",
-                (season_id, pos, pts),
+                "VALUES (?, ?, 'FEATURE_RACE', ?, ?)",
+                (season_id, config_name, pos, pts),
             )
         await db.commit()
     errors = await validate_monotonic_ordering(db_path, season_id)
     assert len(errors) >= 1
-    assert "BAD" in errors[0]
-
-
-@pytest.mark.asyncio
-async def test_validate_monotonic_equal_nonzero(db_path):
-    season_id = await _make_season(db_path)
-    # P1=25, P2=25 — equal non-zero counts as a violation
-    async with get_connection(db_path) as db:
-        for pos, pts in [(1, 25), (2, 25)]:
-            await db.execute(
-                "INSERT INTO season_points_entries (season_id, config_name, session_type, position, points) "
-                "VALUES (?, 'EQ', 'FEATURE_RACE', ?, ?)",
-                (season_id, pos, pts),
-            )
-        await db.commit()
-    errors = await validate_monotonic_ordering(db_path, season_id)
-    assert len(errors) >= 1
-    assert "EQ" in errors[0]
-
-
-@pytest.mark.asyncio
-async def test_validate_monotonic_trailing_zeros_ok(db_path):
-    season_id = await _make_season(db_path)
-    # P1=0, P2=0 — equal zeros are NOT a violation
-    async with get_connection(db_path) as db:
-        for pos, pts in [(1, 0), (2, 0)]:
-            await db.execute(
-                "INSERT INTO season_points_entries (season_id, config_name, session_type, position, points) "
-                "VALUES (?, 'ZEROS', 'FEATURE_RACE', ?, ?)",
-                (season_id, pos, pts),
-            )
-        await db.commit()
-    errors = await validate_monotonic_ordering(db_path, season_id)
-    assert errors == []
+    assert config_name in errors[0]
 
 
 # ---------------------------------------------------------------------------

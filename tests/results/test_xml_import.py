@@ -304,52 +304,36 @@ def test_parse_multiple_errors_collected():
 # ---------------------------------------------------------------------------
 
 
-def test_validate_monotonic_pass():
-    """Non-increasing sequence passes validation."""
-    payload = XmlImportPayload(
-        positions={
-            SessionType.FEATURE_RACE: {1: 25, 2: 18, 3: 15, 4: 12, 5: 10},
-        }
-    )
+@pytest.mark.parametrize(
+    "payload",
+    [
+        XmlImportPayload(positions={SessionType.FEATURE_RACE: {1: 25, 2: 18, 3: 15, 4: 12, 5: 10}}),
+        XmlImportPayload(positions={SessionType.FEATURE_RACE: {1: 25, 2: 18, 3: 0, 4: 0}}),
+        XmlImportPayload(),
+    ],
+    ids=["non-increasing", "trailing-zeros", "empty"],
+)
+def test_validate_monotonic_pass(payload):
+    """A non-increasing sequence passes validation; trailing zeros after a positive value do
+    not trigger a violation; an empty payload has no violations."""
     assert validate_payload(payload) == []
 
 
-def test_validate_monotonic_fail():
-    """Increasing sequence produces an error."""
-    payload = XmlImportPayload(
-        positions={
-            SessionType.FEATURE_RACE: {1: 10, 2: 20},
-        }
-    )
+@pytest.mark.parametrize(
+    ("session_type", "positions", "label"),
+    [
+        (SessionType.FEATURE_RACE, {1: 10, 2: 20}, "Feature Race"),
+        (SessionType.SPRINT_RACE, {1: 8, 2: 8}, "Sprint Race"),
+    ],
+    ids=["increasing", "equal-positive"],
+)
+def test_validate_monotonic_fail(session_type, positions, label):
+    """An increasing sequence produces an error, and so do equal adjacent positive values
+    (non-strictly-decreasing); the error names the session."""
+    payload = XmlImportPayload(positions={session_type: positions})
     errors = validate_payload(payload)
     assert len(errors) == 1
-    assert "Feature Race" in errors[0]
-
-
-def test_validate_trailing_zeros_allowed():
-    """Trailing zeros after a positive value don't trigger a violation."""
-    payload = XmlImportPayload(
-        positions={
-            SessionType.FEATURE_RACE: {1: 25, 2: 18, 3: 0, 4: 0},
-        }
-    )
-    assert validate_payload(payload) == []
-
-
-def test_validate_equal_values_with_next_positive_fail():
-    """Equal adjacent positive values (non-strictly-decreasing) are a violation."""
-    payload = XmlImportPayload(
-        positions={
-            SessionType.SPRINT_RACE: {1: 8, 2: 8},
-        }
-    )
-    errors = validate_payload(payload)
-    assert len(errors) == 1
-
-
-def test_validate_empty_payload_no_errors():
-    """Empty payload has no violations."""
-    assert validate_payload(XmlImportPayload()) == []
+    assert label in errors[0]
 
 
 # ---------------------------------------------------------------------------

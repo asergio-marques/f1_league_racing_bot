@@ -244,11 +244,14 @@ async def _header(db_path, session_type: str = "FEATURE_RACE") -> dict:
 
 
 async def test_the_amended_classification_is_written(tmp_path):
+    """With no verdicts on the round, no penalty record is written either: the ordinary case keeps
+    working, so the verdict fix cannot be read as a special path."""
     db_path = await _make_db(tmp_path)
 
     await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
 
     assert await _race_drivers(db_path) == [(102, 1), (101, 2)]
+    assert await _verdict_rows(db_path, "penalty_records") == []
 
 
 async def test_the_previous_classification_does_not_survive(tmp_path):
@@ -578,26 +581,17 @@ async def test_stage_one_publishes_nothing(tmp_path):
     provisional posting standing.
 
     So the league keeps reading the round it raced until the amendment is actually finished.
+
+    **The rebuild belongs to the final approval, and happens once.** Rebuilding here would
+    publish a classification whose sanctions are still the old round's, reposting every round of
+    the division to do it — and then throw all of it away and do it again when the appeals stage
+    is approved minutes later. Nor is the round's attendance touched.
     """
     db_path = await _make_db(tmp_path, name="amend_repost")
 
     stubs = await _amend(db_path, [_race_row(101, 1)])
 
     stubs["repost"].assert_not_awaited()
-    stubs["asked"].assert_not_awaited()
-
-
-async def test_stage_one_does_not_rebuild_the_division(tmp_path):
-    """**The rebuild belongs to the final approval, and happens once.**
-
-    Rebuilding here would publish a classification whose sanctions are still the old round's,
-    reposting every round of the division to do it — and then throw all of it away and do it
-    again when the appeals stage is approved minutes later.
-    """
-    db_path = await _make_db(tmp_path, name="amend_no_early_replay")
-
-    stubs = await _amend(db_path, [_race_row(101, 1)])
-
     stubs["asked"].assert_not_awaited()
     assert stubs["bot"].attendance_after_review.method_calls == []
 
@@ -665,32 +659,22 @@ async def _race_result_id(db_path, driver: int) -> int:
         return (await cursor.fetchone())[0]
 
 
-async def test_a_round_carrying_a_penalty_can_be_amended_at_all(tmp_path):
-    """The defect itself: the delete was refused and nothing could be amended.
-
-    Before the fix this raised `IntegrityError: FOREIGN KEY constraint failed` and the admin was
-    told the amendment had failed for an internal reason, with no route by which they could ever
-    succeed.
-    """
-    db_path = await _make_db(tmp_path, name="amend_with_penalty")
-    await _add_penalty(db_path, await _race_result_id(db_path, 101))
-
-    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
-
-    assert await _race_drivers(db_path) == [(102, 1), (101, 2)]
-
-
 async def test_the_verdict_follows_its_driver_to_the_new_row(tmp_path):
     """The audit is kept, and kept against the right driver.
 
     The row id changes — the old one is deleted — so the test asserts the verdict points at the
     row the *same driver* now holds, which is the whole of what re-pointing means.
+
+    A round carrying a penalty can be amended at all: before the fix the delete was refused, with
+    `IntegrityError: FOREIGN KEY constraint failed`, and the admin was told the amendment had
+    failed for an internal reason, with no route by which they could ever succeed.
     """
     db_path = await _make_db(tmp_path, name="amend_verdict_follows")
     verdict_id = await _add_penalty(db_path, await _race_result_id(db_path, 101))
 
     await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
 
+    assert await _race_drivers(db_path) == [(102, 1), (101, 2)]
     rows = await _verdict_rows(db_path, "penalty_records")
     assert rows == [(verdict_id, await _race_result_id(db_path, 101))]
 
@@ -825,16 +809,6 @@ async def test_a_refused_amendment_changes_nothing_at_all(tmp_path):
 
     assert await _race_drivers(db_path) == [(101, 1), (102, 2)]
     assert await _verdict_rows(db_path, "penalty_records") == [(verdict_id, before)]
-
-
-async def test_an_amendment_with_no_verdicts_is_unaffected(tmp_path):
-    """The ordinary case keeps working, so the fix cannot be read as a special path."""
-    db_path = await _make_db(tmp_path, name="amend_no_verdicts")
-
-    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
-
-    assert await _race_drivers(db_path) == [(102, 1), (101, 2)]
-    assert await _verdict_rows(db_path, "penalty_records") == []
 
 
 async def test_a_verdict_follows_a_driver_who_has_changed_account(tmp_path):

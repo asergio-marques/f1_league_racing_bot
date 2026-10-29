@@ -239,7 +239,8 @@ async def test_server_scope_needs_no_season():
 
 
 async def test_season_scope_without_a_season_points_at_server_scope():
-    """The refusal names the way out rather than dead-ending (#200)."""
+    """There is nothing to view a configuration *for*, and the command would otherwise read
+    a season id off `None`; the refusal names the way out rather than dead-ending (#200)."""
     cog = _make_cog(season_status=None)
     interaction = _interaction()
 
@@ -250,17 +251,6 @@ async def test_season_scope_without_a_season_points_at_server_scope():
     reply = _replied(interaction)
     assert "No active or setup season found" in reply
     assert "scope: Server" in reply
-
-
-async def test_a_server_with_no_season_is_refused():
-    """There is nothing to view a configuration *for*, and the command would otherwise read
-    a season id off `None`."""
-    cog = _make_cog(season_status=None)
-    interaction = _interaction()
-
-    await _view(cog, interaction)
-
-    assert "No active or setup season" in _replied(interaction)
 
 
 # ---------------------------------------------------------------------------

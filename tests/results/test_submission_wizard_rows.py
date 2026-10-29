@@ -25,9 +25,7 @@ fastest lap and no time, so `DNS`, `DNF` and `DSQ` in the time field stop the fa
 from running — asking a retired driver for a lap time would refuse every row a retirement
 appears in.
 
-**An empty tyre is an answer, not a gap** (XIV.13's per-field absent-datum rule): the
-submission of a session does not oblige a compound, and its absence is a state the graphic
-depicts rather than a gap it reports.
+The tyre compound's rules are pinned with the closed set in `test_result_submission_service.py`.
 """
 from __future__ import annotations
 
@@ -46,11 +44,10 @@ def _qualifying(
     position: str = "1",
     driver: str = DRIVER,
     team: str = TEAM,
-    tyre: str = "Soft",
     best_lap: str = "1:23.456",
     gap: str = "N/A",
 ) -> str:
-    return f"{position}, {driver}, {team}, {tyre}, {best_lap}, {gap}"
+    return f"{position}, {driver}, {team}, Soft, {best_lap}, {gap}"
 
 
 def _race(
@@ -112,7 +109,7 @@ def test_surrounding_whitespace_is_forgiven():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("position", ["0x", "first", "-1", "1.5", ""])
+@pytest.mark.parametrize("position", ["0x", "first", "abc", "-1", "1.5", ""])
 def test_a_position_that_is_not_a_whole_number_is_refused(position):
     result = _validate_qualifying_row_wizard(_qualifying(position=position))
 
@@ -120,7 +117,7 @@ def test_a_position_that_is_not_a_whole_number_is_refused(position):
     assert "Position" in result
 
 
-@pytest.mark.parametrize("driver", ["Lewis", "4242", "<@&4242>", ""])
+@pytest.mark.parametrize("driver", ["Lewis", "notamention", "4242", "<@&4242>", ""])
 def test_a_driver_that_is_not_a_member_mention_is_refused(driver):
     """A role mention where a member should be is the mistake this catches — the two look
     almost identical and a role would silently become a driver id."""
@@ -128,6 +125,7 @@ def test_a_driver_that_is_not_a_member_mention_is_refused(driver):
 
     assert _refused(result)
     assert "Driver" in result
+    assert "Discord member mention" in result
 
 
 def test_an_empty_team_is_refused():
@@ -156,47 +154,13 @@ def test_a_valid_row_carries_the_ids_through():
 
 
 # ---------------------------------------------------------------------------
-# Tyres
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("tyre", ["Soft", "soft", "SOFT"])
-def test_a_tyre_is_stored_in_its_canonical_spelling(tyre):
-    """One spelling is stored so the qualifying graphic finds its file on every row
-    without the league supplying any tyre artwork."""
-    result = _validate_qualifying_row_wizard(_qualifying(tyre=tyre))
-
-    assert not _refused(result)
-    assert result.tyre == _validate_qualifying_row_wizard(_qualifying(tyre="Soft")).tyre
-
-
-def test_an_unknown_compound_is_refused_listing_the_set():
-    """The five compounds are a closed set, so a submission naming something else names
-    nothing the bot can draw — refused here rather than resolved to a placeholder six
-    steps later."""
-    result = _validate_qualifying_row_wizard(_qualifying(tyre="Rainbow"))
-
-    assert _refused(result)
-    assert "Rainbow" in result
-
-
-@pytest.mark.parametrize("tyre", ["", "N/A", "n/a"])
-def test_an_absent_tyre_is_an_answer_not_a_gap(tyre):
-    """The submission of a session does not oblige a compound, and its absence is a state
-    the graphic depicts rather than a gap it reports."""
-    result = _validate_qualifying_row_wizard(_qualifying(tyre=tyre))
-
-    assert not _refused(result)
-    assert result.tyre is None
-
-
-# ---------------------------------------------------------------------------
 # Qualifying times
 # ---------------------------------------------------------------------------
 
 
-def test_a_qualifying_best_lap_must_be_a_time():
-    result = _validate_qualifying_row_wizard(_qualifying(best_lap="quick"))
+@pytest.mark.parametrize("best_lap", ["quick", "badtime"])
+def test_a_qualifying_best_lap_must_be_a_time(best_lap):
+    result = _validate_qualifying_row_wizard(_qualifying(best_lap=best_lap))
 
     assert _refused(result)
     assert "Best Lap" in result
@@ -210,16 +174,18 @@ def test_a_retirement_may_stand_in_for_a_qualifying_time(outcome):
     assert not _refused(result)
 
 
-def test_a_qualifying_leader_s_gap_is_not_checked():
+@pytest.mark.parametrize("gap", ["anything", "WHATEVER_IGNORED"])
+def test_a_qualifying_leader_s_gap_is_not_checked(gap):
     """First place has nobody to be behind, so whatever sits in the field is ignored
     rather than refused — a league writing "—" or "Pole" there is not wrong."""
-    result = _validate_qualifying_row_wizard(_qualifying(position="1", gap="anything"))
+    result = _validate_qualifying_row_wizard(_qualifying(position="1", gap=gap))
 
     assert not _refused(result)
 
 
-def test_a_following_driver_s_gap_must_be_a_delta_a_time_or_absent():
-    result = _validate_qualifying_row_wizard(_qualifying(position="2", gap="miles"))
+@pytest.mark.parametrize("gap", ["miles", "INVALID"])
+def test_a_following_driver_s_gap_must_be_a_delta_a_time_or_absent(gap):
+    result = _validate_qualifying_row_wizard(_qualifying(position="2", gap=gap))
 
     assert _refused(result)
     assert "Gap" in result
@@ -237,19 +203,14 @@ def test_the_three_acceptable_gap_forms(gap):
 # ---------------------------------------------------------------------------
 
 
-def test_the_leading_race_row_must_give_an_absolute_time():
-    """A delta in first place would be a gap to nobody, and every following driver's gap
-    is computed from this one."""
-    result = _validate_race_row_wizard(_race(total_time="+0:01.234"), is_first=True)
+@pytest.mark.parametrize("total_time", ["+0:01.234", "+0:00.000"])
+def test_the_leading_race_row_must_give_an_absolute_time(total_time):
+    """A delta in first place would be a gap to nobody, a zero one included, and every
+    following driver's gap is computed from this one."""
+    result = _validate_race_row_wizard(_race(total_time=total_time), is_first=True)
 
     assert _refused(result)
     assert "absolute time" in result
-
-
-def test_the_leading_race_row_accepts_an_absolute_time():
-    result = _validate_race_row_wizard(_race(total_time="1:23:45.678"), is_first=True)
-
-    assert not _refused(result)
 
 
 @pytest.mark.parametrize(

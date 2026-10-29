@@ -63,9 +63,7 @@ NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 # ---------------------------------------------------------------------------
 
 
-async def _make_db(
-    tmp_path, *, name: str = "results_sync", config_row: bool = True, reserves: int | None = 1
-) -> str:
+async def _make_db(tmp_path, *, name: str = "results_sync") -> str:
     db_path = os.path.join(str(tmp_path), f"{name}.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -84,12 +82,11 @@ async def _make_db(
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
-        if config_row:
-            await db.execute(
-                "INSERT INTO division_results_config (division_id, reserves_in_standings) "
-                "VALUES (?, ?)",
-                (DIVISION_ID, reserves),
-            )
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, reserves_in_standings) "
+            "VALUES (?, 1)",
+            (DIVISION_ID,),
+        )
         await db.commit()
     return db_path
 
@@ -99,7 +96,6 @@ def _make_cog(
     *,
     enabled: bool = True,
     season=SimpleNamespace(id=SEASON_ID, season_number=1, stage=SeasonStage.ONGOING),
-    divisions=None,
 ) -> ResultsCog:
     bot = MagicMock()
     bot.db_path = db_path
@@ -108,9 +104,7 @@ def _make_cog(
     bot.season_service = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(
-        return_value=divisions
-        if divisions is not None
-        else [SimpleNamespace(id=DIVISION_ID, name="Pro", tier=1)]
+        return_value=[SimpleNamespace(id=DIVISION_ID, name="Pro", tier=1)]
     )
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
@@ -229,10 +223,10 @@ async def _league(tmp_path, *, results: bool = True, status: str = "ACTIVE",
     return league
 
 
-async def _toggled(league, *, division="Pro"):
-    """Run `/results reserves toggle` for *division* as Admin on *league*, then the queue."""
+async def _toggled(league):
+    """Run `/results reserves toggle` for Pro as Admin on *league*, then the queue."""
     asked = member_asks(league.bot, "results reserves toggle")
-    await _toggle(ResultsCog(league.bot), asked, division=division)
+    await _toggle(ResultsCog(league.bot), asked, division="Pro")
     return asked
 
 
@@ -280,21 +274,14 @@ def _division_synced(ask) -> int:
 
 
 @pytest.mark.parametrize("label,run", SYNCS_ON_THE_QUEUE)
-async def test_a_sync_reposts_the_division(tmp_path, label, run):
-    db_path = await _make_db(tmp_path, name=f"sync_{label}")
-    cog = _make_cog(db_path)
-
-    repost = await run(cog, _interaction())
-
-    repost.assert_awaited_once()
-    assert _division_synced(repost) == DIVISION_ID
-
-
-@pytest.mark.parametrize("label,run", SYNCS_ON_THE_QUEUE)
 async def test_a_successful_sync_says_so(tmp_path, label, run):
-    """Each sync is asked of the change queue with the interaction, whose acknowledgement the
-    queue updates with "synced" once it has run (`test_rounds_sync_change.py`,
-    `test_standings_sync_change.py`)."""
+    """Each sync is asked of the change queue for the division named, with the interaction,
+    whose acknowledgement the queue updates with "synced" once it has run
+    (`test_rounds_sync_change.py`, `test_standings_sync_change.py`).
+
+    The two syncs sit beside each other and read almost identically; one asking for the
+    other's change would repost standings where a manager asked for results. Each asks the
+    change queue for its own kind alone."""
     db_path = await _make_db(tmp_path, name=f"sync_ok_{label}")
     cog = _make_cog(db_path)
     interaction = _interaction()
@@ -304,6 +291,7 @@ async def test_a_successful_sync_says_so(tmp_path, label, run):
     ask.assert_awaited_once()
     assert ask.await_args.args[0] == SYNC_KINDS[label]
     assert ask.await_args.kwargs["interaction"] is interaction
+    assert _division_synced(ask) == DIVISION_ID
 
 
 @pytest.mark.parametrize("label,run", SYNCS)
@@ -513,19 +501,6 @@ async def test_every_sync_and_toggle_refusal_is_recorded(tmp_path, command, run,
     assert await _reserves(league.db_path) == 1
 
 
-async def test_the_two_syncs_call_different_services(tmp_path):
-    """They sit beside each other and read almost identically; one asking for the other's
-    change would repost standings where a manager asked for results. Each asks the change
-    queue for its own kind alone."""
-    db_path = await _make_db(tmp_path, name="sync_distinct")
-    for label, run in SYNCS:
-        cog = _make_cog(db_path)
-
-        ask = await run(cog, _interaction(), status="ok")
-
-        assert [call.args[0] for call in ask.await_args_list] == [SYNC_KINDS[label]]
-
-
 # ---------------------------------------------------------------------------
 # The reserves toggle
 # ---------------------------------------------------------------------------
@@ -555,23 +530,17 @@ async def test_a_division_with_no_configuration_is_showing_reserves(tmp_path):
     """The schema default, and the league never chose otherwise — so the first toggle must
     *hide* them. Reading it wrongly makes the first press appear to do nothing, and every
     press after that does the opposite of what the manager expects. Read from the database once
-    the change has run."""
+    the change has run.
+
+    The setting is written with an upsert: a plain UPDATE would silently do nothing on a
+    division that has never had a results configuration, and the toggle would report a change
+    it did not make."""
     league = await _league(tmp_path, config_row=False)
 
     asked = await _toggled(league)
 
     assert await _reserves(league.db_path) == 0
     assert "hidden" in _said(asked)
-
-
-async def test_the_setting_is_written_for_a_division_that_had_no_configuration(tmp_path):
-    """A plain UPDATE would silently do nothing on a division that has never had a results
-    configuration, and the toggle would report a change it did not make."""
-    league = await _league(tmp_path, config_row=False)
-
-    await _toggled(league)
-
-    assert await _reserves(league.db_path) is not None
 
 
 async def test_toggling_twice_returns_to_where_it_started(tmp_path):
@@ -619,17 +588,6 @@ async def test_the_toggle_is_logged_with_the_state_it_reached(tmp_path):
     assert "/results reserves toggle" in logged
     assert "hidden" in logged
     assert "Pro" in logged
-
-
-async def test_an_unknown_division_is_not_toggled(tmp_path):
-    """A division the season does not hold: refused at once, nothing queued or toggled."""
-    league = await _league(tmp_path)
-
-    asked = await _toggled(league, division="Rookie")
-
-    assert "Rookie" in _said(asked)
-    assert await change_rows(league.db_path) == []
-    assert await _reserves(league.db_path) == 1
 
 
 async def test_a_server_with_no_season_is_not_toggled(tmp_path):

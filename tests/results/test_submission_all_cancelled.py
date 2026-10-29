@@ -274,7 +274,8 @@ async def test_a_resubmission_entering_every_session_cancelled_ends_the_round_ca
     the queue runs, `results.submission.all_cancelled` reads the drivers' names and then runs
     `end_round` (the round holding standings to withdraw), round 3 is
     CANCELLED and marked as not held, and one `round.status` audit records it moving from
-    AWAITING_REPORT_VERDICTS to CANCELLED; the review is not asked again (core :232-234)."""
+    AWAITING_REPORT_VERDICTS to CANCELLED; the resubmission closes channel 702 rather than
+    asking the review again (core :232-234)."""
     from leaguebot.core.db.database import get_connection
     from tests.results.test_resubmission_changes import (
         REVIEW_OPEN,
@@ -284,6 +285,7 @@ async def test_a_resubmission_entering_every_session_cancelled_ends_the_round_ca
         _reviewing,
         _type,
     )
+    from tests.results.test_review_open_change import SUBMISSION_CHANNEL as REVIEW_CHANNEL
 
     league = await _reviewing(tmp_path, monkeypatch)
     await _press_resubmit(league)
@@ -309,6 +311,7 @@ async def test_a_resubmission_entering_every_session_cancelled_ends_the_round_ca
     assert [(audit["old_value"], audit["new_value"]) for audit in audits] == [
         ("AWAITING_REPORT_VERDICTS", "CANCELLED")
     ]
+    assert ("delete_channel", REVIEW_CHANNEL, REVIEW_CHANNEL) in league.events
     assert len(await _changes(league, REVIEW_OPEN)) == asked_before
 
 

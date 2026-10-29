@@ -8,7 +8,8 @@ its `state` — the staged penalties, the round context — is in memory and doe
 pressed after a restart therefore finds `state is None`, and must say so rather than raise
 inside Discord's interaction handler where the manager would see only "this interaction failed".
 The guard is written out in each of the five rather than shared, which is exactly the shape
-where one gets missed, so `test_every_button_survives_a_restart` drives all five.
+where one gets missed, so the `restarted-review-` cases of
+`test_every_refused_press_of_the_penalty_review_is_recorded` drive all five.
 
 **Every button re-checks the permission** for the same reason the panel does: a review channel
 is visible to both league tiers, and the buttons never disappear.
@@ -242,35 +243,6 @@ async def _press(view, name: str, interaction):
 
 
 # ---------------------------------------------------------------------------
-# The restart guard
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("button", BUTTONS)
-async def test_every_button_survives_a_restart(button):
-    """The view is persistent and outlives the process; its state does not. Without this
-    the manager would see only "this interaction failed" and have no idea why."""
-    view = PenaltyReviewView(None)
-    interaction = _interaction()
-
-    await _press(view, button, interaction)
-
-    assert "bot was restarted" in _replied(interaction)
-
-
-@pytest.mark.parametrize("button", BUTTONS)
-async def test_the_restart_message_says_what_to_wait_for(button):
-    """The prompt refreshes itself, so the manager has something to wait for rather than
-    a failure to report."""
-    view = PenaltyReviewView(None)
-    interaction = _interaction()
-
-    await _press(view, button, interaction)
-
-    assert "prompt to refresh" in _replied(interaction)
-
-
-# ---------------------------------------------------------------------------
 # The permission gate
 # ---------------------------------------------------------------------------
 
@@ -326,7 +298,9 @@ async def test_an_empty_list_goes_straight_to_approval(tmp_path):
 
 
 async def test_a_staged_list_is_confirmed_before_it_is_cleared():
-    """It is an evening's work and discarding it cannot be undone."""
+    """It is an evening's work and discarding it cannot be undone. The confirmation says how
+    many would be discarded: the count is what makes the warning real rather than
+    boilerplate."""
     view = PenaltyReviewView(_state(staged=[_penalty(), _penalty(10)]))
     interaction = _interaction()
 
@@ -335,15 +309,6 @@ async def test_a_staged_list_is_confirmed_before_it_is_cleared():
 
     approval.assert_not_awaited()
     assert interaction.response.send_message.await_args.kwargs["view"] is not None
-
-
-async def test_the_confirmation_says_how_many_would_be_discarded():
-    """The count is what makes the warning real rather than boilerplate."""
-    view = PenaltyReviewView(_state(staged=[_penalty(), _penalty(10)]))
-    interaction = _interaction()
-
-    await _press(view, "no_penalties_btn", interaction)
-
     assert "**2**" in _replied(interaction)
 
 
@@ -489,14 +454,6 @@ async def test_approving_with_nothing_staged_is_refused():
     interaction.client.change_queue.ask.assert_not_awaited()
     assert not view.state.bot.change_queue.ask.called
     assert "No penalties are staged" in _replied(interaction)
-
-
-async def test_the_empty_approval_refusal_names_the_other_button():
-    view = PenaltyReviewView(_state(staged=[]))
-    interaction = _interaction()
-
-    await _press(view, "approve_btn", interaction)
-
     assert "No Penalties / Confirm" in _replied(interaction)
 
 
@@ -636,30 +593,6 @@ async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment, tmp_pat
     assert "Removed pardon" in _answered(interaction)
 
 
-async def test_a_pardon_cannot_be_removed_once_the_reports_are_approved():
-    """**Approving a first pass's reports grants its pardons** (#356). Removing one after that
-    would take it off a list nothing reads again and say it was removed, while the round went on
-    carrying it. An amendment is where a granted pardon is changed."""
-    state = _state(staged=[_penalty()])
-    state.staged_pardons = [_pardon(0)]
-    view = PenaltyReviewView(state)
-    button = next(c for c in view.children if c.custom_id == "pw_pardon_remove_0")
-    interaction = _interaction()
-    refresh = AsyncMock()
-    moved_on = AsyncMock(return_value="❌ already been approved")
-
-    with patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=refresh), patch(
-        "leaguebot.results.services.penalty_wizard._review_moved_on", new=moved_on
-    ):
-        await button.callback(interaction)
-
-    assert len(state.staged_pardons) == 1
-    assert "already been approved" in _replied(interaction)
-    assert "Removed" not in _replied(interaction)
-    refresh.assert_not_awaited()
-    moved_on.assert_awaited_once_with(state)
-
-
 async def test_the_appeals_review_draws_with_more_corrections_than_there_is_room_for():
     from leaguebot.results.services.penalty_wizard import AppealsReviewView
 
@@ -690,7 +623,11 @@ async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, c
     """**The review prompt stayed up, and worked, after the job it was posted for moved on** — so
     Remove said a penalty was removed through the appeals stage when it had been applied, and
     Resubmit started collecting a round already in appeals. Each control now says why it cannot
-    act, and changes nothing: no list touched, no form opened, nothing posted or started."""
+    act, and changes nothing: no list touched, no form opened, nothing posted or started.
+
+    **Approving a first pass's reports grants its pardons** (#356). Removing one after that
+    would take it off a list nothing reads again and say it was removed, while the round went on
+    carrying it. An amendment is where a granted pardon is changed."""
     moved_on = AsyncMock(return_value="❌ moved on")
     monkeypatch.setattr(pw, "_review_moved_on", moved_on)
     state = _state(staged=[_penalty()])
@@ -883,7 +820,12 @@ async def test_every_refused_press_of_the_penalty_review_is_recorded(
     approval question, or the clear confirmation — and is refused: after a restart, without
     the tier, once the review has moved on, on a withdrawn approval message, in an archived
     season, or approving with nothing staged. The reply is today's, and exactly one line
-    records the refusal, naming the button, the review, Alex and the reason."""
+    records the refusal, naming the button, the review, Alex and the reason.
+
+    The view is persistent and outlives the process; its state does not, so a press after a
+    restart says so rather than leave the manager with "this interaction failed". The prompt
+    refreshes itself, so the reply gives the manager something to wait for rather than a
+    failure to report."""
     if setup is not None:
         setup(monkeypatch)
     state = None if restarted else _reviewed_state()

@@ -159,10 +159,22 @@ async def test_the_amendments_report_stage_publishes_and_moves_nothing(tmp_path,
     assert job not in _change_type(tmp_path, REPORTS).steps
 
 
-@pytest.mark.parametrize("call", ["UPDATE rounds", "set_round_status", "record_on"])
+@pytest.mark.parametrize(
+    "call",
+    [
+        "UPDATE rounds",
+        "set_round_status",
+        "record_on",
+        "RoundStatus.FINAL",
+        "refresh_division_status",
+        "wind_down",
+    ],
+)
 def test_neither_stage_moves_the_round_or_records_its_attendance_afresh(call):
     """The round's status is never written by an amendment, and its attendance is recalculated
-    by the last stage rather than recorded as a first pass records it."""
+    by the last stage rather than recorded as a first pass records it. FINAL, the division
+    refresh and the season wind-down travel together, and an amended round has had all three. Its
+    appeals are announced by the rebuild, in order."""
     assert call not in _module_code(AMENDMENT)
 
 
@@ -187,16 +199,6 @@ async def test_the_report_stage_s_save_is_refused_where_the_amendment_is_no_long
 
 
 # ── The appeal stage ──────────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    "call",
-    ["RoundStatus.FINAL", "refresh_division_status", "wind_down"],
-)
-def test_the_amendments_appeal_stage_never_moves_the_round(call):
-    """FINAL, the division refresh and the season wind-down travel together, and an amended
-    round has had all three. Its appeals are announced by the rebuild, in order."""
-    assert call not in _module_code(AMENDMENT)
 
 
 async def test_the_division_is_rebuilt_when_the_appeal_stage_is_approved(tmp_path):

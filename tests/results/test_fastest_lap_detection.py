@@ -30,7 +30,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.results.models.points_config import PointsConfigFastestLap, SessionType
+from leaguebot.results.models.points_config import (
+    PointsConfigEntry,
+    PointsConfigFastestLap,
+    SessionType,
+)
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier
 from leaguebot.results.services.standings_service import (
     compute_points_for_session,
@@ -195,6 +199,29 @@ def _fl_config(points: int = 1, limit: int | None = None) -> PointsConfigFastest
     )
 
 
+def _race_entries(*points: int) -> list[PointsConfigEntry]:
+    """Position points for the feature race, P1 first."""
+    return [
+        PointsConfigEntry(
+            id=position, config_id=1, session_type=SessionType.FEATURE_RACE,
+            position=position, points=value,
+        )
+        for position, value in enumerate(points, start=1)
+    ]
+
+
+#: A quicker driver at P1 and a slower one at P2: (P1's id, P2's id, P1's lap, P2's lap,
+#: position points). The second case scores the positions too.
+_QUICKER_P1_SLOWER_P2 = pytest.mark.parametrize(
+    ("first", "second", "quick", "slow", "entries"),
+    [
+        (DRIVER_A, DRIVER_B, "1:22.000", "1:23.000", ()),
+        (1, 2, "1:23.456", "1:24.000", _race_entries(25, 18)),
+    ],
+    ids=["no-position-points", "with-position-points"],
+)
+
+
 def _compute(rows, fl_config, *, entries=(), fl_override=None):
     return compute_points_for_session(
         rows,
@@ -211,13 +238,17 @@ def test_the_holder_earns_the_bonus():
     assert rows[0].fastest_lap_bonus == 1
 
 
-def test_nobody_else_earns_it():
+@_QUICKER_P1_SLOWER_P2
+def test_nobody_else_earns_it(first, second, quick, slow, entries):
+    """With no override, detection by lap time decides the holder."""
     rows = _compute(
         [
-            _result(DRIVER_A, 1, fastest_lap="1:22.000"),
-            _result(DRIVER_B, 2, fastest_lap="1:23.000"),
+            _result(first, 1, fastest_lap=quick),
+            _result(second, 2, fastest_lap=slow),
         ],
         _fl_config(),
+        entries=entries,
+        fl_override=None,
     )
 
     assert rows[0].fastest_lap_bonus == 1
@@ -273,16 +304,18 @@ def test_a_retirement_can_still_earn_the_bonus():
     assert rows[0].points_awarded == 0
 
 
-def test_an_override_designates_the_holder_directly():
+@_QUICKER_P1_SLOWER_P2
+def test_an_override_designates_the_holder_directly(first, second, quick, slow, entries):
     """A steward can name the holder by hand where the submitted times disagree with what
     the game showed, and the override bypasses detection entirely."""
     rows = _compute(
         [
-            _result(DRIVER_A, 1, fastest_lap="1:22.000"),
-            _result(DRIVER_B, 2, fastest_lap="1:23.000"),
+            _result(first, 1, fastest_lap=quick),
+            _result(second, 2, fastest_lap=slow),
         ],
         _fl_config(),
-        fl_override=DRIVER_B,
+        entries=entries,
+        fl_override=second,
     )
 
     assert rows[0].fastest_lap_bonus == 0

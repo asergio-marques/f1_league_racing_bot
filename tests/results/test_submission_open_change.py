@@ -38,7 +38,6 @@ from tests.support.change_queue import (
 )
 from tests.support.review_league import block_queue, channel
 from tests.support.season_league import (
-    DIVISIONS,
     PRO,
     SeasonLeague,
     ongoing_league,
@@ -47,7 +46,6 @@ from tests.support.season_league import (
 
 KIND = "results.submission.open"
 ROUND_3 = round_id(PRO, 3)
-RESULTS = DIVISIONS[PRO][3].results
 
 _new_ids = itertools.count(7600)
 
@@ -113,9 +111,10 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
 ):
     """Round 3's start asks the queue to open its submission: nothing is created as it is asked.
     The queue then creates one channel in the interaction channel's category (results spec :244),
-    records it as round 3's open submission, and posts in it the opening ("Results submission open for
-    **Round 3** (Pro)") and then the first session's prompt. The round-start timer's callback asks
-    the queue rather than running the submission itself."""
+    records it as round 3's open submission, and posts in it the opening ("Results submission
+    open for **Round 3** (Pro)", naming its sessions, Qualifying and Race) and then the first
+    session's prompt. The round-start timer's callback asks the queue rather than running the
+    submission itself."""
     import leaguebot.__main__ as bot_module
 
     league = await _league(tmp_path)
@@ -130,6 +129,7 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
     assert await _submission(league) == [{"channel_id": made, "closed": 0}]
     opening, prompt = league.texts(made)
     assert "Results submission open for **Round 3** (Pro)" in opening
+    assert "Qualifying" in opening and "Race" in opening
     assert f"📋 Submit **{await _first_session_label(league)}** results" in prompt
     assert [row["kind"] for row in await _open_changes(league)] == [KIND]
     assert "run_result_submission_job" not in inspect.getsource(bot_module.main)
@@ -138,7 +138,8 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
 async def test_the_round_moves_off_not_run_in_the_open_s_save(tmp_path):
     """Discord refuses to create round 3's channel (Missing Permissions). The queue stops at the
     channel's creation, and round 3 is already awaiting results: its move off NOT_RUN was saved
-    with the mark of the job before it, `start_round`."""
+    with the mark of the job before it, `start_round`. No submission is recorded, and no penalty
+    review is asked."""
     league = await _league(tmp_path)
     league.create_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
 
@@ -153,6 +154,9 @@ async def test_the_round_moves_off_not_run_in_the_open_s_save(tmp_path):
                if step["name"] == "start_round"]
     assert start["done_at"] is not None
     assert league.created == []
+    assert await league.rows("SELECT round_id FROM round_submission_channels") == []
+    assert [row for row in await change_rows(league.db_path)
+            if row["kind"] == "results.review.open"] == []
 
 
 async def test_a_round_starting_while_the_queue_is_stopped_opens_when_it_clears_and_is_cancellable_till_then(
