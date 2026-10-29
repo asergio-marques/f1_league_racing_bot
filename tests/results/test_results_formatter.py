@@ -70,8 +70,11 @@ def _make_race(
 # ---------------------------------------------------------------------------
 
 
-def test_collapse_all_zeros():
-    result = _collapse_trailing_zeros([(1, 0), (2, 0), (3, 0)])
+@pytest.mark.parametrize(
+    "rows", [[(1, 0), (2, 0), (3, 0)], [(1, 0)]], ids=["three-zeros", "single-zero"]
+)
+def test_collapse_all_zeros(rows):
+    result = _collapse_trailing_zeros(rows)
     assert len(result) == 1
     label, pts = result[0]
     assert pts == 0
@@ -93,31 +96,23 @@ def test_collapse_mix_nonzero_then_zeros():
     assert points[2] == 0
 
 
-def test_collapse_all_nonzero():
-    result = _collapse_trailing_zeros([(1, 25), (2, 18), (3, 15)])
+@pytest.mark.parametrize(
+    ("rows", "expected"),
+    [
+        ([(1, 25), (2, 18), (3, 15)], [("1", 25), ("2", 18), ("3", 15)]),
+        ([(1, 25)], [("1", 25)]),
+    ],
+    ids=["three-scoring", "single-scoring"],
+)
+def test_collapse_all_nonzero(rows, expected):
+    result = _collapse_trailing_zeros(rows)
     # No trailing zeros — all positions returned as-is
-    labels = [label for label, _ in result]
-    assert labels == ["1", "2", "3"]
-    points = [pts for _, pts in result]
-    assert points == [25, 18, 15]
+    assert result == expected
 
 
 def test_collapse_empty():
     result = _collapse_trailing_zeros([])
     assert result == []
-
-
-def test_collapse_single_zero():
-    result = _collapse_trailing_zeros([(1, 0)])
-    assert len(result) == 1
-    label, pts = result[0]
-    assert pts == 0
-    assert "+" in label
-
-
-def test_collapse_single_nonzero():
-    result = _collapse_trailing_zeros([(1, 25)])
-    assert result == [("1", 25)]
 
 
 # ---------------------------------------------------------------------------
@@ -210,13 +205,6 @@ def test_driver_standings_non_reserve_always_shown():
     assert "<@100>" in result
 
 
-def test_driver_standings_reserve_with_points_shown_reserves_on():
-    """Reserve with points is shown when show_reserves=True."""
-    snaps = [_make_snap(200, 1, 5)]
-    result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=True)
-    assert "<@200>" in result
-
-
 def test_driver_standings_reserve_zero_pts_no_participation_hidden():
     """Reserve with 0 points and no race participation is never shown."""
     snaps = [_make_snap(200, 1, 0, race_participant=False)]
@@ -224,23 +212,27 @@ def test_driver_standings_reserve_zero_pts_no_participation_hidden():
     assert "<@200>" not in result
 
 
-def test_driver_standings_reserve_dnf_shown_when_reserves_on():
-    """Reserve with 0 points but who participated (DNF) is shown when show_reserves=True."""
-    snaps = [_make_snap(200, 1, 0, race_participant=True)]
+_RESERVE_WHO_COUNTS = pytest.mark.parametrize(
+    ("total_points", "race_participant"),
+    [(0, True), (5, False)],
+    ids=["no-points-but-raced-a-dnf", "has-points"],
+)
+
+
+@_RESERVE_WHO_COUNTS
+def test_driver_standings_reserve_shown_when_reserves_on(total_points, race_participant):
+    """A reserve with points, or with 0 points but who participated (DNF), is shown when
+    show_reserves=True."""
+    snaps = [_make_snap(200, 1, total_points, race_participant=race_participant)]
     result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=True)
     assert "<@200>" in result
 
 
-def test_driver_standings_reserve_dnf_hidden_when_reserves_off():
-    """Reserve with 0 points and participation is hidden when show_reserves=False."""
-    snaps = [_make_snap(200, 1, 0, race_participant=True)]
-    result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=False)
-    assert "<@200>" not in result
-
-
-def test_driver_standings_reserve_with_points_hidden_reserves_off():
-    """Reserve with points is hidden when show_reserves=False."""
-    snaps = [_make_snap(200, 1, 5)]
+@_RESERVE_WHO_COUNTS
+def test_driver_standings_reserve_hidden_when_reserves_off(total_points, race_participant):
+    """A reserve with points, or with 0 points and participation, is hidden when
+    show_reserves=False."""
+    snaps = [_make_snap(200, 1, total_points, race_participant=race_participant)]
     result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=False)
     assert "<@200>" not in result
 
@@ -257,13 +249,13 @@ def test_render_time_penalty_whole_seconds_carries_no_decimal():
     assert render_time_penalty(5000) == "+5s"
 
 
-def test_render_time_penalty_fraction_is_three_decimal_places():
-    """Five and a half seconds is "+5.500s" — never rounded to a whole second."""
-    assert render_time_penalty(5500) == "+5.500s"
-
-
-def test_render_time_penalty_sub_second_keeps_its_precision():
-    assert render_time_penalty(750) == "+0.750s"
+@pytest.mark.parametrize(
+    ("ms", "expected"), [(5500, "+5.500s"), (750, "+0.750s")], ids=["5.5s", "sub-second"]
+)
+def test_render_time_penalty_fraction_is_three_decimal_places(ms, expected):
+    """Five and a half seconds is "+5.500s" — never rounded to a whole second — and a
+    sub-second penalty keeps its precision."""
+    assert render_time_penalty(ms) == expected
 
 
 def test_render_time_penalty_negative_is_signed():
