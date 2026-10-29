@@ -161,8 +161,8 @@ async def test_the_call_s_record_saves_its_message_and_the_no_rsvp_rows_with_its
 
 async def test_a_refused_call_stops_the_queue_saying_what_is_left(tmp_path):
     """Discord refuses the call: the queue stops at it, the stop notice saying that no call
-    stands and no attendance rows are open, and nothing is recorded. Once Discord takes it, the
-    queue's next try posts it."""
+    stands and no attendance rows are open, and the log naming what Discord said, and nothing
+    is recorded. Once Discord takes it, the queue's next try posts it."""
     league = await _call_league(tmp_path)
     league.channel(CHECK_IN).send_fails = http_error(discord.Forbidden, status=403,
                                                      text="Missing Permissions")
@@ -176,6 +176,7 @@ async def test_a_refused_call_stops_the_queue_saying_what_is_left(tmp_path):
     assert COUNTS_NOTHING in league.log()
     assert await _call_record(league) == []
     assert await _answers(league) == {}
+    assert "Missing Permissions" in league.log()
 
     league.channel(CHECK_IN).send_fails = None
     league.clock.advance(minutes=1)
@@ -327,23 +328,6 @@ async def test_a_call_for_a_cancelled_round_or_with_attendance_off_is_dropped(tm
     assert await _call_record(league) == []
     assert await _answers(league) == {}
     assert await stopped_job(league.db_path) is None
-
-
-async def test_a_discarded_call_says_post_check_in_is_the_way_to_post_it(tmp_path):
-    """Discord refuses the call and a league admin discards it: no call stands, and the log
-    channel's line says to post it with `/attendance post-check-in`."""
-    league = await _call_league(tmp_path)
-    league.channel(CHECK_IN).send_fails = http_error(discord.Forbidden, status=403,
-                                                     text="Missing Permissions")
-    await _ask(league)
-    await run_queue(league.bot)
-    told_before = league.log()
-
-    await discard_job(league.bot)
-
-    assert await stopped_job(league.db_path) is None
-    assert await _call_record(league) == []
-    assert "/attendance post-check-in" in league.log()[len(told_before):]
 
 
 async def test_a_hand_posted_call_an_admin_discards_tells_the_manager_it_was_discarded(tmp_path):

@@ -171,22 +171,6 @@ async def test_a_burst_of_answers_makes_one_redraw(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-async def test_a_refused_redraw_stops_the_queue_with_the_answer_saved(tmp_path):
-    """Discord refuses every edit of the call (7001). Max presses Accept: his answer is saved,
-    and the queue stops at the redraw."""
-    league = await _league(tmp_path)
-    league.channel(CHECK_IN).messages[CALL].edit = AsyncMock(
-        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
-    )
-
-    await _press(league, MAX, "accept")
-    await run_queue(league.bot)
-
-    assert await _answer(league, MAX) == "ACCEPTED"
-    stopped = await stopped_job(league.db_path)
-    assert stopped is not None and stopped["name"] == "redraw"
-
-
 async def test_a_call_gone_completes_the_redraw_with_a_line(tmp_path):
     """The call (7001) was deleted by hand. Max presses Accept: his answer is saved, the redraw
     finds the call gone and completes, and the queue does not stop."""
@@ -308,9 +292,9 @@ async def test_a_press_refused_at_the_save_still_draws_the_call_for_the_answer_b
 async def test_a_discarded_redraw_writes_the_answer_s_line_naming_the_call_as_not_redrawn(
     tmp_path,
 ):
-    """Discord refuses every edit of the call (7001). Max presses Accept; the queue stops at the
-    redraw and a league admin discards it. His answer is saved, and the log channel holds one
-    success line for it, ending that the call was not redrawn."""
+    """Discord refuses every edit of the call (7001). Max presses Accept: his answer is saved,
+    and the queue stops at the redraw. A league admin discards it; his answer stands, and the
+    log channel holds one success line for it, ending that the call was not redrawn."""
     league = await _league(tmp_path)
     league.channel(CHECK_IN).messages[CALL].edit = AsyncMock(
         side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
@@ -320,6 +304,7 @@ async def test_a_discarded_redraw_writes_the_answer_s_line_naming_the_call_as_no
     await run_queue(league.bot)
     stopped = await stopped_job(league.db_path)
     assert stopped is not None and stopped["name"] == "redraw"
+    assert await _answer(league, MAX) == "ACCEPTED"
     await discard_job(league.bot)
     await run_queue(league.bot)
 
