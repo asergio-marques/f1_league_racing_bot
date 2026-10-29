@@ -192,18 +192,6 @@ def _asked(cog) -> tuple[str, dict]:
 # ---------------------------------------------------------------------------
 
 
-async def test_deleting_outside_setup_is_refused():
-    """A round the league is living through is cancelled, not deleted — deleting would
-    renumber a calendar the drivers have already planned around."""
-    cog = _make_cog(setup_season_id=None)
-    interaction = _interaction()
-
-    await _delete(cog, interaction)
-
-    assert "only be used while the season is in placements" in _replied(interaction)
-    cog.bot.season_service.delete_round.assert_not_awaited()
-
-
 @pytest.mark.parametrize(
     "stage",
     [SeasonStage.CONFIGURATION, SeasonStage.WAITING, SeasonStage.SIGNUPS],
@@ -231,56 +219,6 @@ async def test_deleting_before_placements_is_refused_and_recorded(stage):
     ]
 
 
-async def test_deleting_from_an_archived_season_is_refused():
-    cog = _make_cog(mutable=False)
-    interaction = _interaction()
-
-    await _delete(cog, interaction)
-
-    assert "archived" in _replied(interaction)
-
-
-async def test_deleting_from_an_unknown_division_is_refused_by_name():
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _delete(cog, interaction, division="Division 9")
-
-    assert "Division 9" in _replied(interaction)
-    assert "not found" in _replied(interaction)
-
-
-async def test_deleting_a_round_that_does_not_exist_is_refused_by_number():
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _delete(cog, interaction, number=99)
-
-    replied = _replied(interaction)
-    assert "Round 99" in replied
-    assert "not found" in replied
-
-
-async def test_a_division_is_matched_regardless_of_case():
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _delete(cog, interaction, division="dIvIsIoN 1")
-
-    cog.bot.season_service.delete_round.assert_awaited_once_with(ROUND_ID)
-
-
-async def test_a_deleted_round_renumbers_the_rest():
-    """A deleted round never happened, so the rounds after it move up — and the reply says
-    so, because a manager would otherwise not know their numbering had shifted."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _delete(cog, interaction)
-
-    assert "renumbered" in _replied(interaction)
-
-
 async def test_the_pending_setup_is_reloaded_after_a_delete():
     """The season being built lives in memory as well as in the database; leaving the
     in-memory copy stale would have the review show a round that no longer exists."""
@@ -291,54 +229,6 @@ async def test_the_pending_setup_is_reloaded_after_a_delete():
     await _delete(cog, interaction)
 
     cog._reload_pending_from_db.assert_awaited_once()
-
-
-async def test_a_delete_is_logged_with_the_division_and_round():
-    cog = _make_cog()
-
-    await _delete(cog, _interaction())
-
-    logged = cog.bot.output_router.post_log.await_args.args[0]
-    assert "/round delete" in logged
-    assert "Division 1" in logged
-
-
-# ---------------------------------------------------------------------------
-# /round cancel — the gates
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("word", ["confirm", "Confirm", "yes", ""])
-async def test_cancelling_needs_the_exact_confirmation_word(word):
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _cancel(cog, interaction, confirm=word)
-
-    assert "Type exactly" in _replied(interaction)
-    cog.bot.change_queue.ask.assert_not_awaited()
-
-
-async def test_cancelling_without_an_active_season_is_refused():
-    """The opposite of delete: cancel is for a season being raced."""
-    cog = _make_cog(active_season=None)
-    interaction = _interaction()
-
-    await _cancel(cog, interaction)
-
-    assert "only while the season is ongoing" in _replied(interaction)
-    cog.bot.change_queue.ask.assert_not_awaited()
-
-
-async def test_cancelling_in_an_archived_season_is_refused(tmp_path):
-    cog = _make_cog(mutable=False)
-    cog.bot.db_path = await _migrated(tmp_path)
-    interaction = _interaction()
-
-    await _cancel(cog, interaction)
-
-    assert "archived" in _replied(interaction)
-    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +341,21 @@ async def test_every_other_round_delete_refusal_is_recorded(arranged, asked, rep
             id="without_the_exact_word",
         ),
         pytest.param(
+            {}, {"confirm": "Confirm"},
+            "❌ Type exactly `CONFIRM` in the `confirm` field to proceed.",
+            id="without_the_exact_word_capitalised",
+        ),
+        pytest.param(
+            {}, {"confirm": "yes"},
+            "❌ Type exactly `CONFIRM` in the `confirm` field to proceed.",
+            id="without_the_exact_word_another_word",
+        ),
+        pytest.param(
+            {}, {"confirm": ""},
+            "❌ Type exactly `CONFIRM` in the `confirm` field to proceed.",
+            id="without_the_exact_word_empty",
+        ),
+        pytest.param(
             {"active_season": None}, {},
             "❌ `/round cancel` is available only while the season is ongoing.",
             id="no_season_being_raced",
@@ -475,7 +380,8 @@ async def test_every_other_round_delete_refusal_is_recorded(arranged, asked, rep
 async def test_every_round_cancel_refusal_is_recorded(tmp_path, arranged, asked, reply):
     """A season being raced with round 5 in Division 1, unless the case says otherwise. Each
     refusal the command makes before it asks the queue answers as today, asks the queue for
-    nothing, and writes one refusal line (#482, criterion 1). The refusals the change's check
+    nothing, and writes one refusal line (#482, criterion 1). The confirmation word must be
+    `CONFIRM` exactly: 'confirm', 'Confirm', 'yes' and nothing at all are each refused. The refusals the change's check
     makes are tested in `test_round_cancel_change.py`."""
     cog = _make_cog(**arranged)
     cog.bot.db_path = await _migrated(tmp_path)
@@ -535,6 +441,13 @@ async def test_a_round_cancelled_in_a_division_typed_in_another_case_names_it_as
 
 
 @pytest.mark.parametrize(
+    "typed",
+    [
+        pytest.param("pro", id="typed_in_another_case"),
+        pytest.param("Pro", id="typed_exactly"),
+    ],
+)
+@pytest.mark.parametrize(
     "number, answered",
     [
         pytest.param(5, "✅ Round **5** deleted from **Pro** and rounds renumbered.", id="deleted"),
@@ -542,18 +455,25 @@ async def test_a_round_cancelled_in_a_division_typed_in_another_case_names_it_as
     ],
 )
 async def test_a_round_deleted_in_a_division_typed_in_another_case_names_it_as_it_is_named(
-    number, answered
+    number, answered, typed
 ):
     """A season in placements holds division Pro with round 5. The admin (id 77) runs /round
-    delete typing the division's name as 'pro', in two cases: round 5 is deleted, or round 9,
-    which Pro does not hold, is asked for and the command is refused. The reply opens by naming
-    the division as it is named, **Pro** (or `Pro`), and nowhere shows 'pro'; the one log line
-    (the success line, or the refusal line) names Pro and never 'pro'."""
+    delete typing the division's name as 'pro', or exactly as 'Pro', in two cases: round 5 is
+    deleted, or round 9, which Pro does not hold, is asked for and the command is refused. The
+    reply opens by naming the division as it is named, **Pro** (or `Pro`), and nowhere shows
+    'pro'; the one log line (the success line, or the refusal line) names `/round delete` and
+    Pro and never 'pro'. A deleted round never happened, so the rounds after it move up — and
+    the reply says so, because a manager would otherwise not know their numbering had
+    shifted."""
     cog = _make_cog(divisions=[_division("Pro")])
     interaction = _run_by_the_admin(cog, _interaction(), "round delete")
 
-    await _delete(cog, interaction, division="pro", number=number)
+    await _delete(cog, interaction, division=typed, number=number)
 
+    if number == 5:
+        cog.bot.season_service.delete_round.assert_awaited_once_with(ROUND_ID)
+    else:
+        cog.bot.season_service.delete_round.assert_not_awaited()
     replied = _replied(interaction)
     assert replied.startswith(answered), replied
     assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}, replied
