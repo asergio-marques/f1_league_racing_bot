@@ -335,6 +335,7 @@ async def test_a_driver_below_both_thresholds_is_left_alone(tmp_path, announcer,
     await _run(bot, db_path)
 
     bot.placement_service.sack_driver.assert_not_awaited()
+    bot.placement_service.move_driver.assert_not_awaited()
     bot.placement_service.unassign_driver.assert_not_awaited()
     sheet.assert_not_awaited()
 
@@ -639,6 +640,7 @@ async def test_a_driver_already_in_reserve_is_not_a_candidate(tmp_path, announce
 
     await _run(bot, db_path)
 
+    bot.placement_service.move_driver.assert_not_awaited()
     bot.placement_service.unassign_driver.assert_not_awaited()
     bot.placement_service.assign_driver.assert_not_awaited()
 
@@ -695,6 +697,7 @@ async def test_a_driver_with_no_recorded_total_is_not_a_candidate(tmp_path, anno
 
     await _run(bot, db_path)
 
+    bot.placement_service.move_driver.assert_not_awaited()
     bot.placement_service.unassign_driver.assert_not_awaited()
 
 
