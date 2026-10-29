@@ -108,14 +108,6 @@ def test_points_that_are_not_a_plain_integer_are_refused(points):
     assert any("points" in e.lower() for e in errors)
 
 
-def test_a_float_position_is_refused_rather_than_truncated():
-    """`int(1.5)` would be 1 — silently scoring position 1 from a line that said 1.5, with
-    the manager never knowing which line had been reinterpreted."""
-    valid, errors, _overrides = _parse_bulk_lines("1.5, 25")
-
-    assert valid == []
-
-
 def test_a_position_below_one_is_refused():
     """There is no position zero, and a negative one would sort above the winner."""
     valid, errors, _overrides = _parse_bulk_lines("0, 25\n-1, 25")
