@@ -87,24 +87,20 @@ def test_a_team_name_holding_a_comma_survives():
 # ── The ID, which the sibling scripts depend on ───────────────────────────
 
 
-def test_an_id_below_the_synthetic_range_is_refused():
+@pytest.mark.parametrize(
+    "driver_id",
+    [123456789012345678, SYNTHETIC_ID_BASE - 1],
+    ids=["a real snowflake", "one below the base"],
+)
+def test_an_id_below_the_synthetic_range_is_refused(driver_id):
     """The one mistake this import must not make quietly: below the base is a real
     Discord snowflake, and seating a real account as a mock driver is not recoverable by
-    turning test mode off."""
-    drivers, errors = parse_roster_csv(_csv(f"123456789012345678,Quicksilver,Alpine,Elite,Serbian"))
+    turning test mode off. `_next_synthetic_id` hands out BASE + 1, so BASE is never a
+    driver; the boundary case is the id one below it."""
+    drivers, errors = parse_roster_csv(_csv(f"{driver_id},Quicksilver,Alpine,Elite,Serbian"))
 
     assert drivers == []
     assert "below the range" in errors[0]
-
-
-def test_the_base_itself_is_below_the_range():
-    """`_next_synthetic_id` hands out BASE + 1, so BASE is never a driver."""
-    drivers, errors = parse_roster_csv(
-        _csv(f"{SYNTHETIC_ID_BASE - 1},Quicksilver,Alpine,Elite,Serbian")
-    )
-
-    assert drivers == []
-    assert errors
 
 
 def test_something_that_is_not_a_number_is_refused():
@@ -148,20 +144,15 @@ def test_a_missing_field_is_named(row, expected):
     assert expected in errors[0]
 
 
-def test_two_drivers_of_one_name_are_refused():
+@pytest.mark.parametrize("second", ["Quicksilver", "QUICKSILVER"],
+                         ids=["the same name", "the name in another case"])
+def test_two_drivers_of_one_name_are_refused(second):
     """Indistinguishable in every listing the bot prints, and in the results files the
-    sibling scripts write against this roster."""
-    drivers, errors = parse_roster_csv(_csv(_row(), _row(2)))
+    sibling scripts write against this roster. The clash ignores case."""
+    drivers, errors = parse_roster_csv(_csv(_row(), _row(2, name=second)))
 
     assert len(drivers) == 1
     assert "already named on line 2" in errors[0]
-
-
-def test_the_name_clash_ignores_case():
-    drivers, errors = parse_roster_csv(_csv(_row(), _row(2, name="QUICKSILVER")))
-
-    assert len(drivers) == 1
-    assert errors
 
 
 # ── Reporting ─────────────────────────────────────────────────────────────
@@ -191,18 +182,12 @@ def test_line_numbers_count_the_header_and_blank_lines():
     assert "Line 3" in errors[0]
 
 
-def test_an_empty_paste_is_reported_rather_than_silently_accepted():
-    drivers, errors = parse_roster_csv("")
+@pytest.mark.parametrize("text", ["", HEADER], ids=["nothing", "a header alone"])
+def test_an_empty_paste_is_reported_rather_than_silently_accepted(text):
+    drivers, errors = parse_roster_csv(text)
 
     assert drivers == []
     assert errors == ["There were no drivers in what you pasted."]
-
-
-def test_a_header_alone_is_reported_too():
-    drivers, errors = parse_roster_csv(HEADER)
-
-    assert drivers == []
-    assert errors
 
 
 # ── The divisions a roster names ──────────────────────────────────────────
@@ -232,4 +217,3 @@ def test_a_roster_line_naming_a_driver_with_a_member_mention_is_refused():
 
     assert drivers == []
     assert any(e.startswith("Line 2:") and "member" in e for e in errors)
-
