@@ -20,10 +20,10 @@ audit failed — would leave the round stuck with results the league knows to be
 round's results on the spot, and the collection that should have replaced them never ran. The
 results now stand, published and counted, until every session has been entered again;
 `test_resubmission_changes.py::test_resubmit_is_acknowledged_and_takes_the_prompt_down_before_announcing`
-holds that. The round stays in penalty review
-and the channel is flagged `resubmitting`, which lets the pastes past the review channel's
-message guard. The review prompt is taken down, and any approval message with it (#402), so
-nobody can approve the results being replaced or start a second resubmission over the first.
+holds that. The round stays in penalty review and the channel is flagged `resubmitting`, which
+lets the pastes past the review channel's message guard. The review prompt is taken down, and
+any approval message with it (#402), so nobody can approve the results being replaced or start
+a second resubmission over the first.
 
 **The press is a change on the queue** (#439, slice 6b, C51). Pressing Resubmit asks
 `results.resubmission.start` with its interaction, acknowledged privately as under way; its jobs
@@ -478,8 +478,8 @@ async def test_every_refused_press_of_the_resubmission_is_recorded(
     today's, nothing changes — the penalty stays staged, the channel is not flagged and the
     resubmission is not cancelled — and exactly one line records the refusal, naming Alex and
     the reason. With nowhere to collect in, the review is all the round has, so a Resubmit with
-    its channel gone keeps it whole. The Resubmit press is made on the review of `test_review_open_change.py`'s
-    league, its queue run after it (#439, slice 6b)."""
+    its channel gone keeps it whole. The Resubmit press is made on the review of
+    `test_review_open_change.py`'s league, its queue run after it (#439, slice 6b)."""
     if press == "resubmit":
         league = await _reviewing(tmp_path, monkeypatch)
         state = _prompt_view(league).state

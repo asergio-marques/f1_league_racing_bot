@@ -113,10 +113,10 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
 ):
     """Round 3's start asks the queue to open its submission: nothing is created as it is asked.
     The queue then creates one channel in the interaction channel's category (results spec :244),
-    records it as round 3's open submission, and posts in it the opening ("Results submission open for
-    **Round 3** (Pro)", naming its sessions, Qualifying and Race) and then the first session's
-    prompt. The round-start timer's callback asks
-    the queue rather than running the submission itself."""
+    records it as round 3's open submission, and posts in it the opening ("Results submission
+    open for **Round 3** (Pro)", naming its sessions, Qualifying and Race) and then the first
+    session's prompt. The round-start timer's callback asks the queue rather than running the
+    submission itself."""
     import leaguebot.__main__ as bot_module
 
     league = await _league(tmp_path)
