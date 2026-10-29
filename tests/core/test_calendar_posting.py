@@ -197,32 +197,18 @@ async def _stored_message_id(db_path):
 
 
 async def test_a_league_without_the_graphic_gets_the_text(tmp_path):
+    """The new message's id is returned and nothing is written: the calendar's post job saves
+    the id in its own save; posting writes nothing."""
     db_path = await _make_db(tmp_path, name="cal_text")
 
-    result, channel, _, _ = await _post(db_path, wanted=False)
+    result, channel, _, _ = await _post(
+        db_path, wanted=False, rounds=[_round(1), _round(2)]
+    )
 
     assert result.problem is None
     assert result.posted_as_image is False
     assert "Pro" in _sent_text(channel)
-
-
-async def test_the_textual_calendar_lists_the_rounds(tmp_path):
-    db_path = await _make_db(tmp_path, name="cal_text_rounds")
-
-    _, channel, _, _ = await _post(
-        db_path, wanted=False, rounds=[_round(1), _round(2)]
-    )
-
-    text = _sent_text(channel)
-    assert "Silverstone" in text
-
-
-async def test_the_new_message_id_is_returned_and_nothing_is_written(tmp_path):
-    """The calendar's post job saves the id in its own save; posting writes nothing."""
-    db_path = await _make_db(tmp_path, name="cal_store")
-
-    result, _, _, _ = await _post(db_path)
-
+    assert "Silverstone" in _sent_text(channel)
     assert result.message_id == NEW_MESSAGE_ID
     assert await _stored_message_id(db_path) is None
 
@@ -233,52 +219,23 @@ async def test_the_new_message_id_is_returned_and_nothing_is_written(tmp_path):
 
 
 async def test_a_rendered_calendar_is_posted_as_an_attachment(tmp_path):
+    """The graphic carries no message text: the picture draws the division's own name and
+    says what it is, so a line above it repeats the picture rather than introducing it. A
+    calendar that drew but dropped a round off the end is a notice, and the caller reports it
+    to the manager. The rendered file is discarded after posting, because a rehearsal that
+    leaves its renders behind fills the Pi's disk."""
     db_path = await _make_db(tmp_path, name="cal_image")
     png = tmp_path / "calendar.png"
     png.write_bytes(b"\x89PNG")
 
-    result, channel, _, _ = await _post(
-        db_path, wanted=True, outcome=_outcome(png=png)
+    result, channel, discard, _ = await _post(
+        db_path, wanted=True, outcome=_outcome(png=png, notices=["round 12 did not fit"])
     )
 
     assert result.posted_as_image is True
     assert channel.send.await_args.kwargs.get("file") is not None
-
-
-async def test_a_graphic_carries_no_message_text(tmp_path):
-    """The picture draws the division's own name and says what it is; a line above it
-    repeats the picture rather than introducing it."""
-    db_path = await _make_db(tmp_path, name="cal_notext")
-    png = tmp_path / "calendar.png"
-    png.write_bytes(b"\x89PNG")
-
-    _, channel, _, _ = await _post(db_path, wanted=True, outcome=_outcome(png=png))
-
     assert channel.send.await_args.args[0] is None
-
-
-async def test_a_render_notice_is_carried_back(tmp_path):
-    """A calendar that drew but dropped a round off the end is a notice, and the caller
-    reports it to the manager."""
-    db_path = await _make_db(tmp_path, name="cal_notice")
-    png = tmp_path / "calendar.png"
-    png.write_bytes(b"\x89PNG")
-
-    result, _, _, _ = await _post(
-        db_path, wanted=True, outcome=_outcome(png=png, notices=["round 12 did not fit"])
-    )
-
     assert result.notices == ["round 12 did not fit"]
-
-
-async def test_the_rendered_file_is_discarded_after_posting(tmp_path):
-    """A rehearsal that leaves its renders behind fills the Pi's disk."""
-    db_path = await _make_db(tmp_path, name="cal_discard")
-    png = tmp_path / "calendar.png"
-    png.write_bytes(b"\x89PNG")
-
-    _, _, discard, _ = await _post(db_path, wanted=True, outcome=_outcome(png=png))
-
     discard.assert_called_once()
 
 
@@ -303,11 +260,17 @@ async def test_an_uncommanded_posting_falls_back_to_the_text(tmp_path):
 
 async def test_a_commanded_posting_refuses_and_posts_nothing(tmp_path):
     """A manager asked for a calendar; they are told what is wrong and given the chance to
-    fix it, rather than handed a text calendar they did not ask for."""
+    fix it, rather than handed a text calendar they did not ask for.
+
+    It deletes nothing: the standing calendar is still the best thing in the channel, and
+    removing it for a replacement that was never posted would leave the division with none.
+    And it still discards the render: the `finally` covers the refusal too — a file that was
+    drawn and not posted is exactly as much clutter as one that was."""
     db_path = await _make_db(tmp_path, name="cal_commanded")
 
-    result, channel, _, _ = await _post(
+    result, channel, discard, _ = await _post(
         db_path,
+        division=_division(message_id=OLD_MESSAGE_ID),
         wanted=True,
         outcome=_outcome(problem="the template has no rows"),
         commanded=True,
@@ -315,33 +278,7 @@ async def test_a_commanded_posting_refuses_and_posts_nothing(tmp_path):
 
     assert result.problem == "the template has no rows"
     channel.send.assert_not_awaited()
-
-
-async def test_a_commanded_refusal_deletes_nothing(tmp_path):
-    """The standing calendar is still the best thing in the channel, and removing it for a
-    replacement that was never posted would leave the division with none."""
-    db_path = await _make_db(tmp_path, name="cal_commanded_keep")
-
-    _, channel, _, _ = await _post(
-        db_path,
-        division=_division(message_id=OLD_MESSAGE_ID),
-        wanted=True,
-        outcome=_outcome(problem="no template"),
-        commanded=True,
-    )
-
     channel.get_partial_message.assert_not_called()
-
-
-async def test_a_commanded_refusal_still_discards_the_render(tmp_path):
-    """The `finally` covers the refusal too — a file that was drawn and not posted is
-    exactly as much clutter as one that was."""
-    db_path = await _make_db(tmp_path, name="cal_commanded_discard")
-
-    _, _, discard, _ = await _post(
-        db_path, wanted=True, outcome=_outcome(problem="no template"), commanded=True
-    )
-
     discard.assert_called_once()
 
 
