@@ -402,9 +402,9 @@ async def test_the_results_channels_are_logged_under_results_channel(
 # ---------------------------------------------------------------------------
 
 
-async def _verdicts(cog, interaction, *, name: str = "Division 1", channel=None) -> None:
+async def _verdicts(cog, interaction, *, name: str = "Division 1") -> None:
     await undecorate(ResultsCog.channel_verdicts)(
-        cog, interaction, name, channel or _channel(name="verdicts")
+        cog, interaction, name, _channel(name="verdicts")
     )
 
 
