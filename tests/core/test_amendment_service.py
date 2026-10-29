@@ -65,13 +65,6 @@ async def db_path(tmp_path):
     return path, season_id
 
 
-async def _get_season_id(db_path: str) -> int:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT id FROM seasons LIMIT 1")
-        row = await cursor.fetchone()
-    return row["id"]  # type: ignore[index]
-
-
 async def _seed_season_points(db_path: str, season_id: int) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
