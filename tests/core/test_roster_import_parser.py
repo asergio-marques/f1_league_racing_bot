@@ -95,8 +95,9 @@ def test_a_team_name_holding_a_comma_survives():
 def test_an_id_below_the_synthetic_range_is_refused(driver_id):
     """The one mistake this import must not make quietly: below the base is a real
     Discord snowflake, and seating a real account as a mock driver is not recoverable by
-    turning test mode off. `_next_synthetic_id` hands out BASE + 1, so BASE is never a
-    driver; the boundary case is the id one below it."""
+    turning test mode off. The base itself is in the range and may be imported, though
+    `_next_synthetic_id` hands out BASE + 1 onwards; the boundary case is the id one below
+    it."""
     drivers, errors = parse_roster_csv(_csv(f"{driver_id},Quicksilver,Alpine,Elite,Serbian"))
 
     assert drivers == []
