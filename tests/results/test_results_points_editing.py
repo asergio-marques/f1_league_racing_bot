@@ -110,11 +110,13 @@ def test_the_notice_states_the_rule_that_was_broken():
 
 def test_the_notice_says_the_change_was_saved_anyway():
     """The edit has already been applied. A warning that read like a refusal would have a
-    manager re-running a command that had already worked."""
+    manager re-running a command that had already worked, and by default it says what this will
+    cost at approval."""
     ordering_notice, _, _ = _notice()
     notice = ordering_notice(CONFIG, "Feature Race", ["P5 (10) ≥ P4 (10)"])
 
     assert "has been saved" in notice
+    assert "season cannot be approved" in notice
 
 
 def test_the_notice_says_which_refusal_is_coming():

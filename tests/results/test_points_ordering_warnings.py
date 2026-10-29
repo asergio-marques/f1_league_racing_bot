@@ -15,8 +15,9 @@ asked gives is answered at once, nothing queued; anything else is saved when the
 the warning is judged on the table the change left. The command and form tests drive the real
 commands and forms on a league built by the migrations, with the real services and queue, and
 run the queue. The ordering notice is the points configuration service's, `ordering_notice`, so
-the settings' replies can form it. The amendment review's two tests keep their own harness: the
-review is not a setting, and only their seeding changes.
+the settings' replies can form it; its wording is pinned in `test_results_points_editing.py`. The
+amendment review's two tests keep their own harness: the review is not a setting, and only their
+seeding changes.
 """
 from __future__ import annotations
 
@@ -56,13 +57,6 @@ NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 RACE = app_commands.Choice(name="Feature Race", value="FEATURE_RACE")
 #: When a staged change is made, handed to the service rather than read off the clock.
 NOW = datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc)
-
-
-def _notice() -> Any:
-    """`ordering_notice`, where the points configuration service keeps it."""
-    from leaguebot.results.services.points_config_service import ordering_notice
-
-    return ordering_notice
 
 
 # ---------------------------------------------------------------------------
@@ -159,26 +153,6 @@ async def _table(form: str, db_path: str) -> dict[int, int]:
             (SEASON_ID,),
         )
         return {r["position"]: r["points"] for r in await cursor.fetchall()}
-
-
-# ---------------------------------------------------------------------------
-# The notice itself
-# ---------------------------------------------------------------------------
-
-
-def test_a_clean_table_produces_no_notice_at_all():
-    """Empty string, so every caller can concatenate it without asking first."""
-    assert _notice()(CONFIG, "Feature Race", []) == ""
-
-
-def test_the_notice_names_the_config_the_session_and_who_will_refuse():
-    notice = _notice()(CONFIG, "Feature Race", ["position 1 (10 pts) < position 2 (25 pts)"])
-
-    assert CONFIG in notice
-    assert "Feature Race" in notice
-    assert "position 1 (10 pts) < position 2 (25 pts)" in notice
-    assert "saved" in notice, "the edit applied, and the manager must not be left guessing"
-    assert "cannot be approved" in notice, "and it must say what this will cost at approval"
 
 
 # ---------------------------------------------------------------------------
