@@ -126,9 +126,15 @@ async def test_a_status_written_alone_carries_the_stage_with_it(db_path):
 
 
 async def test_a_status_written_alone_keeps_a_stage_it_still_admits(db_path):
+    """Writing an ongoing season's status again leaves its stage where it was; writing a status
+    that admits no stage it holds moves the stage with it."""
     season_id = await _insert(db_path, "ACTIVE", "ONGOING_SIGNUPS")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE seasons SET status = 'ACTIVE' WHERE id = ?", (season_id,))
+        await db.commit()
+    assert await _row(db_path, season_id) == ("ACTIVE", "ONGOING_SIGNUPS")
+
+    async with get_connection(db_path) as db:
         await db.execute("UPDATE seasons SET status = 'CANCELLED' WHERE id = ?", (season_id,))
         await db.commit()
     assert await _row(db_path, season_id) == ("CANCELLED", "CANCELLED")
