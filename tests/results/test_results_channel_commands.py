@@ -74,15 +74,14 @@ async def _make_db(tmp_path) -> str:
     return db_path
 
 
-def _division(name: str = "Division 1"):
-    return SimpleNamespace(id=DIVISION_ID, name=name, tier=1)
+def _division():
+    return SimpleNamespace(id=DIVISION_ID, name="Division 1", tier=1)
 
 
 def _make_cog(
     db_path: str,
     *,
     season=SimpleNamespace(id=SEASON_ID),
-    divisions=None,
 ) -> ResultsCog:
     bot = MagicMock()
     bot.db_path = db_path
@@ -91,9 +90,7 @@ def _make_cog(
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.season_service = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
-    bot.season_service.get_divisions = AsyncMock(
-        return_value=divisions if divisions is not None else [_division()]
-    )
+    bot.season_service.get_divisions = AsyncMock(return_value=[_division()])
     bot.season_service.set_division_results_channel = AsyncMock(return_value=None)
     bot.season_service.set_division_standings_channel = AsyncMock(return_value=None)
     bot.season_service.set_division_penalty_channel = AsyncMock(return_value=None)
@@ -105,9 +102,9 @@ def _make_cog(
     return cog
 
 
-def _channel(channel_id: int = CHANNEL_ID, name: str = "forecasts", *, may_post: bool = True):
+def _channel(name: str = "forecasts", *, may_post: bool = True):
     channel = MagicMock(spec=discord.TextChannel)
-    channel.id = channel_id
+    channel.id = CHANNEL_ID
     channel.name = name
     channel.mention = f"#{name}"
     channel.permissions_for = MagicMock(return_value=SimpleNamespace(send_messages=may_post))
@@ -115,13 +112,13 @@ def _channel(channel_id: int = CHANNEL_ID, name: str = "forecasts", *, may_post:
 
 
 def _interaction(
-    *, done: bool = False, guild: bool = True, cog: ResultsCog | None = None,
+    *, guild: bool = True, cog: ResultsCog | None = None,
     command: str | None = None,
 ):
     """The manager's interaction, answering as Discord's does: done once responded to or
     deferred. Given *cog*, a refusal's line reaches that cog's log; given *command*, the
     interaction names that command."""
-    state = {"done": done}
+    state = {"done": False}
 
     async def _answer(*_args, **_kwargs):
         state["done"] = True
