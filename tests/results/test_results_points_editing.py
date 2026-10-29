@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from discord import app_commands
 
 from leaguebot.core.db.database import get_connection
@@ -91,8 +92,8 @@ def test_the_notice_lists_every_violation():
         CONFIG, "Feature Race", ["P5 (10) ≥ P4 (10)", "P8 (4) ≥ P7 (3)"]
     )
 
-    assert "P5" in notice
-    assert "P8" in notice
+    assert "P5 (10) ≥ P4 (10)" in notice
+    assert "P8 (4) ≥ P7 (3)" in notice
 
 
 def test_the_notice_states_the_rule_that_was_broken():
@@ -104,13 +105,19 @@ def test_the_notice_states_the_rule_that_was_broken():
     assert "cannot be worth as much as the one above it" in notice
 
 
-def test_the_notice_says_the_change_was_saved_anyway():
+@pytest.mark.parametrize(
+    "violation",
+    ["P5 (10) ≥ P4 (10)", "position 1 (10 pts) < position 2 (25 pts)"],
+    ids=["adjacent positions", "points written out"],
+)
+def test_the_notice_says_the_change_was_saved_anyway(violation: str):
     """The edit has already been applied. A warning that read like a refusal would have a
     manager re-running a command that had already worked, and by default it says what this will
-    cost at approval."""
+    cost at approval. The violation is carried word for word, whatever its wording."""
     ordering_notice, _, _ = _notice()
-    notice = ordering_notice(CONFIG, "Feature Race", ["P5 (10) ≥ P4 (10)"])
+    notice = ordering_notice(CONFIG, "Feature Race", [violation])
 
+    assert violation in notice
     assert "has been saved" in notice
     assert "season cannot be approved" in notice
 
