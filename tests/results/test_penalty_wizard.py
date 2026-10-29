@@ -5,7 +5,8 @@ Covers:
 - AddPenaltyModal fields and constructor
 - AppealsReviewView button custom_ids and state=None safety
 - _AppealsConfirmClearView existence and button styles
-- _pen_label helper
+
+`_pen_label` is covered in `test_penalty_wizard_rendering.py`.
 
 Every test that constructs a Modal or a View is ``async def``, and must stay that way.
 discord.py 2.5.0 builds a View's ``__stopped`` future in ``View.__init__`` with a bare
@@ -31,7 +32,6 @@ from leaguebot.results.services.penalty_wizard import (
     ApprovalView,
     AppealsReviewView,
     AddPenaltyModal,
-    _pen_label,
     _CID_AR_ADD,
     _CID_AR_CONFIRM,
     _CID_AR_APPROVE,
@@ -58,29 +58,31 @@ class TestPenaltyReviewState:
             bot=None,
         )
 
-    def test_staged_default_empty(self):
+    @pytest.mark.parametrize(
+        "field, default",
+        [
+            ("staged", []),
+            ("staged_appeals", []),
+            ("prompt_message_id", None),
+            ("appeals_prompt_message_id", None),
+            ("round_number", 0),
+            ("division_name", ""),
+        ],
+        ids=[
+            "staged",
+            "staged_appeals",
+            "prompt_message_id",
+            "appeals_prompt_message_id",
+            "round_number",
+            "division_name",
+        ],
+    )
+    def test_each_field_has_its_default(self, field, default):
         state = self._make_state()
-        assert state.staged == []
-
-    def test_staged_appeals_default_empty(self):
-        state = self._make_state()
-        assert state.staged_appeals == []
-
-    def test_prompt_message_id_default_none(self):
-        state = self._make_state()
-        assert state.prompt_message_id is None
-
-    def test_appeals_prompt_message_id_default_none(self):
-        state = self._make_state()
-        assert state.appeals_prompt_message_id is None
-
-    def test_round_number_default_zero(self):
-        state = self._make_state()
-        assert state.round_number == 0
-
-    def test_division_name_default_empty(self):
-        state = self._make_state()
-        assert state.division_name == ""
+        if default is None:
+            assert getattr(state, field) is None
+        else:
+            assert getattr(state, field) == default
 
     def test_staged_and_staged_appeals_are_independent(self):
         """Staged and staged_appeals must be separate list instances."""
@@ -115,49 +117,32 @@ class TestAddPenaltyModal:
             use_appeals_staging=use_appeals_staging,
         )
 
-    async def test_driver_input_exists(self):
+    @pytest.mark.parametrize(
+        "field", ["driver_input", "penalty_input", "description_input", "justification_input"]
+    )
+    async def test_each_input_is_a_text_input(self, field):
         modal = self._make_modal()
-        assert hasattr(modal, "driver_input")
-        assert isinstance(modal.driver_input, discord.ui.TextInput)
+        assert hasattr(modal, field)
+        assert isinstance(getattr(modal, field), discord.ui.TextInput)
 
-    async def test_penalty_input_exists(self):
+    @pytest.mark.parametrize("field", ["description_input", "justification_input"])
+    async def test_the_text_input_is_required(self, field):
         modal = self._make_modal()
-        assert hasattr(modal, "penalty_input")
-        assert isinstance(modal.penalty_input, discord.ui.TextInput)
+        assert getattr(modal, field).required is True
 
-    async def test_description_input_exists(self):
+    @pytest.mark.parametrize("field", ["description_input", "justification_input"])
+    async def test_the_text_input_takes_at_most_200_characters(self, field):
         modal = self._make_modal()
-        assert hasattr(modal, "description_input")
-        assert isinstance(modal.description_input, discord.ui.TextInput)
+        assert getattr(modal, field).max_length == 200
 
-    async def test_justification_input_exists(self):
-        modal = self._make_modal()
-        assert hasattr(modal, "justification_input")
-        assert isinstance(modal.justification_input, discord.ui.TextInput)
-
-    async def test_description_input_required(self):
-        modal = self._make_modal()
-        assert modal.description_input.required is True
-
-    async def test_justification_input_required(self):
-        modal = self._make_modal()
-        assert modal.justification_input.required is True
-
-    async def test_description_input_max_length(self):
-        modal = self._make_modal()
-        assert modal.description_input.max_length == 200
-
-    async def test_justification_input_max_length(self):
-        modal = self._make_modal()
-        assert modal.justification_input.max_length == 200
-
-    async def test_title_normal_mode(self):
-        modal = self._make_modal(use_appeals_staging=False)
-        assert "Add Penalty" in modal.title
-
-    async def test_title_appeals_mode(self):
-        modal = self._make_modal(use_appeals_staging=True)
-        assert "Add Correction" in modal.title
+    @pytest.mark.parametrize(
+        "use_appeals_staging, word",
+        [(False, "Add Penalty"), (True, "Add Correction")],
+        ids=["penalty", "appeals"],
+    )
+    async def test_the_title_names_the_mode(self, use_appeals_staging, word):
+        modal = self._make_modal(use_appeals_staging=use_appeals_staging)
+        assert word in modal.title
 
     async def test_session_label_in_title(self):
         modal = self._make_modal()
@@ -173,20 +158,13 @@ class TestPenaltyReviewViewStateless:
         view = PenaltyReviewView(state=None)
         assert view.state is None
 
-    async def test_has_add_button(self):
+    @pytest.mark.parametrize(
+        "cid", [_CID_ADD, _CID_CONFIRM, _CID_APPROVE], ids=["add", "confirm", "approve"]
+    )
+    async def test_has_each_button(self, cid):
         view = PenaltyReviewView(state=None)
         cids = {item.custom_id for item in view.children if isinstance(item, discord.ui.Button)}
-        assert _CID_ADD in cids
-
-    async def test_has_confirm_button(self):
-        view = PenaltyReviewView(state=None)
-        cids = {item.custom_id for item in view.children if isinstance(item, discord.ui.Button)}
-        assert _CID_CONFIRM in cids
-
-    async def test_has_approve_button(self):
-        view = PenaltyReviewView(state=None)
-        cids = {item.custom_id for item in view.children if isinstance(item, discord.ui.Button)}
-        assert _CID_APPROVE in cids
+        assert cid in cids
 
 
 # ---------------------------------------------------------------------------
@@ -206,19 +184,36 @@ class TestAppealsReviewView:
             if isinstance(item, discord.ui.Button) and item.custom_id
         }
 
-    async def test_has_ar_add_button(self):
+    @pytest.mark.parametrize(
+        "cid",
+        [_CID_AR_ADD, _CID_AR_CONFIRM, _CID_AR_APPROVE],
+        ids=["add", "confirm", "approve"],
+    )
+    async def test_has_each_ar_button(self, cid):
         view = AppealsReviewView(state=None)
-        assert _CID_AR_ADD in self._button_cids(view)
+        assert cid in self._button_cids(view)
 
-    async def test_has_ar_confirm_button(self):
-        view = AppealsReviewView(state=None)
-        assert _CID_AR_CONFIRM in self._button_cids(view)
-
-    async def test_has_ar_approve_button(self):
-        view = AppealsReviewView(state=None)
-        assert _CID_AR_APPROVE in self._button_cids(view)
-
-    async def test_with_state_empty_staged_approve_disabled(self):
+    @pytest.mark.parametrize(
+        "staged_appeals, disabled",
+        [
+            ([], True),
+            (
+                [
+                    StagedPenalty(
+                        driver_user_id=99,
+                        session_type=SessionType.FEATURE_RACE,
+                        penalty_type="TIME",
+                        penalty_seconds=5,
+                    )
+                ],
+                False,
+            ),
+        ],
+        ids=["nothing-staged", "a-correction-staged"],
+    )
+    async def test_approve_is_enabled_only_with_a_correction_staged(
+        self, staged_appeals, disabled
+    ):
         state = PenaltyReviewState(
             round_id=1,
             division_id=2,
@@ -227,36 +222,13 @@ class TestAppealsReviewView:
             db_path=":memory:",
             bot=None,
         )
+        state.staged_appeals.extend(staged_appeals)
         view = AppealsReviewView(state=state)
         approve_btn = next(
             item for item in view.children
             if isinstance(item, discord.ui.Button) and item.custom_id == _CID_AR_APPROVE
         )
-        assert approve_btn.disabled is True
-
-    async def test_with_state_has_staged_approve_enabled(self):
-        state = PenaltyReviewState(
-            round_id=1,
-            division_id=2,
-            submission_channel_id=3,
-            session_types_present=[SessionType.FEATURE_RACE],
-            db_path=":memory:",
-            bot=None,
-        )
-        state.staged_appeals.append(
-            StagedPenalty(
-                driver_user_id=99,
-                session_type=SessionType.FEATURE_RACE,
-                penalty_type="TIME",
-                penalty_seconds=5,
-            )
-        )
-        view = AppealsReviewView(state=state)
-        approve_btn = next(
-            item for item in view.children
-            if isinstance(item, discord.ui.Button) and item.custom_id == _CID_AR_APPROVE
-        )
-        assert approve_btn.disabled is False
+        assert approve_btn.disabled is disabled
 
     async def test_dynamic_remove_buttons_added_per_entry(self):
         state = PenaltyReviewState(
@@ -300,27 +272,3 @@ class TestApprovalView:
     async def test_timeout_is_none(self):
         view = ApprovalView(state=None)
         assert view.timeout is None
-
-
-# ---------------------------------------------------------------------------
-# _pen_label helper
-# ---------------------------------------------------------------------------
-
-class TestPenLabel:
-    def test_dsq_label(self):
-        sp = StagedPenalty(driver_user_id=1, session_type=SessionType.FEATURE_RACE, penalty_type="DSQ", penalty_seconds=None)
-        assert _pen_label(sp) == "DSQ"
-
-    def test_positive_time_label(self):
-        sp = StagedPenalty(
-            driver_user_id=1, session_type=SessionType.FEATURE_RACE,
-            penalty_type="TIME", penalty_seconds=10
-        )
-        assert _pen_label(sp) == "+10s"
-
-    def test_negative_time_label(self):
-        sp = StagedPenalty(
-            driver_user_id=1, session_type=SessionType.FEATURE_RACE,
-            penalty_type="TIME", penalty_seconds=-5
-        )
-        assert _pen_label(sp) == "-5s"

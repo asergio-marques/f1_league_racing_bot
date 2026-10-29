@@ -58,28 +58,37 @@ DRIVER_B = 4002
 # ---------------------------------------------------------------------------
 
 
-def _penalty(seconds: int | None, penalty_type: str = "TIME") -> StagedPenalty:
+def _penalty(
+    seconds: int | None, penalty_type: str = "TIME", *, driver: int = DRIVER_A
+) -> StagedPenalty:
     return StagedPenalty(
-        driver_user_id=DRIVER_A,
+        driver_user_id=driver,
         session_type=SessionType.FEATURE_RACE,
         penalty_type=penalty_type,  # type: ignore[arg-type]
         penalty_seconds=seconds,
     )
 
 
-def test_a_time_penalty_is_labelled_with_its_sign():
-    assert _pen_label(_penalty(5)) == "+5s"
+@pytest.mark.parametrize(
+    "driver, seconds, label",
+    [(DRIVER_A, 5, "+5s"), (1, 10, "+10s")],
+    ids=["five-seconds", "ten-seconds-another-driver"],
+)
+def test_a_time_penalty_is_labelled_with_its_sign(driver, seconds, label):
+    assert _pen_label(_penalty(seconds, driver=driver)) == label
 
 
-def test_a_disqualification_is_labelled_as_such():
+@pytest.mark.parametrize("driver", [DRIVER_A, 1], ids=["a-driver", "another-driver"])
+def test_a_disqualification_is_labelled_as_such(driver):
     """A DSQ has no seconds, so it cannot be rendered as a time."""
-    assert _pen_label(_penalty(None, "DSQ")) == "DSQ"
+    assert _pen_label(_penalty(None, "DSQ", driver=driver)) == "DSQ"
 
 
-def test_a_negative_penalty_keeps_its_own_sign():
+@pytest.mark.parametrize("driver", [DRIVER_A, 1], ids=["a-driver", "another-driver"])
+def test_a_negative_penalty_keeps_its_own_sign(driver):
     """A correction giving time back is legitimate on appeal, and "+-5s" would read as a
     typo rather than as a credit."""
-    assert _pen_label(_penalty(-5)) == "-5s"
+    assert _pen_label(_penalty(-5, driver=driver)) == "-5s"
 
 
 def test_no_further_action_is_labelled_as_typed():
