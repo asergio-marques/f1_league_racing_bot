@@ -204,12 +204,13 @@ async def test_full_flow_with_negative_time_penalty(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# T033-4: DSQ → driver moves to last with 0 points
+# T033-4: DSQ → driver moves to last with 0 points; T033-5: the fastest-lap bonus is forfeited
 # ---------------------------------------------------------------------------
 
 
 async def test_full_flow_with_dsq(tmp_path):
-    """DSQ on P1 driver; driver moved to last position with 0 points."""
+    """DSQ on P1 driver, the fastest-lap holder; driver moved to last position with 0 points.
+    AC7: no other driver gains the bonus, which is forfeited, not redistributed."""
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
     _, division_id, round_id = await _bootstrap(db_path)
@@ -242,49 +243,11 @@ async def test_full_flow_with_dsq(tmp_path):
     dsq_row = next(r for r in rows if r["driver_user_id"] == 1)
     assert dsq_row["outcome"] == "DSQ"
     assert dsq_row["finishing_position"] == 2
-
-
-# ---------------------------------------------------------------------------
-# T033-5: DSQ fastest-lap holder — bonus forfeited, not redistributed
-# ---------------------------------------------------------------------------
-
-
-async def test_dsq_fastest_lap_not_redistributed_integration(tmp_path):
-    """AC7 integration: DSQ on fastest-lap holder; no other driver gains bonus."""
-    db_path = str(tmp_path / "test.db")
-    await run_migrations(db_path)
-    _, division_id, round_id = await _bootstrap(db_path)
-    sr_id = await _insert_feature_race(db_path, round_id, division_id)
-
-    staged = [
-        StagedPenalty(
-            driver_user_id=1,
-            session_type=SessionType.FEATURE_RACE,
-            penalty_type="DSQ",
-            penalty_seconds=None,
-        )
-    ]
-    async with get_connection(db_path) as db:
-        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
-        await db.commit()
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT driver_user_id, outcome, fastest_lap_bonus FROM race_session_results "
-            "WHERE session_result_id = ?",
-            (sr_id,),
-        )
-        rows = await cursor.fetchall()
-
-    # No OTHER driver should gain the bonus (core AC7 requirement: bonus forfeited, not redistributed)
     for row in rows:
         if row["driver_user_id"] != 1:
             assert (row["fastest_lap_bonus"] or 0) == 0, (
                 f"Driver {row['driver_user_id']} should not have fastest_lap_bonus after DSQ holder"
             )
-    # The DSQ driver's outcome should be set
-    dsq_row = next(r for r in rows if r["driver_user_id"] == 1)
-    assert dsq_row["outcome"] == "DSQ"
 
 
 # ---------------------------------------------------------------------------
