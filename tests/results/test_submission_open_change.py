@@ -38,7 +38,6 @@ from tests.support.change_queue import (
 )
 from tests.support.review_league import block_queue, channel
 from tests.support.season_league import (
-    DIVISIONS,
     PRO,
     SeasonLeague,
     ongoing_league,
@@ -47,7 +46,6 @@ from tests.support.season_league import (
 
 KIND = "results.submission.open"
 ROUND_3 = round_id(PRO, 3)
-RESULTS = DIVISIONS[PRO][3].results
 
 _new_ids = itertools.count(7600)
 
