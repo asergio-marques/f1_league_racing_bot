@@ -26,25 +26,20 @@ from tests.support.teams import seed_team_instances
 # ---------------------------------------------------------------------------
 
 
-def test_get_sessions_for_format_normal():
-    sessions = get_sessions_for_format(RoundFormat.NORMAL)
+@pytest.mark.parametrize(
+    "fmt, expected",
+    [
+        (RoundFormat.NORMAL, {"FEATURE_QUALIFYING", "FEATURE_RACE"}),
+        (RoundFormat.SPRINT, {"SPRINT_QUALIFYING", "SPRINT_RACE", "FEATURE_RACE"}),
+        (RoundFormat.ENDURANCE, {"FEATURE_RACE"}),
+    ],
+    ids=["normal", "sprint", "endurance"],
+)
+def test_get_sessions_for_format(fmt, expected):
+    sessions = get_sessions_for_format(fmt)
     session_names = {s.value for s in sessions}
-    assert "FEATURE_QUALIFYING" in session_names
-    assert "FEATURE_RACE" in session_names
-
-
-def test_get_sessions_for_format_sprint():
-    sessions = get_sessions_for_format(RoundFormat.SPRINT)
-    session_names = {s.value for s in sessions}
-    assert "SPRINT_QUALIFYING" in session_names
-    assert "SPRINT_RACE" in session_names
-    assert "FEATURE_RACE" in session_names
-
-
-def test_get_sessions_for_format_endurance():
-    sessions = get_sessions_for_format(RoundFormat.ENDURANCE)
-    session_names = {s.value for s in sessions}
-    assert "FEATURE_RACE" in session_names
+    for name in expected:
+        assert name in session_names
 
 
 # ---------------------------------------------------------------------------
@@ -150,18 +145,6 @@ def test_validate_race_row_accepts_delta_format():
     assert result.position == 2
 
 
-def test_validate_race_row_dnf():
-    line = "3, <@300>, T400, DNF, N/A, N/A"
-    result = _validate_race_row_wizard(line, is_first=False)
-    assert isinstance(result, ParsedRaceRow)
-
-
-def test_validate_race_row_dns():
-    line = "4, <@400>, T500, DNS, N/A, N/A"
-    result = _validate_race_row_wizard(line, is_first=False)
-    assert isinstance(result, ParsedRaceRow)
-
-
 def test_validate_race_row_first_place_success():
     line = "1, <@100>, T200, 1:23:45.678, 1:23.456, N/A"
     result = _validate_race_row_wizard(line, is_first=True)
@@ -224,12 +207,31 @@ def test_validate_submission_block_wrong_team_driver():
     assert "assigned to" in combined.lower() or "team" in combined.lower() or "submitted as" in combined.lower()
 
 
-def test_validate_submission_block_success():
+@pytest.mark.parametrize(
+    "other_active_assignments",
+    [None, {}],
+    ids=["not given", "no other active session"],
+)
+def test_validate_submission_block_success(other_active_assignments):
+    """A round with no other ACTIVE session yet raises nothing new (the common case), whether
+    the other sessions' assignments are left out or given as none."""
     lines = [
         "1, <@100>, T300, Soft, 1:23.456, N/A",
         "2, <@200>, T400, Soft, 1:24.000, +0:00.544",
     ]
-    result = _make_qual_block(lines)
+    extra = {} if other_active_assignments is None else {
+        "other_active_assignments": other_active_assignments
+    }
+    result = validate_submission_block(
+        lines,
+        session_type=SessionType.FEATURE_QUALIFYING,
+        division_driver_ids={100, 200},
+        team_of_role={300: 300, 400: 400},
+        team_of_shorthand={"t300": 300, "t400": 400},
+        reserve_team_role_id=None,
+        driver_team_map={100: 300, 200: 400},
+        **extra,
+    )
     assert isinstance(result, list)
     assert all(isinstance(r, ParsedQualifyingRow) for r in result)
 
@@ -306,26 +308,6 @@ def test_validate_submission_block_rejects_the_same_conflict_for_a_non_reserve_d
     assert any("100" in e for e in result)
 
 
-def test_validate_submission_block_with_no_other_sessions_is_unaffected():
-    """A round with no other ACTIVE session yet raises nothing new (the common case)."""
-    lines = [
-        "1, <@100>, T300, Soft, 1:23.456, N/A",
-        "2, <@200>, T400, Soft, 1:24.000, +0:00.544",
-    ]
-    result = validate_submission_block(
-        lines,
-        session_type=SessionType.FEATURE_QUALIFYING,
-        division_driver_ids={100, 200},
-        team_of_role={300: 300, 400: 400},
-        team_of_shorthand={"t300": 300, "t400": 400},
-        reserve_team_role_id=None,
-        driver_team_map={100: 300, 200: 400},
-        other_active_assignments={},
-    )
-    assert isinstance(result, list)
-    assert all(isinstance(r, ParsedQualifyingRow) for r in result)
-
-
 # ---------------------------------------------------------------------------
 # G2 — regex accepts sub-10-second values
 # ---------------------------------------------------------------------------
@@ -334,13 +316,6 @@ def test_validate_submission_block_with_no_other_sessions_is_unaffected():
 def test_validate_qualifying_row_accepts_sub10s_gap():
     """G2: +0.039 must be accepted (was rejected by old \\d{2} pattern)."""
     line = "2, <@200>, T400, Soft, 1:23.456, +0.039"
-    result = _validate_qualifying_row_wizard(line)
-    assert isinstance(result, ParsedQualifyingRow)
-
-
-def test_validate_qualifying_row_accepts_sub10s_best_lap():
-    """G2: A best lap of 9.456 (9 seconds) must be accepted."""
-    line = "1, <@100>, T300, Soft, 9.456, N/A"
     result = _validate_qualifying_row_wizard(line)
     assert isinstance(result, ParsedQualifyingRow)
 
@@ -355,27 +330,6 @@ def test_validate_race_row_accepts_sub10s_gap():
 # ---------------------------------------------------------------------------
 # C3 — Fastest Lap validation skipped when Total Time is outcome literal
 # ---------------------------------------------------------------------------
-
-
-def test_validate_race_row_dsq_fl_skipped():
-    """C3: DSQ Total Time — Fastest Lap validation skipped (N/A allowed)."""
-    line = "2, <@200>, T300, DSQ, N/A, 0.000"
-    result = _validate_race_row_wizard(line, is_first=False)
-    assert isinstance(result, ParsedRaceRow)
-
-
-def test_validate_race_row_dnf_fl_skipped():
-    """C3: DNF Total Time — Fastest Lap validation skipped."""
-    line = "3, <@300>, T400, DNF, N/A, 0.000"
-    result = _validate_race_row_wizard(line, is_first=False)
-    assert isinstance(result, ParsedRaceRow)
-
-
-def test_validate_race_row_dns_fl_skipped():
-    """C3: DNS Total Time — Fastest Lap validation skipped."""
-    line = "4, <@400>, T500, DNS, N/A, 0.000"
-    result = _validate_race_row_wizard(line, is_first=False)
-    assert isinstance(result, ParsedRaceRow)
 
 
 def test_validate_race_row_normal_fl_validated():
@@ -602,32 +556,31 @@ async def test_channel_not_in_penalty_review_when_flag_zero(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_extract_fl_override_present():
-    """A valid FL: header is stripped and the driver ID is returned."""
-    lines = ["FL: <@12345>", "1, <@100>, T400, 1:23:45.678, 1:25.000, N/A"]
+@pytest.mark.parametrize(
+    "header, expected",
+    [("FL: <@12345>", 12345), ("FL: <@!99999>", 99999), ("fl: <@777>", 777)],
+    ids=["mention", "legacy mention", "lower case"],
+)
+def test_extract_fl_override_present(header, expected):
+    """A valid FL: header is stripped and the driver ID is returned. FL: <@!id> (legacy
+    mention format) is also accepted, and the 'FL:' prefix is matched case-insensitively."""
+    lines = [header, "1, <@100>, T400, 1:23:45.678, 1:25.000, N/A"]
     fl_id, remaining = extract_fl_override(lines)
-    assert fl_id == 12345
+    assert fl_id == expected
     assert remaining == ["1, <@100>, T400, 1:23:45.678, 1:25.000, N/A"]
 
 
-def test_extract_fl_override_old_mention_format():
-    """FL: <@!id> (legacy mention format) is also accepted."""
-    lines = ["FL: <@!99999>", "1, <@100>, T400, 1:23:45.678, 1:25.000, N/A"]
-    fl_id, remaining = extract_fl_override(lines)
-    assert fl_id == 99999
-    assert remaining == ["1, <@100>, T400, 1:23:45.678, 1:25.000, N/A"]
-
-
-def test_extract_fl_override_case_insensitive():
-    """The 'FL:' prefix is matched case-insensitively."""
-    lines = ["fl: <@777>", "1, <@100>, T400, 1:23:45.678, 1:25.000, N/A"]
-    fl_id, remaining = extract_fl_override(lines)
-    assert fl_id == 777
-
-
-def test_extract_fl_override_absent():
-    """When no FL: header is present, None is returned and lines is unchanged."""
-    lines = ["1, <@100>, T400, 1:23:45.678, 1:25.000, N/A"]
+@pytest.mark.parametrize(
+    "lines",
+    [
+        ["1, <@100>, T400, 1:23:45.678, 1:25.000, N/A"],
+        ["1, <@100>, T400, 1:23:45.678, 1:25.000, N/A", "2, <@200>, T500, +0:05.000, 1:26.000, N/A"],
+    ],
+    ids=["one row", "two rows"],
+)
+def test_extract_fl_override_absent(lines):
+    """When no FL: header is present, None is returned and lines is unchanged: a first line
+    that looks like a driver row is not consumed."""
     fl_id, remaining = extract_fl_override(lines)
     assert fl_id is None
     assert remaining is lines  # same object — unchanged
@@ -638,14 +591,6 @@ def test_extract_fl_override_empty_list():
     fl_id, remaining = extract_fl_override([])
     assert fl_id is None
     assert remaining == []
-
-
-def test_extract_fl_override_non_matching_first_line():
-    """A first line that looks like a driver row is not consumed."""
-    lines = ["1, <@100>, T400, 1:23:45.678, 1:25.000, N/A", "2, <@200>, T500, +0:05.000, 1:26.000, N/A"]
-    fl_id, remaining = extract_fl_override(lines)
-    assert fl_id is None
-    assert remaining is lines
 
 
 # ---------------------------------------------------------------------------
@@ -801,12 +746,24 @@ def test_race_ordering_dsq_last_accepted():
     assert all(isinstance(r, ParsedRaceRow) for r in result)
 
 
-def test_race_ingame_dsq():
-    """R5: In-game DSQ (from total_time) → outcome DSQ."""
-    line = "4, <@400>, T800, DSQ, N/A, N/A"
+@pytest.mark.parametrize(
+    "line, expected",
+    [
+        ("4, <@400>, T800, DSQ, N/A, N/A", OutcomeModifier.DSQ),
+        ("3, <@300>, T400, DNF, N/A, N/A", OutcomeModifier.DNF),
+        ("4, <@400>, T500, DNS, N/A, N/A", OutcomeModifier.DNS),
+        ("2, <@200>, T300, DSQ, N/A, 0.000", OutcomeModifier.DSQ),
+        ("3, <@300>, T400, DNF, N/A, 0.000", OutcomeModifier.DNF),
+        ("4, <@400>, T500, DNS, N/A, 0.000", OutcomeModifier.DNS),
+    ],
+    ids=["dsq", "dnf", "dns", "dsq-no-penalty", "dnf-no-penalty", "dns-no-penalty"],
+)
+def test_a_retirement_in_the_race_time_is_read_as_its_outcome(line, expected):
+    """R5: A following race row whose Total Time is DNF, DNS or DSQ (in-game), its Fastest Lap
+    N/A and its penalties N/A or 0.000, is read with that outcome (C3: N/A allowed)."""
     result = _validate_race_row_wizard(line, is_first=False)
     assert isinstance(result, ParsedRaceRow)
-    assert result.outcome == OutcomeModifier.DSQ
+    assert result.outcome == expected
 
 
 def test_race_ordering_dns_before_dnf_rejected():
@@ -961,8 +918,12 @@ def test_a_best_lap_with_seconds_of_sixty_or_more_is_refused():
     assert isinstance(_validate_qualifying_row_wizard(line), str)
 
 
-def test_a_best_lap_under_a_minute_is_still_read():
-    line = "1, <@123>, T456, Soft, 58.123, N/A"
+@pytest.mark.parametrize(
+    "line",
+    ["1, <@123>, T456, Soft, 58.123, N/A", "1, <@100>, T300, Soft, 9.456, N/A"],
+    ids=["58.123", "G2: under ten seconds, 9.456"],
+)
+def test_a_best_lap_under_a_minute_is_still_read(line):
     assert not isinstance(_validate_qualifying_row_wizard(line), str)
 
 
