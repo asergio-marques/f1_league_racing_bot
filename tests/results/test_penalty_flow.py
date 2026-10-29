@@ -260,7 +260,7 @@ async def test_penalty_review_flag_lifecycle(tmp_path):
     closing the channel (finalized) causes it to return False."""
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
-    _, division_id, round_id = await _bootstrap(db_path)
+    _, _, round_id = await _bootstrap(db_path)
 
     channel_id = 9001
 
@@ -305,7 +305,7 @@ async def test_test_mode_advance_blocked_until_results_are_final(tmp_path):
     """
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
-    _, division_id, round_id = await _bootstrap(db_path)
+    _, _, round_id = await _bootstrap(db_path)
 
     from leaguebot.core.services.test_mode_service import round_result_status
 
