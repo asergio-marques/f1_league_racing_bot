@@ -96,10 +96,6 @@ def _division(name="Pro", tier=1, *, id=DIVISION_ID, status="ACTIVE", channel=No
     )
 
 
-def _round(id: int, status: str = "NOT_RUN"):
-    return SimpleNamespace(id=id, division_id=DIVISION_ID, round_number=id, status=status)
-
-
 def _make_cog(
     db_path: str,
     *,

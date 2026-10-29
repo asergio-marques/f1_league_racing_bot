@@ -30,8 +30,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from leaguebot.core.models.season import SeasonStage
 
 from leaguebot.core.cogs.team_cog import TeamCog

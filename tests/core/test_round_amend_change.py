@@ -31,8 +31,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection
-
 from tests.support.change_queue import (
     discard_job,
     http_error,

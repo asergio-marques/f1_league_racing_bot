@@ -34,7 +34,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
