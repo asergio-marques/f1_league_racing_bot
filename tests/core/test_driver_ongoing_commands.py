@@ -2,9 +2,10 @@
 
 The services beneath them are tested against a real database in `test_driver_move.py` and
 `test_driver_release.py`, which also pin the stage refusal. What those leave unexercised is the
-rest of each command's ladder: a division that does not resolve, a member with no profile, a
-refusal the service raises, and the reply and log line of a move or release that goes through.
-The two commands copy that ladder rather than share it, so each rung is tested for both.
+rest of each command's ladder: a division that does not resolve, a member with no profile, and
+the reply and log line of a move or release that goes through. The two commands copy that
+ladder rather than share it, so each rung is tested for both. A refusal the service raises is
+pinned, reply and recorded line, in `test_driver_cog_refusals.py`.
 
 The reject command's own ladder is in `test_driver_reject.py`; the one branch it leaves — a
 driver role Discord will not take back — is here, because a failed role removal must not
@@ -145,25 +146,6 @@ async def test_a_move_of_a_member_with_no_profile_is_refused():
     cog.bot.placement_service.move_driver.assert_not_awaited()
 
 
-async def test_a_refusal_the_service_raises_is_relayed_and_recorded():
-    """The manager is told the service's reason, and the refusal is recorded (#482)."""
-    cog = _cog()
-    cog.bot.placement_service.move_driver = AsyncMock(
-        side_effect=ValueError("**Reserve** in this division has no available seats.")
-    )
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "driver move"
-
-    await _move(cog, interaction)
-
-    assert _reply(interaction) == "⛔ **Reserve** in this division has no available seats."
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        "⛔ `/driver move` refused for Manager (<@1>) — "
-        "**Reserve** in this division has no available seats."
-    )
-
-
 async def test_a_move_names_the_team_in_the_division_moved_into():
     """The team is resolved by its shorthand in the division the driver goes to (#381)."""
     from leaguebot.core.services.team_service import TeamReference
@@ -260,25 +242,6 @@ async def test_a_release_of_a_member_with_no_profile_is_refused():
     cog.bot.placement_service.release_driver.assert_not_awaited()
 
 
-async def test_a_release_the_service_refuses_is_relayed_and_recorded():
-    """The manager is told the service's reason, and the refusal is recorded (#482)."""
-    cog = _cog()
-    cog.bot.placement_service.release_driver = AsyncMock(
-        side_effect=ValueError("That is the driver's only seat. Sack or move them instead.")
-    )
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "driver release"
-
-    await _release(cog, interaction)
-
-    assert _reply(interaction) == "⛔ That is the driver's only seat. Sack or move them instead."
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        "⛔ `/driver release` refused for Manager (<@1>) — "
-        "That is the driver's only seat. Sack or move them instead."
-    )
-
-
 @pytest.mark.parametrize(
     "stage", [SeasonStage.ONGOING, SeasonStage.ONGOING_SIGNUPS, SeasonStage.ONGOING_PLACEMENTS]
 )
@@ -300,10 +263,12 @@ async def test_a_release_is_confirmed_and_logged(stage):
 # ── /driver reject: a role Discord will not take back ─────────────────────────────────
 
 
-async def test_a_rejection_stands_when_the_driver_role_cannot_be_removed():
+async def test_a_rejection_whose_role_cannot_be_removed_says_so_in_reply_and_line():
+    """The rejection stands, written before the role is touched. A driver role Discord will not
+    take back is named as not done, in the manager's reply and in the log line beneath the
+    success, as `/driver reassign` names what it could not do (#482)."""
     cog = DriverCog.__new__(DriverCog)
     cog.bot = MagicMock()
-    # Any account names the driver (issue #243); these tests name the current one.
     cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda a: str(a))
     cog.bot.season_service.get_setup_or_active_season = AsyncMock(
         return_value=SimpleNamespace(id=SEASON_ID, stage=SeasonStage.PLACEMENTS)
@@ -329,37 +294,6 @@ async def test_a_rejection_stands_when_the_driver_role_cannot_be_removed():
     cog.bot.driver_service.transition.assert_awaited_once_with(
         str(USER_ID), DriverState.NOT_SIGNED_UP
     )
-    assert _reply(interaction).startswith("✅ Turned down **Racer**")
-
-
-async def test_a_rejection_whose_role_cannot_be_removed_says_so_in_reply_and_line():
-    """A driver role Discord will not take back is named as not done, in the manager's reply
-    and in the log line beneath the success, as `/driver reassign` names what it could not do
-    (#482)."""
-    cog = DriverCog.__new__(DriverCog)
-    cog.bot = MagicMock()
-    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda a: str(a))
-    cog.bot.season_service.get_setup_or_active_season = AsyncMock(
-        return_value=SimpleNamespace(id=SEASON_ID, stage=SeasonStage.PLACEMENTS)
-    )
-    cog.bot.driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(id=PROFILE_ID, current_state=DriverState.UNASSIGNED)
-    )
-    cog.bot.driver_service.transition = AsyncMock()
-    cog.bot.signup_module_service.withdraw_approval = AsyncMock()
-    cog.bot.config_service.get_server_config = AsyncMock(
-        return_value=SimpleNamespace(driver_role_id=902)
-    )
-    cog.bot.output_router.post_log = AsyncMock()
-    interaction = _interaction()
-    interaction.guild.get_role = MagicMock(return_value=SimpleNamespace(id=902))
-    member = _member()
-    member.remove_roles = AsyncMock(
-        side_effect=discord.HTTPException(MagicMock(status=403, reason="Forbidden"), "missing")
-    )
-
-    await undecorate(DriverCog.reject)(cog, interaction, member)
-
     reply = _reply(interaction)
     assert reply.startswith("✅ Turned down **Racer**")
     assert any("role" in line for line in reply.splitlines()[1:])

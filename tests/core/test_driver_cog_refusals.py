@@ -325,6 +325,12 @@ _CASES = {
     ),
 }
 
+#: The whole of today's reply, where a case pins it word for word, mark included.
+_EXACT_REPLIES = {
+    "move refused by the service": "⛔ **Reserve** in this division has no available seats.",
+    "release refused by the service": "⛔ That is the driver's only seat.",
+}
+
 
 @pytest.mark.parametrize("case", sorted(_CASES))
 async def test_a_refusal_of_the_driver_cog_is_recorded_in_the_log_channel(case):
@@ -345,5 +351,7 @@ async def test_a_refusal_of_the_driver_cog_is_recorded_in_the_log_channel(case):
     assert len(sent) == 1 and sent[0].kwargs.get("ephemeral") is True
     reply = sent[0].args[0]
     assert phrase in reply
+    if case in _EXACT_REPLIES:
+        assert reply == _EXACT_REPLIES[case]
     lines = [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
     assert lines == [f"⛔ `/{command}` refused for Alex (<@{MANAGER_ID}>) — {_reason(reply)}"]
