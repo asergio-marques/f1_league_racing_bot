@@ -52,7 +52,6 @@ from leaguebot.core.services.season_service import SeasonService
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.results.models.points_config import SessionType
 from tests.support.change_queue import (
-    SERVER_ID,
     attach_queue,
     change_rows,
     league_double,
