@@ -338,49 +338,6 @@ async def test_the_command_is_a_league_manager_s():
     assert getattr(AttendanceCog.sync.callback, TIER_ATTRIBUTE) == LEAGUE_MANAGER
 
 
-@pytest.mark.parametrize("stage", [None, SeasonStage.PLACEMENTS, SeasonStage.PENDING_COMPLETION])
-async def test_it_is_refused_outside_the_ongoing_stages(tmp_path, stage):
-    db_path = await _make_db(tmp_path, autosack=20)
-    interaction = _interaction()
-
-    synced = await _invoke(_cog(db_path, stage=stage), interaction)
-
-    synced.assert_not_awaited()
-    assert "only while the season is ongoing" in _replied(interaction)
-
-
-async def test_an_unknown_division_is_refused(tmp_path):
-    db_path = await _make_db(tmp_path, autosack=20)
-    interaction = _interaction()
-
-    synced = await _invoke(_cog(db_path), interaction, division="Nowhere")
-
-    synced.assert_not_awaited()
-    assert "not found" in _replied(interaction)
-
-
-async def test_an_unknown_round_is_refused(tmp_path):
-    db_path = await _make_db(tmp_path, autosack=20)
-    await _add_rounds(db_path, {})
-    interaction = _interaction()
-
-    synced = await _invoke(_cog(db_path), interaction, round=9)
-
-    synced.assert_not_awaited()
-    assert "has no round 9" in _replied(interaction)
-
-
-async def test_a_round_not_yet_finalised_is_refused(tmp_path):
-    db_path = await _make_db(tmp_path, autosack=20)
-    await _add_rounds(db_path, {2: "AWAITING_REPORT_VERDICTS"})
-    interaction = _interaction()
-
-    synced = await _invoke(_cog(db_path), interaction, round=2)
-
-    synced.assert_not_awaited()
-    assert "has not had its penalties approved" in _replied(interaction)
-
-
 async def _amendment_open(db_path) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
@@ -471,6 +428,14 @@ async def _refused_outside_ongoing(tmp_path):
     return _cog(await _make_db(tmp_path, autosack=20), stage=None), {}
 
 
+async def _refused_in_placements(tmp_path):
+    return _cog(await _make_db(tmp_path, autosack=20), stage=SeasonStage.PLACEMENTS), {}
+
+
+async def _refused_pending_completion(tmp_path):
+    return _cog(await _make_db(tmp_path, autosack=20), stage=SeasonStage.PENDING_COMPLETION), {}
+
+
 async def _refused_unknown_division(tmp_path):
     return _cog(await _make_db(tmp_path, autosack=20)), {"division": "Nowhere"}
 
@@ -504,6 +469,8 @@ async def _refused_for_a_channel_fault(tmp_path):
     [
         (_refused_while_disabled, "The Attendance module is not enabled."),
         (_refused_outside_ongoing, "only while the season is ongoing"),
+        (_refused_in_placements, "only while the season is ongoing"),
+        (_refused_pending_completion, "only while the season is ongoing"),
         (_refused_unknown_division, "Division 'Nowhere' not found."),
         (_refused_while_amended, "is being amended"),
         (_refused_unknown_round, "has no round 9"),
@@ -511,13 +478,15 @@ async def _refused_for_a_channel_fault(tmp_path):
         (_refused_for_a_channel_fault, "the attendance channel is gone"),
     ],
     ids=[
-        "module-disabled", "not-ongoing", "unknown-division", "amended", "unknown-round",
+        "module-disabled", "not-ongoing", "not-ongoing-placements",
+        "not-ongoing-pending-completion", "unknown-division", "amended", "unknown-round",
         "not-finalised", "channel-fault",
     ],
 )
 async def test_every_refusal_of_the_sync_is_recorded(tmp_path, arrange, reason):
-    """A5: each refusal is answered and writes one "⛔ `/attendance sync` refused" line,
-    giving the reason; a channel fault's line names the channel at fault."""
+    """A5: each refusal is answered once, its reply carrying its reason, and writes one
+    "⛔ `/attendance sync` refused" line, giving the reason; a channel fault's line names
+    the channel at fault."""
     cog, kwargs = await arrange(tmp_path)
     interaction = _interaction()
 
@@ -529,6 +498,7 @@ async def test_every_refusal_of_the_sync_is_recorded(tmp_path, arrange, reason):
         + interaction.followup.send.await_args_list
     )
     assert len(replies) == 1
+    assert reason in str(replies[0].args[0])
     lines = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
     assert len(lines) == 1
     assert lines[0].startswith("\u26d4 `/attendance sync` refused for Manager (<@77>) \u2014 ")
