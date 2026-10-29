@@ -257,18 +257,26 @@ async def test_the_review_warns_where_the_add_refuses(tmp_path):
     assert "not** added" not in warning[0]
 
 
-async def test_the_warning_names_the_division_that_overflows(tmp_path):
+@pytest.mark.parametrize(
+    "rounds_per_division,longest",
+    [
+        pytest.param({"Division 1": 10, "Premier": 25}, "Premier", id="longest sorts last"),
+        pytest.param({"Short": 5, "Long": 25}, "Long", id="longest sorts first"),
+    ],
+)
+async def test_the_warning_names_the_division_that_overflows(
+    tmp_path, rounds_per_division, longest
+):
     """A season of eight divisions needs to know which one to shorten. Only the greatest
     round count can be judged here, because which division gets drawn is decided later — so
-    a season passes only if its longest calendar fits."""
+    a season passes only if its longest calendar fits. The longest division, added second, is
+    named whether its name sorts after the shorter one's or before it."""
     cog = _make_cog()
-    db_path = await _make_season_db(
-        tmp_path, rounds_per_division={"Division 1": 10, "Premier": 25}
-    )
+    db_path = await _make_season_db(tmp_path, rounds_per_division=rounds_per_division)
 
     warning = await _warning(cog, db_path, 24)
 
-    assert "Premier" in warning[0]
+    assert longest in warning[0]
     assert "holds 25" in warning[0]
 
 
