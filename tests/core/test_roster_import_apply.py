@@ -249,7 +249,7 @@ async def test_no_season_is_reported(tmp_path):
 @pytest.mark.parametrize(
     "beside", [False, True], ids=["the seated division alone", "beside an empty division"]
 )
-async def test_a_roster_naming_a_seated_division_seats_none_of_its_empty_ones(season, beside):
+async def test_a_roster_naming_a_seated_division_seats_nobody(season, beside):
     """The CSV describes a whole grid. Importing over a seated division would put seats
     somewhere the file does not describe, with the file still looking like the record. A
     seated division is a fault like any other, so it refuses the whole import: the empty
