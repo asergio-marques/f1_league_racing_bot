@@ -52,27 +52,6 @@ def test_get_sessions_for_format_endurance():
 # ---------------------------------------------------------------------------
 
 
-def test_validate_qualifying_row_rejects_wrong_position():
-    line = "abc, <@123>, T456, Soft, 1:23.456, N/A"
-    result = _validate_qualifying_row_wizard(line)
-    assert isinstance(result, str)
-    assert "Position" in result
-
-
-def test_validate_qualifying_row_rejects_invalid_mention():
-    line = "1, notamention, T456, Soft, 1:23.456, N/A"
-    result = _validate_qualifying_row_wizard(line)
-    assert isinstance(result, str)
-    assert "Discord member mention" in result
-
-
-def test_validate_qualifying_row_rejects_invalid_time():
-    line = "1, <@123>, T456, Soft, badtime, N/A"
-    result = _validate_qualifying_row_wizard(line)
-    assert isinstance(result, str)
-    assert "Best Lap" in result
-
-
 def test_validate_qualifying_row_success():
     line = "1, <@123>, T456, Soft, 1:23.456, N/A"
     result = _validate_qualifying_row_wizard(line)
@@ -181,13 +160,6 @@ def test_validate_race_row_dns():
     line = "4, <@400>, T500, DNS, N/A, N/A"
     result = _validate_race_row_wizard(line, is_first=False)
     assert isinstance(result, ParsedRaceRow)
-
-
-def test_validate_race_row_first_place_must_be_absolute():
-    line = "1, <@100>, T200, +0:00.000, 1:23.456, N/A"
-    result = _validate_race_row_wizard(line, is_first=True)
-    assert isinstance(result, str)
-    assert "absolute" in result.lower() or "1st" in result.lower()
 
 
 def test_validate_race_row_first_place_success():
@@ -378,26 +350,6 @@ def test_validate_race_row_accepts_sub10s_gap():
     line = "2, <@200>, T300, +0.202, 1:14.532, 0.000"
     result = _validate_race_row_wizard(line, is_first=False)
     assert isinstance(result, ParsedRaceRow)
-
-
-# ---------------------------------------------------------------------------
-# C2 — P1 gap input ignored entirely
-# ---------------------------------------------------------------------------
-
-
-def test_validate_qualifying_row_p1_gap_ignored():
-    """C2: P1 gap with any value (even invalid format) must be accepted."""
-    line = "1, <@100>, T300, Soft, 1:23.456, WHATEVER_IGNORED"
-    result = _validate_qualifying_row_wizard(line)
-    assert isinstance(result, ParsedQualifyingRow)
-
-
-def test_validate_qualifying_row_p2_gap_validated():
-    """C2: P2+ gap is still validated — bad format must fail."""
-    line = "2, <@200>, T400, Soft, 1:24.000, INVALID"
-    result = _validate_qualifying_row_wizard(line)
-    assert isinstance(result, str)
-    assert "Gap" in result
 
 
 # ---------------------------------------------------------------------------

@@ -112,7 +112,7 @@ def test_surrounding_whitespace_is_forgiven():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("position", ["0x", "first", "-1", "1.5", ""])
+@pytest.mark.parametrize("position", ["0x", "first", "abc", "-1", "1.5", ""])
 def test_a_position_that_is_not_a_whole_number_is_refused(position):
     result = _validate_qualifying_row_wizard(_qualifying(position=position))
 
@@ -120,7 +120,7 @@ def test_a_position_that_is_not_a_whole_number_is_refused(position):
     assert "Position" in result
 
 
-@pytest.mark.parametrize("driver", ["Lewis", "4242", "<@&4242>", ""])
+@pytest.mark.parametrize("driver", ["Lewis", "notamention", "4242", "<@&4242>", ""])
 def test_a_driver_that_is_not_a_member_mention_is_refused(driver):
     """A role mention where a member should be is the mistake this catches — the two look
     almost identical and a role would silently become a driver id."""
@@ -128,6 +128,7 @@ def test_a_driver_that_is_not_a_member_mention_is_refused(driver):
 
     assert _refused(result)
     assert "Driver" in result
+    assert "Discord member mention" in result
 
 
 def test_an_empty_team_is_refused():
@@ -195,8 +196,9 @@ def test_an_absent_tyre_is_an_answer_not_a_gap(tyre):
 # ---------------------------------------------------------------------------
 
 
-def test_a_qualifying_best_lap_must_be_a_time():
-    result = _validate_qualifying_row_wizard(_qualifying(best_lap="quick"))
+@pytest.mark.parametrize("best_lap", ["quick", "badtime"])
+def test_a_qualifying_best_lap_must_be_a_time(best_lap):
+    result = _validate_qualifying_row_wizard(_qualifying(best_lap=best_lap))
 
     assert _refused(result)
     assert "Best Lap" in result
@@ -210,16 +212,18 @@ def test_a_retirement_may_stand_in_for_a_qualifying_time(outcome):
     assert not _refused(result)
 
 
-def test_a_qualifying_leader_s_gap_is_not_checked():
+@pytest.mark.parametrize("gap", ["anything", "WHATEVER_IGNORED"])
+def test_a_qualifying_leader_s_gap_is_not_checked(gap):
     """First place has nobody to be behind, so whatever sits in the field is ignored
     rather than refused — a league writing "—" or "Pole" there is not wrong."""
-    result = _validate_qualifying_row_wizard(_qualifying(position="1", gap="anything"))
+    result = _validate_qualifying_row_wizard(_qualifying(position="1", gap=gap))
 
     assert not _refused(result)
 
 
-def test_a_following_driver_s_gap_must_be_a_delta_a_time_or_absent():
-    result = _validate_qualifying_row_wizard(_qualifying(position="2", gap="miles"))
+@pytest.mark.parametrize("gap", ["miles", "INVALID"])
+def test_a_following_driver_s_gap_must_be_a_delta_a_time_or_absent(gap):
+    result = _validate_qualifying_row_wizard(_qualifying(position="2", gap=gap))
 
     assert _refused(result)
     assert "Gap" in result
@@ -237,10 +241,11 @@ def test_the_three_acceptable_gap_forms(gap):
 # ---------------------------------------------------------------------------
 
 
-def test_the_leading_race_row_must_give_an_absolute_time():
-    """A delta in first place would be a gap to nobody, and every following driver's gap
-    is computed from this one."""
-    result = _validate_race_row_wizard(_race(total_time="+0:01.234"), is_first=True)
+@pytest.mark.parametrize("total_time", ["+0:01.234", "+0:00.000"])
+def test_the_leading_race_row_must_give_an_absolute_time(total_time):
+    """A delta in first place would be a gap to nobody, a zero one included, and every
+    following driver's gap is computed from this one."""
+    result = _validate_race_row_wizard(_race(total_time=total_time), is_first=True)
 
     assert _refused(result)
     assert "absolute time" in result
