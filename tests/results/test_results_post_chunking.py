@@ -50,17 +50,19 @@ ANCHOR_ID = 900001
 # ---------------------------------------------------------------------------
 
 
-def test_a_short_message_is_not_split():
+@pytest.mark.parametrize(
+    "text",
+    [
+        "short",
+        # Sits on the boundary — `_MSG_MAX` already leaves a margin under Discord's own
+        # limit, so the comparison is `>` and not `>=`.
+        "x" * _MSG_MAX,
+    ],
+    ids=["short", "at-the-limit"],
+)
+def test_a_message_that_fits_is_not_split(text):
     """Most posts fit. Splitting one that does not need it would cost a second message for
     nothing."""
-    assert _split_content("short") == ["short"]
-
-
-def test_a_message_at_the_limit_is_not_split():
-    """Sits on the boundary — `_MSG_MAX` already leaves a margin under Discord's own
-    limit, so the comparison is `>` and not `>=`."""
-    text = "x" * _MSG_MAX
-
     assert _split_content(text) == [text]
 
 
@@ -137,27 +139,6 @@ def _channel():
     return channel
 
 
-async def test_a_short_post_is_one_message():
-    channel = _channel()
-
-    with in_a_job():
-        await _send_chunked(channel, "short")
-
-    assert len(channel._sent) == 1
-
-
-async def test_a_long_post_becomes_several_messages_in_order():
-    channel = _channel()
-    text = "\n".join(f"line {n}" for n in range(500))
-
-    with in_a_job():
-        await _send_chunked(channel, text)
-
-    assert len(channel._sent) > 1
-    assert "line 0" in channel._sent[0].content
-    assert "line 499" in channel._sent[-1].content
-
-
 async def test_every_message_is_returned_with_the_anchor_first():
     """All of them, so all of them can be recorded, and the anchor at the head of the list.
 
@@ -176,6 +157,8 @@ async def test_every_message_is_returned_with_the_anchor_first():
     assert len(sent) > 1
     assert sent == channel._sent
     assert sent[0] is channel._sent[0]
+    assert "line 0" in channel._sent[0].content
+    assert "line 499" in channel._sent[-1].content
 
 
 async def test_a_short_post_returns_the_one_message_it_sent():
