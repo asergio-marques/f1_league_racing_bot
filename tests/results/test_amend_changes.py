@@ -1000,23 +1000,6 @@ async def test_a_lapse_asked_for_a_closed_amendment_is_dropped_unless_a_restart_
         assert "lapsed" not in league.log() and "restart" not in league.log()
 
 
-async def test_a_paste_typed_in_time_holds_the_lapse_though_its_turn_waits(tmp_path, monkeypatch):
-    """The amendment's lane is stopped at another job when Alex pastes the Feature Race four
-    minutes after the prompt; his turn waits. The five minutes run out and the lapse is asked:
-    it finds a paste typed in time waiting, and neither deletes the channel nor closes the row."""
-    league = await _league(tmp_path, monkeypatch)
-    await _ask_open(league)
-    await block_queue(league, lane=LANE)
-    await _type(league, after=timedelta(minutes=4))
-
-    await _fire(league)
-    await run_queue(league.bot)
-
-    assert not _deleted(league)
-    [row] = await _amend_rows(league)
-    assert row["closed_at"] is None
-
-
 async def test_a_paste_typed_after_the_five_minutes_is_not_taken(tmp_path, monkeypatch):
     """Alex pastes the Feature Race six minutes after the prompt appeared, before the timer's lapse
     has run (results :460, Q18: an answer counts only if typed within the five minutes). His turn
@@ -1123,15 +1106,21 @@ async def test_a_lapse_queued_for_an_earlier_prompt_does_not_swallow_the_next_pr
 
 
 async def test_a_lapse_reads_a_paste_typed_in_time_on_the_amendment_s_lane(tmp_path, monkeypatch):
-    """As before, Alex's paste typed in time waits behind a stopped job on the amendment's lane
-    when the lapse runs on the league lane and leaves the amendment open. Once the stopped job is
-    retried and goes through, his paste's turn runs and stage one is recorded."""
+    """The amendment's lane is stopped at another job when Alex pastes the Feature Race four
+    minutes after the prompt; his turn waits. The five minutes run out and the lapse is asked on
+    the league lane: it finds a paste typed in time waiting, and neither deletes the channel nor
+    closes the row. Once the stopped job is retried and goes through, his paste's turn runs and
+    stage one is recorded."""
     league = await _league(tmp_path, monkeypatch)
     await _ask_open(league)
     holder = await block_queue(league, lane=LANE)
     await _type(league, after=timedelta(minutes=4))
     await _fire(league)
     await run_queue(league.bot)
+
+    assert not _deleted(league)
+    [row] = await _amend_rows(league)
+    assert row["closed_at"] is None
 
     holder["fail"] = False
     await retry_job(league.bot, lane=LANE)

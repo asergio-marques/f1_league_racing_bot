@@ -20,6 +20,8 @@ mis-scoring.
 """
 from __future__ import annotations
 
+import pytest
+
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.result_submission_service import (
     _RETIRED_SANCTION_COLUMNS,
@@ -47,45 +49,43 @@ def _validate(line: str, session_type: SessionType):
     )
 
 
-def test_a_race_row_in_the_submission_format_is_accepted():
+@pytest.mark.parametrize(
+    "row,session_type",
+    [
+        (_race, SessionType.FEATURE_RACE),
+        (_qualifying, SessionType.FEATURE_QUALIFYING),
+    ],
+    ids=["race", "qualifying"],
+)
+def test_a_row_in_the_submission_format_is_accepted(row, session_type):
     """The format the amendment now takes, and the one a first submission has always taken."""
-    result = _validate(_race(sanction_columns=False), SessionType.FEATURE_RACE)
-
-    assert not isinstance(result[0], str), result
-    assert result[0].driver_user_id == DRIVER
-
-
-def test_a_qualifying_row_in_the_submission_format_is_accepted():
-    result = _validate(_qualifying(sanction_columns=False), SessionType.FEATURE_QUALIFYING)
+    result = _validate(row(sanction_columns=False), session_type)
 
     assert not isinstance(result[0], str), result
     assert result[0].driver_user_id == DRIVER
 
 
 def test_a_race_row_with_the_old_sanction_columns_is_refused():
-    """Ignoring them would score the round twice over; the paste is rejected instead."""
+    """Ignoring them would score the round twice over; the paste is rejected instead.
+
+    The refusal says what to do instead: an admin working from a saved paste has to learn the
+    format changed, and why. A bare field count would read as a typo and be re-pasted unchanged.
+    """
     result = _validate(_race(sanction_columns=True), SessionType.FEATURE_RACE)
 
     assert isinstance(result[0], str)
     assert "got 8" in result[0]
+    assert "same format as a first submission" in result[0]
+    assert "justification" in result[0]
 
 
 def test_a_qualifying_row_with_the_old_sanction_columns_is_refused():
+    """Both formats lost the same pair, so both rows point at the same explanation."""
     result = _validate(_qualifying(sanction_columns=True), SessionType.FEATURE_QUALIFYING)
 
     assert isinstance(result[0], str)
     assert "got 8" in result[0]
-
-
-def test_the_refusal_says_what_to_do_instead():
-    """An admin working from a saved paste has to learn the format changed, and why.
-
-    A bare field count would read as a typo and be re-pasted unchanged.
-    """
-    result = _validate(_race(sanction_columns=True), SessionType.FEATURE_RACE)
-
-    assert "same format as a first submission" in result[0]
-    assert "justification" in result[0]
+    assert _RETIRED_SANCTION_COLUMNS in result[0]
 
 
 def test_the_explanation_is_only_offered_for_the_old_width():
@@ -98,13 +98,6 @@ def test_the_explanation_is_only_offered_for_the_old_width():
     assert isinstance(short[0], str)
     assert "got 3" in short[0]
     assert _RETIRED_SANCTION_COLUMNS not in short[0]
-
-
-def test_a_row_two_columns_too_wide_in_qualifying_also_explains():
-    """Both formats lost the same pair, so both rows point at the same explanation."""
-    result = _validate(_qualifying(sanction_columns=True), SessionType.FEATURE_QUALIFYING)
-
-    assert _RETIRED_SANCTION_COLUMNS in result[0]
 
 
 def test_a_driver_listed_twice_is_refused():
