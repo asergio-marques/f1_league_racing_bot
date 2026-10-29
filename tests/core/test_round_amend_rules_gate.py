@@ -158,16 +158,6 @@ def _offered_a_confirmation(interaction) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def test_a_round_that_has_started_refuses_a_track_amendment(tmp_path):
-    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) - timedelta(hours=1))
-    interaction = _interaction()
-
-    await _amend(_cog(path), interaction, track=NEW_TRACK)
-
-    assert "already started" in _reply(interaction)
-    assert not _offered_a_confirmation(interaction), "a refused amendment must not be offered"
-
-
 async def test_bringing_a_round_inside_its_check_in_deadline_is_refused(tmp_path):
     """The round would have a check-in that opens and closes in the same instant."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
@@ -462,7 +452,8 @@ ROUND_AMEND_REFUSALS = [
 @pytest.mark.parametrize("case, kwargs, said", ROUND_AMEND_REFUSALS)
 async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case, kwargs, said):
     """Each refusal answers the manager as before, changes nothing, and writes one line in the
-    standard refusal form."""
+    standard refusal form. On the command's path nothing is offered for it: a round that has
+    started, say, refuses a track amendment rather than offering a confirmation of one."""
     started = case == "started"
     soon = case == "confirm window passed"
     when = datetime.now(timezone.utc) + (
@@ -496,6 +487,8 @@ async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case,
         )
 
     assert said in _all_replies(interaction)
+    if not case.startswith("confirm"):
+        assert not _offered_a_confirmation(interaction), "a refused amendment must not be offered"
     assert await _amendments(path) == []
     if case.startswith("pending"):
         # The season being set up is written through its snapshot, not the amendment service.
@@ -610,28 +603,37 @@ async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "where",
+    "where, error, message",
     [
-        "the ask fails",
-        "before amending",
+        pytest.param("the ask fails", "OperationalError", "database is locked",
+                     id="the ask fails"),
+        pytest.param("before amending", "OperationalError", "database is locked",
+                     id="before amending"),
+        pytest.param("the first answer fails", "RuntimeError", "gateway closed",
+                     id="the first answer fails"),
     ],
 )
-async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(tmp_path, where):
+async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(
+    tmp_path, where, error, message,
+):
     """A fault in the Confirm press — asking the change queue for the amendment of round 1 of
-    Div A, or reading the round before it — still stops the buttons. Left running, the view
-    would lapse two minutes later and record that nothing was changed, beside the failure it
-    already recorded."""
+    Div A, reading the round before it, or the press not even acknowledged, its defer failing —
+    still stops the buttons, and is reported as any other fault in the press. Left running, the
+    view would lapse two minutes later and record that nothing was changed, beside the failure
+    it already recorded."""
     import sqlite3
 
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
     cog = _cog(path, attendance=False)
     later = (datetime.now(timezone.utc) + timedelta(days=31)).replace(tzinfo=None)
     fault = sqlite3.OperationalError("database is locked")
+    interaction = _interaction()
     if where == "the ask fails":
         cog.bot.change_queue.ask = AsyncMock(side_effect=fault)
-    else:
+    elif where == "before amending":
         cog.bot.season_service.get_round = AsyncMock(side_effect=fault)
-    interaction = _interaction()
+    else:
+        interaction.response.defer = AsyncMock(side_effect=RuntimeError("gateway closed"))
     _recording(cog, interaction)
     view = _view(cog, [("scheduled_at", later)])
 
@@ -642,36 +644,12 @@ async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(tm
         await view.on_error(interaction, exc, view.confirm)
 
     assert view.is_finished(), "the buttons are still live, so the view will lapse as well"
-    [line] = _lines(cog)
-    assert line.startswith("❌ ")
-    assert f"failed for Manager (<@{USER_ID}>)" in line
-    assert "OperationalError" in line
-    assert "database is locked" not in line
-
-
-async def test_a_round_amend_confirmation_whose_first_answer_fails_stops_its_view(tmp_path):
-    """The Confirm press cannot even be acknowledged — the defer fails. It is reported as any
-    other fault in the press, and the buttons stop, so no lapse line follows the failure."""
-    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
-    cog = _cog(path, attendance=False)
-    later = (datetime.now(timezone.utc) + timedelta(days=31)).replace(tzinfo=None)
-    interaction = _interaction()
-    interaction.response.defer = AsyncMock(side_effect=RuntimeError("gateway closed"))
-    _recording(cog, interaction)
-    view = _view(cog, [("scheduled_at", later)])
-
-    try:
-        await view.confirm.callback(interaction)
-    except Exception as exc:  # noqa: BLE001 — handed on as the library hands it on
-        await view.on_error(interaction, exc, view.confirm)
-
-    assert view.is_finished(), "the buttons are still live, so the view will lapse as well"
     assert await _amendments(path) == []
     [line] = _lines(cog)
     assert line.startswith("❌ ")
     assert f"failed for Manager (<@{USER_ID}>)" in line
-    assert "RuntimeError" in line
-    assert "gateway closed" not in line
+    assert error in line
+    assert message not in line
 
 
 # ---------------------------------------------------------------------------

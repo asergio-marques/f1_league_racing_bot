@@ -554,37 +554,23 @@ async def test_an_invalidation_notice_discord_refuses_stops_the_queue(tmp_path):
             "be posted, and a league admin discarded it") in outcome
 
 
-async def test_a_check_in_call_discord_will_not_delete_stops_the_queue_before_the_call_is_posted_again(
-    tmp_path, reposts,
-):
-    """Attendance on; round 3's call stands (messages 7001 to 7003) and the round is brought
-    forward to three days out, inside its call's window, so its call is posted again. Discord
-    refuses to delete the last notice (7002): the queue stops at the take-down, the call's
-    record kept, and no call is posted again."""
-    league = await ongoing_league(tmp_path, attendance=True)
-    league.undeletable.add(CALL_MESSAGES[1])
-    await _amended(league, scheduled_at=_at(league, days=3))
-
-    await run_queue(league.bot)
-
-    assert await _stopped_at(league) == "take_down_call"
-    assert len(await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3)) == 1
-    assert CALL_MESSAGES[1] in league.channel(PRO_CH.checkin).messages
-    assert reposts.posted == []
-
-
 async def test_a_discarded_check_in_call_take_down_is_named_and_the_call_is_still_posted_again(
     tmp_path, reposts,
 ):
     """Attendance on; round 3's call stands (messages 7001 to 7003) and the round is brought
     forward to three days out, inside its call's window. Discord refuses to delete the last
-    notice (7002) and a league admin discards the take-down: the amendment goes on, the call is
-    posted again beside the message left standing, and the reply names 7002 to remove by hand."""
+    notice (7002): the queue stops at the take-down, the call's record kept, and no call is
+    posted again while it stands stopped. A league admin discards the take-down: the amendment
+    goes on, the call is posted again beside the message left standing, and the reply names 7002
+    to remove by hand."""
     league = await ongoing_league(tmp_path, attendance=True)
     league.undeletable.add(CALL_MESSAGES[1])
     press = await _amended(league, scheduled_at=_at(league, days=3))
     await run_queue(league.bot)
     assert await _stopped_at(league) == "take_down_call"
+    assert len(await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3)) == 1
+    assert CALL_MESSAGES[1] in league.channel(PRO_CH.checkin).messages
+    assert reposts.posted == []
 
     await discard_job(league.bot)
 
@@ -1189,15 +1175,25 @@ async def test_a_call_that_fell_due_while_the_amendment_stood_stopped_is_posted_
     assert reposts.posted == [(R3, PRO)]
 
 
+@pytest.mark.parametrize("test_mode", [
+    pytest.param(False, id="outside test mode"),
+    pytest.param(True, id="under test mode too"),
+])
 async def test_a_call_that_fell_due_while_the_save_stood_stopped_is_posted_once_it_is_discarded(
-    tmp_path, reposts,
+    tmp_path, reposts, test_mode,
 ):
     """Attendance on, its call five days before the round. Pro's round 3 is five days and thirty
     minutes out, and no call stands for it yet: its call is thirty minutes ahead. It is moved a
     day later; the save stops, and forty minutes on, past the call's moment and with its deadline
     still ahead, a league admin discards it. The round stands at its old moment, its call due and
-    none standing: the call is posted."""
+    none standing: the call is posted.
+
+    Under test mode too: the amendment posts it all the same, unlike the start-up recovery,
+    which leaves a test season's calls to `/test-mode advance` (owner, 2026-10-09: "Post it
+    anyway")."""
     league = await ongoing_league(tmp_path, attendance=True)
+    if test_mode:
+        await league.set_test_mode(True)
     await league.write("DELETE FROM rsvp_embed_messages WHERE round_id = ?", R3)
     await _place_r3(league, days=5, minutes=30)
     before = await _moment(league)
@@ -1636,27 +1632,6 @@ async def test_a_call_whose_deadline_passed_while_its_take_down_stood_stopped_is
     assert "round: 3" in line
 
 
-async def test_a_call_that_fell_due_while_the_save_stood_stopped_is_posted_under_test_mode_too(
-    tmp_path, reposts,
-):
-    """As the call caught up once a stopped save is discarded, under test mode: the amendment
-    posts it all the same, unlike the start-up recovery, which leaves a test season's calls to
-    `/test-mode advance` (owner, 2026-10-09: "Post it anyway")."""
-    league = await ongoing_league(tmp_path, attendance=True)
-    await league.set_test_mode(True)
-    await league.write("DELETE FROM rsvp_embed_messages WHERE round_id = ?", R3)
-    await _place_r3(league, days=5, minutes=30)
-    await _amended(league, scheduled_at=_at(league, days=6, minutes=30))
-    with _renumbering_fails():
-        await run_queue(league.bot)
-        assert await _stopped_at(league) == "apply"
-        league.clock.advance(minutes=40)
-        await discard_job(league.bot)
-
-    assert await stopped_job(league.db_path) is None
-    assert reposts.posted == [(R3, PRO)]
-
-
 # ── Each catching-up job judged again when it runs (owner, 2026-10-09) ────────────────
 
 
@@ -2037,59 +2012,6 @@ async def test_a_call_posted_again_after_its_take_down_that_fails_says_its_answe
     assert "no attendance rows were opened" not in outcome
 
 
-@pytest.mark.parametrize("refused", [
-    pytest.param(CALL_MESSAGES[0], id="the call itself refused, so it stands"),
-    pytest.param(CALL_MESSAGES[1], id="the last notice refused, the call gone"),
-])
-async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_call_be_deleted(
-    tmp_path, monkeypatch, refused,
-):
-    """Attendance on; round 3's call stands (7001 to 7003) and the round is brought forward to
-    three days out, so its call is to be posted again. Discord refuses to delete one of its
-    messages, and a league admin discards the take-down; posting the call again is refused too,
-    which stops the queue at `post_call`, and a league admin discards that as well.
-    (the call itself refused) The earlier call is kept, standing with its answers: the stop
-    notice says so, and the reply names the check-in call as not taken down, but never bids the
-    manager remove by hand a call that is the round's only one. (the last notice refused) The
-    call itself was deleted, so no call can be seen: its record is dropped, the stop notice says
-    none can be seen, and the reply never says it was kept but that none can be seen and to post
-    it by hand (owner, 2026-10-09: "Make it"; 2026-10-11: "Notice says what's left")."""
-    league = await ongoing_league(tmp_path, attendance=True)
-    _real_call(league, monkeypatch)
-    league.undeletable.add(refused)
-    press = await _amended(league, scheduled_at=_at(league, days=3))
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == "take_down_call"
-    league.channel(PRO_CH.checkin).send_fails = http_error(
-        discord.Forbidden, status=403, text="Missing Permissions"
-    )
-
-    await discard_job(league.bot)
-
-    assert await _stopped_at(league) == "post_call"
-    assert not [line for line in _log_lines(league) if line.startswith(NOT_POSTED)]
-    notices = _stop_notices(league)
-    await discard_job(league.bot)
-
-    assert await stopped_job(league.db_path) is None
-    rows = await league.rows("SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
-    outcome = _outcome(press)
-    assert NOT_DONE in outcome
-    assert "**Pro** — check-in call:" in outcome
-    assert "removed by hand" not in outcome
-    if refused == CALL_MESSAGES[0]:
-        assert any(EARLIER_STANDS in line for line in notices)
-        assert [row["message_id"] for row in rows] == [str(CALL_MESSAGES[0])]
-        assert "the earlier call was kept" in outcome
-        return
-    assert any(NONE_SEEN in line for line in notices)
-    assert rows == []
-    assert ((await _job(league, "post_call"))["result"] or {}).get("vanished") is True
-    assert "kept" not in outcome
-    assert "none can be seen" in outcome and "`/attendance post-check-in`" in outcome
-    assert "once the cause is cleared (or the check-in channel is set)" in outcome
-
-
 async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
     tmp_path, reposts, caplog,
 ):
@@ -2228,7 +2150,14 @@ async def test_a_discarded_call_post_says_what_is_left(tmp_path, monkeypatch, le
     refused, stopping the queue, and a league admin discards it: the reply's entry for the
     check-in call says what is left — the earlier call kept with its answers counting; none to
     be seen, to post by hand once the cause is cleared; or that the call was not posted again,
-    to post with `/attendance post-check-in`."""
+    to post with `/attendance post-check-in`.
+
+    Where the take-down was discarded, the log channel says nothing of a call not posted, and
+    the reply never bids the manager remove by hand a call that is the round's only one. (earlier
+    call kept) The earlier call stands with its answers, its record kept, and the stop notice
+    says so. (no call can be seen) The call itself was deleted: its record is dropped, the post
+    is recorded as having vanished, the stop notice says none can be seen, and the reply never
+    says it was kept (owner, 2026-10-09: "Make it"; 2026-10-11: "Notice says what's left")."""
     league = await ongoing_league(tmp_path, attendance=True)
     _real_call(league, monkeypatch)
     if left == "earlier call kept":
@@ -2249,12 +2178,26 @@ async def test_a_discarded_call_post_says_what_is_left(tmp_path, monkeypatch, le
     else:
         await discard_job(league.bot)
     assert await _stopped_at(league) == "post_call"
+    if left != "nothing":
+        assert not [line for line in _log_lines(league) if line.startswith(NOT_POSTED)]
+    notices = _stop_notices(league)
 
     await discard_job(league.bot)
 
     assert await stopped_job(league.db_path) is None
     outcome = _outcome(press)
     assert NOT_DONE in outcome
+    rows = await league.rows("SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
+    if left == "earlier call kept":
+        assert any(EARLIER_STANDS in line for line in notices)
+        assert [row["message_id"] for row in rows] == [str(CALL_MESSAGES[0])]
+        assert "removed by hand" not in outcome
+    elif left == "no call can be seen":
+        assert any(NONE_SEEN in line for line in notices)
+        assert rows == []
+        assert ((await _job(league, "post_call"))["result"] or {}).get("vanished") is True
+        assert "removed by hand" not in outcome
+        assert "kept" not in outcome
     said = {
         "earlier call kept": "it could not be posted again, so the earlier call was kept and its "
                              "answers count; see the log channel",
