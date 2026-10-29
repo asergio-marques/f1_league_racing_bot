@@ -283,7 +283,7 @@ def _finalisers():
 #: (view class, button attribute) for every button of the approval step and the appeals prompt
 #: that only a league manager may press. Each is guarded against a lost state too, which the
 #: refusal tests' `restarted-` cases pin, here and in `test_penalty_review_buttons.py`.
-RESTART_GUARDED = [
+MANAGER_ONLY = [
     (ApprovalView, "make_changes_btn"),
     (ApprovalView, "approve_btn"),
     (AppealsReviewView, "add_correction_btn"),
@@ -296,7 +296,7 @@ RESTART_GUARDED = [
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("view_cls,button", RESTART_GUARDED)
+@pytest.mark.parametrize("view_cls,button", MANAGER_ONLY)
 async def test_only_a_league_manager_may_press(tmp_path, view_cls, button):
     """The review happens in the submission channel, which drivers can see. A driver
     confirming the appeals step would finalise a round over the stewards' heads."""
