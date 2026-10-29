@@ -381,8 +381,8 @@ async def test_every_round_cancel_refusal_is_recorded(tmp_path, arranged, asked,
     """A season being raced with round 5 in Division 1, unless the case says otherwise. Each
     refusal the command makes before it asks the queue answers as today, asks the queue for
     nothing, and writes one refusal line (#482, criterion 1). The confirmation word must be
-    `CONFIRM` exactly: 'confirm', 'Confirm', 'yes' and nothing at all are each refused. The refusals the change's check
-    makes are tested in `test_round_cancel_change.py`."""
+    `CONFIRM` exactly: 'confirm', 'Confirm', 'yes' and nothing at all are each refused. The
+    refusals the change's check makes are tested in `test_round_cancel_change.py`."""
     cog = _make_cog(**arranged)
     cog.bot.db_path = await _migrated(tmp_path)
     interaction = _run_by_the_admin(cog, _interaction(), "round cancel")

@@ -845,9 +845,9 @@ async def test_every_other_division_add_refusal_is_recorded(tmp_path, arranged, 
     otherwise. The manager (id 77) adds division Am at tier 2, but with one thing wrong: no season
     being set up; the season still in configuration; a member's mention as the name; or the name
     pRO, which Pro already holds (division lookup is case-insensitive everywhere else, so "pRO"
-    and "Pro" would be the same ambiguity with none of the refusal). The manager gets today's reply word for word and nothing else,
-    no division is added, and the log channel gets exactly one line, "⛔ `/division add` refused
-    for Manager (<@77>) — " and the reply's words."""
+    and "Pro" would be the same ambiguity with none of the refusal). The manager gets today's
+    reply word for word and nothing else, no division is added, and the log channel gets exactly
+    one line, "⛔ `/division add` refused for Manager (<@77>) — " and the reply's words."""
     from leaguebot.core.models.season import SeasonStage
 
     db_path = await _make_db(tmp_path)

@@ -24,7 +24,8 @@ holds it.
 **Cancelling reconsiders the division.** Cancelling the last outstanding round is what finishes
 a division, so the division's own status is refreshed here as well as on a result being
 finalised — without it a league would cancel its final round and still be unable to complete the
-season. `test_season_service_on_forms.py::test_cancelling_the_last_round_finishes_the_division_and_moves_the_season_on_in_the_same_save`
+season. In `test_season_service_on_forms.py`,
+`test_cancelling_the_last_round_finishes_the_division_and_moves_the_season_on_in_the_same_save`
 holds it.
 """
 from __future__ import annotations
