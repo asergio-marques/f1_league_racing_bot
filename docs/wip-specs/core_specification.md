@@ -699,7 +699,7 @@ section states the rules it holds to.
 - The commands adding, removing and clearing drivers created by test mode shall be refused in any state but Placements.
 - A command shall take a whole roster at once, as comma-separated values written one driver to a line, stating the driver's identifier, name, team, division and nationality. A header line naming the columns shall be accepted and ignored.
     - The identifier stated for a driver shall be the identifier the driver is created with. The roster is authoritative, the files generated beside it naming its drivers by those identifiers.
-    - An identifier below the range reserved for test drivers shall be refused.
+    - An identifier below the range reserved for test drivers shall be refused. The lowest identifier of the range is within it, and may be imported. Decided 2026-10-29 (#527).
     - Two drivers sharing an identifier, and two sharing a name, shall each be refused.
     - The nationality of a driver may be omitted, and is otherwise validated as the command adding one driver validates it.
     - A division named by the roster which already holds drivers shall be refused, and with it the whole import: a roster naming a seated division beside an empty one shall seat neither.
