@@ -22,7 +22,7 @@ from tests.support.teams import seed_team_instances
 # ---------------------------------------------------------------------------
 
 
-async def _bootstrap(db_path: str, round_format: str = "NORMAL"):
+async def _bootstrap(db_path: str):
     """Insert minimal rows: server → season → division → round → points config.
 
     Returns (season_id, division_id, round_id).
@@ -47,8 +47,8 @@ async def _bootstrap(db_path: str, round_format: str = "NORMAL"):
         await seed_team_instances(db, division_id, 100, 200, 300)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-            "VALUES (?, 1, ?, '2026-01-01T18:00:00')",
-            (division_id, round_format),
+            "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00')",
+            (division_id,),
         )
         round_id = cursor.lastrowid
         # Points: P1=25, P2=18
