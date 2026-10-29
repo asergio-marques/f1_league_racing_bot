@@ -39,7 +39,7 @@ import json
 import os
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -78,7 +78,6 @@ ROUND_ID = 5
 SUBMISSION_CHANNEL_ID = 770501
 ACTOR_ID = 77
 DRIVER_A = 4001
-ANNOUNCEMENT_ID = 880210
 
 
 # ---------------------------------------------------------------------------
