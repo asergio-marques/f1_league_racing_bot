@@ -261,23 +261,18 @@ async def test_both_holding_the_live_season_is_refused(tmp_path):
     await _refused(db_path, "both hold a seat or a signup")
 
 
-async def test_both_seated_in_one_seasons_division_is_refused(tmp_path):
-    """E25: by seat alone, neither having raced."""
+@pytest.mark.parametrize("part", ["seated", "raced"])
+async def test_both_taking_part_in_one_seasons_division_is_refused(tmp_path, part):
+    """A is seated in Season 1 Pro, and B, who holds a profile, took part in it too: seated
+    there (E25: by seat alone, neither having raced), or racing there."""
     db_path = await _make_db(tmp_path)
     a = await _profile(db_path, A)
     await _seated(db_path, a, S1_PRO)
     b = await _profile(db_path, B)
-    await _seated(db_path, b, S1_PRO)
-
-    await _refused(db_path, "both took part in Season 1 Pro")
-
-
-async def test_one_seated_and_the_other_racing_in_one_division_is_refused(tmp_path):
-    db_path = await _make_db(tmp_path)
-    a = await _profile(db_path, A)
-    await _seated(db_path, a, S1_PRO)
-    await _profile(db_path, B)
-    await _raced(db_path, B, S1_PRO)
+    if part == "seated":
+        await _seated(db_path, b, S1_PRO)
+    else:
+        await _raced(db_path, B, S1_PRO)
 
     await _refused(db_path, "both took part in Season 1 Pro")
 
