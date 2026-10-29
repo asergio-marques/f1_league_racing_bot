@@ -684,39 +684,47 @@ async def _not_held(db) -> list[int]:
 
 
 @pytest.mark.parametrize(
-    "status,moves",
+    "statuses,ended,moves",
     [
-        pytest.param("AWAITING_RESULTS", True, id="awaiting results"),
-        pytest.param("AWAITING_REPORT_VERDICTS", True, id="awaiting report verdicts"),
-        pytest.param("NOT_RUN", False, id="not run"),
-        pytest.param("AWAITING_APPEAL_VERDICTS", False, id="awaiting appeal verdicts"),
-        pytest.param("FINAL", False, id="final"),
-        pytest.param("CANCELLED", False, id="already cancelled"),
+        pytest.param(("AWAITING_RESULTS", "NOT_RUN"), 0, True, id="awaiting results"),
+        pytest.param(("AWAITING_REPORT_VERDICTS", "NOT_RUN"), 0, True,
+                     id="awaiting report verdicts"),
+        pytest.param(("NOT_RUN", "NOT_RUN"), 0, False, id="not run"),
+        pytest.param(("AWAITING_APPEAL_VERDICTS", "NOT_RUN"), 0, False,
+                     id="awaiting appeal verdicts"),
+        pytest.param(("FINAL", "NOT_RUN"), 0, False, id="final"),
+        pytest.param(("CANCELLED", "NOT_RUN"), 0, False, id="already cancelled"),
+        pytest.param(("FINAL", "AWAITING_RESULTS", "NOT_RUN"), 1, True,
+                     id="the middle of three rounds"),
     ],
 )
 async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_report_verdicts(
-    tmp_path, status, moves
+    tmp_path, statuses, ended, moves
 ):
-    """Pro's round 1 stands in *status*, round 2 not run. Ending round 1 as not held moves it to
-    CANCELLED, marked not held and audited, only where it awaited its results (a first
-    submission) or its report verdicts (a resubmission), answering that status, and Pro stays
-    active, round 2 being still to run. From any other status it answers None and writes
-    nothing: the round keeps its status, unmarked, and no audit is written."""
+    """Pro's rounds stand in *statuses*, the last not run. Ending the round at *ended* as not held
+    moves it to CANCELLED, marked not held and audited, only where it awaited its results (a
+    first submission) or its report verdicts (a resubmission), answering that status, every
+    other round untouched and unmarked, and Pro stays active, its last round being still to run.
+    Ending the middle of three rounds, round 1 final, marks that round alone. From any other
+    status it answers None and writes nothing: the round keeps its status, unmarked, and no audit
+    is written."""
     from leaguebot.core.services.season_service import end_round_not_held_on
 
-    db_path = await _ongoing_db(tmp_path, (status, "NOT_RUN"))
+    db_path = await _ongoing_db(tmp_path, statuses)
     async with get_connection(db_path) as db:
-        answer = await end_round_not_held_on(db, ROUND_ID, **ACTOR)
+        answer = await end_round_not_held_on(db, ROUND_ID + ended, **ACTOR)
         if moves:
-            assert answer == status
-            assert await _round_statuses(db) == ["CANCELLED", "NOT_RUN"]
-            assert await _not_held(db) == [1, 0]
-            assert await _round_audits(db) == [(status, "CANCELLED")]
-            assert await _division_status(db) == "ACTIVE", "round 2 is still to run"
+            assert answer == statuses[ended]
+            assert await _round_statuses(db) == [
+                "CANCELLED" if n == ended else status for n, status in enumerate(statuses)
+            ]
+            assert await _not_held(db) == [int(n == ended) for n in range(len(statuses))]
+            assert await _round_audits(db) == [(statuses[ended], "CANCELLED")]
+            assert await _division_status(db) == "ACTIVE", "the last round is still to run"
         else:
             assert answer is None
-            assert await _round_statuses(db) == [status, "NOT_RUN"]
-            assert await _not_held(db) == [0, 0]
+            assert await _round_statuses(db) == list(statuses)
+            assert await _not_held(db) == [0] * len(statuses)
             assert await _round_audits(db) == []
 
 
