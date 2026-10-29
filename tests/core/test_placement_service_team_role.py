@@ -73,12 +73,6 @@ class TestDeleteTeamRoleConfig:
         count = await _count_audit(db_path, "TEAM_ROLE_CONFIG")
         assert count == 1
 
-    async def test_not_found_is_silent_no_op(self, db_path):
-        from leaguebot.core.services.placement_service import PlacementService
-        svc = PlacementService(db_path)
-        # Should not raise
-        await svc.delete_team_role_config("NonExistent", actor_id=9, actor_name="admin")
-
     async def test_not_found_writes_no_audit(self, db_path):
         from leaguebot.core.services.placement_service import PlacementService
         svc = PlacementService(db_path)
@@ -110,11 +104,6 @@ class TestRenameTeamRoleConfig:
         await svc.rename_team_role_config("Red Bull", "Oracle Red Bull", actor_id=9, actor_name="admin")
         count = await _count_audit(db_path, "TEAM_ROLE_CONFIG")
         assert count == 1
-
-    async def test_not_found_is_silent_no_op(self, db_path):
-        from leaguebot.core.services.placement_service import PlacementService
-        svc = PlacementService(db_path)
-        await svc.rename_team_role_config("Ghost", "Ghost2", actor_id=9, actor_name="admin")
 
     async def test_not_found_writes_no_audit(self, db_path):
         from leaguebot.core.services.placement_service import PlacementService
