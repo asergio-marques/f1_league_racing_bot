@@ -224,7 +224,8 @@ async def _active_race(league: Any) -> dict[str, Any]:
 async def test_a_valid_paste_is_written(tmp_path, monkeypatch):
     """The season has one points configuration, "Standard". Alex pastes the amended Feature Race,
     Max ahead of Lewis. Once the queue runs, the queue is not stopped, round 3's Feature Race
-    stands amended with Max first, and it is scored by "Standard"."""
+    stands amended with Max first, and it is scored by "Standard". Stage one is not the amendment
+    succeeding, and the log must not say it was: nothing in the log channel says AMEND_SUCCESS."""
     league = await _league(tmp_path, monkeypatch)
     await _ask_open(league)
 
@@ -233,6 +234,7 @@ async def test_a_valid_paste_is_written(tmp_path, monkeypatch):
     assert await stopped_job(league.db_path) is None
     assert await _winner(league) == MAX
     assert (await _active_race(league))["config_name"] == "Standard"
+    assert "AMEND_SUCCESS" not in league.log()
 
 
 async def test_an_accepted_paste_keeps_the_channel_open_for_the_review_stages(
@@ -249,18 +251,6 @@ async def test_an_accepted_paste_keeps_the_channel_open_for_the_review_stages(
     assert not _deleted(league)
     [row] = await _amendment_rows(league)
     assert row["closed_at"] is None
-
-
-async def test_recording_stage_one_logs_no_success(tmp_path, monkeypatch):
-    """Stage one is not the amendment succeeding, and the log must not say it was. Once Alex's
-    paste has recorded stage one, nothing in the log channel says AMEND_SUCCESS."""
-    league = await _league(tmp_path, monkeypatch)
-    await _ask_open(league)
-
-    await _type(league, RACE_PASTE)
-
-    assert await _winner(league) == MAX
-    assert "AMEND_SUCCESS" not in league.log()
 
 
 async def test_the_sessions_existing_configuration_is_kept_where_still_attached(
@@ -623,23 +613,6 @@ async def _open_elsewhere(league: Any, *, division_id: int) -> None:
         await db.commit()
 
 
-async def test_an_amendment_open_elsewhere_in_the_division_refuses_another(tmp_path, monkeypatch):
-    """**The last stage reposts the whole division from the database**, so a second amendment open
-    beside it would have its unapproved classification published by the first. Round 4 of Pro is
-    being amended in channel 5151. Alex asks to amend round 3: he is told the division already has
-    an amendment open, naming <#5151>; once the queue runs, no channel is created and round 3 has no
-    amendment."""
-    league = await _league(tmp_path, monkeypatch)
-    await _open_elsewhere(league, division_id=DIVISION_ID)
-
-    interaction = await _ask_open(league)
-
-    told = "\n".join([acknowledgement(interaction), updated_reply(interaction)])
-    assert "<#5151>" in told
-    assert league.created == []
-    assert await _amendment_rows(league) == []
-
-
 async def test_an_amendment_open_in_another_division_is_no_obstacle(tmp_path, monkeypatch):
     """A round of another division is being amended in channel 5151. Alex asks to amend round 3 of
     Pro: once the queue runs, its amendment channel is created and recorded as usual."""
@@ -670,8 +643,10 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(
     """Each refusal of `/results rounds amend`'s check is told to Alex and writes exactly one line
     in the standard refusal form, its detail as the reason: the results module off; round 3 not
     FINAL; round 3 with no results standing; round 3 with no Feature Race; or round 4 of Pro already
-    being amended in channel 5151. No channel is created. `AMEND_REJECTED` and `AMEND_REFUSED` are
-    gone."""
+    being amended in channel 5151. No channel is created and round 3 has no amendment.
+    `AMEND_REJECTED` and `AMEND_REFUSED` are gone. **The last stage reposts the whole division from
+    the database**, so a second amendment open beside another would have its unapproved
+    classification published by the first: the division's open amendment refuses Alex's."""
     league = await _league(tmp_path, monkeypatch)
     if case == "module-off":
         league.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
@@ -693,6 +668,7 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(
     told = "\n".join([acknowledgement(interaction), updated_reply(interaction)])
     assert said in told
     assert league.created == []
+    assert await _amendment_rows(league) == []
     [line] = [line for line in league.bot.log_channel.sent if line.startswith("⛔ ")]
     assert "/results rounds amend" in line
     assert "refused for Alex" in line
