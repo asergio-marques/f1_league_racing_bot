@@ -2112,7 +2112,7 @@ async def test_a_round_in_review_is_rescored_and_reposted_under_its_own_label(db
         pytest.param("FINISHED", id="finished-while-another-races"),
     ],
 )
-async def test_a_cancelled_division_is_rescored(db_path, division_status):
+async def test_a_cancelled_or_finished_division_is_rescored(db_path, division_status):
     """Beta was cancelled after two rounds, or finished its season with its last round
     cancelled while Alpha still has a round to race; what it raced is scored under the new
     table too (decided 2026-09-26)."""
