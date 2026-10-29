@@ -74,18 +74,15 @@ async def _audit(db_path: str) -> list[dict]:
         (0, "0:00.000"),
         (3_661_001, "61:01.001"),
         (59_999, "0:59.999"),
+        (3_600_000, "60:00.000"),
     ],
 )
 def test_a_total_is_formatted_as_minutes_seconds_milliseconds(total_ms, expected):
     """Seconds and milliseconds are zero-padded; a league reading `1:3.45` could not tell
-    three seconds from thirty."""
+    three seconds from thirty. Several tracks summed can exceed an hour, and the total keeps
+    counting in minutes: rolling over into hours would make a four-track total read as shorter
+    than a three-track one."""
     assert _fmt_ms(total_ms) == expected
-
-
-def test_an_hour_long_total_keeps_counting_in_minutes(tmp_path):
-    """Several tracks summed can exceed an hour. Rolling over into hours would make a
-    four-track total read as shorter than a three-track one."""
-    assert _fmt_ms(3_600_000) == "60:00.000"
 
 
 # ---------------------------------------------------------------------------

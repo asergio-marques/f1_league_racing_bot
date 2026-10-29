@@ -235,18 +235,6 @@ async def test_a_change_runs_its_steps_in_order_and_marks_each_done(env):
     assert await _states(env) == ["DONE"]
 
 
-async def test_a_step_s_writes_and_its_mark_commit_together(env):
-    """A step that raises after writing leaves neither its write nor its mark."""
-    _queue(env, _type(steps=[_save("a", "written", fails=RuntimeError("boom"))]))
-
-    await _ask(env)
-    await run_queue(env.bot)
-
-    assert await _scratch(env) == []
-    assert [s["done_at"] for s in await step_rows(env.db_path)] == [None]
-
-
-
 async def test_a_fault_stops_the_change_and_keeps_what_earlier_steps_saved(env):
     """A job the bot faults on stops the queue there: the jobs before it keep what they saved,
     and neither the change's later jobs nor a change asked after it run."""
@@ -355,24 +343,6 @@ async def test_a_member_s_request_failing_its_check_is_refused_at_once_and_nothi
     assert acknowledgement(interaction) == "⚠️ Not now."
     assert interaction.response.send_message.await_args.kwargs.get("ephemeral") is True
     assert await change_rows(env.db_path) == []
-    assert ran == []
-
-
-async def test_a_change_whose_check_fails_when_it_runs_is_refused_and_says_why(env):
-    """The acknowledgement is updated with the refusal, and the line is `refusal_line`'s."""
-    holder = {"refuse": False}
-    ran: list[str] = []
-    _queue(env, _type(steps=[_act("a", ran)], check=_check_refusing_when(holder)))
-    interaction = member_interaction(env.bot)
-
-    await _ask(env, interaction=interaction)
-    holder["refuse"] = True
-    await run_queue(env.bot)
-
-    assert _acknowledges(acknowledgement(interaction))
-    assert updated_reply(interaction) == "⚠️ Not now."
-    assert f"⛔ {WHAT} refused for {NAMED} — Not now." in "\n".join(await _lines(env))
-    assert await _states(env) == ["REFUSED"]
     assert ran == []
 
 
@@ -1499,32 +1469,6 @@ async def test_a_change_asked_while_the_queue_is_stopped_joins_the_back_and_says
     assert await _states(env) == ["DONE", "DONE"]
 
 
-async def test_a_switch_off_asked_while_the_queue_is_stopped_waits_behind_it(env):
-    """A switch-off is no exception: asked while the queue is stopped, it waits behind the stopped
-    job like any change, and runs once that job is cleared."""
-    api = _api()
-    holder = {"fail": api.StepFailedOnDiscord("Missing Access")}
-    ran: list[str] = []
-    switch_off = _type("switch_off", steps=[_act("off", ran)])
-    if "overrides_waiting" in {f.name for f in dataclasses.fields(api.ChangeType)}:
-        # The queue built before the rule let a switch-off overtake a waiting change.
-        switch_off = dataclasses.replace(switch_off, overrides_waiting=True)
-    _queue(env, _type("stopping", steps=[_fails_while(holder)]), switch_off)
-
-    await _ask(env, "stopping")
-    await run_queue(env.bot)
-    await _ask(env, "switch_off")
-    await run_queue(env.bot)
-
-    assert ran == []
-    assert await _states(env) == ["RUNNING", "QUEUED"]
-
-    await discard_job(env.bot)
-
-    assert ran == ["off"]
-    assert await _states(env) == ["DONE", "DONE"]
-
-
 async def test_a_stop_is_retried_after_1_5_10_15_30_and_60_minutes_counted_from_the_first_failure(env):
     """The bot's own tries fall 1, 5, 10, 15, 30 and 60 minutes after the job first failed, however
     late a try before them ran: a try made at 3 minutes leaves the next at 5."""
@@ -2451,8 +2395,9 @@ async def test_the_refusal_hook_is_never_asked_at_the_press_for_a_bot_change_or_
 
 async def test_a_change_type_without_a_refusal_hook_is_refused_as_before(env):
     """A change type declares no refusal hook unless it is given one; refused as it starts, its
-    member's change is refused as it always was, the reply updated where it can be, and asks no
-    change of its own, whether or not the reply can still be updated."""
+    member's change is refused as it always was, the acknowledgement updated with the refusal
+    where it can be and the line `refusal_line`'s, and asks no change of its own, whether or not
+    the reply can still be updated."""
     api = _api()
     hook = next((f for f in dataclasses.fields(api.ChangeType) if f.name == "on_refused"), None)
     assert hook is not None and hook.default is None
@@ -2464,6 +2409,7 @@ async def test_a_change_type_without_a_refusal_hook_is_refused_as_before(env):
     await _ask(env, payload={"n": 1}, interaction=interaction)
     holder["refuse"] = True
     await run_queue(env.bot)
+    assert _acknowledges(acknowledgement(interaction))
     holder["refuse"] = False
     await _ask(env, payload={"n": 2})
     holder["refuse"] = True

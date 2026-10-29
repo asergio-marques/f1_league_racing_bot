@@ -246,15 +246,18 @@ async def test_a_round_is_cancelled_on_the_save_handed_and_gives_its_old_status(
         pytest.param("CANCELLED", "ACTIVE", id="already cancelled"),
         pytest.param("AWAITING_REPORT_VERDICTS", "ACTIVE", id="results entered"),
         pytest.param("FINAL", "ACTIVE", id="final"),
-        pytest.param("NOT_RUN", "COMPLETED", id="archived season"),
+        pytest.param("NOT_RUN", "COMPLETED", id="completed season"),
+        pytest.param("NOT_RUN", "CANCELLED", id="cancelled season"),
     ],
 )
 async def test_a_round_no_longer_cancellable_is_left_and_gives_none(
     tmp_path, status, season_status
 ):
     """Pro's round 1 stands in a state it may not be cancelled from: already cancelled, its
-    results entered, final, or not run in a season since archived. Cancelling it on a connection
-    answers None and writes nothing: the round keeps its status and no audit is written."""
+    results entered, final, or not run in a season since archived, as completed or cancelled.
+    Cancelling it on a connection answers None and writes nothing: the round keeps its status
+    and no audit of any kind is written. An archived season is the championship's record; a
+    round inside it cannot be called off after the fact."""
     from leaguebot.core.services.season_service import cancel_round_on
 
     db_path = await _ongoing_db(tmp_path, (status, "NOT_RUN"), season_status=season_status)
@@ -262,6 +265,8 @@ async def test_a_round_no_longer_cancellable_is_left_and_gives_none(
         assert await cancel_round_on(db, ROUND_ID, **ACTOR) is None
         assert await _round_statuses(db) == [status, "NOT_RUN"]
         assert await _round_audits(db) == []
+        cursor = await db.execute("SELECT COUNT(*) AS n FROM audit_entries")
+        assert (await cursor.fetchone())["n"] == 0
 
 
 async def test_cancelling_the_last_round_finishes_the_division_and_moves_the_season_on_in_the_same_save(
@@ -284,41 +289,38 @@ async def test_cancelling_the_last_round_finishes_the_division_and_moves_the_sea
         assert await _season(db) == ("ACTIVE", "ONGOING")
 
 
-async def test_a_division_is_cancelled_on_the_save_handed(tmp_path):
-    """Pro's round 1 is final, round 2 waits for its results and round 3 is not run. Cancelling Pro
-    on a connection answers the ids of rounds 2 and 3, the ones it called off; Pro and those two
-    read CANCELLED there, round 1 stays final, and each round called off is audited from the
-    status it was cancelled from. Nothing of it outlasts a rollback."""
+@pytest.mark.parametrize(
+    "statuses",
+    [
+        pytest.param(("FINAL", "AWAITING_RESULTS", "NOT_RUN"), id="three rounds"),
+        pytest.param(("FINAL", "NOT_RUN"), id="two rounds"),
+    ],
+)
+async def test_a_division_is_cancelled_on_the_save_handed(tmp_path, statuses):
+    """Pro's round 1 is final and its later rounds wait for their results or are not run: with
+    three rounds, round 2 waits for its results and round 3 is not run; with two, round 2 is not
+    run. Cancelling Pro on a connection answers the ids of the rounds it called off, every one
+    but round 1; Pro and those rounds read CANCELLED there, round 1 stays final, and each round
+    called off is audited from the status it was cancelled from. Pro is the season's last
+    running division, yet the `_on` form alone leaves the season ongoing: moving it on is the
+    division change's save's, and `/season cancel`'s cascade, which shares the form, must never
+    leave the season it cancels at Pending completion. Nothing of it outlasts a rollback."""
     from leaguebot.core.services.season_service import cancel_division_on
 
-    db_path = await _ongoing_db(tmp_path, ("FINAL", "AWAITING_RESULTS", "NOT_RUN"))
+    db_path = await _ongoing_db(tmp_path, statuses)
+    later = range(1, len(statuses))
     async with get_connection(db_path) as db:
-        assert await cancel_division_on(db, DIVISION_ID, **ACTOR) == [ROUND_ID + 1, ROUND_ID + 2]
+        assert await cancel_division_on(db, DIVISION_ID, **ACTOR) == [ROUND_ID + n for n in later]
         assert await _division_status(db) == "CANCELLED"
-        assert await _round_statuses(db) == ["FINAL", "CANCELLED", "CANCELLED"]
-        assert await _round_audits(db) == [
-            ("AWAITING_RESULTS", "CANCELLED"), ("NOT_RUN", "CANCELLED"),
-        ]
+        assert await _round_statuses(db) == ["FINAL"] + ["CANCELLED"] * len(later)
+        assert await _round_audits(db) == [(statuses[n], "CANCELLED") for n in later]
+        assert await _season(db) == ("ACTIVE", "ONGOING")
         await db.rollback()
 
     async with get_connection(db_path) as db:
         assert await _division_status(db) == "ACTIVE"
-        assert await _round_statuses(db) == ["FINAL", "AWAITING_RESULTS", "NOT_RUN"]
+        assert await _round_statuses(db) == list(statuses)
         assert await _round_audits(db) == []
-
-
-async def test_cancelling_a_division_on_the_save_handed_leaves_its_season_s_stage_alone(tmp_path):
-    """Pro, the season's last running division, has round 1 final and round 2 not run. Cancelling
-    Pro with the `_on` form alone leaves the season ongoing: moving it on is the division
-    change's save's, and `/season cancel`'s cascade, which shares the form, must never leave the
-    season it cancels at Pending completion."""
-    from leaguebot.core.services.season_service import cancel_division_on
-
-    db_path = await _ongoing_db(tmp_path, ("FINAL", "NOT_RUN"))
-    async with get_connection(db_path) as db:
-        await cancel_division_on(db, DIVISION_ID, **ACTOR)
-        assert await _division_status(db) == "CANCELLED"
-        assert await _season(db) == ("ACTIVE", "ONGOING")
 
 
 async def _round_numbers(db) -> dict[int, int]:
@@ -690,56 +692,48 @@ async def _not_held(db) -> list[int]:
     return [row["not_held"] for row in await cursor.fetchall()]
 
 
-async def test_end_round_not_held_on_cancels_and_marks_the_round_with_its_audit(tmp_path):
-    """Pro's round 1 is final, round 2 waits for its results and round 3 is not run. Ending round 2
-    as not held on a connection answers the status it ended from, AWAITING_RESULTS; it reads
-    CANCELLED there and marked not held, rounds 1 and 3 untouched and unmarked, with one
-    round.status audit from AWAITING_RESULTS to CANCELLED, and Pro stays active, round 3 being
-    still to run."""
-    from leaguebot.core.services.season_service import end_round_not_held_on
-
-    db_path = await _ongoing_db(tmp_path, ("FINAL", "AWAITING_RESULTS", "NOT_RUN"))
-    async with get_connection(db_path) as db:
-        assert await end_round_not_held_on(db, ROUND_ID + 1, **ACTOR) == "AWAITING_RESULTS"
-        assert await _round_statuses(db) == ["FINAL", "CANCELLED", "NOT_RUN"]
-        assert await _not_held(db) == [0, 1, 0]
-        assert await _round_audits(db) == [("AWAITING_RESULTS", "CANCELLED")]
-        assert await _division_status(db) == "ACTIVE"
-
-
 @pytest.mark.parametrize(
-    "status,moves",
+    "statuses,ended,moves",
     [
-        pytest.param("AWAITING_RESULTS", True, id="awaiting results"),
-        pytest.param("AWAITING_REPORT_VERDICTS", True, id="awaiting report verdicts"),
-        pytest.param("NOT_RUN", False, id="not run"),
-        pytest.param("AWAITING_APPEAL_VERDICTS", False, id="awaiting appeal verdicts"),
-        pytest.param("FINAL", False, id="final"),
-        pytest.param("CANCELLED", False, id="already cancelled"),
+        pytest.param(("AWAITING_RESULTS", "NOT_RUN"), 0, True, id="awaiting results"),
+        pytest.param(("AWAITING_REPORT_VERDICTS", "NOT_RUN"), 0, True,
+                     id="awaiting report verdicts"),
+        pytest.param(("NOT_RUN", "NOT_RUN"), 0, False, id="not run"),
+        pytest.param(("AWAITING_APPEAL_VERDICTS", "NOT_RUN"), 0, False,
+                     id="awaiting appeal verdicts"),
+        pytest.param(("FINAL", "NOT_RUN"), 0, False, id="final"),
+        pytest.param(("CANCELLED", "NOT_RUN"), 0, False, id="already cancelled"),
+        pytest.param(("FINAL", "AWAITING_RESULTS", "NOT_RUN"), 1, True,
+                     id="the middle of three rounds"),
     ],
 )
 async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_report_verdicts(
-    tmp_path, status, moves
+    tmp_path, statuses, ended, moves
 ):
-    """Pro's round 1 stands in *status*, round 2 not run. Ending round 1 as not held moves it to
-    CANCELLED, marked not held and audited, only where it awaited its results (a first
-    submission) or its report verdicts (a resubmission), answering that status. From any other
+    """Pro's rounds stand in *statuses*, the last not run. Ending the round at *ended* as not held
+    moves it to CANCELLED, marked not held and audited, only where it awaited its results (a
+    first submission) or its report verdicts (a resubmission), answering that status, every
+    other round untouched and unmarked, and Pro stays active, its last round being still to run.
+    Ending the middle of three rounds, round 1 final, marks that round alone. From any other
     status it answers None and writes nothing: the round keeps its status, unmarked, and no audit
     is written."""
     from leaguebot.core.services.season_service import end_round_not_held_on
 
-    db_path = await _ongoing_db(tmp_path, (status, "NOT_RUN"))
+    db_path = await _ongoing_db(tmp_path, statuses)
     async with get_connection(db_path) as db:
-        answer = await end_round_not_held_on(db, ROUND_ID, **ACTOR)
+        answer = await end_round_not_held_on(db, ROUND_ID + ended, **ACTOR)
         if moves:
-            assert answer == status
-            assert await _round_statuses(db) == ["CANCELLED", "NOT_RUN"]
-            assert await _not_held(db) == [1, 0]
-            assert await _round_audits(db) == [(status, "CANCELLED")]
+            assert answer == statuses[ended]
+            assert await _round_statuses(db) == [
+                "CANCELLED" if n == ended else status for n, status in enumerate(statuses)
+            ]
+            assert await _not_held(db) == [int(n == ended) for n in range(len(statuses))]
+            assert await _round_audits(db) == [(statuses[ended], "CANCELLED")]
+            assert await _division_status(db) == "ACTIVE", "the last round is still to run"
         else:
             assert answer is None
-            assert await _round_statuses(db) == [status, "NOT_RUN"]
-            assert await _not_held(db) == [0, 0]
+            assert await _round_statuses(db) == list(statuses)
+            assert await _not_held(db) == [0] * len(statuses)
             assert await _round_audits(db) == []
 
 

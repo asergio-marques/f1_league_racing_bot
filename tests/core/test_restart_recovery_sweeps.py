@@ -1,32 +1,20 @@
-"""The three sweeps a restart runs over work the previous process left behind.
+"""Two of the sweeps a restart runs over work the previous process left behind.
 
-Issue #208. `_recover_missed_phases`, `_recover_expired_review_prompts` and
-`_recover_orphaned_amend_channels` were uncovered. Each cleans up after something that lived
-only in memory and died with the process — a scheduled phase, a view's timeout, a `wait_for`
-loop — and between them they decide what a league finds when the bot comes back.
-
-**A missed phase is fired against the league's own horizons, not the packaged defaults**
-(issue #111). Every other path that judges whether a phase is overdue reads
-`weather_pipeline_config`; a restart judging by 5/2/2 made the same league see one set of
-timings on an enable and another on a restart — a longer phase 1 never published at all, a
-shorter one published days early. The config is resolved once per server rather than once per
-round, and only *after* the module gate, so a server with weather switched off is never queried
-for it.
-
-**A missed phase is asked of the change queue** (#439), through weather's `ask_forecast`, by
-number, a mystery round's alike: the mystery rule is weather's, which asks a mystery round's
-phase 1 as its notice and nothing for its phases 2 and 3, so the sweep names no format.
+Issue #208. `_recover_expired_review_prompts` and `_recover_orphaned_amend_channels` were
+uncovered. Each cleans up after something that lived only in memory and died with the process —
+a view's timeout, a `wait_for` loop — and between them they decide what a league finds when the
+bot comes back. The third, `_recover_missed_phases`, is pinned in `test_bot_phase_recovery.py`.
 
 **Every standing review prompt is expired by definition.** The approve button's five minutes are
 a `discord.ui.View` timeout held in memory; the bot was down, so they cannot have been served,
-and no view exists to serve them now. Each row is therefore cleared unconditionally — there is
-no "still valid" case to preserve, and a reader who added one would leave a button nothing is
-listening to standing for ever.
-
-**The review channel is *fetched*, not only read from the cache.** A cache miss and a deleted
-channel are indistinguishable to `get_channel`, and the row is cleared either way — so a miss
-would drop the only record of a message still standing, which is exactly what the sweep exists
-to prevent.
+and no view exists to serve them now. Each row's take-down is therefore asked of the change queue
+(`season.review.take_down`, ending `restart`), as the bot, before the queue starts — there is no
+"still valid" case to preserve, and a reader who added one would leave a button nothing is
+listening to standing for ever. The sweep deletes, posts and writes nothing itself, and leaves
+alone a review whose take-down is already in hand: the queue's jobs delete the question and the
+report above it and drop the row, so a deletion Discord refuses stops the queue with the row
+standing rather than losing the only record of a message still up. Those cases are pinned in
+`test_review_prompt_sweep.py`.
 
 **An abandoned amendment's lapse is asked of the change queue** (#439, slice 6b, C64). The sweep
 puts nothing back, deletes nothing and writes nothing itself: it asks `results.amend.lapse` as the
@@ -42,12 +30,9 @@ again. Neither is discoverable from the absence of a message.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
-import pytest
 
 import leaguebot.__main__ as bot_module
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -58,17 +43,13 @@ DIVISION_ID = 11
 ROUND_ID = 21
 STARTER_ID = 4242
 
-PHASE_1_DAYS = 7
-PHASE_2_DAYS = 3
-PHASE_3_HOURS = 6
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
 
 
-async def _base_db(tmp_path, name: str, *, season_status: str = "ACTIVE") -> str:
+async def _base_db(tmp_path, name: str) -> str:
     db_path = os.path.join(str(tmp_path), f"{name}.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -79,8 +60,8 @@ async def _base_db(tmp_path, name: str, *, season_status: str = "ACTIVE") -> str
         )
         await db.execute(
             "INSERT INTO seasons (id, season_number, start_date, status) "
-            "VALUES (?, 1, '2026-01-01', ?)",
-            (SEASON_ID, season_status),
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -91,242 +72,22 @@ async def _base_db(tmp_path, name: str, *, season_status: str = "ACTIVE") -> str
     return db_path
 
 
-def _stub_bot(db_path: str, *, weather_enabled: bool = True, guild=None, channel=None):
+def _stub_bot(db_path: str):
     stub = MagicMock()
     stub.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     stub.db_path = db_path
     stub.module_service = MagicMock()
-    stub.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
     stub.output_router = MagicMock()
     stub.output_router.post_log = AsyncMock(return_value=None)
-    stub.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    stub.get_guild = MagicMock(return_value=guild)
-    stub.get_channel = MagicMock(return_value=channel)
-    stub.fetch_channel = AsyncMock(return_value=channel)
+    stub.get_guild = MagicMock(return_value=None)
+    stub.get_channel = MagicMock(return_value=None)
+    stub.fetch_channel = AsyncMock(return_value=None)
     return stub
-
-
-# ---------------------------------------------------------------------------
-# Missed weather phases
-# ---------------------------------------------------------------------------
-
-
-async def _seed_round(
-    db_path,
-    *,
-    days_away: float,
-    fmt: str = "NORMAL",
-    p1: int = 0,
-    p2: int = 0,
-    p3: int = 0,
-    round_id: int = ROUND_ID,
-):
-    at = datetime.now(timezone.utc) + timedelta(days=days_away)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
-            "phase1_done, phase2_done, phase3_done) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (round_id, DIVISION_ID, round_id, at.isoformat(), fmt, p1, p2, p3),
-        )
-        await db.commit()
-
-
-def _config(phase_1_days=PHASE_1_DAYS, phase_2_days=PHASE_2_DAYS, phase_3_hours=PHASE_3_HOURS):
-    return SimpleNamespace(
-        server_id=SERVER_ID,
-        phase_1_days=phase_1_days,
-        phase_2_days=phase_2_days,
-        phase_3_hours=phase_3_hours,
-    )
-
-
-async def _phases(stub, *, config=None):
-    """Run the phase sweep; one recorder per phase holds the rounds it asked the queue for."""
-    get_config = AsyncMock(return_value=config or _config())
-    p1, p2, p3 = AsyncMock(), AsyncMock(), AsyncMock()
-
-    async def _ask(_queue, _db_path, round_id, phase):
-        await {1: p1, 2: p2, 3: p3}[phase](round_id)
-
-    with patch(
-        "leaguebot.weather.services.weather_config_service.get_weather_pipeline_config", new=get_config
-    ), patch(
-        "leaguebot.weather.services.forecast_changes.ask_forecast", new=AsyncMock(side_effect=_ask)
-    ):
-        await bot_module._recover_missed_phases(stub)
-    return p1, p2, p3, get_config
-
-
-def _fired(stub_call) -> list[int]:
-    return [call.args[0] for call in stub_call.await_args_list]
-
-
-async def test_a_phase_whose_horizon_has_passed_is_fired(tmp_path):
-    """The job that would have run it died with the process; without this the round simply
-    never gets its forecast."""
-    db_path = await _base_db(tmp_path, "phases_due")
-    await _seed_round(db_path, days_away=PHASE_1_DAYS - 1)
-
-    p1, p2, p3, _ = await _phases(_stub_bot(db_path))
-
-    assert _fired(p1) == [ROUND_ID]
-    assert _fired(p2) == []
-
-
-async def test_a_phase_still_ahead_of_its_horizon_is_left_to_the_scheduler(tmp_path):
-    """Firing it now would publish a forecast days early and mark the phase done."""
-    db_path = await _base_db(tmp_path, "phases_early")
-    await _seed_round(db_path, days_away=30)
-
-    p1, p2, p3, _ = await _phases(_stub_bot(db_path))
-
-    assert _fired(p1) == []
-    assert _fired(p2) == []
-    assert _fired(p3) == []
-
-
-async def test_a_round_past_every_horizon_fires_all_three(tmp_path):
-    db_path = await _base_db(tmp_path, "phases_all")
-    await _seed_round(db_path, days_away=0.1)
-
-    p1, p2, p3, _ = await _phases(_stub_bot(db_path))
-
-    assert _fired(p1) == _fired(p2) == _fired(p3) == [ROUND_ID]
-
-
-@pytest.mark.parametrize(
-    "done,expected",
-    [
-        ({"p1": 1}, ([], [ROUND_ID], [ROUND_ID])),
-        ({"p2": 1}, ([ROUND_ID], [], [ROUND_ID])),
-        ({"p3": 1}, ([ROUND_ID], [ROUND_ID], [])),
-    ],
-)
-async def test_a_phase_already_done_is_not_fired_again(tmp_path, done, expected):
-    """These flags are the only thing between a restart and a second forecast for every
-    round of the season."""
-    db_path = await _base_db(tmp_path, f"phases_done_{list(done)[0]}")
-    await _seed_round(db_path, days_away=0.1, **done)
-
-    p1, p2, p3, _ = await _phases(_stub_bot(db_path))
-
-    assert (_fired(p1), _fired(p2), _fired(p3)) == expected
-
-
-async def test_the_horizons_are_the_leagues_own(tmp_path):
-    """Issue #111: a restart judging by the packaged 5/2/2 made the same league see one set
-    of timings on an enable and another on a restart."""
-    db_path = await _base_db(tmp_path, "phases_horizons")
-    await _seed_round(db_path, days_away=10)
-
-    p1, _, _, _ = await _phases(_stub_bot(db_path), config=_config(phase_1_days=14))
-
-    assert _fired(p1) == [ROUND_ID]
-
-
-async def test_a_shorter_horizon_leaves_the_same_round_alone(tmp_path):
-    """The other side of the comparison — and the failure mode is silence, not an error."""
-    db_path = await _base_db(tmp_path, "phases_horizons_short")
-    await _seed_round(db_path, days_away=10)
-
-    p1, _, _, _ = await _phases(_stub_bot(db_path), config=_config(phase_1_days=3))
-
-    assert _fired(p1) == []
-
-
-async def test_a_server_with_weather_off_is_never_asked_for_its_horizons(tmp_path):
-    """The module gate comes first deliberately: a league that has never enabled weather
-    should not have its pipeline configuration read on every start-up."""
-    db_path = await _base_db(tmp_path, "phases_module_off")
-    await _seed_round(db_path, days_away=0.1)
-
-    p1, _, _, get_config = await _phases(_stub_bot(db_path, weather_enabled=False))
-
-    assert _fired(p1) == []
-    get_config.assert_not_awaited()
-
-
-async def test_the_horizons_are_read_once(tmp_path):
-    """The league has one configuration, and a query per round would be a database read for
-    every round of every division on every start-up."""
-    db_path = await _base_db(tmp_path, "phases_onceper")
-    for round_id in (21, 22, 23):
-        await _seed_round(db_path, days_away=0.1, round_id=round_id)
-
-    _, _, _, get_config = await _phases(_stub_bot(db_path))
-
-    assert get_config.await_count == 1
-
-
-async def test_a_mystery_round_is_asked_like_any_other(tmp_path):
-    """A mystery round past every horizon has each phase asked by number; weather, not the
-    sweep, turns phase 1 into its notice and asks nothing for phases 2 and 3."""
-    db_path = await _base_db(tmp_path, "phases_mystery")
-    await _seed_round(db_path, days_away=0.1, fmt="MYSTERY")
-
-    p1, p2, p3, _ = await _phases(_stub_bot(db_path))
-
-    assert _fired(p1) == _fired(p2) == _fired(p3) == [ROUND_ID]
-
-
-async def test_a_season_that_is_not_active_is_not_caught_up(tmp_path):
-    """A season in setup has not started and an archived one is finished; forecasting for
-    either would post into a division that is not racing."""
-    db_path = await _base_db(tmp_path, "phases_setup", season_status="SETUP")
-    await _seed_round(db_path, days_away=0.1)
-
-    p1, _, _, _ = await _phases(_stub_bot(db_path))
-
-    assert _fired(p1) == []
-
-
-async def test_a_naive_scheduled_time_is_read_as_utc(tmp_path):
-    """SQLite hands the column back as text with no offset, and comparing the parsed value
-    to an aware "now" raises — which would abort the sweep partway through a season."""
-    db_path = await _base_db(tmp_path, "phases_naive")
-    naive = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(tzinfo=None)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format) "
-            "VALUES (?, ?, 1, ?, 'NORMAL')",
-            (ROUND_ID, DIVISION_ID, naive.isoformat()),
-        )
-        await db.commit()
-
-    p1, _, _, _ = await _phases(_stub_bot(db_path))
-
-    assert _fired(p1) == [ROUND_ID]
 
 
 # ---------------------------------------------------------------------------
 # Standing season-review prompts
 # ---------------------------------------------------------------------------
-
-
-def _review_channel(*, fetch_fails: bool = False, send_fails: bool = False):
-    channel = MagicMock()
-    message = MagicMock()
-    message.delete = AsyncMock()
-    if fetch_fails:
-        channel.fetch_message = AsyncMock(
-            side_effect=discord.NotFound(MagicMock(status=404), "gone")
-        )
-    else:
-        channel.fetch_message = AsyncMock(return_value=message)
-    channel.send = AsyncMock(
-        side_effect=discord.Forbidden(MagicMock(status=403), "no") if send_fails else None
-    )
-    channel._message = message
-    return channel
-
-
-async def test_a_restart_with_no_standing_prompts_does_nothing(tmp_path):
-    db_path = await _base_db(tmp_path, "review_empty")
-    channel = _review_channel()
-
-    await bot_module._recover_expired_review_prompts(_stub_bot(db_path, channel=channel))
-
-    channel.send.assert_not_awaited()
 
 
 async def test_an_unreadable_prompt_table_does_not_stop_the_start_up(tmp_path):
@@ -474,48 +235,6 @@ async def test_a_second_restart_leaves_a_lapse_in_hand_alone(tmp_path):
     assert len(_amend_lines(league)) == 1
 
 
-async def test_the_league_manager_is_told_to_re_run_the_command(tmp_path):
-    """Their amendment vanished with the restart, and an empty channel list is not an
-    explanation. Round 3 had nothing to put back, so once the queue has run the lapse its line
-    says a restart ended it, and to re-run the command (#482)."""
-    league = await _amend_league(tmp_path)
-
-    await _restart_and_run(league)
-
-    [line] = _amend_lines(league)
-    assert "was ended by a restart" in line
-    assert "re-run /results rounds amend" in line
-
-
-async def test_an_amendment_with_nothing_to_put_back_says_to_re_run_results_rounds_amend(tmp_path):
-    """Nothing to put back: the corrections were never entered, or the amendment had been
-    approved. For the first, the line sends the manager to the command they now type; for the
-    second, to the two syncs."""
-    league = await _amend_league(tmp_path)
-
-    await _restart_and_run(league)
-
-    [line] = _amend_lines(league)
-    assert (
-        "  Amendment channel being deleted; nothing needed putting back. If the amendment had not "
-        "been approved, re-run /results rounds amend. If it had, its channels may be "
-        "part-rebuilt: run /results rounds sync and /results standings sync."
-    ) in line.splitlines()
-
-
-async def test_the_notice_names_the_round_and_the_session(tmp_path):
-    """A manager with four sessions amended over an evening needs to know which one went: the
-    lapse's line names the round and its division, as every record names them (#482), and the
-    session beneath."""
-    league = await _amend_league(tmp_path)
-
-    await _restart_and_run(league)
-
-    [line] = _amend_lines(league)
-    assert "round 3 (Pro)" in line
-    assert "Feature Race" in line
-
-
 async def test_an_amendment_cannot_outlive_its_round(tmp_path):
     """`round_amend_channels.round_id` carries `ON DELETE CASCADE`, so a round deleted while an
     amendment was open takes the amendment's row with it: the restart finds nothing, asks no
@@ -593,20 +312,6 @@ async def test_an_abandoned_amendment_is_put_back_as_it_was(tmp_path):
     assert "re-run /results rounds amend" in line
 
 
-async def test_an_amendment_put_back_says_to_re_run_results_rounds_amend(tmp_path):
-    """The round was put back, so the amendment may be run again: the line sends the manager to
-    the command they now type."""
-    league = await _amend_league(tmp_path, amended=True)
-
-    await _restart_and_run(league)
-
-    [line] = _amend_lines(league)
-    assert (
-        "  Amendment channel being deleted, and the round put back as it was. Please re-run "
-        "/results rounds amend."
-    ) in line.splitlines()
-
-
 async def test_an_amendment_put_back_at_a_restart_is_recorded_as_a_lapse(tmp_path):
     """Alex started `/results rounds amend` of round 3 (Pro) and entered the corrections; the
     bot restarted before the amendment was approved, and the queue's lapse puts the round back.
@@ -635,7 +340,14 @@ async def test_an_amendment_with_nothing_to_put_back_is_recorded_neutrally(tmp_p
     """Alex started `/results rounds amend` of round 3 (Pro); at the restart there is nothing to
     put back, so the bot cannot tell whether the corrections were never entered or the
     amendment had been approved. One line names Alex and says a restart ended it — never
-    "lapsed" — with both cases, and what to run in each, beneath it."""
+    "lapsed" — with both cases, and what to run in each, beneath it: for the first, the command
+    the manager now types; for the second, the two syncs. A manager with four sessions amended
+    over an evening needs to know which one went, so the line names the round and its division,
+    as every record names them (#482), and the session beneath.
+
+    The log must not claim a round was put back when nothing was reverted: an amendment approved
+    and rebuilding the channels when the bot stopped needs the sync commands, not a reassurance.
+    The row is closed with its channel's deletion."""
     league = await _amend_league(tmp_path)
 
     await _restart_and_run(league)
@@ -647,8 +359,15 @@ async def test_an_amendment_with_nothing_to_put_back_is_recorded_neutrally(tmp_p
         "was ended by a restart"
     ) in head
     assert "lapsed" not in line
-    assert "If the amendment had not been approved, re-run /results rounds amend." in line
-    assert "run /results rounds sync and /results standings sync" in line
+    assert (
+        "  Amendment channel being deleted; nothing needed putting back. If the amendment had not "
+        "been approved, re-run /results rounds amend. If it had, its channels may be "
+        "part-rebuilt: run /results rounds sync and /results standings sync."
+    ) in line.splitlines()
+    assert "Feature Race" in line
+    assert "put back as it was" not in line
+    row = await _amend_row(league)
+    assert row is not None and row["closed_at"] is not None
 
 
 async def test_a_revert_that_fails_stops_the_queue_keeping_the_snapshot(tmp_path):
@@ -676,21 +395,3 @@ async def test_a_revert_that_fails_stops_the_queue_keeping_the_snapshot(tmp_path
     assert row["pre_amendment_state"] == "{not json"
     assert ("delete_channel", AMEND_CHANNEL, AMEND_CHANNEL) not in league.events
     assert await _winner(league) == MAX
-
-
-async def test_nothing_to_put_back_is_not_reported_as_a_revert(tmp_path):
-    """The log must not claim a round was put back when nothing was reverted.
-
-    Nothing to revert means the corrected results were never entered, or the amendment had been
-    approved and was rebuilding the channels when the bot stopped — in which case the manager
-    needs the sync commands, not a reassurance. The row is closed with its channel's deletion.
-    """
-    league = await _amend_league(tmp_path)
-
-    await _restart_and_run(league)
-
-    [line] = _amend_lines(league)
-    assert "put back as it was" not in line
-    assert "/results rounds sync" in line
-    row = await _amend_row(league)
-    assert row is not None and row["closed_at"] is not None

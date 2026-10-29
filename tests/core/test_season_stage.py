@@ -126,9 +126,15 @@ async def test_a_status_written_alone_carries_the_stage_with_it(db_path):
 
 
 async def test_a_status_written_alone_keeps_a_stage_it_still_admits(db_path):
+    """Writing an ongoing season's status again leaves its stage where it was; writing a status
+    that admits no stage it holds moves the stage with it."""
     season_id = await _insert(db_path, "ACTIVE", "ONGOING_SIGNUPS")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE seasons SET status = 'ACTIVE' WHERE id = ?", (season_id,))
+        await db.commit()
+    assert await _row(db_path, season_id) == ("ACTIVE", "ONGOING_SIGNUPS")
+
+    async with get_connection(db_path) as db:
         await db.execute("UPDATE seasons SET status = 'CANCELLED' WHERE id = ?", (season_id,))
         await db.commit()
     assert await _row(db_path, season_id) == ("CANCELLED", "CANCELLED")
@@ -137,17 +143,8 @@ async def test_a_status_written_alone_keeps_a_stage_it_still_admits(db_path):
 # ── SeasonService ───────────────────────────────────────────────────────────────────
 
 
-async def test_set_stage_moves_the_season_and_its_status(db_path):
-    svc = SeasonService(db_path)
-    season_id = await _insert(db_path, "SETUP", "PLACEMENTS")
-
-    await svc.set_stage(season_id, SeasonStage.ONGOING)
-
-    assert await svc.get_stage(season_id) is SeasonStage.ONGOING
-    assert await _row(db_path, season_id) == ("ACTIVE", "ONGOING")
-
-
 async def test_set_stage_walks_the_whole_lifecycle(db_path):
+    """Each step moves the season's stage, and its status with it."""
     svc = SeasonService(db_path)
     season_id = await _insert(db_path, "SETUP", "CONFIGURATION")
     for stage in (
@@ -163,6 +160,7 @@ async def test_set_stage_walks_the_whole_lifecycle(db_path):
     ):
         await svc.set_stage(season_id, stage)
         assert await svc.get_stage(season_id) is stage
+        assert await _row(db_path, season_id) == (status_of_stage(stage).value, stage.value)
     assert await _row(db_path, season_id) == ("COMPLETED", "COMPLETED")
 
 

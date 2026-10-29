@@ -499,17 +499,6 @@ async def test_a_running_season_is_warned_even_with_attendance_already_off(tmp_p
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-async def test_a_cascade_is_warned_about_between_seasons(tmp_path):
-    """The other half of the same independence: no season running, but attendance is on."""
-    db_path = await _make_db(tmp_path, attendance=True)
-    cog = _make_cog(db_path, season=None, attendance_enabled=True)
-    interaction = _interaction()
-
-    await cog._disable_results(interaction)
-
-    assert _view_of(interaction) is not None
-
-
 async def test_nothing_is_written_until_the_league_confirms(tmp_path):
     """The warning is shown *before* anything irreversible, so a manager who closes the
     message loses nothing: no change is even asked for."""

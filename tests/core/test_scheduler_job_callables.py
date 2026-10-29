@@ -10,8 +10,9 @@ APScheduler, not by the bot, and an exception inside one is logged by the schedu
 otherwise swallowed: the round quietly loses its forecast, its check-in notice or its submission
 prompt, and nobody finds out until the session. Skipping is not tidiness, it is the difference
 between a silent failure and a logged one. Both absences — no service and no callback — are
-tested for every job, because a restart produces the first and an unregistered module produces
-the second, and they are both ordinary rather than exceptional states.
+tested for every job, the league's own two in `test_scheduler_job_ids.py`, because a restart
+produces the first and an unregistered module produces the second, and they are both ordinary
+rather than exceptional states.
 
 **A callback that is registered is called with the id the job was scheduled for.** That is the
 one thing these functions do, and getting it wrong sends a division's forecast to another
@@ -164,22 +165,6 @@ async def test_a_registered_callback_is_called_with_the_id(job_name, callback_at
     await _job(job_name)(4242)
 
     callback.assert_awaited_once_with(4242)
-
-
-@pytest.mark.parametrize("job_name,_cb", LEAGUE_JOBS)
-async def test_a_league_job_that_fires_before_the_service_exists_skips(job_name, _cb):
-    _install(None)
-
-    await _job(job_name)()  # must not raise
-
-
-@pytest.mark.parametrize("job_name,callback_attr", LEAGUE_JOBS)
-async def test_a_league_job_with_no_callback_registered_skips(job_name, callback_attr):
-    service = _Service()
-    setattr(service, callback_attr, None)
-    _install(service)
-
-    await _job(job_name)()  # must not raise
 
 
 @pytest.mark.parametrize("job_name,callback_attr", LEAGUE_JOBS)

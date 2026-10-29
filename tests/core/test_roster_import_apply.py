@@ -99,23 +99,16 @@ async def test_a_roster_is_seated(season):
     assert [name for _uid, name in await _seated(season)] == ["Quicksilver", "Badger"]
 
 
-async def test_the_ids_written_are_the_ids_the_file_named(season):
-    """The rule every sibling generator script depends on."""
-    await _apply(season, _csv(_row(7, "Quicksilver"), _row(9, "Badger")))
+@pytest.mark.parametrize("first, second", [(7, 9), (40, 41)],
+                         ids=["7 and 9", "40 and 41, not consecutive with 1"])
+async def test_the_ids_written_are_the_ids_the_file_named(season, first, second):
+    """The rule every sibling generator script depends on. The ids are kept even when they are
+    not consecutive from 1: `MAX + 1` allocation would have renumbered 40 and 41 to 1 and 2."""
+    await _apply(season, _csv(_row(first, "Quicksilver"), _row(second, "Badger")))
 
     assert [uid for uid, _name in await _seated(season)] == [
-        str(SYNTHETIC_ID_BASE + 7),
-        str(SYNTHETIC_ID_BASE + 9),
-    ]
-
-
-async def test_the_ids_are_kept_even_when_they_are_not_consecutive(season):
-    """`MAX + 1` allocation would have renumbered these to 1 and 2."""
-    await _apply(season, _csv(_row(40, "Quicksilver"), _row(41, "Badger")))
-
-    assert [uid for uid, _name in await _seated(season)] == [
-        str(SYNTHETIC_ID_BASE + 40),
-        str(SYNTHETIC_ID_BASE + 41),
+        str(SYNTHETIC_ID_BASE + first),
+        str(SYNTHETIC_ID_BASE + second),
     ]
 
 
@@ -253,26 +246,18 @@ async def test_no_season_is_reported(tmp_path):
 # ── A division that already holds drivers ─────────────────────────────────
 
 
-async def test_a_division_that_already_holds_drivers_is_refused(season):
+@pytest.mark.parametrize(
+    "beside", [False, True], ids=["the seated division alone", "beside an empty division"]
+)
+async def test_a_roster_naming_a_seated_division_seats_nobody(season, beside):
     """The CSV describes a whole grid. Importing over a seated division would put seats
-    somewhere the file does not describe, with the file still looking like the record."""
+    somewhere the file does not describe, with the file still looking like the record. A
+    seated division is a fault like any other, so it refuses the whole import: the empty
+    division beside it in the same file lands no more than the seated one (#265)."""
     await _apply(season, _csv(_row(1, "Quicksilver")))
 
-    seated, errors = await _apply(season, _csv(_row(2, "Badger")))
-
-    assert seated == 0
-    assert any("already holds" in problem for problem in errors)
-    assert len(await _seated(season)) == 1
-
-
-async def test_a_roster_naming_a_seated_division_seats_none_of_its_empty_ones(season):
-    """A seated division is a fault like any other, so it refuses the whole import: the
-    empty division beside it in the same file lands no more than the seated one (#265)."""
-    await _apply(season, _csv(_row(1, "Quicksilver")))
-
-    seated, errors = await _apply(
-        season, _csv(_row(2, "Badger"), _row(3, "Wolf", div="Challenger"))
-    )
+    rows = [_row(2, "Badger")] + ([_row(3, "Wolf", div="Challenger")] if beside else [])
+    seated, errors = await _apply(season, _csv(*rows))
 
     assert seated == 0
     assert any("already holds" in problem for problem in errors)

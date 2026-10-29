@@ -266,33 +266,6 @@ async def test_a_season_with_a_division_still_running_is_not_wound_down(tmp_path
     assert await _placements(league) == sorted([(LEWIS, 1), (MAX, 0), (CHARLES, 0)])
 
 
-async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_kept_off(tmp_path):
-    """Every division is done with Max's and Charles's placements pending, a driver (105) in
-    review, and signups already shut: the driver in review is told and has their channel locked,
-    the two approved drivers turned down lose the driver role while Lewis keeps it, and the line
-    says only that the pending placements were turned down, with no claim
-    that signups closed."""
-    from tests.support.change_queue import queued_log_lines
-    from tests.support.season_league import (
-        CHARLES, DRIVER_ROLE, LEWIS, MAX, SIGNING_UP, signing_up,
-    )
-
-    league = await _wind_down_league(tmp_path, stage="ONGOING_PLACEMENTS")
-    await signing_up(league)
-
-    await _wind_down(league)
-
-    assert not league.errors, league.errors
-    assert [user_id for user_id, _notice in league.notices] == [SIGNING_UP]
-    assert league.locked == [SIGNING_UP]
-    assert league.revoked == {MAX: [DRIVER_ROLE], CHARLES: [DRIVER_ROLE]}
-    assert LEWIS not in league.revoked
-    lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
-    assert any("System | Every division is done | Pending placements turned down: 3" in line
-               for line in lines), lines
-    assert not any("Signups closed" in line for line in lines)
-
-
 async def test_a_season_that_moves_on_meanwhile_is_not_made_pending_completion(tmp_path):
     """The move is conditioned on Ongoing; losing that race moves nothing and says False."""
     path = await _db(tmp_path, divisions=(("FINISHED", None),))

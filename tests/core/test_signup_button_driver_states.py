@@ -114,7 +114,9 @@ class TestAReturningRacer:
         assert await _started(league)
 
     async def test_a_member_with_no_profile_still_reaches_the_wizard(self, tmp_path):
-        """The one press that always worked. Pinned so the fix does not trade it away."""
+        """The one press that always worked. Pinned so the fix does not trade it away. It is
+        also the contrast to a past account's refusal (#243): an account linked to no other is
+        not mistaken for a past one, and its signup is asked of the queue."""
         league = await _league(tmp_path)
         await _holding(league, None)
 
@@ -231,12 +233,3 @@ class TestAPastAccount:
         assert f"<@{CURRENT_ACCOUNT}>" in _told(press)
         assert not await _started(league)
         _assert_one_refusal_line(league, "past account of a driver")
-
-    async def test_the_current_account_is_not_mistaken_for_a_past_one(self, tmp_path):
-        """Kimi's own account, linked to no other: his signup is asked of the queue."""
-        league = await _league(tmp_path)
-        await _holding(league, None)
-
-        await _press_the_button(league)
-
-        assert await _started(league)

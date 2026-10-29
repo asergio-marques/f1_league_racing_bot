@@ -250,7 +250,8 @@ async def test_the_next_driver_takes_the_next_seat(tmp_path):
 
 async def test_a_full_race_team_refuses_the_next_driver(tmp_path):
     """The seats are finite and were created when the division was seeded; there is no
-    seat to make."""
+    seat to make. The guards run before anything is written, so a refusal has to leave the
+    division exactly as it stood — a half-placed driver has no command to finish or undo it."""
     db_path = await _make_db(tmp_path, team_seats=1)
     service = _service(db_path)
     await _add_driver(db_path, 102)
@@ -258,6 +259,12 @@ async def test_a_full_race_team_refuses_the_next_driver(tmp_path):
 
     with pytest.raises(ValueError, match="no available seats"):
         await _assign(service, profile_id=102)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS n FROM driver_season_assignments WHERE driver_profile_id = 102"
+        )
+        assert (await cursor.fetchone())["n"] == 0
 
 
 async def test_a_team_that_does_not_exist_is_refused_by_name(tmp_path):
@@ -330,7 +337,8 @@ async def test_a_reserve_team_with_no_seats_at_all_still_takes_a_driver(tmp_path
 
 async def test_the_seat_is_occupied_and_the_assignment_recorded(tmp_path):
     """Both, atomically — a seat held by a driver with no season assignment would draw on
-    the lineup but score for nobody."""
+    the lineup but score for nobody. The assignment points at the seat that was taken:
+    `team_seat_id` is how everything downstream finds which car a driver is in."""
     db_path = await _make_db(tmp_path)
 
     await _assign(_service(db_path))
@@ -342,16 +350,6 @@ async def test_the_seat_is_occupied_and_the_assignment_recorded(tmp_path):
             (PROFILE_ID, DIVISION_ID),
         )
         assert (await cursor.fetchone())["n"] == 1
-    assert await _seat_of(db_path) is not None
-
-
-async def test_the_assignment_points_at_the_seat_that_was_taken(tmp_path):
-    """`team_seat_id` is how everything downstream finds which car a driver is in."""
-    db_path = await _make_db(tmp_path)
-
-    await _assign(_service(db_path))
-
-    async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT dsa.team_seat_id, ts.driver_profile_id FROM driver_season_assignments dsa "
             "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
@@ -361,6 +359,7 @@ async def test_the_assignment_points_at_the_seat_that_was_taken(tmp_path):
         row = await cursor.fetchone()
     assert row is not None
     assert row["driver_profile_id"] == PROFILE_ID
+    assert await _seat_of(db_path) is not None
 
 
 async def test_a_placed_driver_becomes_assigned(tmp_path):
@@ -373,21 +372,3 @@ async def test_a_placed_driver_becomes_assigned(tmp_path):
             "SELECT current_state FROM driver_profiles WHERE id = ?", (PROFILE_ID,)
         )
         assert (await cursor.fetchone())["current_state"] == DriverState.ASSIGNED.value
-
-
-async def test_a_refused_placement_leaves_no_trace(tmp_path):
-    """The guards run before anything is written, so a refusal has to leave the division
-    exactly as it stood — a half-placed driver has no command to finish or undo it."""
-    db_path = await _make_db(tmp_path, team_seats=1)
-    service = _service(db_path)
-    await _add_driver(db_path, 102)
-    await _assign(service, profile_id=PROFILE_ID)
-
-    with pytest.raises(ValueError):
-        await _assign(service, profile_id=102)
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT COUNT(*) AS n FROM driver_season_assignments WHERE driver_profile_id = 102"
-        )
-        assert (await cursor.fetchone())["n"] == 0

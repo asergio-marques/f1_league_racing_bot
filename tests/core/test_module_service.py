@@ -28,97 +28,43 @@ async def db_path(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-class TestIsWeatherEnabled:
-    async def test_returns_false_by_default(self, db_path):
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        result = await svc.is_weather_enabled()
-        assert result is False
-
-    async def test_returns_false_for_unknown_server(self, db_path):
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        result = await svc.is_weather_enabled()
-        assert result is False
+#: The two modules whose flag ModuleService reads and sets by a method of its own.
+MODULES = ["weather", "signup"]
 
 
-class TestIsSignupEnabled:
-    async def test_returns_false_by_default(self, db_path):
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        result = await svc.is_signup_enabled()
-        assert result is False
-
-    async def test_returns_false_for_unknown_server(self, db_path):
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        result = await svc.is_signup_enabled()
-        assert result is False
+@pytest.mark.parametrize("module", MODULES)
+async def test_a_module_is_off_by_default(db_path, module):
+    from leaguebot.core.services.module_service import ModuleService
+    svc = ModuleService(db_path)
+    assert await getattr(svc, f"is_{module}_enabled")() is False
 
 
-class TestSetWeatherEnabled:
-    async def test_enable(self, db_path):
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        await svc.set_weather_enabled(True)
-        assert await svc.is_weather_enabled() is True
-
-    async def test_disable(self, db_path):
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        await svc.set_weather_enabled(True)
-        await svc.set_weather_enabled(False)
-        assert await svc.is_weather_enabled() is False
-
-    async def test_idempotent_enable(self, db_path):
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        await svc.set_weather_enabled(True)
-        await svc.set_weather_enabled(True)  # second enable is a no-op
-        assert await svc.is_weather_enabled() is True
-
-    async def test_idempotent_disable(self, db_path):
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        await svc.set_weather_enabled(False)
-        await svc.set_weather_enabled(False)  # second disable is safe
-        assert await svc.is_weather_enabled() is False
+@pytest.mark.parametrize("module", MODULES)
+@pytest.mark.parametrize(
+    "settings, expected",
+    [
+        ((True,), True),
+        ((True, False), False),
+        ((True, True), True),
+        ((False, False), False),
+    ],
+    ids=["enable", "disable", "enable twice", "disable twice"],
+)
+async def test_a_module_s_flag_is_the_last_one_set(db_path, module, settings, expected):
+    """Setting the flag again to what it already holds is a no-op, and safe."""
+    from leaguebot.core.services.module_service import ModuleService
+    svc = ModuleService(db_path)
+    for value in settings:
+        await getattr(svc, f"set_{module}_enabled")(value)
+    assert await getattr(svc, f"is_{module}_enabled")() is expected
 
 
-class TestSetSignupEnabled:
-    async def test_enable(self, db_path):
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        await svc.set_signup_enabled(True)
-        assert await svc.is_signup_enabled() is True
-
-    async def test_disable(self, db_path):
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        await svc.set_signup_enabled(True)
-        await svc.set_signup_enabled(False)
-        assert await svc.is_signup_enabled() is False
-
-    async def test_idempotent_enable(self, db_path):
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        await svc.set_signup_enabled(True)
-        await svc.set_signup_enabled(True)
-        assert await svc.is_signup_enabled() is True
-
-    async def test_idempotent_disable(self, db_path):
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        await svc.set_signup_enabled(False)
-        await svc.set_signup_enabled(False)
-        assert await svc.is_signup_enabled() is False
-
-    async def test_weather_and_signup_are_independent(self, db_path):
-        from leaguebot.core.services.module_service import ModuleService
-        svc = ModuleService(db_path)
-        await svc.set_weather_enabled(True)
-        assert await svc.is_signup_enabled() is False
-        await svc.set_signup_enabled(True)
-        assert await svc.is_weather_enabled() is True
-        assert await svc.is_signup_enabled() is True
+async def test_weather_and_signup_are_independent(db_path):
+    from leaguebot.core.services.module_service import ModuleService
+    svc = ModuleService(db_path)
+    await svc.set_weather_enabled(True)
+    assert await svc.is_signup_enabled() is False
+    await svc.set_signup_enabled(True)
+    assert await svc.is_weather_enabled() is True
+    assert await svc.is_signup_enabled() is True
 

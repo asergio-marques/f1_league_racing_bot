@@ -85,7 +85,8 @@ def test_the_approval_draws_nothing_itself():
 
 
 def test_approval_refuses_before_it_commits_anything():
-    """The fingerprint stands where the render stood: ahead of everything committed."""
+    """The fingerprint stands where the render stood: ahead of everything committed. Who is
+    pressing is settled first, so a press by somebody who may not approve costs no query."""
     source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "approve")
 
     gate_at = source.index("_changed_since_review()")
@@ -312,18 +313,6 @@ async def _take_downs(env) -> list[dict]:
     return await take_downs(env)
 
 
-async def test_the_reviewer_may_approve(tmp_path, monkeypatch):
-    """Alex's placements review stands in channel 700, posted a moment ago, the season unchanged
-    since its report. Alex, who ran it, presses Approve: the approval is worked."""
-    env = await _standing_placements(tmp_path)
-    await _season_unchanged(env, monkeypatch)
-    view, cog = _view_on(env)
-
-    await _ApproveView.approve(view, _press(env), MagicMock())
-
-    cog._do_approve.assert_awaited_once()
-
-
 async def test_a_league_admin_may_approve_somebody_elses_review(tmp_path, monkeypatch):
     """Alex's placements review stands, the season unchanged. Sam, who holds the league's admin
     role but did not run the review, presses Approve: the approval is worked."""
@@ -334,26 +323,6 @@ async def test_a_league_admin_may_approve_somebody_elses_review(tmp_path, monkey
     await _ApproveView.approve(view, _press(env, 99, league_admin=True), MagicMock())
 
     cog._do_approve.assert_awaited_once()
-
-
-async def test_another_league_manager_may_not_approve(tmp_path):
-    """The case the public message creates — only the reviewer or a league admin. Sam, a league
-    manager who neither ran Alex's review nor holds the admin role, presses Approve: he is refused
-    privately, told nothing has been approved, and the review is left alone: nothing deleted or
-    posted, no take-down asked of the queue."""
-    from tests.support.change_queue import acknowledgement
-
-    env = await _standing_placements(tmp_path)
-    view, cog = _view_on(env)
-    interaction = _press(env, 99)
-
-    await _ApproveView.approve(view, interaction, MagicMock())
-
-    cog._do_approve.assert_not_awaited()
-    assert "Nothing has been approved" in acknowledgement(interaction)
-    assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
-    assert env.channel.deleted == [] and env.channel.sent == []
-    assert await _take_downs(env) == []
 
 
 async def test_nobody_but_the_reviewer_may_approve_while_no_admin_role_is_set(tmp_path):
@@ -373,17 +342,6 @@ async def test_nobody_but_the_reviewer_may_approve_while_no_admin_role_is_set(tm
     cog._do_approve.assert_not_awaited()
     assert "Nothing has been approved" in acknowledgement(interaction)
     assert await _take_downs(env) == []
-
-
-async def test_the_access_check_runs_before_the_fingerprint():
-    """A press by somebody who may not approve costs no query."""
-    import inspect
-
-    source = inspect.getsource(_ApproveView.approve)
-
-    assert source.index("_may_approve") < source.index("_changed_since_review()"), (
-        "the fingerprint is taken for a member who may not approve anyway"
-    )
 
 
 # ── Taking the review down ────────────────────────────────────────────────

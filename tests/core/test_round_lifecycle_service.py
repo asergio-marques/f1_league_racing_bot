@@ -18,11 +18,15 @@ championship's record; a round inside it cannot be called off after the fact. `c
 writes on the save it is handed, as the round's cancellation on the change queue (#439) gives it,
 and where the round may no longer be cancelled it writes nothing and gives `None`, so the change
 names the refusal rather than the save raising.
+`test_season_service_on_forms.py::test_a_round_no_longer_cancellable_is_left_and_gives_none`
+holds it.
 
 **Cancelling reconsiders the division.** Cancelling the last outstanding round is what finishes
 a division, so the division's own status is refreshed here as well as on a result being
 finalised — without it a league would cancel its final round and still be unable to complete the
-season. `test_cancelling_the_last_round_finishes_the_division` holds it.
+season. In `test_season_service_on_forms.py`,
+`test_cancelling_the_last_round_finishes_the_division_and_moves_the_season_on_in_the_same_save`
+holds it.
 """
 from __future__ import annotations
 
@@ -109,7 +113,6 @@ async def _division_status(db_path: str) -> str:
 
 
 NOT_RUN = RoundStatus.NOT_RUN.value
-FINAL = RoundStatus.FINAL.value
 
 # The moment the cancellation is recorded at, pinned.
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
@@ -134,16 +137,27 @@ async def _cancel(db_path: str, round_id: int) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-async def test_deleting_a_round_renumbers_the_rest(tmp_path):
-    """The numbers are positions in a calendar, not identities."""
-    db_path = await _make_db(
-        tmp_path,
-        rounds=((1, 1, 7, NOT_RUN), (2, 2, 14, NOT_RUN), (3, 3, 21, NOT_RUN)),
-    )
+@pytest.mark.parametrize(
+    "rounds, expected",
+    [
+        pytest.param(
+            ((1, 1, 7, NOT_RUN), (2, 2, 14, NOT_RUN), (3, 3, 21, NOT_RUN)), [(1, 1), (3, 2)],
+            id="a middle round",
+        ),
+        pytest.param(
+            ((1, 1, 7, NOT_RUN), (2, 2, 14, NOT_RUN)), [(1, 1)],
+            id="the last round",
+        ),
+    ],
+)
+async def test_deleting_a_round_renumbers_the_rest(tmp_path, rounds, expected):
+    """The numbers are positions in a calendar, not identities. Deleting the last round leaves
+    the others untouched."""
+    db_path = await _make_db(tmp_path, rounds=rounds)
 
     await SeasonService(db_path).delete_round(2)
 
-    assert await _numbers(db_path) == [(1, 1), (3, 2)]
+    assert await _numbers(db_path) == expected
 
 
 async def test_renumbering_follows_the_calendar_not_the_old_numbers(tmp_path):
@@ -157,16 +171,6 @@ async def test_renumbering_follows_the_calendar_not_the_old_numbers(tmp_path):
     await SeasonService(db_path).renumber_rounds(DIVISION_ID)
 
     assert await _numbers(db_path) == [(1, 1), (3, 2), (2, 3)]
-
-
-async def test_deleting_the_last_round_leaves_the_others_untouched(tmp_path):
-    db_path = await _make_db(
-        tmp_path, rounds=((1, 1, 7, NOT_RUN), (2, 2, 14, NOT_RUN))
-    )
-
-    await SeasonService(db_path).delete_round(2)
-
-    assert await _numbers(db_path) == [(1, 1)]
 
 
 async def test_deleting_a_round_that_does_not_exist_is_a_no_op(tmp_path):
@@ -245,45 +249,6 @@ async def test_cancelling_is_audited_against_its_division(tmp_path):
     assert row["change_type"] == "round.status"
     assert row["new_value"] == "CANCELLED"
     assert row["division_id"] == DIVISION_ID
-
-
-@pytest.mark.parametrize("status", ["COMPLETED", "CANCELLED"])
-async def test_a_round_in_an_archived_season_cannot_be_cancelled(tmp_path, status):
-    """The season is the championship's record; a round inside it cannot be called off
-    after the fact. A season archived as completed, or cancelled, holds round 1, not yet run:
-    cancelling it gives `None` and the round stays not run."""
-    db_path = await _make_db(
-        tmp_path, season_status=status, rounds=((1, 1, 7, NOT_RUN),)
-    )
-
-    assert await _cancel(db_path, 1) is None
-    assert await _status(db_path, 1) == NOT_RUN
-
-
-async def test_a_refused_cancellation_changes_nothing(tmp_path):
-    db_path = await _make_db(
-        tmp_path, season_status="COMPLETED", rounds=((1, 1, 7, NOT_RUN),)
-    )
-
-    assert await _cancel(db_path, 1) is None
-
-    assert await _status(db_path, 1) == NOT_RUN
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT COUNT(*) AS n FROM audit_entries")
-        assert (await cursor.fetchone())["n"] == 0
-
-
-async def test_cancelling_the_last_round_finishes_the_division(tmp_path):
-    """Cancelling the last outstanding round is what finishes a division — without the
-    refresh a league would cancel its final round and still be unable to complete the
-    season."""
-    db_path = await _make_db(
-        tmp_path, rounds=((1, 1, 7, FINAL), (2, 2, 14, NOT_RUN))
-    )
-
-    await _cancel(db_path, 2)
-
-    assert await _division_status(db_path) == "FINISHED"
 
 
 async def test_cancelling_one_of_several_rounds_leaves_the_division_running(tmp_path):

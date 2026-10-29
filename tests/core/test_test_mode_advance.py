@@ -566,66 +566,6 @@ async def test_a_finalised_round_with_an_open_channel_says_so_differently(tmp_pa
 # ---------------------------------------------------------------------------
 
 
-async def test_the_rsvp_notice_is_fired(tmp_path):
-    """Round 3 of Division 1's check-in call is next. Advance asks the change queue for it (an
-    `attendance.check_in.call` of the round), and its reply names the RSVP notice."""
-    cog = _make_cog(await _make_db(tmp_path))
-    interaction = _interaction()
-
-    await _advance(cog, interaction, _entry(5))
-
-    [(kind, payload)] = _asked(cog)
-    assert (kind, payload["round_id"]) == (CHECK_IN_CALL, ROUND_ID)
-    assert "RSVP notice" in _replied(interaction)
-
-
-async def test_a_failing_rsvp_notice_is_reported_not_raised(tmp_path):
-    """The change queue cannot save the check-in call's ask. The standard failure reply and one
-    failure line name the RSVP notice, the division and the round (#482)."""
-    cog = _make_cog(await _make_db(tmp_path))
-    interaction = _interaction()
-    interaction.client = cog.bot
-    cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("no channel"))
-
-    await _advance(cog, interaction, _entry(5))
-
-    _assert_failure_recorded(cog, interaction, "RSVP notice")
-
-
-async def test_a_fired_rsvp_notice_is_logged_to_the_league(tmp_path):
-    """Test mode still writes to the league's log, so a maintainer can reconstruct what
-    the rehearsal did."""
-    cog = _make_cog(await _make_db(tmp_path))
-
-    await _advance(cog, _interaction(), _entry(5))
-
-    cog.bot.output_router.post_log.assert_awaited()
-
-
-@pytest.mark.parametrize(
-    "phase,kind,label",
-    [
-        pytest.param(
-            6, CHECK_IN_LAST_NOTICE, "RSVP last-notice",
-        ),
-        pytest.param(
-            7, CHECK_IN_DEADLINE, "RSVP deadline",
-        ),
-    ],
-)
-async def test_the_later_check_in_phases_are_fired(tmp_path, phase, kind, label):
-    """Round 3's last notice (6) or deadline (7) is next. Advance asks the change queue for it
-    by its kind, for the round, and its reply names the step."""
-    cog = _make_cog(await _make_db(tmp_path))
-    interaction = _interaction()
-
-    await _advance(cog, interaction, _entry(phase))
-
-    [(asked_kind, payload)] = _asked(cog)
-    assert (asked_kind, payload["round_id"]) == (kind, ROUND_ID)
-    assert label in _replied(interaction)
-
-
 @pytest.mark.parametrize("phase", [6, 7])
 async def test_a_fired_check_in_phase_cancels_its_own_job(tmp_path, phase):
     """Otherwise the real job fires later and the division is asked a second time."""
@@ -646,15 +586,7 @@ async def test_a_check_in_phase_with_no_job_cancels_nothing(tmp_path, phase):
 
 
 @pytest.mark.parametrize(
-    "phase,phrase",
-    [
-        pytest.param(
-            6, "RSVP last-notice"
-        ),
-        pytest.param(
-            7, "RSVP deadline"
-        ),
-    ],
+    "phase,phrase", [(5, "RSVP notice"), (6, "RSVP last-notice"), (7, "RSVP deadline")]
 )
 async def test_a_failing_check_in_phase_is_reported_not_raised(tmp_path, phase, phrase):
     """The change queue cannot save the step's ask. The standard failure reply and one failure
@@ -669,8 +601,12 @@ async def test_a_failing_check_in_phase_is_reported_not_raised(tmp_path, phase, 
     _assert_failure_recorded(cog, interaction, phrase)
 
 
-@pytest.mark.parametrize("phase,name", [(6, "rsvp_last_notice"), (7, "rsvp_deadline")])
+@pytest.mark.parametrize(
+    "phase,name", [(5, "rsvp_notice"), (6, "rsvp_last_notice"), (7, "rsvp_deadline")]
+)
 async def test_a_fired_check_in_phase_is_logged_by_name(tmp_path, phase, name):
+    """Test mode still writes to the league's log, so a maintainer can reconstruct what
+    the rehearsal did."""
     cog = _make_cog(await _make_db(tmp_path))
 
     await _advance(cog, _interaction(), _entry(phase))
@@ -801,21 +737,24 @@ async def test_a_fired_cleanup_is_logged_by_name(tmp_path, phase, runner, label,
     assert f"phase: {prefix}" in str(cog.bot.output_router.post_log.await_args.args[0])
 
 
-#: Each check-in step advance asks of the change queue: its phase and its kind.
+#: Each check-in step advance asks of the change queue: its phase, its kind, and the name its
+#: reply gives it.
 CHECK_IN_STEPS = [
-    pytest.param(5, CHECK_IN_CALL, id="call"),
-    pytest.param(6, CHECK_IN_LAST_NOTICE, id="last notice"),
-    pytest.param(7, CHECK_IN_DEADLINE, id="deadline"),
-    pytest.param(9, CHECK_IN_CLEAN_UP, id="clean-up"),
+    pytest.param(5, CHECK_IN_CALL, "RSVP notice", id="call"),
+    pytest.param(6, CHECK_IN_LAST_NOTICE, "RSVP last-notice", id="last notice"),
+    pytest.param(7, CHECK_IN_DEADLINE, "RSVP deadline", id="deadline"),
+    pytest.param(9, CHECK_IN_CLEAN_UP, "check-in cleanup", id="clean-up"),
 ]
 
 
-@pytest.mark.parametrize("phase,kind", CHECK_IN_STEPS)
-async def test_advancing_a_check_in_step_replies_on_the_change_queue(tmp_path, phase, kind):
+@pytest.mark.parametrize("phase,kind,label", CHECK_IN_STEPS)
+async def test_advancing_a_check_in_step_replies_on_the_change_queue(
+    tmp_path, phase, kind, label
+):
     """Round 3 of Division 1's check-in call (5), last notice (6), deadline (7) or clean-up (9)
     is next. Advance asks the change queue for that step by its kind, for the round, and replies
-    that it is on the change queue, naming the division and the round, as a weather step's
-    reply does; it runs no check-in runner of its own."""
+    that it is on the change queue, naming the step, the division and the round, as a weather
+    step's reply does; it runs no check-in runner of its own."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
@@ -825,6 +764,7 @@ async def test_advancing_a_check_in_step_replies_on_the_change_queue(tmp_path, p
     assert (asked_kind, payload["round_id"]) == (kind, ROUND_ID)
     replied = _replied(interaction)
     assert "is on the change queue" in replied
+    assert label in replied
     assert "**Division 1**" in replied and "Round 3" in replied
     for name in _CHECK_IN_RUNNERS:
         if name in mocks:

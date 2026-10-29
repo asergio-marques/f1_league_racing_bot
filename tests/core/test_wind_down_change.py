@@ -130,25 +130,6 @@ async def test_the_turn_down_and_the_move_to_pending_completion_are_one_save(tmp
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
-async def test_a_window_that_cannot_be_closed_stops_the_queue(tmp_path):
-    """The signup window is open and the wind-down asked; recording the window closed fails. The
-    queue stops at `post_closed`, whose record writes the window's close, with the season still
-    in Ongoing, signups open, and both pending placements standing; retried, the window closes
-    and the season moves on to Pending completion."""
-    league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
-    league.close_fails = RuntimeError("the window could not be recorded closed")
-    await _ask(league)
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == ("post_closed", None)
-    assert await _stage(league) == "ONGOING_SIGNUPS"
-    assert await _pending(league) == 2
-
-    league.close_fails = None
-    await retry_job(league.bot)
-    assert not await window_open(league)
-    assert await _stage(league) == "PENDING_COMPLETION"
-
-
 async def test_a_signup_channel_that_cannot_be_held_stops_the_queue_at_its_driver(tmp_path):
     league = await _league(tmp_path)
     await signing_up(league)
@@ -189,6 +170,11 @@ async def test_the_turned_down_line_is_written_with_the_save(tmp_path):
 
 
 async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
+    """Every division is done with Max's and Charles's placements pending, a driver (105) in
+    review, and signups already shut: the driver in review is told and has their channel locked,
+    the two approved drivers turned down lose the driver role while Lewis keeps it, and the line
+    says only that the pending placements were turned down, with no claim that signups
+    closed."""
     league = await _league(tmp_path)
     await signing_up(league)
     await _ask(league)
@@ -207,6 +193,11 @@ async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     for user_id in (SIGNING_UP, MAX, CHARLES):
         assert await driver_state(league, user_id) == "NOT_SIGNED_UP"
     assert await _stage(league) == "PENDING_COMPLETION"
+    assert not league.errors, league.errors
+    lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+    assert any("System | Every division is done | Pending placements turned down: 3" in line
+               for line in lines), lines
+    assert not any("Signups closed" in line for line in lines)
 
 
 async def test_a_plain_ongoing_season_is_moved_on_with_no_driver_job(tmp_path):
@@ -370,17 +361,22 @@ async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_stil
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
-@pytest.mark.parametrize("failures", [1, 2], ids=["fails once", "fails again on the retry"])
-async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_the_retry(
-    tmp_path, failures,
+@pytest.mark.parametrize(("signing", "failures"), [(False, 1), (True, 1), (True, 2)],
+                         ids=["nobody signing up", "fails once", "fails again on the retry"])
+async def test_a_window_close_whose_closing_record_fails_stops_the_queue_until_a_retry_records_it(
+    tmp_path, signing, failures,
 ):
     """The wind-down's close returns driver 105, still filling in the wizard, then recording the
-    window closed fails: the queue stops at `post_closed`, with the window still open and 105 Not
-    Signed Up, told nothing, and does so again where the first Retry fails the same way. Once the
+    window closed fails: the queue stops at `post_closed`, with the window still open, the season
+    still in Ongoing, signups open, both pending placements standing, and 105 Not Signed Up, told
+    nothing, and does so again where the first Retry fails the same way. Once the
     record goes through, 105 is told, then their channel closed, each once, and the season is
-    moved on to Pending completion."""
+    moved on to Pending completion. With nobody filling in the wizard, the close returns nobody:
+    the queue stops at `post_closed` all the same, and once retried, the window closes and the
+    season moves on with nobody told and no channel closed."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
-    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    if signing:
+        await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     league.close_fails = RuntimeError("the window could not be recorded closed")
     await _ask(league)
 
@@ -390,22 +386,31 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
             await retry_job(league.bot)
         assert await _stopped_at(league) == ("post_closed", None)
         assert await window_open(league)
-        assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
+        if signing:
+            assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
         assert league.notices == [] and league.locked == []
+        assert await _stage(league) == "ONGOING_SIGNUPS"
+        assert await _pending(league) == 2
 
     league.close_fails = None
     await retry_job(league.bot)
 
-    assert league.notices == [(SIGNING_UP, "🔒 Signups have closed. This channel will be "
-                                           "automatically deleted in 24 hours.")]
-    assert league.locked == [SIGNING_UP]
     jobs = await _jobs(league)
-    assert jobs.count(("signup_notice", SIGNING_UP)) == 1
-    assert jobs.count(("close_signup", SIGNING_UP)) == 1
-    assert jobs.index(("signup_notice", SIGNING_UP)) < jobs.index(("close_signup", SIGNING_UP))
-    assert [(kind, uid) for kind, uid, _n in league.events if kind in ("notice", "lock")] == [
-        ("notice", SIGNING_UP), ("lock", SIGNING_UP),
-    ]
+    if signing:
+        assert league.notices == [(SIGNING_UP, "🔒 Signups have closed. This channel will be "
+                                               "automatically deleted in 24 hours.")]
+        assert league.locked == [SIGNING_UP]
+        assert jobs.count(("signup_notice", SIGNING_UP)) == 1
+        assert jobs.count(("close_signup", SIGNING_UP)) == 1
+        assert jobs.index(("signup_notice", SIGNING_UP)) < jobs.index(("close_signup", SIGNING_UP))
+        assert [(kind, uid) for kind, uid, _n in league.events if kind in ("notice", "lock")] == [
+            ("notice", SIGNING_UP), ("lock", SIGNING_UP),
+        ]
+    else:
+        assert league.notices == [] and league.locked == []
+        assert not [name for name, _uid in jobs if name in ("signup_notice", "close_signup")]
+        [closed] = [row for row in await step_rows(league.db_path) if row["name"] == "post_closed"]
+        assert json.loads(closed["payload"])["returned"] == 0
     assert not await window_open(league)
     assert await _stage(league) == "PENDING_COMPLETION"
 

@@ -8,9 +8,9 @@ before anything is scheduled.
 every later command that resolves a division by name ambiguous — and they all do, because a
 slash command takes a name, not an id. A duplicate tier breaks the sequential-integrity check
 the approval runs, but it breaks it at *approval*, after the whole calendar has been built; both
-commands therefore refuse it at the point it is typed. Each of the four refusals is a separate
-test because a reader tidying four near-identical branches into one loses the wording that tells
-a manager which of them they hit.
+commands therefore refuse it at the point it is typed. Each refusal's wording is pinned word for
+word by a case of its own, because a reader tidying near-identical branches into one loses the
+wording that tells a manager which of them they hit.
 
 **`/division add` writes into the pending snapshot, `/division duplicate` writes to the
 database.** Add is part of building a season that does not exist yet, so it edits the in-memory
@@ -344,20 +344,6 @@ async def test_a_duplicate_name_is_refused(tmp_path):
     assert len(cfg.divisions) == 1
 
 
-async def test_a_duplicate_name_is_refused_regardless_of_case(tmp_path):
-    """Division lookup is case-insensitive everywhere else, so "am" and "Am" would be the
-    same ambiguity with none of the refusal."""
-    db_path = await _make_db(tmp_path)
-    cfg = _pending(PendingDivision(name="Am", role_id=1, tier=1))
-    cog = _make_cog(db_path, cfg=cfg)
-    interaction = _interaction()
-
-    await _add(cog, interaction, name="aM", tier=2)
-
-    assert "already exists" in _replied(interaction)
-    assert len(cfg.divisions) == 1
-
-
 async def test_a_duplicate_tier_is_refused(tmp_path):
     """Refused where it is typed rather than at approval, which is after the whole calendar
     has been built."""
@@ -497,30 +483,6 @@ async def test_duplicating_onto_an_existing_name_is_refused(tmp_path):
 
     assert "already exists" in _replied(interaction)
     cog.bot.season_service.duplicate_division.assert_not_awaited()
-
-
-async def test_duplicating_onto_an_existing_tier_is_refused(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _duplicate(cog, interaction, tier=1)
-
-    assert "tier **1** already exists" in _replied(interaction)
-    cog.bot.season_service.duplicate_division.assert_not_awaited()
-
-
-async def test_every_refusal_answers_before_the_defer(tmp_path):
-    """The gates reply through `response.send_message`, so none of them may run after the
-    defer — a fresh response after a defer is a 404, and the manager sees nothing at all."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _duplicate(cog, interaction, tier=1)
-
-    interaction.response.defer.assert_not_awaited()
-    interaction.response.send_message.assert_awaited_once()
 
 
 async def test_the_copy_itself_is_deferred(tmp_path):
@@ -776,7 +738,9 @@ async def test_add_refuses_a_bad_tier_in_todays_words_and_records_it(tmp_path, t
 async def test_duplicate_refuses_a_bad_tier_in_todays_words_and_records_it(tmp_path, tier, reply):
     """The season is in placements and holds Pro at tier 1; the manager copies it as Am.
     Duplicate keeps its own taken-tier words ("... in this season."), and answers before any
-    defer, as every one of its refusals does."""
+    defer, as every one of its refusals does: the gates reply through `response.send_message`,
+    so none of them may run after the defer — a fresh response after a defer is a 404, and the
+    manager sees nothing at all."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
     interaction = _run_by_the_manager(cog, "division duplicate")
@@ -784,6 +748,7 @@ async def test_duplicate_refuses_a_bad_tier_in_todays_words_and_records_it(tmp_p
     await _duplicate(cog, interaction, source="Pro", new_name="Am", tier=tier)
 
     interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
+    interaction.response.defer.assert_not_awaited()
     interaction.followup.send.assert_not_awaited()
     cog.bot.season_service.duplicate_division.assert_not_awaited()
     assert _logged(cog) == [
@@ -879,9 +844,10 @@ async def test_every_other_division_add_refusal_is_recorded(tmp_path, arranged, 
     """A season in placements whose setup holds division Pro at tier 1, unless the case says
     otherwise. The manager (id 77) adds division Am at tier 2, but with one thing wrong: no season
     being set up; the season still in configuration; a member's mention as the name; or the name
-    pRO, which Pro already holds. The manager gets today's reply word for word and nothing else,
-    no division is added, and the log channel gets exactly one line, "⛔ `/division add` refused
-    for Manager (<@77>) — " and the reply's words."""
+    pRO, which Pro already holds (division lookup is case-insensitive everywhere else, so "pRO"
+    and "Pro" would be the same ambiguity with none of the refusal). The manager gets today's
+    reply word for word and nothing else, no division is added, and the log channel gets exactly
+    one line, "⛔ `/division add` refused for Manager (<@77>) — " and the reply's words."""
     from leaguebot.core.models.season import SeasonStage
 
     db_path = await _make_db(tmp_path)

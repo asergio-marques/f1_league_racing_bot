@@ -190,6 +190,8 @@ MUTATING = [
 
 
 async def test_reassign_accepts_a_mentioned_old_user(tmp_path):
+    """The reply names the current and past accounts, and the roles and any held signup channel
+    move from the account replaced to the one made current (#243)."""
     cog = _make_cog(season=_season())
     interaction = _interaction()
 
@@ -200,6 +202,14 @@ async def test_reassign_accepts_a_mentioned_old_user(tmp_path):
     cog.bot.driver_service.reassign_user_id.assert_awaited_once()
     assert cog.bot.driver_service.reassign_user_id.await_args.args[0] == "1"
     assert "given a new account" in _replied(interaction)
+    assert "Current account : <@2>" in _replied(interaction)
+    assert "Past accounts   : <@1>" in _replied(interaction)
+    assert cog.bot.placement_service.move_driver_roles.await_args.args == (
+        interaction.guild, PROFILE_ID, "1", "2"
+    )
+    cog.bot.wizard_service.move_held_channel.assert_awaited_once_with(
+        "1", "2", interaction.guild
+    )
 
 
 async def test_reassign_accepts_a_raw_snowflake_for_the_old_user(tmp_path):
@@ -415,6 +425,9 @@ async def test_a_user_with_no_driver_profile_is_refused(command):
 
 
 async def test_a_driver_is_assigned_to_the_named_team_and_division(tmp_path):
+    """The command hands the placement service the driver, division, team and season it
+    names, tells the manager the driver was assigned, and logs the move with the command and
+    the team, the log being the league's audit trail for who moved whom."""
     cog = _make_cog(season=_season())
     interaction = _interaction()
 
@@ -426,6 +439,10 @@ async def test_a_driver_is_assigned_to_the_named_team_and_division(tmp_path):
     assert kwargs["team_name"] == "Alpha"
     assert kwargs["season_id"] == SEASON_ID
     assert "Assigned" in _replied(interaction)
+    cog.bot.output_router.post_log.assert_awaited_once()
+    logged = cog.bot.output_router.post_log.await_args.args[0]
+    assert "/driver assign" in logged
+    assert "Alpha" in logged
 
 
 async def test_assign_seats_the_driver_in_the_team_its_shorthand_names(tmp_path):
@@ -490,19 +507,6 @@ async def test_a_refused_assignment_is_reported_not_raised(tmp_path):
     assert "Team Alpha is full." in _replied(interaction)
 
 
-async def test_a_successful_assignment_is_logged(tmp_path):
-    """The log is the league's audit trail for who moved whom."""
-    cog = _make_cog(season=_season())
-    interaction = _interaction()
-
-    await _assign(cog, interaction)
-
-    cog.bot.output_router.post_log.assert_awaited_once()
-    logged = cog.bot.output_router.post_log.await_args.args[0]
-    assert "/driver assign" in logged
-    assert "Alpha" in logged
-
-
 # ---------------------------------------------------------------------------
 # /driver unassign
 # ---------------------------------------------------------------------------
@@ -518,14 +522,6 @@ async def test_a_driver_is_unassigned_from_the_named_division(tmp_path):
     assert kwargs["driver_profile_id"] == PROFILE_ID
     assert kwargs["division_id"] == DIVISION_ID
     assert "Removed" in _replied(interaction)
-
-
-async def test_unassigning_names_the_team_the_driver_left(tmp_path):
-    cog = _make_cog(season=_season())
-    interaction = _interaction()
-
-    await _unassign(cog, interaction)
-
     assert "Alpha" in _replied(interaction)
 
 
@@ -572,25 +568,16 @@ async def test_a_driver_is_sacked(tmp_path):
     assert kwargs["driver_profile_id"] == PROFILE_ID
     assert kwargs["season_id"] == SEASON_ID
     assert "has been sacked" in _replied(interaction)
+    assert "/driver sack" in cog.bot.output_router.post_log.await_args.args[0]
 
 
-async def test_a_sack_is_refused_with_no_season(tmp_path):
-    """Issue #220: sacking is for the ongoing stages. Between seasons the season's end has
-    already returned every driver to Not Signed Up."""
-    cog = _make_cog(season=None)
-    interaction = _interaction()
-
-    await undecorate(DriverCog.sack)(cog, interaction, _member(1, "Driver"))
-
-    assert "only while the season is ongoing" in _replied(interaction)
-    cog.bot.placement_service.sack_driver.assert_not_awaited()
-
-
-@pytest.mark.parametrize("stage", ["PLACEMENTS", "PENDING_COMPLETION"])
+@pytest.mark.parametrize("stage", [None, "PLACEMENTS", "PENDING_COMPLETION"],
+                         ids=["no season", "PLACEMENTS", "PENDING_COMPLETION"])
 async def test_a_sack_is_refused_outside_the_ongoing_stages(tmp_path, stage):
-    """Before placements are confirmed nobody is committed; in Pending completion only the
-    season's completion remains."""
-    cog = _make_cog(season=_season(stage=stage))
+    """Issue #220: sacking is for the ongoing stages. Between seasons the season's end has
+    already returned every driver to Not Signed Up; before placements are confirmed nobody is
+    committed; in Pending completion only the season's completion remains."""
+    cog = _make_cog(season=None if stage is None else _season(stage=stage))
     interaction = _interaction()
 
     await undecorate(DriverCog.sack)(cog, interaction, _member(1, "Driver"))
@@ -611,27 +598,6 @@ async def test_a_refused_sacking_is_reported_not_raised(tmp_path):
     assert "already NOT_SIGNED_UP" in _replied(interaction)
 
 
-async def test_a_successful_sacking_is_logged(tmp_path):
-    cog = _make_cog(season=_season())
-    interaction = _interaction()
-
-    await _sack(cog, interaction)
-
-    assert "/driver sack" in cog.bot.output_router.post_log.await_args.args[0]
-
-
-async def test_reassign_reports_the_current_and_past_accounts(tmp_path):
-    cog = _make_cog(season=_season())
-    interaction = _interaction()
-
-    await undecorate(DriverCog.reassign)(
-        cog, interaction, _member(2, "New"), _member(1, "Old"), None
-    )
-
-    assert "Current account : <@2>" in _replied(interaction)
-    assert "Past accounts   : <@1>" in _replied(interaction)
-
-
 async def test_a_switch_back_is_reported_as_one(tmp_path):
     cog = _make_cog(season=_season())
     outcome = await cog.bot.driver_service.reassign_user_id("1", "2")
@@ -644,19 +610,6 @@ async def test_a_switch_back_is_reported_as_one(tmp_path):
     )
 
     assert "switched back to a past account" in _replied(interaction)
-
-
-async def test_reassign_moves_the_roles_to_the_new_current_account(tmp_path):
-    """Issue #243: from the account replaced to the one made current."""
-    cog = _make_cog(season=_season())
-    interaction = _interaction()
-
-    await undecorate(DriverCog.reassign)(
-        cog, interaction, _member(2, "New"), _member(1, "Old"), None
-    )
-
-    args = cog.bot.placement_service.move_driver_roles.await_args.args
-    assert args == (interaction.guild, PROFILE_ID, "1", "2")
 
 
 async def test_roles_discord_would_not_move_are_reported_and_the_reassign_stands(tmp_path):
@@ -674,19 +627,6 @@ async def test_roles_discord_would_not_move_are_reported_and_the_reassign_stands
     assert "given a new account" in _replied(interaction)
     assert "Missing Permissions" in _replied(interaction)
     assert "not done: the roles could not be given" in cog.bot.output_router.post_log.await_args.args[0]
-
-
-async def test_reassign_moves_a_held_signup_channel_to_the_new_current_account(tmp_path):
-    cog = _make_cog(season=_season())
-    interaction = _interaction()
-
-    await undecorate(DriverCog.reassign)(
-        cog, interaction, _member(2, "New"), _member(1, "Old"), None
-    )
-
-    cog.bot.wizard_service.move_held_channel.assert_awaited_once_with(
-        "1", "2", interaction.guild
-    )
 
 
 async def test_a_merge_is_reported_as_one(tmp_path):

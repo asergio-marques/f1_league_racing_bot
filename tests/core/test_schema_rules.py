@@ -1,10 +1,13 @@
-"""The rules the schema itself holds: keys, cascades, uniqueness and triggers.
+"""The rules the schema itself holds: keys, cascades and uniqueness.
 
 Issue #254 squashed the migration chain into one baseline and removed the tests that proved
 each historic migration carried data across. Several of those tests also pinned a rule of the
 schema as it stands — a cascade, a unique key, a trigger — and those rules are kept here,
 against the schema `run_migrations` raises today, so that removing the history took none of
-them with it.
+them with it. Three are pinned where their rules are: the trigger recording a driver's
+accounts in `test_driver_accounts.py`, the one matching a season's stage to its status in
+`test_season_stage.py`, and the index holding one live season in
+`test_one_live_season_per_server.py`.
 """
 from __future__ import annotations
 
@@ -236,41 +239,6 @@ async def test_an_account_belongs_to_one_driver_across_the_league(db_path):
             "INSERT INTO driver_profiles (discord_user_id, current_state) "
             "VALUES ('2222', 'UNASSIGNED')"
         )
-    db.close()
-
-
-# ── Triggers ──────────────────────────────────────────────────────────────────
-
-
-async def test_a_driver_s_accounts_are_recorded_as_they_change(db_path):
-    db = _connect(db_path)
-    db.execute(
-        "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
-        "VALUES (8, '3333', 'UNASSIGNED')"
-    )
-    db.execute("UPDATE driver_profiles SET discord_user_id = '4444' WHERE id = 8")
-    db.commit()
-    db.close()
-
-    assert _query(
-        db_path,
-        "SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = 8 "
-        "ORDER BY discord_user_id",
-    ) == [("3333",), ("4444",)]
-
-
-async def test_a_season_s_stage_must_match_its_status(db_path):
-    db = _connect(db_path)
-    with pytest.raises(sqlite3.IntegrityError, match="stage does not match"):
-        db.execute("UPDATE seasons SET stage = 'COMPLETED' WHERE id = 1")
-    db.close()
-
-
-async def test_the_league_holds_one_live_season(db_path):
-    db = _connect(db_path)
-    with pytest.raises(sqlite3.IntegrityError):
-        db.execute("INSERT INTO seasons (start_date, status) VALUES ('2027-01-01', 'SETUP')")
-    db.execute("INSERT INTO seasons (start_date, status) VALUES ('2024-01-01', 'CANCELLED')")
     db.close()
 
 

@@ -301,15 +301,6 @@ async def test_a_configured_attendance_module_does_not_block_approval(db_path):
     _assert_asked(cog)
 
 
-async def test_a_disabled_attendance_module_is_not_checked(db_path):
-    cog = _cog(db_path, attendance_enabled=False, attendance_config=None)
-    interaction = _interaction()
-
-    await _approve(cog, interaction)
-
-    _assert_asked(cog)
-
-
 # ---------------------------------------------------------------------------
 # The results module's prerequisites
 # ---------------------------------------------------------------------------

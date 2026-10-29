@@ -108,15 +108,6 @@ async def test_each_module_posts_only_to_its_own_channel(tmp_path, module, chann
             channel.send.assert_not_awaited()
 
 
-async def test_weather_and_results_are_silent_notes(tmp_path):
-    bot = _bot(await _make_db(tmp_path))
-    guild, channels = _guild()
-    await _post_notice(bot, guild, "weather")
-    await _post_notice(bot, guild, "results")
-    assert channels[FORECAST].send.await_args.kwargs.get("silent") is True
-    assert channels[RESULTS].send.await_args.kwargs.get("silent") is True
-
-
 async def test_the_check_in_channel_carries_the_notification(tmp_path):
     """Not silent, and it mentions the division role as the check-in call does."""
     bot = _bot(await _make_db(tmp_path))
@@ -157,22 +148,19 @@ async def test_the_attendance_notice_of_a_division_with_no_role_notifies_nobody(
     assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
 
 
-async def test_the_results_note_notifies_nobody_and_is_silent(tmp_path):
-    """Pro's results channel is told round 3 is called off: silently, and notifying nobody."""
+@pytest.mark.parametrize(
+    "module, channel_id",
+    [pytest.param("results", RESULTS, id="results"), pytest.param("weather", FORECAST, id="weather")],
+)
+async def test_the_weather_and_results_notes_notify_nobody_and_are_silent(
+    tmp_path, module, channel_id
+):
+    """Pro's results channel, and its forecast channel, are told round 3 is called off:
+    silently, and notifying nobody."""
     bot = _bot(await _make_db(tmp_path))
     guild, channels = _guild()
-    await _post_notice(bot, guild, "results")
-    call = channels[RESULTS].send.await_args
-    assert call.kwargs.get("silent") is True
-    assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
-
-
-async def test_the_weather_note_notifies_nobody_and_is_silent(tmp_path):
-    """Pro's forecast channel is told round 3 is called off: silently, and notifying nobody."""
-    bot = _bot(await _make_db(tmp_path))
-    guild, channels = _guild()
-    await _post_notice(bot, guild, "weather")
-    call = channels[FORECAST].send.await_args
+    await _post_notice(bot, guild, module)
+    call = channels[channel_id].send.await_args
     assert call.kwargs.get("silent") is True
     assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
 
@@ -294,11 +282,6 @@ def _with_attendance(bot):
     return bot
 
 
-async def _rows(db_path, table):
-    async with get_connection(db_path) as db:
-        return await (await db.execute(f"SELECT * FROM {table}")).fetchall()  # noqa: S608
-
-
 # ── The check-in is audited in the log before the call comes down ──────────
 
 
@@ -340,6 +323,7 @@ async def _audit(tmp_path, *, distribute=False, round_ids=(ROUND_ID,)):
 
 
 async def test_the_audit_groups_the_drivers_by_their_answer(tmp_path):
+    """Before a distribution, the audit says nothing of reserves."""
     report = await _audit(tmp_path)
     assert report.audit == (
         "\n  check-in, Pro, Round 3 (Monza):"
@@ -356,11 +340,6 @@ async def test_the_audit_names_the_reserves_once_they_are_distributed(tmp_path):
     assert report.audit.endswith(
         "\n    reserves: <@103> (Reserve 3) to Ferrari, <@104> (Reserve 4) on standby"
     )
-
-
-async def test_the_audit_says_nothing_of_reserves_before_a_distribution(tmp_path):
-    report = await _audit(tmp_path)
-    assert "reserves" not in report.audit
 
 
 async def test_a_round_whose_call_never_went_out_is_not_audited(tmp_path):

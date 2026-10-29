@@ -39,6 +39,8 @@ CANCELS = [
     ("cancel_portrait_refresh", ()),
     ("cancel_signup_close_timer", ()),
     ("cancel_rounds", ([5],)),
+    # A wizard's timer, which the signup switch-off disarms whether or not it has fired.
+    ("disarm", ("signup_inactivity", "101")),
 ]
 
 CANCEL_CASES = [pytest.param(name, args, id=name) for name, args in CANCELS]
@@ -137,19 +139,6 @@ def test_a_store_that_cannot_be_listed_removes_nothing():
     service._scheduler.remove_job.assert_not_called()
 
 
-def test_cancel_rounds_takes_the_season_end_job_in_the_same_pass():
-    """A season's cancellation removes round 5's job and the stale season-end job a store still
-    carries in the one pass, listing the store once."""
-    jobs = [_round_job("results_r5", 5), SimpleNamespace(id="season_end_3", kwargs={})]
-    service = _service(jobs)
-
-    service.cancel_rounds([5], season_end=True)
-
-    removed = [call.args[0] for call in service._scheduler.remove_job.call_args_list]
-    assert sorted(removed) == ["results_r5", "season_end_3"]
-    assert service._scheduler.get_jobs.call_count == 1
-
-
 def test_cancel_round_gives_the_jobs_it_removed():
     """Round 5 carries its results submission and its clean-up, and round 6 its results
     submission. Cancelling round 5 gives the two jobs it removed, so that a refused cancellation
@@ -166,7 +155,8 @@ def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_th
     """Rounds 5 and 6 each carry two jobs, round 7 one, and a stale season-end job stands. A
     season's cancellation of rounds 5 and 6, the season-end job with them, gives the jobs it
     removed of each round, by round: round 5's two and round 6's two. The season-end job is
-    removed but left out of what it gives, and round 7 is not named."""
+    removed but left out of what it gives, in the same pass, listing the store once, and round 7
+    is not named."""
     jobs = [
         _round_job("results_r5", 5), _round_job("rsvp_cleanup_r5", 5),
         _round_job("results_r6", 6), _round_job("cleanup_r6", 6),
@@ -180,7 +170,10 @@ def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_th
         5: ["results_r5", "rsvp_cleanup_r5"],
         6: ["cleanup_r6", "results_r6"],
     }
-    assert "season_end_3" in [call.args[0] for call in service._scheduler.remove_job.call_args_list]
+    assert sorted(call.args[0] for call in service._scheduler.remove_job.call_args_list) == [
+        "cleanup_r6", "results_r5", "results_r6", "rsvp_cleanup_r5", "season_end_3",
+    ]
+    assert service._scheduler.get_jobs.call_count == 1
 
 
 def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():

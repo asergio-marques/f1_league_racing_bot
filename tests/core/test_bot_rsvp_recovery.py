@@ -284,25 +284,21 @@ async def test_a_switched_off_module_s_deadline_is_not_caught_up(tmp_path):
     assert await _recover(bot) == 0
 
 
-async def test_a_deadline_that_placed_reserves_is_not_run_again(tmp_path):
+@pytest.mark.parametrize("placed", [
+    pytest.param(True, id="reserves placed"),
+    pytest.param(False, id="no reserves placed"),
+])
+async def test_a_deadline_marked_as_run_is_not_run_again(tmp_path, placed):
     """A second run would redistribute seats the division has already been told about. The
     deadline that ran is marked as run on the call, its announcement recorded beside the mark:
-    the restart asks nothing."""
+    the restart asks nothing, whether or not it placed a reserve.
+
+    Issue #429. A deadline with no reserve to place writes nothing onto a driver, but it marks
+    the call as run like any other — and that is what says it ran. Judged by the placements it
+    looked as if it never had, and every restart before the round's check-in came down posted
+    another "No reserves were placed"."""
     db_path = await _make_db(
-        tmp_path, hours_until_round=-1, placed=True, distribution_msg_id="990099", marked=True
-    )
-    bot = _bot(db_path)
-
-    assert await _recover(bot) == 0
-
-
-async def test_a_deadline_that_placed_no_reserves_is_not_run_again(tmp_path):
-    """Issue #429. A deadline with no reserve to place writes nothing onto a driver, but it
-    marks the call as run like any other — and that is what says it ran. Judged by the
-    placements it looked as if it never had, and every restart before the round's check-in came
-    down posted another "No reserves were placed"."""
-    db_path = await _make_db(
-        tmp_path, hours_until_round=-1, distribution_msg_id="990099", marked=True
+        tmp_path, hours_until_round=-1, placed=placed, distribution_msg_id="990099", marked=True
     )
     bot = _bot(db_path)
 
@@ -365,21 +361,16 @@ async def test_a_restart_after_a_deadline_that_placed_nobody_posts_no_second_not
     assert len(check_in.sent) == 1, "a restart posted the deadline's notice again"
 
 
-async def test_a_cancelled_round_s_deadline_is_not_run(tmp_path):
-    """Nobody is racing it, so there is nothing to distribute into."""
-    db_path = await _make_db(
-        tmp_path, hours_until_round=-1, round_status="CANCELLED"
-    )
-    bot = _bot(db_path)
-
-    assert await _recover(bot) == 0
-
-
-async def test_a_season_not_running_has_no_deadline_to_catch_up(tmp_path):
-    """A season in setup has not started; its check-in calls are not yet owed."""
-    db_path = await _make_db(
-        tmp_path, hours_until_round=-1, season_status="SETUP"
-    )
+@pytest.mark.parametrize("status", [
+    # Nobody is racing it, so there is nothing to distribute into.
+    pytest.param({"round_status": "CANCELLED"}, id="a cancelled round"),
+    # A season in setup has not started; its check-in calls are not yet owed.
+    pytest.param({"season_status": "SETUP"}, id="a season not running"),
+])
+async def test_a_round_not_to_be_run_has_no_deadline_to_catch_up(tmp_path, status):
+    """A round called off, or one of a season not yet running, has its passed deadline left
+    alone: the restart asks nothing."""
+    db_path = await _make_db(tmp_path, hours_until_round=-1, **status)
     bot = _bot(db_path)
 
     assert await _recover(bot) == 0

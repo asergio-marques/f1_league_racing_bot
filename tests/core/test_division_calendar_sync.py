@@ -203,18 +203,6 @@ def _outcome(interaction) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def test_the_calendar_is_reposted(tmp_path):
-    """The calendar is posted once, by the queue's job, and the acknowledgement is updated to
-    say so."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    post = await _sync(cog, interaction)
-
-    post.assert_awaited_once()
-    assert _outcome(interaction) == "✅ Calendar for **Pro** reposted as text."
-
-
 async def test_it_is_a_commanded_posting(tmp_path):
     """So a render fault refuses rather than quietly substituting text (XIV.7)."""
     cog = _make_cog()
@@ -261,16 +249,6 @@ async def test_render_notices_are_shown_and_logged(tmp_path):
     assert "round 12 did not fit" in _replied(interaction)
     logged = _logged(cog)[-1]
     assert "notice: round 12 did not fit" in logged
-
-
-async def test_a_successful_sync_is_logged(tmp_path):
-    cog = _make_cog()
-
-    await _sync(cog, _interaction())
-
-    logged = _logged(cog)[-1]
-    assert "/division calendar-sync | Success" in logged
-    assert "posted as: text" in logged
 
 
 async def test_a_server_with_no_season_is_refused(tmp_path):

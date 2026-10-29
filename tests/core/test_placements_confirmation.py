@@ -2,7 +2,8 @@
 
 `/season placements-review` runs only while the season is in Placements. Its button — and the
 confirmation behind it — is withheld while any signup is unsettled or any division lacks its
-lineup or calendar channel. Confirming commits every placement made.
+lineup or calendar channel. Confirming commits every placement made, which
+`test_season_service_on_forms.py` pins on the approval's save.
 """
 from __future__ import annotations
 
@@ -355,34 +356,3 @@ async def test_the_confirmation_refuses_a_season_no_longer_in_placements(db_path
 
     assert "no longer in placements" in interaction.followup.send.await_args.args[0]
     cog.bot.change_queue.ask.assert_not_awaited()
-
-
-# ── Committing ─────────────────────────────────────────────────────────────────────
-
-
-async def test_confirming_commits_every_placement_of_the_season(db_path):
-    """The approval's one save commits every placement of the season on the connection it is
-    handed, and the save commits it (#439)."""
-    async with get_connection(db_path) as db:
-        for profile_id in (1, 2):
-            await db.execute(
-                "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
-                "VALUES (?, ?, 'ASSIGNED')",
-                (profile_id, str(profile_id)),
-            )
-            await db.execute(
-                "INSERT INTO driver_season_assignments "
-                "(driver_profile_id, season_id, division_id, committed) VALUES (?, ?, 1, 0)",
-                (profile_id, SEASON_ID),
-            )
-        await db.commit()
-
-    from leaguebot.core.services.season_service import commit_placements_on
-
-    async with get_connection(db_path) as db:
-        assert await commit_placements_on(db, SEASON_ID) == 2
-        await db.commit()
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT committed FROM driver_season_assignments")
-        assert [row["committed"] for row in await cursor.fetchall()] == [1, 1]

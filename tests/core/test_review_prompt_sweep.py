@@ -166,23 +166,6 @@ def _lapses(env: Any) -> list[str]:
     return [line for line in env.bot.log_channel.sent if line.startswith("⌛ ")]
 
 
-async def test_a_standing_prompt_is_deleted(league):
-    """Alex's review question stands in channel 700 when the bot starts. The sweep deletes
-    nothing itself and asks one take-down of the queue; once the queue runs, the question is
-    gone."""
-    question = post_in(league.channel, BOT_USER)
-    await _store(league, question.id)
-
-    await _recover_expired_review_prompts(league.bot)
-
-    assert league.channel.deleted == []
-    assert len(await _take_downs(league)) == 1
-
-    await run_queue(league.bot)
-
-    assert league.channel.deleted == [question]
-
-
 async def test_the_notice_pings_the_reviewer(league):
     """Alex's question stands at a restart. Once the queue runs, channel 700 is told the review
     expired, pinging Alex and naming `/season placements-review`."""
@@ -197,13 +180,16 @@ async def test_the_notice_pings_the_reviewer(league):
 
 
 async def test_the_row_is_cleared(league):
-    """Left behind, it would be swept again on every restart for ever. Once the queue has taken
-    Alex's review down, its row is gone and the queue is not stopped."""
+    """Alex's review question stands in channel 700 when the bot starts. The sweep deletes
+    nothing itself and asks one take-down of the queue; once the queue runs, the question is
+    gone, and so is its row — left behind, it would be swept again on every restart for ever —
+    and the queue is not stopped."""
     question = post_in(league.channel, BOT_USER)
     await _store(league, question.id)
 
     await _restart(league)
 
+    assert league.channel.deleted == [question]
     assert await _rows(league.db_path) == []
     assert await stopped_job(league.db_path) is None
 

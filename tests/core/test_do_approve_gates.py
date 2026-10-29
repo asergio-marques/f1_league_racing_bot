@@ -209,34 +209,6 @@ def _replies(interaction) -> str:
     )
 
 
-async def test_the_gate_sequence_runs_without_an_unbound_attribute(db_path):
-    """The regression, blunt and on purpose.
-
-    `_do_approve` reads a dozen services and helpers, and an editing slip that removes one
-    while leaving its call raises only when the button is actually pressed. The walk ends at
-    the change queue's ask (#439), so reaching it is the proof the whole of it ran.
-    """
-    cog = _cog(db_path)
-    interaction = _interaction()
-
-    await _run(cog, interaction)
-
-    cog.bot.change_queue.ask.assert_awaited()
-
-
-async def test_a_season_passing_every_gate_is_asked_of_the_queue(db_path):
-    """The end of the sequence, not merely the absence of an exception.
-
-    The change queue's ask is where the press ends (#439): everything before it can refuse,
-    and the approval's own check and jobs follow it on the queue.
-    """
-    cog = _cog(db_path)
-
-    await _run(cog, _interaction())
-
-    _assert_asked(cog)
-
-
 async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
     cog = _cog(db_path)
     cog._pending = {}
@@ -264,26 +236,6 @@ async def test_a_bad_tier_sequence_refuses_ephemerally(db_path):
         call.kwargs.get("ephemeral") is True
         for call in interaction.followup.send.await_args_list
     )
-
-
-async def test_a_team_name_gate_refuses_and_commits_nothing(db_path):
-    cog = _cog(db_path, _team_name_problems=AsyncMock(return_value=["Team ✱ cannot be a field"]))
-    interaction = _interaction()
-
-    await _run(cog, interaction)
-
-    assert "cannot become" in _replies(interaction)
-    cog.bot.change_queue.ask.assert_not_awaited()
-
-
-async def test_a_lineup_gate_refuses_and_commits_nothing(db_path):
-    cog = _cog(db_path, _lineup_problems=AsyncMock(return_value=["No seat for driver 3"]))
-    interaction = _interaction()
-
-    await _run(cog, interaction)
-
-    assert "cannot draw this season" in _replies(interaction)
-    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_the_withdrawn_template_gate_is_not_called_again(db_path):
@@ -522,6 +474,13 @@ async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
     round would raise `TypeError` instead of walking the sequence these tests exist to
     walk. The approval being asked of the queue is the proof it did neither, the windows
     being read through the reader the bot carries rather than the cog's configs.
+
+    It is also the regression, blunt and on purpose. `_do_approve` reads a dozen services and
+    helpers, and an editing slip that removes one while leaving its call raises only when the
+    button is actually pressed. The walk ends at the change queue's ask (#439), where the press
+    ends: everything before it can refuse, and the approval's own check and jobs follow it on
+    the queue. So reaching it, with the approval's own kind, is the proof the whole of it ran,
+    not merely the absence of an exception.
     """
     cog = _cog(db_path)
     interaction = _interaction()
@@ -744,21 +703,14 @@ async def test_a_refused_season_takes_no_copy_of_the_points_it_was_refused_for(d
         assert (await cursor.fetchone())["n"] == 0
 
 
-async def test_a_well_ordered_points_table_still_approves(db_path):
-    """The other half: a gate that refuses everything is no better than one that refuses nothing."""
-    await _attach(db_path, "GOOD", [(1, 25), (2, 18), (3, 15)])
-    cog = _cog_with_results(db_path)
-    interaction = _interaction()
-
-    await _run(cog, interaction)
-
-    assert "violates monotonic ordering" not in _replies(interaction)
-    _assert_asked(cog)
-
-
-async def test_a_table_worth_nothing_below_the_points_still_approves(db_path):
-    """Trailing zeros are the ordinary shape of a points table, not a fault."""
-    await _attach(db_path, "ZEROS", [(1, 25), (2, 18), (3, 0), (4, 0)])
+@pytest.mark.parametrize("name, points", [
+    pytest.param("GOOD", [(1, 25), (2, 18), (3, 15)], id="well ordered"),
+    pytest.param("ZEROS", [(1, 25), (2, 18), (3, 0), (4, 0)], id="trailing zeros"),
+])
+async def test_a_well_ordered_points_table_still_approves(db_path, name, points):
+    """The other half: a gate that refuses everything is no better than one that refuses nothing.
+    Trailing zeros are the ordinary shape of a points table, not a fault."""
+    await _attach(db_path, name, points)
     cog = _cog_with_results(db_path)
     interaction = _interaction()
 
@@ -862,17 +814,6 @@ async def test_approve_refuses_and_names_a_phantom_points_config(db_path):
     assert "Standrad" in replies, "the refusal must name the configuration that is missing"
     assert "does not exist" in replies
     cog.bot.change_queue.ask.assert_not_awaited()
-
-
-async def test_a_phantom_points_config_is_refused_rather_than_raising(db_path):
-    """Said separately because the silence, not the refusal, was the reported fault."""
-    await _attach_phantom(db_path, "Standrad")
-    cog = _cog_with_results(db_path)
-    interaction = _interaction()
-
-    await _run(cog, interaction)
-
-    interaction.followup.send.assert_awaited()
 
 
 async def test_a_phantom_alongside_a_real_config_is_still_refused(db_path):

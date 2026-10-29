@@ -253,6 +253,9 @@ async def test_a_cancelled_division_does_not_hold_the_season_open(tmp_path) -> N
 # ---------------------------------------------------------------------------
 
 async def test_a_division_finishes_only_once_nothing_is_outstanding(tmp_path) -> None:
+    """The return value says whether *this* call moved it, which is what lets a caller avoid
+    announcing a division finishing twice: refreshing a division already finished reports no
+    change."""
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path)
     div_id, round_ids = built["Div A"]
@@ -267,23 +270,6 @@ async def test_a_division_finishes_only_once_nothing_is_outstanding(tmp_path) ->
     assert await _division_status(db_path, div_id) == "FINISHED"
     # idempotent: a second call reports it did nothing
     assert await _refresh(db_path, div_id) is False
-
-
-@pytest.mark.parametrize("untouchable", ["SETUP", "CANCELLED"])
-async def test_refresh_never_disturbs_a_setup_or_cancelled_division(tmp_path, untouchable) -> None:
-    """Neither is a division that has *finished*, however empty its round list looks."""
-    db_path = str(tmp_path / "bot.db")
-    _, built = await _seed(db_path, rounds_per_division=0)
-    div_id, _ = built["Div A"]
-
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE divisions SET status = ? WHERE id = ?", (untouchable, div_id)
-        )
-        await db.commit()
-
-    assert await _refresh(db_path, div_id) is False
-    assert await _division_status(db_path, div_id) == untouchable
 
 
 async def test_activating_a_season_activates_its_divisions(tmp_path) -> None:

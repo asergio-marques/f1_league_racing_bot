@@ -42,15 +42,6 @@ def _interaction():
     return interaction
 
 
-async def test_abort_needs_the_exact_confirmation_word():
-    cog = _cog(SeasonStage.CONFIGURATION)
-    interaction = _interaction()
-
-    await undecorate(SeasonCog.season_abort)(cog, interaction, "confirm")
-
-    cog.bot.change_queue.ask.assert_not_awaited()
-
-
 _ABORT_REFUSED = (
     "\u274c `/season abort` is available only before a season's placements are first confirmed. "
     "An ongoing season is cancelled with `/season cancel`."

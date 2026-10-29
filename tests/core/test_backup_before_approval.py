@@ -10,14 +10,16 @@ The rule with teeth is the timing. The question is given **what remains** of the
 window rather than a window of its own, so a review whose question goes unanswered expires
 exactly when it would have expired anyway. Anything else would let a manager hold a review
 open indefinitely by not answering, and approve a season the report no longer describes.
+`test_approval_backup_offer.py::test_the_question_inherits_what_is_left_of_the_review` pins it,
+both what the approval hands the question and the real view keeping that timeout, and that
+file holds the cases where no question is asked at all and the answers that let the
+approval go on.
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
-
-import pytest
 
 from leaguebot.core.cogs.season_cog import (
     SeasonCog,
@@ -65,27 +67,6 @@ def _later(seconds: float) -> datetime:
 # ── When the question is asked at all ─────────────────────────────────────
 
 
-async def test_no_question_outside_test_mode():
-    """A real league's approval is not interrupted to offer it a testing convenience."""
-    cog = _cog(test_mode=False)
-    interaction = _interaction()
-
-    assert await cog._offer_backup_before_approving(
-        interaction, _later(300)
-    ) is True
-    interaction.followup.send.assert_not_awaited()
-
-
-async def test_no_question_where_the_server_has_no_configuration():
-    cog = _cog()
-    cog.bot.config_service.get_server_config = AsyncMock(return_value=None)
-    interaction = _interaction()
-
-    assert await cog._offer_backup_before_approving(
-        interaction, _later(300)
-    ) is True
-
-
 async def test_the_question_is_asked_under_test_mode(monkeypatch):
     cog = _cog()
     interaction = _interaction()
@@ -107,27 +88,6 @@ async def test_the_question_is_asked_under_test_mode(monkeypatch):
 
 
 # ── The window, which the question shares rather than extends ─────────────
-
-
-async def test_the_question_is_given_what_is_left_of_the_window(monkeypatch):
-    """Not a fresh five minutes. A review that has already stood for four minutes leaves
-    the question one, and a manager cannot hold a review open by not answering."""
-    cog = _cog()
-    captured: dict = {}
-
-    original_init = _BackupBeforeApprovalView.__init__
-
-    def _capture(self, *args, **kwargs):
-        original_init(self, *args, **kwargs)
-        captured["timeout"] = self.timeout
-        self.answer = "skip"
-
-    monkeypatch.setattr(_BackupBeforeApprovalView, "__init__", _capture)
-    monkeypatch.setattr(_BackupBeforeApprovalView, "wait", AsyncMock())
-
-    await cog._offer_backup_before_approving(_interaction(), _later(60))
-
-    assert 55 < captured["timeout"] <= 60, captured["timeout"]
 
 
 async def test_an_already_expired_window_approves_nothing():
@@ -169,18 +129,6 @@ async def _answered(cog, monkeypatch, answer: str):
     monkeypatch.setattr(_BackupBeforeApprovalView, "wait", AsyncMock())
     result = await cog._offer_backup_before_approving(interaction, _later(300))
     return result, interaction
-
-
-async def test_declining_still_approves(monkeypatch):
-    result, _interaction_ = await _answered(_cog(), monkeypatch, "skip")
-
-    assert result is True
-
-
-async def test_saving_still_approves(monkeypatch):
-    result, _interaction_ = await _answered(_cog(), monkeypatch, "save")
-
-    assert result is True
 
 
 async def test_cancelling_approves_nothing(monkeypatch):

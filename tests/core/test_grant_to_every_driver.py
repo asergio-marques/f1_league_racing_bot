@@ -59,6 +59,8 @@ def _guild(*, members: dict | None = None, role_present: bool = True):
 
 
 async def test_every_driver_the_driver_role_belongs_to_is_given_it(db_path):
+    """Nobody else is given it: not a signup still in review, not a former driver, and not a
+    test driver, who holds no role at all."""
     guild = _guild()
 
     outcome = await PlacementService(db_path).grant_to_every_driver(guild, ROLE_ID)
@@ -67,15 +69,6 @@ async def test_every_driver_the_driver_role_belongs_to_is_given_it(db_path):
     assert outcome.not_granted == []
     for member in guild._members.values():
         member.add_roles.assert_awaited_once_with(guild._role, reason="League role replaced")
-
-
-async def test_nobody_else_is_given_it(db_path):
-    """Not a signup still in review, not a former driver, and not a test driver, who holds no
-    role at all."""
-    guild = _guild()
-
-    await PlacementService(db_path).grant_to_every_driver(guild, ROLE_ID)
-
     asked = sorted(call.args[0] for call in guild.get_member.call_args_list)
     assert asked == [1001, 1002]
 

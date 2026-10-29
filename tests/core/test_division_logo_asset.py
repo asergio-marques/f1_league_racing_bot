@@ -27,7 +27,6 @@ from leaguebot.image.models.image_constants import (
     BLANK_FALLBACK_ASSET_CLASSES,
     FALLBACK_ASSET_NAME,
     NOTICE_ASSET_FALLBACK_USED,
-    NOTICE_OPTIONAL_FIELD_EMPTIED,
     NOTICE_PACKAGED_ASSET_OFF_SHAPE,
     PACKAGED_ASSET_ASPECTS,
     packaged_directory_for,
@@ -130,6 +129,13 @@ def test_a_division_without_a_logo_is_told_nothing_at_all(league_logos, packaged
     fallback one, and not the off-shape one. Reporting either would mark every graphic the
     league posts over an element they never asked for, and the only cure available to them
     would be to supply the very file the bot already ships.
+
+    Silence is not the same as removing the field, and the difference is load-bearing: an
+    emptied field raises `OPTIONAL_FIELD_EMPTIED`, which is a notice — the thing this class must
+    not produce. Drawing the blank is what keeps the slot resolved and quiet at once. And a
+    division always has a name, so the datum is never absent and the slug never empty:
+    resolution ends at FOUND or at the packaged blank, never at MISSING, and a league cannot
+    abandon a render by not having drawn a logo.
     """
     root, result = _render(league_logos)
 
@@ -156,30 +162,6 @@ def test_the_blank_is_silent_however_the_slot_is_shaped(league_logos, packaged):
 
     assert NOTICE_PACKAGED_ASSET_OFF_SHAPE not in _kinds(result)
     assert result.notices == []
-
-
-def test_the_slot_is_filled_rather_than_emptied(league_logos, packaged):
-    """Silence is not the same as removing the field, and the difference is load-bearing.
-
-    An emptied field raises `OPTIONAL_FIELD_EMPTIED`, which is a notice — the thing this
-    class must not produce. Drawing the blank is what keeps the slot resolved and quiet at
-    once.
-    """
-    root, result = _render(league_logos)
-
-    assert NOTICE_OPTIONAL_FIELD_EMPTIED not in _kinds(result)
-    assert _href(root) is not None
-
-
-def test_a_missing_logo_is_never_fatal(league_logos, packaged):
-    """A division always has a name, so the datum is never absent and the slug never empty.
-
-    Resolution therefore ends at FOUND or at the packaged blank, never at MISSING, and a
-    league cannot abandon a render by not having drawn a logo.
-    """
-    _, result = _render(league_logos, datum="A Division Nobody Drew")
-
-    assert result.unresolved == []
 
 
 # ── the silence is this class's alone ─────────────────────────────────────

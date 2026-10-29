@@ -195,14 +195,6 @@ async def test_a_driver_not_in_that_division_is_refused_by_division_name(tmp_pat
     with pytest.raises(ValueError, match="Division 2"):
         await _unassign(_service(db_path), DIVISION_B)
 
-
-async def test_a_refused_unassignment_leaves_the_seat_alone(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seat(db_path, DIVISION_A)
-
-    with pytest.raises(ValueError):
-        await _unassign(_service(db_path), DIVISION_B)
-
     assert await _seat_occupant(db_path, DIVISION_A) == PROFILE_ID
 
 
@@ -213,14 +205,18 @@ async def test_a_refused_unassignment_leaves_the_seat_alone(tmp_path):
 
 async def test_the_seat_is_freed_and_the_assignment_deleted(tmp_path):
     """Both. The seat is what the lineup graphic draws from, so a deleted assignment with
-    an occupied seat would draw a driver no longer of the division."""
+    an occupied seat would draw a driver no longer of the division. Here the driver has left
+    the server: there is no member to revoke roles from, but the seat and the assignment are
+    the league's record and must still be put right."""
     db_path = await _make_db(tmp_path)
     await _seat(db_path, DIVISION_A)
+    service = _service(db_path)
 
-    await _unassign(_service(db_path))
+    await _unassign(service, DIVISION_A, member=None)
 
     assert await _seat_occupant(db_path, DIVISION_A) is None
     assert await _assignments(db_path) == 0
+    service._revoke_roles.assert_not_awaited()
 
 
 async def test_the_division_is_named_in_the_result(tmp_path):
@@ -317,19 +313,6 @@ async def test_a_team_with_no_role_mapping_revokes_only_the_division_role(tmp_pa
 
     service._revoke_roles.assert_awaited_once()
     assert ROLE_ID not in service._revoke_roles.await_args.args
-
-
-async def test_a_driver_who_has_left_the_server_is_still_unassigned(tmp_path):
-    """No member to revoke roles from, but the seat and the assignment are the league's
-    record and must still be put right."""
-    db_path = await _make_db(tmp_path)
-    await _seat(db_path, DIVISION_A)
-    service = _service(db_path)
-
-    await _unassign(service, DIVISION_A, member=None)
-
-    assert await _assignments(db_path) == 0
-    service._revoke_roles.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

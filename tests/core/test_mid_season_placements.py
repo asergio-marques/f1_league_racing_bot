@@ -610,26 +610,6 @@ async def test_a_lineup_discord_refuses_after_a_confirmation_stops_the_queue_and
     assert len(league.texts(am_lineup)) == before + 1
 
 
-async def test_a_clean_confirmation_reports_nothing_undone(tmp_path, monkeypatch):
-    """On `placing_league`, Admin confirms the placements mid-season and the queue runs with
-    nothing refused: the acknowledgement is updated to say both placements are confirmed and the
-    season is ongoing again, with no "not everything could be done" section, and the log
-    channel's confirmation line names nothing not done."""
-    from tests.support.change_queue import run_queue
-
-    league, press = await _placing(tmp_path, monkeypatch)
-
-    await run_queue(league.bot)
-
-    updated = "\n".join(str(call.args[0] if call.args else call.kwargs.get("content", ""))
-                        for call in press.edit_original_response.await_args_list)
-    assert "✅ 2 placement(s) confirmed. The season is ongoing again." in updated
-    assert "Not everything could be done" not in updated
-    [line] = [line for line in league.bot.log_channel.sent
-              if "| /season placements-review | Confirmed" in line]
-    assert "not done" not in line
-
-
 # ── The mid-season button (#439, slice 6b) ─────────────────────────────────────────
 #
 # The button reads its review from the review's row, not from its view's memory, and deletes
@@ -766,24 +746,6 @@ async def test_the_reviewer_confirms_the_mid_season_placements(tmp_path, monkeyp
         interaction, what=_review_button("Confirm placements", "/season placements-review"),
         fingerprint={AREA: "as reviewed"},
     )
-    assert env.channel.deleted == []
-    assert await _take_downs(env) == []
-
-
-async def test_another_league_manager_may_not_confirm_the_mid_season_placements(tmp_path):
-    """Sam, a league manager who neither ran Alex's mid-season review nor holds the league's
-    admin role, presses ✅ Confirm placements: he is refused privately, told nothing has been
-    confirmed, and the review is left alone: nothing deleted, no take-down asked."""
-    from tests.support.change_queue import acknowledgement
-
-    env = await _standing_mid_season(tmp_path)
-    view, cog = _confirm_view(env)
-    interaction = _press(env, 99, "Sam")
-
-    await type(view).approve(view, interaction, MagicMock())
-
-    getattr(cog, CONFIRM).assert_not_awaited()
-    assert "Nothing has been confirmed" in acknowledgement(interaction)
     assert env.channel.deleted == []
     assert await _take_downs(env) == []
 

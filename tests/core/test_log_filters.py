@@ -61,15 +61,6 @@ def test_a_late_autocomplete_is_recorded_as_a_warning_without_a_traceback(log_fi
     assert record.exc_text is None
 
 
-def test_the_command_name_survives_the_rewrite(log_filter):
-    record = _record(_discord_error(UNKNOWN_INTERACTION), MSG_2_5, ("images test lineup",))
-
-    log_filter.filter(record)
-
-    assert "images test lineup" in record.getMessage()
-    assert "expired" in record.getMessage()
-
-
 def test_the_rewrite_survives_either_libraries_message_shape(log_filter):
     """The Pi imports apt's discord.py 2.5; CI installs the pinned 2.7.
 
@@ -88,6 +79,8 @@ def test_the_rewrite_survives_either_libraries_message_shape(log_filter):
     # Neither raises, and both still name the command.
     assert "images test lineup" in old.getMessage()
     assert "images test lineup" in new.getMessage()
+    # The rewrite says the interaction expired.
+    assert "expired" in old.getMessage()
     # The 2.7 form keeps the detail it carries.
     assert "123" in new.getMessage() and "456" in new.getMessage()
 

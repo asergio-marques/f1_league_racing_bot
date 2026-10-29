@@ -439,6 +439,10 @@ async def test_a_calendar_discord_refuses_stops_the_queue_and_puts_nothing_on_th
     await retry_job(league.bot)
     assert len(league.texts(PRO_CH.calendar)) == 1
     assert CANCELLED in reply(interaction)
+    # One success line records the cancellation, after the last job.
+    assert len(_success_lines(league)) == 1
+    jobs = await _jobs(league)
+    assert jobs[-1]["name"] == "close" and all(job["done_at"] for job in jobs)
 
 
 async def test_the_admin_is_told_at_once_naming_the_job_and_the_reply_is_updated_with_the_outcome(
@@ -511,6 +515,10 @@ async def test_a_round_cancel_while_its_division_s_cancellation_is_in_hand_is_re
     assert await _status(league) == "NOT_RUN"
 
 
+@pytest.mark.parametrize("first_done", [
+    pytest.param(False, id="its job waiting"),
+    pytest.param(True, id="only its close left"),
+])
 @pytest.mark.parametrize(("kind", "stage"), [
     pytest.param(SEASON_COMPLETE_KIND, "PENDING_COMPLETION",
                  id="its completion, the season pending completion"),
@@ -518,47 +526,26 @@ async def test_a_round_cancel_while_its_division_s_cancellation_is_in_hand_is_re
     pytest.param(SEASON_ABORT_KIND, "ONGOING", id="its abort"),
 ])
 async def test_a_round_cancel_is_refused_at_once_while_its_season_s_end_is_in_hand(
-    tmp_path, kind, stage,
+    tmp_path, kind, stage, first_done,
 ):
     """Season 3's completion, its cancellation or its abort waits on the queue; for the
     completion, the season has moved to pending completion, as it has by then. Cancelling Pro's
     round 3 is refused at once, naming the season's end and its job, ahead of the refusal of a
     season no longer ongoing: nothing is asked, nothing unarmed, the round stands, and one
-    refusal line is written."""
+    refusal line is written. Where the season's end has done its first job, leaving only its
+    close, it is refused in the same words with " (job #N)" left out, as there is no job but the
+    close to name."""
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE seasons SET stage = ? WHERE id = ?", stage, SEASON_ID)
-    job = await seed_season_end(league.db_path, kind)
+    job = await seed_season_end(league.db_path, kind, first_done=first_done)
 
     interaction = await _asked(league)
 
-    assert reply(interaction) == SEASON_END_IN_HAND[kind].format(job=job)
-    assert len(_refusal_lines(league)) == 1
-    assert await _changes_of(league) == []
-    assert league.unarmed == []
-    assert await _status(league) == "NOT_RUN"
-
-
-@pytest.mark.parametrize(("kind", "stage"), [
-    pytest.param(SEASON_COMPLETE_KIND, "PENDING_COMPLETION",
-                 id="its completion, the season pending completion"),
-    pytest.param(SEASON_CANCEL_KIND, "ONGOING", id="its cancellation"),
-    pytest.param(SEASON_ABORT_KIND, "ONGOING", id="its abort"),
-])
-async def test_a_round_cancel_refused_while_only_its_season_s_end_close_is_left_names_no_job(
-    tmp_path, kind, stage,
-):
-    """Season 3's completion, its cancellation or its abort has done its first job, leaving only
-    its close. Cancelling Pro's round 3 is refused at once in the same words, with " (job #N)"
-    left out, as there is no job but the close to name: nothing is asked, nothing unarmed, the
-    round stands, and one refusal line is written."""
-    league = await ongoing_league(tmp_path)
-    await league.write("UPDATE seasons SET stage = ? WHERE id = ?", stage, SEASON_ID)
-    await seed_season_end(league.db_path, kind, first_done=True)
-
-    interaction = await _asked(league)
-
-    assert reply(interaction) == SEASON_END_IN_HAND[kind].replace(" (job #{job})", "")
-    assert "job #" not in reply(interaction)
+    if first_done:
+        assert reply(interaction) == SEASON_END_IN_HAND[kind].replace(" (job #{job})", "")
+        assert "job #" not in reply(interaction)
+    else:
+        assert reply(interaction) == SEASON_END_IN_HAND[kind].format(job=job)
     assert len(_refusal_lines(league)) == 1
     assert await _changes_of(league) == []
     assert league.unarmed == []
@@ -1144,22 +1131,6 @@ async def test_a_module_turned_off_before_its_notice_drops_the_notice(tmp_path):
     assert (await _job(league, "notify_forecast"))["result"] == {"dropped": True}
     assert "forecast" not in reply(interaction)
     assert len(league.texts(PRO_CH.results)) == 1
-
-
-async def test_one_success_line_records_the_cancellation_after_the_last_job(tmp_path):
-    league = await ongoing_league(tmp_path)
-    _refused(league, PRO_CH.calendar)
-    await _asked(league)
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == "post_calendar"
-    assert _success_lines(league) == []
-
-    league.channel(PRO_CH.calendar).send_fails = None
-    await retry_job(league.bot)
-
-    assert len(_success_lines(league)) == 1
-    jobs = await _jobs(league)
-    assert jobs[-1]["name"] == "close" and all(job["done_at"] for job in jobs)
 
 
 @pytest.mark.parametrize("finishes", [

@@ -121,16 +121,6 @@ async def _run_through(league: Any, name: str) -> None:
     raise AssertionError(f"the approval's job {name} never finished: {await _jobs(league)}")
 
 
-async def _run_take_down(league: Any) -> None:
-    """Run the queue a job at a time until the review's take-down, which the press asked ahead
-    of the approval, has taken the review down and forgotten its row."""
-    for _ in range(100):
-        if not await league.rows("SELECT * FROM season_review_prompts"):
-            return
-        await run_queue(league.bot, steps=1)
-    raise AssertionError("the review was never taken down")
-
-
 async def _stopped_at(league: Any) -> str | None:
     job = await stopped_job(league.db_path)
     return job["name"] if job else None
@@ -336,22 +326,6 @@ async def test_a_restart_between_the_batch_notice_and_its_deletion_deletes_it_an
             _posted_once(league, cid)
 
 
-async def test_a_restart_while_the_approval_is_in_hand_does_not_say_nothing_was_confirmed(
-    tmp_path, monkeypatch,
-):
-    league = await _league_for(tmp_path, monkeypatch)
-    await _pressed(league)
-    assert (await _approval(league))["state"] == "QUEUED"
-
-    await league.restart()
-    await run_queue(league.bot)
-
-    assert not any("expired while the bot was restarting" in text
-                   for text in league.texts(REVIEW_CHANNEL))
-    assert "nothing has been confirmed" not in league.log().lower()
-    assert (await league.season())["stage"] == "ONGOING"
-
-
 async def test_a_stop_before_the_save_leaves_no_timed_work_armed_for_a_season_in_placements(
     tmp_path, monkeypatch,
 ):
@@ -434,23 +408,6 @@ async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_name
     logged = line.replace(f"<@{LEWIS}>", f"`<@{LEWIS}>`")
     assert f"not done: {logged}" in league.log()
     assert MAX in league.granted
-
-
-async def test_a_lineup_discord_refuses_stops_the_queue_and_once_discarded_is_named(
-    tmp_path, monkeypatch,
-):
-    league = await _league_for(tmp_path, monkeypatch)
-    _refused(league, PRO_CH.lineup)
-    press = await _pressed(league)
-
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == "refresh_lineup"
-    await discard_job(league.bot)
-
-    line = ("**Pro** — its lineup could not be posted. No command posts it again; it is posted "
-            "with the next change to its drivers.")
-    assert line in _not_done(reply(press))
-    assert f"not done: {line}" in league.log()
 
 
 # ── The checks ──────────────────────────────────────────────────────────────────────
@@ -865,26 +822,6 @@ async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_
     assert {cid: league.texts(cid) for cid in league.channels} == before
 
 
-async def test_a_stuck_arming_leaves_the_season_ongoing_and_arms_once_retried(
-    tmp_path, monkeypatch,
-):
-    league = await _league_for(tmp_path, monkeypatch, results=True)
-    league.arming_fails = RuntimeError("the job store is locked")
-    await _pressed(league)
-
-    await run_queue(league.bot)
-
-    assert await _stopped_at(league) == "arm"
-    assert "arming the timed work of season 3" in league.log()
-    assert (await league.season())["stage"] == "ONGOING"
-    assert league.armed == []
-
-    league.arming_fails = None
-    await retry_job(league.bot)
-
-    assert league.armed == [("results", _all_rounds())]
-
-
 #: The refusal of a Discard on the season's arming, privately and in the log channel.
 CANNOT_DISCARD_ARMING = (
     "⛔ This job can't be discarded: without it no round of season 3 would ever run. Fix what "
@@ -903,13 +840,16 @@ async def test_the_season_s_arming_cannot_be_discarded_and_once_retried_arms_eve
     tmp_path, monkeypatch,
 ):
     """The arming fails and stops the queue. A league admin's Discard on it is refused, privately
-    and with one line in the log channel, and the queue stays stopped at the arming. Once the
-    arming is mended, Retry arms every round, and the reply names no timed work left unarmed."""
+    and with one line in the log channel, and the queue stays stopped at the arming, the season
+    left Ongoing. Once the arming is mended, Retry arms every round, and the reply names no timed
+    work left unarmed."""
     league = await _league_for(tmp_path, monkeypatch, results=True)
     press = await _pressed(league)
     await _fail_arm(league)
     await run_queue(league.bot)
     assert await _stopped_at(league) == "arm"
+    assert "arming the timed work of season 3" in league.log()
+    assert (await league.season())["stage"] == "ONGOING"
 
     discarding = await discard_job(league.bot)
 
@@ -1514,31 +1454,6 @@ async def _fail_the_notice_delete(league: Any) -> None:
             )
 
 
-@pytest.mark.parametrize(
-    ("half", "job", "line"),
-    [
-        ("post", "post_batch_notice",
-         "The notice that the season's posts were being made could not be posted."),
-        ("delete", "delete_batch_notice",
-         "The notice that the season's posts were being made could not be deleted"),
-    ],
-)
-async def test_a_batch_notice_discord_refuses_stops_the_queue_and_once_discarded_is_named(
-    tmp_path, monkeypatch, half, job, line,
-):
-    league = await _league_for(tmp_path, monkeypatch)
-    press = await _pressed(league)
-    await (_fail_the_notice_post if half == "post" else _fail_the_notice_delete)(league)
-
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == job
-    await discard_job(league.bot)
-
-    assert any(bullet.startswith(line) for bullet in _not_done(reply(press)))
-    assert f"not done: {line}" in league.log()
-    assert (await _approval(league))["state"] == "DONE"
-
-
 async def test_a_discarded_save_approves_nothing_and_says_to_review_again(tmp_path, monkeypatch):
     league = await _league_for(tmp_path, monkeypatch)
     press = await _pressed(league)
@@ -1620,10 +1535,16 @@ async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
     await discard_job(league.bot)
 
     assert APPROVED in reply(press)
-    assert any(bullet.startswith(line) for bullet in _not_done(reply(press)))
+    if job == "delete_batch_notice":
+        # The bullet goes on to link the notice that stands and to bid it be deleted by hand.
+        whole = re.escape(line) + r" \(https://discord\.test/\d+/\d+\): delete it by hand\."
+        assert any(re.fullmatch(whole, bullet) for bullet in _not_done(reply(press)))
+    else:
+        assert line in _not_done(reply(press))
     confirmed = _confirmed_lines(league)
     logged = line.replace(f"<@{LEWIS}>", f"`<@{LEWIS}>`")  # the log's mentions are in backticks
     assert len(confirmed) == 1 and f"\n  not done: {logged}" in confirmed[0]
+    assert (await _approval(league))["state"] == "DONE"
 
 
 async def test_no_separate_opening_classification_line_is_written(tmp_path, monkeypatch):
@@ -1665,22 +1586,6 @@ async def test_one_line_records_the_approval_after_the_last_job(tmp_path, monkey
         f"Admin (`<@{ADMIN_ID}>`) | /season placements-review | Placements confirmed\n"
         "  season: 3\n  season_id: 7\n" + "―" * 36
     ]
-
-
-async def test_the_review_is_cleared_and_its_prompt_forgotten_once_the_approval_is_asked(
-    tmp_path, monkeypatch,
-):
-    league = await _league_for(tmp_path, monkeypatch)
-    review = await post_review(league)
-
-    await _pressed(league, review=review)
-
-    assert (await _approval(league))["state"] == "QUEUED"
-    assert (await league.season())["stage"] == "PLACEMENTS"
-    await _run_take_down(league)
-    assert await league.rows("SELECT * FROM season_review_prompts") == []
-    for message in [*review.report, review.prompt]:
-        assert ("delete", REVIEW_CHANNEL, message.id) in league.events
 
 
 async def test_a_stop_before_the_save_approves_once_on_restart(tmp_path, monkeypatch):
@@ -1890,6 +1795,10 @@ async def test_an_approval_whose_reply_can_no_longer_be_updated_tells_the_review
     assert _told(league, CHANNEL_APPROVED) == 1
     assert not any("expired while the bot was restarting" in text
                    for text in league.texts(REVIEW_CHANNEL))
+    if cut_off == "a restart":
+        # The approval was in hand at the restart, so nothing says it was not confirmed.
+        assert "nothing has been confirmed" not in league.log().lower()
+        assert (await league.season())["stage"] == "ONGOING"
 
 
 async def test_an_approval_whose_reply_is_updated_tells_the_channel_nothing(

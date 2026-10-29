@@ -252,13 +252,17 @@ async def _nothing_approved(league: ReviewLeague) -> None:
 
 
 async def test_staged_penalties_are_applied(tmp_path):
+    """A 5-second penalty staged for Lewis produces one penalty record, on his race result."""
     league = await review_league(tmp_path)
 
     await _approve_reports(league, staged=[league_penalty(LEWIS)])
 
     assert await stopped_at(league) is None
     assert (await race_rows(league.db_path))[LEWIS]["postrace_time_penalties_ms"] == 5000
-    assert len(await penalty_records(league.db_path)) == 1
+    [record] = await penalty_records(league.db_path)
+    assert record["race_result_id"] == await one(
+        league.db_path, "SELECT id FROM race_session_results WHERE driver_user_id = ?", LEWIS,
+    )
 
 
 async def test_the_round_moves_on_to_appeals(tmp_path):

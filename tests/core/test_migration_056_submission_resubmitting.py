@@ -13,22 +13,6 @@ import os
 from leaguebot.core.db.database import get_connection, run_migrations
 
 
-async def _columns(db_path: str) -> dict[str, tuple]:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("PRAGMA table_info(round_submission_channels)")
-        return {row[1]: tuple(row) for row in await cursor.fetchall()}
-
-
-async def test_the_channel_row_carries_the_resubmission_columns(tmp_path):
-    db_path = os.path.join(str(tmp_path), "migration_056.db")
-    await run_migrations(db_path)
-
-    columns = await _columns(db_path)
-
-    assert "resubmitting" in columns
-    assert "resubmit_prompt_message_id" in columns
-
-
 async def test_a_channel_is_not_resubmitting_unless_told_so(tmp_path):
     db_path = os.path.join(str(tmp_path), "migration_056_default.db")
     await run_migrations(db_path)

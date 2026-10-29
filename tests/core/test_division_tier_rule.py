@@ -32,14 +32,16 @@ def test_a_tier_another_division_holds_is_refused():
     assert _rule()(2, [1, 2]) == "A division with tier **2** already exists in this setup."
 
 
-def test_a_free_tier_is_allowed():
-    assert _rule()(3, [1, 2]) is None
-
-
-def test_the_first_division_of_a_season_may_take_any_tier_from_one():
-    assert _rule()(1, []) is None
-
-
-def test_a_division_keeping_its_own_tier_is_allowed():
-    """`/division amend` of the tier-2 division to tier 2 passes the others' tiers, 1 and 3."""
-    assert _rule()(2, [1, 3]) is None
+@pytest.mark.parametrize(
+    "tier, others",
+    [
+        pytest.param(3, [1, 2], id="free_tier"),
+        pytest.param(1, [], id="first_division_of_a_season"),
+        # `/division amend` of the tier-2 division to tier 2 passes the others' tiers, 1 and 3.
+        pytest.param(2, [1, 3], id="keeping_its_own_tier"),
+    ],
+)
+def test_a_tier_the_rule_admits_is_allowed(tier, others):
+    """A free tier; the first division of a season, which may take any tier from one; and a
+    division keeping its own tier, the caller handing over only the others' tiers."""
+    assert _rule()(tier, others) is None

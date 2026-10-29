@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.services import about_service, hub_service
+from leaguebot.core.services import hub_service
 from leaguebot.core.services.about_service import (
     ABOUT_KEY,
     ABOUT_OPTION,
@@ -121,11 +121,13 @@ async def test_about_is_always_offered_and_after_every_module(monkeypatch):
     assert [o.key for o in hub_service.registered_options()] == ["licence", "guides", "about"]
 
 
-def test_its_key_never_changes():
+async def test_its_key_never_changes():
     """Part of the button's custom id: a panel already posted carries it."""
     assert ABOUT_KEY == "about"
     assert ABOUT_OPTION.key == "about"
     assert ABOUT_OPTION.label == "About"
+    _content, view = hub_service.render_panel([ABOUT_OPTION])
+    assert [(item.label, item.custom_id) for item in view.children] == [("About", "hub:about")]
 
 
 async def test_a_press_on_the_panel_reaches_about(monkeypatch):
@@ -135,20 +137,6 @@ async def test_a_press_on_the_panel_reaches_about(monkeypatch):
     await hub_service.press(interaction, ABOUT_KEY)
 
     assert interaction.response.send_message.await_args.args[0] == about_text("v0.4.0-234", MADE)
-
-
-async def test_the_panel_carries_an_about_button(monkeypatch):
-    monkeypatch.setattr(hub_service, "_OPTIONS", {ABOUT_KEY: ABOUT_OPTION})
-    content, view = hub_service.render_panel(hub_service.registered_options())
-
-    assert "Press an option below." in content
-    assert [(item.label, item.custom_id) for item in view.children] == [("About", "hub:about")]
-
-
-def test_registering_the_module_again_is_harmless():
-    """A module imported twice registers the same option twice, which the registry allows."""
-    hub_service.register_option(about_service.ABOUT_OPTION)
-    assert hub_service.registered_options().count(ABOUT_OPTION) == 1
 
 
 @pytest.mark.parametrize("version_", ["v0.5.0", "v0.4.0-230"])

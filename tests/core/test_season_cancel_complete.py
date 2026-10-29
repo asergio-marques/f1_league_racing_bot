@@ -95,47 +95,6 @@ async def _complete(cog, interaction):
 
 
 # ---------------------------------------------------------------------------
-# /season cancel — the gates at the press
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("word", ["confirm", "Confirm", "yes", ""])
-async def test_cancelling_needs_the_exact_confirmation_word(word):
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _cancel(cog, interaction, confirm=word)
-
-    assert "Type exactly" in _replied(interaction)
-    cog.bot.change_queue.ask.assert_not_awaited()
-
-
-async def test_cancelling_with_no_active_season_is_refused():
-    cog = _make_cog(season=None)
-    interaction = _interaction()
-
-    await _cancel(cog, interaction)
-
-    assert "No season is being raced" in _replied(interaction)
-    cog.bot.change_queue.ask.assert_not_awaited()
-
-
-# ---------------------------------------------------------------------------
-# /season complete — the gate at the press
-# ---------------------------------------------------------------------------
-
-
-async def test_completing_with_no_active_season_is_refused():
-    cog = _make_cog(season=None)
-    interaction = _interaction()
-
-    await _complete(cog, interaction)
-
-    assert "No season is being raced" in _replied(interaction)
-    cog.bot.change_queue.ask.assert_not_awaited()
-
-
-# ---------------------------------------------------------------------------
 # Every refusal at the press is recorded (#482)
 # ---------------------------------------------------------------------------
 
@@ -170,6 +129,21 @@ _SEASON_REFUSALS = [
         id="cancel-without-the-confirmation-word",
     ),
     pytest.param(
+        "season cancel", {}, "Confirm",
+        "❌ Type exactly `CONFIRM` in the `confirm` field to proceed.",
+        id="cancel-with-capitalised-confirm",
+    ),
+    pytest.param(
+        "season cancel", {}, "yes",
+        "❌ Type exactly `CONFIRM` in the `confirm` field to proceed.",
+        id="cancel-with-another-word",
+    ),
+    pytest.param(
+        "season cancel", {}, "",
+        "❌ Type exactly `CONFIRM` in the `confirm` field to proceed.",
+        id="cancel-with-an-empty-word",
+    ),
+    pytest.param(
         "season cancel", {"season": None}, "CONFIRM",
         "❌ No season is being raced, so there is none to cancel. A season whose placements "
         "are yet to be confirmed is abandoned with `/season abort`.",
@@ -186,7 +160,8 @@ _SEASON_REFUSALS = [
 @pytest.mark.parametrize("command, built, word, reply", _SEASON_REFUSALS)
 async def test_every_season_cancel_and_complete_refusal_is_recorded(command, built, word, reply):
     """The core specification's record of what changed: a refusal is one line naming the member,
-    what was refused and why. The admin runs /season cancel without the exact word, or either
+    what was refused and why. The admin runs /season cancel without the exact word (lower case,
+    capitalised, another word or none at all), or either
     command with no season being raced: they get today's reply word for word and nothing else,
     nothing is asked of the change queue, and the log channel gets exactly one line,
     "⛔ `/season …` refused for Admin (<@77>) — " and the reason. The refusals found once the

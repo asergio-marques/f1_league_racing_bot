@@ -305,7 +305,9 @@ async def _log_lines(league: SeasonLeague) -> list[str]:
 async def test_the_module_is_disabled(tmp_path):
     """Manager 77 runs `/module disable signup` with the window closed. He is answered at once
     with an under-way line and the module is still on; when the queue runs, the module is off and
-    his acknowledgement is updated to say it is disabled."""
+    his acknowledgement is updated to say it is disabled. The module's configuration names the
+    signup channel (620), which has since been deleted from the server, and that does not stop
+    the disable."""
     league = await _league(tmp_path)
 
     interaction = await _switch_off(league)
@@ -315,6 +317,7 @@ async def test_the_module_is_disabled(tmp_path):
 
     await run_queue(league.bot)
 
+    assert league.guild.get_channel(LEAGUE_SIGNUP_CHANNEL) is None
     assert not await league.bot.module_service.is_signup_enabled()
     assert updated_reply(interaction).startswith("✅")
     assert "disabled" in updated_reply(interaction)
@@ -490,24 +493,6 @@ async def test_every_open_wizards_jobs_are_cancelled(tmp_path):
     }
 
 
-async def test_a_job_that_has_already_fired_is_stepped_over():
-    """APScheduler raises for a job it does not hold, and a wizard whose timeout fired an hour
-    ago is ordinary. Driver 101's two timers have both fired: disarming each, as the switch-off
-    does, raises nothing."""
-    from apscheduler.jobstores.base import JobLookupError
-
-    from leaguebot.core.services.scheduler_service import SchedulerService
-
-    # The real scheduler service, over an APScheduler that no longer holds the job.
-    scheduler = SchedulerService.__new__(SchedulerService)
-    scheduler._scheduler = MagicMock()
-    scheduler._scheduler.get_job = MagicMock(return_value=None)
-    scheduler._scheduler.remove_job = MagicMock(side_effect=JobLookupError("no job"))
-
-    scheduler.disarm(INACTIVITY_TIMER, "101")
-    scheduler.disarm(DELETE_TIMER, "101")
-
-
 async def test_a_league_with_no_configuration_still_disables(tmp_path):
     """A module toggled on and never configured: there are no wizards, no channel and no timers,
     and the flag still has to come down. The switch-off's only job is `switch_off`, the module is
@@ -670,21 +655,6 @@ async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path):
 
     assert not await league.bot.module_service.is_signup_enabled()
     assert "disabled" in updated_reply(interaction)
-
-
-async def test_a_deleted_signup_channel_does_not_stop_the_disable(tmp_path):
-    """The module's configuration names the signup channel (620), which has since been deleted
-    from the server: the module is still on until the queue runs, and off once it has."""
-    league = await _league(tmp_path)
-
-    await _switch_off(league)
-
-    assert await league.bot.module_service.is_signup_enabled()
-
-    await run_queue(league.bot)
-
-    assert league.guild.get_channel(LEAGUE_SIGNUP_CHANNEL) is None
-    assert not await league.bot.module_service.is_signup_enabled()
 
 
 async def test_a_league_with_no_signup_channel_reverts_nothing(tmp_path):

@@ -27,6 +27,7 @@ from tests.support.change_queue import (
     register,
     retry_job,
     run_queue,
+    step_rows,
     stopped_job,
     tier_member,
 )
@@ -78,6 +79,11 @@ def _outcome(interaction: Any) -> str:
 async def _calendar_id(league: Any) -> str | None:
     [row] = await league.rows("SELECT calendar_message_id FROM divisions WHERE id = ?", PRO)
     return row["calendar_message_id"]
+
+
+def _calendar_events(league: Any) -> list[tuple[str, int]]:
+    """What the calendar channel saw, in order: each send and delete, with its message."""
+    return [(kind, mid) for kind, cid, mid in league.events if cid == PRO_CALENDAR]
 
 
 async def _retried_posts(league: Any) -> list[dict[str, Any]]:
@@ -135,6 +141,8 @@ def _pictures_on(league: Any, monkeypatch: Any, tmp_path: Any) -> list[str]:
 
 
 async def test_a_calendar_sync_is_acknowledged_and_updated_with_its_outcome(tmp_path):
+    """End to end: the new calendar is posted, then the old one deleted by the job after it,
+    leaving one calendar in the channel, the new one, with its id saved."""
     league = await ongoing_league(tmp_path)
 
     interaction = await _sync(league)
@@ -148,6 +156,14 @@ async def test_a_calendar_sync_is_acknowledged_and_updated_with_its_outcome(tmp_
               if "| /division calendar-sync | Success" in line]
     assert "division: Pro" in line
     assert "posted as: text" in line
+
+    [change] = [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
+    names = [job["name"] for job in await step_rows(league.db_path, change["id"])]
+    assert names[:2] == ["post_calendar", "delete_replaced"]
+    [new] = list(league.channel(PRO_CALENDAR).messages)
+    assert new != CALENDAR_MESSAGE
+    assert _calendar_events(league) == [("send", new), ("delete", CALENDAR_MESSAGE)]
+    assert await _calendar_id(league) == str(new)
 
 
 @pytest.mark.parametrize("failure", [

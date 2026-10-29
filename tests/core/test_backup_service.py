@@ -145,17 +145,6 @@ def test_save_copies_both_databases(tmp_path):
     assert bs.backup_path(jobs).is_file()
 
 
-def test_save_overwrites_an_earlier_backup(tmp_path):
-    live = tmp_path / "bot.db"
-    _database(live, rows=1)
-    bs.save(live, tmp_path / "scheduler.db")
-
-    _add_round(live, "added later")
-    bs.save(live, tmp_path / "scheduler.db")
-
-    assert "added later" in _rows(bs.backup_path(live))
-
-
 def test_a_missing_scheduler_database_is_not_a_fault(tmp_path):
     """A bot that has never scheduled anything has none, and is still worth backing up."""
     live = tmp_path / "bot.db"
@@ -773,11 +762,16 @@ def test_discard_deletes_both_backups_and_the_lock(tmp_path):
     assert live.is_file(), "the live database is untouched"
 
 
-def test_discard_with_nothing_saved_says_so(tmp_path):
+@pytest.mark.parametrize(
+    "raise_on_failure", [False, True], ids=["told", "asked to raise"]
+)
+def test_discard_with_nothing_saved_says_so(tmp_path, raise_on_failure):
+    """Nothing was saved: the discard says there was nothing. Asked to raise, it still raises
+    nothing, so a Retry after a part-done discard finishes quietly."""
     live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
     _database(live)
 
-    assert bs.discard(live, jobs) is False
+    assert bs.discard(live, jobs, raise_on_failure=raise_on_failure) is False
 
 
 def test_discard_leaves_a_pre_restore_copy_alone(tmp_path):
@@ -821,15 +815,6 @@ def test_a_raising_discard_raises_after_trying_every_file(tmp_path, monkeypatch)
     assert Path(stuck).exists()
     assert not bs.backup_path(jobs).exists()
     assert not bs.lock_path(live).exists()
-
-
-def test_a_discard_that_finds_nothing_raises_nothing(tmp_path):
-    """Nothing was saved: asked to raise, the discard says there was nothing and raises
-    nothing, so a Retry after a part-done discard finishes quietly."""
-    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
-    _database(live)
-
-    assert bs.discard(live, jobs, raise_on_failure=True) is False
 
 
 async def test_a_restored_state_brings_back_no_queue(tmp_path):

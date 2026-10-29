@@ -135,66 +135,19 @@ def _all_seeded_jobs(ids: dict[str, int]) -> list[MagicMock]:
 # What the disable must still do
 # ---------------------------------------------------------------------------
 
-async def test_disable_cancels_the_four_weather_jobs(tmp_path):
-    """All three forecast phases and the post-race cleanup go, for each round in scope."""
-    removed = await _disable_weather(tmp_path, _all_seeded_jobs)
-
-    for rnum in (1, 2):
-        for prefix in WEATHER_PREFIXES:
-            assert f"{prefix}_s1_d1_r{rnum}" in removed
-
-
-async def test_disable_covers_every_round_of_the_season(tmp_path):
-    """The round sweep is unchanged by the job-kind filter: every round of the live
-    season is reached, not just the next one."""
-    removed = await _disable_weather(tmp_path, _all_seeded_jobs)
-
-    assert "weather_p1_s1_d1_r1" in removed
-    assert "weather_p1_s1_d1_r2" in removed
-
-
 @pytest.mark.parametrize("live_status", ["ACTIVE", "SETUP"])
-async def test_disable_reaches_a_season_in_either_live_state(tmp_path, live_status):
-    """A season still in setup has its forecasts cancelled just as a running one does."""
+async def test_disable_removes_exactly_the_weather_jobs_in_scope(tmp_path, live_status):
+    """Stated as a whole: four kinds × the two rounds in scope, and nothing else.
+
+    All three forecast phases and the post-race cleanup go, for every round of the live
+    season, not just the next one, and a season still in setup has its forecasts cancelled
+    just as a running one does. A completed season holds no work to lose and is left alone.
+
+    What it must not touch is #117. Results collection, and with it the round's own arrival
+    transition, survives switching weather off. So do the check-in call, its reminder, its
+    deadline and its cleanup: nothing short of the confirmation of placements would put them
+    back."""
     removed = await _disable_weather(tmp_path, _all_seeded_jobs, live_status=live_status)
-
-    assert "weather_p1_s1_d1_r1" in removed
-    assert "cleanup_s1_d1_r2" in removed
-
-
-async def test_disable_ignores_rounds_of_completed_seasons(tmp_path):
-    """A completed season holds no work to lose and is left alone."""
-    removed = await _disable_weather(tmp_path, _all_seeded_jobs)
-
-    assert not any(jid.endswith("_s3_d1_r1") for jid in removed)
-
-
-# ---------------------------------------------------------------------------
-# What it must not touch — issue #117
-# ---------------------------------------------------------------------------
-
-async def test_disable_leaves_the_result_submission_job(tmp_path):
-    """Results collection — and with it the round's own arrival transition — survives
-    switching weather off."""
-    removed = await _disable_weather(tmp_path, _all_seeded_jobs)
-
-    assert "results_s1_d1_r1" not in removed
-    assert "results_s1_d1_r2" not in removed
-
-
-async def test_disable_leaves_the_four_rsvp_jobs(tmp_path):
-    """The check-in call, its reminder, its deadline and its cleanup survive — nothing short
-    of the confirmation of placements would put them back."""
-    removed = await _disable_weather(tmp_path, _all_seeded_jobs)
-
-    for prefix in ATTENDANCE_PREFIXES:
-        assert f"{prefix}_s1_d1_r1" not in removed
-        assert f"{prefix}_s1_d1_r2" not in removed
-
-
-async def test_disable_removes_exactly_the_weather_jobs_in_scope(tmp_path):
-    """Stated as a whole: four kinds × the two rounds in scope, and nothing else."""
-    removed = await _disable_weather(tmp_path, _all_seeded_jobs)
 
     expected = {
         f"{prefix}{suffix}"
@@ -204,6 +157,10 @@ async def test_disable_removes_exactly_the_weather_jobs_in_scope(tmp_path):
     assert set(removed) == expected
     assert len(removed) == len(expected)
 
+
+# ---------------------------------------------------------------------------
+# What it must not touch — issue #117
+# ---------------------------------------------------------------------------
 
 async def test_disable_leaves_a_job_whose_id_carries_no_round_suffix(tmp_path):
     """A job keyed to the round but not named by the round-scoped convention cannot have

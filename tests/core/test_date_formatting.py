@@ -66,7 +66,8 @@ def test_every_day_of_a_month_gets_a_suffix():
 
 @pytest.mark.parametrize("token", sorted(DATE_FORMATS))
 def test_every_stated_example_is_what_is_actually_drawn(token):
-    """The example is the text a manager picks from, so it cannot drift from the pattern."""
+    """The example is the text a manager picks from, so it cannot drift from the pattern; and
+    whatever the host, no configured format may raise mid-render."""
     _, example = DATE_FORMATS[token]
 
     assert format_date(SUNDAY, token) == example
@@ -101,12 +102,6 @@ def test_no_pattern_uses_a_platform_specific_directive():
     for token, (pattern, _) in DATE_FORMATS.items():
         assert "%-" not in pattern, f"{token} uses a glibc-only directive"
         assert "%#" not in pattern, f"{token} uses a Windows-only directive"
-
-
-def test_every_pattern_renders_on_this_host():
-    """Whatever the host, no configured format may raise mid-render."""
-    for token in DATE_FORMATS:
-        assert format_date(SUNDAY, token)
 
 
 # ── Falling back ──────────────────────────────────────────────────────────

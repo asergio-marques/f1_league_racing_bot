@@ -1496,11 +1496,15 @@ _LOOKUP_SAMPLE = (
 )
 
 
-def test_the_lookup_check_finds_a_lookup_in_a_services_file():
+@pytest.mark.parametrize(
+    "path",
+    ["signup/services/sample_service.py", "core/utils/sample_helper.py"],
+    ids=["a services file", "a utils file"],
+)
+def test_the_lookup_check_finds_a_lookup_in_a_services_or_utils_file(path):
     """In a services file, each of the six ways of looking a service up on the bot is counted;
-    the change queue, held by the queue check, and an attribute that is not a service are not."""
-    path = "signup/services/sample_service.py"
-
+    the change queue, held by the queue check, and an attribute that is not a service are not.
+    A helper is held to the rule as a service is."""
     assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter({(path, "handler"): 6})
 
 
@@ -1509,13 +1513,6 @@ def test_the_lookup_check_does_not_count_a_cog_s_lookup():
     path = "signup/cogs/sample_cog.py"
 
     assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter()
-
-
-def test_the_lookup_check_finds_a_lookup_in_a_utils_file():
-    """A helper is held to the rule as a service is."""
-    path = "core/utils/sample_helper.py"
-
-    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter({(path, "handler"): 6})
 
 
 def test_the_lookup_check_follows_a_local_bound_to_the_bot():

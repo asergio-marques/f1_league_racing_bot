@@ -96,20 +96,23 @@ async def _overflow(cog, would_hold: int, capacity_value, **kwargs):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_round_within_capacity_is_not_refused():
-    cog = _make_cog()
-
-    assert await _overflow(cog, 20, 24) is None
-
-
-async def test_a_round_exactly_at_capacity_is_not_refused():
+@pytest.mark.parametrize(
+    "would_hold",
+    [20, 24],
+    ids=["within_capacity", "exactly_at_capacity"],
+)
+async def test_a_round_within_capacity_is_not_refused(would_hold):
     """The comparison is `>`, so a template drawing twenty-four rounds takes twenty-four."""
     cog = _make_cog()
 
-    assert await _overflow(cog, 24, 24) is None
+    assert await _overflow(cog, would_hold, 24) is None
 
 
 async def test_a_round_past_capacity_is_refused():
+    """XIV.12 requires the change unapplied, and a manager needs to know the calendar is
+    unchanged rather than half-extended. The refusal names both ways out: enlarging the
+    template and turning the aspect off are genuinely different decisions, and a league may
+    reasonably take either."""
     cog = _make_cog()
 
     message = await _overflow(cog, 25, 24)
@@ -117,25 +120,7 @@ async def test_a_round_past_capacity_is_refused():
     assert message is not None
     assert "25 rounds" in message
     assert "draws 24" in message
-
-
-async def test_the_refusal_says_the_round_was_not_added():
-    """XIV.12 requires the change unapplied, and a manager needs to know the calendar is
-    unchanged rather than half-extended."""
-    cog = _make_cog()
-
-    message = await _overflow(cog, 25, 24)
-
     assert "**not** added" in message
-
-
-async def test_the_refusal_names_both_ways_out():
-    """Enlarging the template and turning the aspect off are genuinely different
-    decisions, and a league may reasonably take either."""
-    cog = _make_cog()
-
-    message = await _overflow(cog, 25, 24)
-
     assert "Enlarge the template" in message
     assert "/images config toggle" in message
 
@@ -160,16 +145,16 @@ async def test_the_guard_is_inert_while_the_calendar_aspect_is_off():
     assert await _overflow(cog, 100, 24) is None
 
 
-async def test_a_league_with_no_calendar_template_is_not_refused():
-    cog = _make_cog(report=None)
-
-    assert await _overflow(cog, 100, 24) is None
-
-
-async def test_an_invalid_template_is_not_used_to_refuse():
-    """Its capacity cannot be trusted, and refusing a round on an unreadable number would
-    block a league for a fault in their artwork rather than their calendar."""
-    cog = _make_cog(report=SimpleNamespace(valid=False, resolved_path="/tmp/bad.svg"))
+@pytest.mark.parametrize(
+    "report",
+    [None, SimpleNamespace(valid=False, resolved_path="/tmp/bad.svg")],
+    ids=["no_calendar_template", "invalid_template"],
+)
+async def test_a_missing_or_invalid_template_is_not_used_to_refuse(report):
+    """A league with no calendar template has no capacity to outgrow. An invalid one's
+    capacity cannot be trusted, and refusing a round on an unreadable number would block a
+    league for a fault in their artwork rather than their calendar."""
+    cog = _make_cog(report=report)
 
     assert await _overflow(cog, 100, 24) is None
 
@@ -272,16 +257,26 @@ async def test_the_review_warns_where_the_add_refuses(tmp_path):
     assert "not** added" not in warning[0]
 
 
-async def test_the_warning_names_the_division_that_overflows(tmp_path):
-    """A season of eight divisions needs to know which one to shorten."""
+@pytest.mark.parametrize(
+    "rounds_per_division,longest",
+    [
+        pytest.param({"Division 1": 10, "Premier": 25}, "Premier", id="longest sorts last"),
+        pytest.param({"Short": 5, "Long": 25}, "Long", id="longest sorts first"),
+    ],
+)
+async def test_the_warning_names_the_division_that_overflows(
+    tmp_path, rounds_per_division, longest
+):
+    """A season of eight divisions needs to know which one to shorten. Only the greatest
+    round count can be judged here, because which division gets drawn is decided later — so
+    a season passes only if its longest calendar fits. The longest division, added second, is
+    named whether its name sorts after the shorter one's or before it."""
     cog = _make_cog()
-    db_path = await _make_season_db(
-        tmp_path, rounds_per_division={"Division 1": 10, "Premier": 25}
-    )
+    db_path = await _make_season_db(tmp_path, rounds_per_division=rounds_per_division)
 
     warning = await _warning(cog, db_path, 24)
 
-    assert "Premier" in warning[0]
+    assert longest in warning[0]
     assert "holds 25" in warning[0]
 
 
@@ -302,19 +297,6 @@ async def test_a_season_within_capacity_earns_no_warning(tmp_path):
     db_path = await _make_season_db(tmp_path, rounds_per_division={"Division 1": 20})
 
     assert await _warning(cog, db_path, 24) == []
-
-
-async def test_the_most_demanding_division_is_the_one_compared(tmp_path):
-    """Only the greatest round count can be judged here, because which division gets drawn
-    is decided later — so a season passes only if its longest calendar fits."""
-    cog = _make_cog()
-    db_path = await _make_season_db(
-        tmp_path, rounds_per_division={"Short": 5, "Long": 25}
-    )
-
-    warning = await _warning(cog, db_path, 24)
-
-    assert "Long" in warning[0]
 
 
 async def test_a_season_with_no_divisions_earns_no_warning(tmp_path):

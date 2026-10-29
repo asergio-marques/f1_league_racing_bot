@@ -255,20 +255,3 @@ async def test_a_first_calendar_plans_no_delete(tmp_path, monkeypatch):
     [new] = list(league.channel(PRO_CALENDAR).messages)
     assert await _calendar_id(league) == str(new)
 
-
-async def test_a_calendar_sync_posts_then_deletes_the_old_calendar(tmp_path):
-    """`/division calendar-sync` end to end: one calendar left in the channel, the new one, and
-    its id saved."""
-    from tests.core.test_calendar_sync_change import KIND, _sync
-
-    league = await ongoing_league(tmp_path)
-    await _sync(league)
-
-    await run_queue(league.bot)
-
-    names = [job["name"] for job in await _jobs(league, KIND)]
-    assert names[:2] == ["post_calendar", "delete_replaced"]
-    [new] = list(league.channel(PRO_CALENDAR).messages)
-    assert new != CALENDAR_MESSAGE
-    assert _calendar_events(league) == [("send", new), ("delete", CALENDAR_MESSAGE)]
-    assert await _calendar_id(league) == str(new)

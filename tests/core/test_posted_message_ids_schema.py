@@ -43,19 +43,9 @@ async def _columns(db_path: str, table: str) -> dict[str, dict]:
         return {row["name"]: dict(row) for row in await cursor.fetchall()}
 
 
-async def test_every_posting_table_records_its_chunk_ids(tmp_path):
-    """The columns exist, on all four tables, after a plain migration."""
-    db_path = os.path.join(str(tmp_path), "schema.db")
-    await run_migrations(db_path)
-
-    for table, added in _ADDED.items():
-        columns = await _columns(db_path, table)
-        for column in added:
-            assert column in columns, f"{table}.{column} is missing"
-
-
 async def test_the_new_columns_are_nullable(tmp_path):
-    """A row written before this change has no list to offer, and must still be writable.
+    """The columns exist, on all four tables, after a plain migration; and a row written before
+    this change has no list to offer, and must still be writable.
 
     Those rows fall back to the adjacency walk. Requiring a value would make the change a
     migration of existing data rather than an addition to it.
@@ -66,6 +56,7 @@ async def test_the_new_columns_are_nullable(tmp_path):
     for table, added in _ADDED.items():
         columns = await _columns(db_path, table)
         for column in added:
+            assert column in columns, f"{table}.{column} is missing"
             assert columns[column]["notnull"] == 0, f"{table}.{column} is NOT NULL"
 
 

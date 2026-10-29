@@ -2,6 +2,8 @@
 
 `get_previewable_season` decides which season a preview draws, and its precedence is the
 whole point of it — the deliberately unordered `get_setup_or_active_season` cannot be used.
+A server holding two live seasons at once, which the preview once arbitrated, is refused by the
+database, as `test_one_live_season_per_server.py` pins.
 `get_previous_season_number` gives a fabricated league its season number, and a new season
 its own, one above it.
 """
@@ -78,23 +80,6 @@ class TestPreviewableSeason:
         assert season is not None
         assert season.season_number == 1
         assert season.status is SeasonStatus.SETUP
-
-    @pytest.mark.parametrize(
-        "first, second", [("ACTIVE", "SETUP"), ("SETUP", "ACTIVE"), ("SETUP", "SETUP")]
-    )
-    async def test_a_server_cannot_hold_two_live_seasons(self, db_path, first, second):
-        """The state the preview used to arbitrate is now refused by the database.
-
-        A live season is one that is approved or pending approval, and a server holds at
-        most one. Migration 049 enforces it with a partial unique index rather than
-        leaving it to the command that starts a season — every reader of "the season of
-        this server" depends on there being exactly one, and `/season setup`'s own guard
-        cannot speak for the stored data.
-        """
-        await _seed(db_path, first, 4)
-
-        with pytest.raises(aiosqlite.IntegrityError):
-            await _seed(db_path, second, 5)
 
     @pytest.mark.parametrize("status", ["COMPLETED", "CANCELLED"])
     async def test_a_finished_season_is_never_previewable(self, service, db_path, status):

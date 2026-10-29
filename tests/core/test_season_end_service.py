@@ -80,50 +80,31 @@ async def _mark_all_phases_done(db_path: str, round_ids: list[int]) -> None:
 # SeasonService helper tests
 # ---------------------------------------------------------------------------
 
-async def test_has_existing_season_true() -> None:
+@pytest.mark.parametrize("seeded", [True, False], ids=["a-season", "no-season"])
+async def test_has_existing_season(seeded: bool) -> None:
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
     try:
         await run_migrations(db_path)
-        await _seed_server(db_path, server_id=1)
+        if seeded:
+            await _seed_server(db_path, server_id=1)
         svc = SeasonService(db_path)
-        assert await svc.has_existing_season() is True
+        assert await svc.has_existing_season() is seeded
     finally:
         os.unlink(db_path)
 
 
-async def test_has_existing_season_false() -> None:
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        svc = SeasonService(db_path)
-        assert await svc.has_existing_season() is False
-    finally:
-        os.unlink(db_path)
-
-
-async def test_all_phases_complete_false_when_pending() -> None:
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed_server(db_path, server_id=1)
-        svc = SeasonService(db_path)
-        assert await svc.all_phases_complete() is False
-    finally:
-        os.unlink(db_path)
-
-
-async def test_all_phases_complete_true_when_done() -> None:
+@pytest.mark.parametrize("done", [False, True], ids=["pending", "done"])
+async def test_all_phases_complete(done: bool) -> None:
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
     try:
         await run_migrations(db_path)
         _, round_ids = await _seed_server(db_path, server_id=1)
-        await _mark_all_phases_done(db_path, round_ids)
+        if done:
+            await _mark_all_phases_done(db_path, round_ids)
         svc = SeasonService(db_path)
-        assert await svc.all_phases_complete() is True
+        assert await svc.all_phases_complete() is done
     finally:
         os.unlink(db_path)
 

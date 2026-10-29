@@ -78,14 +78,7 @@ def test_the_jobstore_defaults_to_its_own_file_beside_the_database(workspace):
     assert os.path.dirname(service.jobstore_path) == os.path.dirname(
         os.path.abspath(db_path)
     )
-
-
-def test_league_data_and_the_jobstore_are_different_files(workspace):
-    """The whole point of the change, stated as an assertion."""
-    db_path, build = workspace
-
-    service = build()
-
+    # League data and the jobstore are different files: the whole point of the change.
     assert os.path.abspath(service.jobstore_path) != os.path.abspath(db_path)
 
 

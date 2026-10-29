@@ -90,29 +90,6 @@ def test_heading_is_the_textual_calendar_s_own():
 
 
 @pytest.mark.asyncio
-async def test_a_graphic_is_posted_with_no_message_text(tmp_path, monkeypatch):
-    """The picture draws the division's name and says what it is, so a heading above it
-    repeats the picture rather than introducing it (2026-09-07)."""
-    png = tmp_path / "calendar.png"
-    png.write_bytes(b"\x89PNG")
-    bot = _bot(tmp_path)
-    channel, _ = _channel()
-    monkeypatch.setattr(
-        cps,
-        "render_calendar_image",
-        AsyncMock(return_value=NS(problem=None, notices=[], png_paths=[png])),
-    )
-    monkeypatch.setattr(cps, "replace_calendar_message", AsyncMock(return_value=555))
-
-    result = await cps.post_division_calendar(
-        bot, _guild(channel), _division(), _rounds(), TRACKS
-    )
-
-    assert result.posted_as_image is True
-    assert cps.replace_calendar_message.await_args.kwargs["content"] is None
-
-
-@pytest.mark.asyncio
 async def test_the_textual_calendar_keeps_its_heading(tmp_path, monkeypatch):
     """Withdrawing the graphic's heading must not strip the text's, where it is the only
     thing naming the list of rounds."""
@@ -185,16 +162,21 @@ def test_a_mystery_round_reads_as_mystery_in_the_text():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "images_on,aspect_on", [(False, True), (True, False), (False, False)]
+    "images_on,aspect_on,wanted",
+    [
+        (False, True, False),
+        (True, False, False),
+        (False, False, False),
+        (True, True, True),
+    ],
+    ids=["images_off", "aspect_off", "both_off", "both_open"],
 )
-async def test_either_gate_closed_posts_the_text(tmp_path, images_on, aspect_on):
+async def test_the_graphic_is_wanted_only_with_both_gates_open(
+    tmp_path, images_on, aspect_on, wanted
+):
+    """Either gate closed posts the text; both open wants the graphic."""
     bot = _bot(tmp_path, images_on=images_on, aspect_on=aspect_on)
-    assert await cps.image_calendar_wanted(bot) is False
-
-
-@pytest.mark.asyncio
-async def test_both_gates_open_wants_the_graphic(tmp_path):
-    assert await cps.image_calendar_wanted(_bot(tmp_path)) is True
+    assert await cps.image_calendar_wanted(bot) is wanted
 
 
 @pytest.mark.asyncio
@@ -340,18 +322,6 @@ async def test_commanded_posting_is_rejected_and_posts_nothing(tmp_path, monkeyp
     replace.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_a_division_with_no_calendar_channel_is_rejected(tmp_path):
-    bot = _bot(tmp_path)
-    guild = MagicMock()
-    guild.get_channel = MagicMock(return_value=None)
-
-    result = await cps.post_division_calendar(
-        bot, guild, _division(calendar_channel_id=None), _rounds(), TRACKS
-    )
-    assert "no calendar channel" in result.problem
-
-
 # ── 6. Test mode ─────────────────────────────────────────────────────────
 
 
@@ -371,8 +341,10 @@ async def test_the_replacement_deletion_is_not_test_mode_suppressed(tmp_path):
 
 
 def test_a_cancelled_round_is_struck_through_in_the_text():
-    """The calendar keeps the round the league planned, and says it was called off."""
+    """The calendar keeps the round the league planned, and says it was called off; a round
+    still on beside it is not struck through."""
     rounds = _rounds(2)
+    rounds[0].status = "NOT_RUN"
     rounds[1].status = "CANCELLED"
     unix = int(rounds[1].scheduled_at.timestamp())
     text = cps.textual_calendar("Elite", rounds)
@@ -380,15 +352,8 @@ def test_a_cancelled_round_is_struck_through_in_the_text():
         f"~~Round {rounds[1].round_number}: {rounds[1].track_name} — <t:{unix}:F>~~ — Cancelled"
         in text.splitlines()
     )
-
-
-def test_a_round_still_on_is_not_struck_through():
-    rounds = _rounds(2)
-    rounds[0].status = "NOT_RUN"
-    rounds[1].status = "CANCELLED"
-    first = cps.textual_calendar("Elite", rounds).splitlines()[1]
-    assert "~~" not in first
-    assert "Cancelled" not in first
+    assert "~~" not in text.splitlines()[1]
+    assert "Cancelled" not in text.splitlines()[1]
 
 
 # ── The form a job on the change queue calls (#439, slices 4a and 6) ─────

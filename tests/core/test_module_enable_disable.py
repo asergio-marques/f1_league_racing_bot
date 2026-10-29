@@ -151,6 +151,8 @@ def _season():
 
 
 async def test_weather_is_enabled(tmp_path):
+    """Between seasons, as the cog is made with no active season: there are no divisions to
+    check, and a league setting the bot up before its first season must not be blocked."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
     interaction = _interaction()
@@ -172,17 +174,6 @@ async def test_enabling_weather_twice_does_no_work(tmp_path):
 
     assert "already enabled" in _replied(interaction)
     assert await _audit(db_path) == []
-
-
-async def test_weather_may_be_enabled_between_seasons(tmp_path):
-    """With no active season there are no divisions to check, and a league setting the bot
-    up before its first season must not be blocked."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, season=None)
-
-    await cog._enable_weather(_interaction())
-
-    assert await _weather_flag(db_path) == 1
 
 
 async def test_enabling_weather_is_audited(tmp_path):

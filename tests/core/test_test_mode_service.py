@@ -773,22 +773,12 @@ async def test_a_cleared_round_is_not_offered_its_call_again(tmp_path) -> None:
     assert await get_next_pending_phase(db_path, _StubScheduler()) is None
 
 
-async def test_a_cleanup_job_waits_for_its_own_round_s_results(tmp_path) -> None:
-    """Result submission never comes from the job store, and falls a day before the cleanup."""
-    db_path = str(tmp_path / "results_first.db")
-    await run_migrations(db_path)
-    await _seed_all_done(db_path, [{"track_name": "Monaco"}], results=True)
-    await _stand(db_path, 1, call=True)
-
-    result = await get_next_pending_phase(db_path, _StubScheduler([_job(1, 9, days=1)]))
-
-    assert result is not None and result["phase_number"] == 4
-
-
 async def test_a_round_start_already_asked_of_the_queue_is_not_offered_again(tmp_path) -> None:
-    """Round 1's result submission is the step advance would offer. An advance has already asked
-    the queue to open it, and the opening is not done: the next advance passes over the round
-    start, since offering it again would ask for a second channel."""
+    """Round 1's result submission is the step advance would offer, ahead of the round's cleanup
+    job: result submission never comes from the job store, and falls a day before the cleanup.
+    An advance has already asked the queue to open it, and the opening is not done: the next
+    advance passes over the round start, since offering it again would ask for a second
+    channel."""
     import json
 
     db_path = str(tmp_path / "round_start_in_hand.db")
@@ -928,35 +918,28 @@ async def test_a_mystery_round_s_notice_is_offered_no_forecast_cleanup(tmp_path)
 
 
 @pytest.mark.parametrize(
-    "phase3_done,forecast_standing,shown",
-    [(0, False, "Cleanup: ⏳"), (1, True, "Cleanup: ⏳"), (1, False, "Cleanup: ✅")],
-    ids=["phase-3-to-come", "forecast-standing", "taken-down"],
+    "phase3_done,forecast_phase,shown",
+    [(0, None, "Cleanup: ⏳"), (1, 3, "Cleanup: ⏳"), (1, 2, "Cleanup: ⏳"), (1, None, "Cleanup: ✅")],
+    ids=["phase-3-to-come", "forecast-standing", "earlier-phase-standing", "taken-down"],
 )
 async def test_the_review_shows_the_forecast_cleanup(
-    tmp_path, phase3_done, forecast_standing, shown
+    tmp_path, phase3_done, forecast_phase, shown
 ) -> None:
+    """Where a forecast stands, of the phase given, the clean-up is still to come. Where Round
+    1's Phase 3 was drawn but never posted, its Phase 2 forecast stands: the clean-up deletes
+    whichever of Phases 1 to 3 is still recorded (owner, 2026-10-12), so the review shows it
+    still to come."""
     db_path = str(tmp_path / "review_forecast_cleanup.db")
     await run_migrations(db_path)
     await _seed_with_weather(
         db_path, [{"phase1_done": 1, "phase2_done": 1, "phase3_done": phase3_done}]
     )
-    await _stand(db_path, 1, forecast=forecast_standing)
+    if forecast_phase is None:
+        await _stand(db_path, 1)
+    else:
+        await _stand(db_path, 1, forecast=True, forecast_phase=forecast_phase)
 
     assert shown in await build_review_summary(db_path)
-
-
-async def test_the_review_shows_the_forecast_cleanup_to_come_while_an_earlier_phase_stands(
-    tmp_path,
-) -> None:
-    """Round 1's Phase 3 was drawn but never posted, so its Phase 2 forecast stands. The
-    clean-up deletes whichever of Phases 1 to 3 is still recorded (owner, 2026-10-12), so the
-    review shows it still to come."""
-    db_path = str(tmp_path / "review_phase_2_standing.db")
-    await run_migrations(db_path)
-    await _seed_with_weather(db_path, [{"phase1_done": 1, "phase2_done": 1, "phase3_done": 1}])
-    await _stand(db_path, 1, forecast=True, forecast_phase=2)
-
-    assert "Cleanup: ⏳" in await build_review_summary(db_path)
 
 
 async def test_the_review_shows_a_standing_check_in_as_still_to_clear(tmp_path) -> None:

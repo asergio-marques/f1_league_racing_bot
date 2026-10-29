@@ -163,16 +163,6 @@ async def _standings_users(db_path: str) -> list[tuple[int, int]]:
         return [(r["division_id"], r["driver_user_id"]) for r in await cursor.fetchall()]
 
 
-async def _result_users(db_path: str, table: str) -> list[tuple[int, int]]:
-    """Every row of *table* as (session, driver), sorted."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"SELECT session_result_id, driver_user_id FROM {table} "
-            "ORDER BY session_result_id, driver_user_id"
-        )
-        return [(r["session_result_id"], r["driver_user_id"]) for r in await cursor.fetchall()]
-
-
 async def _seed_profile(
     db_path: str,
     *,
@@ -328,7 +318,8 @@ async def test_re_keying_a_user_with_no_profile_is_refused(tmp_path):
 async def test_two_drivers_both_in_the_live_season_are_not_merged(tmp_path):
     """The new account is a driver of its own, and both are signed up for the live season.
     Merging them is the one thing an account holding a profile could mean (issue #243), and
-    two live signups cannot be one driver."""
+    two live signups cannot be one driver. The refusal changes nothing: the old profile stands
+    and nothing is audited."""
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, user_id=OLD_USER)
     await _seed_profile(db_path, user_id=NEW_USER)
@@ -338,6 +329,9 @@ async def test_two_drivers_both_in_the_live_season_are_not_merged(tmp_path):
         await service.reassign_user_id(
             OLD_USER, NEW_USER, ACTOR_ID, "Manager"
         )
+
+    assert await service.get_profile(OLD_USER) is not None
+    assert await _audit(db_path) == []
 
 
 async def test_an_account_whose_leftover_results_share_a_division_is_refused(tmp_path):
@@ -391,21 +385,6 @@ async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
     assert await _audit(db_path) == []
 
 
-async def test_a_refused_re_key_changes_nothing(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path, user_id=OLD_USER)
-    await _seed_profile(db_path, user_id=NEW_USER)
-    service = DriverService(db_path)
-
-    with pytest.raises(ValueError):
-        await service.reassign_user_id(
-            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
-        )
-
-    assert await service.get_profile(OLD_USER) is not None
-    assert await _audit(db_path) == []
-
-
 async def test_a_re_key_is_audited_with_both_accounts(tmp_path):
     """The league's only record that a driver's history was moved between accounts."""
     db_path = await _make_db(tmp_path)
@@ -427,35 +406,30 @@ async def test_a_re_key_is_audited_with_both_accounts(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_the_former_driver_flag_is_set_and_reports_both_values(tmp_path):
+@pytest.mark.parametrize(
+    "former, value, reported",
+    [
+        pytest.param(False, True, (False, True), id="set"),
+        pytest.param(True, False, (True, False), id="cleared"),
+    ],
+)
+async def test_the_former_driver_flag_is_set_or_cleared_and_reports_both_values(
+    tmp_path, former, value, reported
+):
     """The return value is what the command echoes back, so a manager can see it changed
-    rather than merely that the command ran."""
+    rather than merely that the command ran. It can be cleared again: set by mistake, it would
+    otherwise keep a profile alive through every departure."""
     db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path, former=False)
+    await _seed_profile(db_path, former=former)
     service = DriverService(db_path)
 
     old, new = await service.set_former_driver(
-        OLD_USER, True, ACTOR_ID, "Manager"
+        OLD_USER, value, ACTOR_ID, "Manager"
     )
 
-    assert (old, new) == (False, True)
+    assert (old, new) == reported
     profile = await service.get_profile(OLD_USER)
-    assert profile.former_driver is True
-
-
-async def test_the_former_driver_flag_can_be_cleared_again(tmp_path):
-    """Set by mistake, it would otherwise keep a profile alive through every departure."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path, former=True)
-    service = DriverService(db_path)
-
-    old, new = await service.set_former_driver(
-        OLD_USER, False, ACTOR_ID, "Manager"
-    )
-
-    assert (old, new) == (True, False)
-    profile = await service.get_profile(OLD_USER)
-    assert profile.former_driver is False
+    assert profile.former_driver is value
 
 
 async def test_setting_the_flag_for_a_user_with_no_profile_is_refused(tmp_path):

@@ -166,22 +166,15 @@ async def test_a_division_with_no_rounds_finishes(tmp_path):
     assert await _refresh(db_path, 11) is True
 
 
-async def test_refreshing_a_finished_division_reports_no_change(tmp_path):
-    """The return value says whether *this* call moved it, which is what lets a caller
-    avoid announcing a division finishing twice."""
-    db_path = await _make_db(tmp_path)
-    await _add_division(db_path, 11, status="FINISHED")
-    await _add_round(db_path, 11, 1, RoundStatus.FINAL.value)
-
-    assert await _refresh(db_path, 11) is False
-
-
-async def test_a_cancelled_division_is_not_marked_finished(tmp_path):
+@pytest.mark.parametrize("rounds", [1, 0], ids=["one final round", "no rounds"])
+async def test_a_cancelled_division_is_not_marked_finished(tmp_path, rounds):
     """It was called off deliberately, and moving it to FINISHED would lose that —
-    `/season cancel` would then treat it as a division that had run."""
+    `/season cancel` would then treat it as a division that had run. So too with no rounds,
+    where nothing is outstanding and an active division would finish."""
     db_path = await _make_db(tmp_path)
     await _add_division(db_path, 11, status="CANCELLED")
-    await _add_round(db_path, 11, 1, RoundStatus.FINAL.value)
+    for number in range(1, rounds + 1):
+        await _add_round(db_path, 11, number, RoundStatus.FINAL.value)
 
     moved = await _refresh(db_path, 11)
 
@@ -190,7 +183,8 @@ async def test_a_cancelled_division_is_not_marked_finished(tmp_path):
 
 
 async def test_a_division_still_in_setup_is_not_marked_finished(tmp_path):
-    """It has not started. Finishing it would let a season be completed before it ran."""
+    """It has not started. Finishing it would let a season be completed before it ran, however
+    empty its round list looks: with no rounds, nothing is outstanding, and that is no finish."""
     db_path = await _make_db(tmp_path)
     await _add_division(db_path, 11, status="SETUP")
 

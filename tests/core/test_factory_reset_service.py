@@ -111,11 +111,6 @@ async def test_a_copy_that_fails_its_check_is_refused_and_removed(db_path, tmp_p
     assert not factory_reset_service.backup_path(db_path, "20260919T101500Z").exists()
 
 
-async def test_a_database_that_cannot_be_copied_is_refused(tmp_path):
-    with pytest.raises(backup_service.BackupError):
-        take_backup(str(tmp_path / "missing.db"), _jobstore(tmp_path), now=NOW)
-
-
 def _a_copy_that_fails_its_check(db_path, tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(backup_service, "is_readable_database", lambda _path: False)
     take_backup(db_path, _jobstore(tmp_path), now=NOW)

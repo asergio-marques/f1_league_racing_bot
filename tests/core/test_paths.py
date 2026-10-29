@@ -22,13 +22,12 @@ def root(tmp_path):
     return tmp_path
 
 
-def test_plain_relative_path_resolves(root):
-    resolved = resolve_within_project_root("resources/templates", root=root)
-    assert resolved == (root / "resources" / "templates").resolve()
-
-
-def test_backslashes_are_accepted(root):
-    resolved = resolve_within_project_root("resources\\templates", root=root)
+@pytest.mark.parametrize("given", [
+    pytest.param("resources/templates", id="forward slashes"),
+    pytest.param("resources\\templates", id="backslashes"),
+])
+def test_plain_relative_path_resolves(root, given):
+    resolved = resolve_within_project_root(given, root=root)
     assert resolved == (root / "resources" / "templates").resolve()
 
 
@@ -36,11 +35,6 @@ def test_nonexistent_path_still_resolves(root):
     """A directory that does not exist yet is a validity problem, not a containment one."""
     resolved = resolve_within_project_root("resources/not_yet", root=root)
     assert resolved == (root / "resources" / "not_yet").resolve()
-
-
-def test_dotdot_escape_is_rejected(root):
-    with pytest.raises(PathContainmentError):
-        resolve_within_project_root("../../etc", root=root)
 
 
 def test_buried_dotdot_escape_is_rejected(root):

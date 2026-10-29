@@ -1,12 +1,13 @@
 """Integration tests for round lifecycle: results in → report verdicts → appeal verdicts.
 
 Tests cover:
-- result_status transitions in the DB
-- Zero-staged-penalties still advances to AWAITING_APPEAL_VERDICTS (FR-009)
-- Zero-staged-corrections still advances to FINAL (FR-010)
+- result_status transitions in the DB, zero staged penalties still advancing to
+  AWAITING_APPEAL_VERDICTS (FR-009) and zero staged corrections still to FINAL (FR-010)
 - channel-close only at FINAL (round_submission_channels.closed = 1), in the appeals approval's
   save
-- penalty_records and appeal_records rows created when staged lists are non-empty
+
+The penalty record a staged penalty produces is pinned by
+`tests/results/test_finalize_reviews.py::test_staged_penalties_are_applied`.
 """
 from __future__ import annotations
 
@@ -158,32 +159,6 @@ async def _closed(league) -> bool:
     ))
 
 
-async def test_zero_penalties_advances_to_post_race_penalty(tmp_path):
-    """Nothing staged: the round advances to AWAITING_APPEAL_VERDICTS (FR-009), channel open."""
-    from tests.support.review_league import review_league, round_status, stopped_at
-
-    league = await review_league(tmp_path, other_division=False)
-    await _approve_reports(league)
-
-    assert await stopped_at(league) is None
-    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
-    assert not await _closed(league)
-
-
-async def test_zero_corrections_advances_to_final(tmp_path):
-    """Nothing staged: the round becomes FINAL (FR-010), its channel row closed."""
-    from tests.support.change_queue import run_queue
-    from tests.support.review_league import round_status, stopped_at
-
-    league = await _appeals_league(tmp_path)
-    await _approve_appeals(league)
-    await run_queue(league.bot)
-
-    assert await stopped_at(league) is None
-    assert await round_status(league.db_path) == "FINAL"
-    assert await _closed(league)
-
-
 # ---------------------------------------------------------------------------
 # A review pressed after the round has ended — issue #167
 # ---------------------------------------------------------------------------
@@ -268,7 +243,9 @@ async def test_approving_the_last_rounds_appeals_finishes_the_division(tmp_path)
 async def test_full_lifecycle_states(tmp_path):
     """Walk the lifecycle from results-in to final, verifying each transition: the round is
     awaiting report verdicts, then appeal verdicts once its reports are approved, then final once
-    its appeals are."""
+    its appeals are. Nothing is staged at either approval: zero penalties still advances the
+    round to AWAITING_APPEAL_VERDICTS, its channel open (FR-009), and zero corrections still
+    makes it FINAL, its channel row closed (FR-010)."""
     from tests.support.change_queue import run_queue
     from tests.support.review_league import review_league, round_status, stopped_at
 
@@ -285,28 +262,6 @@ async def test_full_lifecycle_states(tmp_path):
     assert await stopped_at(league) is None
     assert await round_status(league.db_path) == "FINAL"
     assert await _closed(league)
-
-
-# ---------------------------------------------------------------------------
-# penalty_records rows created when staged penalties are non-empty
-# ---------------------------------------------------------------------------
-
-
-async def test_penalty_records_inserted_when_staged(tmp_path):
-    """A 5-second penalty staged for Lewis produces one penalty record, on his race result."""
-    from tests.support.review_league import LEWIS, one, penalty, review_league, stopped_at
-
-    league = await review_league(tmp_path, other_division=False)
-    race_result_id = await one(
-        league.db_path, "SELECT id FROM race_session_results WHERE driver_user_id = ?", LEWIS,
-    )
-    await _approve_reports(league, [penalty(LEWIS)])
-
-    assert await stopped_at(league) is None
-    assert await one(
-        league.db_path, "SELECT COUNT(*) FROM penalty_records WHERE race_result_id = ?",
-        race_result_id,
-    ) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -338,38 +293,27 @@ async def test_the_channel_row_is_closed_in_the_appeals_approval_s_save(tmp_path
 # T028-6: result_status_check helper — is_channel_in_penalty_review
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_is_channel_in_penalty_review_false_after_final(tmp_path):
-    """Once result_status = FINAL, is_channel_in_penalty_review must return False."""
+@pytest.mark.parametrize(
+    "status, expected",
+    [
+        pytest.param("FINAL", False, id="false after final"),
+        # AWAITING_APPEAL_VERDICTS, the old POST_RACE_PENALTY.
+        pytest.param("AWAITING_APPEAL_VERDICTS", True, id="true awaiting appeal verdicts"),
+    ],
+)
+async def test_is_channel_in_penalty_review_follows_the_round_status(tmp_path, status, expected):
+    """is_channel_in_penalty_review returns True while the round awaits its appeal verdicts
+    (the old POST_RACE_PENALTY), and False once it is FINAL."""
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
     _, division_id, round_id = await _bootstrap(db_path)
     await _insert_submission_channel(db_path, round_id, channel_id=777)
 
-    # Advance to FINAL
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE rounds SET status = 'FINAL' WHERE id = ?", (round_id,)
+            "UPDATE rounds SET status = ? WHERE id = ?", (status, round_id)
         )
         await db.commit()
 
     from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
-    assert not await is_channel_in_penalty_review(db_path, 777)
-
-
-@pytest.mark.asyncio
-async def test_is_channel_in_penalty_review_true_at_post_race_penalty(tmp_path):
-    """is_channel_in_penalty_review returns True when result_status = POST_RACE_PENALTY."""
-    db_path = str(tmp_path / "test.db")
-    await run_migrations(db_path)
-    _, division_id, round_id = await _bootstrap(db_path)
-    await _insert_submission_channel(db_path, round_id, channel_id=888)
-
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE rounds SET status = 'AWAITING_APPEAL_VERDICTS' WHERE id = ?", (round_id,)
-        )
-        await db.commit()
-
-    from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
-    assert await is_channel_in_penalty_review(db_path, 888)
+    assert await is_channel_in_penalty_review(db_path, 777) is expected

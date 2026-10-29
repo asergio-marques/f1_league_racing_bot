@@ -60,23 +60,23 @@ def git(monkeypatch):
     return Git()
 
 
-def test_a_release_is_kept_as_it_is():
-    assert v.normalise("v0.5.0") == "v0.5.0"
-    assert v.normalise("v1.10.0\n") == "v1.10.0"
-
-
-def test_a_build_drops_the_commit_suffix():
-    assert v.normalise("v0.4.0-230-g1a2b3c4") == "v0.4.0-230"
-
-
-def test_an_unfilled_placeholder_is_not_a_version():
-    assert v.normalise(PLACEHOLDER) is None
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        pytest.param("v0.5.0", "v0.5.0", id="a release"),
+        pytest.param("v1.10.0\n", "v1.10.0", id="a release with its newline"),
+        pytest.param("v0.4.0-230-g1a2b3c4", "v0.4.0-230", id="a build drops the commit suffix"),
+    ],
+)
+def test_a_version_keeps_its_form(text, expected):
+    """A release is kept as it is; a build drops its commit suffix."""
+    assert v.normalise(text) == expected
 
 
 @pytest.mark.parametrize(
     "text",
     ["", None, "v0.5", "0.5.0", "v01.2.3", "v0.4.0-rc1", "v0.4.0-230", "v0.4.0-230-gXYZ",
-     "attendance_prototype"],
+     "attendance_prototype", pytest.param(PLACEHOLDER, id="unfilled placeholder")],
 )
 def test_malformed_text_is_not_a_version(text):
     assert v.normalise(text) is None
@@ -88,14 +88,19 @@ def test_a_filled_file_is_read_without_asking_git(tmp_path, git):
     assert git.calls == []
 
 
-def test_a_clone_asks_git_once(tmp_path, git):
-    assert v.read_version(_write(tmp_path, PLACEHOLDER + "\n")) == "v0.4.0-230"
+@pytest.mark.parametrize(
+    "text, described, expected",
+    [
+        pytest.param(PLACEHOLDER + "\n", "v0.4.0-230-g1a2b3c4\n", "v0.4.0-230", id="on a build"),
+        pytest.param(PLACEHOLDER, "v0.5.0\n", "v0.5.0", id="on a release"),
+    ],
+)
+def test_a_clone_asks_git_once(tmp_path, git, text, described, expected):
+    """A clone's file names no version, so git is asked, once, and its answer read: a build, or
+    the release a clone of one reads."""
+    git.answer(stdout=described)
+    assert v.read_version(_write(tmp_path, text)) == expected
     assert git.calls == [["git", "describe", "--tags", "--match", "v[0-9]*"]]
-
-
-def test_a_clone_on_a_release_reads_the_release(tmp_path, git):
-    git.answer(stdout="v0.5.0\n")
-    assert v.read_version(_write(tmp_path, PLACEHOLDER)) == "v0.5.0"
 
 
 def test_a_missing_file_asks_git(tmp_path, git):
@@ -103,19 +108,15 @@ def test_a_missing_file_asks_git(tmp_path, git):
     assert len(git.calls) == 1
 
 
-def test_no_git_reads_as_unknown(tmp_path, git):
-    git.answer(raises=FileNotFoundError("git"))
-    assert v.read_version(_write(tmp_path, PLACEHOLDER)) is None
-
-
 @pytest.mark.parametrize(
     "failure",
     [
         subprocess.CalledProcessError(128, "git", stderr="fatal: not a git repository"),
         subprocess.TimeoutExpired("git", v.GIT_TIMEOUT_SECONDS),
+        pytest.param(FileNotFoundError("git"), id="no git"),
     ],
 )
-def test_a_failing_git_reads_as_unknown(tmp_path, git, failure):
+def test_a_missing_or_failing_git_reads_as_unknown(tmp_path, git, failure):
     git.answer(raises=failure)
     assert v.read_version(_write(tmp_path, PLACEHOLDER)) is None
 
@@ -162,16 +163,19 @@ def test_a_filled_file_dates_the_version_without_asking_git(tmp_path, git):
     assert git.calls == []
 
 
-def test_a_clone_asks_git_when_the_version_was_made(tmp_path, git):
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param(PLACEHOLDER + "\n" + DATE_PLACEHOLDER + "\n", id="a clone's placeholders"),
+        pytest.param("v0.5.0\n", id="a file with no date line"),
+    ],
+)
+def test_a_file_with_no_usable_date_asks_git_when_the_version_was_made(tmp_path, git, text):
+    """A file whose date line is a placeholder, or which has none, asks git when the version
+    was made."""
     git.answer(stdout="2026-09-22T12:20:06+01:00\n")
-    root = _write(tmp_path, PLACEHOLDER + "\n" + DATE_PLACEHOLDER + "\n")
-    assert v.read_version_date(root) == MADE
+    assert v.read_version_date(_write(tmp_path, text)) == MADE
     assert git.calls == [["git", "log", "-1", "--format=%cI"]]
-
-
-def test_a_file_with_no_date_line_asks_git(tmp_path, git):
-    git.answer(stdout="2026-09-22T12:20:06+01:00\n")
-    assert v.read_version_date(_write(tmp_path, "v0.5.0\n")) == MADE
 
 
 def test_no_git_leaves_the_date_unknown(tmp_path, git):

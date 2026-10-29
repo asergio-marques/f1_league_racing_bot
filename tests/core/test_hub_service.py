@@ -120,6 +120,7 @@ def test_two_options_may_not_share_a_key():
 
 
 def test_registering_the_same_option_again_is_harmless():
+    """A module imported twice registers the same option twice, which the registry allows."""
     option = _option()
     register_option(option)
     register_option(option)
@@ -183,33 +184,6 @@ async def test_a_press_is_answered_by_its_option():
     interaction.response.send_message.assert_not_awaited()
 
 
-async def test_a_press_on_an_option_no_longer_offered_is_refused():
-    """The panel was posted while the module was on; it has been disabled since."""
-    respond = AsyncMock()
-    offered = _offered(True)
-    register_option(_option("licence", respond=respond, offered=offered))
-    view = HubPanelView(registered_options())
-    offered.return_value = False
-    interaction = _interaction()
-
-    await view.children[0].callback(interaction)
-
-    respond.assert_not_awaited()
-    reply = interaction.response.send_message.await_args
-    assert "no longer offered" in reply.args[0]
-    assert reply.kwargs["ephemeral"] is True
-
-
-async def test_a_press_on_an_option_no_module_registers_any_more_is_refused():
-    """A button left on a panel by a version of the bot that offered it."""
-    view = HubPanelView([_option("retired")])
-    interaction = _interaction()
-
-    await view.children[0].callback(interaction)
-
-    assert "no longer offered" in interaction.response.send_message.await_args.args[0]
-
-
 @pytest.mark.parametrize(
     "registered, named",
     [
@@ -229,8 +203,11 @@ async def test_a_stale_press_is_recorded_in_the_log_channel(registered, named):
     """A press on a button that tries to act is refused in the log channel as well as to the
     member (the core specification's "The record of what changed"). The option is named by its
     label, or by its key where no module registers it any more; the member is answered exactly
-    as before."""
-    option = _option("licence", label="View licence", offered=_offered(False))
+    as before, and the option does not run. The first case is a panel posted while the module
+    was on and disabled since; the second, a button left on a panel by a version of the bot
+    that offered it."""
+    respond = AsyncMock()
+    option = _option("licence", label="View licence", offered=_offered(False), respond=respond)
     if registered:
         register_option(option)
     view = HubPanelView([option])
@@ -238,6 +215,7 @@ async def test_a_stale_press_is_recorded_in_the_log_channel(registered, named):
 
     await view.children[0].callback(interaction)
 
+    respond.assert_not_awaited()
     interaction.response.send_message.assert_awaited_once_with(
         hub_service.NO_LONGER_OFFERED, ephemeral=True
     )
@@ -376,16 +354,6 @@ def _log(league) -> str:
     return "\n".join(league.bot.log_channel.sent)
 
 
-async def test_the_panel_is_posted_and_its_id_kept(league):
-    """Kept so that the next refresh edits it in place rather than posting a second. The hub
-    is set and no panel stands; the refresh is asked and the queue run."""
-    await _ask_refresh(league)
-    await run_queue(league.bot)
-
-    assert "Nothing is offered here yet." in league.hub.sent[0]
-    assert await _stored_panel(league) == league.hub.posted[0].id
-
-
 async def test_a_standing_panel_is_edited_in_place(league):
     """The panel stands in the hub; a refresh asked once an option is registered edits it in
     place, with the option's button, and posts nothing new."""
@@ -479,8 +447,10 @@ async def test_a_hub_channel_gone_stops_the_queue_naming_the_command(league):
 
 
 async def test_the_panel_s_id_is_saved_with_its_mark(league, monkeypatch):
-    """The panel is posted; its id is written in the refresh job's own save, with its mark,
-    never by a commit of the configuration service's own."""
+    """The hub is set and no panel stands; the refresh is asked and the queue run. The panel is
+    posted; its id is kept, so that the next refresh edits it in place rather than posting a
+    second, and is written in the refresh job's own save, with its mark, never by a commit of
+    the configuration service's own."""
     written = []
     own_commit = league.bot.config_service.set_core_setting
 
@@ -494,6 +464,7 @@ async def test_the_panel_s_id_is_saved_with_its_mark(league, monkeypatch):
     await run_queue(league.bot)
 
     assert "hub_message_id" not in written
+    assert "Nothing is offered here yet." in league.hub.sent[0]
     assert await _stored_panel(league) == league.hub.posted[0].id
     [change] = await _refreshes(league)
     assert all(job["done_at"] is not None for job in await step_rows(league.db_path, change["id"]))

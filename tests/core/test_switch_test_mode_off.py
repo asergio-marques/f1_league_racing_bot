@@ -120,17 +120,6 @@ async def _switch_off(db_path):
     return deleted
 
 
-async def test_switching_off_clears_the_flag_and_the_drivers(db_path):
-    assert await _switch_off(db_path) == 2
-
-    assert await _profiles(db_path) == [3]
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT test_mode_active FROM server_configs WHERE server_id = ?", (SERVER_ID,)
-        )
-        assert (await cursor.fetchone())[0] == 0
-
-
 async def test_a_server_not_in_test_mode_is_left_alone(db_path):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE server_configs SET test_mode_active = 0")

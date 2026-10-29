@@ -123,6 +123,8 @@ def test_what_a_league_sees(path):
         "tests/unit/test_x.py",
         "docs/wip-specs/core_specification.md",
         "docs/design/steward_module.md",
+        # The one guide under docs/how-to/ that is for maintainers, not a league.
+        "docs/how-to/test-mode.md",
         "tools/next_version.py",
         ".github/workflows/release.yml",
         ".claude/skills/fix-issue/SKILL.md",
@@ -134,10 +136,6 @@ def test_what_a_league_sees(path):
 )
 def test_what_a_league_does_not_see(path):
     assert cpl.league_facing([path]) == []
-
-
-def test_test_mode_guide_is_not_league_facing():
-    assert cpl.league_facing(["docs/how-to/test-mode.md"]) == []
 
 
 def test_a_rename_out_of_src_counts_as_league_facing():

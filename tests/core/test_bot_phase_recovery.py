@@ -13,7 +13,7 @@ days early.
 
 **The config is resolved once per server, not once per round.** A season's rounds all share one,
 and a league with three divisions of twenty-four rounds would otherwise read it seventy-two
-times on every start. `test_the_configuration_is_read_once_per_server` holds it — and holds it
+times on every start. `test_the_configuration_is_read_once` holds it — and holds it
 against the obvious "simplification" of moving the read inside the loop.
 
 **And only after the module gate**, so a server with weather switched off is never queried for a
@@ -201,13 +201,20 @@ async def test_only_the_horizons_that_have_passed_fire(tmp_path):
     assert [p for p, _ in fired] == [1]
 
 
-async def test_a_phase_already_done_is_not_fired_again(tmp_path):
-    """Otherwise every restart would republish the whole season's forecasts."""
-    db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, True, True, False, "NORMAL"),))
+@pytest.mark.parametrize("done, expected", [
+    pytest.param((True, False, False), [2, 3], id="phase 1 done"),
+    pytest.param((False, True, False), [1, 3], id="phase 2 done"),
+    pytest.param((True, True, False), [3], id="phases 1 and 2 done"),
+    pytest.param((False, False, True), [1, 2], id="phase 3 done"),
+])
+async def test_a_phase_already_done_is_not_fired_again(tmp_path, done, expected):
+    """Otherwise every restart would republish the whole season's forecasts: each phase's own
+    flag holds it back, and the phases not done still fire."""
+    db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, *done, "NORMAL"),))
 
     fired = await _recover(_bot(db_path))
 
-    assert [p for p, _ in fired] == [3]
+    assert sorted(p for p, _ in fired) == expected
 
 
 async def test_every_overdue_round_is_recovered(tmp_path):
@@ -275,21 +282,16 @@ async def test_the_configuration_is_read_once(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_server_with_weather_off_recovers_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, False, False, False, "NORMAL"),))
-
-    assert await _recover(_bot(db_path, weather_enabled=False)) == []
-
-
 async def test_a_server_with_weather_off_is_never_asked_for_its_configuration(tmp_path):
     """The module gate runs first, so a server that does not use the config is not queried
-    for it — the module-output rule applied to reads."""
+    for it — the module-output rule applied to reads — and nothing is recovered."""
     db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, False, False, False, "NORMAL"),))
     reads: list[str] = []
 
-    await _recover(_bot(db_path, weather_enabled=False), reads=reads)
+    fired = await _recover(_bot(db_path, weather_enabled=False), reads=reads)
 
     assert reads == []
+    assert fired == []
 
 
 async def test_a_mystery_round_is_asked_like_any_other(tmp_path):
@@ -301,18 +303,6 @@ async def test_a_mystery_round_is_asked_like_any_other(tmp_path):
     fired = await _recover(_bot(db_path))
 
     assert sorted(fired) == [(1, 1), (2, 1), (3, 1)]
-
-
-async def test_a_season_not_running_recovers_nothing(tmp_path):
-    """A season in setup has not started, and a completed one is over — neither has a
-    forecast owing."""
-    db_path = await _make_db(
-        tmp_path,
-        rounds=((1, RACE_SOON, False, False, False, "NORMAL"),),
-        season_status="SETUP",
-    )
-
-    assert await _recover(_bot(db_path)) == []
 
 
 async def test_a_round_already_raced_recovers_nothing(tmp_path):
@@ -341,24 +331,23 @@ async def test_only_the_raced_round_of_two_is_passed_over(tmp_path):
     assert sorted(fired) == [(1, 2), (2, 2), (3, 2)]
 
 
-async def test_a_cancelled_round_recovers_nothing(tmp_path):
-    """The division was told no forecast would follow, and its phase jobs were cancelled
-    without being marked done — so the flags alone would have a restart post them anyway."""
+@pytest.mark.parametrize("status", [
+    # A season in setup has not started, and a completed one is over — neither has a forecast
+    # owing.
+    pytest.param({"season_status": "SETUP"}, id="a season not running"),
+    # The division was told no forecast would follow, and its phase jobs were cancelled without
+    # being marked done — so the flags alone would have a restart post them anyway.
+    pytest.param({"round_status": "CANCELLED"}, id="a cancelled round"),
+    # A cancelled division has no round left to forecast, whatever each round records.
+    pytest.param({"division_status": "CANCELLED"}, id="a cancelled division"),
+])
+async def test_a_round_not_to_be_run_recovers_nothing(tmp_path, status):
+    """A round its season, its own status or its division's says is not to be run is passed
+    over, however its phases stand."""
     db_path = await _make_db(
         tmp_path,
         rounds=((1, RACE_SOON, False, False, False, "NORMAL"),),
-        round_status="CANCELLED",
-    )
-
-    assert await _recover(_bot(db_path)) == []
-
-
-async def test_a_round_of_a_cancelled_division_recovers_nothing(tmp_path):
-    """A cancelled division has no round left to forecast, whatever each round records."""
-    db_path = await _make_db(
-        tmp_path,
-        rounds=((1, RACE_SOON, False, False, False, "NORMAL"),),
-        division_status="CANCELLED",
+        **status,
     )
 
     assert await _recover(_bot(db_path)) == []
@@ -367,7 +356,8 @@ async def test_a_round_of_a_cancelled_division_recovers_nothing(tmp_path):
 async def test_a_naive_timestamp_is_read_as_utc(tmp_path):
     """Rows written before the timestamps carried a zone still exist. Read as local time
     the horizon would move by the host's offset, so the same database would recover
-    differently on the Pi than on a developer's machine."""
+    differently on the Pi than on a developer's machine; and compared with an aware "now" it
+    would raise, aborting the sweep partway through a season."""
     db_path = await _make_db(tmp_path)
     naive = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(tzinfo=None)
     async with get_connection(db_path) as db:
@@ -413,28 +403,21 @@ async def _forecasts_asked(league) -> list[tuple[int, int]]:
         pytest.param(0.5, False, [(round_id(PRO, 3), 0)], id="its notice owed"),
         pytest.param(0.5, True, [], id="its notice already posted"),
         pytest.param(-1, False, [], id="its race already run"),
+        pytest.param(30 * 24, False, [], id="its first horizon still ahead"),
     ],
 )
 async def test_a_missed_mystery_notice_is_asked_for_when_the_bot_starts(
     tmp_path, hours_until_race, notice_posted, expected,
 ):
-    """Pro's round 3 is a mystery round whose Phase 1 horizon passed while the bot was stopped.
-    The bot starts: with the notice not yet posted and the race still ahead, one forecast change
-    is on the queue, of the notice (phase 0), and none of phases 2 or 3; with the notice posted
-    already, or the race run, none (folded defect 5; weather spec :158 as amended)."""
+    """Pro's round 3 is a mystery round, and the bot starts after being stopped. Where its Phase 1
+    horizon passed while the bot was down, with the notice not yet posted and the race still
+    ahead, one forecast change is on the queue, of the notice (phase 0), and none of phases 2 or
+    3; with the notice posted already, or the race run, none (folded defect 5; weather spec :158
+    as amended). Thirty days out, its Phase 1 horizon not yet reached, none either: its notice is
+    left to its own timer."""
     league = await _mystery_league(tmp_path, hours_until_race=hours_until_race,
                                    notice_posted=notice_posted)
 
     await _recover_missed_phases(league.bot)
 
     assert await _forecasts_asked(league) == expected
-
-
-async def test_a_mystery_round_not_yet_at_its_first_horizon_is_not_asked(tmp_path):
-    """Pro's round 3 is a mystery round thirty days out, before its Phase 1 horizon: the bot
-    starts and asks the queue for nothing; its notice is left to its own timer."""
-    league = await _mystery_league(tmp_path, hours_until_race=30 * 24)
-
-    await _recover_missed_phases(league.bot)
-
-    assert await _forecasts_asked(league) == []

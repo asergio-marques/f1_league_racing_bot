@@ -269,8 +269,10 @@ async def test_a_stop_after_the_save_finishes_the_roles_and_lineups_on_restart(
 async def test_the_placements_and_the_season_s_move_are_saved_in_one_save(
     tmp_path, monkeypatch,
 ):
+    """A save that fails leaves both placements uncommitted and the season placing; a retry
+    with nothing changed confirms them."""
     league = await _league(tmp_path, monkeypatch)
-    await _pressed(league)
+    press = await _pressed(league)
 
     with _failing_save():
         await run_queue(league.bot)
@@ -282,6 +284,9 @@ async def test_the_placements_and_the_season_s_move_are_saved_in_one_save(
 
     assert await _uncommitted(league) == 0
     assert await _stage(league) == "ONGOING"
+    assert CONFIRMED in reply(press)
+    assert len(_confirmed_lines(league)) == 1
+    assert await _stopped_at(league) is None
 
 
 @pytest.mark.parametrize("when", ["at the press", "when it runs"])
@@ -369,7 +374,10 @@ async def test_a_second_press_while_the_confirmation_is_in_hand_is_refused_at_on
     tmp_path, monkeypatch, first,
 ):
     """Two reviews stand; the second is pressed while the first's confirmation waits on the
-    queue, is stopped at its save, or is stopped at a driver's roles after it."""
+    queue, is stopped at its save, or is stopped at a driver's roles after it. Once the first
+    confirmation has committed the placements, the season no longer fingerprints as the second
+    review saw it; the second press is still told what is true, that one is in hand, and not
+    that the season has changed."""
     league = await _league(tmp_path, monkeypatch)
     review, other = await post_mid_season_review(league), await post_mid_season_review(league)
     await _pressed(league, review)
@@ -388,6 +396,7 @@ async def test_a_second_press_while_the_confirmation_is_in_hand_is_refused_at_on
 
     assert ALREADY in reply(second)
     assert "job #" not in reply(second)
+    assert "has changed since this review" not in reply(second)
     assert len(await _confirmations(league)) == 1
 
     league.grant_fails.clear()
@@ -397,24 +406,6 @@ async def test_a_second_press_while_the_confirmation_is_in_hand_is_refused_at_on
         await retry_job(league.bot)
     assert await _stage(league) == "ONGOING"
     assert len(_confirmed_lines(league)) == 1
-
-
-async def test_a_press_while_the_confirmation_is_stopped_after_its_save_is_refused_as_in_hand_not_as_changed(
-    tmp_path, monkeypatch,
-):
-    """The first confirmation committed the placements, so the season no longer fingerprints as
-    the second review saw it; the second press is told what is true: one is in hand."""
-    league = await _league(tmp_path, monkeypatch)
-    review, other = await post_mid_season_review(league), await post_mid_season_review(league)
-    league.grant_fails[MAX] = http_error(discord.Forbidden, status=403)
-    await _pressed(league, review)
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == "grant_roles"
-
-    second = await _pressed(league, other)
-
-    assert ALREADY in reply(second)
-    assert "has changed since this review" not in reply(second)
 
 
 # ── What it does ────────────────────────────────────────────────────────────────────
@@ -436,6 +427,12 @@ async def test_the_manager_is_told_at_once_and_the_reply_is_updated_when_the_pla
 
     assert CONFIRMED in reply(press)
     assert NOT_EVERYTHING not in reply(press)
+    # The outcome arrives as an edit of the acknowledgement, with no section on what could
+    # not be done.
+    updated = "\n".join(str(call.args[0] if call.args else call.kwargs.get("content", ""))
+                        for call in press.edit_original_response.await_args_list)
+    assert CONFIRMED in updated
+    assert "Not everything could be done" not in updated
 
 
 async def test_the_press_is_not_deferred_the_acknowledgement_is_its_response(
@@ -583,21 +580,6 @@ async def test_a_retried_save_judges_the_confirmation_again_and_refuses_what_cha
     assert _confirmed_lines(league) == []
     assert await _uncommitted(league) == 2
     assert await _stage(league) == "ONGOING_PLACEMENTS"
-    assert await _stopped_at(league) is None
-
-
-async def test_a_retried_save_with_nothing_changed_confirms(tmp_path, monkeypatch):
-    league = await _league(tmp_path, monkeypatch)
-    press = await _pressed(league)
-    with _failing_save(times=1):
-        await run_queue(league.bot)
-        assert await _stopped_at(league) == "apply"
-
-        await retry_job(league.bot)
-
-    assert CONFIRMED in reply(press)
-    assert await _stage(league) == "ONGOING"
-    assert len(_confirmed_lines(league)) == 1
     assert await _stopped_at(league) is None
 
 

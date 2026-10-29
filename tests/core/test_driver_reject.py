@@ -58,6 +58,8 @@ def _member():
 
 @pytest.mark.parametrize("stage", [SeasonStage.PLACEMENTS, SeasonStage.ONGOING_PLACEMENTS])
 async def test_an_unassigned_driver_is_turned_down_and_loses_the_driver_role(stage):
+    """Their signup's approval is withdrawn too (#243): the signup was rejected in the end, and
+    outranks nothing any more."""
     cog = _cog(stage)
     member = _member()
 
@@ -67,6 +69,9 @@ async def test_an_unassigned_driver_is_turned_down_and_loses_the_driver_role(sta
         "4242", DriverState.NOT_SIGNED_UP
     )
     member.remove_roles.assert_awaited_once()
+    cog.bot.signup_module_service.withdraw_approval.assert_awaited_once_with(
+        cog.bot.driver_service.get_profile.return_value.id
+    )
 
 
 @pytest.mark.parametrize(
@@ -95,14 +100,3 @@ async def test_only_an_unassigned_driver_is_turned_down(state):
 
     assert "not an Unassigned driver" in interaction.followup.send.await_args.args[0]
     cog.bot.driver_service.transition.assert_not_awaited()
-
-
-async def test_turning_a_driver_down_withdraws_their_signups_approval():
-    """Issue #243: the signup was rejected in the end, and outranks nothing any more."""
-    cog = _cog(SeasonStage.PLACEMENTS)
-
-    await undecorate(DriverCog.reject)(cog, _interaction(), _member())
-
-    cog.bot.signup_module_service.withdraw_approval.assert_awaited_once_with(
-        cog.bot.driver_service.get_profile.return_value.id
-    )

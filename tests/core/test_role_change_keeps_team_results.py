@@ -259,14 +259,19 @@ async def test_results_graphic_names_a_team_after_its_role_is_replaced(tmp_path)
 # ── The submission ───────────────────────────────────────────────────────────
 
 
-async def test_submission_resolves_a_shorthand_to_the_division_team(tmp_path):
+@pytest.mark.parametrize(
+    "ferrari, rival", [("Ferrari", "Rival"), ("FERRARI", "rival")],
+    ids=["as held", "in another case"],
+)
+async def test_submission_resolves_a_shorthand_to_the_division_team(tmp_path, ferrari, rival):
+    """A team is typed by its shorthand, in any case (#381)."""
     db_path, teams = await _league(tmp_path)
 
     parsed = await _validate(
         db_path,
         [
-            f"1, <@{FERRARI_DRIVER}>, Ferrari, 46:23.569, 1:14.523, N/A",
-            f"2, <@{RIVAL_DRIVER}>, Rival, +5.000, 1:14.600, N/A",
+            f"1, <@{FERRARI_DRIVER}>, {ferrari}, 46:23.569, 1:14.523, N/A",
+            f"2, <@{RIVAL_DRIVER}>, {rival}, +5.000, 1:14.600, N/A",
         ],
     )
 
@@ -314,16 +319,17 @@ async def test_the_shorthand_still_names_the_team_after_its_role_is_replaced(tmp
     assert [row.team_instance_id for row in parsed] == [teams["Ferrari"]]
 
 
-async def test_a_refusal_names_the_team_a_driver_is_seated_in(tmp_path):
-    """By name, while echoing the shorthand that was typed."""
+@pytest.mark.parametrize("typed", ["Rival", "rival"])
+async def test_a_refusal_names_the_team_a_driver_is_seated_in(tmp_path, typed):
+    """By name, while echoing the shorthand that was typed, as typed."""
     db_path, _teams = await _league(tmp_path)
 
     errors = await _validate(
-        db_path, [f"1, <@{FERRARI_DRIVER}>, Rival, 46:23.569, 1:14.523, N/A"]
+        db_path, [f"1, <@{FERRARI_DRIVER}>, {typed}, 46:23.569, 1:14.523, N/A"]
     )
 
     assert errors == [
-        f"Row 1: driver <@{FERRARI_DRIVER}> submitted as Rival "
+        f"Row 1: driver <@{FERRARI_DRIVER}> submitted as {typed} "
         "but is assigned to **Ferrari**."
     ]
 
@@ -361,21 +367,6 @@ async def test_a_refusal_names_the_team_an_earlier_session_recorded_across_a_rol
 
 
 # ── A team is typed by its shorthand (#381) ────────────────────────────────
-
-
-async def test_submission_names_a_team_by_its_shorthand(tmp_path):
-    """A team is typed by its shorthand, in any case (#381)."""
-    db_path, teams = await _league(tmp_path)
-
-    parsed = await _validate(
-        db_path,
-        [
-            f"1, <@{FERRARI_DRIVER}>, FERRARI, 46:23.569, 1:14.523, N/A",
-            f"2, <@{RIVAL_DRIVER}>, rival, +5.000, 1:14.600, N/A",
-        ],
-    )
-
-    assert [row.team_instance_id for row in parsed] == [teams["Ferrari"], teams["Rival"]]
 
 
 async def test_submission_refuses_the_shorthand_of_a_team_with_no_role(tmp_path):
@@ -431,15 +422,3 @@ async def test_an_empty_team_column_is_refused(tmp_path):
     errors = await _validate(db_path, [f"1, <@{RIVAL_DRIVER}>, , 46:23.569, 1:14.523, N/A"])
 
     assert errors == ["Row 1: Team must be named, by its shorthand."]
-
-
-async def test_a_refusal_echoes_the_shorthand_as_typed(tmp_path):
-    db_path, _teams = await _league(tmp_path)
-
-    errors = await _validate(
-        db_path, [f"1, <@{FERRARI_DRIVER}>, rival, 46:23.569, 1:14.523, N/A"]
-    )
-
-    assert errors == [
-        f"Row 1: driver <@{FERRARI_DRIVER}> submitted as rival but is assigned to **Ferrari**."
-    ]

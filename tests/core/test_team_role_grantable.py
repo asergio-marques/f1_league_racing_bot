@@ -54,21 +54,6 @@ def test_a_grantable_role_is_accepted():
     assert role_grant_refusal(_role()) is None
 
 
-def test_everyone_is_refused():
-    refusal = role_grant_refusal(_role(default=True))
-
-    assert refusal is not None
-    assert "@everyone" in refusal
-
-
-def test_a_role_managed_by_an_integration_is_refused():
-    """A bot's own role, Server Booster, a linked role: Discord grants those itself."""
-    refusal = role_grant_refusal(_role(managed=True))
-
-    assert refusal is not None
-    assert "integration" in refusal
-
-
 def test_a_role_above_the_bot_s_own_is_refused_saying_how_to_fix_it():
     refusal = role_grant_refusal(_role(above_the_bot=True))
 
@@ -83,10 +68,21 @@ def test_every_role_is_refused_while_the_bot_lacks_manage_roles():
     assert "Manage Roles" in refusal
 
 
-@pytest.mark.parametrize("fault", [{"default": True}, {"managed": True}])
-def test_a_team_s_role_is_told_to_choose_one_of_the_team_s_own(fault):
-    """The default wording is a team's, for every caller that sets one."""
-    assert "Choose a role of the team's own." in role_grant_refusal(_role(**fault))
+@pytest.mark.parametrize(
+    "fault, said",
+    [
+        pytest.param({"default": True}, "@everyone", id="everyone"),
+        # A bot's own role, Server Booster, a linked role: Discord grants those itself.
+        pytest.param({"managed": True}, "integration", id="managed by an integration"),
+    ],
+)
+def test_a_team_s_role_is_told_to_choose_one_of_the_team_s_own(fault, said):
+    """`@everyone` and a role an integration manages are refused, each named as what it is. The
+    default wording is a team's, for every caller that sets one."""
+    refusal = role_grant_refusal(_role(**fault))
+
+    assert said in refusal
+    assert "Choose a role of the team's own." in refusal
 
 
 @pytest.mark.parametrize("fault", [{"default": True}, {"managed": True}])

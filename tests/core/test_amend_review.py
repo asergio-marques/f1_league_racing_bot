@@ -12,8 +12,9 @@ P2 is worth more than P1 is part of what the diff means.
 
 **And it is asked again at the press.** The panel stays open for five minutes, so a staged table
 can change between the diff being drawn and the button being pressed — in either direction. Both checks
-exist for that reason, and `test_a_table_repaired_after_the_panel_was_drawn_is_approved` is the
-half that shows the second check is not merely the first repeated.
+exist for that reason, and `test_a_table_repaired_after_the_panel_was_drawn_is_approved` in
+`tests/results/test_points_amendment_change.py` is the half that shows the second check is not
+merely the first repeated.
 
 **A refused approval changes nothing and says so.** The staged table survives, because the
 manager's next step is to repair it — telling them it was discarded would send them to rebuild
@@ -306,27 +307,22 @@ async def test_a_server_with_no_season_is_refused():
     _assert_refusal_recorded(cog, interaction)
 
 
-async def test_a_season_not_in_amendment_mode_is_refused():
+@pytest.mark.parametrize(
+    "state",
+    [
+        pytest.param(SimpleNamespace(amendment_active=False), id="inactive"),
+        pytest.param(None, id="no_state_row"),
+    ],
+)
+async def test_a_season_not_in_amendment_mode_is_refused(state):
     """There is no modification store to review; `/results amend toggle` is what opens one,
-    and approving against an inactive mode would write nothing while reporting success. The
-    refusal is recorded (#482)."""
+    and approving against an inactive mode would write nothing while reporting success. No
+    state row at all, as against a row saying inactive, gets the same answer, and the `None`
+    would otherwise be read for an attribute. The refusal is recorded (#482)."""
     cog = _make_cog()
     interaction = _interaction(cog)
 
-    stubs = await _review(cog, interaction, state=SimpleNamespace(amendment_active=False))
-
-    assert _replied(interaction) == "❌ Amendment mode is not active."
-    stubs["approve"].assert_not_awaited()
-    _assert_refusal_recorded(cog, interaction)
-
-
-async def test_a_season_that_never_entered_amendment_mode_is_refused():
-    """No state row at all, as against a row saying inactive — the same answer, and the
-    `None` would otherwise be read for an attribute. The refusal is recorded (#482)."""
-    cog = _make_cog()
-    interaction = _interaction(cog)
-
-    stubs = await _review(cog, interaction, state=None)
+    stubs = await _review(cog, interaction, state=state)
 
     assert _replied(interaction) == "❌ Amendment mode is not active."
     stubs["approve"].assert_not_awaited()
@@ -463,16 +459,6 @@ async def test_approving_asks_the_queue_for_the_season_s_approval():
 # ---------------------------------------------------------------------------
 
 
-async def test_rejecting_writes_nothing():
-    cog = _make_cog()
-    interaction = _interaction()
-
-    stubs = await _review(cog, interaction, press="reject")
-
-    stubs["approve"].assert_not_awaited()
-    assert "Amendment rejected" in _replied(interaction)
-
-
 async def test_rejecting_leaves_amendment_mode_active():
     """Rejection is "not these changes", not "abandon the amendment" — conflating the two
     would throw away an evening's staging on a misread button."""
@@ -483,6 +469,7 @@ async def test_rejecting_leaves_amendment_mode_active():
 
     replied = _replied(interaction)
     assert "Modification store and amendment mode remain active" in replied
+    assert "Amendment rejected" in replied
 
 
 _NOTHING_APPROVED = (

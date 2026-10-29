@@ -269,22 +269,27 @@ async def test_the_line_names_the_member_the_command_and_the_values_beneath(env)
     assert await _value(env) == 6
 
 
-async def test_a_value_held_when_asked_is_set_when_a_change_ahead_moved_it(env):
-    """Held 5: 6 is asked, then 5 while 6 waits. 5 is not refused for being held when asked, and
-    once 6 has run it sets 5 again."""
+@pytest.mark.parametrize("value", [
+    pytest.param(5, id="the value held when asked"),
+    pytest.param(7, id="another value"),
+])
+async def test_a_value_asked_while_a_change_is_ahead_is_queued_behind_it_and_set(env, value):
+    """Held 5: 6 is asked, then *value* while 6 waits, and it is queued behind it. 5 is not
+    refused for being held when asked, and once 6 has run it sets 5 again; another value, 7, is
+    set the same way."""
     _league(env)
     second = member_interaction(env.bot)
 
     await _ask(env, 6)
-    await _ask(env, 5, second)
+    await _ask(env, value, second)
     await run_queue(env.bot)
 
     assert await _states(env) == ["DONE", "DONE"]
-    assert updated_reply(second) == "✅ The dummy value is now **5**."
+    assert updated_reply(second) == f"✅ The dummy value is now **{value}**."
     assert [(a[1], a[2]) for a in await _audits(env)] == [
-        ({"value": 5}, {"value": 6}), ({"value": 6}, {"value": 5}),
+        ({"value": 5}, {"value": 6}), ({"value": 6}, {"value": value}),
     ]
-    assert await _value(env) == 5
+    assert await _value(env) == value
 
 
 # ---------------------------------------------------------------------------
@@ -332,20 +337,6 @@ async def test_the_same_setting_to_the_same_value_while_it_waits_is_refused_as_a
         "so it was not asked for again."
     )
     assert len(await change_rows(env.db_path)) == 1
-
-
-async def test_the_same_setting_to_another_value_while_it_waits_is_queued_behind_it(env):
-    _league(env)
-
-    await _ask(env, 6)
-    await _ask(env, 7)
-    await run_queue(env.bot)
-
-    assert await _states(env) == ["DONE", "DONE"]
-    assert await _value(env) == 7
-    assert [(a[1], a[2]) for a in await _audits(env)] == [
-        ({"value": 5}, {"value": 6}), ({"value": 6}, {"value": 7}),
-    ]
 
 
 async def test_the_acknowledgement_names_what_is_being_set(env):

@@ -96,21 +96,19 @@ async def _export(db_path):
 
 
 class TestSlotPresence:
-    async def test_slot_present_marked_true(self, tmp_path):
-        db_path = await _seed(
-            tmp_path,
-            [{"availability": ["Mon_19_00", "Fri_21_00"]}],
-            slots=[(1, "19:00"), (3, "20:00"), (5, "21:00")],
-        )
+    @pytest.mark.parametrize(
+        "availability, slots, expected",
+        [
+            pytest.param(["Mon_19_00", "Fri_21_00"], [(1, "19:00"), (3, "20:00"), (5, "21:00")],
+                         {1: True, 2: False, 3: True}, id="present marked true"),
+            pytest.param([], [(1, "19:00"), (3, "20:00")], {1: False, 2: False},
+                         id="absent marked false"),
+        ],
+    )
+    async def test_slot_presence_is_marked(self, tmp_path, availability, slots, expected):
+        db_path = await _seed(tmp_path, [{"availability": availability}], slots=slots)
         rows, _ = await _export(db_path)
-        assert rows[0]["slot_presence"] == {1: True, 2: False, 3: True}
-
-    async def test_slot_absent_marked_false(self, tmp_path):
-        db_path = await _seed(
-            tmp_path, [{"availability": []}], slots=[(1, "19:00"), (3, "20:00")]
-        )
-        rows, _ = await _export(db_path)
-        assert rows[0]["slot_presence"] == {1: False, 2: False}
+        assert rows[0]["slot_presence"] == expected
 
     async def test_export_columns_survive_a_slot_removal(self, tmp_path):
         """The issue's worked example, end to end.
@@ -169,35 +167,33 @@ class TestSlotPresence:
 
 
 class TestExportRow:
-    async def test_platform_id_included(self, tmp_path):
-        db_path = await _seed(
-            tmp_path, [{"platform": "Steam", "platform_id": "MyPlatformID"}]
-        )
+    @pytest.mark.parametrize(
+        "platform, platform_id, expected",
+        [
+            pytest.param("Steam", "MyPlatformID", ("Steam", "MyPlatformID"), id="included"),
+            pytest.param(None, None, ("", ""), id="null becomes empty string"),
+        ],
+    )
+    async def test_platform_id_exported(self, tmp_path, platform, platform_id, expected):
+        db_path = await _seed(tmp_path, [{"platform": platform, "platform_id": platform_id}])
         rows, _ = await _export(db_path)
-        assert rows[0]["platform"] == "Steam"
-        assert rows[0]["platform_id"] == "MyPlatformID"
+        assert (rows[0]["platform"], rows[0]["platform_id"]) == expected
 
-    async def test_null_platform_id_becomes_empty_string(self, tmp_path):
-        db_path = await _seed(tmp_path, [{"platform": None, "platform_id": None}])
+    @pytest.mark.parametrize(
+        "preferred, expected",
+        [
+            pytest.param(["Red Bull", "Mercedes", "Ferrari"], ("Red Bull", "Mercedes", "Ferrari"),
+                         id="three teams"),
+            pytest.param(["Alpine"], ("Alpine", "", ""),
+                         id="fewer than three padded with empty strings"),
+        ],
+    )
+    async def test_preferred_teams_split_into_three_columns(self, tmp_path, preferred, expected):
+        db_path = await _seed(tmp_path, [{"preferred_teams": preferred}])
         rows, _ = await _export(db_path)
-        assert rows[0]["platform"] == ""
-        assert rows[0]["platform_id"] == ""
-
-    async def test_preferred_teams_split_into_three_columns(self, tmp_path):
-        db_path = await _seed(
-            tmp_path, [{"preferred_teams": ["Red Bull", "Mercedes", "Ferrari"]}]
-        )
-        rows, _ = await _export(db_path)
-        assert rows[0]["preferred_team_1"] == "Red Bull"
-        assert rows[0]["preferred_team_2"] == "Mercedes"
-        assert rows[0]["preferred_team_3"] == "Ferrari"
-
-    async def test_fewer_than_three_teams_padded_with_empty_strings(self, tmp_path):
-        db_path = await _seed(tmp_path, [{"preferred_teams": ["Alpine"]}])
-        rows, _ = await _export(db_path)
-        assert rows[0]["preferred_team_1"] == "Alpine"
-        assert rows[0]["preferred_team_2"] == ""
-        assert rows[0]["preferred_team_3"] == ""
+        assert (
+            rows[0]["preferred_team_1"], rows[0]["preferred_team_2"], rows[0]["preferred_team_3"]
+        ) == expected
 
     async def test_seed_ordering_by_total_lap_ms(self, tmp_path):
         """Lower total_lap_ms → lower seed (earlier in list → higher priority)."""
@@ -248,25 +244,24 @@ class TestExportRow:
         rows, _ = await _export(db_path)
         assert rows[0]["total_lap_fmt"] == ""
 
-    async def test_display_name_fallback_to_discord_username(self, tmp_path):
+    @pytest.mark.parametrize(
+        "discord_username, expected",
+        [
+            pytest.param("Driver#1234", "Driver#1234", id="to the discord username"),
+            pytest.param(None, "999", id="to the user id"),
+        ],
+    )
+    async def test_display_name_fallback(self, tmp_path, discord_username, expected):
         db_path = await _seed(
             tmp_path,
             [{
                 "discord_user_id": "999",
                 "server_display_name": None,
-                "discord_username": "Driver#1234",
+                "discord_username": discord_username,
             }],
         )
         rows, _ = await _export(db_path)
-        assert rows[0]["display_name"] == "Driver#1234"
-
-    async def test_display_name_fallback_to_user_id(self, tmp_path):
-        db_path = await _seed(
-            tmp_path,
-            [{"discord_user_id": "999", "server_display_name": None, "discord_username": None}],
-        )
-        rows, _ = await _export(db_path)
-        assert rows[0]["display_name"] == "999"
+        assert rows[0]["display_name"] == expected
 
 
 # ---------------------------------------------------------------------------
@@ -310,4 +305,3 @@ async def test_a_placed_or_departed_driver_is_not_listed(tmp_path):
     )
 
     assert await PlacementService(db_path, bot=MagicMock()).get_unassigned_drivers_seeded() == []
-

@@ -76,26 +76,24 @@ def test_a_user_mention_is_not_a_group_mention(typed):
     assert _refusal(typed) is None
 
 
-@pytest.mark.parametrize("typed", ["<@4002> Racing", "Team <@!4002>"])
-def test_a_team_name_refuses_a_user_mention(typed):
+@pytest.mark.parametrize(
+    "field, typed",
+    [
+        pytest.param("shorthand", "<@4002> Racing", id="team, mention first"),
+        pytest.param("shorthand", "Team <@!4002>", id="team, nickname mention"),
+        pytest.param("division name", "Division <@4002>", id="division, mention last"),
+        pytest.param("division name", "<@!4002> Racing", id="division, nickname mention"),
+    ],
+)
+def test_a_name_refuses_a_user_mention(field, typed):
     """A team's names are posted every time the team is named, so a member mentioned in one
-    would be notified each time (#381)."""
-    refusal = NAME.check("shorthand", typed).refusal
+    would be notified each time (#381). A division, a test driver and a points configuration
+    are named in posts as a team is, so the same holds for them (#388)."""
+    refusal = NAME.check(field, typed).refusal
 
     assert refusal is not None
     assert "member" in refusal
-    assert "shorthand" in refusal
-
-
-@pytest.mark.parametrize("typed", ["Division <@4002>", "<@!4002> Racing"])
-def test_a_name_refuses_a_user_mention(typed):
-    """A division, a test driver and a points configuration are named in posts as a team is,
-    so a member mentioned in one would be notified every time (#388)."""
-    refusal = NAME.check("division name", typed).refusal
-
-    assert refusal is not None
-    assert "member" in refusal
-    assert "division name" in refusal
+    assert field in refusal
 
 
 def test_free_text_may_still_name_a_driver():
@@ -342,14 +340,17 @@ def test_a_drawn_name_is_stripped_by_the_rules_a_typed_name_is_refused_by():
 # ── Formats: people and roles ─────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("typed, parsed", [("123456789012345678", 123456789012345678), (" 42 ", 42)])
+@pytest.mark.parametrize(
+    "typed, parsed",
+    [
+        ("123456789012345678", 123456789012345678),
+        (" 42 ", 42),
+        # Test drivers' ids start at 9 x 10^18, above every real snowflake.
+        ("9000000000000000001", 9000000000000000001),
+    ],
+)
 def test_parse_user_id_reads_digits(typed, parsed):
     assert parse_user_id(typed) == parsed
-
-
-def test_parse_user_id_accepts_a_test_driver_id():
-    """Test drivers' ids start at 9 x 10^18, above every real snowflake."""
-    assert parse_user_id("9000000000000000001") == 9000000000000000001
 
 
 @pytest.mark.parametrize("typed", ["", "   ", None, "abc", "12a", "-5", "+5", "1 2", "\u00B2", "<@12>"])

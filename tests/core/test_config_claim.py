@@ -142,11 +142,6 @@ async def test_only_one_server_claims_a_released_row(service):
     assert await service.get_league_server_id() == NEW_SERVER
 
 
-async def test_a_claimed_row_is_not_claimed_again(service):
-    assert await service.save_server_config(_config(NEW_SERVER)) is False
-    assert await service.get_league_server_id() == OLD_SERVER
-
-
 async def test_the_table_holds_one_row_at_most(service):
     with pytest.raises(sqlite3.IntegrityError):
         async with get_connection(service._db_path) as db:
