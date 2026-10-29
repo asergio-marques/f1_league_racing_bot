@@ -121,7 +121,16 @@ def _case(case_id, command, run, reply, *, season_status="SETUP", at_once=True, 
             f"❌ Config **{MISSING}** not found.",
         ),
         _case(
+            "fl-not-found-bonus-2", "results config fl", _run("config_fl", MISSING, RACE, 2),
+            f"❌ Config **{MISSING}** not found.",
+        ),
+        _case(
             "fl-qualifying", "results config fl", _run("config_fl", CONFIG, QUALIFYING, 1),
+            "❌ Fastest-lap bonus cannot be set for qualifying sessions.",
+        ),
+        _case(
+            "fl-qualifying-bonus-2", "results config fl",
+            _run("config_fl", CONFIG, QUALIFYING, 2),
             "❌ Fastest-lap bonus cannot be set for qualifying sessions.",
         ),
         _case(
@@ -130,8 +139,18 @@ def _case(case_id, command, run, reply, *, season_status="SETUP", at_once=True, 
             f"❌ Config **{MISSING}** not found.",
         ),
         _case(
+            "fl-plimit-not-found-limit-8", "results config fl-plimit",
+            _run("config_fl_plimit", MISSING, RACE, 8),
+            f"❌ Config **{MISSING}** not found.",
+        ),
+        _case(
             "fl-plimit-qualifying", "results config fl-plimit",
             _run("config_fl_plimit", CONFIG, QUALIFYING, 10),
+            "❌ Position limit cannot be set for qualifying sessions.",
+        ),
+        _case(
+            "fl-plimit-qualifying-limit-8", "results config fl-plimit",
+            _run("config_fl_plimit", CONFIG, QUALIFYING, 8),
             "❌ Position limit cannot be set for qualifying sessions.",
         ),
         _case(
@@ -161,7 +180,9 @@ async def test_every_config_refusal_is_recorded(tmp_path, command, run, reply, s
                                                 at_once):
     """The member Admin is refused as today, and one line records the refusal and its reason:
     at once, nothing queued, where the state when asked refuses it; else acknowledged, then
-    refused when the change runs."""
+    refused when the change runs. A fastest-lap command on a qualifying session is refused
+    apart from "config not found", so a manager who typed the wrong session is told which of
+    the two went wrong."""
     league = await _league(tmp_path, season_status=season_status)
     asked = interaction(league.bot, command)
 

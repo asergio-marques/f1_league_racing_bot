@@ -19,7 +19,8 @@ which is not a scoring system a championship can be run on.
 
 **The fastest-lap commands refuse qualifying outright.** There is no fastest lap to award in a
 qualifying session, and the refusal is distinct from "config not found" — a manager who typed
-the wrong session needs to be told which of the two went wrong.
+the wrong session needs to be told which of the two went wrong. That refusal, like every refusal
+of these commands, is pinned with its log line in `test_results_config_refusals.py`.
 
 **Attaching is refused outside SETUP.** The attachment decides how a whole season is scored, so
 changing it mid-season would rescore the rounds already run by different rules than the ones
@@ -36,23 +37,18 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
 from discord import app_commands
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.results.models.points_config import SessionType
 from tests.support import saves
-from tests.support.change_queue import MEMBER_ID, change_rows, run_queue
+from tests.support.change_queue import change_rows, run_queue
 from tests.support.settings_league import interaction, last_said, log_lines, said, settings_league
 from tests.support.undecorate import undecorate
 
 SEASON_ID = 3
 CONFIG = "100%"
-MISSING = "75%"
-
-#: The member as a log line names them, the mention wrapped so it notifies nobody.
-NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 
 
 def _notice() -> tuple[Any, str, str]:
@@ -183,7 +179,6 @@ def _choice(session: SessionType, label: str) -> Any:
 
 
 RACE = _choice(SessionType.FEATURE_RACE, "Feature Race")
-QUALIFYING = _choice(SessionType.FEATURE_QUALIFYING, "Feature Qualifying")
 
 
 # ---------------------------------------------------------------------------
@@ -191,9 +186,8 @@ QUALIFYING = _choice(SessionType.FEATURE_QUALIFYING, "Feature Qualifying")
 # ---------------------------------------------------------------------------
 
 
-async def _session(league, *, name: str = CONFIG, position: int = 1, points: int = 25,
-                   choice=RACE):
-    return await _run(league, "session", "config_session", name, choice, position, points)
+async def _session(league, *, position: int = 1, points: int = 25):
+    return await _run(league, "session", "config_session", CONFIG, RACE, position, points)
 
 
 async def test_a_position_s_points_are_set(tmp_path):
@@ -206,16 +200,6 @@ async def test_a_position_s_points_are_set(tmp_path):
     assert said(asked)[0].startswith("⏳ ")
     assert await _points(league.db_path, 1) == 25
     assert "position 1" in last_said(asked)
-
-
-async def test_setting_points_on_a_configuration_that_does_not_exist_says_so(tmp_path):
-    """Refused at once, nothing queued."""
-    league = await _league(tmp_path)
-
-    asked = await _session(league, name=MISSING)
-
-    assert "not found" in _replied(asked)
-    assert await change_rows(league.db_path) == []
 
 
 async def test_an_edit_that_breaks_the_order_is_saved_with_a_warning(tmp_path):
@@ -267,12 +251,12 @@ async def test_editing_is_refused_while_the_module_is_disabled(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def _fl(league, *, name: str = CONFIG, points: int = 2, choice=RACE):
-    return await _run(league, "fl", "config_fl", name, choice, points)
+async def _fl(league, *, points: int = 2):
+    return await _run(league, "fl", "config_fl", CONFIG, RACE, points)
 
 
-async def _plimit(league, *, name: str = CONFIG, limit: int = 8, choice=RACE):
-    return await _run(league, "fl-plimit", "config_fl_plimit", name, choice, limit)
+async def _plimit(league, *, limit: int = 8):
+    return await _run(league, "fl-plimit", "config_fl_plimit", CONFIG, RACE, limit)
 
 
 async def _fastest_lap(db_path: str) -> tuple[Any, Any] | None:
@@ -309,52 +293,13 @@ async def test_the_eligibility_limit_is_set(tmp_path):
     assert "top 8" in last_said(asked)
 
 
-@pytest.mark.parametrize("caller", [_fl, _plimit], ids=["fl", "fl-plimit"])
-async def test_the_fastest_lap_commands_refuse_qualifying(tmp_path, caller):
-    """There is no fastest lap to award in a qualifying session, and the refusal is
-    distinct from "config not found" — a manager who typed the wrong session needs to be
-    told which of the two went wrong. Refused at once, nothing queued."""
-    league = await _league(tmp_path)
-
-    asked = await caller(league, choice=QUALIFYING)
-
-    replied = _replied(asked)
-    assert "qualifying" in replied.lower()
-    assert "not found" not in replied
-    assert await change_rows(league.db_path) == []
-
-
-@pytest.mark.parametrize("caller", [_fl, _plimit], ids=["fl", "fl-plimit"])
-async def test_the_fastest_lap_commands_report_a_missing_configuration(tmp_path, caller):
-    league = await _league(tmp_path)
-
-    asked = await caller(league, name=MISSING)
-
-    assert "not found" in _replied(asked)
-    assert await change_rows(league.db_path) == []
-
-
-@pytest.mark.parametrize(
-    "caller,command", [(_fl, "fl"), (_plimit, "fl-plimit")], ids=["fl", "fl-plimit"]
-)
-async def test_a_refused_fastest_lap_edit_is_recorded_as_a_refusal(tmp_path, caller, command):
-    """Nothing changed, so the log records the refusal and its reason, never an edit."""
-    league = await _league(tmp_path)
-
-    await caller(league, name=MISSING)
-
-    assert await log_lines(league) == [
-        f"⛔ `/results config {command}` refused for {NAMED} — Config **{MISSING}** not found."
-    ]
-
-
 # ---------------------------------------------------------------------------
 # /results config append
 # ---------------------------------------------------------------------------
 
 
-async def _append(league, name: str = CONFIG):
-    return await _run(league, "append", "config_append", name)
+async def _append(league):
+    return await _run(league, "append", "config_append", CONFIG)
 
 
 async def _attached(db_path: str) -> list[str]:
@@ -375,15 +320,6 @@ async def test_a_configuration_is_attached_to_the_season(tmp_path):
     assert "attached" in last_said(asked)
 
 
-async def test_attaching_without_a_season_is_refused(tmp_path):
-    league = await _league(tmp_path, season=None)
-
-    asked = await _append(league)
-
-    assert "No season found" in _replied(asked)
-    assert await change_rows(league.db_path) == []
-
-
 async def test_attaching_outside_setup_is_refused(tmp_path):
     """The attachment decides how a whole season is scored, so changing it mid-season
     would rescore rounds already run by rules they were not run under. The season is active:
@@ -396,19 +332,6 @@ async def test_attaching_outside_setup_is_refused(tmp_path):
     assert await _attached(league.db_path) == []
 
 
-async def test_attaching_a_configuration_that_does_not_exist_names_the_way_out(tmp_path):
-    """A manager attaching a mistyped name would otherwise believe the season was
-    configured when it was not — so the refusal says nothing was attached, and names the
-    command that creates one."""
-    league = await _league(tmp_path)
-
-    asked = await _append(league, MISSING)
-
-    replied = _replied(asked)
-    assert "nothing was attached" in replied
-    assert "/results config add" in replied
-
-
 async def test_a_successful_attachment_is_logged(tmp_path):
     league = await _league(tmp_path)
 
@@ -418,15 +341,3 @@ async def test_a_successful_attachment_is_logged(tmp_path):
     assert "config append" in logged
 
 
-async def test_a_refused_attachment_is_recorded_as_a_refusal(tmp_path):
-    """Nothing was attached, so the log records the refusal and its reason, never an
-    attachment."""
-    league = await _league(tmp_path)
-
-    await _append(league, MISSING)
-
-    assert await log_lines(league) == [
-        f"⛔ `/results config append` refused for {NAMED} — "
-        f"Config **{MISSING}** does not exist on this server, so nothing was attached. "
-        "Check the spelling, or create it with `/results config add`."
-    ]
