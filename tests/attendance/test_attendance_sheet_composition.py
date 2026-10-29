@@ -111,28 +111,16 @@ async def _listed(db_path, round_id, division_id=PRO):
     return {row["driver_profile_id"]: row["total_points_after"] for row in rows}
 
 
-async def test_sheet_lists_autosacked_driver(db_path):
-    assert (await _listed(db_path, 102))[2] == 6
-
-
-async def test_sheet_lists_autoreserved_driver(db_path):
-    assert (await _listed(db_path, 102))[3] == 4
-
-
 async def test_a_reserve_placed_into_a_seat_is_listed_from_that_round(db_path):
     assert 4 not in await _listed(db_path, 101)
     assert (await _listed(db_path, 102))[4] == 3
 
 
-async def test_a_reserve_never_placed_is_not_listed(db_path):
-    assert 5 not in await _listed(db_path, 102)
-
-
-async def test_a_driver_seated_but_not_yet_scored_is_listed_on_nought(db_path):
-    assert (await _listed(db_path, 102))[6] == 0
-
-
 async def test_the_full_sheet_after_round_two(db_path):
+    """Driver 1 seated throughout is listed on 2; driver 2, autosacked, is still listed on 6;
+    driver 3, autoreserved, is still listed on 4; driver 4, a Reserve placed into a seat, is
+    listed on 3; driver 5, a Reserve never placed, is not listed; driver 6, seated but not yet
+    scored, is listed on nought."""
     assert await _listed(db_path, 102) == {1: 2, 2: 6, 3: 4, 4: 3, 6: 0}
 
 
@@ -203,27 +191,3 @@ async def test_a_sack_that_fails_reposts_no_other_division(db_path):
 
     assert asked == []
 
-
-async def test_autosack_reposts_every_division(db_path):
-    """A driver sacked for their points in one division loses every seat in every division,
-    so every division they sat in has its sheet posted again."""
-    async with get_connection(db_path) as db:
-        # Driver 2 is seated in Pro too, past the threshold at Pro's round 2, and has a sheet in Am.
-        cursor = await db.execute(
-            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) VALUES (10, 9, 2)"
-        )
-        await db.execute(
-            "INSERT INTO driver_season_assignments "
-            "(driver_profile_id, season_id, division_id, team_seat_id, committed) VALUES (2, 1, 1, ?, 1)",
-            (cursor.lastrowid,),
-        )
-        await db.execute(
-            "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
-            "total_points_after) VALUES (102, 1, 2, 12), (201, 2, 2, 0)"
-        )
-        await db.commit()
-
-    asked = await _enforce(db_path)
-
-    assert sorted(division for division, _round, _marked in asked) == [PRO, AM]
-    assert (AM, 201, {2}) in asked

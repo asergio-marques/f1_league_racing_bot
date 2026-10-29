@@ -123,7 +123,9 @@ async def test_a_sheet_a_sync_asked_for_that_discord_refuses_stops_the_queue_and
 async def test_a_sync_s_sanctions_ask_for_the_sheet_of_each_division_a_sack_reached(db_path):
     """Driver 2 is past Pro's autosack threshold at round 102 and has a sheet in Am, whose latest
     scored round is 201. The sanctions ask the queue for Pro's sheet at round 102 marking driver
-    2, and for Am's at round 201 marking driver 2, and post neither themselves."""
+    2, and for Am's at round 201 marking driver 2, and post neither themselves. A driver sacked
+    for their points in one division loses every seat in every division, so every division they
+    sat in has its sheet posted again."""
     await _seat_driver_two_in_pro_past_the_threshold(db_path)
     bot = MagicMock()
     bot.user.id = 1
