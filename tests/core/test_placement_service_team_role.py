@@ -1,8 +1,6 @@
 """Unit tests for PlacementService.delete_team_role_config and rename_team_role_config."""
 from __future__ import annotations
 
-import json
-
 import aiosqlite
 import pytest
 

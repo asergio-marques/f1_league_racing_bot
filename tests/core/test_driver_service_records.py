@@ -163,16 +163,6 @@ async def _standings_users(db_path: str) -> list[tuple[int, int]]:
         return [(r["division_id"], r["driver_user_id"]) for r in await cursor.fetchall()]
 
 
-async def _result_users(db_path: str, table: str) -> list[tuple[int, int]]:
-    """Every row of *table* as (session, driver), sorted."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"SELECT session_result_id, driver_user_id FROM {table} "
-            "ORDER BY session_result_id, driver_user_id"
-        )
-        return [(r["session_result_id"], r["driver_user_id"]) for r in await cursor.fetchall()]
-
-
 async def _seed_profile(
     db_path: str,
     *,
