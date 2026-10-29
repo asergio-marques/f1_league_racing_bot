@@ -1766,7 +1766,7 @@ async def test_a_driver_with_no_signup_channel_left_is_named_and_nothing_is_lock
     deletion, and they are named: "<@105> had no signup channel left to tell", in the reply, under
     no warning heading as nothing was discarded, on a line of its own beneath "✅ Season marked
     as complete.", and, with the mention backticked, under `not done:` in the closing line,
-    which reads "| Success" with that the only line beneath it."""
+    which reads "| Success" and its season line, with that `not done:` line straight after."""
     if whose == "in review":
         league = await pending_completion_league(tmp_path)
         await signing_up(league)
@@ -1786,7 +1786,7 @@ async def test_a_driver_with_no_signup_channel_left_is_named_and_nothing_is_lock
     assert NO_CHANNEL in reply(interaction)
     assert NOT_EVERYTHING not in reply(interaction)
     # The completion still succeeds: the reply says so, with the driver on a line of its own,
-    # and the closing line reads "| Success" with the driver the only line beneath it.
+    # and the closing line reads "| Success", then its season line, then the driver.
     assert COMPLETED in reply(interaction)
     assert NO_CHANNEL in reply(interaction).splitlines()
     [line] = _closing_lines(league)
