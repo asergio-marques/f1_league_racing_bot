@@ -324,9 +324,16 @@ class TestTeamList:
 # ---------------------------------------------------------------------------
 
 class TestTeamReserveRole:
-    async def test_set_role_calls_set_config(self):
+    @pytest.mark.parametrize("season", [
+        pytest.param(None, id="no live season"),
+        pytest.param("ONGOING", id="an ongoing season"),
+    ])
+    async def test_set_role_calls_set_config(self, season):
+        """With no live season, or with one ongoing, where the mapping is set mid-season."""
         from leaguebot.core.cogs.team_cog import TeamCog
-        bot = _make_bot()
+        from leaguebot.core.models.season import SeasonStage
+        live_season = None if season is None else _make_season(stage=SeasonStage(season))
+        bot = _make_bot(live_season=live_season)
         cog = TeamCog(bot)
         interaction = _make_interaction()
         role = _make_role(999)
