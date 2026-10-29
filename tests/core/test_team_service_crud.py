@@ -140,6 +140,7 @@ async def test_a_new_server_s_team_list_is_the_reserve_team_alone(tmp_path):
 
     assert [t.name for t in teams] == [RESERVE]
     assert teams[0].is_reserve is True
+    assert teams[0].full_name == RESERVE
 
 
 async def test_reading_the_team_list_restores_a_lost_reserve(tmp_path):
@@ -253,25 +254,17 @@ async def test_a_team_s_shorthand_is_changed(tmp_path):
     assert "Alpha" not in await _names(db_path)
 
 
-async def test_a_team_s_full_name_is_changed_on_its_own(tmp_path):
-    """Either name may change without the other (#381)."""
-    db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha Racing")
-
-    result = await service.modify_default_team("Alpha", full_name="Alpha Grand Prix")
-
-    assert result == {"name": "Alpha", "full_name": "Alpha Grand Prix"}
-
-
 async def test_a_change_of_name_is_recorded_in_the_audit_log(tmp_path):
+    """Either name may change without the other (#381): the full name changes on its own."""
     db_path = await _make_db(tmp_path)
     service = TeamService(db_path)
     await service.add_default_team("Alpha", full_name="Alpha Racing")
 
-    await service.modify_default_team(
+    result = await service.modify_default_team(
         "Alpha", full_name="Alpha Grand Prix", actor_id=7, actor_name="Manager"
     )
+
+    assert result == {"name": "Alpha", "full_name": "Alpha Grand Prix"}
 
     async with get_connection(db_path) as db:
         rows = await (
@@ -463,14 +456,6 @@ async def test_seeding_a_division_copies_each_team_s_full_name(tmp_path):
 
     names = {t["name"]: t["full_name"] for t in await service.get_division_teams(1)}
     assert names == {"RBR": "Oracle Red Bull Racing", RESERVE: RESERVE}
-
-
-async def test_the_reserve_team_is_reserve_in_both_names(tmp_path):
-    db_path = await _make_db(tmp_path)
-
-    reserve = next(t for t in await TeamService(db_path).get_default_teams() if t.is_reserve)
-
-    assert (reserve.name, reserve.full_name) == (RESERVE, RESERVE)
 
 
 async def test_the_reserve_team_is_seeded_without_seats(tmp_path):

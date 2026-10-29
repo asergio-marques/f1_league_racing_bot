@@ -107,13 +107,7 @@ def test_every_shipped_default_team_name_passes():
     for name in DEFAULT_TEAMS:
         assert validate_team_name(name, seen) is None, name
         seen[normalise(name)] = name
-
-
-def test_the_shipped_defaults_normalise_uniquely():
-    from leaguebot.image.utils.asset_resolver import normalise
-
-    keys = [normalise(name) for name in DEFAULT_TEAMS]
-    assert len(set(keys)) == len(keys)
+    assert len(seen) == len(DEFAULT_TEAMS), "the shipped defaults normalise uniquely"
 
 
 # ── Names a league might reasonably choose ────────────────────────────────
@@ -191,17 +185,17 @@ async def _review_problems(tmp_path, server_teams, division_teams):
     return await SeasonCog._team_name_problems(cog, season_id=1)
 
 
+@pytest.mark.parametrize(
+    "server_teams, division_teams",
+    [
+        pytest.param(["Red Bull", "Ferrari"], ["Haas"], id="sound"),
+        # FR-031 reaching the review, not the command alone.
+        pytest.param(["2Fast Motorsport"], ["9ers"], id="digit-led"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_season_review_passes_a_sound_team_list(tmp_path):
-    problems = await _review_problems(tmp_path, ["Red Bull", "Ferrari"], ["Haas"])
-
-    assert problems == []
-
-
-@pytest.mark.asyncio
-async def test_season_review_admits_a_name_beginning_with_a_digit(tmp_path):
-    """FR-031 reaching the review, not the command alone."""
-    problems = await _review_problems(tmp_path, ["2Fast Motorsport"], ["9ers"])
+async def test_season_review_passes_a_sound_team_list(tmp_path, server_teams, division_teams):
+    problems = await _review_problems(tmp_path, server_teams, division_teams)
 
     assert problems == []
 
@@ -238,7 +232,8 @@ async def test_season_review_catches_two_teams_normalising_alike(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "name", ["**Red** Bull", "Red Bull \U0001F402", "<@&987654321098765432> Racing", "@here Racing"]
+    "name", ["**Red** Bull", "Red Bull \U0001F402", "<@&987654321098765432> Racing", "@here Racing",
+             "_Scuderia_"]
 )
 def test_a_team_name_with_markup_an_emoji_or_a_group_mention_is_refused(name):
     """A team's name is posted as text and drawn on graphics, so it is held to the rules every
@@ -247,10 +242,6 @@ def test_a_team_name_with_markup_an_emoji_or_a_group_mention_is_refused(name):
 
     assert problem is not None
     assert "shorthand" in problem
-
-
-def test_a_team_name_with_markup_is_refused():
-    assert validate_team_name("_Scuderia_") is not None
 
 
 # ── A shorthand is short, and typed into comma-separated rows (#381) ───────
