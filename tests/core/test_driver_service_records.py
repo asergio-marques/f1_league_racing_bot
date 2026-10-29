@@ -423,7 +423,7 @@ async def test_a_re_key_is_audited_with_both_accounts(tmp_path):
         pytest.param(True, False, (True, False), id="cleared"),
     ],
 )
-async def test_the_former_driver_flag_is_set_and_reports_both_values(
+async def test_the_former_driver_flag_is_set_or_cleared_and_reports_both_values(
     tmp_path, former, value, reported
 ):
     """The return value is what the command echoes back, so a manager can see it changed
