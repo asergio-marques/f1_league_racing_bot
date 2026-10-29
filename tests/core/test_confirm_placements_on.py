@@ -41,6 +41,7 @@ async def _uncommitted(db) -> int:
 
 
 async def test_confirming_on_commits_the_placements_and_returns_the_season_to_ongoing(db_path):
+    """On the connection handed, and nothing of it outlasts a rollback."""
     from leaguebot.core.services.season_lifecycle_service import confirm_placements_on
 
     async with get_connection(db_path) as db:
@@ -49,13 +50,6 @@ async def test_confirming_on_commits_the_placements_and_returns_the_season_to_on
         assert confirmed.committed == 1
         assert await _uncommitted(db) == 0
         assert await _stage(db) == "ONGOING"
-
-
-async def test_confirming_on_commits_nothing_itself(db_path):
-    from leaguebot.core.services.season_lifecycle_service import confirm_placements_on
-
-    async with get_connection(db_path) as db:
-        await confirm_placements_on(db, 1)
         await db.rollback()
 
     async with get_connection(db_path) as db:
