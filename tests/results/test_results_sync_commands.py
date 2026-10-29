@@ -63,9 +63,7 @@ NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 # ---------------------------------------------------------------------------
 
 
-async def _make_db(
-    tmp_path, *, name: str = "results_sync", config_row: bool = True, reserves: int | None = 1
-) -> str:
+async def _make_db(tmp_path, *, name: str = "results_sync") -> str:
     db_path = os.path.join(str(tmp_path), f"{name}.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -84,12 +82,11 @@ async def _make_db(
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
-        if config_row:
-            await db.execute(
-                "INSERT INTO division_results_config (division_id, reserves_in_standings) "
-                "VALUES (?, ?)",
-                (DIVISION_ID, reserves),
-            )
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, reserves_in_standings) "
+            "VALUES (?, 1)",
+            (DIVISION_ID,),
+        )
         await db.commit()
     return db_path
 
@@ -99,7 +96,6 @@ def _make_cog(
     *,
     enabled: bool = True,
     season=SimpleNamespace(id=SEASON_ID, season_number=1, stage=SeasonStage.ONGOING),
-    divisions=None,
 ) -> ResultsCog:
     bot = MagicMock()
     bot.db_path = db_path
@@ -108,9 +104,7 @@ def _make_cog(
     bot.season_service = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(
-        return_value=divisions
-        if divisions is not None
-        else [SimpleNamespace(id=DIVISION_ID, name="Pro", tier=1)]
+        return_value=[SimpleNamespace(id=DIVISION_ID, name="Pro", tier=1)]
     )
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
