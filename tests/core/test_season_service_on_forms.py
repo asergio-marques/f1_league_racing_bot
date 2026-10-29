@@ -246,15 +246,18 @@ async def test_a_round_is_cancelled_on_the_save_handed_and_gives_its_old_status(
         pytest.param("CANCELLED", "ACTIVE", id="already cancelled"),
         pytest.param("AWAITING_REPORT_VERDICTS", "ACTIVE", id="results entered"),
         pytest.param("FINAL", "ACTIVE", id="final"),
-        pytest.param("NOT_RUN", "COMPLETED", id="archived season"),
+        pytest.param("NOT_RUN", "COMPLETED", id="completed season"),
+        pytest.param("NOT_RUN", "CANCELLED", id="cancelled season"),
     ],
 )
 async def test_a_round_no_longer_cancellable_is_left_and_gives_none(
     tmp_path, status, season_status
 ):
     """Pro's round 1 stands in a state it may not be cancelled from: already cancelled, its
-    results entered, final, or not run in a season since archived. Cancelling it on a connection
-    answers None and writes nothing: the round keeps its status and no audit is written."""
+    results entered, final, or not run in a season since archived, as completed or cancelled.
+    Cancelling it on a connection answers None and writes nothing: the round keeps its status
+    and no audit is written. An archived season is the championship's record; a round inside it
+    cannot be called off after the fact."""
     from leaguebot.core.services.season_service import cancel_round_on
 
     db_path = await _ongoing_db(tmp_path, (status, "NOT_RUN"), season_status=season_status)

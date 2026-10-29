@@ -47,13 +47,8 @@ def test_a_round_the_results_module_owns_is_never_already_done() -> None:
     assert ROUND_AWAITING_RESULTS_MODULE.isdisjoint(ROUND_TERMINAL)
 
 
-def test_every_named_state_is_a_real_round_status() -> None:
-    known = {s.value for s in RoundStatus}
-    for named in (ROUND_TERMINAL, ROUND_CANCELLABLE, ROUND_AWAITING_RESULTS_MODULE):
-        assert named <= known
-
-
 def test_the_three_sets_account_for_every_state_between_them() -> None:
-    """A state in none of them is one no rule reaches — worth failing over."""
+    """A state in none of them is one no rule reaches — worth failing over. And every state
+    they name is a real round status."""
     covered = ROUND_TERMINAL | ROUND_CANCELLABLE | ROUND_AWAITING_RESULTS_MODULE
     assert covered == {s.value for s in RoundStatus}

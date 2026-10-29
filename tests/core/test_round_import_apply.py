@@ -90,23 +90,10 @@ async def test_rounds_are_sorted_and_numbered_from_one(db_path):
     assert applied["Pro"] == cfg.divisions[0].rounds
 
 
-async def test_a_track_is_stored_under_its_canonical_name(db_path):
-    cfg = _cfg()
-
-    _, errors = await apply_round_import(
-        cfg=cfg,
-        parsed=_payload(_parsed(14, track="14")),
-        db_path=db_path,
-        overflow_check=_no_overflow,
-    )
-
-    assert errors == []
-    assert cfg.divisions[0].rounds[0]["track_name"] == "Hungaroring"
-
-
 @pytest.mark.parametrize("written", ["14", "Hungaroring", "hungaroring", "14 – Hungaroring"])
 async def test_a_track_may_be_named_any_way_the_bot_accepts(db_path, written):
-    """`resolve_track_name` owns the rule; this is the seam, not the rule."""
+    """Each is stored under its canonical name. `resolve_track_name` owns the rule; this is the
+    seam, not the rule."""
     cfg = _cfg()
 
     _, errors = await apply_round_import(
