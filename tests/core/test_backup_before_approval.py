@@ -11,7 +11,8 @@ window rather than a window of its own, so a review whose question goes unanswer
 exactly when it would have expired anyway. Anything else would let a manager hold a review
 open indefinitely by not answering, and approve a season the report no longer describes.
 `test_approval_backup_offer.py::test_the_question_inherits_what_is_left_of_the_review` pins it,
-and that file holds the cases where no question is asked at all and the answers that let the
+both what the approval hands the question and the real view keeping that timeout, and that
+file holds the cases where no question is asked at all and the answers that let the
 approval go on.
 """
 from __future__ import annotations

@@ -206,6 +206,13 @@ async def test_the_question_inherits_what_is_left_of_the_review():
     assert captured
     assert 100 < captured[0] <= 120  # what remains of the two minutes, not a fresh window
 
+    # The stand-in above only shows what the method hands the view. The real view must keep
+    # that timeout, or an unanswered question would stay open for discord's default three
+    # minutes after the review had run out.
+    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
+
+    assert _BackupBeforeApprovalView(cog, timeout=captured[0]).timeout == captured[0]
+
 
 async def test_the_question_says_when_the_review_expires():
     """So a maintainer weighing it knows they are on a clock, whichever way they answer."""
