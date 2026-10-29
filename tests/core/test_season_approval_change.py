@@ -1536,8 +1536,9 @@ async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
 
     assert APPROVED in reply(press)
     if job == "delete_batch_notice":
-        # The bullet goes on to link the notice that stands, so it is matched as far as the link.
-        assert any(bullet.startswith(line) for bullet in _not_done(reply(press)))
+        # The bullet goes on to link the notice that stands and to bid it be deleted by hand.
+        whole = re.escape(line) + r" \(https://discord\.test/\d+/\d+\): delete it by hand\."
+        assert any(re.fullmatch(whole, bullet) for bullet in _not_done(reply(press)))
     else:
         assert line in _not_done(reply(press))
     confirmed = _confirmed_lines(league)
