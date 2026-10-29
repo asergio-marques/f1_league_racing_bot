@@ -401,6 +401,7 @@ async def test_point_distribution_all_scenarios(tmp_path):
         cur = await db.execute("SELECT driver_profile_id, points_awarded FROM driver_round_attendance ORDER BY driver_profile_id")
         rows = await cur.fetchall()
 
+    assert [row["driver_profile_id"] for row in rows] == [profile for profile, *_ in scenarios]
     for row in rows:
         assert row["points_awarded"] == expected[row["driver_profile_id"]], (
             f"profile {row['driver_profile_id']}: expected {expected[row['driver_profile_id']]}, got {row['points_awarded']}"
