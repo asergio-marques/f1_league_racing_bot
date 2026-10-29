@@ -1449,7 +1449,7 @@ async def test_a_drawn_table_whose_old_message_will_not_delete_stops_the_queue(t
 # ---------------------------------------------------------------------------
 
 
-def _standings_drawn(league: _League, tmp_path: Any, *, championships: tuple[str, ...] = (
+def _standings_drawn(tmp_path: Any, *, championships: tuple[str, ...] = (
     "drivers", "constructors",
 )) -> Any:
     """Image generation on for the standings, each of *championships* drawing as a picture and
@@ -1501,7 +1501,7 @@ async def test_a_standings_picture_s_old_message_is_deleted_by_a_job_of_its_own(
     pictures were sent."""
     league = await _league(tmp_path)
     standings = league.channel(STANDINGS_CHANNEL)
-    with _standings_drawn(league, tmp_path):
+    with _standings_drawn(tmp_path):
         await _ask(league)
         await _run_until_done(league, "post_standings")
 
@@ -1547,7 +1547,7 @@ async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keep
     standings.seed(CONSTRUCTORS_GRAPHIC, "constructors' standings graphic")
     old_link = standings.messages[DRIVERS_GRAPHIC].jump_url
     standings.delete_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
-    with _standings_drawn(league, tmp_path):
+    with _standings_drawn(tmp_path):
         interaction = await _ask(league)
         await run_queue(league.bot)
 
@@ -1579,7 +1579,7 @@ async def test_a_standings_picture_s_id_is_saved_with_its_mark(tmp_path):
 
     league = await _league(tmp_path)
     own_save = AsyncMock()
-    with _standings_drawn(league, tmp_path), patch.object(
+    with _standings_drawn(tmp_path), patch.object(
         results_post_service, "_set_standings_message_id", new=own_save, create=True,
     ):
         await _ask(league)
@@ -1601,7 +1601,7 @@ async def test_a_picture_sent_before_a_later_failure_is_removed_before_the_next_
     league = await _league(tmp_path)
     standings = league.channel(STANDINGS_CHANNEL)
     standings.fail_send_at = 2
-    with _standings_drawn(league, tmp_path, championships=("drivers",)):
+    with _standings_drawn(tmp_path, championships=("drivers",)):
         await _ask(league)
         await run_queue(league.bot)
         assert (await stopped_job(league.db_path))["name"] == "post_standings"
