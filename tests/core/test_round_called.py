@@ -41,19 +41,18 @@ async def _make_db(tmp_path) -> str:
     return db_path
 
 
-async def test_a_round_is_called_by_its_number_and_its_division(tmp_path):
-    """Round 3 of Pro is named "round 3 in **Pro**"."""
+@pytest.mark.parametrize(
+    "round_id, expected",
+    [
+        pytest.param(ROUND_ID, "round 3 in **Pro**", id="by its number and its division"),
+        pytest.param(ROUND_ID + 1, "a round no longer there", id="no longer there"),
+    ],
+)
+async def test_a_round_is_called_by_its_number_and_its_division(tmp_path, round_id, expected):
+    """Round 3 of Pro is named "round 3 in **Pro**"; a round id the database no longer holds is
+    named "a round no longer there"."""
     from leaguebot.core.services.season_service import round_called
 
     db_path = await _make_db(tmp_path)
 
-    assert await round_called(db_path, ROUND_ID) == "round 3 in **Pro**"
-
-
-async def test_a_round_no_longer_there_is_called_so(tmp_path):
-    """A round id the database no longer holds is named "a round no longer there"."""
-    from leaguebot.core.services.season_service import round_called
-
-    db_path = await _make_db(tmp_path)
-
-    assert await round_called(db_path, ROUND_ID + 1) == "a round no longer there"
+    assert await round_called(db_path, round_id) == expected

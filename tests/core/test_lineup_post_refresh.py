@@ -468,20 +468,19 @@ async def test_a_lineup_channel_that_is_not_a_text_channel_raises(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_division_resolves_by_tier_number(tmp_path):
-    """A league that calls its divisions "1" and "2" is naming tiers."""
-    db_path = await _make_db(tmp_path, name="resolve_tier")
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("1", id="by tier number"),
+        pytest.param("Pro", id="by name"),
+    ],
+)
+async def test_a_division_resolves_by_name(tmp_path, text):
+    """A league that calls its divisions "1" and "2" is naming tiers; one that calls one "Pro"
+    is naming names."""
+    db_path = await _make_db(tmp_path, name="resolve_division")
 
-    assert await PlacementService(db_path).resolve_division(SEASON_ID, "1") == (
-        DIVISION_ID,
-        "Pro",
-    )
-
-
-async def test_a_division_resolves_by_name(tmp_path):
-    db_path = await _make_db(tmp_path, name="resolve_name")
-
-    assert await PlacementService(db_path).resolve_division(SEASON_ID, "Pro") == (
+    assert await PlacementService(db_path).resolve_division(SEASON_ID, text) == (
         DIVISION_ID,
         "Pro",
     )
@@ -505,28 +504,21 @@ async def test_the_number_is_tried_first(tmp_path):
     )
 
 
-async def test_an_unknown_division_resolves_to_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, name="resolve_unknown")
+@pytest.mark.parametrize(
+    "season_id, text",
+    [
+        pytest.param(SEASON_ID, "Rookie", id="unknown name"),
+        pytest.param(SEASON_ID, "9", id="unknown tier"),
+        # Unlike the cog-level lookups, which are case-insensitive. Pinned because the
+        # inconsistency is real and a reader will assume otherwise.
+        pytest.param(SEASON_ID, "pro", id="name matched exactly"),
+        # Divisions are per season, and a tier number repeats in every one of them.
+        pytest.param(999, "1", id="another season"),
+    ],
+)
+async def test_an_unknown_division_resolves_to_nothing(tmp_path, season_id, text):
+    """A name no division holds, a tier no division holds, a name in the wrong case, and a tier
+    held only in another season all resolve to nothing."""
+    db_path = await _make_db(tmp_path, name="resolve_nothing")
 
-    assert await PlacementService(db_path).resolve_division(SEASON_ID, "Rookie") is None
-
-
-async def test_a_tier_no_division_holds_resolves_to_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, name="resolve_notier")
-
-    assert await PlacementService(db_path).resolve_division(SEASON_ID, "9") is None
-
-
-async def test_a_name_is_matched_exactly(tmp_path):
-    """Unlike the cog-level lookups, which are case-insensitive. Pinned because the
-    inconsistency is real and a reader will assume otherwise."""
-    db_path = await _make_db(tmp_path, name="resolve_case")
-
-    assert await PlacementService(db_path).resolve_division(SEASON_ID, "pro") is None
-
-
-async def test_another_seasons_division_is_not_resolved(tmp_path):
-    """Divisions are per season, and a tier number repeats in every one of them."""
-    db_path = await _make_db(tmp_path, name="resolve_season")
-
-    assert await PlacementService(db_path).resolve_division(999, "1") is None
+    assert await PlacementService(db_path).resolve_division(season_id, text) is None
