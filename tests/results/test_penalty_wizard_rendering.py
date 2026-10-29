@@ -24,7 +24,6 @@ without it a test-mode review shows the same name against every penalty.
 from __future__ import annotations
 
 import os
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
