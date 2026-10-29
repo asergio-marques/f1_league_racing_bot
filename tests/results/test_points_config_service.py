@@ -30,21 +30,6 @@ async def db_path(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# create_config
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_create_config_success(db_path):
-    """A configuration added is in the store under its name. A name already taken is the
-    `config_add` setting's check to refuse, before anything is written
-    (`test_a_duplicate_name_is_refused`)."""
-    await create_config(db_path, config_name="Standard")
-
-    assert await config_exists(db_path, "Standard") is True
-
-
-# ---------------------------------------------------------------------------
 # remove_config
 # ---------------------------------------------------------------------------
 
@@ -215,6 +200,10 @@ async def test_setup_seasons_linking_is_empty_when_nothing_stands_on_it(db_path)
 
 @pytest.mark.asyncio
 async def test_config_exists_answers_by_name(db_path):
+    """A configuration added is in the store under its name. A name already taken is the
+    `config_add` setting's check to refuse, before anything is written
+    (`test_results_config_refusals.py::test_every_config_refusal_is_recorded`, its
+    `add-duplicate-no-season` case)."""
     await create_config(db_path, config_name="Standard")
 
     assert await config_exists(db_path, "Standard") is True
