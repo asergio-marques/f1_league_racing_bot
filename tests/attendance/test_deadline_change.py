@@ -178,7 +178,8 @@ async def test_the_timer_asks_for_the_deadline_and_the_queue_distributes_locks_a
     """Nothing is edited or posted as the deadline is asked. The queue runs its jobs in order —
     `distribute`, `lock_call`, `announce` — taking the buttons off the call (7001) and posting
     one announcement in Pro's check-in channel, recorded on the call with the deadline marked
-    as run. The deadline timer's callback asks the queue rather than running the deadline."""
+    as run: with no mark and no message, the deadline has not run, so it runs. The deadline
+    timer's callback asks the queue rather than running the deadline."""
     import leaguebot.__main__ as bot_module
 
     league = await _league(tmp_path)
@@ -339,9 +340,12 @@ async def test_a_call_gone_completes_its_lock_with_a_line(tmp_path):
 
 async def test_a_deadline_with_no_call_closes_the_check_in_and_asks_the_clean_up(tmp_path):
     """Round 3's call is off the record when the deadline is asked; its answers (Lewis
-    accepted, Max not answered) are kept from it. The queue posts nothing in the check-in
-    channel; the deadline clears the answers, the log channel saying the round counts nothing
-    against anyone, and asks the round's clean-up of the queue, which marks the check-in over."""
+    accepted, Max not answered) are kept from it. A deadline closes the call standing, and with
+    none there is nothing to close: the queue posts nothing in the check-in channel, an
+    announcement no call would record and nothing would take down a day after the round, and it
+    does not stop. The deadline clears the answers, the log channel saying once that the round
+    counts nothing against anyone, as a restart past the deadline would, and asks the round's
+    clean-up of the queue, which marks the check-in over."""
     league = await _league(tmp_path)
     await league.write("DELETE FROM rsvp_embed_messages WHERE round_id = ?", ROUND_3)
 
@@ -352,7 +356,7 @@ async def test_a_deadline_with_no_call_closes_the_check_in_and_asks_the_clean_up
     assert await league.rows(
         "SELECT * FROM driver_round_attendance WHERE round_id = ?", ROUND_3
     ) == []
-    assert "nothing against anyone" in league.log()
+    assert league.log().count("nothing against anyone") == 1
     assert CLEAN_UP_KIND in [row["kind"] for row in await change_rows(league.db_path)]
     [row] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", ROUND_3)
     assert row["checkin_cleared"] == 1

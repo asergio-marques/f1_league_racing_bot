@@ -502,43 +502,35 @@ async def _call_row(league) -> list[dict]:
     return await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", ROUND_3)
 
 
-async def test_a_last_notice_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
-    tmp_path,
+@pytest.mark.parametrize(
+    ("moved", "content", "last_notice_channel", "distribution_channel", "deleted"),
+    [
+        (LAST_NOTICE, "Round 3 last notice", MOVED, CHECK_IN,
+         {(CHECK_IN, CALL), (MOVED, LAST_NOTICE), (CHECK_IN, ANNOUNCEMENT)}),
+        (ANNOUNCEMENT, "Round 3 reserves", CHECK_IN, MOVED,
+         {(CHECK_IN, CALL), (CHECK_IN, LAST_NOTICE), (MOVED, ANNOUNCEMENT)}),
+    ],
+    ids=["last-notice", "reserve-announcement"],
+)
+async def test_a_message_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
+    tmp_path, moved, content, last_notice_channel, distribution_channel, deleted,
 ):
     """The issue's fault (b): the last notice went to the new channel, the clean-up looked for
-    it in the call's, and it stood for good."""
+    it in the call's, and it stood for good. A reserve announcement posted in the new channel is
+    deleted from there in the same way."""
     league = await _moved_league(tmp_path)
-    _moved_into(league, LAST_NOTICE, "Round 3 last notice")
+    _moved_into(league, moved, content)
     await league.write(
         "UPDATE rsvp_embed_messages SET last_notice_channel_id = ?, distribution_channel_id = ? "
-        "WHERE round_id = ?", str(MOVED), str(CHECK_IN), ROUND_3,
+        "WHERE round_id = ?", str(last_notice_channel), str(distribution_channel), ROUND_3,
     )
     await _round_3_raced_a_day_ago(league)
 
     await _ask(league, "clean_up")
 
     assert await stopped_job(league.db_path) is None
-    assert _deletes(league) == {(CHECK_IN, CALL), (MOVED, LAST_NOTICE), (CHECK_IN, ANNOUNCEMENT)}
-    assert LAST_NOTICE not in league.channel(MOVED).messages
-    assert await _call_row(league) == []
-
-
-async def test_a_reserve_announcement_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
-    tmp_path,
-):
-    league = await _moved_league(tmp_path)
-    _moved_into(league, ANNOUNCEMENT, "Round 3 reserves")
-    await league.write(
-        "UPDATE rsvp_embed_messages SET last_notice_channel_id = ?, distribution_channel_id = ? "
-        "WHERE round_id = ?", str(CHECK_IN), str(MOVED), ROUND_3,
-    )
-    await _round_3_raced_a_day_ago(league)
-
-    await _ask(league, "clean_up")
-
-    assert await stopped_job(league.db_path) is None
-    assert _deletes(league) == {(CHECK_IN, CALL), (CHECK_IN, LAST_NOTICE), (MOVED, ANNOUNCEMENT)}
-    assert ANNOUNCEMENT not in league.channel(MOVED).messages
+    assert _deletes(league) == deleted
+    assert moved not in league.channel(MOVED).messages
     assert await _call_row(league) == []
 
 

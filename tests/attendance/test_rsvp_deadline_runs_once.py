@@ -98,26 +98,6 @@ async def test_a_deadline_marked_run_is_not_run_again_whatever_became_of_its_ann
     assert (await _call(league))["distribution_msg_id"] is None
 
 
-async def test_a_deadline_whose_message_never_posted_is_run_again(tmp_path):
-    """No mark and no message: the deadline has not run, so it locks the call, posts its
-    announcement, and records both the message and the mark."""
-    from tests.support.change_queue import stopped_job
-    from tests.support.season_league import CALL_MESSAGES
-
-    league = await _league_past_its_deadline(tmp_path, marked=False, announced=False)
-
-    await _ask_deadline(league)
-
-    assert await stopped_job(league.db_path) is None
-    events = _check_in_events(league)
-    assert ("edit", CALL_MESSAGES[0]) in events
-    sent = [mid for kind, mid in events if kind == "send"]
-    assert len(sent) == 1
-    call = await _call(league)
-    assert call["distribution_msg_id"] == str(sent[0])
-    assert call["deadline_run_at"] is not None
-
-
 # ---------------------------------------------------------------------------
 # Twice asked, and past the deadline with no call standing (owner, 2026-10-09: "Past the
 # deadline, nothing counts"). Pro's round 3 holds Lewis's acceptance and Max's NO_RSVP; where no
@@ -177,35 +157,6 @@ async def test_two_deadline_runs_at_once_post_one_announcement(tmp_path):
     assert len(changes) == 1
     [posted] = _sent(league)
     assert (await _call(league))["distribution_msg_id"] == str(posted)
-
-
-async def test_a_deadline_with_no_call_standing_posts_nothing(tmp_path):
-    """A deadline closes the call standing, and with none there is nothing to close: it posts no
-    announcement, which no call would record and nothing would take down a day after the round,
-    and the queue does not stop."""
-    from tests.support.change_queue import stopped_job
-
-    league = await _without_a_call(tmp_path)
-
-    await _ask_deadline(league)
-
-    assert _sent(league) == []
-    assert await stopped_job(league.db_path) is None
-
-
-async def test_a_deadline_with_no_call_standing_clears_the_answers_kept_and_says_so(tmp_path):
-    """No call stands for round 3, its earlier call having been taken down, but the answers to it
-    are kept. The deadline is asked and run, the bot running throughout: the answers are
-    cleared, the check-in marked over, and the log channel says, once, that the round counts
-    nothing against anyone, as a restart past the deadline would. Nothing is posted in the
-    check-in channel."""
-    league = await _without_a_call(tmp_path)
-
-    await _ask_deadline(league)
-
-    assert await _round_state(league) == (0, 1)
-    assert league.log().count("nothing against anyone") == 1
-    assert _sent(league) == []
 
 
 async def test_a_deadline_with_a_call_standing_keeps_its_answers(tmp_path):
