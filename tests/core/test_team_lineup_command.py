@@ -17,9 +17,9 @@ league a second lineup post every time somebody ran the command.
 **A rejected graphic refuses rather than falling back to text.** The caller is the one person
 able to fix the template, so silently drawing text instead would hide a broken template from
 the only person who could put it right (Constitution XIV.7). `test_a_rejected_graphic_refuses_
-rather_than_falling_back` holds that, and its neighbour holds the matching resource rule: every
-file already drawn in the batch is discarded when a later division rejects, which is the one
-leak no posting path accounts for.
+rather_than_falling_back` holds that, and `test_team_cog.py`'s `TestTeamLineupDiscardsItsPictures`
+holds the matching resource rule: every file already drawn in the batch is discarded when a later
+division rejects, which is the one leak no posting path accounts for.
 
 **The text path draws every seat, filled or empty.** An empty seat is information — it is where
 a manager can place somebody — so it is listed as empty rather than omitted, and the seats are
@@ -303,38 +303,6 @@ async def test_a_rejected_graphic_refuses_rather_than_falling_back(tmp_path, mon
     assert "Seat 1" not in sent
 
 
-async def test_a_rejection_discards_the_files_already_drawn(tmp_path):
-    """One `finally` around the whole batch. A rejection part way through abandons every
-    picture drawn before it, and without the discard those files are the one leak no
-    posting path accounts for."""
-    png = tmp_path / "lineup.png"
-    png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    outcomes = [
-        SimpleNamespace(action="POSTED", message="", png_path=png, notices=[]),
-        SimpleNamespace(action="REJECTED", message="bad", png_path=None, notices=[]),
-    ]
-    discarded: list = []
-
-    cog = _make_cog(
-        divisions=[_division(11, "Division 1", 1), _division(12, "Division 2", 2)],
-        teams=[_team("Alpha", 1, [(1, None, None)])],
-    )
-    interaction = _interaction()
-
-    with patch(
-        "leaguebot.image.services.image_lineup_post.lineup_enabled", new=AsyncMock(return_value=True)
-    ), patch(
-        "leaguebot.image.services.image_lineup_post.render_for_command",
-        new=AsyncMock(side_effect=outcomes),
-    ), patch(
-        "leaguebot.image.services.image_render_service.discard_attachment",
-        new=lambda *files: discarded.extend(files),
-    ):
-        await _lineup(cog, interaction)
-
-    assert discarded, "the file drawn for the first division was never discarded"
-
-
 async def test_a_drawn_lineup_is_sent_as_files(tmp_path):
     png = tmp_path / "lineup.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -355,41 +323,6 @@ async def test_a_drawn_lineup_is_sent_as_files(tmp_path):
 # ---------------------------------------------------------------------------
 # /team reserve-role
 # ---------------------------------------------------------------------------
-
-
-async def test_the_reserve_role_is_set(tmp_path):
-    cog = _make_cog()
-    interaction = _interaction()
-    # A team's role must be one the bot can grant (#381), so the double answers that check.
-    role = MagicMock()
-    role.id = 4242
-    role.name = "Reserves"
-    role.mention = "@Reserves"
-    role.is_default.return_value = False
-    role.managed = False
-    role.guild.me.guild_permissions.manage_roles = True
-    role.guild.me.top_role.__gt__ = lambda _self, _other: True
-
-    await undecorate(TeamCog.team_reserve_role)(cog, interaction, role)
-
-    cog.bot.placement_service.set_team_role_config.assert_awaited_once()
-    args = cog.bot.placement_service.set_team_role_config.await_args
-    assert args.args[0] == "Reserve"
-    assert args.args[1] == 4242
-    assert "set to" in _sent(interaction)
-
-
-async def test_omitting_the_role_clears_the_mapping(tmp_path):
-    """The parameter is optional precisely so it can be cleared; a league that stops using
-    a reserve role has no other way to unset it."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await undecorate(TeamCog.team_reserve_role)(cog, interaction, None)
-
-    cog.bot.placement_service.delete_team_role_config.assert_awaited_once()
-    cog.bot.placement_service.set_team_role_config.assert_not_awaited()
-    assert "cleared" in _sent(interaction)
 
 
 async def test_setting_the_reserve_role_is_logged_with_the_role(tmp_path):

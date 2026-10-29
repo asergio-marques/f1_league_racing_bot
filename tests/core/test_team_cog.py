@@ -341,11 +341,21 @@ class TestTeamReserveRole:
         args, kwargs = interaction.followup.send.call_args
         content = args[0] if args else kwargs["content"]
         assert "✅" in content
+        assert "set to" in content
         assert "<@&999>" in content
 
-    async def test_clear_role_calls_delete_config(self):
+    @pytest.mark.parametrize("season", [
+        pytest.param(None, id="no live season"),
+        pytest.param("ONGOING", id="an ongoing season"),
+    ])
+    async def test_clear_role_calls_delete_config(self, season):
+        """The parameter is optional precisely so it can be cleared; a league that stops using
+        a reserve role has no other way to unset it. With no live season, or with one ongoing,
+        where the mapping is repaired mid-season."""
         from leaguebot.core.cogs.team_cog import TeamCog
-        bot = _make_bot()
+        from leaguebot.core.models.season import SeasonStage
+        live_season = None if season is None else _make_season(stage=SeasonStage(season))
+        bot = _make_bot(live_season=live_season)
         cog = TeamCog(bot)
         interaction = _make_interaction()
 
