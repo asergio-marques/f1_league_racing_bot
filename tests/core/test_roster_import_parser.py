@@ -42,6 +42,14 @@ def test_a_row_is_read_whole():
     assert driver.nationality == "Serbian"
 
 
+def test_the_lowest_id_of_the_range_may_be_imported():
+    """The range reserved for test drivers begins at its base, which is itself within it."""
+    drivers, errors = parse_roster_csv(_csv(_row(offset=0)))
+
+    assert errors == []
+    assert [driver.discord_user_id for driver in drivers] == [SYNTHETIC_ID_BASE]
+
+
 def test_the_header_is_skipped():
     drivers, errors = parse_roster_csv(_csv(_row(), _row(2, name="Badger")))
 
