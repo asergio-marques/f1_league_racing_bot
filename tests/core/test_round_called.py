@@ -48,7 +48,9 @@ async def _make_db(tmp_path) -> str:
         pytest.param(ROUND_ID + 1, "a round no longer there", id="no longer there"),
     ],
 )
-async def test_a_round_is_called_by_its_number_and_its_division(tmp_path, round_id, expected):
+async def test_a_round_is_called_by_its_number_and_division_or_as_no_longer_there(
+    tmp_path, round_id, expected
+):
     """Round 3 of Pro is named "round 3 in **Pro**"; a round id the database no longer holds is
     named "a round no longer there"."""
     from leaguebot.core.services.season_service import round_called

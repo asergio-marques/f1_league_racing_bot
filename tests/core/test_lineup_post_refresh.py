@@ -474,7 +474,7 @@ async def test_a_lineup_channel_that_is_not_a_text_channel_raises(tmp_path):
         pytest.param("Pro", id="by name"),
     ],
 )
-async def test_a_division_resolves_by_name(tmp_path, text):
+async def test_a_division_resolves_by_tier_number_or_name(tmp_path, text):
     """A league that calls its divisions "1" and "2" is naming tiers; one that calls one "Pro"
     is naming names."""
     db_path = await _make_db(tmp_path, name="resolve_division")

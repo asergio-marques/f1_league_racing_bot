@@ -150,7 +150,7 @@ async def test_the_guard_is_inert_while_the_calendar_aspect_is_off():
     [None, SimpleNamespace(valid=False, resolved_path="/tmp/bad.svg")],
     ids=["no_calendar_template", "invalid_template"],
 )
-async def test_an_invalid_template_is_not_used_to_refuse(report):
+async def test_a_missing_or_invalid_template_is_not_used_to_refuse(report):
     """A league with no calendar template has no capacity to outgrow. An invalid one's
     capacity cannot be trusted, and refusing a round on an unreadable number would block a
     league for a fault in their artwork rather than their calendar."""

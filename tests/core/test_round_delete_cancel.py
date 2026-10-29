@@ -454,7 +454,7 @@ async def test_a_round_cancelled_in_a_division_typed_in_another_case_names_it_as
         pytest.param(9, "❌ Round 9 not found in division `Pro`.", id="round_not_found"),
     ],
 )
-async def test_a_round_deleted_in_a_division_typed_in_another_case_names_it_as_it_is_named(
+async def test_a_round_deleted_in_a_division_typed_in_any_case_names_it_as_it_is_named(
     number, answered, typed
 ):
     """A season in placements holds division Pro with round 5. The admin (id 77) runs /round
