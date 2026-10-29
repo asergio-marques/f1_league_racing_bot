@@ -35,6 +35,7 @@ from leaguebot.core.models.round import RoundFormat
 from leaguebot.results.services import penalty_wizard, result_submission_service
 from leaguebot.results.services.result_submission_service import (
     DivisionValidationData,
+    ResubmissionCancelView,
     get_sessions_for_format,
 )
 from leaguebot.results.utils import results_formatter
@@ -141,8 +142,8 @@ async def _rows(league: ReviewLeague, sql: str, *args: Any) -> list[dict[str, An
 
 async def _row(league: ReviewLeague) -> dict[str, Any]:
     [row] = await _rows(league, 
-        "SELECT resubmitting, resubmit_prompt_message_id, resubmit_started_by "
-        "FROM round_submission_channels WHERE round_id = ?", ROUND_ID,
+        "SELECT in_penalty_review, results_posted, resubmitting, resubmit_prompt_message_id, "
+        "resubmit_started_by FROM round_submission_channels WHERE round_id = ?", ROUND_ID,
     )
     return row
 
@@ -185,7 +186,14 @@ async def test_resubmit_is_acknowledged_and_takes_the_prompt_down_before_announc
     nothing has changed yet: the prompt stands and the channel is not resubmitting. Once the
     queue runs, the channel is flagged resubmitting, the review prompt is deleted, and only then
     is the announcement posted with its Cancel button, followed by the prompt for the first
-    session, Qualifying; the round's results still stand, and the acknowledgement is updated."""
+    session, Qualifying; the round's results still stand, and the acknowledgement is updated to
+    say the resubmission started.
+
+    The round stays in review with its results posted throughout; `resubmitting` is what lets the
+    pastes through the review channel's guard. Left up, the prompt's Approve would finalise the
+    results being replaced, and its Resubmit would start a second collector reading the same
+    channel. The results stand until every session has been entered again (#210): deleting them
+    here left the round with no results at all, and nothing to put them back."""
     league = await _reviewing(tmp_path, monkeypatch)
     [prompt] = _prompts(league)
 
@@ -193,26 +201,30 @@ async def test_resubmit_is_acknowledged_and_takes_the_prompt_down_before_announc
 
     assert acknowledgement(interaction).startswith("⏳")
     assert _prompts(league) == [prompt]
-    assert (await _row(league))["resubmitting"] == 0
+    row = await _row(league)
+    assert (row["in_penalty_review"], row["results_posted"], row["resubmitting"]) == (1, 1, 0)
 
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
     assert [change["state"] for change in await _changes(league, START_KIND)] == ["DONE"]
-    assert (await _row(league))["resubmitting"] == 1
+    row = await _row(league)
+    assert (row["in_penalty_review"], row["results_posted"], row["resubmitting"]) == (1, 1, 1)
     assert _prompts(league) == []
     announcement = _announcement(league)
-    assert announcement.view is not None
+    assert isinstance(announcement.view, ResubmissionCancelView)
     assert (league.events.index(("delete", SUBMISSION_CHANNEL, prompt))
             < league.events.index(("send", SUBMISSION_CHANNEL, announcement.id)))
     assert any(f"📋 Submit **{QUALIFYING}** results" in text for text in _texts(league))
     assert await _sessions(league) == [("FEATURE_RACE", "ACTIVE")]
-    assert updated_reply(interaction)
+    assert "Resubmission started" in updated_reply(interaction)
 
 
 async def test_the_announcement_s_id_is_saved_with_its_mark(tmp_path, monkeypatch):
     """Once the queue has run the press, the submission row records the announcement's id and
-    the manager who started the resubmission, saved with the mark of the job that posted it."""
+    the manager who started the resubmission, saved with the mark of the job that posted it. A
+    restart ends the resubmission: its sweep needs the message to take the Cancel button down,
+    nothing listening for it any more, and its lapse line names who started it."""
     league = await _reviewing(tmp_path, monkeypatch)
 
     await _press_resubmit(league)

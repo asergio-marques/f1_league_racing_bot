@@ -19,7 +19,8 @@ audit failed — would leave the round stuck with results the league knows to be
 **The old results are superseded, not deleted** (issue #210). Pressing the button deleted the
 round's results on the spot, and the collection that should have replaced them never ran. The
 results now stand, published and counted, until every session has been entered again;
-`test_pressing_resubmit_keeps_the_round_s_results` holds that. The round stays in penalty review
+`test_resubmission_changes.py::test_resubmit_is_acknowledged_and_takes_the_prompt_down_before_announcing`
+holds that. The round stays in penalty review
 and the channel is flagged `resubmitting`, which lets the pastes past the review channel's
 message guard. The review prompt is taken down, and any approval message with it (#402), so
 nobody can approve the results being replaced or start a second resubmission over the first.
@@ -55,7 +56,6 @@ from leaguebot.results.services.result_submission_service import (
 from tests.results.test_resubmission_changes import (
     _announcement,
     _reviewing,
-    _row,
     _sessions,
 )
 from tests.results.test_review_open_change import (
@@ -66,10 +66,8 @@ from tests.results.test_review_open_change import (
 )
 from tests.support.change_queue import (
     MEMBER_ID,
-    acknowledgement,
     http_error,
     stopped_job,
-    updated_reply,
 )
 from tests.support.review_league import APPROVAL
 
@@ -191,11 +189,11 @@ def _pardon(pardon_type: str = "ABSENT", justification: str = "Ill"):
 
 
 async def _press(tmp_path, monkeypatch, *, staged=(), pardons=(), approval: bool = False,
-                 prompt_gone: bool = False, run: bool = True):
+                 prompt_gone: bool = False):
     """Round 3's review prompt standing, with *staged* penalties and *pardons* in its review and,
     where *approval*, its approval message (8901) standing too; where *prompt_gone*, the prompt
-    was deleted by hand. Alex, a league manager, presses Resubmit and, where *run*, the queue is
-    run. Gives the league, the review's state and the press's interaction."""
+    was deleted by hand. Alex, a league manager, presses Resubmit and the queue is run. Gives the
+    league, the review's state and the press's interaction."""
     league = await _reviewing(tmp_path, monkeypatch)
     state = _prompt_view(league).state
     state.staged[:] = list(staged)
@@ -206,13 +204,13 @@ async def _press(tmp_path, monkeypatch, *, staged=(), pardons=(), approval: bool
     if prompt_gone:
         [prompt] = _prompts(league)
         league.channel(SUBMISSION_CHANNEL).messages.pop(prompt)
-    interaction = await _click(league, view, run=run)
+    interaction = await _click(league, view)
     return league, state, interaction
 
 
-async def _click(league, view, *, run: bool = True):
-    """Alex, a league manager, presses Resubmit on *view* in channel 702; then, where *run*, the
-    queue is run. Gives the press's interaction."""
+async def _click(league, view):
+    """Alex, a league manager, presses Resubmit on *view* in channel 702; then the queue is run.
+    Gives the press's interaction."""
     from tests.support.change_queue import member_interaction, run_queue, tier_member
 
     interaction = member_interaction(
@@ -222,8 +220,7 @@ async def _click(league, view, *, run: bool = True):
     button = next(item for item in view.children
                   if getattr(item, "custom_id", None) == "pw_resubmit")
     await button.callback(interaction)
-    if run:
-        await run_queue(league.bot)
+    await run_queue(league.bot)
     return interaction
 
 
@@ -247,39 +244,6 @@ def _lines(league) -> list[str]:
 # ---------------------------------------------------------------------------
 # What is kept, and what is thrown away
 # ---------------------------------------------------------------------------
-
-
-async def test_pressing_resubmit_keeps_the_round_s_results(tmp_path, monkeypatch):
-    """Issue #210. They stand until every session has been entered again. Deleting them here
-    left the round with no results at all, and nothing to put them back. Once the queue has run
-    the press, round 3 still holds its Feature Race."""
-    league, _state, _interaction = await _press(tmp_path, monkeypatch)
-
-    assert await _sessions(league) == [("FEATURE_RACE", "ACTIVE")]
-
-
-async def test_resubmitting_flags_the_channel(tmp_path, monkeypatch):
-    """The round is still in review with its results posted; `resubmitting` is what lets the
-    pastes through the review channel's guard. Nothing is flagged until the queue runs the
-    press; then it is."""
-    league, _state, _interaction = await _press(tmp_path, monkeypatch, run=False)
-
-    assert await _flags_of(league) == (1, 1, 0)
-
-    from tests.support.change_queue import run_queue
-
-    await run_queue(league.bot)
-
-    assert await _flags_of(league) == (1, 1, 1)
-
-
-async def test_the_penalty_prompt_is_taken_down_when_resubmission_starts(tmp_path, monkeypatch):
-    """Left up, its Approve would finalise the results being replaced, and its Resubmit would
-    start a second collector reading the same channel. Once the queue has run the press, no
-    review prompt stands in channel 702."""
-    league, _state, _interaction = await _press(tmp_path, monkeypatch)
-
-    assert _prompts(league) == []
 
 
 async def test_the_approval_message_is_taken_down_when_resubmission_starts(tmp_path, monkeypatch):
@@ -375,12 +339,6 @@ async def test_the_discarded_pardons_are_logged_in_full(tmp_path, monkeypatch):
     ]
 
 
-async def test_the_resubmission_itself_is_logged(tmp_path, monkeypatch):
-    league, _state, _interaction = await _press(tmp_path, monkeypatch)
-
-    assert "RESULTS_RESUBMISSION | Started" in "\n".join(_lines(league))
-
-
 async def test_the_resubmission_counts_the_pardons_it_discarded(tmp_path, monkeypatch):
     """Resubmit pressed with one pardon staged and no penalty: the resubmission's one line
     counts no penalty and one pardon discarded."""
@@ -422,6 +380,7 @@ async def test_a_resubmission_with_nothing_staged_still_logs(tmp_path, monkeypat
     league, _state, _interaction = await _press(tmp_path, monkeypatch)
 
     assert "discarded_count: 0" in "\n".join(_lines(league))
+    assert "RESULTS_RESUBMISSION | Started" in "\n".join(_lines(league))
 
 
 async def test_a_failing_log_does_not_block_the_resubmission(tmp_path, monkeypatch):
@@ -457,58 +416,6 @@ async def test_the_division_is_told_in_the_submission_channel(tmp_path, monkeypa
     announcement = str(_announcement(league).content)
     assert "resubmission started" in announcement.lower()
     assert "stand until every session has been entered again" in announcement
-
-
-async def test_the_announcement_carries_the_cancel_button(tmp_path, monkeypatch):
-    league, _state, _interaction = await _press(tmp_path, monkeypatch)
-
-    assert isinstance(_announcement(league).view, ResubmissionCancelView)
-
-
-async def test_the_announcement_is_recorded_for_the_restart_sweep(tmp_path, monkeypatch):
-    """A restart ends the resubmission, and the sweep needs the message to take the button
-    down — nothing is listening for it any more."""
-    league, _state, _interaction = await _press(tmp_path, monkeypatch)
-
-    assert (await _row(league))["resubmit_prompt_message_id"] == _announcement(league).id
-
-
-async def test_who_started_the_resubmission_is_recorded_for_the_restart_sweep(
-    tmp_path, monkeypatch,
-):
-    """Alex presses 🔄 Resubmit on round 3 (Pro). A restart ends the resubmission, and its lapse
-    line names who started it, so the round's submission channel row keeps Alex's id once the
-    queue has run the press."""
-    league, _state, _interaction = await _press(tmp_path, monkeypatch)
-
-    assert int((await _row(league))["resubmit_started_by"]) == MEMBER_ID
-
-
-async def test_the_manager_is_told_privately_what_to_do_next(tmp_path, monkeypatch):
-    """Alex is answered privately that the resubmission is under way, and once the queue has run
-    the press the answer is updated to say it started."""
-    league, _state, interaction = await _press(tmp_path, monkeypatch)
-
-    assert acknowledgement(interaction).startswith("⏳")
-    assert "Resubmission started" in updated_reply(interaction)
-
-
-async def test_a_missing_submission_channel_refuses_and_changes_nothing(tmp_path, monkeypatch):
-    """The channel may have been deleted by hand. With nowhere to collect in, the review is all
-    the round has — so its staged penalty is kept, the channel is not flagged, and the manager
-    is told why."""
-    league = await _reviewing(tmp_path, monkeypatch)
-    state = _prompt_view(league).state
-    state.staged[:] = [_penalty()]
-    view = _prompt_view(league)
-    league.channels.pop(SUBMISSION_CHANNEL)
-
-    interaction = await _click(league, view)
-
-    assert len(state.staged) == 1
-    assert await _flags_of(league) == (1, 1, 0)
-    said = acknowledgement(interaction) + "\n" + updated_reply(interaction)
-    assert "submission channel could not be found" in said
 
 
 # ---------------------------------------------------------------------------
@@ -570,7 +477,8 @@ async def test_every_refused_press_of_the_resubmission_is_recorded(
     button of a resubmission under way without holding the league manager tier. The reply is
     today's, nothing changes — the penalty stays staged, the channel is not flagged and the
     resubmission is not cancelled — and exactly one line records the refusal, naming Alex and
-    the reason. The Resubmit press is made on the review of `test_review_open_change.py`'s
+    the reason. With nowhere to collect in, the review is all the round has, so a Resubmit with
+    its channel gone keeps it whole. The Resubmit press is made on the review of `test_review_open_change.py`'s
     league, its queue run after it (#439, slice 6b)."""
     if press == "resubmit":
         league = await _reviewing(tmp_path, monkeypatch)
