@@ -6,7 +6,9 @@ conversation hands its review over to the league (a last paste, a resubmission's
 round's lane, as a follow-on in its save, for `results.review.prompt`, which posts the stage prompt
 in the channel. A refused prompt stops only that round's lane, and a discarded one asks for the
 review again, as the prompt's discard did before. A review put back by the start-up is a command's
-work: it runs whole on the league lane, posting its prompt itself.
+work: it runs whole on the league lane, posting its prompt itself, which
+`test_review_open_change.py`'s
+`test_recovery_reopens_a_report_stage_through_the_queue_replacing_the_old_prompt` pins.
 
 The league, its channels and its queue are `test_review_open_change.py`'s, round 3 of Pro with its
 submission channel 702.
@@ -27,7 +29,6 @@ from tests.results.test_review_open_change import (
     _league,
     _open,
     _prompts,
-    _recover,
     _refuse_the_job,
 )
 from tests.support.change_queue import (
@@ -63,7 +64,10 @@ async def _kind_of(db_path: str, change_id: int) -> str:
 async def test_a_review_opened_from_a_last_paste_posts_its_prompt_on_the_round_s_lane(tmp_path):
     """Round 3 awaits its results; the league manager Alex's last paste asks for its review. The
     review opens on the league lane, and its prompt is asked of round 3's lane, which posts it in
-    the submission channel and saves its id."""
+    the submission channel, where the stewards already are and where the results were
+    submitted, and saves its id. Recovery deletes the old prompt once a new one stands; without
+    the id it cannot, and the round ends up with two live prompts and two sets of staged
+    penalties."""
     league = await _league(tmp_path, name="prompt_on_lane")
 
     await _open(league)
@@ -74,6 +78,7 @@ async def test_a_review_opened_from_a_last_paste_posts_its_prompt_on_the_round_s
     assert _lane(prompt_change) == ROUND_LANE
     assert prompt_change["state"] == "DONE"
     [prompt] = _prompts(league)
+    assert prompt in league.sent_to(SUBMISSION_CHANNEL)
     assert (await _channel_row(league.db_path))["prompt_message_id"] == prompt
 
 
@@ -120,25 +125,6 @@ async def test_a_discarded_prompt_asks_the_review_again(tmp_path):
     assert await stopped_job(league.db_path) is None
     [prompt] = _prompts(league)
     assert (await _channel_row(league.db_path))["prompt_message_id"] == prompt
-
-
-async def test_a_review_put_back_at_a_restart_posts_its_prompt_on_the_league_lane(tmp_path):
-    """Round 3 was in its report stage when the bot stopped, its interim results out and its
-    prompt 8900 standing. The start-up puts the review back: one change on the league lane posts
-    the fresh prompt itself and deletes the old one; nothing is asked of the round's lane."""
-    league = await _league(tmp_path, name="prompt_put_back", in_review=True, results_posted=True,
-                           prompt=PROMPT,
-                           round_status=RoundStatus.AWAITING_REPORT_VERDICTS.value)
-
-    await _recover(league)
-
-    [opened] = await changes_of(league.db_path, KIND)
-    assert _lane(opened) == "league"
-    assert opened["origin"] == "BOT"
-    assert await changes_of(league.db_path, PROMPT_KIND) == []
-    [prompt] = _prompts(league)
-    assert prompt != PROMPT
-    assert PROMPT not in league.channel(SUBMISSION_CHANNEL).messages
 
 
 async def _put_up_the_appeals_prompt(league: Any) -> None:

@@ -22,7 +22,8 @@ discarded post leaves the results unposted, and the prompt still comes.
 that skips the posting and nothing else.
 
 **The sessions offered are the active ones, in racing order**, and the prompt's message id is
-saved with its post, so the next restart can replace it.
+saved with its post, so the next restart can replace it (`test_review_prompt_change.py` pins
+where the prompt is posted and its id saved).
 
 **A Discard of the `open` save or of the prompt asks for the review again**, as the bot ("Discard
 reopens the review"). **Restart recovery** asks the queue rather than reopening the review itself,
@@ -320,14 +321,6 @@ async def test_the_review_flag_is_set_before_any_posting(tmp_path):
     assert league.sent_to(STANDINGS_CHANNEL) == []
 
 
-async def test_the_round_now_awaits_report_verdicts(tmp_path):
-    league = await _league(tmp_path, name="open_status")
-
-    await _open(league)
-
-    assert await _round_status(league.db_path) == RoundStatus.AWAITING_REPORT_VERDICTS.value
-
-
 @pytest.mark.parametrize("status", sorted(ROUND_CANCELLABLE))
 async def test_a_cancellable_round_moves_into_review(tmp_path, status):
     """Read from the model's own frozenset: a state added to what may be cancelled and not
@@ -538,27 +531,6 @@ async def test_a_round_that_does_not_exist_does_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 # The prompt
 # ---------------------------------------------------------------------------
-
-
-async def test_the_prompt_is_posted_to_the_submission_channel(tmp_path):
-    """Where the stewards already are, and where the results were submitted."""
-    league = await _league(tmp_path, name="open_prompt")
-
-    await _open(league)
-
-    prompts = _prompts(league)
-    assert len(prompts) == 1
-    assert prompts[0] in league.sent_to(SUBMISSION_CHANNEL)
-
-
-async def test_the_prompt_message_id_is_persisted(tmp_path):
-    """Recovery deletes the old prompt once a new one stands; without the id it cannot, and the
-    round ends up with two live prompts and two sets of staged penalties."""
-    league = await _league(tmp_path, name="open_promptid")
-
-    await _open(league)
-
-    assert (await _channel_row(league.db_path))["prompt_message_id"] == _prompts(league)[0]
 
 
 async def test_the_view_is_registered_for_persistent_routing(tmp_path):
@@ -1246,6 +1218,9 @@ async def test_recovery_leaves_alone_a_round_whose_paste_is_queued_or_stopped(tm
 async def test_recovery_reopens_a_report_stage_through_the_queue_replacing_the_old_prompt(
     tmp_path,
 ):
+    """Round 3 was in its report stage when the bot stopped, its interim results out and its
+    prompt 8900 standing. The start-up puts the review back: one change on the league lane posts
+    the fresh prompt itself and deletes the old one; nothing is asked of the round's lane."""
     league = await _league(tmp_path, name="recover_report", in_review=True,
                            results_posted=True, prompt=PROMPT,
                            round_status=RoundStatus.AWAITING_REPORT_VERDICTS.value)
@@ -1257,6 +1232,8 @@ async def test_recovery_reopens_a_report_stage_through_the_queue_replacing_the_o
     asked = await changes_of(league.db_path, KIND)
     assert len(asked) == 1
     assert asked[0]["origin"] == "BOT"
+    assert (asked[0].get("lane") or "league") == "league"
+    assert await changes_of(league.db_path, "results.review.prompt") == []
     payload = json.loads(asked[0]["payload"])
     assert payload["publish"] is False
     assert payload["old_prompt_id"] == PROMPT
