@@ -305,23 +305,19 @@ async def test_a_server_with_no_attendance_config_is_left_alone(tmp_path, announ
     sheet.assert_not_awaited()
 
 
-async def test_both_thresholds_disabled_sanctions_nobody(tmp_path, announcer, sheet):
-    """FR-027. A league that wants the points but not the automatic consequences."""
-    db_path = await _make_db(tmp_path, autoreserve=None, autosack=None)
-    await _seed_totals(db_path, {FULL_TIME_PROFILE: 500})
-    bot = _make_bot(db_path)
+@pytest.mark.parametrize(
+    "autoreserve, autosack", [(None, None), (0, 0)], ids=["none", "zero"]
+)
+async def test_both_thresholds_disabled_sanctions_nobody(
+    tmp_path, announcer, sheet, autoreserve, autosack
+):
+    """FR-027. A league that wants the points but not the automatic consequences.
 
-    await _run(bot, db_path)
-
-    bot.placement_service.sack_driver.assert_not_awaited()
-    bot.placement_service.assign_driver.assert_not_awaited()
-
-
-async def test_a_threshold_of_zero_counts_as_disabled(tmp_path, announcer, sheet):
-    """`cfg_row["..."] or None` folds 0 into "off". Pinned because a league setting a
-    threshold of zero plainly means "never", and the falsy check is what delivers that —
-    a later `is not None` would sanction every driver on the grid at once."""
-    db_path = await _make_db(tmp_path, autoreserve=0, autosack=0)
+    A threshold of zero counts as disabled: `cfg_row["..."] or None` folds 0 into "off".
+    Pinned because a league setting a threshold of zero plainly means "never", and the falsy
+    check is what delivers that — a later `is not None` would sanction every driver on the
+    grid at once."""
+    db_path = await _make_db(tmp_path, autoreserve=autoreserve, autosack=autosack)
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 500})
     bot = _make_bot(db_path)
 

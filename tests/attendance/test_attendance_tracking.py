@@ -285,7 +285,7 @@ async def test_record_attendance_full_recompute_can_flip_to_absent(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 6. Attendance point rules — one test per spec case (US3)
+# 6. Attendance point rules — one case per spec case (US3)
 #
 # Penalty config used throughout: no_rsvp=2  absent=1  no_show=3
 #
@@ -324,76 +324,43 @@ async def _points(db_file: str) -> int:
     return row["points_awarded"]
 
 
-# Case A — Failure to check-in, attended → no_rsvp_penalty (2)
-
 @pytest.mark.asyncio
-async def test_points_case_a_no_rsvp_attended(tmp_path):
-    """Case A: NO_RSVP + attended = no_rsvp_penalty (2)."""
-    db = await _make_single_driver_db(tmp_path, rsvp_status="NO_RSVP", attended=1)
+@pytest.mark.parametrize(
+    "rsvp_status, attended, expected",
+    [
+        ("NO_RSVP", 1, 2),
+        ("NO_RSVP", 0, 3),
+        ("ACCEPTED", 1, 0),
+        ("TENTATIVE", 1, 0),
+        ("DECLINED", 1, 0),
+        ("ACCEPTED", 0, 3),
+        ("TENTATIVE", 0, 1),
+        ("DECLINED", 0, 1),
+    ],
+    ids=[
+        "A-no-rsvp-attended",
+        "B-no-rsvp-absent",
+        "C-accepted-attended",
+        "C-tentative-attended",
+        "C-declined-attended",
+        "D-accepted-absent",
+        "E-tentative-absent",
+        "E-declined-absent",
+    ],
+)
+async def test_points_follow_the_check_in_and_the_attendance(
+    tmp_path, rsvp_status, attended, expected
+):
+    """One driver's points for each spec case in the table above.
+
+    Case A: NO_RSVP + attended = no_rsvp_penalty (2).
+    Case B: NO_RSVP + absent = no_rsvp_penalty + absent_penalty (2+1=3).
+    Case C: ACCEPTED, TENTATIVE or DECLINED + attended = 0.
+    Case D: ACCEPTED + absent = no_show_penalty (3).
+    Case E: TENTATIVE or DECLINED + absent = absent_penalty (1)."""
+    db = await _make_single_driver_db(tmp_path, rsvp_status=rsvp_status, attended=attended)
     await distribute_attendance_points(db, round_id=1, division_id=10)
-    assert await _points(db) == 2
-
-
-# Case B — NO_RSVP, did not attend → no_rsvp_penalty + absent_penalty (2+1=3)
-
-@pytest.mark.asyncio
-async def test_points_case_b_no_rsvp_absent(tmp_path):
-    """Case B: NO_RSVP + absent = no_rsvp_penalty + absent_penalty (2+1=3)."""
-    db = await _make_single_driver_db(tmp_path, rsvp_status="NO_RSVP", attended=0)
-    await distribute_attendance_points(db, round_id=1, division_id=10)
-    assert await _points(db) == 3
-
-
-# Case C — Checked-in, attended → 0 (all three checked-in statuses)
-
-@pytest.mark.asyncio
-async def test_points_case_c_accepted_attended(tmp_path):
-    """Case C: ACCEPTED + attended = 0."""
-    db = await _make_single_driver_db(tmp_path, rsvp_status="ACCEPTED", attended=1)
-    await distribute_attendance_points(db, round_id=1, division_id=10)
-    assert await _points(db) == 0
-
-
-@pytest.mark.asyncio
-async def test_points_case_c_tentative_attended(tmp_path):
-    """Case C: TENTATIVE + attended = 0."""
-    db = await _make_single_driver_db(tmp_path, rsvp_status="TENTATIVE", attended=1)
-    await distribute_attendance_points(db, round_id=1, division_id=10)
-    assert await _points(db) == 0
-
-
-@pytest.mark.asyncio
-async def test_points_case_c_declined_attended(tmp_path):
-    """Case C: DECLINED + attended = 0."""
-    db = await _make_single_driver_db(tmp_path, rsvp_status="DECLINED", attended=1)
-    await distribute_attendance_points(db, round_id=1, division_id=10)
-    assert await _points(db) == 0
-
-
-# Case D — Checked-in, did not attend → no_show_penalty (3)
-
-@pytest.mark.asyncio
-async def test_points_case_d_accepted_absent(tmp_path):
-    """Case D: ACCEPTED + absent = no_show_penalty (3)."""
-    db = await _make_single_driver_db(tmp_path, rsvp_status="ACCEPTED", attended=0)
-    await distribute_attendance_points(db, round_id=1, division_id=10)
-    assert await _points(db) == 3
-
-
-@pytest.mark.asyncio
-async def test_points_case_d_tentative_absent(tmp_path):
-    """Case E: TENTATIVE + absent = absent_penalty (1)."""
-    db = await _make_single_driver_db(tmp_path, rsvp_status="TENTATIVE", attended=0)
-    await distribute_attendance_points(db, round_id=1, division_id=10)
-    assert await _points(db) == 1
-
-
-@pytest.mark.asyncio
-async def test_points_case_d_declined_absent(tmp_path):
-    """Case E: DECLINED + absent = absent_penalty (1)."""
-    db = await _make_single_driver_db(tmp_path, rsvp_status="DECLINED", attended=0)
-    await distribute_attendance_points(db, round_id=1, division_id=10)
-    assert await _points(db) == 1
+    assert await _points(db) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -552,19 +519,17 @@ async def _make_reserve_driver_db(
 
 
 @pytest.mark.asyncio
-async def test_allocated_reserve_accepted_absent_gets_no_show_penalty(tmp_path):
-    """Allocated reserve + ACCEPTED + absent = no_show_penalty (3)."""
-    db = await _make_reserve_driver_db(tmp_path, attended=0, assigned_team_id=1)
+@pytest.mark.parametrize(
+    "attended, expected", [(0, 3), (1, 0)], ids=["absent", "attended"]
+)
+async def test_an_allocated_reserve_who_accepted_is_scored_as_a_full_timer(
+    tmp_path, attended, expected
+):
+    """Allocated reserve + ACCEPTED + absent = no_show_penalty (3).
+    Allocated reserve + ACCEPTED + attended = 0."""
+    db = await _make_reserve_driver_db(tmp_path, attended=attended, assigned_team_id=1)
     await distribute_attendance_points(db, round_id=1, division_id=10)
-    assert await _points(db) == 3
-
-
-@pytest.mark.asyncio
-async def test_allocated_reserve_accepted_attended_gets_zero(tmp_path):
-    """Allocated reserve + ACCEPTED + attended = 0."""
-    db = await _make_reserve_driver_db(tmp_path, attended=1, assigned_team_id=1)
-    await distribute_attendance_points(db, round_id=1, division_id=10)
-    assert await _points(db) == 0
+    assert await _points(db) == expected
 
 
 @pytest.mark.asyncio
