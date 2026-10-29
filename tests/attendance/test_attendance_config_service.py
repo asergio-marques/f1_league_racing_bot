@@ -137,6 +137,7 @@ async def test_get_or_create_writes_the_packaged_defaults(tmp_path):
     config = await service.get_or_create_config()
 
     assert config is not None
+    assert config.module_enabled is False
     assert await service.get_config() is not None
 
 
@@ -310,7 +311,8 @@ async def test_the_rsvp_channel_can_be_set_and_read_back(tmp_path):
 
     config = await service.get_division_config(DIVISION_ID)
     assert config is not None
-    assert str(config.rsvp_channel_id) == "777001"
+    assert config.rsvp_channel_id == "777001"
+    assert config.attendance_channel_id is None
 
 
 async def test_repointing_the_rsvp_channel_updates_rather_than_duplicates(tmp_path):
@@ -340,8 +342,9 @@ async def test_setting_one_division_channel_leaves_the_other_alone(tmp_path):
     await service.set_attendance_channel(DIVISION_ID, 888001)
 
     config = await service.get_division_config(DIVISION_ID)
-    assert str(config.rsvp_channel_id) == "777001"
-    assert str(config.attendance_channel_id) == "888001"
+    assert config is not None
+    assert config.rsvp_channel_id == "777001"
+    assert config.attendance_channel_id == "888001"
 
 
 async def test_a_division_with_no_config_reads_as_none(tmp_path):
