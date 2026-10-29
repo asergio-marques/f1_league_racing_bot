@@ -9,8 +9,9 @@ persistent views: Discord re-attaches the buttons after a restart but the wizard
 in-memory and is rebuilt asynchronously, so for a few seconds a button exists with `state is
 None`. Pressing one then must not raise — an unhandled exception in a component callback shows
 a league "This interaction failed" and leaves them guessing — and it must not finalise anything
-either. Every button is tested for it, because the guard is one `if` and it is the sort of thing
-a reader deletes as defensive clutter.
+either. Every button is tested for it, by the `restarted-` cases of the refusal tests here and in
+`test_penalty_review_buttons.py`, because the guard is one `if` and it is the sort of thing a
+reader deletes as defensive clutter.
 
 **Only a league manager may press any of them.** The review happens in the submission channel,
 which drivers can see; a driver confirming the appeals step would finalise a round over the
@@ -279,58 +280,15 @@ def _finalisers():
     )
 
 
-#: (view class, button attribute) for every button guarded against a lost state.
+#: (view class, button attribute) for every button of the approval step and the appeals prompt
+#: that only a league manager may press. Each is guarded against a lost state too, which the
+#: refusal tests' `restarted-` cases pin, here and in `test_penalty_review_buttons.py`.
 RESTART_GUARDED = [
     (ApprovalView, "make_changes_btn"),
     (ApprovalView, "approve_btn"),
     (AppealsReviewView, "add_correction_btn"),
     (AppealsReviewView, "no_changes_btn"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# A state that did not survive the restart
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("view_cls,button", RESTART_GUARDED)
-async def test_a_button_with_no_state_says_so_rather_than_raising(view_cls, button):
-    """Discord re-attaches the buttons after a restart but the state is rebuilt
-    asynchronously, so for a few seconds a button exists with no state behind it. An
-    unhandled exception there shows a league "This interaction failed" and nothing else."""
-    view = view_cls(state=None)
-    interaction = _interaction()
-
-    await _press(view, button, interaction)
-
-    assert "bot was restarted" in _replied(interaction)
-
-
-@pytest.mark.parametrize("view_cls,button", RESTART_GUARDED)
-async def test_a_button_with_no_state_finalises_nothing(view_cls, button):
-    """Which is the half that matters: a round finalised from a half-recovered view would
-    publish whatever the empty state contained."""
-    view = view_cls(state=None)
-    interaction = _interaction()
-    p1, p2, p3, p4 = _finalisers()
-
-    with p1 as penalty, p2 as appeals, p3, p4:
-        await _press(view, button, interaction)
-
-    penalty.assert_not_awaited()
-    appeals.assert_not_awaited()
-    assert _asked(interaction) == []
-
-
-async def test_a_remove_button_with_no_state_says_so():
-    """It is built from the state's own list, so a restart leaves buttons whose index
-    refers to a list that no longer exists."""
-    view = AppealsReviewView(state=None)
-    interaction = _interaction()
-
-    await view._make_remove_cb(0)(interaction)
-
-    assert "bot was restarted" in _replied(interaction)
 
 
 # ---------------------------------------------------------------------------
@@ -355,21 +313,6 @@ async def test_only_a_league_manager_may_press(tmp_path, view_cls, button):
     penalty.assert_not_awaited()
     appeals.assert_not_awaited()
     assert _asked(interaction, state) == []
-
-
-async def test_only_a_league_manager_may_remove_a_correction(tmp_path):
-    db_path = await _make_db(tmp_path, name="lm_remove")
-    state = _state(db_path, appeals=[_penalty()])
-    view = AppealsReviewView(state=state)
-    interaction = _interaction()
-
-    with _manager(False), patch(
-        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
-    ):
-        await view._make_remove_cb(0)(interaction)
-
-    assert "Only league managers" in _replied(interaction)
-    assert len(state.staged_appeals) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -463,24 +406,18 @@ async def test_a_round_with_no_season_row_is_still_approvable(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_remove_button_is_offered_for_each_staged_correction(tmp_path):
+@pytest.mark.parametrize(
+    "drivers, expected",
+    [([101, 102], ["Remove #1", "Remove #2"]), ([], [])],
+    ids=["two-staged", "nothing-staged"],
+)
+async def test_a_remove_button_is_offered_for_each_staged_correction(tmp_path, drivers, expected):
     db_path = await _make_db(tmp_path, name="appeals_buttons")
-    state = _state(db_path, appeals=[_penalty(101), _penalty(102)])
+    state = _state(db_path, appeals=[_penalty(driver) for driver in drivers])
 
     view = AppealsReviewView(state=state)
 
-    assert [i.label for i in view.children if str(i.label).startswith("Remove")] == [
-        "Remove #1",
-        "Remove #2",
-    ]
-
-
-async def test_a_prompt_with_nothing_staged_offers_no_remove_buttons(tmp_path):
-    db_path = await _make_db(tmp_path, name="appeals_nobuttons")
-
-    view = AppealsReviewView(state=_state(db_path))
-
-    assert [i for i in view.children if str(i.label).startswith("Remove")] == []
+    assert [i.label for i in view.children if str(i.label).startswith("Remove")] == expected
 
 
 async def test_removing_a_correction_takes_it_off_the_list(tmp_path):
@@ -553,11 +490,19 @@ async def test_confirming_with_nothing_staged_finalises_at_once(tmp_path):
 
     Alex presses No Changes / Confirm on round 3's appeals review with nothing staged. The press
     asks the queue at once for `results.appeals.approve` of round 3 with no corrections, handing
-    it the press for its acknowledgement."""
+    it the press for its acknowledgement. The approval (the queue's ask, stubbed) writes its own
+    line, as its `close` does, and the press writes no second one: one action, one line."""
     db_path = await _make_db(tmp_path, name="appeals_confirm_empty")
     state = _state(db_path)
     view = AppealsReviewView(state=state)
     interaction = _interaction()
+
+    async def _approved(_kind, _payload, *, interaction, **_kwargs):
+        await interaction.client.output_router.post_log("the approval's own line")
+
+    # Each queue gets its own stub, so the one ask is counted once by `_asked_once`.
+    interaction.client.change_queue.ask = AsyncMock(side_effect=_approved)
+    state.bot.change_queue.ask = AsyncMock(side_effect=_approved)
     p1, p2, p3, p4 = _finalisers()
 
     with _manager(), p1, p2, p3, p4:
@@ -567,6 +512,7 @@ async def test_confirming_with_nothing_staged_finalises_at_once(tmp_path):
     assert payload["round_id"] == ROUND_ID
     assert payload["division_id"] == DIVISION_ID
     assert payload["staged"] == []
+    assert _all_lines(interaction, state) == ["the approval's own line"]
 
 
 async def test_approving_the_appeals_asks_for_the_corrections_staged(tmp_path):
@@ -667,21 +613,6 @@ async def test_going_back_keeps_the_corrections(tmp_path):
     _assert_appeals_clear_abandoned(line, "cancelled by Alex (<@77>)")
 
 
-async def test_only_a_league_manager_may_confirm_the_clear(tmp_path):
-    db_path = await _make_db(tmp_path, name="appeals_clear_lm")
-    state = _state(db_path, appeals=[_penalty()])
-    view = _AppealsConfirmClearView(state=state)
-    interaction = _interaction()
-    p1, p2, p3, p4 = _finalisers()
-
-    with _manager(False), p1, p2 as finalise, p3, p4:
-        await _press(view, "confirm_btn", interaction)
-
-    assert len(state.staged_appeals) == 1
-    finalise.assert_not_awaited()
-    assert _asked(interaction, state) == []
-
-
 # ---------------------------------------------------------------------------
 # Every refusal is recorded (#482)
 #
@@ -739,7 +670,12 @@ async def test_every_refused_press_of_the_appeals_review_is_recorded(
     refused: after a restart, without the tier, on a Remove whose correction has already gone,
     or approving with nothing staged. The reply is today's, nothing is staged, removed or
     approved, and exactly one line records the refusal, naming the button, the review, Alex and
-    the reason."""
+    the reason.
+
+    After a restart the button exists with no state behind it (a Remove button's index then
+    refers to a list that no longer exists), and the press must neither raise, which shows a
+    league "This interaction failed" and nothing else, nor finalise: a round finalised from a
+    half-recovered view would publish whatever the empty state contained."""
     db_path = await _make_db(tmp_path, name="appeals_refusals")
     state = None if restarted else _state(db_path, appeals=[_penalty()] * staged)
     if kind == "clear":
@@ -893,31 +829,6 @@ async def test_every_press_of_the_appeals_review_writes_one_line(tmp_path, kind,
     assert not line.startswith(("⛔", "↩️", "⌛")), line
     for fragment in ("Alex (<@77>)", label, "appeals review of round 3 (Pro)", "+5s", *removed):
         assert fragment in line, (fragment, line)
-
-
-async def test_no_changes_writes_no_line_beside_the_approval_s_own(tmp_path):
-    """Round 3's appeals review (division Pro) has nothing staged. Alex presses No Changes /
-    Confirm, which asks the queue for the appeals approval at once; the approval (the queue's
-    ask, stubbed) writes its own line, as its `close` does. The press writes no second one: one
-    action, one line."""
-    db_path = await _make_db(tmp_path, name="appeals_no_changes_line")
-    state = _state(db_path)
-    view = AppealsReviewView(state=state)
-    interaction = _interaction()
-
-    async def _approved(_kind, _payload, *, interaction, **_kwargs):
-        await interaction.client.output_router.post_log("the approval's own line")
-
-    interaction.client.change_queue.ask = AsyncMock(side_effect=_approved)
-    state.bot.change_queue = interaction.client.change_queue
-    p1, p2, p3, p4 = _finalisers()
-
-    with _manager(True), p1, p2, p3, p4:
-        await _press(view, "no_changes_btn", interaction)
-
-    interaction.client.change_queue.ask.assert_awaited_once()
-    assert interaction.client.change_queue.ask.await_args.args[0] == "results.appeals.approve"
-    assert _all_lines(interaction, state) == ["the approval's own line"]
 
 
 # ---------------------------------------------------------------------------
