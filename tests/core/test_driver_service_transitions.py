@@ -39,141 +39,70 @@ async def _seed_driver(db_path, user_id: str, state: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# PENDING_SIGNUP_COMPLETION → NOT_SIGNED_UP (T007 new transition)
+# The transitions allowed and refused (T007, T052)
 # ---------------------------------------------------------------------------
 
 
-class TestPendingSignupCompletionToNotSignedUp:
-    async def test_transition_succeeds(self, db_path):
-        from leaguebot.core.models.driver_profile import DriverState
-        await _seed_driver(db_path, "u1", "PENDING_SIGNUP_COMPLETION")
-        svc = _make_svc(db_path)
-        result = await svc.transition("u1", DriverState.NOT_SIGNED_UP)
-        # Nothing is deleted: the driver is pending deletion (issue #220)
-        assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP
-
-    async def test_former_driver_retains_profile(self, db_path):
-        from leaguebot.core.db.database import get_connection
-        from leaguebot.core.models.driver_profile import DriverState
-        await _seed_driver(db_path, "u2", "PENDING_SIGNUP_COMPLETION")
+@pytest.mark.parametrize(
+    "from_state, to_state, former",
+    [
+        pytest.param("PENDING_SIGNUP_COMPLETION", "NOT_SIGNED_UP", False, id="PSC to NSU"),
+        pytest.param("PENDING_SIGNUP_COMPLETION", "NOT_SIGNED_UP", True,
+                     id="PSC to NSU, a former driver"),
+        pytest.param("PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL", False,
+                     id="PSC to PAA"),
+        pytest.param("PENDING_DRIVER_CORRECTION", "NOT_SIGNED_UP", False, id="PDC to NSU"),
+        pytest.param("PENDING_DRIVER_CORRECTION", "PENDING_ADMIN_APPROVAL", False,
+                     id="PDC to PAA"),
+        pytest.param("PENDING_ADMIN_APPROVAL", "AWAITING_CORRECTION_PARAMETER", False,
+                     id="PAA to ACP"),
+        pytest.param("AWAITING_CORRECTION_PARAMETER", "PENDING_DRIVER_CORRECTION", False,
+                     id="ACP to PDC"),
+        pytest.param("AWAITING_CORRECTION_PARAMETER", "PENDING_ADMIN_APPROVAL", False,
+                     id="ACP to PAA, the timeout's revert"),
+        pytest.param("AWAITING_CORRECTION_PARAMETER", "NOT_SIGNED_UP", False,
+                     id="ACP to NSU, a withdrawal or forced close"),
+        pytest.param("PENDING_ADMIN_APPROVAL", "NOT_SIGNED_UP", False, id="PAA to NSU"),
+    ],
+)
+async def test_an_allowed_transition_lands_on_its_target(db_path, from_state, to_state, former):
+    """A driver in *from_state*, a former driver or not, is moved to *to_state*. A return to
+    Not Signed Up deletes nothing: the profile is kept, pending deletion (#220), a former
+    driver's as anyone's. The awaiting-correction-parameter state (T052, spec 014) is reached
+    from pending admin approval, and left for a driver correction, back to admin approval when
+    it times out, or to Not Signed Up on a withdrawal or a forced close."""
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.models.driver_profile import DriverState
+    await _seed_driver(db_path, "u1", from_state)
+    if former:
         async with get_connection(db_path) as db:
             await db.execute(
-                "UPDATE driver_profiles SET former_driver = 1 WHERE discord_user_id = 'u2'"
+                "UPDATE driver_profiles SET former_driver = 1 WHERE discord_user_id = 'u1'"
             )
             await db.commit()
-        svc = _make_svc(db_path)
-        result = await svc.transition("u2", DriverState.NOT_SIGNED_UP)
-        assert result is not None
-        assert result.current_state == DriverState.NOT_SIGNED_UP
-
-    async def test_transition_to_pending_admin_still_works(self, db_path):
-        from leaguebot.core.models.driver_profile import DriverState
-        await _seed_driver(db_path, "u3", "PENDING_SIGNUP_COMPLETION")
-        svc = _make_svc(db_path)
-        result = await svc.transition("u3", DriverState.PENDING_ADMIN_APPROVAL)
-        assert result is not None
-        assert result.current_state == DriverState.PENDING_ADMIN_APPROVAL
+    svc = _make_svc(db_path)
+    result = await svc.transition("u1", DriverState(to_state))
+    assert result is not None
+    assert result.current_state == DriverState(to_state)
 
 
-# ---------------------------------------------------------------------------
-# PENDING_DRIVER_CORRECTION → NOT_SIGNED_UP (T007 new transition)
-# ---------------------------------------------------------------------------
-
-
-class TestPendingDriverCorrectionToNotSignedUp:
-    async def test_transition_succeeds(self, db_path):
-        from leaguebot.core.models.driver_profile import DriverState
-        await _seed_driver(db_path, "u4", "PENDING_DRIVER_CORRECTION")
-        svc = _make_svc(db_path)
-        result = await svc.transition("u4", DriverState.NOT_SIGNED_UP)
-        assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP  # pending deletion (#220)
-
-    async def test_existing_transitions_still_work(self, db_path):
-        from leaguebot.core.models.driver_profile import DriverState
-        await _seed_driver(db_path, "u5", "PENDING_DRIVER_CORRECTION")
-        svc = _make_svc(db_path)
-        result = await svc.transition("u5", DriverState.PENDING_ADMIN_APPROVAL)
-        assert result is not None
-        assert result.current_state == DriverState.PENDING_ADMIN_APPROVAL
-
-    async def test_invalid_transition_still_raises(self, db_path):
-        from leaguebot.core.models.driver_profile import DriverState
-        await _seed_driver(db_path, "u6", "PENDING_DRIVER_CORRECTION")
-        svc = _make_svc(db_path)
-        with pytest.raises(ValueError):
-            # Cannot go directly to ASSIGNED from PENDING_DRIVER_CORRECTION
-            await svc.transition("u6", DriverState.ASSIGNED)
-
-
-# ---------------------------------------------------------------------------
-# PENDING_ADMIN_APPROVAL → NOT_SIGNED_UP (pre-existing from 012, verify present)
-# ---------------------------------------------------------------------------
-
-
-class TestPendingAdminApprovalToNotSignedUp:
-    async def test_transition_succeeds(self, db_path):
-        from leaguebot.core.models.driver_profile import DriverState
-        await _seed_driver(db_path, "u7", "PENDING_ADMIN_APPROVAL")
-        svc = _make_svc(db_path)
-        result = await svc.transition("u7", DriverState.NOT_SIGNED_UP)
-        assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP  # pending deletion (#220)
-
-
-# ---------------------------------------------------------------------------
-# T052 — AWAITING_CORRECTION_PARAMETER (ACP) transition paths
-# ---------------------------------------------------------------------------
-
-
-class TestAwaitingCorrectionParameterTransitions:
-    """T052: New ACP state added in spec 014."""
-
-    async def test_paa_to_acp(self, db_path):
-        from leaguebot.core.models.driver_profile import DriverState
-        await _seed_driver(db_path, "acp1", "PENDING_ADMIN_APPROVAL")
-        svc = _make_svc(db_path)
-        result = await svc.transition("acp1", DriverState.AWAITING_CORRECTION_PARAMETER)
-        assert result is not None
-        assert result.current_state == DriverState.AWAITING_CORRECTION_PARAMETER
-
-    async def test_acp_to_pdc(self, db_path):
-        from leaguebot.core.models.driver_profile import DriverState
-        await _seed_driver(db_path, "acp2", "AWAITING_CORRECTION_PARAMETER")
-        svc = _make_svc(db_path)
-        result = await svc.transition("acp2", DriverState.PENDING_DRIVER_CORRECTION)
-        assert result is not None
-        assert result.current_state == DriverState.PENDING_DRIVER_CORRECTION
-
-    async def test_acp_to_paa_timeout_revert(self, db_path):
-        from leaguebot.core.models.driver_profile import DriverState
-        await _seed_driver(db_path, "acp3", "AWAITING_CORRECTION_PARAMETER")
-        svc = _make_svc(db_path)
-        result = await svc.transition("acp3", DriverState.PENDING_ADMIN_APPROVAL)
-        assert result is not None
-        assert result.current_state == DriverState.PENDING_ADMIN_APPROVAL
-
-    async def test_pdc_to_paa(self, db_path):
-        from leaguebot.core.models.driver_profile import DriverState
-        await _seed_driver(db_path, "acp4", "PENDING_DRIVER_CORRECTION")
-        svc = _make_svc(db_path)
-        result = await svc.transition("acp4", DriverState.PENDING_ADMIN_APPROVAL)
-        assert result is not None
-        assert result.current_state == DriverState.PENDING_ADMIN_APPROVAL
-
-    async def test_psc_cannot_go_to_acp_directly(self, db_path):
-        """ACP is only reachable from PAA, not from PSC."""
-        from leaguebot.core.models.driver_profile import DriverState
-        await _seed_driver(db_path, "acp5", "PENDING_SIGNUP_COMPLETION")
-        svc = _make_svc(db_path)
-        with pytest.raises(ValueError):
-            await svc.transition("acp5", DriverState.AWAITING_CORRECTION_PARAMETER)
-
-    async def test_acp_to_not_signed_up(self, db_path):
-        """ACP can transition to NOT_SIGNED_UP (withdrawal/forced-close)."""
-        from leaguebot.core.models.driver_profile import DriverState
-        await _seed_driver(db_path, "acp6", "AWAITING_CORRECTION_PARAMETER")
-        svc = _make_svc(db_path)
-        result = await svc.transition("acp6", DriverState.NOT_SIGNED_UP)
-        assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP  # pending deletion (#220)
+@pytest.mark.parametrize(
+    "from_state, to_state",
+    [
+        pytest.param("PENDING_SIGNUP_COMPLETION", "AWAITING_CORRECTION_PARAMETER",
+                     id="PSC to ACP"),
+        pytest.param("PENDING_DRIVER_CORRECTION", "ASSIGNED", id="PDC to ASSIGNED"),
+    ],
+)
+async def test_a_transition_the_table_does_not_allow_raises(db_path, from_state, to_state):
+    """The awaiting-correction-parameter state is reachable only from pending admin approval,
+    not from pending signup completion, and a driver awaiting their correction cannot go
+    straight to Assigned."""
+    from leaguebot.core.models.driver_profile import DriverState
+    await _seed_driver(db_path, "u1", from_state)
+    svc = _make_svc(db_path)
+    with pytest.raises(ValueError):
+        await svc.transition("u1", DriverState(to_state))
 
 
 # ---------------------------------------------------------------------------
@@ -222,21 +151,6 @@ class TestSignupDataClearing:
         assert row["discord_username"] == "TestUser"
         assert row["platform"] == "Steam"
         assert row["platform_id"] == "SteamUser123"
-
-    async def test_non_former_driver_nsu_keeps_profile_pending_deletion(self, db_path):
-        """former_driver=False: NOT_SIGNED_UP keeps the profile, pending deletion (#220)."""
-        from leaguebot.core.db.database import get_connection
-        from leaguebot.core.models.driver_profile import DriverState
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "INSERT INTO driver_profiles "
-                "(discord_user_id, current_state, former_driver) "
-                "VALUES ('nfd1', 'PENDING_ADMIN_APPROVAL', 0)"
-            )
-            await db.commit()
-        svc = _make_svc(db_path)
-        result = await svc.transition("nfd1", DriverState.NOT_SIGNED_UP)
-        assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP
 
 
 async def test_a_state_written_within_a_transaction_obeys_the_table(tmp_path):

@@ -12,6 +12,7 @@ import os
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.placement_service import PlacementService
@@ -73,27 +74,24 @@ async def _league(tmp_path, *, state: str = "ASSIGNED", committed: int = 1,
     return db_path, profile_id
 
 
-async def test_an_assigned_driver_holds_driver_division_and_team_roles(tmp_path):
-    db_path, pid = await _league(tmp_path)
-    assert await PlacementService(db_path).driver_role_ids(pid) == {
-        DRIVER_ROLE, DIVISION_ROLE, TEAM_ROLE
-    }
-
-
-async def test_an_unconfirmed_placement_grants_no_division_or_team_role(tmp_path):
-    db_path, pid = await _league(tmp_path, state="UNASSIGNED", committed=0)
-    assert await PlacementService(db_path).driver_role_ids(pid) == {DRIVER_ROLE}
-
-
-async def test_a_driver_not_signed_up_holds_no_driver_role(tmp_path):
-    """E22."""
-    db_path, pid = await _league(tmp_path, state="NOT_SIGNED_UP", committed=0)
-    assert await PlacementService(db_path).driver_role_ids(pid) == set()
-
-
-async def test_a_test_mode_driver_holds_no_roles(tmp_path):
-    db_path, pid = await _league(tmp_path, test=True)
-    assert await PlacementService(db_path).driver_role_ids(pid) == set()
+@pytest.mark.parametrize(
+    "state, committed, test, expected",
+    [
+        pytest.param("ASSIGNED", 1, False, {DRIVER_ROLE, DIVISION_ROLE, TEAM_ROLE},
+                     id="assigned"),
+        pytest.param("UNASSIGNED", 0, False, {DRIVER_ROLE}, id="unconfirmed placement"),
+        pytest.param("NOT_SIGNED_UP", 0, False, set(), id="not signed up"),
+        pytest.param("ASSIGNED", 1, True, set(), id="test mode"),
+    ],
+)
+async def test_a_driver_holds_the_roles_their_standing_entitles_them_to(
+    tmp_path, state, committed, test, expected
+):
+    """An assigned driver holds the driver, division and team roles; an unconfirmed placement
+    grants no division or team role; a driver not signed up holds no driver role (E22); and a
+    test-mode driver holds no roles."""
+    db_path, pid = await _league(tmp_path, state=state, committed=committed, test=test)
+    assert await PlacementService(db_path).driver_role_ids(pid) == expected
 
 
 def _role(role_id: int) -> MagicMock:
