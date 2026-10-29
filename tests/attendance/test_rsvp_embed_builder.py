@@ -58,21 +58,21 @@ def _roster_field(embed: discord.Embed) -> str | None:
 # ---------------------------------------------------------------------------
 
 class TestTitleFormat:
-    def test_contains_season_number(self):
-        embed = _build(season_number=5, round_number=2, track_name="Spa")
-        assert "Season 5" in embed.title
-
-    def test_contains_round_number(self):
-        embed = _build(season_number=1, round_number=12, track_name="Spa")
-        assert "Round 12" in embed.title
-
-    def test_contains_track_name(self):
-        embed = _build(track_name="Silverstone")
-        assert "Silverstone" in embed.title
-
-    def test_title_format_exact(self):
-        embed = _build(season_number=3, round_number=7, track_name="Monza")
-        assert embed.title == "Season 3 Round 7 — Monza"
+    @pytest.mark.parametrize(
+        ("season_number", "round_number", "track_name", "title"),
+        [
+            (5, 2, "Spa", "Season 5 Round 2 — Spa"),
+            (1, 12, "Spa", "Season 1 Round 12 — Spa"),
+            (3, 7, "Silverstone", "Season 3 Round 7 — Silverstone"),
+            (3, 7, "Monza", "Season 3 Round 7 — Monza"),
+        ],
+        ids=["season-5", "round-12", "silverstone", "monza"],
+    )
+    def test_title_format_exact(self, season_number, round_number, track_name, title):
+        """The title is the season number, the round number and the track, exactly."""
+        embed = _build(season_number=season_number, round_number=round_number,
+                       track_name=track_name)
+        assert embed.title == title
 
 
 # ---------------------------------------------------------------------------
@@ -98,17 +98,18 @@ class TestMysteryTrack:
 
 
 class TestStatusIndicators:
-    def test_no_rsvp_indicator(self):
-        assert _STATUS_INDICATOR["NO_RSVP"] == "()"
-
-    def test_accepted_indicator(self):
-        assert _STATUS_INDICATOR["ACCEPTED"] == "(✅)"
-
-    def test_tentative_indicator(self):
-        assert _STATUS_INDICATOR["TENTATIVE"] == "(❓)"
-
-    def test_declined_indicator(self):
-        assert _STATUS_INDICATOR["DECLINED"] == "(❌)"
+    @pytest.mark.parametrize(
+        ("status", "indicator"),
+        [
+            ("NO_RSVP", "()"),
+            ("ACCEPTED", "(✅)"),
+            ("TENTATIVE", "(❓)"),
+            ("DECLINED", "(❌)"),
+        ],
+        ids=["no-rsvp", "accepted", "tentative", "declined"],
+    )
+    def test_status_indicator(self, status, indicator):
+        assert _STATUS_INDICATOR[status] == indicator
 
     def test_all_four_appear_in_roster(self):
         teams = [
@@ -156,29 +157,26 @@ class TestTeamRosterGrouping:
         roster = _roster_field(embed)
         assert "*(Reserve)*" not in roster
 
-    def test_driver_display_str_present(self):
+    @pytest.mark.parametrize(
+        ("team_name", "display_str", "rsvp_status"),
+        [
+            ("Mercedes", "<@123456789>", "NO_RSVP"),
+            ("McLaren", "TestDriver1", "ACCEPTED"),
+        ],
+        ids=["mention", "test-name"],
+    )
+    def test_driver_display_str_present(self, team_name, display_str, rsvp_status):
+        """A driver is shown by their display string: a mention, or a test driver's name."""
         teams = [
             {
-                "name": "Mercedes",
+                "name": team_name,
                 "is_reserve": False,
-                "drivers": [{"display_str": "<@123456789>", "rsvp_status": "NO_RSVP"}],
+                "drivers": [{"display_str": display_str, "rsvp_status": rsvp_status}],
             }
         ]
         embed = _build(teams=teams)
         roster = _roster_field(embed)
-        assert "<@123456789>" in roster
-
-    def test_test_display_name_present(self):
-        teams = [
-            {
-                "name": "McLaren",
-                "is_reserve": False,
-                "drivers": [{"display_str": "TestDriver1", "rsvp_status": "ACCEPTED"}],
-            }
-        ]
-        embed = _build(teams=teams)
-        roster = _roster_field(embed)
-        assert "TestDriver1" in roster
+        assert display_str in roster
 
     def test_no_drivers_shows_placeholder(self):
         teams = [{"name": "TeamEmpty", "is_reserve": False, "drivers": []}]
@@ -215,11 +213,6 @@ class TestTeamRosterGrouping:
 
 
 class TestDiscordTimestamp:
-    def test_timestamp_field_present(self):
-        embed = _build()
-        date_field = next((f for f in embed.fields if "Date" in f.name), None)
-        assert date_field is not None
-
     def test_timestamp_full_format(self):
         embed = _build(scheduled_at=_FIXED_DT)
         date_field = next(f for f in embed.fields if "Date" in f.name)
@@ -239,22 +232,17 @@ class TestDiscordTimestamp:
 
 
 class TestEventTypeLabel:
-    def test_normal_label(self):
-        embed = _build(round_format=RoundFormat.NORMAL)
+    @pytest.mark.parametrize(
+        ("round_format", "track_name", "label"),
+        [
+            (RoundFormat.NORMAL, "Monza", "Normal"),
+            (RoundFormat.SPRINT, "Monza", "Sprint"),
+            (RoundFormat.ENDURANCE, "Monza", "Endurance"),
+            (RoundFormat.MYSTERY, None, "Mystery"),
+        ],
+        ids=["normal", "sprint", "endurance", "mystery"],
+    )
+    def test_event_type_label(self, round_format, track_name, label):
+        embed = _build(round_format=round_format, track_name=track_name)
         et = next(f for f in embed.fields if "Event Type" in f.name)
-        assert et.value == "Normal"
-
-    def test_sprint_label(self):
-        embed = _build(round_format=RoundFormat.SPRINT)
-        et = next(f for f in embed.fields if "Event Type" in f.name)
-        assert et.value == "Sprint"
-
-    def test_endurance_label(self):
-        embed = _build(round_format=RoundFormat.ENDURANCE)
-        et = next(f for f in embed.fields if "Event Type" in f.name)
-        assert et.value == "Endurance"
-
-    def test_mystery_label(self):
-        embed = _build(round_format=RoundFormat.MYSTERY, track_name=None)
-        et = next(f for f in embed.fields if "Event Type" in f.name)
-        assert et.value == "Mystery"
+        assert et.value == label
