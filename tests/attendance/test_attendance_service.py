@@ -120,17 +120,18 @@ class TestTimingInvariantLastZeroSentinelValid:
         assert result is None
 
 
-class TestTimingInvariantLastEqualsDeadlineRejected:
+class TestTimingInvariantLastNotAboveDeadlineRejected:
     @pytest.mark.parametrize(
         "notice_days, last, deadline",
-        [(5, 4, 4), (5, 6, 6)],
-        ids=["last-4-equals-deadline-4", "last-6-equals-deadline-6"],
+        [(5, 4, 4), (5, 6, 6), (5, 1, 2)],
+        ids=["last-4-equals-deadline-4", "last-6-equals-deadline-6", "deadline-2-above-last-1"],
     )
-    async def test_timing_invariant_last_equals_deadline_rejected(
+    async def test_a_last_notice_not_above_the_deadline_is_rejected(
         self, notice_days, last, deadline
     ):
         """The last notice must fall strictly before the deadline: notice_days=5 (120h) clears
-        the last notice, but last <= deadline is rejected."""
+        the last notice, but last <= deadline is rejected, whether the two are equal or the
+        deadline is the larger."""
         from leaguebot.attendance.services.attendance_service import validate_timing_invariant
         result = validate_timing_invariant(notice_days, last, deadline)
         assert result is not None
