@@ -425,7 +425,9 @@ async def test_a_user_with_no_driver_profile_is_refused(command):
 
 
 async def test_a_driver_is_assigned_to_the_named_team_and_division(tmp_path):
-    """The log is the league's audit trail for who moved whom."""
+    """The command hands the placement service the driver, division, team and season it
+    names, tells the manager the driver was assigned, and logs the move with the command and
+    the team, the log being the league's audit trail for who moved whom."""
     cog = _make_cog(season=_season())
     interaction = _interaction()
 
