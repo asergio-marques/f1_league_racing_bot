@@ -361,18 +361,22 @@ async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_stil
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
-@pytest.mark.parametrize("failures", [1, 2], ids=["fails once", "fails again on the retry"])
+@pytest.mark.parametrize(("signing", "failures"), [(False, 1), (True, 1), (True, 2)],
+                         ids=["nobody signing up", "fails once", "fails again on the retry"])
 async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_the_retry(
-    tmp_path, failures,
+    tmp_path, signing, failures,
 ):
     """The wind-down's close returns driver 105, still filling in the wizard, then recording the
     window closed fails: the queue stops at `post_closed`, with the window still open, the season
     still in Ongoing, signups open, both pending placements standing, and 105 Not Signed Up, told
     nothing, and does so again where the first Retry fails the same way. Once the
     record goes through, 105 is told, then their channel closed, each once, and the season is
-    moved on to Pending completion."""
+    moved on to Pending completion. With nobody filling in the wizard, the close returns nobody:
+    the queue stops at `post_closed` all the same, and once retried, the window closes and the
+    season moves on with nobody told and no channel closed."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
-    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    if signing:
+        await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     league.close_fails = RuntimeError("the window could not be recorded closed")
     await _ask(league)
 
@@ -382,7 +386,8 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
             await retry_job(league.bot)
         assert await _stopped_at(league) == ("post_closed", None)
         assert await window_open(league)
-        assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
+        if signing:
+            assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
         assert league.notices == [] and league.locked == []
         assert await _stage(league) == "ONGOING_SIGNUPS"
         assert await _pending(league) == 2
@@ -390,16 +395,22 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
     league.close_fails = None
     await retry_job(league.bot)
 
-    assert league.notices == [(SIGNING_UP, "🔒 Signups have closed. This channel will be "
-                                           "automatically deleted in 24 hours.")]
-    assert league.locked == [SIGNING_UP]
     jobs = await _jobs(league)
-    assert jobs.count(("signup_notice", SIGNING_UP)) == 1
-    assert jobs.count(("close_signup", SIGNING_UP)) == 1
-    assert jobs.index(("signup_notice", SIGNING_UP)) < jobs.index(("close_signup", SIGNING_UP))
-    assert [(kind, uid) for kind, uid, _n in league.events if kind in ("notice", "lock")] == [
-        ("notice", SIGNING_UP), ("lock", SIGNING_UP),
-    ]
+    if signing:
+        assert league.notices == [(SIGNING_UP, "🔒 Signups have closed. This channel will be "
+                                               "automatically deleted in 24 hours.")]
+        assert league.locked == [SIGNING_UP]
+        assert jobs.count(("signup_notice", SIGNING_UP)) == 1
+        assert jobs.count(("close_signup", SIGNING_UP)) == 1
+        assert jobs.index(("signup_notice", SIGNING_UP)) < jobs.index(("close_signup", SIGNING_UP))
+        assert [(kind, uid) for kind, uid, _n in league.events if kind in ("notice", "lock")] == [
+            ("notice", SIGNING_UP), ("lock", SIGNING_UP),
+        ]
+    else:
+        assert league.notices == [] and league.locked == []
+        assert not [name for name, _uid in jobs if name in ("signup_notice", "close_signup")]
+        [closed] = [row for row in await step_rows(league.db_path) if row["name"] == "post_closed"]
+        assert json.loads(closed["payload"])["returned"] == 0
     assert not await window_open(league)
     assert await _stage(league) == "PENDING_COMPLETION"
 
