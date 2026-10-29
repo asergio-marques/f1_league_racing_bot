@@ -34,7 +34,6 @@ error silently clears the neighbouring channel.
 from __future__ import annotations
 
 import os
-from datetime import date
 
 import pytest
 
