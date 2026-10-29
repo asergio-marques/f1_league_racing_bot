@@ -163,32 +163,23 @@ async def _set_former(db_path: str, profile_id: int, value: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_a_provisional_round_marks_nobody(tmp_path):
+@pytest.mark.parametrize("status", ["AWAITING_RESULTS", "AWAITING_APPEAL_VERDICTS"])
+async def test_a_provisional_round_marks_nobody(tmp_path, status):
     """Results pasted in but not yet settled leave the flag alone.
 
     The heart of #216. The round is still awaiting its verdicts, so the classification is
     provisional: a driver in it may yet be taken out by a resubmission or an appeal, and the
-    spec marks nobody until the round is final.
+    spec marks nobody until the round is final. The last provisional state, awaiting appeal
+    verdicts, counts as provisional too.
     """
     db_path = await _make_db(tmp_path)
-    await _add_round(db_path, 21, status="AWAITING_RESULTS")
+    await _add_round(db_path, 21, status=status)
     await _add_race(db_path, 21, [(31, 101, "CLASSIFIED"), (32, 102, "CLASSIFIED")])
 
     await _recompute(db_path, 21)
 
     assert await _former(db_path, 31) == 0
     assert await _former(db_path, 32) == 0
-
-
-async def test_a_round_awaiting_appeal_verdicts_marks_nobody(tmp_path):
-    """The last provisional state counts as provisional too."""
-    db_path = await _make_db(tmp_path)
-    await _add_round(db_path, 21, status="AWAITING_APPEAL_VERDICTS")
-    await _add_race(db_path, 21, [(31, 101, "CLASSIFIED")])
-
-    await _recompute(db_path, 21)
-
-    assert await _former(db_path, 31) == 0
 
 
 # ---------------------------------------------------------------------------

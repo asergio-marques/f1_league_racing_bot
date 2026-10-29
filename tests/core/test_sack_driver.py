@@ -216,14 +216,6 @@ async def _profile_state(db_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_committed_driver_may_be_sacked(tmp_path):
-    db_path = await _make_db(tmp_path, name="sack_assigned")
-
-    await _sack(_service(db_path), _guild())
-
-    assert await _profile_state(db_path) == DriverState.NOT_SIGNED_UP.value
-
-
 async def test_a_driver_with_no_confirmed_placement_is_refused(tmp_path):
     """Issue #220: an uncommitted placement is unassigned, an Unassigned driver rejected."""
     db_path = await _make_db(tmp_path, name="sack_uncommitted")
@@ -248,24 +240,16 @@ async def test_a_driver_with_no_confirmed_placement_is_refused(tmp_path):
 )
 async def test_any_other_state_is_refused(tmp_path, state):
     """Someone mid-signup has nothing to revoke, and someone at Not Signed Up is already
-    out — sacking either would do nothing but move a driver the season no longer holds."""
+    out — sacking either would do nothing but move a driver the season no longer holds. The
+    refusal names the state it found: a manager who meets it needs to know which state they
+    hit, not merely that they hit one — a driver still in review and one already gone call for
+    different next steps."""
     db_path = await _make_db(tmp_path, name=f"refuse_{state.value}", state=state)
 
-    with pytest.raises(ValueError, match="Unassigned or Assigned"):
+    with pytest.raises(ValueError, match=f"Unassigned or Assigned.*{state.value}"):
         await _sack(_service(db_path), _guild())
 
     assert await _profile_state(db_path) == state.value
-
-
-async def test_the_refusal_names_the_state_it_found(tmp_path):
-    """A manager who meets it needs to know which state they hit, not merely that they hit
-    one — a driver still in review and one already gone call for different next steps."""
-    db_path = await _make_db(
-        tmp_path, name="refuse_names", state=DriverState.PENDING_ADMIN_APPROVAL
-    )
-
-    with pytest.raises(ValueError, match="PENDING_ADMIN_APPROVAL"):
-        await _sack(_service(db_path), _guild())
 
 
 # ---------------------------------------------------------------------------
@@ -299,24 +283,16 @@ async def test_a_driver_who_never_raced_keeps_their_attendance_and_results(tmp_p
 # ---------------------------------------------------------------------------
 
 
-async def test_a_former_drivers_profile_is_kept(tmp_path):
-    """Every historical result points at it — deleting it would either fail on a foreign
-    key or rewrite a season's results to name nobody."""
-    db_path = await _make_db(tmp_path, name="keep_former", former_driver=True)
-
-    await _sack(_service(db_path), _guild())
-
-    assert await _count(db_path, "SELECT COUNT(*) FROM driver_profiles") == 1
-
-
 async def test_a_former_driver_is_returned_to_not_signed_up(tmp_path):
     """Which is what lets them sign up again next season without a manager unpicking
-    anything."""
+    anything. Their profile is kept: every historical result points at it — deleting it would
+    either fail on a foreign key or rewrite a season's results to name nobody."""
     db_path = await _make_db(tmp_path, name="former_state", former_driver=True)
 
     await _sack(_service(db_path), _guild())
 
     assert await _profile_state(db_path) == DriverState.NOT_SIGNED_UP.value
+    assert await _count(db_path, "SELECT COUNT(*) FROM driver_profiles") == 1
 
 
 async def test_a_former_drivers_signup_details_are_kept(tmp_path):
