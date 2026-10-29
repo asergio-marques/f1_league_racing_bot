@@ -256,8 +256,8 @@ async def test_a_round_no_longer_cancellable_is_left_and_gives_none(
     """Pro's round 1 stands in a state it may not be cancelled from: already cancelled, its
     results entered, final, or not run in a season since archived, as completed or cancelled.
     Cancelling it on a connection answers None and writes nothing: the round keeps its status
-    and no audit is written. An archived season is the championship's record; a round inside it
-    cannot be called off after the fact."""
+    and no audit of any kind is written. An archived season is the championship's record; a
+    round inside it cannot be called off after the fact."""
     from leaguebot.core.services.season_service import cancel_round_on
 
     db_path = await _ongoing_db(tmp_path, (status, "NOT_RUN"), season_status=season_status)
@@ -265,6 +265,8 @@ async def test_a_round_no_longer_cancellable_is_left_and_gives_none(
         assert await cancel_round_on(db, ROUND_ID, **ACTOR) is None
         assert await _round_statuses(db) == [status, "NOT_RUN"]
         assert await _round_audits(db) == []
+        cursor = await db.execute("SELECT COUNT(*) AS n FROM audit_entries")
+        assert (await cursor.fetchone())["n"] == 0
 
 
 async def test_cancelling_the_last_round_finishes_the_division_and_moves_the_season_on_in_the_same_save(
