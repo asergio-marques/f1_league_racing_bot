@@ -198,20 +198,6 @@ async def test_the_classification_is_put_back(tmp_path):
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
 
-async def test_the_standings_are_recomputed_rather_than_restored(tmp_path):
-    """They follow from the driver rows, so a second stored copy would only drift. The lapse's and
-    the cancel's revert recompute them in their own save, through the form of the cascade that
-    takes its connection."""
-    db_path = await _db(tmp_path, "revert_cascade")
-    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
-    await _overwrite_the_classification(db_path)
-
-    with _cascade_in_the_save() as cascade:
-        await revert_amendment(db_path, ROUND_ID)
-
-    cascade.assert_awaited_once()
-
-
 async def test_the_standings_put_back_settle_a_full_tie_by_name(tmp_path):
     """As the posting does (decided 2026-09-15). Recomputed by user id instead, the stored order
     disagrees with the posted one, and the next round's movement arrows show a driver moving
@@ -231,7 +217,10 @@ async def test_the_standings_put_back_settle_a_full_tie_by_name(tmp_path):
 
 async def test_standings_names_that_cannot_be_had_still_leave_the_cascade_running(tmp_path):
     """Ordering a full tie by id is the lesser fault; not recomputing at all is the greater. Where
-    the names could not be had, none are handed, and the cascade runs on ids."""
+    the names could not be had, none are handed, and the cascade runs on ids. The standings
+    follow from the driver rows, so a second stored copy would only drift: the lapse's and the
+    cancel's revert recompute them in their own save, through the form of the cascade that takes
+    its connection."""
     db_path = await _db(tmp_path, "revert_names_fail")
     await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
@@ -372,7 +361,9 @@ async def test_an_amendment_still_within_its_deadline_is_left_alone(tmp_path):
 
 async def test_the_revert_is_announced(tmp_path):
     """An amendment quietly undone would be worse than one left hanging. It is announced in the
-    standard lapse form; a row that recorded nobody names "a member", with no mention."""
+    standard lapse form; a row that recorded nobody names "a member", with no mention. The league
+    is told the amendment lapsed and may be run again, so the notice sends the manager to the
+    command they now type: the line beneath the standard lapse form says so."""
     db_path = await _db(tmp_path, "sweep_announced")
     await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
@@ -394,25 +385,6 @@ async def test_the_revert_is_announced(tmp_path):
     assert "round 4" in logged or "round: 4" in logged
     assert head.endswith("lapsed unconfirmed (started by a member)")
     assert "<@" not in head
-
-
-async def test_the_revert_notice_says_to_re_run_results_rounds_amend(tmp_path):
-    """The league is told the amendment lapsed and may be run again, so the notice sends the
-    manager to the command they now type. The line beneath the standard lapse form says so."""
-    db_path = await _db(tmp_path, "sweep_announced_rerun")
-    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
-    await _overwrite_the_classification(db_path)
-    later = datetime.now(timezone.utc) + timedelta(
-        seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60
-    )
-
-    bot = _queued(db_path, later)
-
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
-    assert len(await _lapses(db_path)) == 1
-    with _cascade():
-        await run_queue(bot)
-
     notice = next(
         str(call.args[0])
         for call in bot.output_router.post_log.await_args_list
