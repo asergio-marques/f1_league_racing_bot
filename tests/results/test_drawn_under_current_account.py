@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.results_post_service import _load_driver_rows
@@ -83,18 +85,17 @@ async def _stored(db_path: str) -> list[tuple]:
         return [tuple(r) for r in await cursor.fetchall()]
 
 
-async def test_a_race_is_drawn_under_the_current_account(tmp_path):
+@pytest.mark.parametrize(
+    "session_result_id, session_type",
+    [(1, SessionType.FEATURE_RACE), (2, SessionType.FEATURE_QUALIFYING)],
+    ids=["race", "qualifying"],
+)
+async def test_a_session_is_drawn_under_the_current_account(
+    tmp_path, session_result_id: int, session_type: SessionType
+):
     db_path = await _completed_season(tmp_path)
 
-    rows = await _load_driver_rows(db_path, 1, SessionType.FEATURE_RACE)
-
-    assert [r.driver_user_id for r in rows] == [NOW, OTHER]
-
-
-async def test_a_qualifying_is_drawn_under_the_current_account(tmp_path):
-    db_path = await _completed_season(tmp_path)
-
-    rows = await _load_driver_rows(db_path, 2, SessionType.FEATURE_QUALIFYING)
+    rows = await _load_driver_rows(db_path, session_result_id, session_type)
 
     assert [r.driver_user_id for r in rows] == [NOW, OTHER]
 
