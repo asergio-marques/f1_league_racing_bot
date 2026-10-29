@@ -166,16 +166,6 @@ async def test_a_division_with_no_rounds_finishes(tmp_path):
     assert await _refresh(db_path, 11) is True
 
 
-async def test_refreshing_a_finished_division_reports_no_change(tmp_path):
-    """The return value says whether *this* call moved it, which is what lets a caller
-    avoid announcing a division finishing twice."""
-    db_path = await _make_db(tmp_path)
-    await _add_division(db_path, 11, status="FINISHED")
-    await _add_round(db_path, 11, 1, RoundStatus.FINAL.value)
-
-    assert await _refresh(db_path, 11) is False
-
-
 async def test_a_cancelled_division_is_not_marked_finished(tmp_path):
     """It was called off deliberately, and moving it to FINISHED would lose that —
     `/season cancel` would then treat it as a division that had run."""

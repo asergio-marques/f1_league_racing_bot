@@ -15,8 +15,8 @@ kept for a later caller that defers, and `tests/core/test_channel_registry.py` p
 
 **Where they once differed by accident** (issue #212, which #208 pinned rather than fixed). They
 wrote `old_value = ''` into the audit entry, so a reassignment could not be traced back. Both now
-record the channel they replaced, as an integer — `test_the_core_pair_record_the_channel_they_replaced`
-and `test_every_channel_command_here_audits_its_ids_as_integers`. Each writes its channel and its
+record the channel they replaced, as an integer, which
+`test_every_channel_command_here_audits_its_ids_as_integers` pins. Each writes its channel and its
 record in one transaction.
 
 **"Set" and "updated" are different words for a reason:** a manager who meant to assign a fresh
@@ -372,20 +372,6 @@ async def test_a_first_assignment_and_a_move_are_worded_differently(tmp_path, wh
 
 
 @pytest.mark.parametrize("which", ALL)
-async def test_the_core_pair_record_the_channel_they_replaced(tmp_path, which):
-    """They once wrote an empty `old_value`, so a lineup or calendar channel that moved could
-    not be traced back — against the rule that every change is recorded from what to what
-    (issue #212)."""
-    db_path = await _make_db(tmp_path)
-    await _seed_core_channel(db_path, which, 111)
-
-    await _run(_make_cog(db_path), which, _interaction())
-
-    old = json.loads((await _audit_rows(db_path))[0]["old_value"])
-    assert old["channel_id"] == 111
-
-
-@pytest.mark.parametrize("which", ALL)
 async def test_a_first_core_assignment_records_no_previous_channel(tmp_path, which):
     db_path = await _make_db(tmp_path)
 
@@ -396,8 +382,11 @@ async def test_a_first_core_assignment_records_no_previous_channel(tmp_path, whi
 
 @pytest.mark.parametrize("which", ALL)
 async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, which):
-    """Every channel command writes its ids as integers, so a reader querying the audit for a
-    channel id need not know which command wrote the row (issue #212)."""
+    """Every channel command records the channel it replaced, and writes its ids as integers, so
+    a reader querying the audit for a channel id need not know which command wrote the row. They
+    once wrote an empty `old_value`, so a lineup or calendar channel that moved could not be
+    traced back — against the rule that every change is recorded from what to what (issue
+    #212)."""
     db_path = await _make_db(tmp_path, name=f"types_{which}")
     await _seed_core_channel(db_path, which, 111)
     cog = _make_cog(db_path)

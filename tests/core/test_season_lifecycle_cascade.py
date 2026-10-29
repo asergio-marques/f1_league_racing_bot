@@ -253,6 +253,9 @@ async def test_a_cancelled_division_does_not_hold_the_season_open(tmp_path) -> N
 # ---------------------------------------------------------------------------
 
 async def test_a_division_finishes_only_once_nothing_is_outstanding(tmp_path) -> None:
+    """The return value says whether *this* call moved it, which is what lets a caller avoid
+    announcing a division finishing twice: refreshing a division already finished reports no
+    change."""
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path)
     div_id, round_ids = built["Div A"]
