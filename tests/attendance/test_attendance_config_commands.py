@@ -299,16 +299,6 @@ async def test_a_negative_penalty_is_refused_and_nothing_is_written(command):
     assert "negative" in interaction.response.send_message.await_args.args[0]
 
 
-async def test_a_penalty_of_zero_is_written():
-    """Zero stops the charge for that case entirely — it is a value, not a disable sentinel."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _invoke(AttendanceCog.config_no_show_penalty, cog, interaction, 0)
-
-    assert _set_setting_call(cog).args == ("no_show_penalty", 0)
-
-
 async def test_the_timing_commands_are_refused_while_a_season_is_active():
     """Timing cannot move mid-season; the penalties can, and are covered above."""
     cog = _make_cog()
@@ -640,6 +630,8 @@ SUCCESSES = [
      "no-RSVP penalty: 2 point(s) (was 1 point(s))"),
     (S.config_absent_penalty, "absent-penalty", {}, 3, "absent_penalty", 1, 3,
      "absent penalty: 3 point(s) (was 1 point(s))"),
+    # A penalty of zero stops the charge for that case entirely: it is a value, not a disable
+    # sentinel, so it is written as zero.
     (S.config_no_show_penalty, "no-show-penalty", {}, 0, "no_show_penalty", 1, 0,
      "no-show penalty: 0 point(s) (was 1 point(s))"),
     (S.config_autosack, "autosack", {}, 8, "autosack_threshold", None, 8,
