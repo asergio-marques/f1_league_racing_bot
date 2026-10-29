@@ -363,7 +363,7 @@ async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_stil
 
 @pytest.mark.parametrize(("signing", "failures"), [(False, 1), (True, 1), (True, 2)],
                          ids=["nobody signing up", "fails once", "fails again on the retry"])
-async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_the_retry(
+async def test_a_window_close_whose_closing_record_fails_stops_the_queue_until_a_retry_records_it(
     tmp_path, signing, failures,
 ):
     """The wind-down's close returns driver 105, still filling in the wizard, then recording the
