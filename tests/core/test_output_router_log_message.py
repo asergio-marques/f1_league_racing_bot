@@ -168,6 +168,7 @@ def _refusing_channel() -> MagicMock:
     return channel
 
 
+@pytest.mark.parametrize("channel", [99, 555], ids=["the-log-channel", "another-channel"])
 @pytest.mark.parametrize(
     "where",
     [
@@ -182,11 +183,12 @@ def _refusing_channel() -> MagicMock:
     ],
 )
 async def test_a_line_for_a_given_channel_that_fails_is_neither_queued_nor_redirected(
-    tmp_path, monkeypatch, where
+    tmp_path, monkeypatch, where, channel
 ):
     """The factory reset's closing line, and the retry worker's own lines, go to a channel the
-    caller names. No retry row, no notice in the interaction channel, and no member answered
-    either, whatever the failure: the caller puts the line in the host's log instead."""
+    caller names, the configured log channel or another. It is that channel the line is tried
+    in. No retry row, no notice in the interaction channel, and no member answered either,
+    whatever the failure: the caller puts the line in the host's log instead."""
     from leaguebot.core.services import retry_service
 
     enqueue = AsyncMock()
@@ -198,10 +200,14 @@ async def test_a_line_for_a_given_channel_that_fails_is_neither_queued_nor_redir
     router = OutputRouter(bot, bot.config_service, retry_db_path=str(tmp_path / "retry.db"))
     router._warn_member = AsyncMock()
 
-    assert await router.post_log("the league was reset", channel=99) is None
+    assert await router.post_log("the league was reset", channel=channel) is None
 
     enqueue.assert_not_awaited()
-    assert [call.args[0] for call in bot.get_channel.call_args_list] == [99]
+    assert [call.args[0] for call in bot.get_channel.call_args_list] == [channel]
+    if where == "gone":
+        bot.fetch_channel.assert_awaited_once_with(channel)
+    else:
+        bot.get_channel.return_value.send.assert_awaited_once()
     router._warn_member.assert_not_awaited()
 
 
