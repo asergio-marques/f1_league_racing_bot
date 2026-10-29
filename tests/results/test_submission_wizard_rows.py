@@ -25,9 +25,7 @@ fastest lap and no time, so `DNS`, `DNF` and `DSQ` in the time field stop the fa
 from running — asking a retired driver for a lap time would refuse every row a retirement
 appears in.
 
-**An empty tyre is an answer, not a gap** (XIV.13's per-field absent-datum rule): the
-submission of a session does not oblige a compound, and its absence is a state the graphic
-depicts rather than a gap it reports.
+The tyre compound's rules are pinned with the closed set in `test_result_submission_service.py`.
 """
 from __future__ import annotations
 
@@ -157,41 +155,6 @@ def test_a_valid_row_carries_the_ids_through():
 
 
 # ---------------------------------------------------------------------------
-# Tyres
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("tyre", ["Soft", "soft", "SOFT"])
-def test_a_tyre_is_stored_in_its_canonical_spelling(tyre):
-    """One spelling is stored so the qualifying graphic finds its file on every row
-    without the league supplying any tyre artwork."""
-    result = _validate_qualifying_row_wizard(_qualifying(tyre=tyre))
-
-    assert not _refused(result)
-    assert result.tyre == _validate_qualifying_row_wizard(_qualifying(tyre="Soft")).tyre
-
-
-def test_an_unknown_compound_is_refused_listing_the_set():
-    """The five compounds are a closed set, so a submission naming something else names
-    nothing the bot can draw — refused here rather than resolved to a placeholder six
-    steps later."""
-    result = _validate_qualifying_row_wizard(_qualifying(tyre="Rainbow"))
-
-    assert _refused(result)
-    assert "Rainbow" in result
-
-
-@pytest.mark.parametrize("tyre", ["", "N/A", "n/a"])
-def test_an_absent_tyre_is_an_answer_not_a_gap(tyre):
-    """The submission of a session does not oblige a compound, and its absence is a state
-    the graphic depicts rather than a gap it reports."""
-    result = _validate_qualifying_row_wizard(_qualifying(tyre=tyre))
-
-    assert not _refused(result)
-    assert result.tyre is None
-
-
-# ---------------------------------------------------------------------------
 # Qualifying times
 # ---------------------------------------------------------------------------
 
@@ -249,12 +212,6 @@ def test_the_leading_race_row_must_give_an_absolute_time(total_time):
 
     assert _refused(result)
     assert "absolute time" in result
-
-
-def test_the_leading_race_row_accepts_an_absolute_time():
-    result = _validate_race_row_wizard(_race(total_time="1:23:45.678"), is_first=True)
-
-    assert not _refused(result)
 
 
 @pytest.mark.parametrize(

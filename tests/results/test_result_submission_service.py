@@ -82,7 +82,7 @@ def _wizard(tyre: str) -> ParsedQualifyingRow | str:
 @pytest.mark.parametrize(
     ("written", "expected"),
     [
-        ("Soft", "Soft"), ("softs", "Soft"), ("S", "Soft"),
+        ("Soft", "Soft"), ("soft", "Soft"), ("SOFT", "Soft"), ("softs", "Soft"), ("S", "Soft"),
         ("Mediums", "Medium"), ("M", "Medium"),
         ("hard", "Hard"), ("H", "Hard"),
         ("Inter", "Intermediate"), ("Intermediates", "Intermediate"), ("I", "Intermediate"),
@@ -101,7 +101,9 @@ def test_an_accepted_spelling_is_stored_canonically(parse, written, expected):
 
 
 @pytest.mark.parametrize("parse", [_wizard], ids=["wizard"])
-@pytest.mark.parametrize("written", ["Ultrasoft", "Supersoft", "C3", "Slick", "banana"])
+@pytest.mark.parametrize(
+    "written", ["Ultrasoft", "Supersoft", "C3", "Slick", "banana", "Rainbow"]
+)
 def test_a_compound_outside_the_set_is_refused(parse, written):
     """Refused at submission rather than resolved to a placeholder six steps later."""
     result = parse(written)
@@ -120,13 +122,13 @@ def test_the_refusal_names_every_compound_a_steward_may_write(parse):
 
 
 @pytest.mark.parametrize("parse", [_wizard], ids=["wizard"])
-@pytest.mark.parametrize("written", ["", "   ", "N/A"])
+@pytest.mark.parametrize("written", ["", "   ", "N/A", "n/a"])
 def test_a_row_recording_no_compound_is_accepted_and_stores_none(parse, written):
     """A closed vocabulary constrains what a compound may be, not whether one was given.
 
-    The submission of a session does not oblige a tyre, and the qualifying catalogue
-    declares the field `fallback_when_absent` on that basis — so an empty field is a state
-    to draw, never a line to send back.
+    The submission of a session does not oblige a tyre (XIV.13's per-field absent-datum
+    rule), and the qualifying catalogue declares the field `fallback_when_absent` on that
+    basis — so an empty field is a state to draw, never a line to send back.
     """
     result = parse(written)
     assert isinstance(result, ParsedQualifyingRow), result
