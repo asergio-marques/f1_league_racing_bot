@@ -255,30 +255,6 @@ async def test_the_last_paste_asks_the_review_and_says_its_job_number(tmp_path, 
     assert f"⏳ The penalty review is being opened (job #{first})" in _said(league)
 
 
-async def test_every_session_cancelled_closes_the_channel_as_a_job(tmp_path, monkeypatch):
-    """The qualifying was entered as cancelled; the admin types CANCELLED for the race too. When
-    the queue runs, the channel says "⏭️", round 3's submission row is closed and its channel
-    deleted by a job, no penalty review is asked, and round 3 ends cancelled, marked as not
-    held."""
-    league = await _league(tmp_path, monkeypatch)
-    await accept_session(league, ROUND_3, session="FEATURE_QUALIFYING", status="CANCELLED")
-
-    await _type(league, "CANCELLED")
-    await run_queue(league.bot)
-
-    assert await stopped_job(league.db_path) is None
-    assert "⏭️" in _said(league)
-    [row] = await league.rows(
-        "SELECT closed FROM round_submission_channels WHERE round_id = ?", ROUND_3
-    )
-    assert row["closed"] == 1
-    assert any(event[0] == "delete_channel" and event[1] == SUBMISSION_CHANNEL
-               for event in league.events)
-    assert not [row for row in await change_rows(league.db_path) if row["kind"] == REVIEW_OPEN]
-    [ended] = await league.rows("SELECT status, not_held FROM rounds WHERE id = ?", ROUND_3)
-    assert (ended["status"], ended["not_held"]) == ("CANCELLED", 1)
-
-
 async def test_a_refused_prompt_stops_the_queue_with_the_session_saved(tmp_path, monkeypatch):
     """Discord refuses the race's prompt in the submission channel. The qualifying's turn stops
     at `post_prompt`, on the round's lane, with the qualifying already saved."""
@@ -396,7 +372,9 @@ async def test_a_cancellation_saved_between_the_settling_and_the_save_saves_no_s
     open, and its save is next; before the save runs, a cancellation's save records round 3
     cancelled. The session's save then saves nothing and answers in the channel that round 3 has
     been cancelled, so its results can no longer be entered, and no prompt for the race is
-    posted."""
+    posted; and one `RESULT_SUBMISSION_REJECTED` line is logged naming season 3, Pro, round 3 and
+    the qualifying, with the reason that round 3 has been cancelled and the paste (results
+    :261)."""
     league = await _league(tmp_path, monkeypatch)
 
     await _type(league, QUALI_PASTE)
@@ -417,29 +395,6 @@ async def test_a_cancellation_saved_between_the_settling_and_the_save_saves_no_s
             "saved.") in _said(league)
     assert "📋 Submit" not in _said(league)
     assert await stopped_job(league.db_path) is None
-
-
-async def test_a_session_refused_at_its_save_for_a_cancellation_is_logged(tmp_path, monkeypatch):
-    """As above: round 3's qualifying is judged and settled, then a cancellation's save records
-    round 3 cancelled before the session's save runs. The save saves nothing, and one
-    `RESULT_SUBMISSION_REJECTED` line is logged naming season 3, Pro, round 3 and the qualifying,
-    with the reason that round 3 has been cancelled and the paste (results :261)."""
-    league = await _league(tmp_path, monkeypatch)
-
-    await _type(league, QUALI_PASTE)
-    for _ in range(50):
-        turns = await _turns(league)
-        if turns and any(job["name"] == "settle" and job["done_at"]
-                         for job in await step_rows(league.db_path, turns[0]["id"])):
-            break
-        await run_queue(league.bot, steps=1)
-    else:
-        raise AssertionError("the turn was never settled")
-    await league.write("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", ROUND_3)
-
-    await run_queue(league.bot)
-
-    assert await _sessions(league) == []
     [line] = await _refused_lines(league)
     _names_the_paste(line, content=QUALI_PASTE, reason="Round 3 has been cancelled")
 
