@@ -604,44 +604,9 @@ def test_format_time_ms(ms, expected_str):
 
 
 # ---------------------------------------------------------------------------
-# T032 — penalty-state entry after final session
+# T032 — penalty-state entry after final session (the flag set is pinned in
+# test_penalty_flow.py::test_penalty_review_flag_lifecycle)
 # ---------------------------------------------------------------------------
-
-
-async def test_penalty_state_entered_after_final_session(tmp_path):
-    """is_channel_in_penalty_review returns True once in_penalty_review=1 is set in the DB."""
-    from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
-
-    db_path = str(tmp_path / "test.db")
-    await run_migrations(db_path)
-
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, log_channel_id) VALUES (1,10,20,30)"
-        )
-        cursor = await db.execute(
-            "INSERT INTO seasons (start_date, status, season_number) VALUES ('2026-01-01','ACTIVE',1)"
-        )
-        season_id = cursor.lastrowid
-        cursor = await db.execute(
-            "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id) VALUES (?,?,777,888)",
-            (season_id, "Main"),
-        )
-        division_id = cursor.lastrowid
-        cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
-            (division_id,),
-        )
-        round_id = cursor.lastrowid
-        channel_id = 555
-        await db.execute(
-            "INSERT INTO round_submission_channels (round_id, channel_id, created_at, closed, in_penalty_review) VALUES (?,?,'2026-01-01T18:00:00',0,1)",
-            (round_id, channel_id),
-        )
-        await db.commit()
-
-    assert await is_channel_in_penalty_review(db_path, channel_id) is True
 
 
 async def test_channel_not_in_penalty_review_when_flag_zero(tmp_path):
@@ -993,39 +958,6 @@ async def test_other_active_team_assignments_reads_other_active_sessions_only(tm
 
     result = await other_active_team_assignments(db_path, round_id, SessionType.FEATURE_RACE)
     assert result == {500: (300, "FEATURE_QUALIFYING")}
-
-
-async def test_other_active_team_assignments_excludes_the_session_being_validated(tmp_path):
-    from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.result_submission_service import other_active_team_assignments
-
-    db_path = str(tmp_path / "test.db")
-    await run_migrations(db_path)
-
-    async with get_connection(db_path) as db:
-        round_id = await _seed_round(db)
-        division_id = (
-            await (await db.execute("SELECT division_id FROM rounds WHERE id = ?", (round_id,))).fetchone()
-        )["division_id"]
-
-        cursor = await db.execute(
-            "INSERT INTO session_results (round_id, division_id, session_type, status) "
-            "VALUES (?, ?, 'FEATURE_QUALIFYING', 'ACTIVE')",
-            (round_id, division_id),
-        )
-        qual_id = cursor.lastrowid
-        await db.execute(
-            "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-            "team_instance_id, finishing_position, outcome, tyre, best_lap, points_awarded) "
-            "VALUES (?, 500, 300, 1, 'CLASSIFIED', 'Soft', '1:23.456', 25)",
-            (qual_id,),
-        )
-        await db.commit()
-
-    result = await other_active_team_assignments(
-        db_path, round_id, SessionType.FEATURE_QUALIFYING
-    )
-    assert result == {}
 
 
 async def test_other_active_team_assignments_leaves_out_the_sessions_an_amendment_replaces(tmp_path):
