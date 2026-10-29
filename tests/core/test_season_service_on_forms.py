@@ -287,30 +287,37 @@ async def test_cancelling_the_last_round_finishes_the_division_and_moves_the_sea
         assert await _season(db) == ("ACTIVE", "ONGOING")
 
 
-async def test_a_division_is_cancelled_on_the_save_handed(tmp_path):
-    """Pro's round 1 is final, round 2 waits for its results and round 3 is not run. Cancelling Pro
-    on a connection answers the ids of rounds 2 and 3, the ones it called off; Pro and those two
-    read CANCELLED there, round 1 stays final, and each round called off is audited from the
-    status it was cancelled from. Pro is the season's last running division, yet the `_on` form
-    alone leaves the season ongoing: moving it on is the division change's save's, and `/season
-    cancel`'s cascade, which shares the form, must never leave the season it cancels at Pending
-    completion. Nothing of it outlasts a rollback."""
+@pytest.mark.parametrize(
+    "statuses",
+    [
+        pytest.param(("FINAL", "AWAITING_RESULTS", "NOT_RUN"), id="three rounds"),
+        pytest.param(("FINAL", "NOT_RUN"), id="two rounds"),
+    ],
+)
+async def test_a_division_is_cancelled_on_the_save_handed(tmp_path, statuses):
+    """Pro's round 1 is final and its later rounds wait for their results or are not run: with
+    three rounds, round 2 waits for its results and round 3 is not run; with two, round 2 is not
+    run. Cancelling Pro on a connection answers the ids of the rounds it called off, every one
+    but round 1; Pro and those rounds read CANCELLED there, round 1 stays final, and each round
+    called off is audited from the status it was cancelled from. Pro is the season's last
+    running division, yet the `_on` form alone leaves the season ongoing: moving it on is the
+    division change's save's, and `/season cancel`'s cascade, which shares the form, must never
+    leave the season it cancels at Pending completion. Nothing of it outlasts a rollback."""
     from leaguebot.core.services.season_service import cancel_division_on
 
-    db_path = await _ongoing_db(tmp_path, ("FINAL", "AWAITING_RESULTS", "NOT_RUN"))
+    db_path = await _ongoing_db(tmp_path, statuses)
+    later = range(1, len(statuses))
     async with get_connection(db_path) as db:
-        assert await cancel_division_on(db, DIVISION_ID, **ACTOR) == [ROUND_ID + 1, ROUND_ID + 2]
+        assert await cancel_division_on(db, DIVISION_ID, **ACTOR) == [ROUND_ID + n for n in later]
         assert await _division_status(db) == "CANCELLED"
-        assert await _round_statuses(db) == ["FINAL", "CANCELLED", "CANCELLED"]
-        assert await _round_audits(db) == [
-            ("AWAITING_RESULTS", "CANCELLED"), ("NOT_RUN", "CANCELLED"),
-        ]
+        assert await _round_statuses(db) == ["FINAL"] + ["CANCELLED"] * len(later)
+        assert await _round_audits(db) == [(statuses[n], "CANCELLED") for n in later]
         assert await _season(db) == ("ACTIVE", "ONGOING")
         await db.rollback()
 
     async with get_connection(db_path) as db:
         assert await _division_status(db) == "ACTIVE"
-        assert await _round_statuses(db) == ["FINAL", "AWAITING_RESULTS", "NOT_RUN"]
+        assert await _round_statuses(db) == list(statuses)
         assert await _round_audits(db) == []
 
 
