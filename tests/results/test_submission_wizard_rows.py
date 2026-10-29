@@ -44,11 +44,10 @@ def _qualifying(
     position: str = "1",
     driver: str = DRIVER,
     team: str = TEAM,
-    tyre: str = "Soft",
     best_lap: str = "1:23.456",
     gap: str = "N/A",
 ) -> str:
-    return f"{position}, {driver}, {team}, {tyre}, {best_lap}, {gap}"
+    return f"{position}, {driver}, {team}, Soft, {best_lap}, {gap}"
 
 
 def _race(
