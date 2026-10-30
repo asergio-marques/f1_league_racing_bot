@@ -118,12 +118,6 @@ def _resolver(user_id: str) -> str:
     return NAMES.get(user_id, user_id)
 
 
-def test_a_bare_mention_becomes_the_name():
-    assert resolve_mentions("<@123> was penalised.", _resolver) == (
-        "Ada Lovelace was penalised."
-    )
-
-
 @pytest.mark.parametrize("form", ["<@123>", "<@!123>"])
 def test_every_mention_form_is_resolved(form):
     assert resolve_mentions(f"{form} reached the limit.", _resolver) == (

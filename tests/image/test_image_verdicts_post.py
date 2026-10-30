@@ -144,29 +144,14 @@ async def _send(channel, *, kind=VerdictKind.PENALTY, **overrides):
 
 @pytest.mark.asyncio
 async def test_the_message_carries_the_mention_and_nothing_besides(channel, stub_image_path):
+    """The exact content rules out the rest of the announcement: no penalty, description,
+    justification or round, and no trailing display name, which the textual announcement
+    appends but which the image path draws on the canvas."""
     await _send(channel)
 
     (content, file), = channel.sent
     assert content == "<@123>"
     assert file is not None
-
-
-@pytest.mark.asyncio
-async def test_the_message_carries_no_trailing_display_name(channel, stub_image_path):
-    """The textual announcement appends it; on the image path the name is on the canvas."""
-    await _send(channel)
-
-    (content, _file), = channel.sent
-    assert "Ada Lovelace" not in content
-
-
-@pytest.mark.asyncio
-async def test_the_announcement_body_is_nowhere_in_the_message(channel, stub_image_path):
-    await _send(channel)
-
-    (content, _file), = channel.sent
-    for moved in ("Penalty", "Description", "Justification", "Round 7", "seconds added"):
-        assert moved not in content
 
 
 # ── T029: the appeal stands beside the penalty, editing nothing ───────────
