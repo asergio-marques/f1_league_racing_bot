@@ -82,14 +82,8 @@ def test_a_sprint_round_names_four_sessions_in_the_order_they_are_run():
 
 @pytest.mark.parametrize("fmt", ["NORMAL", "ENDURANCE", "MYSTERY"])
 def test_every_other_format_names_two(fmt):
-    assert session_names(fmt) == ("Qualifying", "Race")
-
-
-def test_a_session_name_carries_no_qualifier_of_its_length():
     """A mystery round's short qualifying and long race are named as any other's (FR-024)."""
-    for name in session_names("MYSTERY"):
-        assert "short" not in name.lower()
-        assert "long" not in name.lower()
+    assert session_names(fmt) == ("Qualifying", "Race")
 
 
 def test_the_sessions_are_projected_in_order():

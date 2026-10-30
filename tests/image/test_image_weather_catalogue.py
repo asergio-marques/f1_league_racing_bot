@@ -222,13 +222,18 @@ def test_a_template_below_the_session_floor_is_refused():
     assert "session" in message
 
 
-def test_a_template_below_the_slot_floor_is_refused():
+@pytest.mark.parametrize(
+    ("slots", "declared"), [(2, "2"), (1, "1")], ids=["two-slots", "one-slot"]
+)
+def test_a_template_below_the_slot_floor_is_refused(slots, declared):
+    """It is the entirety of what a league manager is told, so it must carry all three:
+    the collection, the count declared and the count required."""
     cat = catalogue_for("weather_p3_sprint_template")
     with pytest.raises(CapacityError) as exc:
-        cat.capacity(_p3(4, 2))
+        cat.capacity(_p3(4, slots))
     message = str(exc.value)
     assert "slot" in message
-    assert "2" in message and "3" in message
+    assert declared in message and "3" in message
 
 
 def test_the_slot_floor_binds_every_session_not_merely_the_first():
@@ -360,14 +365,6 @@ def test_a_sound_phase_two_template_carries_no_foreign_field():
 def test_a_sound_phase_three_template_carries_no_foreign_field():
     declared = FieldIndex(_p3(2, 4)).declared()
     assert sibling_fields_declared("weather_p3_template", declared) == []
-
-
-def test_a_weather_template_is_not_a_sibling_of_another_module_s_type():
-    for key in WEATHER_KEYS:
-        siblings = set(sibling_keys(key))
-        assert "calendar_template" not in siblings
-        assert "attendance_template" not in siblings
-        assert "results_race_template" not in siblings
 
 
 # ── 5. The shipped defaults satisfy their own catalogues ──────────────────

@@ -57,6 +57,7 @@ def _drawing(phase, fmt="ENDURANCE", sessions=None, **kw):
 @pytest.mark.parametrize(
     "phase,fmt,expected",
     [
+        # Phase 1 holds no session, so no variant arises for it.
         (1, "NORMAL", "weather_p1_template"),
         (1, "SPRINT", "weather_p1_template"),
         (1, "ENDURANCE", "weather_p1_template"),
@@ -70,12 +71,6 @@ def _drawing(phase, fmt="ENDURANCE", sessions=None, **kw):
 )
 def test_the_format_of_the_round_selects_the_template(phase, fmt, expected):
     assert weather_template_key(phase, fmt) == expected
-
-
-def test_phase_one_draws_one_template_for_every_format():
-    """It holds no session, so no variant arises for it."""
-    keys = {weather_template_key(1, f) for f in ("NORMAL", "SPRINT", "ENDURANCE")}
-    assert keys == {"weather_p1_template"}
 
 
 def test_a_mystery_round_reaches_the_mystery_template_at_every_phase():
@@ -111,7 +106,10 @@ def test_a_phase_outside_the_pipeline_is_refused():
 
 @pytest.mark.parametrize("phase,text", sorted(PHASE_DESCRIPTIONS.items()))
 def test_the_phase_description_is_fixed_text(phase, text):
-    assert _drawing(phase).phase_description == text
+    """The phase is named in words by `phase_description` and nowhere else."""
+    description = _drawing(phase).phase_description
+    assert description == text
+    assert str(phase) not in (description or "")
 
 
 def test_the_phase_descriptions_are_the_three_the_spec_names():
@@ -265,13 +263,6 @@ def test_no_drawing_carries_a_date_a_time_a_driver_or_a_team():
     fields = set(vars(_drawing(3, "SPRINT", SPRINT_SESSIONS)))
     for forbidden in ("round_date", "round_time", "driver_name", "team_name", "mention"):
         assert forbidden not in fields
-
-
-def test_no_drawing_carries_a_phase_number_as_a_value():
-    """The phase is named in words by `phase_description` and nowhere else."""
-    drawing = _drawing(3)
-    assert drawing.phase_description == "Final session forecast"
-    assert "3" not in (drawing.phase_description or "")
 
 
 def test_the_division_tier_is_carried_as_given_and_emptied_when_absent():
