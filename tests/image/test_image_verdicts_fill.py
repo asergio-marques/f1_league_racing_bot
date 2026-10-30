@@ -156,7 +156,7 @@ def test_a_sanction_still_draws_the_stage_and_the_driver():
 
 
 @pytest.mark.parametrize("field", ["division_tier", "season_number"])
-def test_an_absent_tier_is_emptied_rather_than_dashed(field):
+def test_an_absent_heading_field_is_emptied_rather_than_dashed(field):
     spec = build_fill_spec(_penalty(**{field: None}), _root())
     assert field in spec.empty
     assert spec.text.get(field) in (None, "")

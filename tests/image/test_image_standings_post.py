@@ -265,7 +265,7 @@ async def test_both_render_so_two_messages_are_posted_and_no_section_falls_back(
     [(DRIVERS, "drivers", "constructors"), (CONSTRUCTORS, "constructors", "drivers")],
     ids=["drivers-failing", "constructors-failing"],
 )
-async def test_the_drivers_failing_falls_back_to_the_drivers_section_alone(
+async def test_a_failing_graphic_falls_back_to_its_own_section_alone(
     tmp_path, failing_key, failing, surviving
 ):
     """The other graphic still draws, so its table must not be repeated as text."""
