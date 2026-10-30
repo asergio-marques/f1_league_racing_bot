@@ -190,15 +190,6 @@ async def test_the_master_toggle_disables_portraits_and_stops_the_daily_job(tmp_
     league.scheduler.cancel_portrait_refresh.assert_called_once_with()
 
 
-async def test_enabling_the_master_toggle_re_arms_a_standing_daily_setting(tmp_path):
-    cog, league = await _league(tmp_path, use_pfp=False, pfp_daily=True, pfp_daily_time="07:45")
-
-    interaction = await _run(cog, league, "use_pfp_toggle")
-
-    _acknowledged(interaction)
-    league.scheduler.schedule_portrait_refresh.assert_called_once_with("07:45")
-
-
 # ── The two sub-toggles need the master on ────────────────────────────────
 
 
@@ -431,8 +422,8 @@ async def test_an_ending_is_recorded_though_the_buttons_cannot_be_taken_down(end
 
 async def test_the_master_toggle_arms_the_daily_job_before_the_success_is_recorded(tmp_path):
     """Portraits switched on with daily updates standing at 07:45: acknowledged at once; when
-    it runs, no line has been written by the time the job is armed, and one success line
-    follows it."""
+    it runs, the daily job is re-armed at the standing time, no line has been written by the
+    time it is armed, and one success line follows it."""
     cog, league = await _league(tmp_path, use_pfp=False, pfp_daily=True, pfp_daily_time="07:45")
     recorded_by_then = []
     league.scheduler.schedule_portrait_refresh.side_effect = (
@@ -443,6 +434,7 @@ async def test_the_master_toggle_arms_the_daily_job_before_the_success_is_record
 
     _acknowledged(interaction)
     assert recorded_by_then == [[]]
+    league.scheduler.schedule_portrait_refresh.assert_called_once_with("07:45")
     assert_one_line(league.bot, "images use-pfp toggle")
 
 

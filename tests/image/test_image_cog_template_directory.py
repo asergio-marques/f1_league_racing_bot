@@ -151,8 +151,9 @@ async def test_a_folder_holding_every_valid_template_is_stored(tmp_path):
 
 async def test_a_folder_missing_a_template_is_refused_and_names_it(tmp_path):
     """The calendar alone switched on, the folder moved to one holding no drawing: refused
-    saying the folder does not hold every template the switched-on outputs need, naming the
-    calendar's drawing and no other, and the folder stays where it was."""
+    saying the folder does not hold every template the switched-on outputs need, that the
+    previous one is still in force, naming the calendar's drawing and no other and why it
+    cannot be used, and the folder stays where it was."""
     league = await _league(tmp_path, aspects=("calendar",))
 
     interaction = await _run(league, NO_TEMPLATES)
@@ -162,10 +163,16 @@ async def test_a_folder_missing_a_template_is_refused_and_names_it(tmp_path):
         f"❌ **Template directory** was **not** changed — `{NO_TEMPLATES}` does not hold every "
         "template the bot needs for the outputs you have switched on."
     ), reply
+    assert "still in force" in reply
+    assert "can't be found" in reply
     assert [line for line in reply.splitlines() if line.startswith("  ↳ ")] == [
         line for line in reply.splitlines() if line.startswith("  ↳ **Calendar**: ")
     ] != []
     assert await _stored(league) == BEFORE
+    # Principle V: a refused configuration is as much a part of the audit trail. It is
+    # recorded as one "⛔" line naming the command, with the reason it was refused.
+    line = assert_one_refusal(league.bot, f"`/{COMMAND}`")
+    assert "does not hold every template" in line
 
 
 async def test_an_invalid_template_is_refused_the_same_way(tmp_path, monkeypatch):
@@ -220,19 +227,6 @@ async def test_a_server_with_no_configuration_is_refused(tmp_path, monkeypatch):
 # ── The refusal itself ────────────────────────────────────────────────────
 
 
-async def test_a_refusal_says_the_previous_folder_still_stands(tmp_path):
-    """The calendar alone switched on, the folder moved to one holding no drawing: the refusal
-    says the folder was not changed, the previous one is still in force, and why the calendar's
-    drawing cannot be used."""
-    league = await _league(tmp_path, aspects=("calendar",))
-
-    reply = said(await _run(league, NO_TEMPLATES))
-
-    assert "not** changed" in reply
-    assert "still in force" in reply
-    assert "can't be found" in reply
-
-
 async def test_a_wholesale_failure_names_every_template_at_fault(tmp_path, monkeypatch):
     """Image spec: a refused folder names each template at fault with its own reason. No
     cut at six and no "…and N more" line: the whole reply goes, in as many parts as it
@@ -253,14 +247,3 @@ async def test_a_wholesale_failure_names_every_template_at_fault(tmp_path, monke
     assert len(interaction.said) > 1
     assert all(len(part) <= 2000 for part in interaction.said)
     assert await _stored(league) == BEFORE
-
-
-async def test_a_refusal_is_logged_like_an_accepted_change(tmp_path):
-    """Principle V: a refused configuration is as much a part of the audit trail. It is
-    recorded as one "⛔" line naming the command, with the reason it was refused."""
-    league = await _league(tmp_path, aspects=("calendar",))
-
-    await _run(league, NO_TEMPLATES)
-
-    line = assert_one_refusal(league.bot, f"`/{COMMAND}`")
-    assert "does not hold every template" in line
