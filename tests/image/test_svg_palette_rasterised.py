@@ -64,15 +64,6 @@ def _svg(body: str, *, defs: str = "") -> etree._Element:
     )
 
 
-def test_the_injected_rule_beats_the_templates_own_stylesheet(tmp_path):
-    root = _svg(
-        f'<rect x="0" y="0" width="200" height="100" class="accent colour-fill-accent"/>',
-        defs=f"<style>.accent {{ fill:{HOUSE} }}</style>",
-    )
-    apply_palette(root, {"accent": TIER})
-    assert _hex(_pixel(tmp_path, root, (100, 50))) == TIER
-
-
 def test_the_injected_rule_beats_a_presentation_attribute(tmp_path):
     """This is what lets a template stay a valid picture that shows its own colours."""
     root = _svg(

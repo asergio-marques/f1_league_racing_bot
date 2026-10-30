@@ -228,57 +228,6 @@ def test_the_regular_face_chosen_is_the_nearest_to_400_not_the_first_alphabetica
 
 
 @pytest.mark.rasteriser
-def test_measurement_errs_narrow_against_what_the_rasteriser_draws():
-    """A line the measurement admits must be a line the canvas holds (XIV.5).
-
-    Compared against the converter's own query rather than against a guess: it reports the
-    drawn width of the element, kerning and shaping included, which is exactly the number
-    the measurement must not fall below.
-    """
-    import subprocess  # noqa: PLC0415
-    import tempfile  # noqa: PLC0415
-    from pathlib import Path  # noqa: PLC0415
-
-    from leaguebot.image.services.image_render_service import find_converter  # noqa: PLC0415
-
-    executable = find_converter()
-
-    family = "DejaVu Sans"
-    resolved = resolve_family(family, bold=False)
-    if resolved.substituted or resolved.path is None:
-        pytest.skip(f"{family} is not installed on this host")
-
-    sample = "Handgloves reviewed mixing quartz"
-    size = 40.0
-    svg = (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="200">'
-        f'<text id="probe" x="0" y="100" '
-        f'style="font-family:{family};font-size:{size:g}px">{sample}</text></svg>'
-    )
-
-    with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory) / "probe.svg"
-        path.write_text(svg, encoding="utf-8")
-        completed = subprocess.run(
-            [executable, str(path), "--query-id=probe", "--query-width"],
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-
-    if completed.returncode != 0 or not completed.stdout.strip():
-        pytest.skip("the rasteriser could not report a drawn width on this host")
-
-    drawn = float(completed.stdout.strip())
-    measured = measure(sample, resolved, size)
-
-    assert measured >= drawn, (
-        f"measurement must err narrow: measured {measured:.2f}px but the rasteriser "
-        f"draws {drawn:.2f}px, so a line admitted here would overrun the canvas"
-    )
-
-
-@pytest.mark.rasteriser
 @pytest.mark.parametrize(
     "where,template",
     [
@@ -305,14 +254,20 @@ def test_measurement_errs_narrow_against_what_the_rasteriser_draws():
     ids=["own", "root", "group"],
 )
 def test_measurement_errs_narrow_however_the_family_was_declared(where, template):
-    """The companion above proves the resolver; this proves it is fed the right family.
+    """A line the measurement admits must be a line the canvas holds (XIV.5), wherever the
+    family was declared.
+
+    Compared against the converter's own query rather than against a guess: it reports the
+    drawn width of the element, kerning and shaping included, which is exactly the number
+    the measurement must not fall below. The `own` case, the family on the text itself,
+    proves the resolver; the inherited cases prove it is fed the right family.
 
     The resolver was always correct — but it was reached through `computed_style`, which
     read only the element's own declarations, so a family stated where SVG says it inherits
     arrived as nothing at all. Measurement then fell to a generic `sans-serif` while the
     rasteriser obeyed the template, and the two drew apart with every check green. Every
-    shipped template declares its family on the root, so this went unseen: the case the
-    older test builds is the one case that already worked.
+    shipped template declares its family on the root, so this went unseen: the `own` case
+    is the one case that already worked.
 
     Reading the family back through `computed_style` rather than passing it to
     `resolve_family` directly is the whole point — it is the step that was broken.
