@@ -33,15 +33,6 @@ class TestMysteryNoticeMessage:
         )
         assert mystery_notice_message() == expected
 
-    def test_contains_forecast_header(self):
-        assert "🏁 **Weather Forecast**" in mystery_notice_message()
-
-    def test_contains_mystery_track_line(self):
-        assert "**Track**: Mystery" in mystery_notice_message()
-
-    def test_contains_unknown_conditions_text(self):
-        assert "Conditions are unknown to all" in mystery_notice_message()
-
     def test_no_role_mention(self):
         assert "<@&" not in mystery_notice_message()
 
@@ -133,13 +124,6 @@ class TestScheduleRoundMystery:
         svc.schedule_round(_mystery_round(), season_number=1, division_tier=1)
         assert svc._scheduler.add_job.call_count == 5
 
-    def test_weather_p1_job_is_scheduled(self):
-        # weather_p1 replaces the old mystery_r job; it checks format at runtime
-        svc = _make_scheduler_no_db()
-        svc.schedule_round(_mystery_round(round_id=42), season_number=3, division_tier=2)
-        job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        assert any("weather_p1" in jid for jid in job_ids)
-
     def test_no_legacy_mystery_r_job(self):
         svc = _make_scheduler_no_db()
         svc.schedule_round(_mystery_round(), season_number=1, division_tier=1)
@@ -164,6 +148,7 @@ class TestScheduleRoundMystery:
         svc = _make_scheduler_no_db()
         svc.schedule_round(_mystery_round(round_id=42), season_number=3, division_tier=2)
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
+        # weather_p1 replaces the old mystery_r job; it checks format at runtime.
         # Format: <event>_s{season}_d{tier}_r{round_number}_id{round_id}. The round id is the
         # part that has to be there — season, tier and number are all rewritten by a
         # renumbering, and without the id an amended round could schedule on top of a sibling's
@@ -225,7 +210,16 @@ class TestCancelRoundIncludesMystery:
 class TestScheduleAttendanceRoundMystery:
     """schedule_attendance_round must treat MYSTERY identically to all other formats."""
 
-    def test_mystery_creates_rsvp_notice_job(self):
+    @pytest.mark.parametrize(
+        "expected_id",
+        [
+            "rsvp_notice_s1_d1_r1_id5",
+            "rsvp_deadline_s1_d1_r1_id5",
+            "rsvp_last_notice_s1_d1_r1_id5",
+        ],
+        ids=["notice", "deadline", "last_notice_when_enabled"],
+    )
+    def test_mystery_creates_each_rsvp_job(self, expected_id):
         svc = _make_scheduler_no_db()
         svc.schedule_attendance_round(
             _future_round(5, RoundFormat.MYSTERY),
@@ -236,33 +230,7 @@ class TestScheduleAttendanceRoundMystery:
             deadline_hours=2,
         )
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        assert "rsvp_notice_s1_d1_r1_id5" in job_ids
-
-    def test_mystery_creates_rsvp_deadline_job(self):
-        svc = _make_scheduler_no_db()
-        svc.schedule_attendance_round(
-            _future_round(5, RoundFormat.MYSTERY),
-            season_number=1,
-            division_tier=1,
-            notice_days=3,
-            last_notice_hours=24,
-            deadline_hours=2,
-        )
-        job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        assert "rsvp_deadline_s1_d1_r1_id5" in job_ids
-
-    def test_mystery_creates_last_notice_job_when_enabled(self):
-        svc = _make_scheduler_no_db()
-        svc.schedule_attendance_round(
-            _future_round(5, RoundFormat.MYSTERY),
-            season_number=1,
-            division_tier=1,
-            notice_days=3,
-            last_notice_hours=24,
-            deadline_hours=2,
-        )
-        job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        assert "rsvp_last_notice_s1_d1_r1_id5" in job_ids
+        assert expected_id in job_ids
 
     def test_mystery_creates_same_rsvp_job_count_as_normal(self):
         """MYSTERY and NORMAL round must produce identical RSVP job counts."""
