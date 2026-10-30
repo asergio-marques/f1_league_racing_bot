@@ -77,7 +77,8 @@ def test_every_compound_is_reachable_by_at_least_its_own_name(compound):
 def test_a_compound_outside_the_set_names_nothing(written):
     """Five and no sixth. A legacy compound is refused like any other unknown.
 
-    It canonicalises to None as an absent one does, but only it is a line to send back.
+    It canonicalises to None as an absent one does, but, unlike an absent one, it is a
+    line to send back.
     """
     assert canonicalise_tyre(written) is None
     assert not records_no_tyre(written)
