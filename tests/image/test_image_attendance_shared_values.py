@@ -1,8 +1,10 @@
 """What the sheet and the textual sheet must say identically (041, T025 / FR-013).
 
 Constitution XIV.7: where the graphic draws a value the text path also draws, the two are one
-rendering with two presentations. This file pins the three shared values and the one that is
-deliberately *not* shared, so a later change to either path cannot silently part them.
+rendering with two presentations. This file pins the three shared values — the driver's name,
+the team held at generation and the points total — so a later change to either path cannot
+silently part them. The sanction annotation, drawn as the plain literal the message emphasises,
+is pinned in `test_image_attendance_service.py`.
 
 It also covers the live grid resolution (FR-014, FR-016) and the two `/images test` guards
 (FR-068, FR-071), neither of which the pure-utility tests can reach.
@@ -46,7 +48,10 @@ def test_the_total_is_read_from_the_persisted_column_by_both_paths():
     """``total_points_after`` is already per-division and already net of pardons.
 
     The textual sheet reads it directly; so does the graphic. Neither recomputes it, so there
-    is no arithmetic that could disagree.
+    is no arithmetic that could disagree. The textual sheet writes "7 attendance points" in a
+    sentence and the graphic writes "7" in a column headed TOTAL: the *number* is identical,
+    and the sentence around it is presentation, not rendering. There is no shared formatter to
+    call: the text path interpolates the number into its line at the point of use.
     """
     text_source = inspect.getsource(attendance_service.post_attendance_sheet)
     assert "total_points_after" in text_source
@@ -58,39 +63,6 @@ def test_the_total_is_read_from_the_persisted_column_by_both_paths():
         display_names={1: "A"},
     )
     assert drawing.entries[0].points == "7"
-
-
-def test_the_points_total_is_the_same_number_in_both_presentations():
-    """The one value drawn differently, and deliberately.
-
-    The textual sheet writes "7 attendance points" in a sentence; the graphic writes "7" in a
-    column headed TOTAL. The *number* is identical and comes from the same column — what
-    differs is the sentence around it, which is presentation and not rendering. There is no
-    shared formatter to call because the text path has no formatter: it interpolates the
-    number into its line at the point of use.
-    """
-    drawing = resolve_drawing(
-        division_name="D",
-        round_number=1,
-        records=[DriverRecord(key=1, total=7)],
-        display_names={1: "A"},
-    )
-    drawn = drawing.entries[0].points
-
-    # The textual line for the same driver, composed as post_attendance_sheet composes it.
-    textual = f"{7} attendance point{'s' if 7 != 1 else ''}"
-
-    assert drawn == "7"
-    assert textual.startswith(drawn)
-
-
-def test_the_sanction_annotation_matches_the_textual_one_with_its_emphasis_stripped():
-    """The graphic draws the plain literal; the message applies the emphasis (FR-017)."""
-    from leaguebot.image.services.image_attendance_service import SANCTION_ANNOTATION
-
-    textual_suffix = " *(reached point limit)*"
-    stripped = textual_suffix.strip().strip("*").strip("()")
-    assert stripped.lower() == SANCTION_ANNOTATION.lower()
 
 
 # ── The live grid (FR-014, FR-016) ────────────────────────────────────────
@@ -147,21 +119,14 @@ async def test_the_grid_draws_every_round_the_division_holds_run_or_not(grid_db)
 
 
 @pytest.mark.asyncio
-async def test_a_mystery_round_is_drawn_from_the_mystery_datum(grid_db):
-    """044 FR-012 — the **country** is the datum the heading's flag resolves by.
+async def test_a_round_heading_carries_the_country_its_circuit_is_run_in(grid_db):
+    """Every heading, not only the mystery one: the posted sheet drew none of them.
 
-    This asserted on `track` until 2026-08-28, which 044 had already stopped being an
-    asset datum — so the sheet drew no flag on any heading and the test still passed.
+    044 FR-012 — the **country** is the datum the heading's flag resolves by, so the mystery
+    round is drawn from the mystery datum in its country as well as its track.
     """
     headings, _ = await attendance_service._round_grid(grid_db, 7, [501])
     assert headings[1].track == "Mystery"
-    assert headings[1].country == "Mystery"
-
-
-@pytest.mark.asyncio
-async def test_a_round_heading_carries_the_country_its_circuit_is_run_in(grid_db):
-    """Every heading, not only the mystery one: the posted sheet drew none of them."""
-    headings, _ = await attendance_service._round_grid(grid_db, 7, [501])
     assert [h.country for h in headings] == [
         "United Kingdom",
         "Mystery",
