@@ -41,6 +41,7 @@ def test_every_page_fits_the_limit(count):
 
 @pytest.mark.parametrize("count", [1, 23, 60])
 def test_no_row_is_lost_or_duplicated(count):
+    """Rows are atomic — every emitted line is one of the ones handed in, once and in order."""
     body = _roster(count)
     pages = paginate_fenced(HEADER, body, footer=FOOTER)
 
@@ -99,11 +100,3 @@ def test_an_empty_body_still_returns_a_sendable_page():
     assert pages[0].startswith(HEADER)
     assert pages[0].count("```") == 2
 
-
-def test_a_page_break_never_falls_inside_a_row():
-    """Rows are atomic — every emitted line is one of the ones handed in."""
-    body = _roster(60)
-    for page in paginate_fenced(HEADER, body, footer=FOOTER):
-        inner = page.split("```")[1]
-        for line in (item for item in inner.split("\n") if item):
-            assert line in body
