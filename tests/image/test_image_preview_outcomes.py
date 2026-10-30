@@ -146,29 +146,31 @@ class TestRsvpPreview:
         assert len(requests) == 1
         assert requests[0][1] == "rsvp_template"
 
-    async def test_a_sprint_round_names_four_sessions(self, bot, league):
+    @pytest.mark.parametrize(
+        ("round_number", "fmt", "count"),
+        [(2, "SPRINT", 4), (1, "NORMAL", 2)],
+        ids=["sprint-names-four", "two-session-names-two"],
+    )
+    async def test_a_sprint_round_names_four_sessions(
+        self, bot, league, round_number, fmt, count
+    ):
         """The session list follows the round's own format, not a fabricated one."""
         from leaguebot.image.services.image_rsvp_service import session_names
 
-        context = await _context(bot, round_number=2)
+        context = await _context(bot, round_number=round_number)
 
-        assert len(session_names("SPRINT")) == 4
-        assert context.round.format.value == "SPRINT"
-
-    async def test_a_two_session_round_names_two(self, bot, league):
-        from leaguebot.image.services.image_rsvp_service import session_names
-
-        context = await _context(bot, round_number=1)
-
-        assert len(session_names(context.round.format.value)) == 2
+        assert context.round.format.value == fmt
+        assert len(session_names(context.round.format.value)) == count
 
 
 # ── Results (T022) ────────────────────────────────────────────────────────
 
 
 class TestResultsPreview:
-    async def test_one_picture_per_session_of_a_normal_round(self, bot, league):
-        context = await _context(bot, round_number=1, require_teams=True)
+    @pytest.mark.parametrize("round_number", [1, 3], ids=["normal", "endurance"])
+    async def test_one_picture_per_session_of_a_normal_round(self, bot, league, round_number):
+        """A normal round and an endurance round run the same two feature sessions."""
+        context = await _context(bot, round_number=round_number, require_teams=True)
 
         requests = await build_results_preview(bot, context)
 
@@ -185,13 +187,6 @@ class TestResultsPreview:
         requests = await build_results_preview(bot, context)
 
         assert len(requests) == 4
-
-    async def test_an_endurance_round_draws_two(self, bot, league):
-        context = await _context(bot, round_number=3, require_teams=True)
-
-        requests = await build_results_preview(bot, context)
-
-        assert len(requests) == 2
 
     async def test_the_classification_is_over_the_leagues_own_drivers(self, bot, league):
         """The outcome is invented; who it happens to is not."""
@@ -219,13 +214,7 @@ class TestStandingsPreview:
             "standings_drivers_template",
             "standings_constructors_template",
         ]
-
-    async def test_it_stands_after_the_round_named(self, bot, league):
-        context = await _context(bot, round_number=2, require_teams=True)
-
-        requests = await build_standings_preview(bot, context)
-
-        assert requests
+        # It stands after the round named.
         assert context.round.round_number == 2
 
     async def test_the_reserve_team_is_not_drawn_as_a_constructor(self, bot, league, db_path):
@@ -318,7 +307,7 @@ class TestStandingsPreview:
         passed no gaps either, on the mistaken reading that the two go together. They do
         not: the gap is arithmetic over the classification being drawn alone. A manager
         judging the template's `PTS · GAP` column saw half of what a posting would put
-        there.
+        there. The column is one value read two ways, so the two must reconcile.
         """
         from pathlib import Path
 
@@ -338,6 +327,9 @@ class TestStandingsPreview:
         assert "row_1_gap_to_leader" in spec.empty_quietly
         assert spec.text["row_2_gap_to_leader"].startswith("-")
         assert spec.text["row_2_gap_to_leader"] != "-0"
+        leader_points = int(spec.text["row_1_points"])
+        second_points = int(spec.text["row_2_points"])
+        assert spec.text["row_2_gap_to_leader"] == f"-{leader_points - second_points}"
 
     async def test_the_gap_to_the_leader_is_drawn_on_the_constructors_preview(
         self, bot, league
@@ -359,27 +351,6 @@ class TestStandingsPreview:
 
         assert "row_1_gap_to_leader" in spec.empty_quietly
         assert spec.text["row_2_gap_to_leader"].startswith("-")
-
-    async def test_the_gap_agrees_with_the_points_it_stands_beside(self, bot, league):
-        """The column is one value read two ways, so the two must reconcile."""
-        from pathlib import Path
-
-        from leaguebot.image.utils.svg_document import load_svg
-
-        context = await _context(bot, round_number=2, require_teams=True)
-        requests = await build_standings_preview(bot, context)
-
-        drivers_spec_builder = next(
-            spec for label, key, spec in requests if key == "standings_drivers_template"
-        )
-        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
-        root = load_svg(root_dir / "standings_drivers_template.svg")
-        spec = drivers_spec_builder(root)
-
-        leader_points = int(spec.text["row_1_points"])
-        second_points = int(spec.text["row_2_points"])
-
-        assert spec.text["row_2_gap_to_leader"] == f"-{leader_points - second_points}"
 
     async def test_two_drivers_level_on_points_are_drawn_on_separate_positions(
         self, bot, league
@@ -851,7 +822,8 @@ class TestAttendancePreview:
         """The marks are the whole of what the sheet says beyond its numbers.
 
         A preview seeded from one narrow band of totals paints a single mark down the column
-        — or none at all — and leaves the two artworks and the unmarked row unjudged.
+        — or none at all — and leaves the two artworks and the unmarked row unjudged. A
+        driver earning no mark is drawn as one, and the sheet must show that too.
         """
         from pathlib import Path
 
@@ -877,21 +849,6 @@ class TestAttendancePreview:
 
         assert (MARK_ASSET_CLASS, MARK_REACHED) in marks
         assert (MARK_ASSET_CLASS, MARK_NEAR) in marks
-
-    async def test_the_drawn_sheet_leaves_a_row_unmarked(self, bot, league):
-        """A driver earning no mark is drawn as one, and the sheet must show that too."""
-        context = await _context(bot, round_number=2, require_teams=True)
-
-        requests = await build_attendance_preview(bot, context)
-
-        from pathlib import Path
-
-        from leaguebot.image.utils.svg_document import load_svg
-
-        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
-        root = load_svg(root_dir / "attendance_template.svg")
-        spec = requests[0][2](root)
-
         marked = [n for n in spec.image_data if n.endswith("_points_background")]
         assert len(marked) < len(context.drivers)
 
@@ -922,16 +879,7 @@ class TestVerdictPreview:
 
         assert len(requests) == 5
         assert all(r[1] == "verdicts_template" for r in requests)
-
-    async def test_the_driver_is_one_of_the_divisions_own(self, bot, league):
-        """FR-033."""
-        context = await _context(bot, round_number=1, require_teams=True)
-
-        requests = await build_verdict_preview(bot, context)
-
-        assert any(
-            context.drivers[0].display_name in label or True for label, _k, _s in requests
-        )
+        # FR-033 — the driver is one of the division's own.
         assert context.drivers[0].fabricated is False
 
     async def test_only_sanctions_the_module_can_issue_are_drawn(self, bot, league):
@@ -963,19 +911,19 @@ class TestWeatherPreview:
 
         assert len(requests) == 1
 
-    async def test_a_sprint_round_draws_the_sprint_template(self, bot, league):
-        context = await _context(bot, round_number=2, require_mystery=False)
+    @pytest.mark.parametrize(
+        ("round_number", "sprint"),
+        [(2, True), (1, False)],
+        ids=["sprint-round-sprint-template", "normal-round-plain-template"],
+    )
+    async def test_a_sprint_round_draws_the_sprint_template(
+        self, bot, league, round_number, sprint
+    ):
+        context = await _context(bot, round_number=round_number, require_mystery=False)
 
         requests = await build_weather_preview(bot, context, phase=2)
 
-        assert "sprint" in requests[0][1]
-
-    async def test_a_normal_round_draws_the_plain_template(self, bot, league):
-        context = await _context(bot, round_number=1, require_mystery=False)
-
-        requests = await build_weather_preview(bot, context, phase=2)
-
-        assert "sprint" not in requests[0][1]
+        assert ("sprint" in requests[0][1]) is sprint
 
     async def test_the_mystery_notice_carries_no_session(self, bot, league):
         context = await _context(bot, round_number=4, require_mystery=True)
