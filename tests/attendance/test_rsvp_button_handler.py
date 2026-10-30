@@ -33,7 +33,10 @@ read as current behaviour, so the wip-spec's words are quoted above instead.
 Each is pinned by a pair of tests sitting either side of its moment, because the three differ
 only in *which* instant they compare against and a later reader collapsing them into one check
 would pass any test that only exercised one kind of driver. `test_a_reserve_who_has_not_
-accepted_may_still_step_in_after_the_deadline` is the one that would catch it.
+accepted_may_still_step_in_after_the_deadline` is the one that would catch it. The button tests
+hold both sides of the two reserve rules: the allowed side in the reserve section, a reserve who
+has accepted changing their answer before the deadline included, and the locked side as cases of
+`test_every_refused_press_is_recorded`, `reserve-accepted` and `round-started`.
 
 **Times are taken from the clock, never pinned, where the handler is driven.** The handler
 reads `datetime.now` itself and takes no `now` parameter, so a fixture that seeded a fixed date
@@ -365,15 +368,6 @@ async def test_an_unknown_action_says_so(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_someone_with_no_driver_profile_is_turned_away(tmp_path):
-    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
-    interaction = _make_interaction(db_path, 999999)
-
-    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
-
-    assert "not registered as a driver" in _reply(interaction)
-
-
 async def test_a_call_no_longer_standing_records_no_answer(tmp_path):
     """A cancelled season takes its calls down several steps before its rounds are recorded
     cancelled; a failure in between must not leave a withdrawn call still answerable."""
@@ -390,33 +384,6 @@ async def test_a_call_no_longer_standing_records_no_answer(tmp_path):
     assert await _status(db_path, FULL_TIME_PROFILE) == before
 
 
-async def test_a_cancelled_round_records_no_answer(tmp_path):
-    """Its call is taken down with the cancellation (#175); a press that raced it, or lands
-    on a call the bot could not delete, must not record an answer to a round that is off."""
-    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
-    before = await _status(db_path, FULL_TIME_PROFILE)
-    async with get_connection(db_path) as db:
-        await db.execute("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (ROUND_ID,))
-        await db.commit()
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
-
-    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
-
-    assert "no longer open" in _reply(interaction)
-    assert await _status(db_path, FULL_TIME_PROFILE) == before
-
-
-async def test_a_driver_of_another_division_is_turned_away(tmp_path):
-    """A driver of the server, but with no seat in this division — the call is posted in a
-    channel they may well be able to see."""
-    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
-    interaction = _make_interaction(db_path, STRANGER_PROFILE)
-
-    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
-
-    assert "not a member of this division" in _reply(interaction)
-
-
 async def test_a_driver_whose_placement_is_not_confirmed_is_turned_away(tmp_path):
     """Only a driver with a *confirmed* placement in the division may answer its call.
 
@@ -428,11 +395,12 @@ async def test_a_driver_whose_placement_is_not_confirmed_is_turned_away(tmp_path
     began opening rows, the predicate became what stops it opening one here (issue #209).
 
     **The same refusal as every other way of not being a driver of this division**, together
-    with the two tests above: an unconfirmed placement, a seat in another division, and no
-    profile at all are one rule with one message. Telling them apart would serve nobody — a
-    league manager who does not drive and presses a button out of curiosity is in exactly the
-    same position — and who can see a check-in channel in the first place is the league's own
-    permissions to set, which this bot does not touch."""
+    with the `no-profile` and `not-a-member` cases of `test_every_refused_press_is_recorded`:
+    an unconfirmed placement, a seat in another division, and no profile at all are one rule
+    with one message. Telling them apart would serve nobody — a league manager who does not
+    drive and presses a button out of curiosity is in exactly the same position — and who can
+    see a check-in channel in the first place is the league's own permissions to set, which
+    this bot does not touch."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3), call_posted=False)
     await _uncommit_placement(db_path, FULL_TIME_PROFILE)
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
@@ -441,16 +409,6 @@ async def test_a_driver_whose_placement_is_not_confirmed_is_turned_away(tmp_path
 
     assert "not a member of this division" in _reply(interaction)
     assert await _status(db_path, FULL_TIME_PROFILE) is None
-
-
-async def test_a_button_for_a_deleted_round_says_so(tmp_path):
-    """A call outlives its round if the round is removed by an amendment."""
-    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
-
-    await _press(interaction, "rsvp_accept_r9999")
-
-    assert "no longer exists" in _reply(interaction)
 
 
 # ---------------------------------------------------------------------------
@@ -463,6 +421,8 @@ async def test_a_button_for_a_deleted_round_says_so(tmp_path):
     [("accept", "ACCEPTED"), ("tentative", "TENTATIVE"), ("decline", "DECLINED")],
 )
 async def test_each_button_records_its_own_status(tmp_path, action, expected):
+    """The answer is the thing that matters: the call's channel is not found here, and a call
+    deleted by hand must not cost a driver their check-in."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
 
@@ -543,20 +503,13 @@ async def test_with_no_deadline_configured_answers_stay_open_until_the_start(tmp
 
 # ---------------------------------------------------------------------------
 # FR-015 / FR-016 — a reserve locks differently, and on what they already said
+#
+# The tests here are the allowed side of both reserve rules: a reserve who has not accepted may
+# still step in after the deadline, and a reserve who has accepted may still change their answer
+# before it. The locked side is a pair of cases of `test_every_refused_press_is_recorded`:
+# `reserve-accepted`, a reserve who has accepted withdrawing after the deadline, and
+# `round-started`, a reserve who has not accepted stepping in once the round has started.
 # ---------------------------------------------------------------------------
-
-
-async def test_a_reserve_who_accepted_is_locked_out_after_the_deadline(tmp_path):
-    """They have been counted on for a seat; withdrawing after the deadline is the case the
-    "provided they have NOT accepted the check-in" clause exists to prevent."""
-    db_path = await _make_db(tmp_path, starts_in=timedelta(hours=DEADLINE_HOURS - 1))
-    await _set_status(db_path, RESERVE_PROFILE, "ACCEPTED")
-    interaction = _make_interaction(db_path, RESERVE_PROFILE)
-
-    await _press(interaction, f"rsvp_decline_r{ROUND_ID}")
-
-    assert "already accepted" in _reply(interaction)
-    assert await _status(db_path, RESERVE_PROFILE) == "ACCEPTED"
 
 
 async def test_a_reserve_who_has_not_accepted_may_still_step_in_after_the_deadline(tmp_path):
@@ -589,16 +542,23 @@ async def test_a_reserve_with_no_answer_at_all_may_step_in_after_the_deadline(tm
     assert await _status(db_path, RESERVE_PROFILE) == "ACCEPTED"
 
 
-async def test_a_reserve_is_locked_out_once_the_round_has_started(tmp_path):
-    """The other side of the reserve's rule. Late is allowed; after the lights have gone out
-    is not."""
-    db_path = await _make_db(tmp_path, starts_in=timedelta(hours=-1))
+@pytest.mark.parametrize(
+    "action,expected", [("decline", "DECLINED"), ("tentative", "TENTATIVE")]
+)
+async def test_a_reserve_who_has_accepted_may_change_their_answer_before_the_deadline(
+    tmp_path, action, expected
+):
+    """Having accepted locks a reserve at the deadline, not before it. The arrangement of the
+    `reserve-accepted` case of `test_every_refused_press_is_recorded`, two hours earlier: with
+    an hour still to go, the new answer is recorded and nothing refuses it."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(hours=DEADLINE_HOURS + 1))
+    await _set_status(db_path, RESERVE_PROFILE, "ACCEPTED")
     interaction = _make_interaction(db_path, RESERVE_PROFILE)
 
-    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
+    await _press(interaction, f"rsvp_{action}_r{ROUND_ID}")
 
-    assert "round has started" in _reply(interaction)
-    assert await _status(db_path, RESERVE_PROFILE) == "NO_RSVP"
+    assert await _status(db_path, RESERVE_PROFILE) == expected
+    assert "has been updated" in _reply(interaction)
 
 
 # ---------------------------------------------------------------------------
@@ -716,18 +676,6 @@ async def test_the_call_is_edited_in_place_when_an_answer_changes(tmp_path):
     assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
 
 
-async def test_an_answer_is_still_recorded_when_the_call_cannot_be_found(tmp_path):
-    """The answer is the thing that matters. A call deleted by hand must not cost a driver
-    their check-in."""
-    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
-
-    await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
-
-    assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
-    assert "has been updated" in _reply(interaction)
-
-
 # ---------------------------------------------------------------------------
 # Any account names the driver (issue #243)
 # ---------------------------------------------------------------------------
@@ -788,18 +736,27 @@ REFUSALS = [
      "the \u201cAccept\u201d button of a check-in call", "switched off for this server"),
     ("no-profile", timedelta(days=3), 999999, f"rsvp_accept_r{ROUND_ID}", None,
      "the \u201cAccept\u201d button of a check-in call", "not registered as a driver"),
+    # A call outlives its round if the round is removed by an amendment.
     ("round-gone", timedelta(days=3), FULL_TIME_PROFILE, "rsvp_accept_r9999", None,
      "the \u201cAccept\u201d button of a check-in call", "This round no longer exists."),
+    # Its call is taken down with the cancellation (#175); a press that raced it, or lands on
+    # a call the bot could not delete, must not record an answer to a round that is off.
     ("cancelled", timedelta(days=3), FULL_TIME_PROFILE, f"rsvp_accept_r{ROUND_ID}", _cancel_round,
      f"the \u201cAccept\u201d button {CALL}", "This check-in is no longer open"),
+    # A driver of the server, but with no seat in this division: the call is posted in a
+    # channel they may well be able to see.
     ("not-a-member", timedelta(days=3), STRANGER_PROFILE, f"rsvp_accept_r{ROUND_ID}", None,
      f"the \u201cAccept\u201d button {CALL}", "You are not a member of this division."),
     ("deadline", timedelta(hours=DEADLINE_HOURS - 1), FULL_TIME_PROFILE,
      f"rsvp_tentative_r{ROUND_ID}", None,
      f"the \u201cTentative\u201d button {CALL}", "The RSVP deadline has passed."),
+    # They have been counted on for a seat; withdrawing after the deadline is the case the
+    # "provided they have NOT accepted the check-in" clause exists to prevent.
     ("reserve-accepted", timedelta(hours=DEADLINE_HOURS - 1), RESERVE_PROFILE,
      f"rsvp_decline_r{ROUND_ID}", _reserve_accepted,
      f"the \u201cDecline\u201d button {CALL}", "You have already accepted"),
+    # The other side of the reserve's rule: late is allowed; after the lights have gone out
+    # is not.
     ("round-started", timedelta(hours=-1), RESERVE_PROFILE, f"rsvp_accept_r{ROUND_ID}", None,
      f"the \u201cAccept\u201d button {CALL}", "The round has started."),
 ]
@@ -813,15 +770,17 @@ REFUSALS = [
 async def test_every_refused_press_is_recorded(
     tmp_path, starts_in, profile, custom_id, arrange, what, reason
 ):
-    """A14: each refusal keeps its reply and writes one line naming the button and, once the
-    round is read, the call it sits on."""
+    """A14: each refusal keeps its reply, leaves the presser's answer as it was, and writes one
+    line naming the button and, once the round is read, the call it sits on."""
     db_path = await _make_db(tmp_path, starts_in=starts_in)
     interaction = _make_interaction(db_path, profile)
     if arrange is not None:
         await arrange(db_path, interaction)
+    before = await _status(db_path, profile)
 
     await _press(interaction, custom_id)
 
+    assert await _status(db_path, profile) == before
     interaction.response.send_message.assert_awaited_once()
     assert reason in _reply(interaction)
     logged = _logged(interaction)

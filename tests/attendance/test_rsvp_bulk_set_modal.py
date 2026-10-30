@@ -320,24 +320,18 @@ async def test_every_entry_of_a_paste_is_applied(tmp_path):
         ("tentative", "TENTATIVE"),
         ("decline", "DECLINED"),
         ("declined", "DECLINED"),
+        ("ACCEPT", "ACCEPTED"),
     ],
+    ids=["accept", "accepted", "tentative", "decline", "declined", "upper-case-accept"],
 )
 async def test_the_vocabulary_is_the_maintainers(tmp_path, typed, stored):
     """Typed by hand under time pressure during a rehearsal, so both the verb and the
-    participle are accepted."""
+    participle are accepted, and the status is read regardless of case."""
     bot = await _bot(await _make_db(tmp_path, name=f"bulk_{typed}"))
 
     await _submit(bot, f"900000001, {typed}")
 
     assert (await _applied(bot)) == [(31, stored)]
-
-
-async def test_the_status_is_read_regardless_of_case(tmp_path):
-    bot = await _bot(await _make_db(tmp_path, name="bulk_case"))
-
-    await _submit(bot, "900000001, ACCEPT")
-
-    assert (await _applied(bot)) == [(31, "ACCEPTED")]
 
 
 async def test_surrounding_whitespace_is_ignored(tmp_path):
@@ -487,15 +481,6 @@ async def test_an_entirely_wrong_paste_says_so(tmp_path):
     replied = _replied(interaction)
     assert "Applied" not in replied
     assert "Errors" in replied
-
-
-async def test_an_empty_paste_is_answered_rather_than_ignored(tmp_path):
-    """An empty reply to a modal submission looks to Discord like a command that hung."""
-    bot = await _bot(await _make_db(tmp_path, name="bulk_empty"))
-
-    interaction, _ = await _submit(bot, "\n  \n")
-
-    assert "No valid entries." in _replied(interaction)
 
 
 # ---------------------------------------------------------------------------
@@ -676,7 +661,9 @@ async def test_a_paste_with_every_entry_rejected_records_each_one(tmp_path):
 
 
 async def test_an_empty_paste_records_that_nothing_changed(tmp_path):
-    """A11: a paste of blank lines asks nothing, and records that nothing was changed."""
+    """A11: a paste of blank lines asks nothing, and records that nothing was changed. It is
+    still answered, since an empty reply to a modal submission looks to Discord like a
+    command that hung."""
     bot = await _bot(await _make_db(tmp_path, name="bulk_empty_log"))
 
     interaction, _ = await _submit(bot, "\n  \n")

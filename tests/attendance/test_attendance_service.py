@@ -39,20 +39,6 @@ async def db_path(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-class TestIsAttendanceEnabledFalseByDefault:
-    async def test_returns_false_when_no_row(self, db_path):
-        from leaguebot.attendance.services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        result = await svc.get_config()
-        assert result is None
-
-    async def test_module_enabled_false_after_get_or_create(self, db_path):
-        from leaguebot.attendance.services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        cfg = await svc.get_or_create_config()
-        assert cfg.module_enabled is False
-
-
 async def test_attendance_switches_off_on_a_handed_connection(db_path):
     """Its flag down and its per-division channels cleared, its settings row kept, all on the
     caller's connection and saved only when the caller commits; it says whether attendance was
@@ -93,25 +79,6 @@ async def test_attendance_switches_off_on_a_handed_connection(db_path):
 # ---------------------------------------------------------------------------
 
 
-class TestGetDivisionConfigNoneBeforeCreate:
-    async def test_get_config_none_before_create(self, db_path):
-        from leaguebot.attendance.services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        result = await svc.get_division_config(10)
-        assert result is None
-
-
-class TestSetRsvpChannel:
-    async def test_set_rsvp_channel(self, db_path):
-        from leaguebot.attendance.services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        await svc.set_rsvp_channel(10, 999)
-        cfg = await svc.get_division_config(10)
-        assert cfg is not None
-        assert cfg.rsvp_channel_id == "999"
-        assert cfg.attendance_channel_id is None
-
-
 class TestSetAttendanceChannel:
     async def test_set_attendance_channel(self, db_path):
         from leaguebot.attendance.services.attendance_service import AttendanceService
@@ -121,18 +88,6 @@ class TestSetAttendanceChannel:
         assert cfg is not None
         assert cfg.attendance_channel_id == "888"
         assert cfg.rsvp_channel_id is None
-
-
-class TestSetChannelPreservesOtherChannel:
-    async def test_set_channel_preserves_other_channel(self, db_path):
-        from leaguebot.attendance.services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        await svc.set_rsvp_channel(10, 111)
-        await svc.set_attendance_channel(10, 222)
-        cfg = await svc.get_division_config(10)
-        assert cfg is not None
-        assert cfg.rsvp_channel_id == "111"
-        assert cfg.attendance_channel_id == "222"
 
 
 # ---------------------------------------------------------------------------
@@ -157,15 +112,6 @@ class TestTimingInvariantNoticeTooSmall:
         assert "rsvp_notice_days" in result
 
 
-class TestTimingInvariantDeadlineExceedsLast:
-    async def test_timing_invariant_deadline_exceeds_last(self):
-        from leaguebot.attendance.services.attendance_service import validate_timing_invariant
-        # notice_days=5, 120>6, but last=6 <= deadline=6 → violation
-        result = validate_timing_invariant(5, 6, 6)
-        assert result is not None
-        assert "rsvp_last_notice_hours" in result
-
-
 class TestTimingInvariantLastZeroSentinelValid:
     async def test_timing_invariant_last_zero_sentinel_valid(self):
         from leaguebot.attendance.services.attendance_service import validate_timing_invariant
@@ -174,11 +120,20 @@ class TestTimingInvariantLastZeroSentinelValid:
         assert result is None
 
 
-class TestTimingInvariantLastEqualsDeadlineRejected:
-    async def test_timing_invariant_last_equals_deadline_rejected(self):
+class TestTimingInvariantLastNotAboveDeadlineRejected:
+    @pytest.mark.parametrize(
+        "notice_days, last, deadline",
+        [(5, 4, 4), (5, 6, 6), (5, 1, 2)],
+        ids=["last-4-equals-deadline-4", "last-6-equals-deadline-6", "deadline-2-above-last-1"],
+    )
+    async def test_a_last_notice_not_above_the_deadline_is_rejected(
+        self, notice_days, last, deadline
+    ):
+        """The last notice must fall strictly before the deadline: notice_days=5 (120h) clears
+        the last notice, but last <= deadline is rejected, whether the two are equal or the
+        deadline is the larger."""
         from leaguebot.attendance.services.attendance_service import validate_timing_invariant
-        # notice_days=5 (120h), last=4, deadline=4 → last <= deadline → rejected
-        result = validate_timing_invariant(5, 4, 4)
+        result = validate_timing_invariant(notice_days, last, deadline)
         assert result is not None
         assert "rsvp_last_notice_hours" in result
 

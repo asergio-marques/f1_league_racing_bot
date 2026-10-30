@@ -80,8 +80,13 @@ async def test_a_later_round_s_total_is_corrected(tmp_path):
 
     # The amendment shows the driver did race round 1, so only the missed check-in stands.
     await _set_attended(db_file, round_ids[0], 1)
-    await _carry_forward(db_file, round_ids[0], division_id)
+    touched = await _carry_forward(db_file, round_ids[0], division_id)
 
+    assert touched[-1] == round_ids[1], (
+        "the division's current total stands on the last round touched, which is why the "
+        "caller posts the sheet and enforces the sanctions against that round, and not "
+        "against the amended one"
+    )
     assert await _awarded(db_file, round_ids[0]) == 2
     assert await _total(db_file, round_ids[0]) == 2, (
         "the amended round holds the season's total rather than its own"
@@ -194,17 +199,3 @@ async def test_a_round_scored_again_keeps_its_own_running_total(tmp_path):
 
     assert await _total(db_file, round_ids[0]) == 3
     assert await _total(db_file, round_ids[1]) == 6
-
-
-@pytest.mark.asyncio
-async def test_the_division_s_current_total_stands_on_the_last_round_touched(tmp_path):
-    """Which is why the caller posts the sheet and enforces the sanctions against that
-    round, and not against the amended one."""
-    db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
-    await _score_both_rounds(db_file, division_id, round_ids)
-    await _set_attended(db_file, round_ids[0], 1)
-
-    touched = await _carry_forward(db_file, round_ids[0], division_id)
-
-    assert touched[-1] == round_ids[1]
-    assert await _total(db_file, touched[-1]) == 5

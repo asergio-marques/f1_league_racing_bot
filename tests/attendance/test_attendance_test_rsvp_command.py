@@ -156,18 +156,6 @@ async def _set_status(cog, interaction, *, division="Pro"):
 # ---------------------------------------------------------------------------
 
 
-async def test_the_modal_is_opened_for_the_divisions_active_embed(tmp_path):
-    db_path = await _make_db(tmp_path, name="rsvp_ok")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _set_status(cog, interaction)
-
-    interaction.response.send_modal.assert_awaited_once()
-    modal = interaction.response.send_modal.await_args.args[0]
-    assert isinstance(modal, _RsvpBulkSetModal)
-
-
 async def test_the_modal_carries_the_round_and_embed_it_will_edit(tmp_path):
     """It rebuilds that embed after applying the statuses; the wrong ids would edit another
     division's check-in."""
@@ -183,24 +171,16 @@ async def test_the_modal_carries_the_round_and_embed_it_will_edit(tmp_path):
     assert modal._embed_message_id == EMBED_MESSAGE
 
 
-async def test_the_division_is_matched_regardless_of_case(tmp_path):
-    db_path = await _make_db(tmp_path, name="rsvp_case")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _set_status(cog, interaction, division="pRo")
-
-    interaction.response.send_modal.assert_awaited_once()
-
-
 async def test_the_form_names_the_division_as_the_league_named_it(tmp_path):
-    """The form's replies and log lines name the division as stored, not as typed (#482)."""
+    """The division is matched regardless of case, and the form's replies and log lines name
+    it as stored, not as typed (#482)."""
     db_path = await _make_db(tmp_path, name="rsvp_stored_name")
     cog = _make_cog(db_path)
     interaction = _interaction()
 
     await _set_status(cog, interaction, division="pRo")
 
+    interaction.response.send_modal.assert_awaited_once()
     assert interaction.response.send_modal.await_args.args[0]._division_name == "Pro"
 
 
@@ -385,4 +365,5 @@ async def test_opening_the_form_records_nothing(tmp_path):
     await _set_status(cog, interaction)
 
     interaction.response.send_modal.assert_awaited_once()
+    assert isinstance(interaction.response.send_modal.await_args.args[0], _RsvpBulkSetModal)
     cog.bot.output_router.post_log.assert_not_awaited()

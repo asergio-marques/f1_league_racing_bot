@@ -22,6 +22,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import discord
+import pytest
 
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.attendance.services.rsvp_service import call_failure_text
@@ -93,7 +94,8 @@ async def test_a_refused_call_s_stop_notice_names_the_division_the_round_and_the
 
 async def test_the_report_says_the_round_opened_no_attendance_rows(tmp_path):
     """The consequence is what staff need to know, not merely that a send failed: the stop notice
-    says no attendance rows are open for the round until the call is posted."""
+    says no attendance rows are open for the round until the call is posted. FR-062 holds with
+    images off, as here."""
     league = await _league(tmp_path)
     _refuse(league)
 
@@ -133,33 +135,6 @@ async def test_both_failure_paths_of_the_notice_report_the_call(tmp_path):
     assert await _nothing_opened(league)
 
 
-async def test_the_report_is_reached_before_the_notice_returns_on_a_failed_send(tmp_path):
-    """A failed send stops the call's change there: nothing after the post runs, so no record
-    and no attendance rows are written, and the stop notice is posted."""
-    league = await _league(tmp_path)
-    _refuse(league, http_error(discord.Forbidden, status=403, text="Missing Permissions"))
-
-    await _ask_and_run(league)
-
-    stopped = await stopped_job(league.db_path)
-    assert stopped is not None and stopped["name"] == "post_call"
-    assert await _nothing_opened(league)
-    assert "Missing Permissions" in league.log()
-
-
-async def test_the_report_consults_no_image_module_and_no_toggle(tmp_path):
-    """FR-062 holds with images off: a refused call stops the queue with its notice all the
-    same."""
-    league = await _league(tmp_path, images=False)
-    _refuse(league)
-
-    await _ask_and_run(league)
-
-    assert await stopped_job(league.db_path) is not None
-    assert NOTHING_LEFT in league.log()
-    assert COUNTS_NOTHING in league.log()
-
-
 async def test_the_report_is_not_guarded_by_any_conditional_in_its_call_sites(tmp_path, monkeypatch):
     """Images on and the check-in graphic drawn: a refused call stops the queue with its notice
     as it does without one."""
@@ -182,17 +157,28 @@ async def test_the_report_is_not_guarded_by_any_conditional_in_its_call_sites(tm
     assert COUNTS_NOTHING in league.log()
 
 
-async def test_the_note_names_the_command_that_posts_the_call_again(tmp_path):
+@pytest.mark.parametrize(
+    "refusal",
+    [None, http_error(discord.Forbidden, status=403, text="Missing Permissions")],
+    ids=["service-unavailable", "forbidden"],
+)
+async def test_the_note_names_the_command_that_posts_the_call_again(tmp_path, refusal):
     """The advice must name a command that exists (#123), filled in for the division and round so
-    a manager can copy it out of the log channel: a league admin discards the refused call, and
-    the line says to post it with `/attendance post-check-in division: Pro round: 4`."""
+    a manager can copy it out of the log channel: a league admin discards the refused call, no
+    call stands and the queue is no longer stopped, and the line written for the discard says to
+    post it with `/attendance post-check-in division: Pro round: 4`, whatever Discord refused
+    with."""
     league = await _league(tmp_path)
-    _refuse(league)
+    _refuse(league, refusal)
     await _ask_and_run(league)
+    told_before = league.log()
 
     await discard_job(league.bot)
 
-    assert "/attendance post-check-in division: Pro round: 4" in league.log()
+    assert "/attendance post-check-in division: Pro round: 4" in league.log()[len(told_before):]
+    assert await stopped_job(league.db_path) is None
+    assert await league.rows(
+        "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ?", ROUND_4) == []
 
 
 def test_the_command_the_note_names_is_a_real_one():

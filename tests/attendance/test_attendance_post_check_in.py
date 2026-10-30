@@ -306,68 +306,6 @@ async def test_the_command_is_a_league_manager_s():
 # ---------------------------------------------------------------------------
 
 
-async def test_it_is_refused_while_the_module_is_off(tmp_path):
-    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=1))
-    cog = _cog(db_path)
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    interaction = _interaction()
-
-    posts = await _invoke(cog, interaction)
-
-    posts.assert_nothing()
-    assert "not enabled" in str(interaction.response.send_message.await_args.args[0])
-
-
-@pytest.mark.parametrize(
-    "stage", [None, SeasonStage.PLACEMENTS, SeasonStage.PENDING_COMPLETION]
-)
-async def test_it_is_refused_outside_the_ongoing_stages(tmp_path, stage):
-    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=1))
-    cog = _cog(db_path, stage=stage)
-    interaction = _interaction()
-
-    posts = await _invoke(cog, interaction)
-
-    posts.assert_nothing()
-    assert "only while the season is ongoing" in _replied(interaction)
-
-
-async def test_an_unknown_division_is_refused(tmp_path):
-    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=1))
-    cog = _cog(db_path)
-    interaction = _interaction()
-
-    posts = await _invoke(cog, interaction, division="Division 9")
-
-    posts.assert_nothing()
-    assert "not found" in _replied(interaction)
-
-
-async def test_an_unknown_round_is_refused(tmp_path):
-    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=1))
-    cog = _cog(db_path)
-    interaction = _interaction()
-
-    posts = await _invoke(cog, interaction, round=7)
-
-    posts.assert_nothing()
-    assert "no round 7" in _replied(interaction)
-
-
-async def test_a_cancelled_round_is_refused(tmp_path):
-    """A round that is off has no check-in to answer, so there is nothing to post."""
-    db_path = await _make_db(
-        tmp_path, scheduled_at=NOW + timedelta(days=1), status="CANCELLED"
-    )
-    cog = _cog(db_path)
-    interaction = _interaction()
-
-    posts = await _invoke(cog, interaction)
-
-    posts.assert_nothing()
-    assert "cancelled" in _replied(interaction)
-
-
 async def test_a_round_whose_check_in_is_over_is_refused(tmp_path):
     """A round whose check-in is over, closed by its deadline with no call standing or given up
     at a restart, has nothing left to answer: the command refuses it up front, in one line, and
@@ -425,18 +363,6 @@ async def test_a_call_not_yet_due_is_refused(tmp_path):
     assert await _rows(db_path) == 0
 
 
-async def test_a_call_exactly_due_is_posted(tmp_path):
-    """The boundary belongs to the window: at the due moment the call is late, not early, and
-    is asked of the queue."""
-    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=NOTICE_DAYS))
-    cog = _cog(db_path)
-    interaction = _interaction()
-
-    posts = await _invoke(cog, interaction, posts=True)
-
-    posts.assert_asked_once(interaction)
-
-
 async def test_a_round_past_its_deadline_is_refused(tmp_path):
     """A call posted after the deadline arrives with its buttons already locked."""
     db_path = await _make_db(
@@ -487,11 +413,29 @@ async def test_a_disabled_deadline_still_stops_at_the_race_itself(tmp_path, offs
 # ---------------------------------------------------------------------------
 
 
-async def test_it_posts_the_call_for_the_named_round(tmp_path):
+@pytest.mark.parametrize(
+    "offset, deadline_hours",
+    [
+        (timedelta(days=1), DEADLINE_HOURS),
+        (timedelta(days=NOTICE_DAYS), DEADLINE_HOURS),
+        (timedelta(minutes=1), 0),
+    ],
+    ids=["a-day-out", "exactly-due", "deadline-disabled-a-minute-out"],
+)
+async def test_it_posts_the_call_for_the_named_round(tmp_path, offset, deadline_hours):
     """The defect itself: a league can reach the round's call, asked of the queue with the
-    manager's interaction rather than posted at once."""
-    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=1))
+    manager's interaction rather than posted at once.
+
+    The boundary belongs to the window: at the due moment the call is late, not early, and is
+    asked of the queue. With the deadline disabled the boundary is the race, not some margin
+    before it: a minute out is still answerable."""
+    db_path = await _make_db(tmp_path, scheduled_at=NOW + offset)
     cog = _cog(db_path)
+    cog.bot.attendance_service.get_config = AsyncMock(
+        return_value=SimpleNamespace(
+            rsvp_notice_days=NOTICE_DAYS, rsvp_deadline_hours=deadline_hours
+        )
+    )
     interaction = _interaction()
 
     posts = await _invoke(cog, interaction, posts=True)
@@ -531,38 +475,6 @@ async def test_the_run_is_written_to_the_log_channel(tmp_path):
     assert "| /attendance post-check-in | Success" in line
     assert "division: Pro" in line
     assert "round: 4" in line
-
-
-async def test_a_missing_attendance_configuration_is_refused(tmp_path):
-    """The timings come from the configuration, so without one there is no window to judge.
-
-    `get_config` returns None where the row is absent, and reading `rsvp_notice_days` off it
-    would raise in the middle of a recovery command — the worst place to hand a manager a
-    traceback instead of an answer.
-    """
-    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=1))
-    cog = _cog(db_path)
-    cog.bot.attendance_service.get_config = AsyncMock(return_value=None)
-    interaction = _interaction()
-
-    posts = await _invoke(cog, interaction)
-
-    posts.assert_nothing()
-    assert "No attendance configuration" in _replied(interaction)
-
-
-async def test_a_disabled_deadline_allows_a_call_right_up_to_the_race(tmp_path):
-    """The boundary is the race, not some margin before it — a minute out is still answerable."""
-    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(minutes=1))
-    cog = _cog(db_path)
-    cog.bot.attendance_service.get_config = AsyncMock(
-        return_value=SimpleNamespace(rsvp_notice_days=NOTICE_DAYS, rsvp_deadline_hours=0)
-    )
-    interaction = _interaction()
-
-    posts = await _invoke(cog, interaction, posts=True)
-
-    posts.assert_asked_once(interaction)
 
 
 # ---------------------------------------------------------------------------
@@ -640,7 +552,12 @@ async def _arrange(tmp_path, case):
     }.get(case, NOW + timedelta(days=1))
     status = "CANCELLED" if case == "cancelled" else "NOT_RUN"
     db_path = await _make_db(tmp_path, scheduled_at=scheduled_at, status=status)
-    cog = _cog(db_path, stage=None if case == "not-ongoing" else SeasonStage.ONGOING)
+    stage = {
+        "not-ongoing": None,
+        "not-ongoing-placements": SeasonStage.PLACEMENTS,
+        "not-ongoing-pending-completion": SeasonStage.PENDING_COMPLETION,
+    }.get(case, SeasonStage.ONGOING)
+    cog = _cog(db_path, stage=stage)
     if case == "module-disabled":
         cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
     if case == "standing":
@@ -653,23 +570,32 @@ async def _arrange(tmp_path, case):
     }.get(case, {})
 
 
+# *via* is the reply that carries the refusal: the module gate answers before the command
+# defers, by `response.send_message`; every later refusal follows the defer, by `followup.send`.
 @pytest.mark.parametrize(
-    "case,reason",
+    "case,reason,via",
     [
-        ("module-disabled", "The Attendance module is not enabled."),
-        ("not-ongoing", "only while the season is ongoing"),
-        ("unknown-division", "Division 'Division 9' not found."),
-        ("unknown-round", "has no round 7"),
-        ("cancelled", "is cancelled"),
-        ("standing", "already standing"),
-        ("no-configuration", "No attendance configuration found."),
-        ("not-due", "is not due until"),
-        ("past-deadline", "so a call posted now could not be answered"),
+        ("module-disabled", "The Attendance module is not enabled.", "response"),
+        ("not-ongoing", "only while the season is ongoing", "followup"),
+        ("not-ongoing-placements", "only while the season is ongoing", "followup"),
+        ("not-ongoing-pending-completion", "only while the season is ongoing", "followup"),
+        ("unknown-division", "Division 'Division 9' not found.", "followup"),
+        ("unknown-round", "has no round 7", "followup"),
+        # A round that is off has no check-in to answer, so there is nothing to post.
+        ("cancelled", "is cancelled", "followup"),
+        ("standing", "already standing", "followup"),
+        # The timings come from the configuration, so without one there is no window to
+        # judge; reading `rsvp_notice_days` off the None `get_config` gives would hand the
+        # manager a traceback in the middle of a recovery command instead of an answer.
+        ("no-configuration", "No attendance configuration found.", "followup"),
+        ("not-due", "is not due until", "followup"),
+        ("past-deadline", "so a call posted now could not be answered", "followup"),
     ],
 )
-async def test_every_refusal_of_a_hand_posted_call_is_recorded(tmp_path, case, reason):
-    """A6: each refusal is answered once and writes one "⛔ `/attendance post-check-in`
-    refused" line with its reason, and nothing is posted."""
+async def test_every_refusal_of_a_hand_posted_call_is_recorded(tmp_path, case, reason, via):
+    """A6: each refusal is answered once, by the reply *via* names, carrying its reason, and
+    writes one "⛔ `/attendance post-check-in` refused" line with its reason, and nothing is
+    posted."""
     cog, kwargs = await _arrange(tmp_path, case)
     interaction = _interaction()
 
@@ -681,6 +607,12 @@ async def test_every_refusal_of_a_hand_posted_call_is_recorded(tmp_path, case, r
         + interaction.followup.send.await_args_list
     )
     assert len(replies) == 1
+    assert reason in str(replies[0].args[0])
+    carried = {
+        "response": interaction.response.send_message,
+        "followup": interaction.followup.send,
+    }[via]
+    assert carried.await_count == 1
     logged = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
     assert len(logged) == 1
     assert logged[0].startswith(

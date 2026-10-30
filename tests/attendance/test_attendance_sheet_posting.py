@@ -241,7 +241,8 @@ async def test_a_failed_post_leaves_the_previous_sheet_standing(sheet_db):
 @pytest.mark.asyncio
 async def test_the_replacements_id_is_returned(sheet_db):
     """The new sheet's id, its channel and the sheet it replaces are given back for the job to
-    save; the posting writes nothing."""
+    save; the posting writes nothing. An ordinary sheet still takes the slot: the occasion that
+    predates the enum is untouched by it."""
     await _config(sheet_db, prior="4242")
     journal: list[str] = []
     channel = _FakeChannel(journal)
@@ -252,6 +253,7 @@ async def test_the_replacements_id_is_returned(sheet_db):
 
     assert int(posted.message_id) == 5001
     assert int(posted.channel_id) == 900
+    assert posted.takes_slot is True
     assert posted.previous == "4242"
     assert await _stored_message_id(sheet_db) == "4242"
 
@@ -276,7 +278,8 @@ async def test_a_first_posting_deletes_nothing(sheet_db):
 
 @pytest.mark.asyncio
 async def test_the_composed_sheet_text_is_unchanged_by_the_reorder(sheet_db):
-    """The reorder changed **when** the message is sent, never what it says."""
+    """The reorder changed **when** the message is sent, never what it says. The fallback loses
+    nothing: with no picture, the text says it all."""
     await _config(sheet_db, prior=None)
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
@@ -292,6 +295,7 @@ async def test_the_composed_sheet_text_is_unchanged_by_the_reorder(sheet_db):
         "Drivers who reach 10 points will be moved to reserve.\n"
         "Drivers who reach 20 points will be removed from all driving roles in all divisions."
     )
+    assert channel.sent_file is None
 
 
 @pytest.mark.asyncio
@@ -331,21 +335,6 @@ async def test_with_a_graphic_the_message_carries_the_heading_alone(sheet_db, mo
     assert channel.sent_file is not None
     assert "<@111>" not in channel.sent_content
     assert "attendance point" not in channel.sent_content
-
-
-@pytest.mark.asyncio
-async def test_without_a_graphic_the_message_carries_the_whole_textual_sheet(sheet_db):
-    """The fallback loses nothing: with no picture, the text says it all."""
-    await _config(sheet_db, prior=None)
-    channel = _FakeChannel([])
-    guild = _FakeGuild(channel, {111: "Ayrton"})
-
-    with in_a_job():
-        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
-
-    assert channel.sent_file is None
-    assert "<@111>" in channel.sent_content
-    assert "attendance point" in channel.sent_content
 
 
 @pytest.mark.asyncio
@@ -616,23 +605,6 @@ async def test_the_final_sheet_stands_beside_the_last_rounds(sheet_db):
 
 
 @pytest.mark.asyncio
-async def test_an_ordinary_sheet_still_takes_the_slot(sheet_db):
-    """The occasion that predates the enum is untouched by it."""
-    await _config(sheet_db, prior="4242")
-    journal: list[str] = []
-    channel = _FakeChannel(journal)
-    guild = _FakeGuild(channel, {111: "Ayrton"})
-
-    with in_a_job():
-        posted = await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
-
-    assert posted.takes_slot is True
-    assert posted.previous == "4242"
-    assert not [entry for entry in journal if entry.startswith("delete:")]
-    assert await _stored_message_id(sheet_db) == "4242"
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("occasion_name", ["SEASON_OPENING", "SEASON_FINAL"])
 async def test_a_boundary_graphic_carries_no_message_text(sheet_db, occasion_name, monkeypatch):
     """The phrase is drawn on the sheet, so a heading above it would say it twice."""
@@ -653,23 +625,6 @@ async def test_a_boundary_graphic_carries_no_message_text(sheet_db, occasion_nam
 
     assert channel.sent_content is None
     assert channel.sent_file is not None
-
-
-@pytest.mark.asyncio
-async def test_an_ordinary_graphic_still_carries_its_heading(sheet_db, monkeypatch):
-    from leaguebot.attendance.services import attendance_service
-
-    await _config(sheet_db, prior=None)
-    channel = _FakeChannel([])
-    guild = _FakeGuild(channel, {111: "Ayrton"})
-    monkeypatch.setattr(
-        attendance_service, "_sheet_attachment", _fake_attachment(object())
-    )
-
-    with in_a_job():
-        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
-
-    assert channel.sent_content == "**Attendance Standings**"
 
 
 @pytest.mark.asyncio

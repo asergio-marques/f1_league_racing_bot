@@ -383,7 +383,9 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
     call's with it) No call can be seen: its record is dropped, its answers kept, and the stop
     notice says no call for the round can be seen (owner, 2026-10-09: "Drop the record, say
     so"). (the call's lookup forbidden, or failing) Discord does not say the earlier call is
-    gone, so it is taken to stand, as when the post alone is refused."""
+    gone, so it is taken to stand, as when the post alone is refused. In every case the stop
+    notice is the only report: no separate NOT POSTED line reaches the log channel (owner,
+    2026-10-11: "Notice says what's left")."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
@@ -414,6 +416,7 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
         RESERVE_PROFILE: "DECLINED",
     }
     notice = _logged(bot)
+    assert "NOT POSTED" not in notice
     assert "no attendance rows were opened" not in notice
     assert NOTHING_LEFT not in notice
     assert COUNTS_NOTHING not in notice
@@ -426,39 +429,6 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
     assert stored.last_notice_msg_id == LAST_NOTICE_MSG_ID
     assert [event for event in bot.events if event[0] == "delete"] == []
     assert "the earlier call still stands, and the answers given to it count" in notice
-
-
-@pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
-async def test_a_raising_repost_raises_with_what_it_left_and_reports_nothing(tmp_path, fault):
-    """Round 1's call stands (900001, its last notice 900002), answered by both drivers, and is
-    asked again in its place. Its failure stops the queue, and the stop notice is the only
-    report: no separate NOT POSTED line reaches the log channel, the answers are kept, and the
-    notice says what is left (owner, 2026-10-11: "Notice says what's left")."""
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
-    await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
-    if fault == "the channel is gone":
-        bot = _queue_bot(db_path)
-    else:
-        bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
-        bot.channels[RSVP_CHANNEL_ID].send_fails = discord.HTTPException(
-            MagicMock(status=403), "Missing Permissions")
-
-    await _ask(bot, replacing=True)
-
-    assert await stopped_job(db_path) is not None
-    assert "NOT POSTED" not in _logged(bot)
-    assert await _answers(db_path) == {
-        FULL_TIME_PROFILE: "ACCEPTED",
-        RESERVE_PROFILE: "DECLINED",
-    }
-    stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
-    if fault == "the channel is gone":
-        assert stored is None
-        assert "no call for this round can be seen" in _logged(bot)
-        return
-    assert stored is not None and stored.message_id == CALL_MSG_ID
-    assert "the earlier call still stands, and the answers given to it count" in _logged(bot)
 
 
 async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path):
