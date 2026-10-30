@@ -617,11 +617,6 @@ def _highlighted(cell, *, style=_INK, highlights=True, rounds=1):
     return build_fill_spec(_drawing([entry], rounds=[heading]), root)
 
 
-def test_a_podium_cell_draws_the_chip_of_its_place():
-    spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1))
-    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "race_p1")
-
-
 def test_each_podium_place_draws_its_own_chip():
     """The **kind** decides the chip; the datum names the session it was earned in.
 

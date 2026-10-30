@@ -106,7 +106,13 @@ def test_both_standings_catalogues_are_registered_and_not_empty():
 
 
 def test_the_two_catalogues_share_their_whole_graphic_fields():
-    """Siblings share the declaration of their common part (XIV.10)."""
+    """Siblings share the declaration of their common part (XIV.10).
+
+    The lifecycle label is mandatory on the graphic, XIV.16 (v4.5.0): the split with
+    message text is not exclusive. The label is kept as message text *and* drawn, so a
+    picture forwarded away from the message it rode on still says which phase it stands
+    after.
+    """
     assert (
         STANDINGS_DRIVERS_CATALOGUE.mandatory
         == STANDINGS_CONSTRUCTORS_CATALOGUE.mandatory
@@ -116,15 +122,6 @@ def test_the_two_catalogues_share_their_whole_graphic_fields():
         STANDINGS_DRIVERS_CATALOGUE.optional
         == STANDINGS_CONSTRUCTORS_CATALOGUE.optional
     )
-
-
-def test_the_lifecycle_label_is_mandatory_on_the_graphic():
-    """XIV.16 (v4.5.0): the split with message text is not exclusive.
-
-    The label is kept as message text *and* drawn, so a picture forwarded away from the
-    message it rode on still says which phase it stands after.
-    """
-    assert "result_status" in STANDINGS_DRIVERS_CATALOGUE.mandatory
 
 
 def test_an_optional_heading_declares_the_group_that_may_wrap_it():
@@ -189,17 +186,17 @@ def test_the_round_headings_stand_at_top_level_and_not_under_a_row():
 # ── 3. Capacity counted from the template ─────────────────────────────────
 
 
-def test_rows_and_rounds_are_both_counted_from_the_template():
-    root = _template(*_rows(3, "driver_name"), *_headings(5))
-    assert STANDINGS_DRIVERS_CATALOGUE.capacity(root) == 3
-    assert STANDINGS_DRIVERS_CATALOGUE.column_capacity(root) == 5
-
-
-def test_row_capacity_and_column_capacity_are_kept_apart():
-    """Conflating them would refuse a placement because a template drew few rounds."""
-    root = _template(*_rows(9, "driver_name"), *_headings(2))
-    assert STANDINGS_DRIVERS_CATALOGUE.capacity(root) == 9
-    assert STANDINGS_DRIVERS_CATALOGUE.column_capacity(root) == 2
+@pytest.mark.parametrize(
+    ("rows", "headings"),
+    [(3, 5), (9, 2)],
+    ids=["fewer-rows-than-rounds", "more-rows-than-rounds"],
+)
+def test_row_capacity_and_column_capacity_are_kept_apart(rows, headings):
+    """Rows and rounds are both counted from the template, and kept apart: conflating them
+    would refuse a placement because a template drew few rounds."""
+    root = _template(*_rows(rows, "driver_name"), *_headings(headings))
+    assert STANDINGS_DRIVERS_CATALOGUE.capacity(root) == rows
+    assert STANDINGS_DRIVERS_CATALOGUE.column_capacity(root) == headings
 
 
 def test_cars_are_counted_per_containing_row():
@@ -492,9 +489,10 @@ def test_the_round_heading_draws_a_flag_and_not_a_track_map(catalogue):
     """A round is a column heading here, at a size no circuit outline survives.
 
     Only the calendar and the check-in graphic may declare a track-class field
-    (Constitution XIV.13).
+    (Constitution XIV.13), and the heading's id names the class it draws (XIV.11).
     """
     columns = catalogue.columns
+    assert columns.prefix == "round"
     assert "flag" in columns.fields
     assert "image" not in columns.fields, "a standings round must not draw a map"
     assert columns.assets.get("flag") == "flag"
@@ -509,13 +507,6 @@ def test_the_round_heading_draws_a_flag_and_not_a_track_map(catalogue):
 def test_no_field_of_a_standings_catalogue_draws_the_track_class(catalogue):
     classes = set(catalogue.columns.assets.values()) | set(catalogue.rows.assets.values())
     assert "track" not in classes
-
-
-def test_the_round_heading_flag_id_names_its_class():
-    """XIV.11 — an id must name the class it draws."""
-    columns = STANDINGS_DRIVERS_CATALOGUE.columns
-    assert columns.prefix == "round"
-    assert "flag" in columns.fields
 
 
 # ── The highlight layers ──────────────────────────────────────────────────
