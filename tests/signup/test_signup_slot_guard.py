@@ -205,7 +205,7 @@ class TestPermittedWhileFree:
     @pytest.mark.parametrize(
         "stage", ["CONFIGURATION", "COMPLETED"], ids=["configuration", "archived"]
     )
-    async def test_slot_change_permitted_in_configuration(self, tmp_path, stage):
+    async def test_slot_change_permitted_while_nothing_is_fixed(self, tmp_path, stage):
         """A season still in Configuration has fixed nothing yet, and an archived season holds
         nothing fixed."""
         db_path = await _seed(tmp_path, unassigned=0, stage=stage)
