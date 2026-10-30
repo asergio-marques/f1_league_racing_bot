@@ -126,7 +126,11 @@ def test_no_collection_is_counted():
 
 
 def test_a_sanction_empties_the_session_quietly_and_raises_no_notice():
-    """XIV.3's determined-empty: the value *is* nothing, and nothing is wrong."""
+    """XIV.3's determined-empty: the value *is* nothing, and nothing is wrong.
+
+    The sanction label is never written into the session field: it stands on the stage
+    alone, and writing it twice says it under two headings.
+    """
     spec = build_fill_spec(_sanction(), _root())
 
     assert "session_name" in spec.empty_quietly
@@ -148,35 +152,19 @@ def test_a_sanction_still_draws_the_stage_and_the_driver():
     assert spec.text["driver_name"] == "Ada Lovelace"
 
 
-def test_the_sanction_label_is_never_written_into_the_session_field():
-    """It stands on the stage alone; writing it twice says it under two headings."""
-    spec = build_fill_spec(_sanction(), _root())
-    assert spec.text.get("session_name") != "Attendance Sanction"
-
-
 # ── Values that do not apply are emptied, never dashed ────────────────────
 
 
-def test_an_absent_tier_is_emptied_rather_than_dashed():
-    spec = build_fill_spec(_penalty(division_tier=None), _root())
-    assert "division_tier" in spec.empty
-    assert spec.text.get("division_tier") in (None, "")
-
-
-def test_an_absent_season_number_is_emptied():
-    spec = build_fill_spec(_penalty(season_number=None), _root())
-    assert "season_number" in spec.empty
+@pytest.mark.parametrize("field", ["division_tier", "season_number"])
+def test_an_absent_tier_is_emptied_rather_than_dashed(field):
+    spec = build_fill_spec(_penalty(**{field: None}), _root())
+    assert field in spec.empty
+    assert spec.text.get(field) in (None, "")
 
 
 def test_a_mystery_round_reads_mystery_grand_prix():
     spec = build_fill_spec(_penalty(race_name="Mystery Grand Prix"), _root())
     assert spec.text["race_name"] == "Mystery Grand Prix"
-
-
-def test_an_absent_nationality_removes_the_flag():
-    spec = build_fill_spec(_penalty(driver_nationality=None), _root())
-    assert "driver_flag" in spec.remove
-    assert "driver_flag" not in spec.image_data
 
 
 def test_a_league_that_collects_no_nationality_removes_the_flag_quietly():
@@ -209,6 +197,7 @@ def test_a_driver_who_stated_none_removes_the_flag_loudly():
     spec = build_fill_spec(drawing, _root())
 
     assert "driver_flag" in spec.remove
+    assert "driver_flag" not in spec.image_data
     assert suppressed_flag_fields(drawing) == set()
 
 
