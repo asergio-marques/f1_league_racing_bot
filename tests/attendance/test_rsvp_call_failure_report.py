@@ -175,7 +175,6 @@ async def test_the_note_names_the_command_that_posts_the_call_again(tmp_path, re
 
     await discard_job(league.bot)
 
-    assert "/attendance post-check-in division: Pro round: 4" in league.log()
     assert "/attendance post-check-in division: Pro round: 4" in league.log()[len(told_before):]
     assert await stopped_job(league.db_path) is None
     assert await league.rows(
