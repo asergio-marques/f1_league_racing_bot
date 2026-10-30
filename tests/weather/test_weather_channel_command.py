@@ -190,7 +190,8 @@ async def test_the_weather_channel_is_refused_while_weather_is_off(tmp_path, mon
 
 async def test_the_live_season_is_the_one_whose_channels_are_set(tmp_path, monkeypatch):
     """A division's channels belong to the season being built or raced; an archived season's
-    no longer matter, and are never reached (issue #220)."""
+    no longer matter, and are never reached (issue #220). With no season being built or raced,
+    the refusal is recorded in the log channel."""
     _free(monkeypatch)
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path, season=None)
@@ -203,6 +204,7 @@ async def test_the_live_season_is_the_one_whose_channels_are_set(tmp_path, monke
 
     cog.bot.season_service.get_setup_or_active_season.assert_awaited_once()
     assert "No season is live" in _replied(interaction)
+    _assert_one_refusal_line(cog, interaction)
     assert await _audit(db_path) == []
 
 
@@ -216,19 +218,6 @@ async def test_an_unknown_division_is_refused_by_name(tmp_path, monkeypatch):
 
     assert _replied(interaction) == "❌ Division **Division 9** not found in the current season."
     cog.bot.season_service.set_division_forecast_channel.assert_not_awaited()
-
-
-async def test_no_live_season_is_recorded_as_a_refusal(tmp_path, monkeypatch):
-    """With no season being built or raced, the refusal is recorded in the log channel."""
-    _free(monkeypatch)
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, season=None)
-    interaction = _interaction()
-
-    await _run(cog, interaction)
-
-    assert "No season is live" in _replied(interaction)
-    _assert_one_refusal_line(cog, interaction)
 
 
 async def test_an_unknown_division_is_recorded_as_a_refusal(tmp_path, monkeypatch):
@@ -291,20 +280,6 @@ async def test_a_channel_doing_another_job_is_recorded_as_a_refusal(tmp_path, mo
     _assert_one_refusal_line(cog, interaction)
 
 
-async def test_re_setting_the_same_channel_is_refused_as_unchanged(tmp_path, monkeypatch):
-    """Not a collision with something else. Telling a manager it clashes would send them
-    looking for a conflict that does not exist."""
-    _in_use(monkeypatch, ChannelUse("weather", "Division 1"))
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _run(cog, interaction)
-
-    cog.bot.season_service.set_division_forecast_channel.assert_not_awaited()
-    assert "Nothing was changed." in _replied(interaction)
-
-
 async def test_the_two_refusals_do_not_read_alike(tmp_path, monkeypatch):
     """`same_setting` is threaded all the way to the refusal text for this reason alone;
     a reader collapsing the two messages would lose the distinction entirely."""
@@ -323,8 +298,10 @@ async def test_the_two_refusals_do_not_read_alike(tmp_path, monkeypatch):
 
 async def test_a_refused_assignment_writes_nothing(tmp_path, monkeypatch):
     """The check runs before the write. The same-value case used to be written and only
-    then reported as unchanged — this holds the order against a later tidy-up. The refusal
-    is recorded in the log channel, with the reply's own reason."""
+    then reported as unchanged — this holds the order against a later tidy-up. It is refused
+    as unchanged, not as a collision with something else: telling a manager it clashes would
+    send them looking for a conflict that does not exist. The refusal is recorded in the log
+    channel, with the reply's own reason."""
     _in_use(monkeypatch, ChannelUse("weather", "Division 1"))
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
@@ -334,6 +311,7 @@ async def test_a_refused_assignment_writes_nothing(tmp_path, monkeypatch):
 
     assert await _audit(db_path) == []
     cog.bot.season_service.set_division_forecast_channel.assert_not_awaited()
+    assert "Nothing was changed." in _replied(interaction)
     _assert_one_refusal_line(cog, interaction)
 
 
