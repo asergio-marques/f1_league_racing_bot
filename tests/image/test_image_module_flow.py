@@ -443,6 +443,25 @@ async def test_template_relocation(module_service, config_service, template_dir)
         "the other half of the standings pair must be unaffected"
     )
 
+    # Every template is independently relocatable: from the baseline, pointing any one
+    # column at a missing file disturbs no other.
+    await saves.set_field(
+        config_service,
+        "standings_drivers_template",
+        TEMPLATE_COLUMNS["standings_drivers_template"],
+    )
+    for column in TEMPLATE_COLUMNS:
+        await saves.set_field(config_service, column, "absent.svg")
+        config = await config_service.get_config()
+        reports = evaluate_all_templates(config, root=template_dir)
+
+        assert not reports[column].valid
+        assert sum(1 for r in reports.values() if r.valid) == 15, (
+            f"relocating {column} disturbed another template"
+        )
+
+        await saves.set_field(config_service, column, TEMPLATE_COLUMNS[column])
+
 
 async def test_season_review_and_config_view_agree(
     module_service, config_service, template_dir, monkeypatch
@@ -1774,27 +1793,6 @@ async def test_toggle_state_survives_into_the_wiring_increment(
     assert toggles["calendar"] is False
 
 
-async def test_every_template_is_independently_relocatable(
-    module_service, config_service, template_dir
-):
-    from leaguebot.image.services.image_validity_service import evaluate_all_templates
-
-    await _enable(module_service, config_service)
-    await saves.set_field(config_service, "template_directory", "templates")
-
-    for column in TEMPLATE_COLUMNS:
-        await saves.set_field(config_service, column, "absent.svg")
-        config = await config_service.get_config()
-        reports = evaluate_all_templates(config, root=template_dir)
-
-        assert not reports[column].valid
-        assert sum(1 for r in reports.values() if r.valid) == 15, (
-            f"relocating {column} disturbed another template"
-        )
-
-        await saves.set_field(config_service, column, TEMPLATE_COLUMNS[column])
-
-
 # ══════════════════════════════════════════════════════════════════════════
 # 036 / T015 — validate-then-store (FR-005, SC-002)
 #
@@ -1887,7 +1885,7 @@ async def test_malformed_file_is_refused_and_nothing_written(config_service, con
 
     assert problem is not None and problem.kind == PROBLEM_NOT_SVG
     assert "double hyphen" in problem.detail
-    assert "XMLSyntaxError" not in problem.detail
+    assert "XMLSyntaxError" not in problem.detail  # FR-046
     stored = await config_service.get_config()
     assert stored.calendar_template == "known_good.svg"
 
@@ -2279,7 +2277,9 @@ def test_the_season_approval_refusal_is_ephemeral():
     assert head[head.rindex("await "):].startswith("await refuse(")
 
 
-# ── 038: test mode changes nothing in the lineup path (T060, FR-035/36) ───
+# ── 038: test mode changes nothing in the lineup path (T060, FR-035) ──────
+# FR-036, a test driver drawn by its test display name, is pinned in
+# test_image_lineup_service.py::test_the_chain_falls_through_in_order.
 
 
 def test_no_lineup_module_branches_on_test_mode():
@@ -2297,18 +2297,6 @@ def test_no_lineup_module_branches_on_test_mode():
     ):
         text = (src / relative).read_text(encoding="utf-8")
         assert "test_mode" not in text, relative
-
-
-def test_the_lineup_draws_a_test_driver_through_the_name_chain():
-    """FR-036 — a test driver is drawn by its test display name, not skipped."""
-
-    from leaguebot.image.services.image_lineup_service import resolve_driver_name
-
-    # No Discord account and no signup record: the chain reaches the fourth link.
-    assert (
-        resolve_driver_name(discord_user_id="900001", test_display_name="Test Driver 1")
-        == "Test Driver 1"
-    )
 
 
 # ══════════════════════════════════════════════════════════════════════════

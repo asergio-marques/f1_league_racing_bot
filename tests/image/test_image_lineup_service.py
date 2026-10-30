@@ -68,6 +68,12 @@ def test_the_chain_falls_through_in_order():
     )
     assert resolve_driver_name(discord_user_id="7", signup_username="user") == "user"
     assert resolve_driver_name(discord_user_id="7", test_display_name="Test") == "Test"
+    # FR-036 — a test driver is drawn by its test display name, not skipped: with no
+    # Discord account and no signup record, the chain reaches the fourth link.
+    assert (
+        resolve_driver_name(discord_user_id="900001", test_display_name="Test Driver 1")
+        == "Test Driver 1"
+    )
 
 
 def test_the_chain_ends_at_the_user_id_and_never_at_nothing():

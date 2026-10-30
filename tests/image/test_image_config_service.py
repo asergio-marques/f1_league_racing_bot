@@ -151,9 +151,7 @@ from leaguebot.image.models.image_catalogues import CATALOGUES as _CATALOGUES  #
 from leaguebot.image.models.image_catalogues import FieldCatalogue as _FieldCatalogue  # noqa: E402
 from leaguebot.image.models.image_module import (  # noqa: E402
     PROBLEM_EXTENSION,
-    PROBLEM_MISSING_MANDATORY_FIELD,
     PROBLEM_NOT_FOUND,
-    PROBLEM_NOT_SVG,
     ImageConfig as _ImageConfig,
 )
 from leaguebot.image.services.image_validity_service import (  # noqa: E402
@@ -490,30 +488,11 @@ def test_absent_file_names_the_path_searched(template_dir):
     assert problem.template_key == "calendar_template"
 
 
-def test_malformed_file_is_a_parse_problem_not_a_missing_one(template_dir):
-    (template_dir / "templates" / "calendar_template.svg").write_bytes(
-        b'<svg xmlns="http://www.w3.org/2000/svg"><!-- a -- b --></svg>'
-    )
-    problem = check_template(_make_config(), "calendar_template", root=template_dir)
-
-    assert problem.kind == PROBLEM_NOT_SVG
-    assert "double hyphen" in problem.detail
-    assert "XMLSyntaxError" not in problem.detail  # FR-046
-
-
 def test_a_directory_named_as_a_template_is_not_a_file(template_dir):
     target = template_dir / "templates" / "calendar_template.svg"
     target.unlink()
     target.mkdir()
     assert check_template(_make_config(), "calendar_template", root=template_dir) is not None
-
-
-def test_missing_mandatory_field_is_its_own_class(template_dir, catalogue_slot):
-    catalogue_slot("calendar_template", _FieldCatalogue(mandatory=frozenset({"season_name"})))
-    problem = check_template(_make_config(), "calendar_template", root=template_dir)
-
-    assert problem.kind == PROBLEM_MISSING_MANDATORY_FIELD
-    assert "season_name" in problem.detail
 
 
 def test_all_four_failure_classes_are_mutually_distinguishable(template_dir, catalogue_slot):
