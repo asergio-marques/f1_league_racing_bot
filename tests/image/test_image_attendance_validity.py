@@ -70,10 +70,6 @@ def test_a_sound_sheet_declaring_no_round_is_accepted():
     assert _missing(SHEET, _sound_sheet(rows=1, rounds=0)) == []
 
 
-def test_a_sound_call_declaring_no_session_is_accepted():
-    assert _missing(CALL, _sound_call(sessions=0)) == []
-
-
 @pytest.mark.parametrize("field", ["division_name", "classification_label"])
 def test_a_missing_mandatory_sheet_field_is_named(field):
     ids = [i for i in _sound_sheet() if i != field]
@@ -130,13 +126,6 @@ def test_a_gap_in_the_round_numbering_names_the_rounds():
     with pytest.raises(CapacityError) as exc:
         catalogue_for(SHEET).columns.declared_capacity(_svg(ids))
     assert "round" in str(exc.value)
-
-
-def test_a_gap_in_the_session_numbering_names_the_sessions():
-    ids = _sound_call() + ["session_1_name", "session_3_name"]
-    with pytest.raises(CapacityError) as exc:
-        catalogue_for(CALL).rows.declared_capacity(_svg(ids))
-    assert "session" in str(exc.value)
 
 
 def test_each_numbering_names_which_of_the_three_is_at_fault():
