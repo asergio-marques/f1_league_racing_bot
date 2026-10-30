@@ -1041,7 +1041,7 @@ def test_layer_two_applies_to_a_populated_catalogue_and_skips_an_empty_one(unspe
     assert layer.applies_to("rsvp_template")
     assert layer.applies_to("weather_p1_template")
     assert layer.applies_to("weather_p3_sprint_template")
-    # Verdicts has no catalogue yet, so Layer 2 *skips* rather than passes.
+    # Verdicts' catalogue is staged empty, so Layer 2 *skips* rather than passes.
     assert CATALOGUES[UNSPECIFIED_KEY].is_empty
     assert not layer.applies_to(UNSPECIFIED_KEY)
 
