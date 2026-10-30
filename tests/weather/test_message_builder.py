@@ -20,48 +20,43 @@ from leaguebot.weather.utils.message_builder import format_slots_for_forecast, f
 
 class TestFormatSlotsForForecast:
 
-    # --- all-same multi-slot: each canonical type ---
+    @pytest.mark.parametrize(
+        ("slots", "expected"),
+        [
+            (["Clear", "Clear", "Clear"], "Clear"),
+            (["Light Cloud", "Light Cloud"], "Light Cloud"),
+            (["Overcast", "Overcast", "Overcast"], "Overcast"),
+            (["Wet", "Wet"], "Wet"),
+            (["Very Wet", "Very Wet", "Very Wet", "Very Wet"], "Very Wet"),
+        ],
+        ids=["clear", "light_cloud", "overcast", "wet", "very_wet"],
+    )
+    def test_all_same_type(self, slots, expected):
+        """All-same multi-slot, for each canonical type: the single type label."""
+        assert format_slots_for_forecast(slots) == expected
 
-    def test_all_same_clear(self):
-        assert format_slots_for_forecast(["Clear", "Clear", "Clear"]) == "Clear"
+    @pytest.mark.parametrize(
+        ("slots", "expected"),
+        [
+            (["Clear", "Wet", "Clear"], "*Clear* → *Wet* → *Clear*"),
+            (["Clear", "Light Cloud", "Overcast"], "*Clear* → *Light Cloud* → *Overcast*"),
+            (["Clear", "Clear", "Wet"], "*Clear* → *Clear* → *Wet*"),
+        ],
+        ids=["two_types", "all_different", "nearly_same_last_differs"],
+    )
+    def test_mixed_types(self, slots, expected):
+        """Mixed types: no simplification."""
+        assert format_slots_for_forecast(slots) == expected
 
-    def test_all_same_light_cloud(self):
-        assert format_slots_for_forecast(["Light Cloud", "Light Cloud"]) == "Light Cloud"
-
-    def test_all_same_overcast(self):
-        assert format_slots_for_forecast(["Overcast", "Overcast", "Overcast"]) == "Overcast"
-
-    def test_all_same_wet(self):
-        assert format_slots_for_forecast(["Wet", "Wet"]) == "Wet"
-
-    def test_all_same_very_wet(self):
-        assert format_slots_for_forecast(["Very Wet", "Very Wet", "Very Wet", "Very Wet"]) == "Very Wet"
-
-    # --- mixed types: no simplification ---
-
-    def test_mixed_two_types(self):
-        result = format_slots_for_forecast(["Clear", "Wet", "Clear"])
-        assert result == "*Clear* → *Wet* → *Clear*"
-
-    def test_mixed_all_different(self):
-        result = format_slots_for_forecast(["Clear", "Light Cloud", "Overcast"])
-        assert result == "*Clear* → *Light Cloud* → *Overcast*"
-
-    def test_nearly_same_last_differs(self):
-        result = format_slots_for_forecast(["Clear", "Clear", "Wet"])
-        assert result == "*Clear* → *Clear* → *Wet*"
-
-    # --- single-slot exempt ---
-
-    def test_single_slot_clear(self):
-        # single slot: return as plain label, no italic wrapper, no arrow
-        assert format_slots_for_forecast(["Clear"]) == "Clear"
-
-    def test_single_slot_wet(self):
-        assert format_slots_for_forecast(["Wet"]) == "Wet"
-
-    def test_single_slot_does_not_get_parens(self):
-        result = format_slots_for_forecast(["Overcast"])
+    @pytest.mark.parametrize(
+        ("slots", "expected"),
+        [(["Clear"], "Clear"), (["Wet"], "Wet"), (["Overcast"], "Overcast")],
+        ids=["clear", "wet", "overcast"],
+    )
+    def test_single_slot_is_exempt(self, slots, expected):
+        """A single slot is exempt: a plain label, no italic wrapper, no arrow, no parens."""
+        result = format_slots_for_forecast(slots)
+        assert result == expected
         assert "draws" not in result
         assert "→" not in result
 
@@ -72,50 +67,47 @@ class TestFormatSlotsForForecast:
 
 class TestFormatSlotsForLog:
 
-    # --- all-same multi-slot: simplified + raw draws in parens ---
+    @pytest.mark.parametrize(
+        ("slots", "expected"),
+        [
+            (["Clear", "Clear", "Clear"], "Clear (draws: Clear, Clear, Clear)"),
+            (["Light Cloud", "Light Cloud"], "Light Cloud (draws: Light Cloud, Light Cloud)"),
+            (["Overcast", "Overcast", "Overcast"],
+             "Overcast (draws: Overcast, Overcast, Overcast)"),
+            (["Wet", "Wet"], "Wet (draws: Wet, Wet)"),
+            (["Very Wet", "Very Wet", "Very Wet", "Very Wet"],
+             "Very Wet (draws: Very Wet, Very Wet, Very Wet, Very Wet)"),
+        ],
+        ids=["clear", "light_cloud", "overcast", "wet", "very_wet_four_slots"],
+    )
+    def test_all_same_type(self, slots, expected):
+        """All-same multi-slot: simplified, with the raw draws in parens."""
+        assert format_slots_for_log(slots) == expected
 
-    def test_all_same_clear(self):
-        result = format_slots_for_log(["Clear", "Clear", "Clear"])
-        assert result == "Clear (draws: Clear, Clear, Clear)"
-
-    def test_all_same_light_cloud(self):
-        result = format_slots_for_log(["Light Cloud", "Light Cloud"])
-        assert result == "Light Cloud (draws: Light Cloud, Light Cloud)"
-
-    def test_all_same_overcast(self):
-        result = format_slots_for_log(["Overcast", "Overcast", "Overcast"])
-        assert result == "Overcast (draws: Overcast, Overcast, Overcast)"
-
-    def test_all_same_wet(self):
-        result = format_slots_for_log(["Wet", "Wet"])
-        assert result == "Wet (draws: Wet, Wet)"
-
-    def test_all_same_very_wet_four_slots(self):
-        result = format_slots_for_log(["Very Wet", "Very Wet", "Very Wet", "Very Wet"])
-        assert result == "Very Wet (draws: Very Wet, Very Wet, Very Wet, Very Wet)"
-
-    # --- mixed types: plain arrow-joined, no parens ---
-
-    def test_mixed_two_types(self):
-        result = format_slots_for_log(["Clear", "Wet"])
-        assert result == "Clear → Wet"
-
-    def test_mixed_three_types(self):
-        result = format_slots_for_log(["Clear", "Light Cloud", "Overcast"])
-        assert result == "Clear → Light Cloud → Overcast"
-
-    def test_nearly_same_last_differs(self):
-        result = format_slots_for_log(["Wet", "Wet", "Clear"])
-        assert result == "Wet → Wet → Clear"
+    @pytest.mark.parametrize(
+        ("slots", "expected"),
+        [
+            (["Clear", "Wet"], "Clear → Wet"),
+            (["Clear", "Light Cloud", "Overcast"], "Clear → Light Cloud → Overcast"),
+            (["Wet", "Wet", "Clear"], "Wet → Wet → Clear"),
+        ],
+        ids=["two_types", "three_types", "nearly_same_last_differs"],
+    )
+    def test_mixed_types(self, slots, expected):
+        """Mixed types: plain arrow-joined, no parens."""
+        result = format_slots_for_log(slots)
+        assert result == expected
         assert "(draws:" not in result
 
-    # --- single-slot exempt ---
-
-    def test_single_slot_overcast(self):
-        assert format_slots_for_log(["Overcast"]) == "Overcast"
-
-    def test_single_slot_no_parens(self):
-        result = format_slots_for_log(["Clear"])
+    @pytest.mark.parametrize(
+        ("slots", "expected"),
+        [(["Overcast"], "Overcast"), (["Clear"], "Clear")],
+        ids=["overcast", "clear"],
+    )
+    def test_single_slot_is_exempt(self, slots, expected):
+        """A single slot is exempt: a plain label, no arrow, no parens."""
+        result = format_slots_for_log(slots)
+        assert result == expected
         assert "draws" not in result
         assert "→" not in result
 
