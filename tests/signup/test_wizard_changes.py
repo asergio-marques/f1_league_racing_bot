@@ -217,7 +217,8 @@ def _in_order(seen: list[str], wanted: list[str]) -> bool:
 
 
 async def test_sign_up_is_acknowledged_and_creates_the_channel_and_welcome_as_jobs(tmp_path):
-    """Kimi presses Sign Up while signups are open. At once he is answered privately that his
+    """Kimi, signed up to nothing, presses Sign Up while signups are open and test mode is off,
+    so one `signup.start` is asked of the queue. At once he is answered privately that his
     signup is under way, and no channel is created yet. When the queue runs, the `signup.start`
     change's jobs `create_channel`, `start`, `arm_inactivity` and `post_welcome` are done in that
     order: his signup channel (6500) is created, he is Pending Signup Completion, his 24 hours of

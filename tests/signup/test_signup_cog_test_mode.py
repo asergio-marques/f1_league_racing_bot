@@ -109,7 +109,9 @@ class TestTheSignUpButton:
     and a press asks ``signup.start`` of it; the test-mode refusal is that change's check, made
     as it is asked and before every other, so these press it on a real queue: the league is
     ``tests/signup/test_wizard_changes.py``'s, at Signups with the window open, Kimi (105)
-    pressing Sign Up in the signup channel."""
+    pressing Sign Up in the signup channel. That a press with test mode off reaches the wizard
+    is pinned by ``test_wizard_changes.py``'s
+    ``test_sign_up_is_acknowledged_and_creates_the_channel_and_welcome_as_jobs``."""
 
     @staticmethod
     async def _press(league: Any) -> Any:
@@ -150,15 +152,6 @@ class TestTheSignUpButton:
         assert "test mode" in _told(press)
         assert "signup in progress" not in _told(press)
         assert not await _changes_of(league, START_KIND)
-
-    async def test_it_reaches_the_wizard_when_test_mode_is_off(self, tmp_path):
-        """Test mode is off and Kimi, signed up to nothing, presses Sign Up: one ``signup.start``
-        is asked of the queue."""
-        league = await _league(tmp_path)
-
-        await self._press(league)
-
-        assert len(await _changes_of(league, START_KIND)) == 1
 
 
 # ── /signup open ──────────────────────────────────────────────────────────
