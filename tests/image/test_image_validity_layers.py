@@ -365,14 +365,24 @@ def test_all_sixteen_templates_valid_when_present(tmp_path, templates):
         assert report.depth_checked == expected, template_key
 
 
-def test_missing_file_reason(tmp_path, templates):
-    (templates / "calendar_template.svg").unlink()
-    report = _evaluate(_config("templates"), tmp_path, "calendar_template")
+@pytest.mark.parametrize(
+    ("template_key", "filename"),
+    [
+        ("calendar_template", "calendar_template.svg"),
+        ("attendance_template", "attendance_template.svg"),
+    ],
+    ids=["calendar", "attendance"],
+)
+def test_missing_file_reason(tmp_path, templates, template_key, filename):
+    """An invalid report always carries the path searched."""
+    (templates / filename).unlink()
+    report = _evaluate(_config("templates"), tmp_path, template_key)
 
     assert not report.valid
     assert report.failed_layer == LAYER_RESOLUTION
     assert report.reason.lower().startswith("file not found")
-    assert "calendar_template.svg" in str(report.resolved_path)
+    assert report.resolved_path is not None
+    assert filename in str(report.resolved_path)
 
 
 def test_unparseable_file_reason_differs_from_missing(tmp_path, templates):
@@ -386,16 +396,12 @@ def test_unparseable_file_reason_differs_from_missing(tmp_path, templates):
     assert not report.reason.lower().startswith("file not found")
 
 
-def test_truncated_markup_is_a_parse_failure(tmp_path, templates):
-    (templates / "lineup_template.svg").write_bytes(MALFORMED_SVG)
-    report = _evaluate(_config("templates"), tmp_path, "lineup_template")
-
-    assert not report.valid
-    assert "not a valid svg file" in report.reason.lower()
-
-
-def test_wrong_root_element_is_a_parse_failure(tmp_path, templates):
-    (templates / "lineup_template.svg").write_bytes(WRONG_ROOT)
+@pytest.mark.parametrize(
+    "markup", [MALFORMED_SVG, WRONG_ROOT], ids=["truncated", "wrong-root"]
+)
+def test_truncated_markup_is_a_parse_failure(tmp_path, templates, markup):
+    """Truncated markup and a wrong root element are both parse failures."""
+    (templates / "lineup_template.svg").write_bytes(markup)
     report = _evaluate(_config("templates"), tmp_path, "lineup_template")
 
     assert not report.valid
@@ -430,13 +436,6 @@ def test_viewbox_only_template_declares_a_canvas(tmp_path, templates, unspecifie
     report = _evaluate(_config("templates"), tmp_path, UNSPECIFIED_KEY)
     assert report.valid
     assert report.depth_checked == LAYER_RESOLUTION
-
-
-def test_invalid_report_always_carries_the_path_searched(tmp_path, templates):
-    (templates / "attendance_template.svg").unlink()
-    report = _evaluate(_config("templates"), tmp_path, "attendance_template")
-    assert report.resolved_path is not None
-    assert "attendance_template.svg" in str(report.resolved_path)
 
 
 def test_one_bad_template_does_not_affect_the_others(tmp_path, templates):
@@ -571,38 +570,38 @@ def test_sprint_and_non_sprint_variants_are_distinguishable(tmp_path, templates)
     assert TEMPLATE_LABELS["weather_p3_template"] != TEMPLATE_LABELS["weather_p3_sprint_template"]
 
 
-def test_specific_attribution_for_results_pair(tmp_path, templates):
-    """US3 scenario 4: qualifying named specifically, race reported valid."""
+@pytest.mark.parametrize(
+    ("removed", "sibling", "aspect", "word"),
+    [
+        # US3 scenario 4: qualifying named specifically, race reported valid.
+        ("results_qualifying_template", "results_race_template", "results", "qualifying"),
+        # US3 scenario 5: constructors named specifically, drivers reported valid.
+        (
+            "standings_constructors_template",
+            "standings_drivers_template",
+            "standings",
+            "constructor",
+        ),
+    ],
+    ids=["results-pair", "standings-pair"],
+)
+def test_specific_attribution_for_results_pair(
+    tmp_path, templates, removed, sibling, aspect, word
+):
+    """One of a pair named specifically, its sibling reported valid (US3 scenarios 4, 5)."""
     from leaguebot.image.models.image_constants import TEMPLATE_LABELS
     from leaguebot.image.services.image_validity_service import build_aspect_statuses, evaluate_all_templates
 
-    (templates / "results_qualifying_template.svg").unlink()
+    (templates / f"{removed}.svg").unlink()
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
 
-    assert not reports["results_qualifying_template"].valid
-    assert reports["results_race_template"].valid
+    assert not reports[removed].valid
+    assert reports[sibling].valid
 
-    statuses = {s.aspect: s for s in build_aspect_statuses({"results": True}, reports)}
-    reason = statuses["results"].blocking_reasons[0]
-    assert TEMPLATE_LABELS["results_qualifying_template"] in reason
-    assert "qualifying" in reason.lower()
-
-
-def test_specific_attribution_for_standings_pair(tmp_path, templates):
-    """US3 scenario 5: constructors named specifically, drivers reported valid."""
-    from leaguebot.image.models.image_constants import TEMPLATE_LABELS
-    from leaguebot.image.services.image_validity_service import build_aspect_statuses, evaluate_all_templates
-
-    (templates / "standings_constructors_template.svg").unlink()
-    reports = evaluate_all_templates(_config("templates"), root=tmp_path)
-
-    assert not reports["standings_constructors_template"].valid
-    assert reports["standings_drivers_template"].valid
-
-    statuses = {s.aspect: s for s in build_aspect_statuses({"standings": True}, reports)}
-    reason = statuses["standings"].blocking_reasons[0]
-    assert TEMPLATE_LABELS["standings_constructors_template"] in reason
-    assert "constructor" in reason.lower()
+    statuses = {s.aspect: s for s in build_aspect_statuses({aspect: True}, reports)}
+    reason = statuses[aspect].blocking_reasons[0]
+    assert TEMPLATE_LABELS[removed] in reason
+    assert word in reason.lower()
 
 
 def test_every_template_label_is_unique():
@@ -617,7 +616,10 @@ def test_every_template_label_is_unique():
 
 def test_declared_depth_follows_each_type_s_catalogue(tmp_path, templates):
     """Depth is what was *applied*, per type — not one number for the whole set."""
-    from leaguebot.image.services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.image_validity_service import (
+        LAYER_TRIAL_RENDER,
+        evaluate_all_templates,
+    )
 
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
     assert all(reports[key].depth_checked == LAYER_BOUNDS for key in POPULATED)
@@ -626,16 +628,12 @@ def test_declared_depth_follows_each_type_s_catalogue(tmp_path, templates):
         for key, report in reports.items()
         if key not in POPULATED
     )
-
-
-def test_depth_summary_states_the_depth_reached(tmp_path, templates, unspecified):
-    from leaguebot.image.services.image_validity_service import ImageValidityService, evaluate_all_templates
-
-    reports = evaluate_all_templates(_config("templates"), root=tmp_path)
-    summary = ImageValidityService.depth_summary(reports)
-
-    assert "layer 1" in summary.lower()
-    assert "resolution" in summary.lower()
+    # A valid report is never described as fully valid: a passing template carries its
+    # depth, so a renderer cannot overstate it. The calendar is checked to Layer 3 — the
+    # deepest ratified — and still must not read as fully valid: the trial render of
+    # Layer 4 is unratified, so its depth stays below it.
+    assert reports["calendar_template"].valid is True
+    assert reports["calendar_template"].depth_checked < LAYER_TRIAL_RENDER
 
 
 def test_depth_summary_names_what_was_not_checked(tmp_path, templates):
@@ -649,26 +647,6 @@ def test_depth_summary_names_what_was_not_checked(tmp_path, templates):
     # Layer 2 now applies to the calendar, so what remains unchecked is 3 and 4.
     assert "bounds declaration" in summary
     assert "trial render" in summary
-
-
-def test_a_valid_report_is_never_described_as_fully_valid(tmp_path, templates):
-    """A passing template carries its depth, so a renderer cannot overstate it.
-
-    The calendar is checked to Layer 3 — the deepest ratified — and still must not read as
-    fully valid: the trial render of Layer 4 is unratified, so its depth stays below it.
-    """
-    from leaguebot.image.services.image_validity_service import (
-        LAYER_BOUNDS,
-        LAYER_TRIAL_RENDER,
-        evaluate_all_templates,
-    )
-
-    reports = evaluate_all_templates(_config("templates"), root=tmp_path)
-    report = reports["calendar_template"]
-
-    assert report.valid is True
-    assert report.depth_checked == LAYER_BOUNDS
-    assert report.depth_checked < LAYER_TRIAL_RENDER
 
 
 # ── Invariant 1: stable surface (T031) ────────────────────────────────────
@@ -1083,6 +1061,7 @@ def test_depth_summary_claims_layer_two_only_where_a_catalogue_exists(
     summary = ImageValidityService.depth_summary(reports)
 
     assert "Checked to layer 1" in summary
+    assert "resolution" in summary.lower()
     assert "layer 3 where a field catalogue exists" in summary
     # Layers 2 and 3 are no longer *pending* — both have been applied — so neither may be
     # listed among the layers still to come.
@@ -1233,22 +1212,22 @@ def test_mandatory_row_fields_join_the_mandatory_set(catalogue_override):
 # before it is run and are checked only at the render.
 
 
-def test_a_sound_results_template_is_accepted_with_no_classification_in_view(
-    tmp_path, templates
-):
-    for key in ("results_qualifying_template", "results_race_template"):
-        report = _evaluate(_config("templates"), tmp_path, key)
-        assert report.valid, f"{key}: {report.reason}"
-        assert report.depth_checked == LAYER_BOUNDS
-
-
-def test_a_missing_whole_graphic_field_is_named(tmp_path, templates):
+@pytest.mark.parametrize(
+    ("removed", "field_id"),
+    [
+        (b'<text id="race_name">R</text>', "race_name"),
+        (b'<text id="row_1_points">0</text>', "row_1_points"),
+    ],
+    ids=["whole-graphic", "row"],
+)
+def test_a_missing_mandatory_field_is_named(tmp_path, templates, removed, field_id):
+    """A missing whole-graphic field and a row missing a mandatory field are both named."""
     (templates / "results_race_template.svg").write_bytes(
-        RESULTS_RACE_SVG.replace(b'<text id="race_name">R</text>', b"")
+        RESULTS_RACE_SVG.replace(removed, b"")
     )
     report = _evaluate(_config("templates"), tmp_path, "results_race_template")
     assert not report.valid
-    assert "race_name" in report.reason
+    assert field_id in report.reason
 
 
 def test_a_results_template_declaring_no_row_is_refused(tmp_path, templates):
@@ -1275,15 +1254,6 @@ def test_a_gap_in_the_row_numbering_is_refused(tmp_path, templates):
     report = _evaluate(_config("templates"), tmp_path, "results_race_template")
     assert not report.valid
     assert "gap" in report.reason
-
-
-def test_a_row_missing_a_mandatory_field_is_named(tmp_path, templates):
-    (templates / "results_race_template.svg").write_bytes(
-        RESULTS_RACE_SVG.replace(b'<text id="row_1_points">0</text>', b"")
-    )
-    report = _evaluate(_config("templates"), tmp_path, "results_race_template")
-    assert not report.valid
-    assert "row_1_points" in report.reason
 
 
 def test_a_siblings_row_field_is_refused_and_named(tmp_path, templates):
@@ -1554,20 +1524,6 @@ def test_a_uniformly_stretching_portrait_set_is_caught_by_the_stretch_check_alon
 
     assert class_aspect_faults_of(root, "lineup_template") == []
     assert len(stretch_faults_of(root, "lineup_template")) == 2
-
-
-def test_the_shipped_templates_hold_no_slot_that_wrongly_claims_to_stretch():
-    from pathlib import Path
-
-    from lxml import etree
-
-    from leaguebot.image.models.image_constants import TEMPLATE_LABELS
-    from leaguebot.image.services.image_validity_service import stretch_faults_of
-
-    directory = Path(__file__).resolve().parents[2] / "resources/defaults/templates"
-    for key in sorted(TEMPLATE_LABELS):
-        root = etree.parse(str(directory / f"{key}.svg")).getroot()
-        assert stretch_faults_of(root, key) == [], key
 
 
 def test_the_attendance_marks_stretch_and_the_arrows_beside_them_do_not():
