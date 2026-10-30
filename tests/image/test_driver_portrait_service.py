@@ -130,14 +130,8 @@ def test_the_portrait_is_centre_cropped_rather_than_letterboxed():
 
 
 def test_the_recorded_key_carries_the_shape_as_well_as_the_avatar():
-    from leaguebot.image.services.driver_portrait_service import portrait_key
-
-    assert portrait_key("abc123", 1.0) == "abc123@1.0000"
-    assert portrait_key("abc123", 0.75) == "abc123@0.7500"
-
-
-def test_re_shaping_the_template_makes_an_unchanged_avatar_stale():
-    """The point of folding the shape in.
+    """Re-shaping the template makes an unchanged avatar stale: the point of folding the
+    shape in.
 
     A league that re-shapes its lineup has changed no avatar at all, so on the avatar alone
     every portrait would read as current and stay at the old shape for as long as its driver
@@ -146,7 +140,9 @@ def test_re_shaping_the_template_makes_an_unchanged_avatar_stale():
     """
     from leaguebot.image.services.driver_portrait_service import portrait_key
 
-    assert portrait_key("abc123", 1.0) != portrait_key("abc123", 0.75)
+    assert portrait_key("abc123", 1.0) == "abc123@1.0000"
+    assert portrait_key("abc123", 0.75) == "abc123@0.7500"
+    # A legacy row, keyed on the avatar alone, matches no current key.
     assert portrait_key("abc123", 1.0) != "abc123"
 
 
@@ -180,6 +176,8 @@ async def test_a_first_fetch_writes_the_file_and_the_row(db_path, directory):
 
     assert written == 1
     assert (directory / "7.svg").is_file()
+    # No `.partial` temporary is left behind beside it.
+    assert sorted(p.name for p in directory.iterdir()) == ["7.svg"]
     assert base64.b64encode(PNG).decode() in (directory / "7.svg").read_text()
     # The shape it was wrapped at is part of what is recorded, so a later re-shaping of the
     # lineup template makes this row stale on its own.
@@ -499,12 +497,6 @@ async def test_the_budget_returns_without_raising_and_writes_no_row(db_path, dir
     assert written == 0
     assert await _rows(db_path) == {}
     assert not (directory / "1.svg").exists()
-
-
-async def test_no_partial_file_is_left_behind(db_path, directory):
-    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
-
-    assert sorted(p.name for p in directory.iterdir()) == ["7.svg"]
 
 
 # ── The pre-render gate ───────────────────────────────────────────────────

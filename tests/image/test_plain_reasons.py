@@ -5,9 +5,10 @@ text — field ids, layer numbers, resolved paths — goes to the bot's log and 
 else. These tests pin both halves of that: the sentence returned, and the absence of
 the jargon it replaced.
 
-The last test is the one that matters over time. It walks every failure this module can
-produce and asserts none of them leaks a path, a backtick-quoted field id or a layer
-number, so the plain wording cannot quietly rot back into developer prose.
+`test_every_template_fault_carries_a_remedy` is the one that matters over time. It walks
+every failure this module can produce and asserts none of them leaks a path, a
+backtick-quoted field id or a layer number, so the plain wording cannot quietly rot back into
+developer prose.
 """
 from __future__ import annotations
 
@@ -172,28 +173,6 @@ def _assert_plain(sentence: str) -> None:
     assert not _PATH.search(sentence), f"path in {sentence!r}"
 
 
-def test_every_template_fault_this_module_produces_reads_plainly(tmp_path):
-    """Walk the real failures rather than hand-written strings, so a new one is caught."""
-    directory = tmp_path / "templates"
-    directory.mkdir()
-    for filename in TEMPLATE_COLUMNS.values():
-        (directory / filename).write_bytes(VALID_SVG)
-
-    # A missing file, a file that is not a drawing, and a drawing with no canvas.
-    (directory / TEMPLATE_COLUMNS["calendar_template"]).unlink()
-    (directory / TEMPLATE_COLUMNS["lineup_template"]).write_bytes(b"not markup at all")
-    (directory / TEMPLATE_COLUMNS["rsvp_template"]).write_bytes(
-        b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'
-    )
-
-    reports = evaluate_all_templates(_config("templates"), root=tmp_path)
-    failures = [r for r in reports.values() if not r.valid]
-
-    assert failures, "the fixture must actually produce failures"
-    for report in failures:
-        _assert_plain(plain_reason(report))
-
-
 def test_a_missing_template_directory_reads_plainly(tmp_path):
     reports = evaluate_all_templates(_config("no_such_dir"), root=tmp_path)
 
@@ -284,11 +263,14 @@ def test_each_asset_folder_names_its_own_setting_command():
 
 
 def test_every_template_fault_carries_a_remedy(tmp_path):
-    """Walk the real failures, so a fault added later cannot arrive without one."""
+    """Walk the real failures rather than hand-written strings, so a fault added later is
+    caught: it cannot arrive without a remedy, nor with a reason that does not read plainly."""
     directory = tmp_path / "templates"
     directory.mkdir()
     for filename in TEMPLATE_COLUMNS.values():
         (directory / filename).write_bytes(VALID_SVG)
+
+    # A missing file, a file that is not a drawing, and a drawing with no canvas.
     (directory / TEMPLATE_COLUMNS["calendar_template"]).unlink()
     (directory / TEMPLATE_COLUMNS["lineup_template"]).write_bytes(b"not markup at all")
     (directory / TEMPLATE_COLUMNS["rsvp_template"]).write_bytes(
@@ -300,6 +282,7 @@ def test_every_template_fault_carries_a_remedy(tmp_path):
 
     assert failures, "the fixture must actually produce failures"
     for report in failures:
+        _assert_plain(plain_reason(report))
         _assert_actionable(plain_template_line(report))
 
 
