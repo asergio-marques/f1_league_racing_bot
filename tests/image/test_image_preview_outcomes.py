@@ -151,7 +151,7 @@ class TestRsvpPreview:
         [(2, "SPRINT", 4), (1, "NORMAL", 2)],
         ids=["sprint-names-four", "two-session-names-two"],
     )
-    async def test_a_sprint_round_names_four_sessions(
+    async def test_a_round_names_as_many_sessions_as_its_format_runs(
         self, bot, league, round_number, fmt, count
     ):
         """The session list follows the round's own format, not a fabricated one."""
@@ -168,7 +168,7 @@ class TestRsvpPreview:
 
 class TestResultsPreview:
     @pytest.mark.parametrize("round_number", [1, 3], ids=["normal", "endurance"])
-    async def test_one_picture_per_session_of_a_normal_round(self, bot, league, round_number):
+    async def test_one_picture_per_session_of_a_round(self, bot, league, round_number):
         """A normal round and an endurance round run the same two feature sessions."""
         context = await _context(bot, round_number=round_number, require_teams=True)
 
@@ -916,7 +916,7 @@ class TestWeatherPreview:
         [(2, True), (1, False)],
         ids=["sprint-round-sprint-template", "normal-round-plain-template"],
     )
-    async def test_a_sprint_round_draws_the_sprint_template(
+    async def test_a_round_draws_the_template_of_its_format(
         self, bot, league, round_number, sprint
     ):
         context = await _context(bot, round_number=round_number, require_mystery=False)

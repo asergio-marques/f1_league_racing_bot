@@ -399,7 +399,7 @@ def test_unparseable_file_reason_differs_from_missing(tmp_path, templates):
 @pytest.mark.parametrize(
     "markup", [MALFORMED_SVG, WRONG_ROOT], ids=["truncated", "wrong-root"]
 )
-def test_truncated_markup_is_a_parse_failure(tmp_path, templates, markup):
+def test_unparseable_markup_is_a_parse_failure(tmp_path, templates, markup):
     """Truncated markup and a wrong root element are both parse failures."""
     (templates / "lineup_template.svg").write_bytes(markup)
     report = _evaluate(_config("templates"), tmp_path, "lineup_template")
@@ -585,7 +585,7 @@ def test_sprint_and_non_sprint_variants_are_distinguishable(tmp_path, templates)
     ],
     ids=["results-pair", "standings-pair"],
 )
-def test_specific_attribution_for_results_pair(
+def test_specific_attribution_for_a_sibling_pair(
     tmp_path, templates, removed, sibling, aspect, word
 ):
     """One of a pair named specifically, its sibling reported valid (US3 scenarios 4, 5)."""
