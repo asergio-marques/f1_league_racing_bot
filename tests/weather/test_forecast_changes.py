@@ -175,7 +175,8 @@ async def test_a_forecast_discord_refuses_stops_the_queue_and_is_tried_again_as_
     tmp_path, monkeypatch, refused,
 ):
     """The forecast refused stops the queue at its post, and nothing is put on the old retry
-    queue; Retry posts it as text, with no picture drawn, and records its id."""
+    queue; Retry posts it as text, with no picture drawn, and records its id. The forecast that
+    finally stands notifies Pro's role 801, and no member, as the first would have."""
     from leaguebot.image.services import image_weather_post
 
     league = await _league(tmp_path)
@@ -204,6 +205,9 @@ async def test_a_forecast_discord_refuses_stops_the_queue_and_is_tried_again_as_
     assert await _forecasts(league) == {1: new}
     if refused == "picture refused":
         assert drawn.await_count == 1
+    retried = _sends(league)[-1]
+    assert _notified_roles(retried) == {PRO_ROLE}
+    assert _notifies_no_member(retried)
 
 
 @pytest.mark.parametrize("phase", [2, 3])
@@ -505,26 +509,6 @@ async def test_a_forecast_posted_as_text_notifies_the_division_s_role(tmp_path):
     assert _notifies_no_member(send)
 
 
-async def test_a_retried_forecast_notifies_the_role(tmp_path):
-    """Pro's phase 1 forecast is refused by Discord, stopping the queue; Retry posts it again, as
-    text. The forecast that finally stands notifies Pro's role 801 as the first would have."""
-    league = await _league(tmp_path)
-    _refusing(league)
-
-    await _ask(league, 1)
-    await run_queue(league.bot)
-    assert (await stopped_job(league.db_path))["name"] == "post_forecast"
-
-    _accepting(league)
-    await retry_job(league.bot)
-
-    assert await stopped_job(league.db_path) is None
-    retried = _sends(league)[-1]
-    assert "file" not in retried.kwargs or retried.kwargs["file"] is None
-    assert _notified_roles(retried) == {PRO_ROLE}
-    assert _notifies_no_member(retried)
-
-
 async def test_the_mystery_notice_notifies_nobody(tmp_path):
     """Round 3 is a mystery round and its phase 1 asked: the notice posted in Pro's forecast
     channel names no role and is sent letting no role, no member and not everyone notify."""
@@ -574,25 +558,10 @@ async def _two_part_phase_2(league: Any) -> None:
     await league.write("UPDATE rounds SET track_name = ? WHERE id = ?", LONG_TRACK, ROUND)
 
 
-async def test_a_forecast_in_two_parts_records_both(tmp_path):
-    """Round 3's track has a name of some 1,870 characters, and Phase 2 is asked after Phase 1:
-    the Phase 2 forecast is posted in two messages, and its record keeps both, in order."""
-    league = await _league(tmp_path)
-    await _two_part_phase_2(league)
-    before = len(_events(league))
-
-    await _posted(league, 2)
-
-    parts = [mid for kind, mid in _events(league)[before:] if kind == "send"]
-    assert len(parts) == 2
-    [row] = await league.rows(
-        "SELECT message_ids FROM forecast_messages WHERE round_id = ? AND phase_number = 2", ROUND)
-    assert json.loads(row["message_ids"]) == parts
-
-
 async def test_a_superseded_forecast_in_two_parts_is_deleted_whole(tmp_path):
-    """Round 3's Phase 2 forecast was posted in two messages; Phase 3 is then asked. Once Phase 3
-    is posted, both messages of Phase 2 are deleted from Pro's forecast channel, and no record of
+    """Round 3's track has a name of some 1,870 characters, so its Phase 2 forecast is posted in
+    two messages, and its record keeps both, in order; Phase 3 is then asked. Once Phase 3 is
+    posted, both messages of Phase 2 are deleted from Pro's forecast channel, and no record of
     Phase 2 is left."""
     league = await _league(tmp_path)
     await _two_part_phase_2(league)
@@ -600,6 +569,9 @@ async def test_a_superseded_forecast_in_two_parts_is_deleted_whole(tmp_path):
     await _posted(league, 2)
     parts = [mid for kind, mid in _events(league)[before:] if kind == "send"]
     assert len(parts) == 2
+    [row] = await league.rows(
+        "SELECT message_ids FROM forecast_messages WHERE round_id = ? AND phase_number = 2", ROUND)
+    assert json.loads(row["message_ids"]) == parts
 
     await _posted(league, 3)
 
