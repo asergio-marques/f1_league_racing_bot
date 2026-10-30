@@ -33,7 +33,9 @@ read as current behaviour, so the wip-spec's words are quoted above instead.
 Each is pinned by a pair of tests sitting either side of its moment, because the three differ
 only in *which* instant they compare against and a later reader collapsing them into one check
 would pass any test that only exercised one kind of driver. `test_a_reserve_who_has_not_
-accepted_may_still_step_in_after_the_deadline` is the one that would catch it.
+accepted_may_still_step_in_after_the_deadline` is the one that would catch it. For the two
+reserve rules the locked side is a case of `test_every_refused_press_is_recorded`:
+`reserve-accepted` and `round-started`.
 
 **Times are taken from the clock, never pinned, where the handler is driven.** The handler
 reads `datetime.now` itself and takes no `now` parameter, so a fixture that seeded a fixed date
@@ -500,6 +502,11 @@ async def test_with_no_deadline_configured_answers_stay_open_until_the_start(tmp
 
 # ---------------------------------------------------------------------------
 # FR-015 / FR-016 — a reserve locks differently, and on what they already said
+#
+# The tests here are the allowed side: a reserve who has not accepted may still step in after
+# the deadline. The locked side is a pair of cases of `test_every_refused_press_is_recorded`:
+# `reserve-accepted`, a reserve who has accepted withdrawing after the deadline, and
+# `round-started`, a reserve who has not accepted stepping in once the round has started.
 # ---------------------------------------------------------------------------
 
 
