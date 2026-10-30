@@ -55,9 +55,15 @@ def test_identifier_wins_when_both_exist():
     assert element.text == "by id"
 
 
-def test_unresolvable_name_returns_none():
+@pytest.mark.parametrize(
+    "name",
+    ["driver_name", "", "   ", "row_1_"],
+    ids=["unknown", "empty", "blank", "trailing-underscore"],
+)
+def test_unresolvable_name_returns_none(name):
+    """An unknown name, and an odd one, resolve to nothing rather than raising."""
     index = FieldIndex(build('<text id="points">3</text>'))
-    assert index.resolve("driver_name") is None
+    assert index.resolve(name) is None
 
 
 def test_label_on_a_non_layer_group_is_not_an_address():
@@ -159,12 +165,6 @@ def test_index_must_be_rebuilt_after_a_removal():
     group.getparent().remove(group)
 
     assert FieldIndex(root).resolve("sanctions") is None
-
-
-@pytest.mark.parametrize("name", ["", "   ", "row_1_"])
-def test_odd_names_resolve_to_nothing_rather_than_raising(name):
-    index = FieldIndex(build('<text id="points">3</text>'))
-    assert index.resolve(name) is None
 
 
 # ══════════════════════════════════════════════════════════════════════════

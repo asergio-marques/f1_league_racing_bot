@@ -37,6 +37,8 @@ from leaguebot.image.utils.svg_document import (
         ('viewBox="0 0 800 600"', (800, 600)),
         ('viewBox="0,0,800,600"', (800, 600)),
         ('width="100%" height="100%" viewBox="0 0 640 480"', (640, 480)),
+        # Physical units convert at the CSS reference, 96 px to the inch.
+        ('width="1in" height="2in"', (96, 192)),
     ],
 )
 def test_canvas_is_read_from_the_root(attrs, expected):
@@ -50,11 +52,6 @@ def test_two_templates_declaring_different_sizes_each_keep_their_own():
     b = parse_svg_bytes(b'<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1400"/>')
     assert canvas_of(a) == (1200, 675)
     assert canvas_of(b) == (900, 1400)
-
-
-def test_physical_units_convert_at_the_css_reference():
-    root = parse_svg_bytes(b'<svg xmlns="http://www.w3.org/2000/svg" width="1in" height="2in"/>')
-    assert canvas_of(root) == (96, 192)
 
 
 def test_missing_canvas_raises():

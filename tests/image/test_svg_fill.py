@@ -110,30 +110,22 @@ def test_invariant_4_each_template_renders_at_its_own_declared_canvas():
     assert tall.canvas == (1200, 1212)
 
 
-def test_invariant_5_crop_rewrites_both_height_and_viewbox():
-    """The cut is made in the SVG, not delegated to the rasteriser's export area."""
+@pytest.mark.parametrize("cut", [500, 438], ids=["y500", "y438"])
+def test_invariant_5_crop_rewrites_both_height_and_viewbox(cut):
+    """The cut is made in the SVG, not delegated to the rasteriser's export area.
+
+    Rewriting height alone would scale rather than cut — the viewBox must follow, its width
+    untouched by a vertical crop.
+    """
     root = parse_svg_bytes(
         b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="876" '
-        b'viewBox="0 0 1200 876"><rect id="cut" y="500"/></svg>'
+        b'viewBox="0 0 1200 876"><rect id="cut" y="' + str(cut).encode() + b'"/></svg>'
     )
     result = fill(FillSpec(root=root, crop="cut"))
 
-    assert root.get("height") == "500"
-    assert root.get("viewBox") == "0 0 1200 500"
-    assert result.canvas == (1200, 500)
-
-
-def test_crop_does_not_scale_the_drawing():
-    """Rewriting height alone would scale rather than cut — the viewBox must follow."""
-    root = parse_svg_bytes(
-        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="876" '
-        b'viewBox="0 0 1200 876"><rect id="cut" y="438"/></svg>'
-    )
-    fill(FillSpec(root=root, crop="cut"))
-
-    _, _, vb_w, vb_h = root.get("viewBox").split()
-    assert int(vb_w) == 1200, "width must be untouched by a vertical crop"
-    assert int(vb_h) == int(root.get("height")), "viewBox height must track the canvas"
+    assert root.get("height") == str(cut)
+    assert root.get("viewBox") == f"0 0 1200 {cut}"
+    assert result.canvas == (1200, cut)
 
 
 def test_invariant_6_unfilled_field_below_the_crop_is_not_a_problem():

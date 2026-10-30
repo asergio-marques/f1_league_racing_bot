@@ -101,18 +101,6 @@ def test_well_formed_xml_that_is_not_svg_is_rejected(tmp_path: Path):
 # ── Filesystem faults (FR-002 keeps "not found" distinct from "does not parse") ──
 
 
-def test_a_directory_named_as_a_template_reports_a_read_failure(tmp_path: Path):
-    directory = tmp_path / "calendar.svg"
-    directory.mkdir()
-
-    with pytest.raises(SvgParseError) as caught:
-        load_svg(directory)
-
-    message = str(caught.value)
-    assert "could not be read" in message
-    assert_no_raw_parser_text(message)
-
-
 def test_a_directory_is_named_unreadable_without_consulting_the_parser(tmp_path: Path, monkeypatch):
     """The fault must not depend on which libxml2 lxml was linked against.
 
@@ -134,7 +122,9 @@ def test_a_directory_is_named_unreadable_without_consulting_the_parser(tmp_path:
     with pytest.raises(SvgParseError) as caught:
         load_svg(directory)
 
-    assert "could not be read" in str(caught.value)
+    message = str(caught.value)
+    assert "could not be read" in message
+    assert_no_raw_parser_text(message)
 
 
 def test_a_path_given_as_a_str_is_accepted(tmp_path: Path):
