@@ -271,7 +271,7 @@ class TestScheduleAttendanceRoundMystery:
         )
         assert svc._scheduler.add_job.call_count == 3
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        assert "rsvp_last_notice_s1_d1_r1" not in job_ids
+        assert not any(jid.startswith("rsvp_last_notice_") for jid in job_ids)
 
 
 # ---------------------------------------------------------------------------
