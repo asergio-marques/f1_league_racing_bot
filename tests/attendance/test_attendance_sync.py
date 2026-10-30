@@ -464,18 +464,20 @@ async def _refused_for_a_channel_fault(tmp_path):
     return _cog(db_path), {"faults": ["Division 1: the attendance channel is gone"]}
 
 
+# *via* is the reply that carries the refusal: the module gate answers before the command
+# defers, by `response.send_message`; every later refusal follows the defer, by `followup.send`.
 @pytest.mark.parametrize(
-    "arrange,reason",
+    "arrange,reason,via",
     [
-        (_refused_while_disabled, "The Attendance module is not enabled."),
-        (_refused_outside_ongoing, "only while the season is ongoing"),
-        (_refused_in_placements, "only while the season is ongoing"),
-        (_refused_pending_completion, "only while the season is ongoing"),
-        (_refused_unknown_division, "Division 'Nowhere' not found."),
-        (_refused_while_amended, "is being amended"),
-        (_refused_unknown_round, "has no round 9"),
-        (_refused_not_finalised, "has not had its penalties approved"),
-        (_refused_for_a_channel_fault, "the attendance channel is gone"),
+        (_refused_while_disabled, "The Attendance module is not enabled.", "response"),
+        (_refused_outside_ongoing, "only while the season is ongoing", "followup"),
+        (_refused_in_placements, "only while the season is ongoing", "followup"),
+        (_refused_pending_completion, "only while the season is ongoing", "followup"),
+        (_refused_unknown_division, "Division 'Nowhere' not found.", "followup"),
+        (_refused_while_amended, "is being amended", "followup"),
+        (_refused_unknown_round, "has no round 9", "followup"),
+        (_refused_not_finalised, "has not had its penalties approved", "followup"),
+        (_refused_for_a_channel_fault, "the attendance channel is gone", "followup"),
     ],
     ids=[
         "module-disabled", "not-ongoing", "not-ongoing-placements",
@@ -483,10 +485,10 @@ async def _refused_for_a_channel_fault(tmp_path):
         "not-finalised", "channel-fault",
     ],
 )
-async def test_every_refusal_of_the_sync_is_recorded(tmp_path, arrange, reason):
-    """A5: each refusal is answered once, its reply carrying its reason, and writes one
-    "⛔ `/attendance sync` refused" line, giving the reason; a channel fault's line names
-    the channel at fault."""
+async def test_every_refusal_of_the_sync_is_recorded(tmp_path, arrange, reason, via):
+    """A5: each refusal is answered once, by the reply *via* names, carrying its reason, and
+    writes one "⛔ `/attendance sync` refused" line, giving the reason; a channel fault's line
+    names the channel at fault."""
     cog, kwargs = await arrange(tmp_path)
     interaction = _interaction()
 
@@ -499,6 +501,11 @@ async def test_every_refusal_of_the_sync_is_recorded(tmp_path, arrange, reason):
     )
     assert len(replies) == 1
     assert reason in str(replies[0].args[0])
+    carried = {
+        "response": interaction.response.send_message,
+        "followup": interaction.followup.send,
+    }[via]
+    assert carried.await_count == 1
     lines = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
     assert len(lines) == 1
     assert lines[0].startswith("\u26d4 `/attendance sync` refused for Manager (<@77>) \u2014 ")
