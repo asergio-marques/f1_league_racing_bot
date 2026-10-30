@@ -432,17 +432,19 @@ def _teams(count: int = 3):
     ] + [SimpleNamespace(name="Reserve", max_seats=0, is_reserve=True)]
 
 
-def test_the_sample_draws_one_entry_fewer_than_the_rows_declared():
-    """So the rendering of an unused row can be judged."""
-    root = _template(8, _QUALIFYING_ROW)
+@pytest.mark.parametrize(
+    ("rows", "expected"),
+    [(8, 7), (1, 1)],
+    ids=["one-fewer-than-declared", "a-single-row-draws-one-and-leaves-none-unused"],
+)
+def test_the_sample_draws_one_entry_fewer_than_the_rows_declared_but_never_none(
+    rows, expected
+):
+    """So the rendering of an unused row can be judged; a single-row template still draws
+    its one entry and leaves none unused."""
+    root = _template(rows, _QUALIFYING_ROW)
     drawing = build_results_drawing(root, QUALIFYING_TEMPLATE_KEY, _teams())
-    assert drawing.entry_count == 7
-
-
-def test_a_single_row_template_draws_one_entry_and_leaves_none_unused():
-    root = _template(1, _QUALIFYING_ROW)
-    drawing = build_results_drawing(root, QUALIFYING_TEMPLATE_KEY, _teams())
-    assert drawing.entry_count == 1
+    assert drawing.entry_count == expected
 
 
 def test_the_sample_is_drawn_for_the_fabricated_division_at_the_final_stage():

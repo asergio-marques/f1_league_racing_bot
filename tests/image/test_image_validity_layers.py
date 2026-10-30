@@ -1044,8 +1044,9 @@ def test_only_the_specified_catalogues_are_populated():
     # Neither populated type contributes here. The calendar's capacity is derived from
     # its template and its collection is rounds; the lineup's teams and seats are fixed
     # by the data and diverge rather than overflow, and its one template-fixed
-    # collection is the reserve seats. This map feeds the seated-driver guard, which
-    # neither of those is.
+    # collection is the reserve seats. Nor do the two results templates: their row
+    # collection is entries, not seated drivers, so it must not bound placement. This
+    # map feeds the seated-driver guard, which none of those is.
     assert declared_capacities() == {}
 
 

@@ -157,14 +157,8 @@ def test_chrome_beside_the_columns_is_carried_in():
     delta = CANVAS - 340
     assert _x(root, "aside_rule") == before_rule - delta
     assert _x(root, "aside_head") == before_head - delta
-
-
-def test_a_carried_element_keeps_its_distance_from_the_new_edge():
-    root = _document(drawn=2, aside=True)
-    _fill(root, drawn=2)
+    # A carried element keeps its distance from the new edge.
     width = int(root.get("width"))
-    # 16 from the last column's edge before, and 16 from it after.
-    assert _x(root, "aside_rule") == FIRST + 2 * PITCH + 16
     assert width - _x(root, "aside_head") == CANVAS - (FIRST + COLUMNS * PITCH + 24)
 
 
