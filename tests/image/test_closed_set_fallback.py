@@ -176,6 +176,10 @@ def test_an_incomplete_custom_directory_still_draws_the_real_closed_set_icon(
     assert href.endswith(expected_file), href
     assert not href.endswith(FALLBACK_ASSET_NAME)
 
+    # A notice is still raised — the kind is unchanged, as XIV.13 requires — but it must not
+    # send a manager looking for artwork they were never expected to supply.
+    assert f"the bot's own `{expected_file}` was drawn instead" in result.notices[0].detail
+
 
 # ── The predicate itself ──────────────────────────────────────────────────
 
@@ -337,6 +341,14 @@ def test_a_league_directory_still_draws_the_shipped_reserved_asset(
     assert href.endswith(expected_file), href
     assert not href.endswith(FALLBACK_ASSET_NAME)
 
+    # The module drew its own correct file; saying "fallback" would send a manager looking for
+    # artwork they were never expected to supply.
+    assert len(result.notices) == 1
+    assert result.notices[0].notice_kind == "ASSET_FALLBACK_USED"
+    detail = result.notices[0].detail
+    assert expected_file in detail
+    assert "fallback" not in detail.lower()
+
 
 def test_an_ordinary_country_in_an_empty_league_directory_gets_the_placeholder(
     tmp_path, real_packaged_project_root
@@ -350,34 +362,7 @@ def test_an_ordinary_country_in_an_empty_league_directory_gets_the_placeholder(
     element = root.find(".//{http://www.w3.org/2000/svg}image")
     href = element.get("{http://www.w3.org/1999/xlink}href") or element.get("href")
     assert href.endswith(FALLBACK_ASSET_NAME), href
-
-
-# ── What the notice says ──────────────────────────────────────────────────
-
-
-def test_a_packaged_exact_hit_does_not_claim_a_fallback_was_drawn(
-    tmp_path, real_packaged_project_root
-):
-    """The module drew its own correct file; saying "fallback" would send a manager
-    looking for artwork they were never expected to supply."""
-    custom_directory = tmp_path / "league_flag"
-    custom_directory.mkdir()
-
-    _root, result = _render("flag", "Mystery", custom_directory)
-
-    assert len(result.notices) == 1
-    assert result.notices[0].notice_kind == "ASSET_FALLBACK_USED"
-    detail = result.notices[0].detail
-    assert "mystery.svg" in detail
-    assert "fallback" not in detail.lower()
-
-
-def test_a_genuine_placeholder_still_says_so(tmp_path, real_packaged_project_root):
-    custom_directory = tmp_path / "league_flag"
-    custom_directory.mkdir()
-
-    _root, result = _render("flag", "United Kingdom", custom_directory)
-
+    # A genuine placeholder still says so.
     assert len(result.notices) == 1
     assert "fallback" in result.notices[0].detail.lower()
 
@@ -455,19 +440,3 @@ def test_a_leagues_own_fallback_still_beats_the_packaged_compound(
     assert resolution.outcome is AssetOutcome.FALLBACK
     assert resolution.path == own_fallback
     assert not resolution.from_packaged
-
-
-def test_the_notice_for_a_compound_says_the_bots_own_file_was_drawn(
-    tmp_path, real_packaged_project_root
-):
-    """A notice is still raised — the kind is unchanged, as XIV.13 requires — but it must
-    not send a manager looking for artwork they were never expected to supply.
-    """
-    custom_directory = tmp_path / "league_tyres"
-    custom_directory.mkdir()
-
-    _root, result = _render("tyre", "Soft", custom_directory)
-
-    assert result.unresolved == []
-    assert [n.notice_kind for n in result.notices] == ["ASSET_FALLBACK_USED"]
-    assert "the bot's own `soft.svg` was drawn instead" in result.notices[0].detail
