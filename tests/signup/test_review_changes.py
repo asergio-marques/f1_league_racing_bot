@@ -280,10 +280,13 @@ async def test_approve_saves_grants_the_role_and_tells_the_driver_as_jobs(tmp_pa
     """Manager 77 presses Approve on Kimi's review panel. At once they are answered privately
     that the approval is under way; Kimi is still awaiting approval and holds no role. When the
     queue runs, `signup.approve` runs on the league lane, `approve` before `grant_role`: Kimi is
-    Unassigned, his signup record approved, and given the driver role (820). It asks back
+    Unassigned, not placed (approval says he may race; the placement commands decide where),
+    his signup record is marked approved (an approved signup outranks a later one of the
+    driver's that was not, #243), and he is given the driver role (820), once. It asks back
     `signup.closing` on Kimi's lane, whose `signup_notice` tells his channel he was approved,
-    once; his typing there is revoked and the channel's deletion armed a day on. The manager's
-    reply is updated to say the signup was approved."""
+    once; his typing there is revoked and the channel's deletion armed a day on, the channel
+    itself still standing, since deleting it at once would take the message with it. The
+    manager's reply is updated to say the signup was approved."""
     league = await _league(tmp_path)
 
     press = await _press_approve(league)
@@ -308,14 +311,17 @@ async def test_approve_saves_grants_the_role_and_tells_the_driver_as_jobs(tmp_pa
     assert _armed(league, DELETE_TIMER) == [
         (DELETE_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))
     ]
+    assert KIMI_CHANNEL in league.channels
+    league.channel(KIMI_CHANNEL).delete.assert_not_awaited()
     assert "approved" in updated_reply(press).lower()
 
 
 async def test_a_role_that_cannot_be_granted_is_named_and_does_not_stop_the_queue(tmp_path):
     """Discord refuses to give Kimi the driver role. Manager 77 presses Approve and the queue
     runs: the league lane is not stopped, Kimi is Unassigned all the same, and his channel is
-    told he was approved. The manager's updated reply, and the log channel, say the driver role
-    could not be granted."""
+    told he was approved. The manager's updated reply says both that the signup was approved
+    and that the driver role could not be granted, and the log channel says the role could not
+    be granted."""
     league = await _league(tmp_path)
     league.grant_fails[SIGNING_UP] = http_error(discord.Forbidden, status=403)
 
@@ -325,6 +331,7 @@ async def test_a_role_that_cannot_be_granted_is_named_and_does_not_stop_the_queu
     assert await stopped_job(league.db_path, "league") is None
     assert await _driver_state(league) == "UNASSIGNED"
     assert any("approved" in text.lower() for text in _texts(league))
+    assert "approved" in updated_reply(press).lower()
     assert "driver role could not be granted" in updated_reply(press).lower()
     assert "driver role could not be granted" in league.log().lower()
 
