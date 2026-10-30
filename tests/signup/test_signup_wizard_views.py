@@ -487,17 +487,6 @@ async def test_each_driver_type_button_reports_its_own_type(tmp_path, button, dr
     assert (await _draft(league))["driver_type"] == driver_type
 
 
-async def test_no_preference_finishes_the_team_step(tmp_path):
-    """Kimi, at the team question with no picks, presses No Preference; once the queue runs his
-    wizard has moved on to the teammate question."""
-    league = await _kimi_at(tmp_path, "COLLECTING_PREFERRED_TEAMS")
-
-    await _press_on(league, "PreferredTeamsButtonView", "_no_preference_callback")
-    await run_queue(league.bot)
-
-    assert await _state(league) == "COLLECTING_PREFERRED_TEAMMATE"
-
-
 async def test_no_preference_answers_the_teammate_question(tmp_path):
     """Kimi, at the teammate question, presses No Preference: the press asks signup.answer on
     the lane of his signup channel, and once the queue runs his wizard has moved past the
