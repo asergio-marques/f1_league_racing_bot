@@ -99,39 +99,28 @@ class TestSignupRecordsJoin:
         assert "driver_profile_id" not in columns
         assert "discord_user_id" in columns
 
-    async def test_nationalities_reads_a_seeded_driver(self, bot, db_path):
-        """`_nationalities` is imported by the attendance and verdict paths too."""
-        from leaguebot.image.services.image_results_post import _nationalities
-
-        await _seed_driver(db_path, nationality="Dutch")
-
-        assert await _nationalities(bot, [USER_ID]) == {USER_ID: "Dutch"}
-
-    async def test_nationalities_yields_none_where_the_driver_stated_one_not(
-        self, bot, db_path
+    @pytest.mark.parametrize(
+        ("seed", "user_id", "nationality"),
+        [
+            (_seed_driver, USER_ID, "Dutch"),
+            (_seed_driver, USER_ID, None),
+            (_seed_test_driver, TEST_USER_ID, "Brazilian"),
+            (_seed_test_driver, TEST_USER_ID, None),
+        ],
+        ids=["seeded", "seeded-none-stated", "mock", "mock-none-given"],
+    )
+    async def test_nationalities_reads_each_drivers_own(
+        self, bot, db_path, seed, user_id, nationality
     ):
+        """`_nationalities` is imported by the attendance and verdict paths too.
+
+        A mock driver has no signup record; its nationality is on its profile.
+        """
         from leaguebot.image.services.image_results_post import _nationalities
 
-        await _seed_driver(db_path, nationality=None)
+        await seed(db_path, nationality=nationality)
 
-        assert await _nationalities(bot, [USER_ID]) == {USER_ID: None}
-
-    async def test_nationalities_reads_a_mock_drivers_own(self, bot, db_path):
-        """A mock driver has no signup record; its nationality is on its profile."""
-        from leaguebot.image.services.image_results_post import _nationalities
-
-        await _seed_test_driver(db_path, nationality="Brazilian")
-
-        assert await _nationalities(bot, [TEST_USER_ID]) == {TEST_USER_ID: "Brazilian"}
-
-    async def test_nationalities_yields_none_for_a_mock_driver_given_none(
-        self, bot, db_path
-    ):
-        from leaguebot.image.services.image_results_post import _nationalities
-
-        await _seed_test_driver(db_path, nationality=None)
-
-        assert await _nationalities(bot, [TEST_USER_ID]) == {TEST_USER_ID: None}
+        assert await _nationalities(bot, [user_id]) == {user_id: nationality}
 
     async def test_the_verdict_lookup_reads_both_kinds_of_driver(self, db_path):
         """The fourth site, which joined the phantom column until this was written."""
@@ -232,31 +221,21 @@ class TestSignupRecordsJoin:
 class TestNationalityCollected:
     """The switch lives in `signup_module_settings`; `signup_config` never existed."""
 
-    async def test_a_league_that_switched_collection_off_is_observed(self, db_path):
+    @pytest.mark.parametrize(
+        ("nationality_required", "expected"), [(0, False), (1, True)], ids=["off", "on"]
+    )
+    async def test_the_signup_switch_is_observed(self, db_path, nationality_required, expected):
         from leaguebot.image.services.image_results_post import _nationality_collected
 
         async with get_connection(db_path) as db:
             await db.execute(
                 "INSERT INTO signup_module_settings (id, nationality_required, "
-                "time_type, time_image_required) VALUES (?, 0, 'TIME_TRIAL', 1)",
-                (1,),
+                "time_type, time_image_required) VALUES (?, ?, 'TIME_TRIAL', 1)",
+                (1, nationality_required),
             )
             await db.commit()
 
-        assert await _nationality_collected(db_path) is False
-
-    async def test_a_league_that_collects_is_observed(self, db_path):
-        from leaguebot.image.services.image_results_post import _nationality_collected
-
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "INSERT INTO signup_module_settings (id, nationality_required, "
-                "time_type, time_image_required) VALUES (?, 1, 'TIME_TRIAL', 1)",
-                (1,),
-            )
-            await db.commit()
-
-        assert await _nationality_collected(db_path) is True
+        assert await _nationality_collected(db_path) is expected
 
     async def test_a_league_with_no_row_collects(self, db_path):
         """The documented default, and what a league without the signup module gets."""
@@ -292,26 +271,21 @@ class TestTheTestModeSwitchStandsIn:
             )
             await db.commit()
 
-    async def test_the_test_mode_switch_wins_while_test_mode_is_on(self, db_path):
+    @pytest.mark.parametrize(
+        ("test_mode", "test_nationality", "signup", "expected"),
+        [(1, 0, 1, False), (1, 1, 0, True), (0, 0, 1, True)],
+        ids=["test-mode-wins", "test-mode-wins-the-other-way", "signup-outside-test-mode"],
+    )
+    async def test_the_test_mode_switch_governs_only_while_test_mode_is_on(
+        self, db_path, test_mode, test_nationality, signup, expected
+    ):
         from leaguebot.image.services.image_results_post import _nationality_collected
 
-        await self._set(db_path, test_mode=1, test_nationality=0, signup=1)
+        await self._set(
+            db_path, test_mode=test_mode, test_nationality=test_nationality, signup=signup
+        )
 
-        assert await _nationality_collected(db_path) is False
-
-    async def test_it_wins_in_the_other_direction_too(self, db_path):
-        from leaguebot.image.services.image_results_post import _nationality_collected
-
-        await self._set(db_path, test_mode=1, test_nationality=1, signup=0)
-
-        assert await _nationality_collected(db_path) is True
-
-    async def test_the_signup_switch_governs_outside_test_mode(self, db_path):
-        from leaguebot.image.services.image_results_post import _nationality_collected
-
-        await self._set(db_path, test_mode=0, test_nationality=0, signup=1)
-
-        assert await _nationality_collected(db_path) is True
+        assert await _nationality_collected(db_path) is expected
 
     async def test_the_switch_defaults_on_for_a_server_already_configured(self, db_path):
         """Migration 042 fills the existing rows in place, so no wipe is needed."""
