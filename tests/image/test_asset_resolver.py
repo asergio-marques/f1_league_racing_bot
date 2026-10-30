@@ -740,7 +740,11 @@ def test_our_own_artwork_records_a_shape_for_every_class():
 
 
 def test_the_flag_artwork_is_three_by_two_and_the_track_artwork_square():
-    """The two deliberately differ, and nothing requires two classes to agree."""
+    """The two deliberately differ, and nothing requires two classes to agree.
+
+    The packaged-asset off-shape notice compares a slot against this table, so pinning it here
+    also keeps that notice from quietly starting to report against something else.
+    """
     from leaguebot.image.models.image_constants import PACKAGED_ASSET_ASPECTS
 
     assert PACKAGED_ASSET_ASPECTS["flag"] == pytest.approx(1.5)

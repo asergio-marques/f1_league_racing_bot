@@ -18,7 +18,6 @@ from leaguebot.image.models.image_constants import (
     FALLBACK_ASSET_NAME,
     NOTICE_ASSET_FALLBACK_USED,
     NOTICE_PACKAGED_ASSET_OFF_SHAPE,
-    PACKAGED_ASSET_ASPECTS,
     packaged_directory_for,
 )
 from leaguebot.image.utils.svg_document import parse_svg_bytes
@@ -83,13 +82,8 @@ def test_a_packaged_flag_in_a_re_shaped_slot_is_reported(league_flags, packaged_
     assert "3:2" in off_shape[0].detail          # what we ship
     assert "2:1" in off_shape[0].detail          # what the slot is
     assert "stretched" in off_shape[0].detail
-
-
-def test_it_is_raised_beside_the_fallback_notice_rather_than_instead_of_it(
-    league_flags, packaged_flags
-):
-    """Two different facts: that a fallback was drawn, and that it does not fit."""
-    notices = _render(league_flags, width=120, height=60)
+    # Raised beside the fallback notice rather than instead of it: two different facts, that a
+    # fallback was drawn, and that it does not fit.
     assert _kinds(notices) == {NOTICE_ASSET_FALLBACK_USED, NOTICE_PACKAGED_ASSET_OFF_SHAPE}
 
 
@@ -134,8 +128,3 @@ def test_a_slot_declaring_no_usable_dimensions_is_not_guessed_at(
         )
     )
     assert NOTICE_PACKAGED_ASSET_OFF_SHAPE not in _kinds(result.notices)
-
-
-def test_the_shape_it_compares_against_is_the_packaged_table():
-    """Pinned so the notice cannot quietly start reporting against something else."""
-    assert PACKAGED_ASSET_ASPECTS["flag"] == pytest.approx(1.5)

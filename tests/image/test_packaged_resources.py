@@ -183,27 +183,8 @@ def test_the_packaged_templates_declare_the_expected_slots(template, field_id, a
     )
 
 
-@pytest.mark.parametrize(
-    "template",
-    [
-        "standings_drivers_template",
-        "standings_constructors_template",
-        "attendance_template",
-        "weather_p1_template",
-        "weather_p2_template",
-        "weather_p2_sprint_template",
-        "weather_p3_template",
-        "weather_p3_sprint_template",
-    ],
-)
-def test_only_the_calendar_and_check_in_templates_declare_a_circuit_map(template):
-    """XIV.13 — every other type draws the country flag and nothing else."""
-    text = (RESOURCES / "templates" / f"{template}.svg").read_text(encoding="utf-8")
-    assert 'id="track_image"' not in text
-    assert not re.search(r'id="round_\d+_image"', text)
-
-
 def test_the_two_map_bearing_templates_are_exactly_the_calendar_and_the_check_in():
+    """XIV.13 — every other type draws the country flag and nothing else."""
     bearing = {
         path.stem
         for path in _template_paths()
@@ -217,26 +198,15 @@ def test_the_two_map_bearing_templates_are_exactly_the_calendar_and_the_check_in
 # The grand prix name, drawn only where one round is the subject (2026-09-01)
 # --------------------------------------------------------------------------
 
-#: The sheets that stand after a whole season. Each names the round it stands after by
-#: number, and naming that one round's grand prix beneath the heading read as a subtitle
-#: for the table rather than as a fact about it.
-SEASON_SHEETS = (
-    "attendance_template",
-    "standings_drivers_template",
-    "standings_constructors_template",
-)
-
-
-@pytest.mark.parametrize("template", SEASON_SHEETS)
-def test_a_season_sheet_does_not_name_a_grand_prix(template):
-    """``race_name`` stays in each catalogue; these files decline to declare it."""
-    text = (RESOURCES / "templates" / f"{template}.svg").read_text(encoding="utf-8")
-    assert 'id="race_name"' not in text
-
-
 def test_every_other_round_scoped_template_still_names_its_grand_prix():
     """The check-in, the results sheets, the verdict, its banner and the forecasts each
-    draw one round."""
+    draw one round.
+
+    The sheets that stand after a whole season — attendance and the two standings — are
+    absent from the set. Each names the round it stands after by number, and naming that one
+    round's grand prix beneath the heading read as a subtitle for the table rather than as a
+    fact about it. ``race_name`` stays in each catalogue; these files decline to declare it.
+    """
     naming = {
         path.stem
         for path in _template_paths()
