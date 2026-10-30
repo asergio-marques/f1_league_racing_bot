@@ -11,7 +11,9 @@ Covers:
   2. Every mandatory field — team blocks included — is checkable the moment a template is
      named: a missing `reserve_group`, `division_name` or `team_<x>_name` is a rejection.
   3. Contiguity of both collections is a rejection at that same moment.
-  4. The lineup reports genuine depth 2, not a skip.
+
+That the lineup reports genuine depth 2, not a skip, is pinned with every other type in
+`test_image_validity_layers.py`.
 """
 from __future__ import annotations
 
@@ -21,10 +23,7 @@ import pytest
 from lxml import etree
 
 from leaguebot.image.models.image_catalogues import LINEUP_CATALOGUE, CapacityError
-from leaguebot.image.services.image_validity_service import (
-    LAYER_CATALOGUE,
-    CatalogueLayer,
-)
+from leaguebot.image.services.image_validity_service import CatalogueLayer
 
 SVG_NS = "http://www.w3.org/2000/svg"
 
@@ -52,10 +51,6 @@ def _root(*, reserve_group=True, reserve_slots=2, teams=None, division_name=True
 
 
 # ── Layer 2 evaluates the lineup from the template alone ──────────────────
-
-
-def test_layer_two_applies_to_the_lineup():
-    assert CatalogueLayer().applies_to("lineup_template")
 
 
 def test_the_team_blocks_are_checkable_with_no_division_in_view():
@@ -153,10 +148,6 @@ def test_the_layer_reports_a_capacity_fault_as_its_own_reason():
     assert result.passed is False
     assert "gap" in result.reason
 
-
-def test_the_lineup_declares_depth_two_not_a_skip():
-    assert CatalogueLayer().number == LAYER_CATALOGUE
-    assert not LINEUP_CATALOGUE.is_empty
 
 # ── One comparison, one severity (047 FR-024) ─────────────────────────────
 

@@ -11,12 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from leaguebot.image.models.image_catalogues import CATALOGUES, catalogue_for
 from leaguebot.image.services.image_validity_service import (
     LAYER_BOUNDS,
     LAYER_CATALOGUE,
     LAYER_RESOLUTION,
-    CatalogueLayer,
     TemplateContext,
     evaluate_template,
 )
@@ -98,32 +96,6 @@ def named(tmp_path):
     return _write
 
 
-# ── The layer applies at all ──────────────────────────────────────────────
-
-
-def test_layer_two_applies_to_the_calendar_now_it_has_a_catalogue():
-    assert CatalogueLayer().applies_to("calendar_template")
-    assert not catalogue_for("calendar_template").is_empty
-
-
-def test_layer_two_still_skips_a_type_with_no_catalogue():
-    """XIV.9.4 — a type checked shallowly must not read as fully valid.
-
-    Every one of the fifteen catalogues is populated as of 043, so the condition is staged
-    rather than found: what it proves must still hold for whichever type is specified next.
-    """
-    from leaguebot.image.models.image_catalogues import FieldCatalogue
-
-    saved = dict(CATALOGUES)
-    try:
-        CATALOGUES["verdicts_template"] = FieldCatalogue()
-        assert not CatalogueLayer().applies_to("verdicts_template")
-        assert CATALOGUES["verdicts_template"].is_empty
-    finally:
-        CATALOGUES.clear()
-        CATALOGUES.update(saved)
-
-
 # ── A sound template ──────────────────────────────────────────────────────
 
 
@@ -149,24 +121,21 @@ def test_a_missing_whole_graphic_field_is_named(named):
     assert "division_name" in report.reason
 
 
-def test_a_missing_round_field_is_named(named):
-    report = named(_template(rounds=(1, 2), omit="date"))
+@pytest.mark.parametrize(
+    ("rounds", "omit", "missing"),
+    [
+        ((1, 2), "date", "round_2_date"),
+        ((1,), "vertical_crop_point", "round_1_vertical_crop_point"),
+        # Every calendar must be able to show a round called off (#175), so a round with
+        # no overlay is refused as a missing crop point is.
+        ((1, 2), "cancelled", "round_2_cancelled"),
+    ],
+    ids=["date", "crop-point", "cancellation-overlay"],
+)
+def test_a_missing_round_field_is_named(named, rounds, omit, missing):
+    report = named(_template(rounds=rounds, omit=omit))
     assert not report.valid
-    assert "round_2_date" in report.reason
-
-
-def test_a_missing_crop_point_is_named(named):
-    report = named(_template(rounds=(1,), omit="vertical_crop_point"))
-    assert not report.valid
-    assert "round_1_vertical_crop_point" in report.reason
-
-
-def test_a_missing_cancellation_overlay_is_named(named):
-    """Every calendar must be able to show a round called off (#175), so a round with no
-    overlay is refused as a missing crop point is."""
-    report = named(_template(rounds=(1, 2), omit="cancelled"))
-    assert not report.valid
-    assert "round_2_cancelled" in report.reason
+    assert missing in report.reason
 
 
 def test_the_packaged_calendar_veils_every_round_it_declares():
