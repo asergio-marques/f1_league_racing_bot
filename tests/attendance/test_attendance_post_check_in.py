@@ -570,29 +570,32 @@ async def _arrange(tmp_path, case):
     }.get(case, {})
 
 
+# *via* is the reply that carries the refusal: the module gate answers before the command
+# defers, by `response.send_message`; every later refusal follows the defer, by `followup.send`.
 @pytest.mark.parametrize(
-    "case,reason",
+    "case,reason,via",
     [
-        ("module-disabled", "The Attendance module is not enabled."),
-        ("not-ongoing", "only while the season is ongoing"),
-        ("not-ongoing-placements", "only while the season is ongoing"),
-        ("not-ongoing-pending-completion", "only while the season is ongoing"),
-        ("unknown-division", "Division 'Division 9' not found."),
-        ("unknown-round", "has no round 7"),
+        ("module-disabled", "The Attendance module is not enabled.", "response"),
+        ("not-ongoing", "only while the season is ongoing", "followup"),
+        ("not-ongoing-placements", "only while the season is ongoing", "followup"),
+        ("not-ongoing-pending-completion", "only while the season is ongoing", "followup"),
+        ("unknown-division", "Division 'Division 9' not found.", "followup"),
+        ("unknown-round", "has no round 7", "followup"),
         # A round that is off has no check-in to answer, so there is nothing to post.
-        ("cancelled", "is cancelled"),
-        ("standing", "already standing"),
+        ("cancelled", "is cancelled", "followup"),
+        ("standing", "already standing", "followup"),
         # The timings come from the configuration, so without one there is no window to
         # judge; reading `rsvp_notice_days` off the None `get_config` gives would hand the
         # manager a traceback in the middle of a recovery command instead of an answer.
-        ("no-configuration", "No attendance configuration found."),
-        ("not-due", "is not due until"),
-        ("past-deadline", "so a call posted now could not be answered"),
+        ("no-configuration", "No attendance configuration found.", "followup"),
+        ("not-due", "is not due until", "followup"),
+        ("past-deadline", "so a call posted now could not be answered", "followup"),
     ],
 )
-async def test_every_refusal_of_a_hand_posted_call_is_recorded(tmp_path, case, reason):
-    """A6: each refusal is answered once, its reply carrying its reason, and writes one
-    "⛔ `/attendance post-check-in` refused" line with its reason, and nothing is posted."""
+async def test_every_refusal_of_a_hand_posted_call_is_recorded(tmp_path, case, reason, via):
+    """A6: each refusal is answered once, by the reply *via* names, carrying its reason, and
+    writes one "⛔ `/attendance post-check-in` refused" line with its reason, and nothing is
+    posted."""
     cog, kwargs = await _arrange(tmp_path, case)
     interaction = _interaction()
 
@@ -605,6 +608,11 @@ async def test_every_refusal_of_a_hand_posted_call_is_recorded(tmp_path, case, r
     )
     assert len(replies) == 1
     assert reason in str(replies[0].args[0])
+    carried = {
+        "response": interaction.response.send_message,
+        "followup": interaction.followup.send,
+    }[via]
+    assert carried.await_count == 1
     logged = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
     assert len(logged) == 1
     assert logged[0].startswith(
