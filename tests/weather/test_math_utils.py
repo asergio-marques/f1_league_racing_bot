@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
+
 import pytest
 
 from leaguebot.weather.utils.math_utils import (
@@ -24,20 +26,20 @@ class TestComputeRpcBeta:
     """Tests for compute_rpc_beta — Beta distribution sampling."""
 
     def test_returns_tuple(self) -> None:
+        # raw_draw must be present and be a float (even if clamped rpc differs)
         raw_draw, rpc = compute_rpc_beta(0.30, 0.05)
         assert isinstance(raw_draw, float)
         assert isinstance(rpc, float)
 
-    def test_rpc_within_bounds_mid_range(self) -> None:
-        # United Kingdom: mu=0.30, sigma=0.05 — run 50 draws
+    @pytest.mark.parametrize(
+        ("mu", "sigma"),
+        [(0.30, 0.05), (0.05, 0.02)],
+        ids=["mid_range_united_kingdom", "low_mu_bahrain"],
+    )
+    def test_rpc_within_bounds(self, mu: float, sigma: float) -> None:
+        # 50 draws, each clamped into [0, 1]
         for _ in range(50):
-            raw_draw, rpc = compute_rpc_beta(0.30, 0.05)
-            assert 0.0 <= rpc <= 1.0, f"rpc={rpc} out of [0,1]"
-
-    def test_rpc_within_bounds_low_mu(self) -> None:
-        # Bahrain: mu=0.05, sigma=0.02
-        for _ in range(50):
-            raw_draw, rpc = compute_rpc_beta(0.05, 0.02)
+            raw_draw, rpc = compute_rpc_beta(mu, sigma)
             assert 0.0 <= rpc <= 1.0, f"rpc={rpc} out of [0,1]"
 
     def test_rpc_rounded_to_2dp(self) -> None:
@@ -45,38 +47,31 @@ class TestComputeRpcBeta:
             _, rpc = compute_rpc_beta(0.25, 0.05)
             assert rpc == round(rpc, 2)
 
-    def test_raw_draw_recorded(self) -> None:
-        # raw_draw must be present and be a float (even if clamped rpc differs)
-        raw_draw, rpc = compute_rpc_beta(0.30, 0.05)
-        assert isinstance(raw_draw, float)
-
-    def test_clamp_applied_via_monkeypatch(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Force betavariate to return 1.5 (out of range) — rpc must clamp to 1.0
+    @pytest.mark.parametrize(
+        ("forced", "expected_rpc"),
+        [(1.5, 1.0), (-0.1, 0.0)],
+        ids=["above_one_clamps_to_one", "below_zero_clamps_to_zero"],
+    )
+    def test_clamp_applied_via_monkeypatch(
+        self, monkeypatch: pytest.MonkeyPatch, forced: float, expected_rpc: float,
+    ) -> None:
+        # Force betavariate out of range: raw_draw is recorded as drawn, and rpc
+        # clamps to the nearer bound
         import leaguebot.weather.utils.math_utils as math_utils
-        monkeypatch.setattr(math_utils._random, "betavariate", lambda a, b: 1.5)
+        monkeypatch.setattr(math_utils._random, "betavariate", lambda a, b: forced)
         raw_draw, rpc = compute_rpc_beta(0.30, 0.05)
-        assert raw_draw == 1.5
-        assert rpc == 1.0
+        assert raw_draw == forced
+        assert rpc == expected_rpc
 
-    def test_clamp_lower_bound_via_monkeypatch(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Force betavariate to return -0.1 — rpc must clamp to 0.0
-        import leaguebot.weather.utils.math_utils as math_utils
-        monkeypatch.setattr(math_utils._random, "betavariate", lambda a, b: -0.1)
-        raw_draw, rpc = compute_rpc_beta(0.30, 0.05)
-        assert raw_draw == pytest.approx(-0.1)
-        assert rpc == 0.0
-
-    def test_infeasible_sigma_raises(self) -> None:
-        # sigma >= sqrt(mu*(1-mu)) must raise ValueError
-        import math
-        mu = 0.30
-        sigma = math.sqrt(mu * (1.0 - mu))  # exactly at boundary
+    @pytest.mark.parametrize(
+        "sigma",
+        [math.sqrt(0.30 * (1.0 - 0.30)), 0.0],
+        ids=["at_upper_boundary", "zero"],
+    )
+    def test_infeasible_sigma_raises(self, sigma: float) -> None:
+        # sigma >= sqrt(mu*(1-mu)), or sigma <= 0, must raise ValueError
         with pytest.raises(ValueError, match="Infeasible"):
-            compute_rpc_beta(mu, sigma)
-
-    def test_sigma_zero_raises(self) -> None:
-        with pytest.raises(ValueError):
-            compute_rpc_beta(0.30, 0.0)
+            compute_rpc_beta(0.30, sigma)
 
     def test_all_28_default_tracks_produce_valid_rpc(self) -> None:
         """Smoke test: representative track mu/sigma values all produce a valid draw."""
@@ -153,14 +148,13 @@ class TestSlotDistribution:
 
 
 class TestClampWeight:
-    def test_clamp_negative(self) -> None:
-        assert clamp_weight(-5.0) == 0.0
-
-    def test_clamp_zero(self) -> None:
-        assert clamp_weight(0.0) == 0.0
-
-    def test_positive_unchanged(self) -> None:
-        assert clamp_weight(42.5) == 42.5
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [(-5.0, 0.0), (0.0, 0.0), (42.5, 42.5)],
+        ids=["negative_clamps", "zero_clamps", "positive_unchanged"],
+    )
+    def test_clamp_weight(self, value: float, expected: float) -> None:
+        assert clamp_weight(value) == expected
 
 
 class TestPhase3WeightFunctions:
@@ -168,14 +162,13 @@ class TestPhase3WeightFunctions:
 
     _WEATHER_TYPES = {"Clear", "Light Cloud", "Overcast", "Wet", "Very Wet"}
 
-    def test_sunny_keys(self) -> None:
-        assert set(weights_sunny(0.5).keys()) == self._WEATHER_TYPES
-
-    def test_mixed_keys(self) -> None:
-        assert set(weights_mixed(0.5).keys()) == self._WEATHER_TYPES
-
-    def test_rain_keys(self) -> None:
-        assert set(weights_rain(0.5).keys()) == self._WEATHER_TYPES
+    @pytest.mark.parametrize(
+        "weight_fn",
+        [weights_sunny, weights_mixed, weights_rain],
+        ids=["sunny", "mixed", "rain"],
+    )
+    def test_keys(self, weight_fn: Callable[[float], dict[str, float]]) -> None:
+        assert set(weight_fn(0.5).keys()) == self._WEATHER_TYPES
 
     def test_sunny_zero_prain(self) -> None:
         w = weights_sunny(0.0)
