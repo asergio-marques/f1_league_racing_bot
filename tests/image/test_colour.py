@@ -48,6 +48,7 @@ def test_rejected_forms(value):
 @pytest.mark.parametrize(
     "value,expected",
     [
+        # The packaged fastest-lap default must survive its own validation.
         ("#A020F0", (160, 32, 240)),
         ("#a020f0", (160, 32, 240)),
         ("#A020f0", (160, 32, 240)),
@@ -77,11 +78,6 @@ def test_error_states_the_required_form():
 def test_normalise_is_canonical_uppercase():
     assert normalise_hex("#a020f0") == "#A020F0"
     assert normalise_hex("#A020F0") == "#A020F0"
-
-
-def test_default_fastest_lap_colour_is_valid():
-    """The packaged default must survive its own validation."""
-    assert is_valid_hex("#A020F0")
 
 
 # ── T045: the WCAG formula ────────────────────────────────────────────────
