@@ -33,9 +33,10 @@ read as current behaviour, so the wip-spec's words are quoted above instead.
 Each is pinned by a pair of tests sitting either side of its moment, because the three differ
 only in *which* instant they compare against and a later reader collapsing them into one check
 would pass any test that only exercised one kind of driver. `test_a_reserve_who_has_not_
-accepted_may_still_step_in_after_the_deadline` is the one that would catch it. For the two
-reserve rules the locked side is a case of `test_every_refused_press_is_recorded`:
-`reserve-accepted` and `round-started`.
+accepted_may_still_step_in_after_the_deadline` is the one that would catch it. The button tests
+hold both sides of the two reserve rules: the allowed side in the reserve section, a reserve who
+has accepted changing their answer before the deadline included, and the locked side as cases of
+`test_every_refused_press_is_recorded`, `reserve-accepted` and `round-started`.
 
 **Times are taken from the clock, never pinned, where the handler is driven.** The handler
 reads `datetime.now` itself and takes no `now` parameter, so a fixture that seeded a fixed date
@@ -503,8 +504,9 @@ async def test_with_no_deadline_configured_answers_stay_open_until_the_start(tmp
 # ---------------------------------------------------------------------------
 # FR-015 / FR-016 — a reserve locks differently, and on what they already said
 #
-# The tests here are the allowed side: a reserve who has not accepted may still step in after
-# the deadline. The locked side is a pair of cases of `test_every_refused_press_is_recorded`:
+# The tests here are the allowed side of both reserve rules: a reserve who has not accepted may
+# still step in after the deadline, and a reserve who has accepted may still change their answer
+# before it. The locked side is a pair of cases of `test_every_refused_press_is_recorded`:
 # `reserve-accepted`, a reserve who has accepted withdrawing after the deadline, and
 # `round-started`, a reserve who has not accepted stepping in once the round has started.
 # ---------------------------------------------------------------------------
@@ -538,6 +540,25 @@ async def test_a_reserve_with_no_answer_at_all_may_step_in_after_the_deadline(tm
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert await _status(db_path, RESERVE_PROFILE) == "ACCEPTED"
+
+
+@pytest.mark.parametrize(
+    "action,expected", [("decline", "DECLINED"), ("tentative", "TENTATIVE")]
+)
+async def test_a_reserve_who_has_accepted_may_change_their_answer_before_the_deadline(
+    tmp_path, action, expected
+):
+    """Having accepted locks a reserve at the deadline, not before it. The arrangement of the
+    `reserve-accepted` case of `test_every_refused_press_is_recorded`, two hours earlier: with
+    an hour still to go, the new answer is recorded and nothing refuses it."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(hours=DEADLINE_HOURS + 1))
+    await _set_status(db_path, RESERVE_PROFILE, "ACCEPTED")
+    interaction = _make_interaction(db_path, RESERVE_PROFILE)
+
+    await _press(interaction, f"rsvp_{action}_r{ROUND_ID}")
+
+    assert await _status(db_path, RESERVE_PROFILE) == expected
+    assert "has been updated" in _reply(interaction)
 
 
 # ---------------------------------------------------------------------------
