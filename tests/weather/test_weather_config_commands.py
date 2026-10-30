@@ -433,14 +433,13 @@ async def test_a_held_value_changes_nothing(tmp_path, phase):
     shown = f"{held} hour(s)" if phase == 3 else f"{held} day(s)"
 
     asked = await _ask(league, phase, held)
-    assert acknowledgement(asked).startswith("⏳ ")
+    assert acknowledgement(asked).startswith(f"⏳ Setting the {deadline} deadline to {shown}. ")
     await run_queue(league.bot)
 
     assert last_said(asked) == f"ℹ️ Nothing changed: the {deadline} deadline is already **{shown}**."
-    (line,) = await log_lines(league)
-    first, *details = line.splitlines()
-    assert first == f"{NAMED} | /weather config phase-{phase}-deadline | Nothing changed"
-    assert any(shown in detail for detail in details), line
+    assert await log_lines(league) == [
+        f"{NAMED} | /weather config phase-{phase}-deadline | Nothing changed\n  {deadline}: {shown}"
+    ]
     assert await audit_rows(league.db_path) == []
 
 

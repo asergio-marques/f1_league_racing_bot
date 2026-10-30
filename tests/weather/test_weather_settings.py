@@ -127,22 +127,6 @@ async def test_a_deadline_is_acknowledged_then_updated_with_all_three_deadlines(
     )
 
 
-async def test_a_held_deadline_answers_nothing_changed_with_its_line_and_no_audit_entry(tmp_path):
-    """A deadline asked for the value it already holds is acknowledged, not refused, and when
-    it runs answers that nothing changed, with a "Nothing changed" line and no audit entry."""
-    league = await settings_league(tmp_path)
-
-    asked = await _ask(league, 1, 5)
-    assert acknowledgement(asked).startswith("⏳ Setting the Phase 1 deadline to 5 day(s). ")
-    await run_queue(league.bot)
-
-    assert last_said(asked) == "ℹ️ Nothing changed: the Phase 1 deadline is already **5 day(s)**."
-    assert await log_lines(league) == [
-        f"{NAMED} | /weather config phase-1-deadline | Nothing changed\n  Phase 1: 5 day(s)"
-    ]
-    assert await audit_rows(league.db_path) == []
-
-
 async def test_a_deadline_asked_before_placements_are_confirmed_and_run_after_is_refused(tmp_path):
     """A deadline asked while no season is confirmed, whose season's placements are confirmed
     before it runs, is refused when it runs in today's words, the deadline left as it was."""
