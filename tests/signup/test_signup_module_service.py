@@ -111,16 +111,11 @@ class TestSlotRemove:
         slots = await svc.get_slots()
         assert slots == []
 
-    async def test_remove_out_of_range_returns_false(self, db_path):
+    @pytest.mark.parametrize("rank", [1, 99], ids=["first-rank", "out-of-range"])
+    async def test_no_slots_returns_false(self, db_path, rank):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        result = await svc.remove_slot_by_rank(99)
-        assert result is False
-
-    async def test_no_slots_returns_false(self, db_path):
-        from leaguebot.signup.services.signup_module_service import SignupModuleService
-        svc = SignupModuleService(db_path)
-        result = await svc.remove_slot_by_rank(1)
+        result = await svc.remove_slot_by_rank(rank)
         assert result is False
 
 
