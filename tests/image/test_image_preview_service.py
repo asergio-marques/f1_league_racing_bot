@@ -372,6 +372,15 @@ class TestRefusals:
     async def test_an_unknown_division_is_refused_and_the_known_ones_named(
         self, bot, league
     ):
+        """FR-015 — a fault of configuration is never reported as a failure to render, so
+        no render is attempted before the refusal."""
+
+        class ExplodingRenderService:
+            async def render(self, *args, **kwargs):  # pragma: no cover - must not run
+                raise AssertionError("a render was attempted before the refusal")
+
+        bot.image_render_service = ExplodingRenderService()
+
         with pytest.raises(PreviewRefused) as caught:
             await resolve_context(bot, "Nonexistent")
         assert caught.value.reason == REASON_NO_DIVISION
@@ -444,23 +453,6 @@ class TestRefusals:
         with pytest.raises(PreviewRefused) as caught:
             await resolve_context(bot, "Nope", round_number=99)
         assert caught.value.reason == REASON_NO_DIVISION
-
-
-# ── T009: nothing renders before a refusal ────────────────────────────────
-
-
-class TestNothingRendersBeforeARefusal:
-    async def test_no_render_is_attempted_on_a_refusal(self, bot, league):
-        """FR-015 — a fault of configuration is never reported as a failure to render."""
-
-        class ExplodingRenderService:
-            async def render(self, *args, **kwargs):  # pragma: no cover - must not run
-                raise AssertionError("a render was attempted before the refusal")
-
-        bot.image_render_service = ExplodingRenderService()
-
-        with pytest.raises(PreviewRefused):
-            await resolve_context(bot, "Nonexistent")
 
 
 # ── T010: the league's own asset directories ──────────────────────────────

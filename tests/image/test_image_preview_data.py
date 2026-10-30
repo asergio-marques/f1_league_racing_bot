@@ -679,18 +679,13 @@ class TestAttendanceFabrication:
         )
         return records, limit
 
-    def test_both_marks_and_an_unmarked_row_appear_together(self):
-        from leaguebot.image.services.image_attendance_service import MARK_NEAR, MARK_REACHED
-
-        records, limit = self._sheet(20, 12)
-
-        assert self._marks(records, limit) == {MARK_REACHED, MARK_NEAR, None}
-
     def test_the_marks_survive_a_field_of_four_and_a_single_round_run(self):
         """A preview is asked for at round one as often as at round twelve."""
         from leaguebot.image.services.image_attendance_service import MARK_NEAR, MARK_REACHED
 
-        for driver_count, round_count in ((4, 1), (4, 2), (20, 1), (20, 2), (20, 24)):
+        for driver_count, round_count in (
+            (4, 1), (4, 2), (20, 1), (20, 2), (20, 12), (20, 24),
+        ):
             records, limit = self._sheet(driver_count, round_count)
             assert self._marks(records, limit) == {MARK_REACHED, MARK_NEAR, None}, (
                 f"{driver_count} drivers over {round_count} rounds"
