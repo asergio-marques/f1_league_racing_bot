@@ -452,23 +452,9 @@ async def test_the_csv_names_every_column_a_manager_needs(tmp_path):
         assert column in header
 
 
-async def test_each_availability_slot_becomes_its_own_column(tmp_path):
-    """The manager sorts by slot to find who can race when, which needs a column per slot
-    rather than one cell listing them."""
-    interaction = _interaction()
-    cog = _make_cog(
-        exportable=[_exportable(1, slots=(1,))],
-        slots=[_slot(1, "Monday 19:00 UTC"), _slot(2, "Friday 21:00 UTC")],
-    )
-
-    await _export(cog, interaction)
-
-    header = _csv_rows(interaction)[0]
-    assert "Monday 19:00 UTC" in header
-    assert "Friday 21:00 UTC" in header
-
-
 async def test_a_slot_the_driver_gave_is_marked_and_one_they_did_not_is_blank(tmp_path):
+    """Each availability slot becomes its own column: the manager sorts by slot to find who
+    can race when, which needs a column per slot rather than one cell listing them."""
     interaction = _interaction()
     cog = _make_cog(
         exportable=[_exportable(1, slots=(1,))],
@@ -479,6 +465,8 @@ async def test_a_slot_the_driver_gave_is_marked_and_one_they_did_not_is_blank(tm
 
     rows = _csv_rows(interaction)
     header, row = rows[0], rows[1]
+    assert "Monday 19:00 UTC" in header
+    assert "Friday 21:00 UTC" in header
     assert row[header.index("Monday 19:00 UTC")] == "X"
     assert row[header.index("Friday 21:00 UTC")] == ""
 
