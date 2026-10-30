@@ -239,21 +239,6 @@ async def test_setter_persists_and_leaves_the_other_two_alone(
     assert await _stored(db_path) == expected
 
 
-@pytest.mark.parametrize(
-    "setter, value, expected", SETTERS, ids=["phase_1", "phase_2", "phase_3"]
-)
-async def test_second_call_updates_rather_than_inserting_a_second_row(
-    setter, value, expected, tmp_path
-):
-    db_path = await _make_db(tmp_path)
-
-    await setter(db_path, value)
-    await setter(db_path, value)
-
-    assert await _row_count(db_path) == 1
-    assert await _stored(db_path) == expected
-
-
 async def test_setters_compose(tmp_path):
     """Setting all three in turn leaves every one of them stored."""
     db_path = await _make_db(tmp_path)

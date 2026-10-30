@@ -227,26 +227,16 @@ async def test_amend_round_runs_no_overdue_phase_while_weather_is_disabled(tmp_p
 
     Weather off; Am's round 3, 90 days out with no phase performed, has its track amended and is
     brought forward to an hour from now, every phase's horizon passed: no phase is run and
-    nothing of weather's is armed."""
+    nothing of weather's is armed. The knock-on: a phase marked done while the module was off
+    could never be redone, so the phase flags are left at 0, and a later enable does not find
+    the phase already performed. The draws are recorded and then made for real, so the whole
+    path is exercised."""
     league = await _amended_league(tmp_path, weather=False, at=timedelta(days=90))
 
     await _amend(league, track="Silverstone Circuit", scheduled_at=_moment(league, _AN_HOUR))
 
     assert phases.ran == []
     league.bot.scheduler_service.schedule_round.assert_not_called()
-
-
-async def test_amend_round_leaves_the_phases_for_a_later_enable(tmp_path):
-    """The knock-on: a phase marked done while the module was off could never be redone.
-
-    Run for real rather than with the runners patched out, so the whole path is exercised —
-    the flags must be left at 0, so that a later enable does not find the phase already performed.
-    Weather off; Am's round 3 has its track amended and is brought forward to an hour from now.
-    """
-    league = await _amended_league(tmp_path, weather=False, at=timedelta(days=90))
-
-    await _amend(league, track="Silverstone Circuit", scheduled_at=_moment(league, _AN_HOUR))
-
     assert await _phase_state(league.db_path, AM_3) == (0, 0, 0, 0)
 
 
