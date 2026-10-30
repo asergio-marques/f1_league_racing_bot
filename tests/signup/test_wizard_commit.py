@@ -210,7 +210,9 @@ def _signup_lines(league: SeasonLeague) -> list[str]:
 
 async def test_every_answer_reaches_the_record(tmp_path):
     """Kimi has answered everything but his notes. He types "See you there"; once the queue runs
-    his signup record holds every answer, his notes and his signup channel."""
+    his signup record holds every answer, his notes and his signup channel. The record is built
+    from the draft, so it is saved before the draft is cleared: clearing first would save an
+    empty one."""
     league = await _league(tmp_path)
 
     await _type(league, "See you there")
@@ -298,18 +300,6 @@ async def test_the_wizard_is_parked_and_its_draft_cleared(tmp_path):
     assert json.loads(wizard["draft_answers_json"] or "{}") == {}
 
 
-async def test_the_record_is_saved_before_the_draft_is_cleared(tmp_path):
-    """The record is built from the draft, so clearing first would save an empty one. Once the
-    queue runs Kimi's record holds his platform."""
-    league = await _league(tmp_path)
-
-    await _type(league, "See you there")
-    await run_queue(league.bot)
-
-    record = await _record(league)
-    assert record is not None and record.platform == "Steam"
-
-
 async def test_the_driver_loses_write_permission(tmp_path):
     """The channel now holds a review panel rather than a question. Once the queue runs Kimi's
     typing in his channel is revoked."""
@@ -339,24 +329,16 @@ async def test_the_inactivity_timeout_is_cancelled(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_the_review_panel_is_posted_to_the_signup_channel(tmp_path):
-    """Once the queue runs one review panel, with its buttons, is posted in Kimi's channel."""
+async def test_the_review_panel_notifies_no_group(tmp_path):
+    """Once the queue runs one review panel, with its buttons, is posted in Kimi's channel. It
+    quotes the driver's own answers, and the bot's permission to mention everybody must not
+    carry a group mention in one of them (#362). The panel posted allows users alone."""
     league = await _league(tmp_path)
 
     await _type(league, "See you there")
     await run_queue(league.bot)
 
     assert len(_panels(league)) == 1
-
-
-async def test_the_review_panel_notifies_no_group(tmp_path):
-    """It quotes the driver's own answers, and the bot's permission to mention everybody must
-    not carry a group mention in one of them (#362). The panel posted allows users alone."""
-    league = await _league(tmp_path)
-
-    await _type(league, "See you there")
-    await run_queue(league.bot)
-
     [panel] = _panels(league)
     allowed = panel.kwargs["allowed_mentions"]
     assert (allowed.everyone, allowed.roles, allowed.users) == (False, False, True)
