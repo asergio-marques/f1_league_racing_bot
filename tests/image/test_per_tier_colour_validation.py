@@ -114,18 +114,8 @@ def test_a_shortfall_blocks_the_aspect_that_would_draw_it():
     calendar = next(s for s in statuses if s.aspect == "calendar")
     assert calendar.state == STATE_ENABLED_INVALID
     assert any("accent" in reason for reason in calendar.blocking_reasons)
-
-
-def test_the_blocking_reason_names_the_command_that_fixes_it():
-    statuses = build_aspect_statuses(
-        {"calendar": True},
-        {CALENDAR: _report(slots={"accent"})},
-        colour_shortfall={CALENDAR: ["`accent` is not set for **Division 1**"]},
-    )
-    reason = next(
-        r for r in next(s for s in statuses if s.aspect == "calendar").blocking_reasons
-        if "accent" in r
-    )
+    # The blocking reason names the command that fixes it.
+    reason = next(r for r in calendar.blocking_reasons if "accent" in r)
     assert "per-tier-set-colour" in reason
 
 
