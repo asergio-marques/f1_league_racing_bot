@@ -202,15 +202,13 @@ class TestPermittedWhileFree:
         await _remove(cog, _interaction(), slot_id=1)
         assert "Monday 19:00 UTC" not in await _slot_labels(db_path)
 
-    async def test_slot_change_permitted_in_configuration(self, tmp_path):
-        db_path = await _seed(tmp_path, unassigned=0, stage="CONFIGURATION")
-
-        await _add(_cog(db_path), _interaction())
-
-        assert "Friday 21:00 UTC" in await _slot_labels(db_path)
-
-    async def test_an_archived_season_holds_nothing_fixed(self, tmp_path):
-        db_path = await _seed(tmp_path, unassigned=0, stage="COMPLETED")
+    @pytest.mark.parametrize(
+        "stage", ["CONFIGURATION", "COMPLETED"], ids=["configuration", "archived"]
+    )
+    async def test_slot_change_permitted_while_nothing_is_fixed(self, tmp_path, stage):
+        """A season still in Configuration has fixed nothing yet, and an archived season holds
+        nothing fixed."""
+        db_path = await _seed(tmp_path, unassigned=0, stage=stage)
 
         await _add(_cog(db_path), _interaction())
 

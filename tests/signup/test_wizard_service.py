@@ -28,50 +28,30 @@ def _normalise(raw: str):
 
 
 class TestValidateNationality:
-    def test_full_adjective_accepted(self):
-        assert _validate("British") == "British"
-
-    def test_full_adjective_case_insensitive(self):
-        assert _validate("british") == "British"
-        assert _validate("BRITISH") == "British"
-
-    def test_country_name_accepted(self):
-        assert _validate("United Kingdom") == "British"
-
-    def test_country_name_case_insensitive(self):
-        assert _validate("united kingdom") == "British"
-        assert _validate("GERMANY") == "German"
-
-    def test_other_lowercase_accepted(self):
-        assert _validate("other") == "Other"
-
-    def test_other_uppercase_accepted(self):
-        assert _validate("OTHER") == "Other"
-
-    def test_other_mixed_case_accepted(self):
-        assert _validate("Other") == "Other"
-
-    def test_two_letter_iso_code_rejected_gb(self):
-        """GB was the old format — must now be rejected."""
-        assert _validate("gb") is None
-
-    def test_two_letter_iso_code_rejected_us(self):
-        assert _validate("us") is None
-
-    def test_unknown_string_rejected(self):
-        assert _validate("xyzzy") is None
-
-    def test_empty_string_rejected(self):
-        assert _validate("") is None
-
-    def test_leading_trailing_whitespace_stripped(self):
-        assert _validate("  British  ") == "British"
-
-    def test_german_country_name_stored_as_adjective(self):
-        assert _validate("Germany") == "German"
-
-    def test_usa_alias_accepted(self):
-        assert _validate("USA") == "American"
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            pytest.param("British", "British", id="adjective"),
+            pytest.param("british", "British", id="adjective-lowercase"),
+            pytest.param("BRITISH", "British", id="adjective-uppercase"),
+            pytest.param("United Kingdom", "British", id="country"),
+            pytest.param("united kingdom", "British", id="country-lowercase"),
+            pytest.param("GERMANY", "German", id="country-uppercase"),
+            pytest.param("Germany", "German", id="country-stored-as-adjective"),
+            pytest.param("USA", "American", id="usa-alias"),
+            pytest.param("other", "Other", id="other-lowercase"),
+            pytest.param("OTHER", "Other", id="other-uppercase"),
+            pytest.param("Other", "Other", id="other-mixed-case"),
+            # GB was the old format and must now be refused.
+            pytest.param("gb", None, id="iso-code-gb"),
+            pytest.param("us", None, id="iso-code-us"),
+            pytest.param("xyzzy", None, id="unknown"),
+            pytest.param("", None, id="empty"),
+            pytest.param("  British  ", "British", id="whitespace-stripped"),
+        ],
+    )
+    def test_a_nationality_is_read_as_its_adjective_or_refused(self, raw, expected):
+        assert _validate(raw) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -116,9 +96,13 @@ class TestNormaliseLapTimeRoundTrip:
         for t in ["1:23.456", "0:59.000", "2:01.999"]:
             assert _normalise(t) == t
 
-    def test_a_colon_before_the_thousandths_is_refused(self):
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            pytest.param("1:23:456", id="colon-before-thousandths"),
+            pytest.param("1:23.5", id="fewer-than-three-digits"),
+        ],
+    )
+    def test_a_time_outside_the_one_form_is_refused(self, raw):
         """Strict since #362: signup reads times as the results paste does."""
-        assert _normalise("1:23:456") is None
-
-    def test_fewer_than_three_digits_is_refused(self):
-        assert _normalise("1:23.5") is None
+        assert _normalise(raw) is None

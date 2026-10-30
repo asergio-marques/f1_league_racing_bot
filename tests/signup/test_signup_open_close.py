@@ -281,38 +281,6 @@ async def _is_open(db_path: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def test_signups_cannot_be_opened_under_test_mode(tmp_path):
-    """No real driver may sign up while the server is under test, so a window opened now
-    is one nobody could use."""
-    db_path = await _seed(tmp_path, test_mode=True)
-    interaction = _interaction()
-
-    await _open(_cog(db_path), interaction)
-
-    assert "test mode" in _replied(interaction)
-    assert not await _is_open(db_path)
-
-
-async def test_an_unconfigured_module_cannot_be_opened(tmp_path):
-    db_path = await _seed(tmp_path, config=False)
-    interaction = _interaction()
-
-    await _open(_cog(db_path), interaction)
-
-    assert "not configured" in _replied(interaction)
-
-
-async def test_signups_already_open_are_not_opened_again(tmp_path):
-    """Opening twice would post a second button and leave the first standing."""
-    db_path = await _seed(tmp_path, signups_open=True)
-    interaction = _interaction()
-
-    await _open(_cog(db_path), interaction)
-
-    assert "already open" in _replied(interaction)
-    interaction._signup_channel.send.assert_not_awaited()
-
-
 async def test_every_missing_setting_is_named_at_once(tmp_path):
     """Naming only the first would send a manager round the loop three times, and each
     refusal names the command that fixes it."""
@@ -386,50 +354,6 @@ async def test_every_role_fault_is_named_at_once_beside_what_is_not_set(tmp_path
     assert "/signup channel" in replied
     assert "**base role** is no longer on the server" in replied
     assert "**driver role** is no longer on the server" in replied
-
-
-async def test_signups_cannot_be_opened_with_no_time_slots(tmp_path):
-    """The wizard asks which slots a driver is available for; with none configured that
-    question has no answers and the driver could not finish."""
-    db_path = await _seed(tmp_path, slots=0)
-    interaction = _interaction()
-
-    await _open(_cog(db_path), interaction)
-
-    assert "time slot" in _replied(interaction)
-
-
-async def test_an_unknown_track_id_is_refused_naming_the_valid_range(tmp_path):
-    db_path = await _seed(tmp_path)
-    interaction = _interaction()
-
-    await _open(_cog(db_path), interaction, track_ids="1, 99999")
-
-    replied = _replied(interaction)
-    assert "99999" in replied
-    assert not await _is_open(db_path)
-
-
-async def test_an_unparseable_close_time_is_refused(tmp_path):
-    db_path = await _seed(tmp_path)
-    interaction = _interaction()
-
-    await _open(_cog(db_path), interaction, close_time="next tuesday-ish")
-
-    assert not await _is_open(db_path)
-    interaction._signup_channel.send.assert_not_awaited()
-
-
-async def test_a_configured_channel_that_no_longer_exists_is_reported(tmp_path):
-    """Configured and since deleted. The refusal comes after the defer, so it arrives as a
-    follow-up rather than a first response."""
-    db_path = await _seed(tmp_path)
-    interaction = _interaction(channel_found=False)
-
-    await _open(_cog(db_path), interaction)
-
-    assert "not found" in _replied(interaction)
-    assert not await _is_open(db_path)
 
 
 # ---------------------------------------------------------------------------
@@ -541,18 +465,6 @@ async def test_only_the_base_role_may_be_pinged(tmp_path):
     assert allowed.roles is not True
 
 
-async def test_a_close_time_arms_the_timer(tmp_path):
-    db_path = await _seed(tmp_path)
-    cog = _cog(db_path)
-    interaction = _interaction()
-
-    await _open(cog, interaction, close_time=_future(7))
-
-    cog.bot.scheduler_service.schedule_signup_close_timer.assert_called_once()
-    cfg = await SignupModuleService(db_path).get_config()
-    assert cfg.close_at is not None
-
-
 async def test_opening_without_a_close_time_arms_nothing(tmp_path):
     db_path = await _seed(tmp_path)
     cog = _cog(db_path)
@@ -577,13 +489,14 @@ async def test_opening_is_audited_with_the_tracks_chosen(tmp_path):
 
 
 async def test_opening_with_a_close_time_states_it_in_the_line_and_the_audit_row(tmp_path):
-    """A manager opens signups with a close time a week out: the Success line and the
-    SIGNUP_OPEN audit row both carry the close time armed."""
+    """A manager opens signups with a close time a week out: the close timer is armed, and the
+    Success line and the SIGNUP_OPEN audit row both carry the close time armed."""
     db_path = await _seed(tmp_path)
     cog = _cog(db_path)
 
     await _open(cog, _interaction(), close_time=_future(7))
 
+    cog.bot.scheduler_service.schedule_signup_close_timer.assert_called_once()
     armed = (await SignupModuleService(db_path).get_config()).close_at
     assert armed is not None
     [line] = _lines(cog)
@@ -668,8 +581,17 @@ SIGNUP_OPEN_REFUSALS = [
 async def test_every_signup_open_refusal_reaches_the_log_channel(
     tmp_path, seed, built, args, said
 ):
-    """Each refusal answers the manager as before, opens nothing, and writes one line in the
-    standard form."""
+    """Each refusal answers the manager as before, opens nothing, leaves the window as it stood
+    (closed, or open for the already-open case), and writes one line in the standard form.
+
+    - Under test mode no real driver may sign up, so a window opened then is one nobody could
+      use.
+    - Opening twice would post a second button and leave the first standing.
+    - The wizard asks which slots a driver is available for; with none configured that question
+      has no answers and the driver could not finish.
+    - A channel configured and since deleted is refused after the defer, so the refusal
+      arrives as a follow-up rather than a first response.
+    """
     db_path = await _seed(tmp_path, **seed)
     cog = _cog(db_path)
     interaction = _interaction(**built)
@@ -680,6 +602,7 @@ async def test_every_signup_open_refusal_reaches_the_log_channel(
 
     assert said in _replied(interaction)
     interaction._signup_channel.send.assert_not_awaited()
+    assert await _is_open(db_path) is bool(seed.get("signups_open"))
     [line] = _lines(cog)
     assert line.startswith("⛔ ")
     assert "/signup open" in line

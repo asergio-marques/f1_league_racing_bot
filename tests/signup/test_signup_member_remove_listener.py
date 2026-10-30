@@ -129,7 +129,8 @@ async def test_every_departure_goes_through_the_wizard_clean_up(tmp_path, state)
 
 @pytest.mark.parametrize("state", ["UNASSIGNED", "ASSIGNED"])
 async def test_a_placed_or_approved_driver_leaving_is_announced(tmp_path, state):
-    """The wizard path says nothing about them, yet the league has just lost a driver."""
+    """The wizard path says nothing about them, yet the league has just lost a driver. They
+    are named by the name they signed up under."""
     cog = _cog(await _make_db(tmp_path, name=f"mr_announce_{state}", state=state))
 
     await _leave(cog)
@@ -137,14 +138,7 @@ async def test_a_placed_or_approved_driver_leaving_is_announced(tmp_path, state)
     logged = _logged(cog)
     assert "Driver left server" in logged
     assert f"state: {state}" in logged
-
-
-async def test_the_announcement_uses_the_name_they_signed_up_under(tmp_path):
-    cog = _cog(await _make_db(tmp_path, name="mr_name", state="ASSIGNED"))
-
-    await _leave(cog)
-
-    assert "**Racer One**" in _logged(cog)
+    assert "**Racer One**" in logged
 
 
 async def test_a_driver_with_no_signup_record_is_named_by_their_discord_name(tmp_path):

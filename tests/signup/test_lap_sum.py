@@ -33,16 +33,11 @@ def test_a_lap_time_of_ten_minutes_or_more_is_read():
     assert parse_time("10:00.000") == 600_000
 
 
-def test_a_lap_time_with_two_digits_after_the_dot_is_refused():
-    """Signup accepts a lap time in one form only, three digits after the dot (#362), so one
-    outside it is refused rather than padded into a seed."""
-    assert parse_time("1:23.45") is None
-
-
-@pytest.mark.parametrize("raw", ["nonsense", "a:bc.def"])
+@pytest.mark.parametrize("raw", ["nonsense", "a:bc.def", "1:23.45"])
 def test_a_time_that_is_not_one_is_refused_rather_than_guessed(raw):
     """The seed is a number a whole season's divisions are built from, so a wrong one is worse
-    than no number at all."""
+    than no number at all. Signup accepts a lap time in one form only, three digits after the
+    dot (#362), so one outside it (`1:23.45`) is refused rather than padded into a seed."""
     assert parse_time(raw) is None
 
 

@@ -282,25 +282,16 @@ async def test_a_driver_not_awaiting_a_parameter_is_left_alone(tmp_path):
     assert _posted(league) == ""
 
 
-async def test_the_revert_reposts_the_review_panel(tmp_path):
+async def test_the_reposted_review_panel_notifies_no_group(tmp_path):
     """Without the panel the manager has the driver back but no buttons to act on: the
-    restart's lapse posts one fresh review panel in Kimi's channel."""
+    restart's lapse posts one fresh review panel in Kimi's channel. The reposted panel quotes
+    the same answers the first did (#362): it may notify neither everyone nor any role."""
     league = await _league(tmp_path)
 
     await _restart(league)
     await run_queue(league.bot)
 
     assert len(_panels(league)) == 1
-
-
-async def test_the_reposted_review_panel_notifies_no_group(tmp_path):
-    """The reposted panel quotes the same answers the first did (#362): it may notify neither
-    everyone nor any role."""
-    league = await _league(tmp_path)
-
-    await _restart(league)
-    await run_queue(league.bot)
-
     [panel] = _panels(league)
     assert panel.kwargs["allowed_mentions"].everyone is False
     assert panel.kwargs["allowed_mentions"].roles is False

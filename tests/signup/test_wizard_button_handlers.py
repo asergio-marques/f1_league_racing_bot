@@ -21,9 +21,12 @@ The other button steps moved with the views: platform and driver type
 (`test_signup_wizard_views.py::test_each_platform_button_reports_its_own_platform`,
 `::test_each_driver_type_button_reports_its_own_type`), No Preference for a teammate
 (`::test_no_preference_answers_the_teammate_question`), a button on a step already answered
-(`::test_a_button_on_a_step_already_answered_is_refused_and_recorded`), a team picked twice
-(`test_preferred_teams_view.py::test_a_team_pressed_again_on_an_earlier_message_is_refused_and_recorded`),
-a press with no wizard (`::test_a_press_in_a_channel_with_no_wizard_is_answered`), a channel the
+(`::test_a_button_on_a_step_already_answered_is_refused_and_recorded`), a team button pressed
+once the wizard has moved on to the teammate or notes step
+(`test_preferred_teams_view.py::test_a_team_pressed_on_a_step_already_answered_is_refused_and_recorded`),
+a team picked twice
+(`::test_a_team_pressed_again_on_an_earlier_message_is_refused_and_recorded`), a press with no
+wizard (`::test_a_press_in_a_channel_with_no_wizard_is_answered`), a channel the
 next question cannot be posted in
 (`test_signup_answer_change.py::test_a_refused_next_question_stops_the_queue_with_the_answer_saved`),
 the answer's line (`::test_a_button_answer_s_line_records_the_answer`) and the correction's
@@ -201,15 +204,6 @@ async def test_no_preference_ends_the_loop_keeping_the_picks_so_far(tmp_path):
     assert await _state(league) == "COLLECTING_PREFERRED_TEAMMATE"
 
 
-async def test_no_preference_with_no_picks_at_all_stores_an_empty_list(tmp_path):
-    league = await _team_step(tmp_path)
-
-    await _no_preference(league)
-
-    assert await _picks(league) == []
-    assert await _state(league) == "COLLECTING_PREFERRED_TEAMMATE"
-
-
 @pytest.mark.parametrize("ends_by", ["third-pick", "no-preference"])
 async def test_the_sub_step_counter_is_cleared_when_the_loop_ends(tmp_path, ends_by):
     """It is bookkeeping, not an answer. Left in `draft_answers` it would be carried into
@@ -224,18 +218,3 @@ async def test_the_sub_step_counter_is_cleared_when_the_loop_ends(tmp_path, ends
 
     assert "_pref_teams_step" not in await _draft(league)
 
-
-async def test_a_team_button_pressed_on_a_later_step_does_nothing(tmp_path):
-    """Kimi's wizard has moved on to his notes; he scrolls up and presses Ferrari on the team
-    step's old message. Once the queue runs nothing is recorded, his wizard stays on the notes,
-    and he is told the step has already been answered."""
-    league = await _team_step(tmp_path, state="COLLECTING_NOTES")
-    press = _press(league)
-
-    await _press_team(_view(league), 0, press)
-    await run_queue(league.bot)
-
-    assert await _picks(league) == []
-    assert await _state(league) == "COLLECTING_NOTES"
-    from tests.signup.test_preferred_teams_view import _answered
-    assert "That step has already been answered." in _answered(press)

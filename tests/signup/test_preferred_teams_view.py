@@ -260,18 +260,20 @@ async def test_a_restarted_view_offers_stub_buttons_for_every_slot():
 # ---------------------------------------------------------------------------
 
 
-async def test_a_button_records_the_team_its_label_names(tmp_path):
-    """Kimi, with no picks yet, presses the second button, labelled Mercedes. At once he is
-    answered privately that it is under way and nothing is saved; once the queue runs, Mercedes
-    is his pick."""
+@pytest.mark.parametrize("index, team", [(1, "Mercedes"), (2, "McLaren")],
+                         ids=["second-button", "third-button"])
+async def test_a_button_records_the_team_its_label_names(tmp_path, index, team):
+    """Kimi, with no picks yet, sees the whole list and presses the second button, labelled
+    Mercedes, or the third, labelled McLaren. At once he is answered privately that it is under
+    way and nothing is saved; once the queue runs, the team the button names is his pick."""
     league = await _team_step(tmp_path)
 
-    press = await _press_team(_view(league), 1, _press(league))
+    press = await _press_team(_view(league), index, _press(league))
 
     assert acknowledgement(press).startswith("⏳")
     assert await _picks(league) == []
     await run_queue(league.bot)
-    assert await _picks(league) == ["Mercedes"]
+    assert await _picks(league) == [team]
 
 
 async def test_a_press_on_an_earlier_message_records_the_team_its_label_names(tmp_path):
@@ -347,30 +349,22 @@ async def test_a_wizard_with_no_snapshot_is_answered(tmp_path):
     assert await _changes(league) == []
 
 
-async def test_a_team_pressed_on_a_step_already_answered_is_refused_and_recorded(tmp_path):
-    """Kimi has moved on to the teammate question and presses a team button left above. The
-    pick is judged when the queue reaches it: it changes nothing, Kimi is told "That step has
-    already been answered.", and one ⛔ line records the refusal."""
-    league = await _team_step(tmp_path, state="COLLECTING_PREFERRED_TEAMMATE")
+@pytest.mark.parametrize("state", ["COLLECTING_PREFERRED_TEAMMATE", "COLLECTING_NOTES"],
+                         ids=["teammate-step", "notes-step"])
+async def test_a_team_pressed_on_a_step_already_answered_is_refused_and_recorded(tmp_path, state):
+    """Kimi has moved on to the teammate question, or on to his notes, and scrolls up to press
+    a team button on the team step's old message. The pick is judged when the queue reaches it:
+    it changes nothing, nothing is recorded, his wizard stays on the step he had reached, Kimi
+    is told "That step has already been answered.", and one ⛔ line records the refusal."""
+    league = await _team_step(tmp_path, state=state)
 
     press = await _press_team(_view(league), 0, _press(league))
     await run_queue(league.bot)
 
     assert "That step has already been answered." in _answered(press)
     _refused_line(league, "That step has already been answered.")
-    assert await _state(league) == "COLLECTING_PREFERRED_TEAMMATE"
+    assert await _state(league) == state
     assert await _picks(league) == []
-
-
-async def test_a_driver_with_no_picks_yet_sees_the_whole_list(tmp_path):
-    """Kimi, with no picks, presses the third button: once the queue runs McLaren is his
-    pick."""
-    league = await _team_step(tmp_path)
-
-    await _press_team(_view(league), 2, _press(league))
-    await run_queue(league.bot)
-
-    assert await _picks(league) == ["McLaren"]
 
 
 # ---------------------------------------------------------------------------

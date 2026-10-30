@@ -273,34 +273,6 @@ async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_approving_approves_the_signup(tmp_path):
-    """Manager 77 presses Approve on Kimi's panel; once the queue runs Kimi is Unassigned and
-    the manager's reply, as updated, says the signup was approved."""
-    league = await _league(tmp_path)
-
-    press = await _press(league, "approve_button")
-    await run_queue(league.bot)
-
-    assert await _driver_state(league) == "UNASSIGNED"
-    assert "approved" in _answered(press).lower()
-
-
-async def test_approve_tells_the_manager_of_a_driver_role_not_granted(tmp_path):
-    """Discord refuses Kimi the driver role. Manager 77 presses Approve and the queue runs: the
-    approval stands, and the manager's updated reply says both that the signup was approved and
-    that the driver role could not be granted."""
-    league = await _league(tmp_path)
-    league.grant_fails[SIGNING_UP] = http_error(discord.Forbidden, status=403)
-
-    press = await _press(league, "approve_button")
-    await run_queue(league.bot)
-
-    reply = updated_reply(press).lower()
-    assert "approved" in reply
-    assert "driver role could not be granted" in reply
-    assert await _driver_state(league) == "UNASSIGNED"
-
-
 async def test_approving_needs_no_reason(tmp_path):
     """Only the two negative outcomes collect one — a driver told why they were approved
     would be an odd thing to read. Approve waits for no reason: the approval is asked of the

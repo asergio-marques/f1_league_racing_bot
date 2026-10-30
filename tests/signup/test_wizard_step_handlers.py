@@ -348,14 +348,6 @@ def test_a_signup_note_mentioning_everyone_is_refused(wizard):
     assert "notes" in _refused(_judge(wizard, "NOTES", "@everyone please check"))
 
 
-def test_a_preferred_teammate_given_as_a_role_mention_is_refused(wizard):
-    _refused(_judge(wizard, "PREFERRED_TEAMMATE", "<@&987654321098765432>"))
-
-
-def test_a_platform_id_holding_here_is_refused(wizard):
-    _refused(_judge(wizard, "PLATFORM_ID", "@here"))
-
-
 def test_a_signup_note_with_an_emoji_is_kept(wizard):
     """Shown only as text, where an emoji reads as the driver meant it."""
     answers = _accepted(_judge(wizard, "NOTES", "Happy to race \U0001F600"))
@@ -397,7 +389,10 @@ def test_a_typed_answer_refused_keeps_its_reply_and_writes_one_refusal_line(
 ):
     """A refused typed answer gives the reply posted in the driver's channel, starting ❌, and
     the step its one refusal line names (the line itself, "⛔ the <step> step of <driver>'s
-    signup wizard refused …", is written by signup.answer's job: test_signup_answer_change)."""
+    signup wizard refused …", is written by signup.answer's job: test_signup_answer_change),
+    and gives nothing to save. The table carries the group mentions a free-text answer refuses
+    (#362): `@here` as a platform ID, a role mention as a preferred teammate, `@everyone` in a
+    note."""
     from leaguebot.signup.services.wizard_changes import Refused
 
     wizard.config_snapshot.time_image_required = screenshot_required
@@ -405,6 +400,7 @@ def test_a_typed_answer_refused_keeps_its_reply_and_writes_one_refusal_line(
     judged = _judge(wizard, state, typed)
 
     assert isinstance(judged, Refused)
+    assert not hasattr(judged, "answers"), "a refusal gives nothing to save"
     assert judged.reply.startswith("❌")
     assert judged.step == step
 

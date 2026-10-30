@@ -14,7 +14,9 @@ grant, a driver who has left the server: none of them may stop an approval part-
 pins the rules each outcome holds.
 
 **All three hold the channel for 24 hours rather than deleting it.** The driver is told the
-outcome in the channel, so deleting it at once would take the message with it.
+outcome in the channel, so deleting it at once would take the message with it. Approval's hold,
+with the role granted, Unassigned and the approved mark, is pinned by
+`tests/signup/test_review_changes.py::test_approve_saves_grants_the_role_and_tells_the_driver_as_jobs`.
 
 Request Changes writes down **who** asked and **why**, so that the lapse can mention the right
 manager when the five minutes run out.
@@ -23,7 +25,6 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -58,7 +59,6 @@ KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 REVIEWER = 77
 LAP_TIMES = {"1": "1:30.000", "2": "1:31.500"}
 INACTIVITY_TIMER = "signup_inactivity"
-DELETE_TIMER = "signup_channel_delete"
 CLOSING_KIND = "signup.closing"
 LABELS = {"reject": "Reject", "request_changes": "Request Changes"}
 
@@ -216,26 +216,6 @@ async def _closings(league: SeasonLeague) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-async def test_an_approved_driver_is_granted_the_driver_role(tmp_path):
-    """Manager 77 approves Kimi and the queue runs: Kimi is given the league's driver role
-    (820), once."""
-    league = await _league(tmp_path)
-
-    await _approve(league)
-
-    assert league.granted.get(SIGNING_UP) == [DRIVER_ROLE]
-
-
-async def test_an_approved_driver_becomes_unassigned(tmp_path):
-    """Unassigned, not placed. Approval says they may race; the placement commands decide
-    where."""
-    league = await _league(tmp_path)
-
-    await _approve(league)
-
-    assert await _state(league) == "UNASSIGNED"
-
-
 async def test_a_driver_with_no_lap_times_stores_no_seeding_value(tmp_path):
     """A league that asked for no times has nothing to seed from, and storing a zero would seed
     every driver identically: Kimi's record, holding no lap times, is approved with no total."""
@@ -267,8 +247,10 @@ async def test_approval_without_a_signup_configuration_does_nothing(tmp_path):
 async def test_a_driver_role_not_granted_is_reported_and_the_approval_stands(tmp_path, why):
     """The driver role cannot be given: the role has been deleted, Kimi has left the server, or
     Discord refuses it. The approval stands, as the core specification's role rules have it:
-    Kimi is Unassigned, the league lane is not stopped, and both the manager's updated reply and
-    the Approved line in the log channel say the driver role could not be granted."""
+    Kimi is Unassigned, his signup record is marked approved, the league lane is not stopped,
+    and both the manager's updated reply and the Approved line in the log channel say the
+    driver role could not be granted. A driver who has left the server may come back, and the
+    record is the league's either way, so he is approved all the same."""
     from tests.support.change_queue import stopped_job
 
     league = await _league(tmp_path)
@@ -282,6 +264,7 @@ async def test_a_driver_role_not_granted_is_reported_and_the_approval_stands(tmp
     press = await _approve(league)
 
     assert await _state(league) == "UNASSIGNED"
+    assert (await _record(league))["approved"] == 1
     assert await stopped_job(league.db_path, "league") is None
     assert "role" in updated_reply(press).lower()
     assert any("| Signup | Approved" in line for line in _lines(league)), league.log()
@@ -314,36 +297,6 @@ async def test_a_league_with_no_driver_role_configured_still_approves(tmp_path):
     assert league.granted.get(SIGNING_UP) is None
 
 
-async def test_a_driver_who_has_left_the_server_is_still_approved(tmp_path):
-    """Kimi has left the server: he may come back, and the record is the league's either way,
-    so he is approved all the same."""
-    league = await _league(tmp_path)
-    league.absent.add(SIGNING_UP)
-
-    await _approve(league)
-
-    assert await _state(league) == "UNASSIGNED"
-    assert (await _record(league))["approved"] == 1
-
-
-async def test_approval_holds_the_channel_rather_than_deleting_it(tmp_path):
-    """The driver is told the outcome in the channel; deleting it at once would take the
-    message with it. After the queue runs Kimi's channel still stands, is told he was approved,
-    his typing there is revoked and its deletion is armed a day on."""
-    league = await _league(tmp_path)
-
-    await _approve(league)
-
-    assert KIMI_CHANNEL in league.channels
-    league.channel(KIMI_CHANNEL).delete.assert_not_awaited()
-    assert any("approved" in text.lower() for text in _texts(league)), _texts(league)
-    assert any(call.kwargs.get("send_messages") is False
-               for call in league.channel(KIMI_CHANNEL).set_permissions.call_args_list)
-    armed = [call.args for call in league.bot.scheduler_service.arm_once.call_args_list
-             if call.args and call.args[0] == DELETE_TIMER]
-    assert armed == [(DELETE_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))]
-
-
 async def test_approval_cancels_the_inactivity_timeout(tmp_path):
     """The wizard is finished. Left armed, the 24-hour timeout would later close a signup that
     had already been approved, so the approval disarms Kimi's inactivity timer."""
@@ -352,18 +305,6 @@ async def test_approval_cancels_the_inactivity_timeout(tmp_path):
     await _approve(league)
 
     league.bot.scheduler_service.disarm.assert_any_call(INACTIVITY_TIMER, str(SIGNING_UP))
-
-
-async def test_approval_is_logged_naming_the_manager_and_the_driver(tmp_path):
-    """Manager 77 approves Kimi: the log channel carries an Approved line naming 77, with Kimi
-    named beneath it."""
-    league = await _league(tmp_path)
-
-    await _approve(league)
-
-    [approved] = [line for line in _lines(league) if "| Signup | Approved" in line]
-    assert f"<@{REVIEWER}>" in approved
-    assert f"<@{SIGNING_UP}>" in league.log()
 
 
 async def test_an_approval_whose_role_job_is_discarded_is_still_recorded(tmp_path, monkeypatch):
@@ -384,16 +325,6 @@ async def test_an_approval_whose_role_job_is_discarded_is_still_recorded(tmp_pat
     [approved] = [line for line in _lines(league) if "| Signup | Approved" in line]
     assert f"<@{REVIEWER}>" in approved
     assert "driver role could not be granted" in league.log().lower(), league.log()
-
-
-async def test_an_approved_signup_is_marked_as_such(tmp_path):
-    """Issue #243: an approved signup outranks a later one of the driver's that was not. Kimi's
-    signup record is marked approved once the queue has run his approval."""
-    league = await _league(tmp_path)
-
-    await _approve(league)
-
-    assert (await _record(league))["approved"] == 1
 
 
 @pytest.mark.parametrize(

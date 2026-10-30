@@ -244,6 +244,8 @@ async def test_a_server_with_no_settings_row_starts_from_the_defaults(tmp_path, 
 
 
 async def test_the_configuration_is_reported(tmp_path):
+    """The report names the three settings as well as the channels: the toggles have no
+    other read-back, so this report is the only way a league can confirm what it set."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
     interaction = _interaction()
@@ -255,6 +257,9 @@ async def test_the_configuration_is_reported(tmp_path):
     assert fields["Base Role"] == "@role"
     assert fields["Driver Role"] == "@role"
     assert fields["Signups Open"] == "No"
+    assert fields["Nationality Required"] in ("ON", "OFF")
+    assert fields["Time Type"] in ("Time Trial", "Short Qualification")
+    assert fields["Time Image Required"] in ("ON", "OFF")
 
 
 async def test_a_deleted_channel_is_reported_as_not_found(tmp_path):
@@ -314,21 +319,6 @@ async def test_a_server_that_has_configured_nothing_reports_not_set(tmp_path):
     # The league's roles are shown whether or not the module has a configuration.
     assert fields["Base Role"] == "@role"
     assert fields["Driver Role"] == "@role"
-
-
-async def test_the_report_names_the_settings_as_well_as_the_channels(tmp_path):
-    """The three toggles have no other read-back, so this report is the only way a league
-    can confirm what it set."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await undecorate(SignupCog.config_view)(cog, interaction)
-
-    fields = _fields(interaction)
-    assert fields["Nationality Required"] in ("ON", "OFF")
-    assert fields["Time Type"] in ("Time Trial", "Short Qualification")
-    assert fields["Time Image Required"] in ("ON", "OFF")
 
 
 async def test_the_report_reflects_a_toggle_that_has_been_flipped(tmp_path):
