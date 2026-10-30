@@ -301,6 +301,7 @@ async def test_a_server_with_no_attendance_config_is_left_alone(tmp_path, announ
     await _run(bot, db_path)
 
     bot.placement_service.sack_driver.assert_not_awaited()
+    bot.placement_service.move_driver.assert_not_awaited()
     bot.placement_service.assign_driver.assert_not_awaited()
     sheet.assert_not_awaited()
 
@@ -324,6 +325,7 @@ async def test_both_thresholds_disabled_sanctions_nobody(
     await _run(bot, db_path)
 
     bot.placement_service.sack_driver.assert_not_awaited()
+    bot.placement_service.move_driver.assert_not_awaited()
     bot.placement_service.assign_driver.assert_not_awaited()
 
 
