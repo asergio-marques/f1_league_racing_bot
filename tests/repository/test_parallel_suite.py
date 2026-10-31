@@ -7,11 +7,31 @@ pinned here.
 """
 from __future__ import annotations
 
+import configparser
+import re
+from pathlib import Path
+
 import pytest
 
 from tests import conftest  # already imported by pytest; not re-executed
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 GB = 1024 * 1024  # /proc/meminfo counts in kB
+
+
+def test_the_suite_runs_in_parallel_on_every_host():
+    """`pytest tests/ -q` is the one command every host and every CI job runs, so the workers are
+    asked for in `pytest.ini` rather than on each command line, and xdist is pinned with the rest.
+    `worksteal` because the tests' lengths vary a thousandfold, and a worker left with the long
+    ones would hold up the run."""
+    parser = configparser.ConfigParser()
+    parser.read(REPO_ROOT / "pytest.ini", encoding="utf-8")
+    addopts = parser.get("pytest", "addopts").split()
+    requirements = (REPO_ROOT / "requirements.txt").read_text(encoding="utf-8")
+
+    assert addopts[addopts.index("-n") + 1] == "auto"
+    assert addopts[addopts.index("--dist") + 1] == "worksteal"
+    assert re.search(r"^pytest-xdist==", requirements, re.MULTILINE)
 
 
 def _meminfo(tmp_path, available_kb: int, swap_free_kb: int):

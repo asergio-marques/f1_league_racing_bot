@@ -41,6 +41,9 @@ jobs:
     #
     # `-rs` prints every skipped test and its reason. The summary line below counts skips but
     # cannot say which, and CLAUDE.md asks that a new skip be justified — which needs its name.
+    #
+    # The tests run in xdist workers, one a core, as `pytest.ini` asks of every run (#540); the
+    # JUnit report and `--durations` are the controller's, and cover every worker.
     - name: Github Action for testing the code
       env:
         COVERAGE_CORE: sysmon
@@ -153,6 +156,11 @@ jobs:
     # differ, so its skips differ too, and the log should say which. `--durations` on both jobs
     # names the slowest tests, so one that creeps up is seen before it costs this job its
     # timeout — which is how issue #252 was found, by a timeout and nothing earlier.
+    #
+    # Single tests here that take several seconds against a fraction of one on Linux are not a
+    # wait in the suite (#540): none recurs from run to run, they vary in length, and they bunch
+    # late in the run, where each worker's heap is largest. They are the garbage collector's
+    # pauses and the runner's own stalls.
     - name: Github Action for testing the code
       run: pytest tests/ -q -rs -m "not rasteriser" --durations=15 --junitxml=pytest-results.xml
 
