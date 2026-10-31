@@ -212,12 +212,7 @@ async def _check_out(key: tuple[str, float]) -> tuple[aiosqlite.Connection, _Ide
                 else:
                     stale = [db for db, _ in idle]
                     idle.clear()
-        try:
-            await _close_all(stale)
-        except BaseException:
-            if found is not None:
-                await found[0].close()
-            raise
+        await _close_all(stale)
         if found is not None:
             return found
     db = await aiosqlite.connect(db_path, timeout=timeout, factory=_Connection)
