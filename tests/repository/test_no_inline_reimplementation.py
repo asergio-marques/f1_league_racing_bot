@@ -70,6 +70,21 @@ def _test_files() -> list[pathlib.Path]:
     return sorted(TESTS.rglob("*.py"))
 
 
+def _functions(node: ast.AST) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Every function defined in *node*, at any depth, found by descending through statements
+    alone. A function is a statement, so none is missed, and the expressions that make up most of
+    a test file are left unvisited here: they are walked once, in each test function, where the
+    branches are looked for."""
+    found: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+    for child in ast.iter_child_nodes(node):
+        if not isinstance(child, (ast.stmt, ast.excepthandler, ast.match_case)):
+            continue
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            found.append(child)
+        found.extend(_functions(child))
+    return found
+
+
 def _offenders() -> list[str]:
     src_names = _src_function_names()
     found: list[str] = []
@@ -79,9 +94,7 @@ def _offenders() -> list[str]:
             tree = ast.parse(source)
         except SyntaxError:  # pragma: no cover - collection would fail first
             continue
-        for func in ast.walk(tree):
-            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
+        for func in _functions(tree):
             if not func.name.startswith("test"):
                 continue
             for branch in ast.walk(func):
