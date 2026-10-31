@@ -390,8 +390,9 @@ async def test_a_connection_returned_cleanly_is_lent_again(tmp_path, lending) ->
 
 @pytest.mark.asyncio
 async def test_two_connections_asked_for_at_once_are_two_connections(tmp_path, lending) -> None:
-    """A caller asking while another holds a connection gets one of its own, at once: a save
-    reads the queue on a second connection while its own is still open."""
+    """A caller asking while another holds a connection gets one of its own, at once: some code
+    opens a second connection while its first is still open, as a service reading through
+    another service inside its own block does, and a checkout that waited would never end."""
     db_path = await _a_database(tmp_path)
 
     async with get_connection(db_path) as outer:
@@ -609,3 +610,4 @@ async def test_closing_the_connections_ends_every_idle_thread(tmp_path, lending)
         assert await _refuses_queries(idle)
     async with get_connection(db_path) as fresh:
         assert fresh is not one and fresh is not two
+
