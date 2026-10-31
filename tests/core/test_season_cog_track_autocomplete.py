@@ -87,11 +87,18 @@ async def test_a_database_failure_offers_no_choices_rather_than_breaking_the_com
 
 
 async def test_an_autocomplete_that_hangs_offers_nothing(cog, monkeypatch):
-    """The deadline applies here too — a late answer is worse than an empty one."""
+    """The deadline applies here too — a late answer is worse than an empty one.
+
+    The hung read is let go once the answer is checked, and the callback left running past the
+    deadline is waited for, so its connection closes within the test. Left hanging, it held a
+    database thread open past the test's call, and the suite's teardown waited out its whole
+    grace period for it (`tests/support/change_queue.py`, `THREAD_GRACE_SECONDS`)."""
     import leaguebot.core.services.track_service as track_service
 
+    released = asyncio.Event()
+
     async def _hang(_db):
-        await asyncio.sleep(30)
+        await released.wait()
         return []
 
     monkeypatch.setattr(track_service, "get_all_tracks", _hang)
@@ -102,3 +109,7 @@ async def test_an_autocomplete_that_hangs_offers_nothing(cog, monkeypatch):
 
     assert result == []
     assert elapsed < 3.0, f"took {elapsed:.2f}s — past Discord's budget"
+
+    released.set()
+    left_running = asyncio.all_tasks() - {asyncio.current_task()}
+    await asyncio.wait(left_running, timeout=5)

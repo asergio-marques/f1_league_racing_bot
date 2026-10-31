@@ -133,6 +133,12 @@ async def run_queue(bot: Any, *, steps: int | None = None) -> None:
 
 
 #: How long `stop_started_queues` waits, in all, for aiosqlite's threads to finish.
+#:
+#: A test that pays it has left a connection open past its call: a task it abandoned still
+#: holding one, as a hung autocomplete did until its test let the hang go and waited for it. A
+#: survey of the whole suite found that test the only one (#540), besides the test of this wait
+#: itself. Isolated stalls of several seconds on the Windows runner are not this wait: they did
+#: not recur from run to run, and are the garbage collector's and the runner's own.
 THREAD_GRACE_SECONDS = 5.0
 
 #: Every queue `restart_queue` has started, with the event loop its worker runs on.
