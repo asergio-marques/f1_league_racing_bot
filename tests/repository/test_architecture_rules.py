@@ -2154,3 +2154,109 @@ def test_the_write_check_counts_commits_and_scripts_but_not_a_handed_connection(
         ("core/services/retry_service.py", "save"): 1,
         ("core/services/retry_service.py", "build"): 1,
     })
+
+
+# ── 13. A lent connection carries only what the database code sets on it ───────────────────
+
+#: The calls that leave something on a connection for whoever is lent it next.
+_CONNECTION_SETTING_CALLS = frozenset({"create_function", "set_authorizer"})
+
+#: The attributes of a connection whose assignment changes it for whoever is lent it next.
+_CONNECTION_SETTINGS = frozenset({"row_factory", "isolation_level"})
+
+#: SQL that changes the connection rather than the database, as its first words.
+_CONNECTION_SQL = re.compile(r"^\s*(PRAGMA|ATTACH|CREATE\s+TEMP(ORARY)?)\b", re.IGNORECASE)
+
+#: The functions allowed for good to set a connection up, and why: each works on a connection it
+#: opened itself with `sqlite3.connect` and closes, which `get_connection` never lends.
+CONNECTIONS_OF_THEIR_OWN = {
+    ("core/services/backup_service.py", "is_readable_database"):
+        "checks a copy's integrity on a connection of its own",
+    ("core/services/backup_service.py", "_write_empty_database"):
+        "writes the scheduler's empty file on a connection of its own",
+    ("core/services/factory_reset_service.py", "_self_contained"):
+        "takes a backup copy out of WAL on a connection of its own",
+    ("core/services/scheduler_service.py", "prepare_jobstore"):
+        "sets the scheduler's job store to WAL on a connection of its own",
+}
+
+
+def _connection_settings_among(nodes) -> Counter[tuple[str, str]]:
+    """What sets a connection up among *nodes*, each ``(file, function, node)``, outside the
+    database code and the functions working on a connection of their own: each call to
+    `create_function` or `set_authorizer`, each assignment to `row_factory` or `isolation_level`,
+    and each PRAGMA, ATTACH or CREATE TEMP run."""
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in nodes:
+        if _kind(path) == "db" or (path, function) in CONNECTIONS_OF_THEIR_OWN:
+            continue
+        if isinstance(node, ast.Call):
+            name = _call_name(node)
+            sql = _sql_text(node.args[0]) if name in SQL_CALLS and node.args else None
+            if name in _CONNECTION_SETTING_CALLS or (sql is not None and _CONNECTION_SQL.match(sql)):
+                found[(path, function)] += 1
+        elif isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            found[(path, function)] += sum(
+                isinstance(target, ast.Attribute) and target.attr in _CONNECTION_SETTINGS
+                for target in targets
+            )
+    return +found
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#540: a conversation's save sets its authoriser outside the database code"
+)
+def test_a_lent_connection_carries_only_what_the_database_code_sets():
+    """Nothing outside the database code leaves anything on a connection that `get_connection`
+    could lend the next caller (architecture.md, "The database"): no SQL function or authoriser,
+    no `row_factory` or `isolation_level`, no PRAGMA, ATTACH or temporary table. A conversation's
+    save confines its connection through the database code's `never_lend`, which closes it rather
+    than lend it again."""
+    _check(
+        "a lent connection carries only what the database code sets on it",
+        _connection_settings_among(_nodes()),
+        {},
+    )
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        pytest.param("db.create_function('f', 1, len)", id="create_function"),
+        pytest.param("await db.set_authorizer(refuse)", id="set_authorizer"),
+        pytest.param("db.row_factory = None", id="row_factory"),
+        pytest.param("db.isolation_level = None", id="isolation_level"),
+        pytest.param("await db.execute('PRAGMA foreign_keys = OFF')", id="pragma"),
+        pytest.param("await db.execute(\"ATTACH DATABASE 'x.db' AS x\")", id="attach"),
+        pytest.param("await db.execute('CREATE TEMP TABLE t (x)')", id="temp table"),
+        pytest.param("await db.execute('create temporary view v as select 1')", id="temp view"),
+    ],
+)
+def test_the_connection_state_check_sees_each_setting(line):
+    """Each way of setting a connection up is counted in a service, and none in the database
+    code, which sets up the connections it lends; a query and a table made for good are not."""
+    source = (
+        "async def handler(db, refuse):\n"
+        f"    {line}\n"
+        "    await db.execute('SELECT 1')\n"
+        "    await db.execute('CREATE TABLE kept (x)')\n"
+    )
+
+    assert _connection_settings_among(_sample(source)) == Counter(
+        {("core/services/sample_service.py", "handler"): 1}
+    )
+    assert _connection_settings_among(_sample(source, "core/db/database.py")) == Counter()
+
+
+def test_every_function_setting_up_a_connection_of_its_own_opens_one():
+    """Each function allowed to set a connection up opens one itself with `sqlite3.connect`, so the
+    list cannot pass over a connection `get_connection` lent."""
+    opened = {
+        (path, function)
+        for path, function, node in _nodes()
+        if isinstance(node, ast.Call) and _opens_a_connection(node)
+        and isinstance(node.func, ast.Attribute) and node.func.attr == "connect"
+    }
+
+    assert sorted(set(CONNECTIONS_OF_THEIR_OWN) - opened) == []
