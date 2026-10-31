@@ -275,7 +275,8 @@ def _free_memory_mb() -> int | None:
 
 
 def _cores() -> int:
-    """The cores this process may run on, counted as xdist counts them."""
+    """The cores this process may run on, as xdist counts them without `psutil`, which the suite
+    does not install."""
     if hasattr(os, "sched_getaffinity"):
         return len(os.sched_getaffinity(0))
     return os.cpu_count() or 1

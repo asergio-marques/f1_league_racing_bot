@@ -45,8 +45,9 @@ def release_parsed_source(module: ModuleType) -> None:
 
     The trees hold some 129 MB, and a cache keeps them to the end of the run: in every xdist
     worker that ran a source check, whatever it ran after. `tests/repository/conftest.py` calls
-    this as each file of checks finishes, so a worker holds the parse only while it needs it, and
-    each file parses the package once at most."""
+    this as each file of checks finishes, so a worker holds the parse only while it needs it. A
+    file parses the package once each time a worker takes up its tests, which work-stealing can
+    make more than once."""
     package_sources.cache_clear()
     for value in vars(module).values():
         if getattr(value, "__module__", None) == module.__name__ and hasattr(value, "cache_clear"):
