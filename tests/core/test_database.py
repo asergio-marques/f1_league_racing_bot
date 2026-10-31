@@ -611,3 +611,99 @@ async def test_closing_the_connections_ends_every_idle_thread(tmp_path, lending)
     async with get_connection(db_path) as fresh:
         assert fresh is not one and fresh is not two
 
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#540: a connection given back while the connections are being closed is kept idle",
+)
+@pytest.mark.asyncio
+async def test_a_connection_given_back_while_the_connections_close_is_closed_too(
+    tmp_path, lending
+) -> None:
+    """A block that ends cleanly while the connections are being closed, as the bot stops, has its
+    connection closed too: nothing is left idle afterwards, and its thread has ended, so it cannot
+    keep the process alive.
+
+    One caller holds a connection while another is given back and left idle. The connections are
+    then closed, and the idle one's close is held until the first caller has given its own back,
+    so that the return certainly falls while the closing is under way."""
+    from leaguebot.core.db.database import close_connections
+
+    db_path = await _a_database(tmp_path)
+    taken = asyncio.Event()
+    release = asyncio.Event()
+
+    async def hold() -> aiosqlite.Connection:
+        async with get_connection(db_path) as held:
+            taken.set()
+            await release.wait()
+        return held
+
+    holder = asyncio.create_task(hold())
+    await taken.wait()
+    async with get_connection(db_path) as idle_one:
+        pass
+    real_close = idle_one.close
+
+    async def close_once_the_other_is_back() -> None:
+        release.set()
+        await asyncio.wait([holder])
+        await real_close()
+
+    idle_one.close = close_once_the_other_is_back
+    async with asyncio.timeout(10):
+        await close_connections()
+    returned = await holder
+
+    assert await _refuses_queries(returned), "the connection given back meanwhile was kept idle"
+    returned._thread.join(timeout=5)
+    assert not returned._thread.is_alive()
+    assert await _refuses_queries(idle_one)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#540: a connection whose return is cancelled is left open",
+)
+@pytest.mark.asyncio
+async def test_a_connection_whose_return_is_cancelled_is_closed(
+    tmp_path, lending, monkeypatch
+) -> None:
+    """A block whose task is cancelled while its connection is being checked on its way back, as a
+    Ctrl-C does to the work under way, has that connection closed rather than left open with its
+    thread alive.
+
+    The check that a returned connection holds nothing pending is made to wait, and the task is
+    cancelled while it waits."""
+    from leaguebot.core.db import database
+
+    db_path = await _a_database(tmp_path)
+    checking = asyncio.Event()
+
+    async def check_that_waits(db: aiosqlite.Connection) -> bool:
+        checking.set()
+        await asyncio.Event().wait()
+        return True
+
+    monkeypatch.setattr(database, "_is_clean", check_that_waits)
+    used: list[aiosqlite.Connection] = []
+
+    async def use() -> None:
+        async with get_connection(db_path) as db:
+            used.append(db)
+
+    task = asyncio.create_task(use())
+    try:
+        await checking.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        (cancelled,) = used
+        assert await _refuses_queries(cancelled), "the connection was left open"
+        cancelled._thread.join(timeout=5)
+        assert not cancelled._thread.is_alive()
+    finally:
+        # Left open, its thread, which is not a daemon, would keep the test run from ending.
+        for db in used:
+            await db.close()
