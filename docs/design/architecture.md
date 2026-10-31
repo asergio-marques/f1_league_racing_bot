@@ -1047,8 +1047,9 @@ later on its own.
   (`run_migrations` and `_enable_wal`, the journal mode set on the database file itself), the
   queue's own records, the retry queue for log lines, and `backup_service._write_empty_database`,
   which writes the scheduler's empty file and not the league's.
-  The connection-state check refuses, outside the database code, any of what the database section
-  forbids a lent connection to carry (`test_a_lent_connection_carries_only_what_the_database_code_sets`);
+  The connection-state check refuses, outside the database code, a SQL function added with
+  `create_function`, an authoriser, an assignment to `row_factory` or `isolation_level`, and a PRAGMA,
+  ATTACH or temporary table (`test_a_lent_connection_carries_only_what_the_database_code_sets`);
   the few functions that set up a connection of their own, opened with `sqlite3.connect` and never
   lent, are named for good.
 - **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
