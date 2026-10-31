@@ -226,6 +226,62 @@ def _sweep_stale_templates() -> None:
             shutil.rmtree(stale, ignore_errors=True)
 
 
+#: What one xdist worker takes at its peak over the full suite, in MB, and what the host is left
+#: for everything else. See `pytest_xdist_auto_num_workers`.
+_WORKER_MEMORY_MB = 450
+_MEMORY_RESERVE_MB = 512
+
+#: Where Linux says how much memory is free. Absent on Windows and macOS.
+_MEMINFO = Path("/proc/meminfo")
+
+
+def _free_memory_mb() -> int | None:
+    """The memory the host can give the run, in MB: what is available plus the free swap, or
+    None where the host does not say."""
+    try:
+        text = _MEMINFO.read_text(encoding="ascii")
+    except OSError:
+        return None
+    fields: dict[str, int] = {}
+    for line in text.splitlines():
+        name, _, rest = line.partition(":")
+        if rest.split():
+            fields[name] = int(rest.split()[0])
+    if "MemAvailable" not in fields:
+        return None
+    return (fields["MemAvailable"] + fields.get("SwapFree", 0)) // 1024
+
+
+def _cores() -> int:
+    """The cores this process may run on, counted as xdist counts them."""
+    if hasattr(os, "sched_getaffinity"):
+        return len(os.sched_getaffinity(0))
+    return os.cpu_count() or 1
+
+
+def pytest_xdist_auto_num_workers(config):
+    """Run as many workers as the host has memory for, up to one a core (#540).
+
+    `pytest.ini` asks for `-n auto`, which xdist reads as one worker a core. Each worker holds the
+    whole collected suite and grows as it runs, to some `_WORKER_MEMORY_MB` at its peak. A hosted
+    runner has memory to spare for four, but the Raspberry Pi the bot is developed on has 1.8 GB
+    shared with the editor and the agents working on it, and at three workers its swap filled
+    completely, which invites the out-of-memory killer into the editor's session. So the count is
+    what the host's available memory and free swap hold once `_MEMORY_RESERVE_MB` is set aside,
+    clamped between one and the core count: about two on the Pi as it is used, four on CI.
+
+    Returning None leaves the count to xdist: where `PYTEST_XDIST_AUTO_NUM_WORKERS` names one,
+    which a host may set to override this, and where the host does not say what is free, as on
+    Windows, whose runner has memory to spare.
+    """
+    if os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS"):
+        return None
+    free = _free_memory_mb()
+    if free is None:
+        return None
+    return max(1, min(_cores(), (free - _MEMORY_RESERVE_MB) // _WORKER_MEMORY_MB))
+
+
 def pytest_collection_modifyitems(config, items):
     from leaguebot.image.services.image_render_service import converter_available
 
