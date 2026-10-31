@@ -33,6 +33,8 @@ ROOT = Path(__file__).resolve().parents[2]
 #: The bot, as the one package it is installed as (architecture.md, "How the code is laid out").
 PACKAGE = ROOT / "src" / "leaguebot"
 
+from tests.support.source import package_sources
+
 sys.path.insert(0, str(ROOT / "tools"))
 from coverage_by_module import classify  # noqa: E402
 
@@ -60,11 +62,9 @@ CLEANUPS = f"{PASS['weather']} and {PASS['attendance']}"
 
 @cache
 def _sources() -> tuple[tuple[str, ast.Module], ...]:
-    """Every file of the package, as ``(path relative to it, parsed tree)``, in sorted order."""
-    return tuple(
-        (path.relative_to(PACKAGE).as_posix(), ast.parse(path.read_text(encoding="utf-8")))
-        for path in sorted(PACKAGE.rglob("*.py"))
-    )
+    """Every file of the package, as ``(path relative to it, parsed tree)``, in sorted order: the
+    parse the source checks share (`tests/support/source.py`)."""
+    return tuple((source.path, source.tree) for source in package_sources())
 
 
 def _kind(path: str) -> str:
