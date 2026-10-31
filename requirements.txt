@@ -30,6 +30,11 @@ fonttools==4.63.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
 coverage==7.15.4
+# The suite runs on every core the host can spare (#540): `pytest.ini` asks for `-n auto`, and
+# `tests/conftest.py` sizes "auto" to the host's free memory. `execnet` is the transport xdist
+# starts its workers through, pinned beside it so both land the same everywhere.
+pytest-xdist==3.8.0
+execnet==2.1.2
 
 # The type check (#228): `mypy` from the repository root, configured by `mypy.ini`. It types
 # the bot against the libraries above, so it is installed beside them rather than on its own.
