@@ -416,7 +416,10 @@ def apply_staged_restore(db_path: str | Path, jobstore_path: str | Path) -> bool
     """Swap any staged files into place. Returns whether anything was swapped.
 
     **Called at startup, before a single service is constructed.** That is the one moment
-    nothing holds a connection to either database, which is what makes the swap safe.
+    nothing holds a connection to either database, which is what makes the swap safe. No
+    connection is idle to be lent at that moment either: the pool is filled only once the bot
+    uses the database, and a caller that swapped files later would first empty it with
+    `close_connections`, an idle connection otherwise reading the file it opened.
 
     The WAL and shared-memory files of the database being replaced are removed with it. A
     stale `-wal` beside a different database is not merely useless — SQLite would try to

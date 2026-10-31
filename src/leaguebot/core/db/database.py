@@ -28,7 +28,9 @@ _MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "migrations")
 #:
 #: This is passed to `aiosqlite.connect` rather than issued as a PRAGMA: it is a
 #: connect-time argument, so it costs no round trip. Left unset, `sqlite3` defaults it to
-#: 5.0 anyway — naming it here makes the value a decision rather than an accident.
+#: 5.0 anyway — naming it here makes the value a decision rather than an accident. It is part
+#: of the key connections are lent under, so a connection opened with another timeout is
+#: never lent to a caller that asked for this one.
 _BUSY_TIMEOUT_SECONDS = 5.0
 
 #: The busy timeout for a Discord autocomplete callback.
@@ -373,6 +375,12 @@ async def run_migrations(db_path: str) -> None:
     the migrations directory raises :class:`DatabasePredatesBaselineError` before anything
     is written — the journal mode included — and the database has to be recreated. The same
     holds for one migrated by a branch that added a migration this checkout does not carry.
+
+    **The migrations use a connection of their own,** opened and closed here and never one
+    `get_connection` lends. When this returns nothing holds the database open, so the last
+    connection to close has checkpointed the log and a factory reset can delete the fresh copy it
+    migrated (`test_migrations_hold_no_connection_open_afterwards`). All the commits and scripts
+    stay in this function and `_enable_wal`, which the rule on saves allows.
     """
     async with _migration_connection(db_path) as db:
         migration_files = sorted(

@@ -676,10 +676,10 @@ class SeasonService:
         """The divisions of the season an `/images test` preview draws, in one connection.
 
         Exactly `get_previewable_season` followed by `get_divisions`, which is what the
-        preview autocomplete used to call in turn — two `aiosqlite.connect` opens, two
-        `PRAGMA foreign_keys`, two closes, on a path with three seconds to answer Discord in.
-        Doing both on one connection halves that, and the second query is only reached when
-        the first found a season.
+        preview autocomplete used to call in turn — two checkouts of a connection, each with its
+        `PRAGMA foreign_keys` and, when none is idle to be lent, an open and a close, on a path with
+        three seconds to answer Discord in. Doing both on one connection halves that, and the
+        second query is only reached when the first found a season.
 
         Empty where the server holds no previewable season, which is the same answer the
         pair gave and is why the preview's division parameter is optional.
