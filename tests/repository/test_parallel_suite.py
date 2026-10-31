@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from tests import conftest  # already imported by pytest; not re-executed
+from tests.support import source
 from tests.support.source import package_sources, release_parsed_source
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -97,10 +98,17 @@ def test_the_collected_suite_is_left_out_of_the_collector():
     assert gc.get_freeze_count() > 0
 
 
-def test_a_file_of_checks_lets_go_of_the_parsed_source_when_it_finishes():
+def test_a_file_of_checks_lets_go_of_the_parsed_source_when_it_finishes(
+    monkeypatch, tmp_path, request
+):
     """The parsed package is some 129 MB, and a cache would keep it in every worker that ran a
     source check to the end of the run. Once a file of checks finishes, the shared parse is let
-    go, and so is every cache the file built from it; nothing else in the file is touched."""
+    go, and so is every cache the file built from it; nothing else in the file is touched. Primed
+    from a package of one file, so the test parses next to nothing."""
+    (tmp_path / "one.py").write_text("x = 1\n", encoding="utf-8")
+    monkeypatch.setattr(source, "PACKAGE", tmp_path)
+    package_sources.cache_clear()
+    request.addfinalizer(package_sources.cache_clear)
     module = types.ModuleType("checks")
 
     @functools.cache
@@ -110,10 +118,16 @@ def test_a_file_of_checks_lets_go_of_the_parsed_source_when_it_finishes():
     derived.__module__ = "checks"
     module.derived = derived
     module.untouched = {"kept": True}
-    derived()
+    assert derived() == 1
 
     release_parsed_source(module)
 
     assert package_sources.cache_info().currsize == 0
     assert derived.cache_info().currsize == 0
     assert module.untouched == {"kept": True}
+
+
+def test_every_file_of_checks_lets_go_of_the_parsed_source(request):
+    """`tests/repository/conftest.py` gives every test here the fixture that calls
+    `release_parsed_source` once its file has run; without it, the release above never runs."""
+    assert "_parsed_source_let_go" in request.fixturenames
