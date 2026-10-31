@@ -137,3 +137,16 @@ def test_the_tools_directory_is_not_measured_either():
     source = _coveragerc().get("run", "source").strip()
 
     assert "tools" not in [part.strip() for part in source.splitlines()]
+
+
+def test_every_worker_is_measured():
+    """The tests run in xdist's workers (#540), which `coverage run` does not follow by itself:
+    without `patch = subprocess` the gate would read the controller, which runs no test, and fail
+    every build on a coverage of nothing. Each worker then writes a data file of its own, so the
+    workflow joins them before the first report reads one."""
+    patches = [part.strip() for part in _coveragerc().get("run", "patch").split(",")]
+    workflow = _workflow()
+
+    assert "subprocess" in patches
+    assert "coverage combine" in workflow
+    assert workflow.index("coverage combine") < workflow.index("coverage json")

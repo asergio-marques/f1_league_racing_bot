@@ -82,8 +82,13 @@ jobs:
     # This runs *before* the whole-repo gate so the breakdown is present on a failing build,
     # which is when it is most worth reading, and the tool prints the table before it exits
     # non-zero for the same reason.
+    #
+    # `coverage combine` first: the tests run in xdist's workers, each writing a data file of its
+    # own (`.coveragerc`, `patch = subprocess`), and nothing reports until they are joined. Both
+    # gates below read the joined file.
     - name: Coverage by module
       run: |
+        coverage combine -q
         coverage json -q -o coverage.json
         python tools/coverage_by_module.py coverage.json \
           --fail-under "$MIN_COVERAGE_REQUIRED" | tee /tmp/by-module.txt

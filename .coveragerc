@@ -21,3 +21,10 @@
 # file and the gate silently goes back to measuring the suite.
 [run]
 source = src
+#
+# `patch = subprocess` follows the suite into its xdist workers (#540). The tests run in worker
+# processes `pytest.ini` asks for, which `coverage run` does not otherwise measure: without this the
+# gate would read the controller alone, which runs no test. Coverage sets `parallel` from it, so each
+# process writes a data file of its own, and `coverage combine` joins them before anything reports
+# — the workflow does, and so must a measurement by hand (CLAUDE.md, Testing).
+patch = subprocess
