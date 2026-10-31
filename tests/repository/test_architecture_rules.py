@@ -2204,9 +2204,6 @@ def _connection_settings_among(nodes) -> Counter[tuple[str, str]]:
     return +found
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#540: a conversation's save sets its authoriser outside the database code"
-)
 def test_a_lent_connection_carries_only_what_the_database_code_sets():
     """Nothing outside the database code leaves anything on a connection that `get_connection`
     could lend the next caller (architecture.md, "The database"): no SQL function or authoriser,

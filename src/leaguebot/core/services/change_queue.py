@@ -201,7 +201,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.db.database import get_connection, inserted_id, never_lend
 from leaguebot.core.models.change import (
     AuditRecord,
     ChangeOrigin,
@@ -450,7 +450,7 @@ async def _confine(db: aiosqlite.Connection, writes: Collection[str] | None) -> 
             return sqlite3.SQLITE_DENY
         return sqlite3.SQLITE_OK
 
-    await db.set_authorizer(_authorise)
+    await never_lend(db, _authorise)
 
 
 def league_lane(_payload: dict[str, Any]) -> str:
