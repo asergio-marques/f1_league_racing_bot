@@ -8,13 +8,16 @@ pinned here.
 from __future__ import annotations
 
 import configparser
+import functools
 import gc
 import re
+import types
 from pathlib import Path
 
 import pytest
 
 from tests import conftest  # already imported by pytest; not re-executed
+from tests.support.source import package_sources, release_parsed_source
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GB = 1024 * 1024  # /proc/meminfo counts in kB
@@ -92,3 +95,25 @@ def test_the_collected_suite_is_left_out_of_the_collector():
     all of it again each time: about a tenth of the core tests' time on the Pi. Once collection
     finishes it is frozen, so by the time any test runs the frozen generation holds it."""
     assert gc.get_freeze_count() > 0
+
+
+def test_a_file_of_checks_lets_go_of_the_parsed_source_when_it_finishes():
+    """The parsed package is some 129 MB, and a cache would keep it in every worker that ran a
+    source check to the end of the run. Once a file of checks finishes, the shared parse is let
+    go, and so is every cache the file built from it; nothing else in the file is touched."""
+    module = types.ModuleType("checks")
+
+    @functools.cache
+    def derived() -> int:
+        return len(package_sources())
+
+    derived.__module__ = "checks"
+    module.derived = derived
+    module.untouched = {"kept": True}
+    derived()
+
+    release_parsed_source(module)
+
+    assert package_sources.cache_info().currsize == 0
+    assert derived.cache_info().currsize == 0
+    assert module.untouched == {"kept": True}

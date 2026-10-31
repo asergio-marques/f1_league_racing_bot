@@ -15,6 +15,7 @@ import ast
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
+from types import ModuleType
 
 #: The bot, as the one package it is installed as (architecture.md, "How the code is laid out").
 PACKAGE = Path(__file__).resolve().parents[2] / "src" / "leaguebot"
@@ -37,3 +38,16 @@ def package_sources() -> tuple[SourceFile, ...]:
         text = path.read_text(encoding="utf-8")
         files.append(SourceFile(path.relative_to(PACKAGE).as_posix(), text, ast.parse(text)))
     return tuple(files)
+
+
+def release_parsed_source(module: ModuleType) -> None:
+    """Let go of the parsed package, and of every cache *module* built from it.
+
+    The trees hold some 129 MB, and a cache keeps them to the end of the run: in every xdist
+    worker that ran a source check, whatever it ran after. `tests/repository/conftest.py` calls
+    this as each file of checks finishes, so a worker holds the parse only while it needs it, and
+    each file parses the package once at most."""
+    package_sources.cache_clear()
+    for value in vars(module).values():
+        if getattr(value, "__module__", None) == module.__name__ and hasattr(value, "cache_clear"):
+            value.cache_clear()
