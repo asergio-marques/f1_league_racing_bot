@@ -21,6 +21,7 @@ being guarded against is deletion, not restructuring.
 from __future__ import annotations
 
 import configparser
+import re
 from pathlib import Path
 
 import pytest
@@ -147,6 +148,9 @@ def test_every_worker_is_measured():
     patches = [part.strip() for part in _coveragerc().get("run", "patch").split(",")]
     workflow = _workflow()
 
+    combine = re.search(r"^\s+coverage combine\b", workflow, re.MULTILINE)
+    report = re.search(r"^\s+coverage json\b", workflow, re.MULTILINE)
+
     assert "subprocess" in patches
-    assert "coverage combine" in workflow
-    assert workflow.index("coverage combine") < workflow.index("coverage json")
+    assert combine and report, "the workflow runs no combine, or no report"
+    assert combine.start() < report.start()
