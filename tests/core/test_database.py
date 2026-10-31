@@ -544,35 +544,40 @@ async def test_a_half_read_query_holds_no_snapshot_once_returned(tmp_path, lendi
     assert count == 4
 
 
-@pytest.mark.skipif(
-    os.name == "nt",
-    reason="Windows will not replace a file a connection holds open, so the case cannot arise there",
-)
 @pytest.mark.asyncio
 async def test_a_replaced_database_file_is_not_served_by_an_old_connection(
-    tmp_path, lending
+    tmp_path, lending, monkeypatch
 ) -> None:
-    """A database file swapped for another between two callers is read afresh: the second
-    caller sees the new file, not what an idle connection still holds open."""
+    """A database file that has become another file between two callers is read afresh: the
+    second caller gets a new connection, and the idle one, still holding the old file open, is
+    closed.
+
+    The swap is faked rather than made: from the second caller on, `os.stat` reports the file
+    under another identity (another inode), as a file put in its place would carry. Windows
+    will not replace a file a connection holds open, so a real swap could not run there, and
+    the fake lets the test run on every host with no skip."""
     db_path = await _a_database(tmp_path)
     async with get_connection(db_path) as first:
         await (await first.execute("SELECT COUNT(*) FROM t")).fetchall()
 
-    replacement = str(tmp_path / "replacement.db")
-    other = sqlite3.connect(replacement)
-    try:
-        other.execute("CREATE TABLE replaced (x INTEGER)")
-        other.commit()
-    finally:
-        other.close()
-    os.replace(replacement, db_path)
+    real_stat = os.stat
+    replaced = os.path.abspath(db_path)
+
+    def stat_as_replaced(path, *args, **kwargs):
+        result = real_stat(path, *args, **kwargs)
+        if not isinstance(path, int) and os.path.abspath(os.fspath(path)) == replaced:
+            fields = list(result[:10])
+            fields[1] = result.st_ino + 1
+            return os.stat_result(fields)
+        return result
+
+    monkeypatch.setattr(os, "stat", stat_as_replaced)
 
     async with get_connection(db_path) as second:
         assert second is not first
-        names = {row[0] for row in await (await second.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
-        )).fetchall()}
-    assert names == {"replaced"}
+        count = (await sole_row(await second.execute("SELECT COUNT(*) FROM t")))[0]
+    assert count == 3
+    assert await _refuses_queries(first)
 
 
 @pytest.mark.xfail(strict=True, reason="#540: the bot keeps no idle connection yet")
