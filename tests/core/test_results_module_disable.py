@@ -670,13 +670,18 @@ async def test_a_long_list_is_split_across_replies(tmp_path):
     """A season's worth of links outruns Discord's 2,000 characters, and one reply that long
     would be refused outright — the manager would learn nothing at all. The update of the
     acknowledgement carries the first part, and follow-ups the rest. Every removal is refused,
-    and each stops the queue until a league admin discards it."""
+    and each stops the queue until a league admin discards it.
+
+    Three rounds, the fewest whose links still outrun one reply: each refused removal is
+    discarded in turn, and each discard reads every change before it, so the test's time grows
+    with the square of the links."""
     db_path = await _make_db(tmp_path)
-    await _season(db_path, rounds=4, verdicts=12)
+    await _season(db_path, rounds=3, verdicts=12)
     cog = _queued_cog(db_path)
     for channel in cog.bot.channels.values():
         channel.refuse_all = True
-    links = _every_link(4, 12)
+    links = _every_link(3, 12)
+    assert len("\n".join(links)) > 2000, "too few links to need a second reply"
 
     interaction = await _turn_off(cog)
     assert await _discard_every_stop(cog) > 1
@@ -687,7 +692,7 @@ async def test_a_long_list_is_split_across_replies(tmp_path):
         for call in interaction.edit_original_response.await_args_list
         + interaction.followup.send.await_args_list
     ]
-    assert len(links) == 60
+    assert len(links) == 45
     assert interaction.followup.send.await_count >= 1
     assert all(len(chunk) <= 2000 for chunk in sent)
     assert all(link in "\n".join(sent) for link in links)
