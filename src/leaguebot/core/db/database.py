@@ -45,8 +45,8 @@ AUTOCOMPLETE_TIMEOUT_SECONDS = 1.0
 #: How many idle connections to one database (and one timeout) are kept to be lent again.
 #:
 #: Pinned by `test_no_more_than_four_idle_connections_are_kept`. Four covers the most that run
-#: at once in practice (a step's save, the queue it asks on a second connection, and a reader or
-#: two); one asking beyond that opens its own and closes it on return, as every caller did before
+#: at once in practice (a step's save, a service it reads through inside that block, and a reader
+#: or two); one asking beyond that opens its own and closes it on return, as every caller did before
 #: connections were lent. Zero switches lending off.
 _IDLE_CONNECTIONS_KEPT = 4
 
@@ -139,8 +139,9 @@ async def get_connection(
     handed back up.
 
     **Checking out never waits.** It takes an idle connection or opens one, and a caller never
-    queues for another to finish: a save asks the queue on a second connection while its own is
-    open, so two callers at once always get two connections
+    queues for another to finish: some code opens a second connection while its first is still
+    open (a service reading through another service inside its own block), so two callers at once
+    always get two connections
     (`test_two_connections_asked_for_at_once_are_two_connections`). That is why the pool is not
     capped by waiting. Before a connection is reused the database file's identity (device and
     inode) is read afresh with ``os.stat`` on the path and compared with the one the connection

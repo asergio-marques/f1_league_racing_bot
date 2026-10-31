@@ -490,8 +490,8 @@ makes SQLite read the whole schema before its first statement, and a change open
 `get_connection` therefore keeps a few connections idle and lends them to the next caller for the
 same database, and each block still has one connection to itself. Core's database code does this
 and nothing else does. Checking a connection out never waits: it takes an idle one or opens one,
-because a save asks the queue on a second connection while its own is open (below), so two callers
-at once always have two. A connection is lent again only when it was given back clean and nothing
+because some code opens a second connection while its first is still open (a service reading
+through another service inside its own block), so two callers at once always have two. A connection is lent again only when it was given back clean and nothing
 on it differs from a new one; any other is closed, which rolls back what it held. A connection that
 a conversation's save confined to its own tables is closed on return, never lent, and nothing
 outside the database code leaves anything on a connection (a SQL function, an authoriser, a
@@ -503,10 +503,10 @@ connections as the bot stops, as wiring, since each holds a thread that would ke
 alive. The cap, the closing of cursors on return and the reliance on the connection library's
 internals are in `get_connection`'s docstring, each pinned by a test.
 
-*Rejected:* one connection held for the bot's life, since a save reads the queue on a second
-connection while its own is open, and one connection cannot be two. *Rejected:* a capped pool whose
-checkout waits for a free connection, since that same read would wait on the save that asked for it,
-and neither would finish.
+*Rejected:* one connection held for the bot's life, since a service reading through another
+service inside its own block needs a second connection while its first is open, and one connection
+cannot be two. *Rejected:* a capped pool whose checkout waits for a free connection, since that
+second read would wait on the block that asked for it, and neither would finish.
 
 **A step saves in one go.** The queue opens a saving step's connection and hands it down; the step
 makes its changes on it, and they commit, with the step's mark and any audit record, all together
