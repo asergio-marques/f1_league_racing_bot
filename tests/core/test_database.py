@@ -544,6 +544,10 @@ async def test_a_half_read_query_holds_no_snapshot_once_returned(tmp_path, lendi
     assert count == 4
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows will not replace a file a connection holds open, so the case cannot arise there",
+)
 @pytest.mark.asyncio
 async def test_a_replaced_database_file_is_not_served_by_an_old_connection(
     tmp_path, lending
