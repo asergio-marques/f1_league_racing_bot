@@ -612,10 +612,6 @@ async def test_closing_the_connections_ends_every_idle_thread(tmp_path, lending)
         assert fresh is not one and fresh is not two
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#540: a connection given back while the connections are being closed is kept idle",
-)
 @pytest.mark.asyncio
 async def test_a_connection_given_back_while_the_connections_close_is_closed_too(
     tmp_path, lending
@@ -661,10 +657,6 @@ async def test_a_connection_given_back_while_the_connections_close_is_closed_too
     assert await _refuses_queries(idle_one)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#540: a connection whose return is cancelled is left open",
-)
 @pytest.mark.asyncio
 async def test_a_connection_whose_return_is_cancelled_is_closed(
     tmp_path, lending, monkeypatch

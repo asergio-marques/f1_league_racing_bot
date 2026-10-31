@@ -59,8 +59,17 @@ _Identity = tuple[int, int]
 #: The idle connections, by the database path and the busy timeout they were opened with, each
 #: with the identity of the file it opened. ``_idle_lock`` guards it, since a change run on a
 #: worker thread (`season_review_changes`) can ask for a connection from a loop of its own.
+#:
+#: Module state rather than a pool object handed to every service: lending sits behind
+#: `get_connection`, so no call site changes and no service is handed one more thing to pass on.
+#: It is empty at import and nothing is opened then.
 _idle: dict[tuple[str, float], list[tuple[aiosqlite.Connection, _Identity]]] = {}
 _idle_lock = threading.Lock()
+
+#: How many calls of `close_connections` are under way. While any is, a connection given back is
+#: closed rather than kept idle, so one returned in the middle of the bot stopping cannot be left
+#: open with a thread that would keep the process alive. ``_idle_lock`` guards it.
+_closing = 0
 
 #: The signature of an SQLite authoriser callback.
 Authoriser = Callable[[int, "str | None", "str | None", "str | None", "str | None"], int]
@@ -201,7 +210,12 @@ async def _check_out(key: tuple[str, float]) -> tuple[aiosqlite.Connection, _Ide
                 else:
                     stale = [db for db, _ in idle]
                     idle.clear()
-        await _close_all(stale)
+        try:
+            await _close_all(stale)
+        except BaseException:
+            if found is not None:
+                await found[0].close()
+            raise
         if found is not None:
             return found
     db = await aiosqlite.connect(db_path, timeout=timeout, factory=_Connection)
@@ -211,19 +225,26 @@ async def _check_out(key: tuple[str, float]) -> tuple[aiosqlite.Connection, _Ide
 async def _check_in(
     key: tuple[str, float], db: aiosqlite.Connection, identity: _Identity | None, lend: bool
 ) -> None:
-    """Keep *db* idle if it was returned clean and there is room, else close it."""
-    if (
-        lend
-        and identity is not None
-        and _IDLE_CONNECTIONS_KEPT > 0
-        and db not in _NEVER_LENT
-        and await _is_clean(db)
-    ):
-        with _idle_lock:
-            idle = _idle.setdefault(key, [])
-            if len(idle) < _IDLE_CONNECTIONS_KEPT:
-                idle.append((db, identity))
-                return
+    """Keep *db* idle if it was returned clean and there is room, else close it.
+
+    A cancellation that arrives while *db* is being checked closes it too, and is raised again: a
+    connection neither kept nor closed would keep its thread, which is not a daemon, alive
+    (`test_a_connection_whose_return_is_cancelled_is_closed`). One returned while the connections
+    are being closed is closed, not kept
+    (`test_a_connection_given_back_while_the_connections_close_is_closed_too`).
+    """
+    if lend and identity is not None and _IDLE_CONNECTIONS_KEPT > 0 and db not in _NEVER_LENT:
+        try:
+            clean = await _is_clean(db)
+        except BaseException:
+            await db.close()
+            raise
+        if clean:
+            with _idle_lock:
+                idle = _idle.setdefault(key, [])
+                if not _closing and len(idle) < _IDLE_CONNECTIONS_KEPT:
+                    idle.append((db, identity))
+                    return
     await db.close()
 
 
@@ -242,26 +263,36 @@ async def _is_clean(db: aiosqlite.Connection) -> bool:
 async def _close_all(connections: list[aiosqlite.Connection]) -> None:
     """Close each of *connections*, one by one: a failure to close one is logged and does not
     keep the rest open."""
-    for db in connections:
+    for index, db in enumerate(connections):
         try:
             await db.close()
         except Exception:
             log.exception("A database connection would not close.")
+        except BaseException:
+            await _close_all(connections[index + 1 :])
+            raise
 
 
 async def close_connections(db_path: str | None = None) -> None:
     """Close the idle connections, of the database at *db_path* or of all, and end their threads.
 
     Called by the entry point as the bot stops, and by a caller about to replace the database
-    file. A connection in use is not touched: it is closed or kept as its block ends.
+    file. A connection in use is not touched: it is closed as its block ends, never kept, if that
+    is while this is under way (`test_a_connection_given_back_while_the_connections_close_is_closed_too`).
     """
+    global _closing
     with _idle_lock:
+        _closing += 1
         taken = [
             db
             for key in [k for k in _idle if db_path is None or k[0] == db_path]
             for db, _ in _idle.pop(key)
         ]
-    await _close_all(taken)
+    try:
+        await _close_all(taken)
+    finally:
+        with _idle_lock:
+            _closing -= 1
 
 
 async def never_lend(db: aiosqlite.Connection, authoriser: Authoriser) -> None:
