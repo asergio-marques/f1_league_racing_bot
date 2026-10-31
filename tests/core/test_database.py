@@ -586,9 +586,7 @@ async def test_no_more_than_four_idle_connections_are_kept(tmp_path) -> None:
         assert len(lent) == 4
         assert [await _refuses_queries(db) for db in not_kept] == [True, True]
     finally:
-        close = getattr(database, "close_connections", None)
-        if close is not None:
-            await close()
+        await database.close_connections()
 
 
 @pytest.mark.asyncio

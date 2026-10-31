@@ -410,11 +410,9 @@ async def lending(monkeypatch):
     back cleanly, whatever the bot's own cap is set to, and closed as the test ends (#540)."""
     from leaguebot.core.db import database
 
-    monkeypatch.setattr(database, "_IDLE_CONNECTIONS_KEPT", 4, raising=False)
+    monkeypatch.setattr(database, "_IDLE_CONNECTIONS_KEPT", 4)
     yield
-    close = getattr(database, "close_connections", None)
-    if close is not None:
-        await close()
+    await database.close_connections()
 
 
 @pytest.fixture(autouse=True)

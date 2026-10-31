@@ -474,9 +474,7 @@ async def test_turning_results_off_and_closing_its_rounds_land_in_one_save(tmp_p
     # connection's thread and where it closes it, however the connection is opened and closed.
     from leaguebot.core.db import database
 
-    close_lent = getattr(database, "close_connections", None)
-    if close_lent is not None:
-        await close_lent()
+    await database.close_connections()
     open_now: set[int] = set()
     most = 0
     real_await = aiosqlite.Connection.__await__
@@ -493,7 +491,7 @@ async def test_turning_results_off_and_closing_its_rounds_land_in_one_save(tmp_p
         await real_close(self)
 
     with monkeypatch.context() as patched:
-        patched.setattr(database, "_IDLE_CONNECTIONS_KEPT", 0, raising=False)
+        patched.setattr(database, "_IDLE_CONNECTIONS_KEPT", 0)
         patched.setattr(aiosqlite.Connection, "__await__", _counted_await)
         patched.setattr(aiosqlite.Connection, "close", _counted_close)
         await run_queue(bot, steps=1)
