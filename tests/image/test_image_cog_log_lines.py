@@ -292,6 +292,12 @@ def _acknowledged(asked) -> None:
 
 #: Each refusal of plan section 2 not pinned in a module's own test file: the command, what
 #: it is given, how the league stands, and a phrase of the reply it gives today.
+def _bare_group_lines(bot: Any) -> list[str]:
+    """Every logged line naming the config group bare, "| /images config |", rather than the
+    command that ran (A8)."""
+    return [line for line in logged(bot) if "| /images config |" in line]
+
+
 OWN_REFUSALS = [
     pytest.param(
         "images use-pfp prerender-toggle", (), {"use_pfp": 0},
@@ -393,7 +399,8 @@ async def test_a_command_s_own_refusal_records_one_line_naming_it(
     tmp_path, name, arguments, config, reply
 ):
     """The reply is the one given today; the log channel gains one "⛔" line naming the
-    command, and nothing is stored."""
+    command, and nothing is stored. No line names the config group bare, "| /images config |",
+    which every image line carried whatever the command (A8)."""
     league = await _league(tmp_path, **config)
     before = await _stored(league.db_path)
 
@@ -403,6 +410,7 @@ async def test_a_command_s_own_refusal_records_one_line_naming_it(
     assert await _stored(league.db_path) == before
     assert await audit_rows(league.db_path) == []
     assert_one_refusal(league.bot, f"`/{name}`")
+    assert not _bare_group_lines(league.bot)
 
 
 async def test_a_pasted_palette_with_an_unreadable_line_is_refused_by_the_form(tmp_path):
@@ -539,7 +547,7 @@ async def test_a_success_records_one_line_naming_its_own_command(
 ):
     """Acknowledged at once; once run, the reply is today's success and the log channel holds
     one line, "Race Control (`<@42>`) | /<command> | Success", with what was set beneath, saved
-    with its audit entry."""
+    with its audit entry. No line names the config group bare, "| /images config |" (A8)."""
     league = await _league(tmp_path, **config)
 
     asked = await _run_with(league, name, *arguments)
@@ -551,6 +559,7 @@ async def test_a_success_records_one_line_naming_its_own_command(
     for forms in values:
         assert _carries(details, forms), (forms, details)
     _audited_by_the_member(await audit_rows(league.db_path))
+    assert not _bare_group_lines(league.bot)
 
 
 async def test_confirming_daily_portraits_records_one_line_naming_the_command(tmp_path):
@@ -606,21 +615,6 @@ async def test_a_part_applied_import_lists_the_blocks_it_passed_over(tmp_path):
     assert passed_over, details
     assert "Bad" in "\n".join(details[passed_over[0]:]), details
     assert (await _stored(league.db_path))["image_tier_colour"] == [("good", "accent", "#A78BFA")]
-
-
-async def test_no_line_names_the_config_group_bare(tmp_path):
-    """A8: across every success and every refusal above, no line reads "| /images config |",
-    the name every image line carried whatever the command."""
-    lines = []
-    for index, case in enumerate(SUCCESSES + OWN_REFUSALS):
-        name, arguments, config, *_rest = case.values
-        (tmp_path / str(index)).mkdir()
-        league = await _league(tmp_path / str(index), **config)
-        await _run_with(league, name, *arguments)
-        lines += logged(league.bot)
-
-    assert lines
-    assert not [line for line in lines if "| /images config |" in line], lines
 
 
 # ── A20 (N1): a value already held changes nothing ────────────────────────
