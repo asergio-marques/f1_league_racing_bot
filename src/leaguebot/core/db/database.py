@@ -55,6 +55,22 @@ async def get_connection(
         yield db
 
 
+@asynccontextmanager
+async def _migration_connection(db_path: str) -> AsyncIterator[aiosqlite.Connection]:
+    """A connection for `run_migrations` alone, opened and closed here and never lent.
+
+    The migrations get a connection of their own, outside whatever `get_connection` keeps, so
+    that when `run_migrations` returns nothing holds the database open. The factory reset
+    migrates a fresh copy and then deletes it (`factory_reset_service.wipe`), and the last
+    connection to close is the one that checkpoints the write-ahead log and removes it
+    (`test_migrations_hold_no_connection_open_afterwards`).
+    """
+    async with aiosqlite.connect(db_path, timeout=_BUSY_TIMEOUT_SECONDS) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("PRAGMA foreign_keys = ON")
+        yield db
+
+
 async def sole_row(cursor: aiosqlite.Cursor) -> aiosqlite.Row:
     """The one row a query certain to return one has returned.
 
@@ -143,7 +159,7 @@ async def run_migrations(db_path: str) -> None:
     is written — the journal mode included — and the database has to be recreated. The same
     holds for one migrated by a branch that added a migration this checkout does not carry.
     """
-    async with get_connection(db_path) as db:
+    async with _migration_connection(db_path) as db:
         migration_files = sorted(
             f for f in os.listdir(_MIGRATIONS_DIR)
             if f.endswith(".sql") and not f.startswith("__")
