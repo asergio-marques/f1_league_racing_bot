@@ -10,7 +10,6 @@ import sqlite3
 
 import aiosqlite
 import pytest
-import pytest_asyncio
 
 from leaguebot.core.db.database import get_connection, run_migrations, sole_row
 
@@ -337,20 +336,8 @@ async def test_a_caller_s_own_factory_is_left_alone(tmp_path) -> None:
 #
 # `get_connection` keeps a few connections idle once they are returned cleanly, and lends them
 # to the next caller, which spares a thread and SQLite's re-read of the schema on every open.
-# Most tests here switch the lending on through `lending`, so that each holds whatever the cap
-# is set to, and close what it left idle as they finish.
-
-
-@pytest_asyncio.fixture
-async def lending(monkeypatch):
-    """Keep up to four idle connections for this test, and close them as it ends."""
-    from leaguebot.core.db import database
-
-    monkeypatch.setattr(database, "_IDLE_CONNECTIONS_KEPT", 4, raising=False)
-    yield
-    close = getattr(database, "close_connections", None)
-    if close is not None:
-        await close()
+# Most tests here switch the lending on through `lending` (`tests/conftest.py`), so that each
+# holds whatever the cap is set to, and close what it left idle as they finish.
 
 
 @pytest.mark.asyncio

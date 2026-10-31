@@ -44,6 +44,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 
 from leaguebot.core.db.database import get_connection
+from tests.support.connections import close_lent_connections
 
 SERVER_ID = 12408
 INTERACTION_CHANNEL_ID = 100
@@ -183,11 +184,29 @@ def stop_started_queues(*, started_before: Collection[threading.Thread] = ()) ->
     alive before the test's call began (a connection a fixture holds until its teardown), is not
     waited for: it would never finish in time, and every test holding one would pay the whole
     grace period.
+
+    **The connections the bot keeps idle to lend again are closed between the two**, once the
+    queues are stopped and before the wait (`tests/support/connections.py`). Each idle one keeps
+    its thread alive until it is closed, so a test that only gave its connections back would
+    otherwise pay the whole grace period
+    (`test_stop_started_queues_waits_on_no_idle_lent_connection`).
     """
+    _stop_queues()
+    close_lent_connections()
+    _wait_for_database_threads(started_before)
+
+
+def _stop_queues() -> None:
+    """Stop every queue `restart_queue` started, on the loop it runs on, and forget them."""
     started, _STARTED[:] = list(_STARTED), []
     for queue, loop in started:
         if not loop.is_closed() and not loop.is_running():
             loop.run_until_complete(queue.stop())
+
+
+def _wait_for_database_threads(started_before: Collection[threading.Thread]) -> None:
+    """Wait for each aiosqlite thread not in *started_before*, up to `THREAD_GRACE_SECONDS` in
+    all."""
     deadline = time.monotonic() + THREAD_GRACE_SECONDS
     earlier = set(started_before)
     for thread in threading.enumerate():

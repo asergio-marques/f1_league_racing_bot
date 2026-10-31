@@ -43,3 +43,22 @@ async def test_stop_started_queues_waits_on_no_thread_a_fixture_holds(tmp_path, 
         start = time.monotonic()
         change_queue.stop_started_queues()
         assert time.monotonic() - start >= short_grace * 0.9
+
+
+@pytest.mark.xfail(strict=True, reason="#540: a connection returned cleanly is not lent again yet")
+async def test_stop_started_queues_waits_on_no_idle_lent_connection(tmp_path, short_grace, lending):
+    """A connection the test's call gave back cleanly, kept idle to be lent again, is closed before
+    the wait rather than waited on: the stop returns well inside the grace period, and the idle
+    connection's thread has ended."""
+    db_path = os.path.join(str(tmp_path), "teardown.db")
+    await run_migrations(db_path)
+    before = set(threading.enumerate())
+    async with get_connection(db_path) as idle:
+        await (await idle.execute("SELECT 1")).fetchall()
+    assert idle._thread.is_alive(), "precondition: the connection is kept idle to be lent again"
+
+    start = time.monotonic()
+    change_queue.stop_started_queues(started_before=before)
+
+    assert time.monotonic() - start < short_grace / 2
+    assert not idle._thread.is_alive()

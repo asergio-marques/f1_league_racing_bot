@@ -46,6 +46,9 @@ import threading
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
+
+from tests.support.connections import close_lent_connections
 
 # Before any test module is imported — see the module docstring.
 os.environ.setdefault("BOT_TOKEN", "not-a-real-token")
@@ -353,6 +356,10 @@ def pytest_runtest_call(item):
     Only the database threads started during the test's call are waited for: one a fixture opened
     in set-up stays alive until its teardown, and waiting on it would cost every such test the
     whole grace period (`test_stop_started_queues_waits_on_no_thread_a_fixture_holds`).
+
+    The connections the bot keeps idle to lend again are closed here too, before that wait, which
+    would otherwise wait on each of their threads (`stop_started_queues`); and where the test
+    started no queue, closed all the same.
     """
     before = set(threading.enumerate())
     try:
@@ -361,6 +368,53 @@ def pytest_runtest_call(item):
         queues = sys.modules.get("tests.support.change_queue")
         if queues is not None:
             queues.stop_started_queues(started_before=before)
+        else:
+            close_lent_connections()
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_setup(item):
+    """Close the connections the bot keeps idle once the test's fixtures are set up (#540).
+
+    A fixture that seeds its database through `get_connection` gives its connection back to be
+    lent again; closed here, it is not counted among the threads alive before the test's call,
+    and the test starts with nothing lent from a database but its own
+    (`tests/support/connections.py`).
+    """
+    try:
+        return (yield)
+    finally:
+        close_lent_connections()
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(item, nextitem):
+    """Close the connections the bot keeps idle once the test's fixtures are torn down (#540), so
+    that none holds the test's `tmp_path` database open as pytest deletes it, which Windows
+    refuses, and none is lent to the next test (`tests/support/connections.py`)."""
+    try:
+        return (yield)
+    finally:
+        close_lent_connections()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Close the connections the bot keeps idle as the session ends (#540): each holds a thread
+    that is not a daemon, which would keep the process alive past the run."""
+    close_lent_connections()
+
+
+@pytest_asyncio.fixture
+async def lending(monkeypatch):
+    """Switch on the lending of connections for this test: up to four are kept idle once given
+    back cleanly, whatever the bot's own cap is set to, and closed as the test ends (#540)."""
+    from leaguebot.core.db import database
+
+    monkeypatch.setattr(database, "_IDLE_CONNECTIONS_KEPT", 4, raising=False)
+    yield
+    close = getattr(database, "close_connections", None)
+    if close is not None:
+        await close()
 
 
 @pytest.fixture(autouse=True)
