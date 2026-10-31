@@ -321,3 +321,39 @@ async def test_a_caller_s_own_factory_is_left_alone(tmp_path) -> None:
 
     assert len(opened) == 1
     assert level == 2
+
+
+# ── Lending connections again ─────────────────────────────────────────
+#
+# `get_connection` keeps a few connections idle once they are returned cleanly, and lends them
+# to the next caller, which spares a thread and SQLite's re-read of the schema on every open.
+# Most tests here switch the lending on through `lending`, so that each holds whatever the cap
+# is set to, and close what it left idle as they finish.
+
+
+@pytest_asyncio.fixture
+async def lending(monkeypatch):
+    """Keep up to four idle connections for this test, and close them as it ends."""
+    from leaguebot.core.db import database
+
+    monkeypatch.setattr(database, "_IDLE_CONNECTIONS_KEPT", 4, raising=False)
+    yield
+    close = getattr(database, "close_connections", None)
+    if close is not None:
+        await close()
+
+
+@pytest.mark.asyncio
+async def test_migrations_hold_no_connection_open_afterwards(tmp_path, lending) -> None:
+    """The migrations open a connection of their own and close it, whatever is lent.
+
+    A factory reset migrates `bot.fresh.db` and then deletes it, which Windows refuses while
+    anything holds the file open. The last connection to close checkpoints the write-ahead log
+    and deletes it, so a `-wal` file left beside the database means a connection is still open.
+    """
+    db_path = str(tmp_path / "bot.db")
+    _stub_database(db_path)  # populated, so the real runner migrates it
+
+    await run_migrations(db_path)
+
+    assert not os.path.exists(db_path + "-wal"), "a connection to the database is still open"
