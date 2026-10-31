@@ -10,12 +10,16 @@ test's connections. So `tests/conftest.py` closes them around every test, and
 
 They are closed on an event loop of their own, never on the test's: the one pytest-asyncio gives a
 test may be closed already, or not yet open, at each point this runs. aiosqlite binds no
-connection to a loop, so a connection opened on the test's loop closes on this one.
+connection to a loop, so a connection opened on the test's loop closes on this one. Where the
+calling thread is already running a loop, as an `async def` test calling `stop_started_queues` is,
+a second loop cannot be run on that thread, so the closing runs on a short-lived thread of its own,
+which is joined before this returns.
 """
 from __future__ import annotations
 
 import asyncio
 import sys
+import threading
 
 
 def close_lent_connections() -> None:
@@ -28,8 +32,25 @@ def close_lent_connections() -> None:
     close = getattr(database, "close_connections", None)
     if close is None:
         return
-    loop = asyncio.new_event_loop()
     try:
-        loop.run_until_complete(close())
-    finally:
-        loop.close()
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(close())
+        finally:
+            loop.close()
+        return
+    failure: list[BaseException] = []
+
+    def _close_on_a_thread_of_its_own() -> None:
+        try:
+            asyncio.run(close())
+        except BaseException as exc:
+            failure.append(exc)
+
+    closer = threading.Thread(target=_close_on_a_thread_of_its_own, name="close-lent-connections")
+    closer.start()
+    closer.join()
+    if failure:
+        raise failure[0]
