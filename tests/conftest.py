@@ -171,7 +171,12 @@ def _install_unsynced_connections() -> None:
     straight to `sqlite3.connect`, so a `factory` makes the setting as the connection opens,
     on its own thread and with no round trip of its own, and it reaches the fixtures that
     seed through aiosqlite directly as well as everything that goes through
-    `get_connection`. A caller's own `factory` wins. Plain `sqlite3.connect` is left alone,
+    `get_connection`. **The bot's own factory is kept, made unsynced:** `get_connection` hands
+    aiosqlite a `sqlite3.Connection` subclass of `leaguebot.core.db.database`'s, which records
+    the cursors it must close before lending the connection again, so it is swapped for a
+    subclass of itself that also turns the flush off. Swapping it for `UnsyncedConnection`
+    would lose that, and keeping it as it is would keep FULL. Any other factory a caller
+    passes wins as it is. Plain `sqlite3.connect` is left alone,
     and so is the scheduler's job store, which goes through SQLAlchemy and keeps a FULL pin
     of its own. Nothing in `src/` changes: a seam there would put test machinery in the bot.
 
@@ -191,9 +196,25 @@ def _install_unsynced_connections() -> None:
             super().__init__(*args, **kwargs)
             self.execute("PRAGMA synchronous = OFF")
 
+    unsynced: dict[type, type] = {}
+
+    def unsynced_bot_factory(factory: type) -> type:
+        if factory not in unsynced:
+            def __init__(self, *args, **kwargs) -> None:
+                factory.__init__(self, *args, **kwargs)
+                self.execute("PRAGMA synchronous = OFF")
+
+            name = f"Unsynced{factory.__name__}"
+            unsynced[factory] = type(name, (factory,), {"__init__": __init__})
+        return unsynced[factory]
+
     @functools.wraps(real)
     def connect(database, **kwargs):
-        kwargs.setdefault("factory", UnsyncedConnection)
+        factory = kwargs.get("factory")
+        if factory is None:
+            kwargs["factory"] = UnsyncedConnection
+        elif factory.__module__ == "leaguebot.core.db.database":
+            kwargs["factory"] = unsynced_bot_factory(factory)
         return real(database, **kwargs)
 
     aiosqlite.connect = connect

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import sqlite3
@@ -11,7 +12,7 @@ import aiosqlite
 import pytest
 import pytest_asyncio
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.db.database import get_connection, run_migrations, sole_row
 
 
 def _stub_database(db_path: str) -> None:
@@ -270,12 +271,18 @@ async def test_connections_keep_full_durability(monkeypatch, tmp_path) -> None:
 # connection at `synchronous = OFF`, because the flushes FULL pays are what made a database
 # test cost several times as much on Windows as on Linux. See the docstring there.
 
+@pytest.mark.xfail(
+    strict=True, reason="#540: get_connection hands aiosqlite no factory of the bot's own yet"
+)
 @pytest.mark.asyncio
 async def test_the_suite_s_connections_skip_the_flush_to_disk(tmp_path) -> None:
-    """A test's database is opened at OFF (0), and is still in WAL.
+    """A test's database is opened at OFF (0), and is still in WAL, on the bot's own kind of
+    connection.
 
     OFF changes only what survives a power cut, which no test can observe. WAL changes which
-    reads wait on which writes, which tests do, so the suite keeps the bot's journal mode.
+    reads wait on which writes, which tests do, so the suite keeps the bot's journal mode. The
+    bot's kind of connection records the cursors it closes before lending it again, so the
+    suite keeps that too.
     """
     db_path = str(tmp_path / "suite.db")
     await run_migrations(db_path)
@@ -286,8 +293,11 @@ async def test_the_suite_s_connections_skip_the_flush_to_disk(tmp_path) -> None:
         cursor = await db.execute("PRAGMA journal_mode")
         (mode,) = await cursor.fetchone()
 
+        kinds = {kind.__module__ for kind in type(db._conn).__mro__}
+
     assert level == 0, "expected OFF (0) on the suite's own connections"
     assert mode.lower() == "wal", "the suite must still test the bot's journal mode"
+    assert "leaguebot.core.db.database" in kinds, "the suite must keep the bot's connection"
 
 
 @pytest.mark.asyncio
@@ -357,3 +367,263 @@ async def test_migrations_hold_no_connection_open_afterwards(tmp_path, lending) 
     await run_migrations(db_path)
 
     assert not os.path.exists(db_path + "-wal"), "a connection to the database is still open"
+
+
+_NOT_LENT = "#540: a connection returned cleanly is not lent again yet"
+
+
+async def _a_database(tmp_path) -> str:
+    """A migrated database under *tmp_path*, holding a table `t` of three rows."""
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    db = sqlite3.connect(db_path)
+    try:
+        db.execute("CREATE TABLE t (x INTEGER)")
+        db.executemany("INSERT INTO t VALUES (?)", [(1,), (2,), (3,)])
+        db.commit()
+    finally:
+        db.close()
+    return db_path
+
+
+async def _refuses_queries(db: aiosqlite.Connection) -> bool:
+    """Whether *db* has been closed, so that it runs nothing more."""
+    try:
+        await db.execute("SELECT 1")
+    except ValueError:
+        return True
+    return False
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_LENT)
+@pytest.mark.asyncio
+async def test_a_connection_returned_cleanly_is_lent_again(tmp_path, lending) -> None:
+    """A block that ends with nothing pending gives its connection back, and the next caller
+    for the same database gets that connection rather than a new one."""
+    db_path = await _a_database(tmp_path)
+
+    async with get_connection(db_path) as first:
+        await (await first.execute("SELECT COUNT(*) FROM t")).fetchall()
+    async with get_connection(db_path) as second:
+        assert second is first
+
+
+@pytest.mark.asyncio
+async def test_two_connections_asked_for_at_once_are_two_connections(tmp_path, lending) -> None:
+    """A caller asking while another holds a connection gets one of its own, at once: a save
+    reads the queue on a second connection while its own is still open."""
+    db_path = await _a_database(tmp_path)
+
+    async with get_connection(db_path) as outer:
+        async with asyncio.timeout(5):
+            async with get_connection(db_path) as inner:
+                assert inner is not outer
+                assert await (await inner.execute("SELECT COUNT(*) FROM t")).fetchall()
+
+
+@pytest.mark.asyncio
+async def test_a_connection_returned_mid_transaction_is_closed_not_lent(
+    tmp_path, lending
+) -> None:
+    """A block that ends with a write uncommitted closes its connection, which rolls the write
+    back, and the next caller gets a fresh connection that never sees it."""
+    db_path = await _a_database(tmp_path)
+
+    async with get_connection(db_path) as first:
+        await first.execute("INSERT INTO t VALUES (4)")
+        assert first.in_transaction
+    async with get_connection(db_path) as second:
+        assert second is not first
+        (count,) = await sole_row(await second.execute("SELECT COUNT(*) FROM t"))
+    assert count == 3
+    assert await _refuses_queries(first)
+
+
+@pytest.mark.asyncio
+async def test_a_connection_left_by_an_exception_is_closed_not_lent(tmp_path, lending) -> None:
+    """A block left by an exception closes its connection, whatever it had pending, and the
+    next caller gets a fresh one."""
+    db_path = await _a_database(tmp_path)
+
+    with pytest.raises(RuntimeError, match="the step failed"):
+        async with get_connection(db_path) as first:
+            await (await first.execute("SELECT COUNT(*) FROM t")).fetchall()
+            raise RuntimeError("the step failed")
+    async with get_connection(db_path) as second:
+        assert second is not first
+    assert await _refuses_queries(first)
+
+
+@pytest.mark.xfail(strict=True, reason="#540: there is no never_lend helper yet")
+@pytest.mark.asyncio
+async def test_a_confined_connection_is_never_lent_again(tmp_path, lending) -> None:
+    """A connection that a conversation's save confined to its own tables is closed when the
+    save returns it, so its refusal can never reach the next caller's writes."""
+    from leaguebot.core.db.database import never_lend
+
+    db_path = await _a_database(tmp_path)
+
+    def refuse_every_write(action, *_args) -> int:
+        if action in (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE):
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    async with get_connection(db_path) as confined:
+        await never_lend(confined, refuse_every_write)
+        with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
+            await confined.execute("INSERT INTO t VALUES (4)")
+    async with get_connection(db_path) as next_one:
+        assert next_one is not confined
+        await next_one.execute("INSERT INTO t VALUES (4)")
+        await next_one.commit()
+    assert await _refuses_queries(confined)
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_LENT)
+@pytest.mark.asyncio
+async def test_a_lent_connection_has_its_foreign_keys_on_again(tmp_path, lending) -> None:
+    """A caller that turned foreign keys off on its connection does not pass that on: the next
+    caller gets the same connection with them on again."""
+    db_path = await _a_database(tmp_path)
+
+    async with get_connection(db_path) as first:
+        await first.execute("PRAGMA foreign_keys = OFF")
+    async with get_connection(db_path) as second:
+        assert second is first
+        (enforced,) = await sole_row(await second.execute("PRAGMA foreign_keys"))
+    assert enforced == 1
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_LENT)
+@pytest.mark.asyncio
+async def test_an_autocomplete_connection_is_never_lent_with_the_longer_timeout(
+    tmp_path, lending
+) -> None:
+    """An autocomplete's connection, which gives up on a lock after one second, is lent only to
+    another autocomplete; an ordinary caller never gets it, nor an autocomplete the ordinary
+    caller's five seconds."""
+    from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
+
+    db_path = await _a_database(tmp_path)
+
+    async with get_connection(db_path, timeout=AUTOCOMPLETE_TIMEOUT_SECONDS) as quick:
+        pass
+    async with get_connection(db_path) as ordinary:
+        assert ordinary is not quick
+        (ordinary_ms,) = await sole_row(await ordinary.execute("PRAGMA busy_timeout"))
+    async with get_connection(db_path, timeout=AUTOCOMPLETE_TIMEOUT_SECONDS) as again:
+        assert again is quick
+        assert again is not ordinary
+        (again_ms,) = await sole_row(await again.execute("PRAGMA busy_timeout"))
+    assert (ordinary_ms, again_ms) == (5000, 1000)
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_LENT)
+@pytest.mark.asyncio
+async def test_a_cursor_read_after_its_connection_is_returned_fails_as_before(
+    tmp_path, lending
+) -> None:
+    """A cursor kept past its block cannot be read, even though its connection lives on: the
+    cursors are closed as the connection is given back."""
+    db_path = await _a_database(tmp_path)
+
+    async with get_connection(db_path) as first:
+        kept = await first.execute("SELECT x FROM t ORDER BY x")
+    async with get_connection(db_path) as second:
+        assert second is first
+    with pytest.raises((ValueError, sqlite3.ProgrammingError)):
+        await kept.fetchall()
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_LENT)
+@pytest.mark.asyncio
+async def test_a_half_read_query_holds_no_snapshot_once_returned(tmp_path, lending) -> None:
+    """A query read only in part, and left so, does not keep its view of the database into the
+    next caller's work: the next caller sees a row written meanwhile."""
+    db_path = await _a_database(tmp_path)
+
+    async with get_connection(db_path) as first:
+        half_read = await first.execute("SELECT x FROM t ORDER BY x")
+        assert await half_read.fetchone() is not None
+    writer = sqlite3.connect(db_path)
+    try:
+        writer.execute("INSERT INTO t VALUES (4)")
+        writer.commit()
+    finally:
+        writer.close()
+    async with get_connection(db_path) as second:
+        assert second is first
+        (count,) = await sole_row(await second.execute("SELECT COUNT(*) FROM t"))
+    assert count == 4
+
+
+@pytest.mark.asyncio
+async def test_a_replaced_database_file_is_not_served_by_an_old_connection(
+    tmp_path, lending
+) -> None:
+    """A database file swapped for another between two callers is read afresh: the second
+    caller sees the new file, not what an idle connection still holds open."""
+    db_path = await _a_database(tmp_path)
+    async with get_connection(db_path) as first:
+        await (await first.execute("SELECT COUNT(*) FROM t")).fetchall()
+
+    replacement = str(tmp_path / "replacement.db")
+    other = sqlite3.connect(replacement)
+    try:
+        other.execute("CREATE TABLE replaced (x INTEGER)")
+        other.commit()
+    finally:
+        other.close()
+    os.replace(replacement, db_path)
+
+    async with get_connection(db_path) as second:
+        assert second is not first
+        names = {row[0] for row in await (await second.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )).fetchall()}
+    assert names == {"replaced"}
+
+
+@pytest.mark.xfail(strict=True, reason="#540: the bot keeps no idle connection yet")
+@pytest.mark.asyncio
+async def test_no_more_than_four_idle_connections_are_kept(tmp_path) -> None:
+    """Six connections in use at once, all given back cleanly, leave four idle: six asked for
+    again get those four and two new ones, and the other two were closed."""
+    from leaguebot.core.db import database
+
+    db_path = await _a_database(tmp_path)
+    try:
+        async with contextlib.AsyncExitStack() as stack:
+            first = [await stack.enter_async_context(get_connection(db_path)) for _ in range(6)]
+        async with contextlib.AsyncExitStack() as stack:
+            second = [await stack.enter_async_context(get_connection(db_path)) for _ in range(6)]
+        lent = [db for db in first if any(db is again for again in second)]
+        not_kept = [db for db in first if not any(db is again for again in second)]
+        assert len(lent) == 4
+        assert [await _refuses_queries(db) for db in not_kept] == [True, True]
+    finally:
+        close = getattr(database, "close_connections", None)
+        if close is not None:
+            await close()
+
+
+@pytest.mark.xfail(strict=True, reason="#540: there is no close_connections yet")
+@pytest.mark.asyncio
+async def test_closing_the_connections_ends_every_idle_thread(tmp_path, lending) -> None:
+    """Closing the connections, as the bot does when it stops, ends the thread of every idle
+    one, so none keeps the process alive; the next caller gets a fresh connection."""
+    from leaguebot.core.db.database import close_connections
+
+    db_path = await _a_database(tmp_path)
+    async with get_connection(db_path) as one:
+        async with get_connection(db_path) as two:
+            pass
+
+    await close_connections()
+
+    for idle in (one, two):
+        idle._thread.join(timeout=5)
+        assert not idle._thread.is_alive()
+        assert await _refuses_queries(idle)
+    async with get_connection(db_path) as fresh:
+        assert fresh is not one and fresh is not two
