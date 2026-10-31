@@ -19,7 +19,7 @@ retained runs overran the 923 MB tmpfs `/tmp` sits on the Raspberry Pi, which fa
 rasteriser tests with 0-byte PNGs. It also sets `tmp_path_retention_policy = failed`, which
 drops each *passing* test's directory as it finishes — the count alone acts only at session
 end, and one run's accumulated scratch reached 817 MB and filled the tmpfs before it could.
-The template scratch below is the one thing pytest does not own, so `pytest_sessionstart`
+The template scratch below is the one thing pytest does not own, so `_sweep_stale_templates`
 sweeps it to the same schedule.
 
 **`BOT_TOKEN` is given a placeholder before any test module is collected.** The entry point,
@@ -75,6 +75,8 @@ def _refuse_another_checkouts_bot() -> None:
 
 def pytest_configure(config):
     _refuse_another_checkouts_bot()
+    if not hasattr(config, "workerinput"):
+        _sweep_stale_templates()
 
 
 _TEMPLATE_PREFIX = "f1-schema-"
@@ -201,7 +203,7 @@ def _install_unsynced_connections() -> None:
 _install_unsynced_connections()
 
 
-def pytest_sessionstart(session):
+def _sweep_stale_templates() -> None:
     """Clear template scratch that an earlier run was killed before cleaning up.
 
     `_install_template_migrations` puts its templates in a `tempfile.mkdtemp` outside the
@@ -210,6 +212,13 @@ def pytest_sessionstart(session):
     gets to. Each leak is small, but it lands on the very tmpfs that retention setting
     exists to protect. Only directories carrying this module's own prefix are removed, and
     never the one this run is using.
+
+    **Only the process that starts the run sweeps, never an xdist worker** (#540). Every worker
+    imports this module and makes template scratch of its own, so a worker sweeping as it starts
+    deletes the live templates of the workers that started before it: `test_schema_rules.py`,
+    which raises a schema while it is collected, failed with "unable to open database file". So
+    `pytest_configure` calls this where the config carries no `workerinput`, in the controller
+    before any worker exists, or in a run without workers.
     """
     root = Path(tempfile.gettempdir())
     for stale in root.glob(f"{_TEMPLATE_PREFIX}*"):

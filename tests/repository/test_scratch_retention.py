@@ -18,14 +18,20 @@ wrote. That is *more* than was kept before, not less — the retention count dis
 failure's scratch along with everything else.
 
 Three mechanisms, then, and all three are easy to undo by accident — hence these tests.
-`pytest.ini` carries the two settings, and `pytest_sessionstart` sweeps the one directory
-pytest does not own.
+`pytest.ini` carries the two settings, and `_sweep_stale_templates` in `tests/conftest.py` sweeps
+the one directory pytest does not own.
+
+The sweep runs in the process that starts the run, never in an xdist worker (#540): a worker
+sweeping as it starts would delete the live templates of the workers started before it.
 """
 from __future__ import annotations
 
 import configparser
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from tests import conftest  # already imported by pytest; not re-executed
 
@@ -63,7 +69,7 @@ def test_a_killed_run_s_template_scratch_is_swept(monkeypatch, tmp_path):
     stale.mkdir()
     (stale / "0.db").write_bytes(b"leftover")
 
-    conftest.pytest_sessionstart(session=None)
+    conftest._sweep_stale_templates()
 
     assert not stale.exists()
 
@@ -76,7 +82,7 @@ def test_the_scratch_this_run_is_using_is_left_alone(monkeypatch, tmp_path):
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     monkeypatch.setattr(conftest, "_TEMPLATE_SCRATCH", live)
 
-    conftest.pytest_sessionstart(session=None)
+    conftest._sweep_stale_templates()
 
     assert live.exists()
 
@@ -87,6 +93,22 @@ def test_nothing_else_in_the_temp_directory_is_touched(monkeypatch, tmp_path):
     someone_else = tmp_path / "pytest-of-someone"
     someone_else.mkdir()
 
-    conftest.pytest_sessionstart(session=None)
+    conftest._sweep_stale_templates()
 
     assert someone_else.exists()
+
+
+@pytest.mark.parametrize("worker, swept", [(False, True), (True, False)], ids=["the run's own process", "a worker"])
+def test_only_the_process_starting_the_run_sweeps(monkeypatch, tmp_path, worker, swept):
+    """Every xdist worker makes template scratch of its own as it starts. A worker that swept
+    would take the next worker's live templates for a killed run's and delete them, and that
+    worker's every database would then fail to open. The process starting the run sweeps
+    before any worker exists; a worker sweeps nothing."""
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    other = tmp_path / f"{conftest._TEMPLATE_PREFIX}another-process"
+    other.mkdir()
+    config = SimpleNamespace(workerinput={"workerid": "gw1"}) if worker else SimpleNamespace()
+
+    conftest.pytest_configure(config)
+
+    assert other.exists() is not swept
