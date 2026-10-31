@@ -170,7 +170,8 @@ async def get_connection(
     `test_no_more_than_four_idle_connections_are_kept`).
 
     **Cursors are closed on return,** in one hop on the connection's thread, through aiosqlite's
-    private ``_execute``, which the pin on aiosqlite holds in place. Most of the bot's queries are a
+    private ``_execute`` and the private ``_conn`` it reads the connection from, which the pin on
+    aiosqlite holds in place. Most of the bot's queries are a
     bare ``cursor = await db.execute(...)`` that is never closed, and a half-read one would keep its
     read snapshot into the next caller's work
     (`test_a_half_read_query_holds_no_snapshot_once_returned`). A cursor read after the block fails,
