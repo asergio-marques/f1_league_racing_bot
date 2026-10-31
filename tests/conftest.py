@@ -76,8 +76,6 @@ def _refuse_another_checkouts_bot() -> None:
 
 def pytest_configure(config):
     _refuse_another_checkouts_bot()
-    if not hasattr(config, "workerinput"):
-        _sweep_stale_templates()
 
 
 _TEMPLATE_PREFIX = "f1-schema-"
@@ -214,17 +212,25 @@ def _sweep_stale_templates() -> None:
     exists to protect. Only directories carrying this module's own prefix are removed, and
     never the one this run is using.
 
-    **Only the process that starts the run sweeps, never an xdist worker** (#540). Every worker
-    imports this module and makes template scratch of its own, so a worker sweeping as it starts
-    deletes the live templates of the workers that started before it: `test_schema_rules.py`,
+    **Only the process that starts the session sweeps, never an xdist worker** (#540). Every
+    worker imports this module and makes template scratch of its own, so a worker sweeping as it
+    starts deletes the live templates of the workers that started before it: `test_schema_rules.py`,
     which raises a schema while it is collected, failed with "unable to open database file". So
-    `pytest_configure` calls this where the config carries no `workerinput`, in the controller
-    before any worker exists, or in a run without workers.
+    `pytest_sessionstart` calls this where the config carries no `workerinput`: in the controller,
+    whose own `pytest_sessionstart` runs before xdist's starts the workers (that one is `trylast`),
+    or in a run without workers. A session start rather than `pytest_configure`, which `--help` and
+    `--markers` run too, outside any session and outside the lock: a sweep there would take a
+    running session's templates.
     """
     root = Path(tempfile.gettempdir())
     for stale in root.glob(f"{_TEMPLATE_PREFIX}*"):
         if stale != _TEMPLATE_SCRATCH and stale.is_dir():
             shutil.rmtree(stale, ignore_errors=True)
+
+
+def pytest_sessionstart(session):
+    if not hasattr(session.config, "workerinput"):
+        _sweep_stale_templates()
 
 
 def pytest_collection_finish(session):

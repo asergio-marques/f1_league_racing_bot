@@ -21,7 +21,7 @@ Three mechanisms, then, and all three are easy to undo by accident — hence the
 `pytest.ini` carries the two settings, and `_sweep_stale_templates` in `tests/conftest.py` sweeps
 the one directory pytest does not own.
 
-The sweep runs in the process that starts the run, never in an xdist worker (#540): a worker
+The sweep runs in the process that starts the session, never in an xdist worker (#540): a worker
 sweeping as it starts would delete the live templates of the workers started before it.
 """
 from __future__ import annotations
@@ -98,8 +98,10 @@ def test_nothing_else_in_the_temp_directory_is_touched(monkeypatch, tmp_path):
     assert someone_else.exists()
 
 
-@pytest.mark.parametrize("worker, swept", [(False, True), (True, False)], ids=["the run's own process", "a worker"])
-def test_only_the_process_starting_the_run_sweeps(monkeypatch, tmp_path, worker, swept):
+@pytest.mark.parametrize(
+    "worker, swept", [(False, True), (True, False)], ids=["the session's own process", "a worker"]
+)
+def test_only_the_process_starting_the_session_sweeps(monkeypatch, tmp_path, worker, swept):
     """Every xdist worker makes template scratch of its own as it starts. A worker that swept
     would take the next worker's live templates for a killed run's and delete them, and that
     worker's every database would then fail to open. The process starting the run sweeps
@@ -109,6 +111,6 @@ def test_only_the_process_starting_the_run_sweeps(monkeypatch, tmp_path, worker,
     other.mkdir()
     config = SimpleNamespace(workerinput={"workerid": "gw1"}) if worker else SimpleNamespace()
 
-    conftest.pytest_configure(config)
+    conftest.pytest_sessionstart(SimpleNamespace(config=config))
 
     assert other.exists() is not swept
