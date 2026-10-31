@@ -568,7 +568,6 @@ async def test_a_replaced_database_file_is_not_served_by_an_old_connection(
     assert await _refuses_queries(first)
 
 
-@pytest.mark.xfail(strict=True, reason="#540: the bot keeps no idle connection yet")
 @pytest.mark.asyncio
 async def test_no_more_than_four_idle_connections_are_kept(tmp_path) -> None:
     """Six connections in use at once, all given back cleanly, leave four idle: six asked for

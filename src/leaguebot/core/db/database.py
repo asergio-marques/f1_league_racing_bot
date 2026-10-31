@@ -46,7 +46,7 @@ AUTOCOMPLETE_TIMEOUT_SECONDS = 1.0
 #: at once in practice (a step's save, the queue it asks on a second connection, and a reader or
 #: two); one asking beyond that opens its own and closes it on return, as every caller did before
 #: connections were lent. Zero switches lending off.
-_IDLE_CONNECTIONS_KEPT = 0
+_IDLE_CONNECTIONS_KEPT = 4
 
 #: Who has called ``never_lend``: connections that are closed on return, whatever else is true.
 _NEVER_LENT: weakref.WeakSet[aiosqlite.Connection] = weakref.WeakSet()
