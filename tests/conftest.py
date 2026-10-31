@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import atexit
 import functools
+import gc
 import os
 import shutil
 import sys
@@ -224,6 +225,21 @@ def _sweep_stale_templates() -> None:
     for stale in root.glob(f"{_TEMPLATE_PREFIX}*"):
         if stale != _TEMPLATE_SCRATCH and stale.is_dir():
             shutil.rmtree(stale, ignore_errors=True)
+
+
+def pytest_collection_finish(session):
+    """Put everything collected out of the garbage collector's reach (#540).
+
+    The collected suite — every test module, its fixtures and parameters, some 340,000 objects
+    for the core tests alone — lives to the end of the run, and the collector's full passes
+    walked all of it again each time: on the Pi they took about a tenth of the core tests' run,
+    in pauses of up to 1.4 seconds that lengthened as the run went on. `gc.freeze` moves what
+    exists now into a generation the collector never scans. On the core tests with three workers
+    it cut each worker's full collections by some 40% and the run from 10:36 to 9:49 (Pi,
+    2026-10-31). The collect first, so that garbage left by collection is not frozen with it.
+    """
+    gc.collect()
+    gc.freeze()
 
 
 #: What one xdist worker takes at its peak over the full suite, in MB, and what the host is left

@@ -8,6 +8,7 @@ pinned here.
 from __future__ import annotations
 
 import configparser
+import gc
 import re
 from pathlib import Path
 
@@ -84,3 +85,10 @@ def test_a_count_the_host_names_is_left_to_xdist(monkeypatch, tmp_path):
     monkeypatch.setattr(conftest, "_MEMINFO", _meminfo(tmp_path, 300 * 1024, 0))
 
     assert conftest.pytest_xdist_auto_num_workers(config=None) is None
+
+
+def test_the_collected_suite_is_left_out_of_the_collector():
+    """The collected suite lives to the end of the run, and the collector's full passes walked
+    all of it again each time: about a tenth of the core tests' time on the Pi. Once collection
+    finishes it is frozen, so by the time any test runs the frozen generation holds it."""
+    assert gc.get_freeze_count() > 0

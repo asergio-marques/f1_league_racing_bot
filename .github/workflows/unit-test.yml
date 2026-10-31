@@ -160,7 +160,8 @@ jobs:
     # Single tests here that take several seconds against a fraction of one on Linux are not a
     # wait in the suite (#540): none recurs from run to run, they vary in length, and they bunch
     # late in the run, where each worker's heap is largest. They are the garbage collector's
-    # pauses and the runner's own stalls.
+    # pauses and the runner's own stalls; `tests/conftest.py` freezes the collected suite out of
+    # the collector's reach to shorten the first.
     - name: Github Action for testing the code
       run: pytest tests/ -q -rs -m "not rasteriser" --durations=15 --junitxml=pytest-results.xml
 
