@@ -699,3 +699,90 @@ async def test_a_connection_whose_return_is_cancelled_is_closed(
         # Left open, its thread, which is not a daemon, would keep the test run from ending.
         for db in used:
             await db.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("closed_by", ["a replaced file", "closing the connections"])
+async def test_a_cancelled_close_of_the_idle_connections_still_closes_the_rest(
+    tmp_path, lending, monkeypatch, closed_by
+) -> None:
+    """Two idle connections being closed together, because their database file has been replaced
+    or because the connections are being closed as the bot stops, are both closed even where the
+    work closing them is cancelled while the first close is under way, as a Ctrl-C does: the
+    cancellation reaches the caller, every one of them runs nothing more and has its thread
+    ended, and none is left idle.
+
+    The first close is made to wait, and the task closing them is cancelled while it waits. The
+    file's replacement is faked as in the replaced-file test, by `os.stat` reporting another
+    inode."""
+    from leaguebot.core.db import database
+
+    db_path = await _a_database(tmp_path)
+    async with get_connection(db_path) as one:
+        async with get_connection(db_path) as two:
+            pass
+    idle = [one, two]
+
+    closing = asyncio.Event()
+    closes_begun = 0
+
+    def close_that_waits_first(db: aiosqlite.Connection):
+        real_close = db.close
+
+        async def close() -> None:
+            nonlocal closes_begun
+            closes_begun += 1
+            if closes_begun == 1:
+                closing.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    await real_close()
+            else:
+                await real_close()
+
+        return close
+
+    for db in idle:
+        db.close = close_that_waits_first(db)
+
+    if closed_by == "a replaced file":
+        real_stat = os.stat
+        replaced = os.path.abspath(db_path)
+
+        def stat_as_replaced(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            if not isinstance(path, int) and os.path.abspath(os.fspath(path)) == replaced:
+                fields = list(result[:10])
+                fields[1] = result.st_ino + 1
+                return os.stat_result(fields)
+            return result
+
+        monkeypatch.setattr(os, "stat", stat_as_replaced)
+
+        async def work() -> None:
+            async with get_connection(db_path):
+                pass
+
+    else:
+
+        async def work() -> None:
+            await database.close_connections()
+
+    task = asyncio.create_task(work())
+    try:
+        await closing.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        for db in idle:
+            assert await _refuses_queries(db), "a connection was left open"
+            db._thread.join(timeout=5)
+            assert not db._thread.is_alive()
+        assert not any(database._idle.values())
+    finally:
+        # Left open, a thread, which is not a daemon, would keep the test run from ending.
+        for db in idle:
+            del db.close
+            await db.close()
