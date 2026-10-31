@@ -1386,7 +1386,6 @@ async def _numbered(env, *payloads: int) -> int:
     return max(s["id"] for s in await step_rows(env.db_path))
 
 
-@pytest.mark.xfail(strict=True, reason="#540: there is no close_connections yet")
 async def test_a_job_after_a_restored_state_is_numbered_above_every_job_before_it(env, tmp_path):
     """A state saved after job #1, then jobs #2 and #3 done, then the state restored: the next job
     asked for is numbered above #3, so no number in the log channel names two jobs.

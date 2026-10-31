@@ -45,7 +45,6 @@ async def test_stop_started_queues_waits_on_no_thread_a_fixture_holds(tmp_path, 
         assert time.monotonic() - start >= short_grace * 0.9
 
 
-@pytest.mark.xfail(strict=True, reason="#540: a connection returned cleanly is not lent again yet")
 async def test_stop_started_queues_waits_on_no_idle_lent_connection(tmp_path, short_grace, lending):
     """A connection the test's call gave back cleanly, kept idle to be lent again, is closed before
     the wait rather than waited on: the stop returns well inside the grace period, and the idle

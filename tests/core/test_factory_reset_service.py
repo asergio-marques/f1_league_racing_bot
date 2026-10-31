@@ -309,7 +309,6 @@ async def test_the_wipe_leaves_no_scratch_behind(db_path, tmp_path):
 
 
 
-@pytest.mark.xfail(strict=True, reason="#540: a connection returned cleanly is not lent again yet")
 async def test_a_factory_reset_under_lent_connections_leaves_them_reading_the_fresh_database(
     db_path, lending
 ):

@@ -270,9 +270,6 @@ async def test_connections_keep_full_durability(monkeypatch, tmp_path) -> None:
 # connection at `synchronous = OFF`, because the flushes FULL pays are what made a database
 # test cost several times as much on Windows as on Linux. See the docstring there.
 
-@pytest.mark.xfail(
-    strict=True, reason="#540: get_connection hands aiosqlite no factory of the bot's own yet"
-)
 @pytest.mark.asyncio
 async def test_the_suite_s_connections_skip_the_flush_to_disk(tmp_path) -> None:
     """A test's database is opened at OFF (0), and is still in WAL, on the bot's own kind of
@@ -356,9 +353,6 @@ async def test_migrations_hold_no_connection_open_afterwards(tmp_path, lending) 
     assert not os.path.exists(db_path + "-wal"), "a connection to the database is still open"
 
 
-_NOT_LENT = "#540: a connection returned cleanly is not lent again yet"
-
-
 async def _a_database(tmp_path) -> str:
     """A migrated database under *tmp_path*, holding a table `t` of three rows."""
     db_path = str(tmp_path / "bot.db")
@@ -382,7 +376,6 @@ async def _refuses_queries(db: aiosqlite.Connection) -> bool:
     return False
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_LENT)
 @pytest.mark.asyncio
 async def test_a_connection_returned_cleanly_is_lent_again(tmp_path, lending) -> None:
     """A block that ends with nothing pending gives its connection back, and the next caller
@@ -441,7 +434,6 @@ async def test_a_connection_left_by_an_exception_is_closed_not_lent(tmp_path, le
     assert await _refuses_queries(first)
 
 
-@pytest.mark.xfail(strict=True, reason="#540: there is no never_lend helper yet")
 @pytest.mark.asyncio
 async def test_a_confined_connection_is_never_lent_again(tmp_path, lending) -> None:
     """A connection that a conversation's save confined to its own tables is closed when the
@@ -466,7 +458,6 @@ async def test_a_confined_connection_is_never_lent_again(tmp_path, lending) -> N
     assert await _refuses_queries(confined)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_LENT)
 @pytest.mark.asyncio
 async def test_a_lent_connection_has_its_foreign_keys_on_again(tmp_path, lending) -> None:
     """A caller that turned foreign keys off on its connection does not pass that on: the next
@@ -481,7 +472,6 @@ async def test_a_lent_connection_has_its_foreign_keys_on_again(tmp_path, lending
     assert enforced == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_LENT)
 @pytest.mark.asyncio
 async def test_an_autocomplete_connection_is_never_lent_with_the_longer_timeout(
     tmp_path, lending
@@ -505,7 +495,6 @@ async def test_an_autocomplete_connection_is_never_lent_with_the_longer_timeout(
     assert (ordinary_ms, again_ms) == (5000, 1000)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_LENT)
 @pytest.mark.asyncio
 async def test_a_cursor_read_after_its_connection_is_returned_fails_as_before(
     tmp_path, lending
@@ -522,7 +511,6 @@ async def test_a_cursor_read_after_its_connection_is_returned_fails_as_before(
         await kept.fetchall()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_LENT)
 @pytest.mark.asyncio
 async def test_a_half_read_query_holds_no_snapshot_once_returned(tmp_path, lending) -> None:
     """A query read only in part, and left so, does not keep its view of the database into the
@@ -603,7 +591,6 @@ async def test_no_more_than_four_idle_connections_are_kept(tmp_path) -> None:
             await close()
 
 
-@pytest.mark.xfail(strict=True, reason="#540: there is no close_connections yet")
 @pytest.mark.asyncio
 async def test_closing_the_connections_ends_every_idle_thread(tmp_path, lending) -> None:
     """Closing the connections, as the bot does when it stops, ends the thread of every idle
