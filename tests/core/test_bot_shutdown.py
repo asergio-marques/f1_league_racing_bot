@@ -25,7 +25,6 @@ def _calls_named(nodes: list[ast.stmt], name: str) -> list[ast.Call]:
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#540: the entry point closes no connections as it stops")
 def test_the_bot_closes_its_connections_however_it_stops():
     """`main` awaits `bot.start` inside a `try` whose `finally` awaits `close_connections`, so the
     idle connections are closed whether the bot stops cleanly, on Ctrl-C, or on an error."""
