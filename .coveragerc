@@ -8,7 +8,7 @@
 # workflow's own floor, on every green build for months (issue #208).
 #
 # `source = src` is the whole fix: the gate now measures the bot. Both `coverage run` and
-# `coverage json` pick this file up automatically, so the workflow's commands are unchanged.
+# `coverage json` pick this file up automatically, so the workflow's commands need not name it.
 # The bot is the package in `src/leaguebot/`, installed editable (`pip install -e .`), so its
 # files are imported from where they sit and measured there.
 #
