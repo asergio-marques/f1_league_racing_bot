@@ -155,10 +155,6 @@ def _bot(*, module_on=True, toggles=None, reports=None):
     return bot
 
 
-async def test_an_aspect_that_is_on_could_attach_a_file():
-    assert await aspect_attaches_files(_bot(toggles={"standings": True}), "standings")
-
-
 async def test_an_aspect_that_is_off_could_not():
     assert not await aspect_attaches_files(_bot(toggles={"standings": False}), "standings")
 

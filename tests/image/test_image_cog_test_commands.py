@@ -129,18 +129,29 @@ class TestDivisionAutocomplete:
     elsewhere; only the autocomplete changed.
     """
 
-    async def test_it_offers_the_drawn_seasons_divisions(self, cog):
+    @pytest.mark.parametrize(
+        "offered",
+        [["Division 1", "Division 2"], ["Pending Division"]],
+        ids=["approved-season", "season-pending-approval"],
+    )
+    async def test_it_offers_the_drawn_seasons_divisions(self, cog, offered):
+        """The lookup is the service's; the cog must simply ask the right question.
+
+        Which season counts as previewable — approved first, pending approval otherwise —
+        is decided inside `get_previewable_divisions`, and is covered against a real
+        database in `tests/core/test_season_previewable_lookup.py`.
+        """
         cog.bot = SimpleNamespace(
             season_service=SimpleNamespace(
                 get_previewable_divisions=_async(
-                    [SimpleNamespace(name="Division 1"), SimpleNamespace(name="Division 2")]
+                    [SimpleNamespace(name=name) for name in offered]
                 ),
             )
         )
 
         choices = await cog._division_autocomplete(_Interaction(), "")
 
-        assert [c.value for c in choices] == ["Division 1", "Division 2"]
+        assert [c.value for c in choices] == offered
 
     async def test_it_filters_by_what_has_been_typed(self, cog):
         cog.bot = SimpleNamespace(
@@ -388,7 +399,13 @@ class TestTheTwelveCommands:
         "weather-p2": ["division", "round"],
         "weather-p3": ["division", "round"],
         "weather-mystery": ["division", "round"],
+        # A-003 — `verdict` is named as the feature description names it, not after the
+        # aspect: singular, never `verdicts`.
         "verdict": ["division", "round"],
+        # The two aspects are independent, so the two previews are two commands. `verdict`
+        # draws the cards a review produced and `verdict-banner` the header above them; a
+        # league may have either toggle on without the other, and drawing both from one
+        # command would show a picture it does not post.
         "verdict-banner": ["division", "round"],
     }
 
@@ -409,22 +426,6 @@ class TestTheTwelveCommands:
         for command in ImageCog.test.commands:
             division = next(p for p in command.parameters if p.name == "division")
             assert division.autocomplete, command.name
-
-    def test_the_verdict_command_is_singular(self):
-        """A-003 — named as the feature description names it, not after the aspect."""
-        names = {c.name for c in ImageCog.test.commands}
-        assert "verdict" in names
-        assert "verdicts" not in names
-
-    def test_the_banner_is_a_command_of_its_own(self):
-        """The two aspects are independent, so the two previews are two commands.
-
-        `verdict` draws the cards a review produced and `verdict-banner` the header above
-        them; a league may have either toggle on without the other, and drawing both from
-        one command would show a picture it does not post.
-        """
-        names = {c.name for c in ImageCog.test.commands}
-        assert {"verdict", "verdict-banner"} <= names
 
 
 def _async(value):
@@ -483,34 +484,6 @@ class TestTheReplyNamesTheSeason:
         assert "pending approval" not in interaction.followup.messages[0]
 
 
-class TestAutocompleteFollowsTheDrawnSeason:
-    async def test_a_season_pending_approval_offers_its_divisions(self, cog):
-        """The lookup is the service's; the cog must simply ask the right question.
-
-        Which season counts as previewable — approved first, pending approval otherwise —
-        is decided inside `get_previewable_divisions`, and is covered against a real
-        database in `tests/core/test_season_previewable_lookup.py`.
-        """
-        cog.bot = SimpleNamespace(
-            season_service=SimpleNamespace(
-                get_previewable_divisions=_async(
-                    [SimpleNamespace(name="Pending Division")]
-                ),
-            )
-        )
-
-        choices = await cog._division_autocomplete(_Interaction(), "")
-
-        assert [c.value for c in choices] == ["Pending Division"]
-
-    async def test_a_season_less_server_offers_nothing_and_does_not_raise(self, cog):
-        cog.bot = SimpleNamespace(
-            season_service=SimpleNamespace(get_previewable_divisions=_async([]))
-        )
-
-        assert await cog._division_autocomplete(_Interaction(), "") == []
-
-
 # ── 046 US2: the command surface on a season-less server ──────────────────
 
 
@@ -564,19 +537,6 @@ class TestNoLeagueIsInvented:
     async def test_an_empty_division_still_says_its_drivers_are_invented(self, cog):
         """FR-018 survives: a real division whose seats are empty draws made-up names,
         and the manager is told so."""
-        interaction = _Interaction()
-        await interaction.response.defer()
-
-        await cog._send_preview(
-            interaction,
-            title="Lineup",
-            context=_context(fabricated_drivers=True),
-            outcomes=[("Lineup", "lineup_template", _outcome())],
-        )
-
-        assert "Seat your drivers" in interaction.followup.messages[0]
-
-    async def test_a_real_division_with_empty_seats_still_gets_the_seat_note(self, cog):
         interaction = _Interaction()
         await interaction.response.defer()
 

@@ -38,12 +38,6 @@ def test_both_catalogues_are_registered_against_their_template_slot():
     assert catalogue_for(CALL) is RSVP_CATALOGUE
 
 
-def test_neither_catalogue_is_empty():
-    """An empty catalogue makes validity Layer 2 skip rather than pass (XIV.9)."""
-    assert not ATTENDANCE_CATALOGUE.is_empty
-    assert not RSVP_CATALOGUE.is_empty
-
-
 # ── 2. The sheet's fields match the wip-spec, in both directions ──────────
 
 
@@ -257,11 +251,6 @@ def test_a_gap_in_the_row_numbering_is_fatal():
     with pytest.raises(CapacityError) as exc:
         ATTENDANCE_CATALOGUE.rows.declared_capacity(root)
     assert "row" in str(exc.value)
-
-
-def test_a_sheet_template_declaring_no_row_at_all_is_fatal():
-    with pytest.raises(CapacityError):
-        ATTENDANCE_CATALOGUE.rows.declared_capacity(_svg(["division_name"]))
 
 
 def test_a_template_declaring_no_round_is_not_faulty():

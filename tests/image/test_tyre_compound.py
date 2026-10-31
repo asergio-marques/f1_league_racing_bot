@@ -26,12 +26,6 @@ def test_the_set_is_the_five_compounds_a_session_may_be_run_on():
     assert TYRE_COMPOUNDS == ("Soft", "Medium", "Hard", "Intermediate", "Wet")
 
 
-@pytest.mark.parametrize("compound", TYRE_COMPOUNDS)
-def test_every_canonical_name_round_trips_through_itself(compound):
-    """A value already canonical needs no special case anywhere downstream."""
-    assert canonicalise_tyre(compound) == compound
-
-
 # ── The accepted spellings ────────────────────────────────────────────────
 
 @pytest.mark.parametrize(
@@ -46,6 +40,8 @@ def test_every_canonical_name_round_trips_through_itself(compound):
     ],
 )
 def test_each_accepted_spelling_gives_its_compound(written, expected):
+    """Every canonical name is a spelling of itself: a value already canonical needs no
+    special case anywhere downstream."""
     assert canonicalise_tyre(written) == expected
 
 
@@ -79,7 +75,11 @@ def test_every_compound_is_reachable_by_at_least_its_own_name(compound):
     "written", ["Ultrasoft", "Supersoft", "Hypersoft", "Slick", "C3", "Softish", "banana"]
 )
 def test_a_compound_outside_the_set_names_nothing(written):
-    """Five and no sixth. A legacy compound is refused like any other unknown."""
+    """Five and no sixth. A legacy compound is refused like any other unknown.
+
+    It canonicalises to None as an absent one does, but, unlike an absent one, it is a
+    line to send back.
+    """
     assert canonicalise_tyre(written) is None
     assert not records_no_tyre(written)
 
@@ -94,12 +94,6 @@ def test_a_field_recording_no_compound_is_not_an_error(written):
     """
     assert records_no_tyre(written) is True
     assert canonicalise_tyre(written) is None
-
-
-def test_an_unknown_compound_is_told_apart_from_an_absent_one():
-    """Both canonicalise to None; only one of them is a line to send back."""
-    assert canonicalise_tyre("Ultrasoft") is canonicalise_tyre("") is None
-    assert records_no_tyre("") and not records_no_tyre("Ultrasoft")
 
 
 # ── How a message names them ──────────────────────────────────────────────

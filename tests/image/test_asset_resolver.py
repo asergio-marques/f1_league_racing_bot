@@ -36,25 +36,20 @@ SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"/>'
         ("Nürburgring", "nurburgring"),
         ("ALFA ROMEO", "alfa_romeo"),
         ("Circuit de Barcelona—Catalunya", "circuit_de_barcelona_catalunya"),
+        # The separator is an underscore, never a hyphen: v2.13.0 briefly said hyphen; it was
+        # withdrawn. Every shipped asset uses `_`.
+        ("Red-Bull-Racing", "red_bull_racing"),
+        # A run of punctuation collapses to one underscore.
+        ("A  --  B", "a_b"),
     ],
 )
 def test_normalisation_matches_the_documented_rule(datum, expected):
     assert normalise(datum) == expected
 
 
-def test_separator_is_an_underscore_not_a_hyphen():
-    """v2.13.0 briefly said hyphen; it was withdrawn. Every shipped asset uses `_`."""
-    assert normalise("Red Bull Racing") == "red_bull_racing"
-    assert "-" not in normalise("Red-Bull-Racing")
-
-
 @pytest.mark.parametrize("datum", ["", "   ", "!!!", "---", "…"])
 def test_data_with_no_alphanumerics_normalise_to_empty(datum):
     assert normalise(datum) == ""
-
-
-def test_runs_of_punctuation_collapse_to_one_underscore():
-    assert normalise("A  --  B") == "a_b"
 
 
 def test_normalisation_is_total_and_pure():
@@ -312,6 +307,7 @@ def test_a_resolved_asset_is_pointed_at_by_the_field(flags):
     href = out.find(".//{http://www.w3.org/2000/svg}image").get("href")
 
     assert href.endswith("british.svg")
+    assert href.startswith("file:///"), "the rasteriser cannot resolve a bare path"
     assert result.unresolved == []
     assert result.notices == []
 
@@ -339,22 +335,11 @@ def test_a_fallback_is_drawn_and_names_the_datum_that_had_no_file(flags):
     assert "Portuguese" in notice.detail
 
 
-def test_a_mandatory_asset_with_no_file_and_no_fallback_is_fatal(flags, no_packaged_tier):
-    """FR-044 — the graphic is meaningless without it."""
-    result = render_with_assets(
-        '<image id="row_1_flag"/>',
-        image_data={"row_1_flag": ("flag", "Portuguese")},
-        asset_directories={"flag": flags},
-        catalogue=FieldCatalogue(mandatory=frozenset({"row_1_flag"})),
-    )
-
-    assert result.unresolved
-    assert "row_1_flag" in result.unresolved[0]
-    assert "Portuguese" in result.unresolved[0]
-
-
 def test_a_missing_asset_with_no_fallback_is_fatal_whatever_the_field(flags, no_packaged_tier):
-    """Asset resolution does not consult mandatory/optional. Uniform, both ways."""
+    """Asset resolution does not consult mandatory/optional. Uniform, both ways.
+
+    FR-044 — the graphic is meaningless without it, and the fault names the field and the datum.
+    """
     for catalogue in (
         FieldCatalogue(mandatory=frozenset({"row_1_flag"})),
         FieldCatalogue(optional=frozenset({"row_1_flag"})),
@@ -368,6 +353,8 @@ def test_a_missing_asset_with_no_fallback_is_fatal_whatever_the_field(flags, no_
         )
         assert result.unresolved, f"should be fatal for {catalogue}"
         assert "fallback.svg" in result.unresolved[0]
+        assert "row_1_flag" in result.unresolved[0]
+        assert "Portuguese" in result.unresolved[0]
 
 
 def test_the_fatal_miss_names_the_class_the_datum_and_both_files_looked_for(flags, no_packaged_tier):
@@ -642,18 +629,6 @@ def test_a_relative_href_draws_exactly_what_a_missing_one_draws(tmp_path):
     assert _draw("absolute", asset.as_uri()) != _draw("missing2", "file:///no/such.svg")
 
 
-def test_a_resolved_asset_is_written_as_a_uri_not_a_path(flags):
-    result = render_with_assets(
-        '<image id="row_1_flag"/>',
-        image_data={"row_1_flag": ("flag", "British")},
-        asset_directories={"flag": flags},
-    )
-    out = parse_svg_bytes(result.svg)
-    href = out.find(".//{http://www.w3.org/2000/svg}image").get("href")
-
-    assert href.startswith("file:///"), "the rasteriser cannot resolve a bare path"
-
-
 # --------------------------------------------------------------------------
 # Which classes are held to a shape, and what our own artwork uses
 # (044, Constitution XIV.6, relaxed 2026-09-01)
@@ -713,25 +688,16 @@ def test_every_asset_class_is_either_held_to_one_shape_or_allowed_to_stretch():
     both = RATIO_CONSISTENT_ASSET_CLASSES & STRETCHABLE_ASSET_CLASSES
     assert not both, f"classes both held to a shape and free to stretch: {sorted(both)}"
 
+    # A shapeless class is outside `STRETCHABLE_ASSET_CLASSES` too: free of a fixed shape is not
+    # licence to squash. `stretch_faults_of` refuses `preserveAspectRatio="none"` on any slot
+    # outside it, so a league's crest letterboxes into whatever box its template gives it; only
+    # which box is free.
     claimed = set(SHAPELESS_ASSET_CLASSES) & (
         RATIO_CONSISTENT_ASSET_CLASSES | STRETCHABLE_ASSET_CLASSES
     )
     assert not claimed, (
         f"classes claiming an exemption they do not need: {sorted(claimed)}"
     )
-
-
-def test_a_shapeless_class_may_still_not_stretch():
-    """Free of a fixed shape is not licence to squash.
-
-    `stretch_faults_of` refuses `preserveAspectRatio="none"` on any slot outside
-    `STRETCHABLE_ASSET_CLASSES`, and a shapeless class is outside it. A league's crest
-    letterboxes into whatever box its template gives it; only which box is free.
-    """
-    from leaguebot.image.models.image_constants import STRETCHABLE_ASSET_CLASSES
-
-    for asset_class in SHAPELESS_ASSET_CLASSES:
-        assert asset_class not in STRETCHABLE_ASSET_CLASSES, asset_class
 
 
 def test_the_marker_class_is_the_one_left_unchecked():
@@ -774,7 +740,11 @@ def test_our_own_artwork_records_a_shape_for_every_class():
 
 
 def test_the_flag_artwork_is_three_by_two_and_the_track_artwork_square():
-    """The two deliberately differ, and nothing requires two classes to agree."""
+    """The two deliberately differ, and nothing requires two classes to agree.
+
+    The packaged-asset off-shape notice compares a slot against this table, so pinning it here
+    also keeps that notice from quietly starting to report against something else.
+    """
     from leaguebot.image.models.image_constants import PACKAGED_ASSET_ASPECTS
 
     assert PACKAGED_ASSET_ASPECTS["flag"] == pytest.approx(1.5)

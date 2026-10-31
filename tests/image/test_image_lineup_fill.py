@@ -133,6 +133,7 @@ def test_a_field_the_template_does_not_declare_is_not_filled():
 
 
 def test_an_unoccupied_seat_empties_its_name_and_removes_its_images():
+    """FR-014's second half. A vacancy a league can see is not a surplus slot."""
     drawing = resolve_drawing(
         division_name="Elite",
         teams=[_team("Red Bull", [_seat(1, "a"), _seat(2)]), _team("Reserve", [], True)],
@@ -142,6 +143,7 @@ def test_an_unoccupied_seat_empties_its_name_and_removes_its_images():
     # notice and does not offend the mandatory classification (XIV.3).
     assert "team_1_driver_2_name" in spec.empty_quietly
     assert "team_1_driver_2_name" not in spec.empty
+    assert "team_1_driver_2_name" not in spec.remove
     assert "team_1_driver_2_flag" in spec.remove
     assert "team_1_driver_2_image" in spec.remove
 
@@ -341,18 +343,6 @@ def test_a_slot_beyond_the_team_s_configured_seats_is_removed():
     assert "team_1_driver_2_name" in spec.remove
     assert "team_1_driver_3_name" in spec.remove
     assert "team_1_driver_2_name" not in spec.empty_quietly
-
-
-def test_a_configured_seat_nobody_occupies_is_drawn_empty():
-    """FR-014's second half. A vacancy a league can see is not a surplus slot."""
-    drawing = resolve_drawing(
-        division_name="Elite",
-        teams=[_team("Red Bull", [_seat(1, "a"), _seat(2)]), _team("Reserve", [], True)],
-    )
-    spec = build_fill_spec(drawing, _template([2]))
-
-    assert "team_1_driver_2_name" in spec.empty_quietly
-    assert "team_1_driver_2_name" not in spec.remove
 
 
 def test_the_image_type_is_the_lineup():

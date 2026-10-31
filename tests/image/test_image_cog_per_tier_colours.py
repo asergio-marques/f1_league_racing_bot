@@ -164,15 +164,6 @@ def _not_asked(asked) -> None:
 # ── The toggle ────────────────────────────────────────────────────────────
 
 
-async def test_the_toggle_stores_what_it_was_given(tmp_path):
-    league = await _league(tmp_path)
-
-    asked = await _toggle(league, True)
-
-    _acknowledged(asked)
-    assert await _per_tier(league) == 1
-
-
 async def test_turning_it_on_reports_what_is_still_wanted(tmp_path):
     """The moment the shortfall becomes real is the moment to say so: read once the colour
     setting is saved."""
@@ -192,6 +183,7 @@ async def test_turning_it_on_with_everything_set_says_so(tmp_path):
 
     _acknowledged(asked)
     assert "every tier" in asked.said[-1].lower(), asked.said
+    assert await _per_tier(league) == 1
 
 
 async def test_turning_it_off_demands_nothing(tmp_path):

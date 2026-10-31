@@ -228,12 +228,21 @@ KINDS = {
 @requires_rasteriser
 @pytest.mark.parametrize("kind", sorted(KINDS))
 async def test_every_preview_reaches_a_png(bot, league, kind, tmp_path):
-    """Rule XIV.14 — the check is against the raster, never the SVG."""
+    """Rule XIV.14 — the check is against the raster, never the SVG.
+
+    The standings case is also the regression coverage for the round grid (FR-025,
+    FR-026): both championships, round columns included, reach a picture. The templates
+    declare a session cell per round per row, and a car per round per row on the
+    constructors graphic, and both must resolve over the league's own calendar and drivers
+    for either graphic to render at all.
+    """
     kwargs, build = KINDS[kind]
     context = await resolve_context(bot, "Premier", **kwargs)
 
     requests = await build(bot, context)
     assert requests, f"{kind} produced no picture request"
+    if kind == "standings":
+        assert len(requests) == 2, "both championships are drawn"
 
     for label, template_key, spec_builder in requests:
         outcome = await bot.image_render_service.render(
@@ -251,26 +260,3 @@ async def test_the_twelve_kinds_are_all_covered():
     from leaguebot.image.cogs.image_cog import ImageCog
 
     assert {c.name for c in ImageCog.test.commands} == set(KINDS)
-
-
-@requires_rasteriser
-async def test_the_standings_preview_draws_the_whole_grid(bot, league, tmp_path):
-    """Both championships, round columns included, reach a picture (FR-025, FR-026).
-
-    Regression coverage for the round grid: the templates declare a session cell per round
-    per row, and a car per round per row on the constructors graphic, and both must resolve
-    over the league's own calendar and drivers for either graphic to render at all.
-    """
-    context = await resolve_context(
-        bot, "Premier", round_number=1, require_teams=True
-    )
-
-    requests = await build_standings_preview(bot, context)
-    assert len(requests) == 2, "both championships are drawn"
-
-    for label, template_key, spec_builder in requests:
-        outcome = await bot.image_render_service.render(
-            template_key, spec_builder, output_dir=tmp_path
-        )
-        assert outcome.problem is None, f"{label}: {outcome.problem}"
-        assert outcome.png_paths, f"{label} produced no file"

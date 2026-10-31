@@ -18,7 +18,6 @@ from leaguebot.image.models.image_catalogues import (
     RESULTS_RACE_CATALOGUE,
     CapacityError,
     catalogue_for,
-    declared_capacities,
     sibling_fields_declared,
     sibling_row_fields,
 )
@@ -139,12 +138,6 @@ def test_a_gap_in_the_row_numbering_is_fatal():
     root = _template("row_1_position", "row_2_position", "row_4_position")
     with pytest.raises(CapacityError, match="has a gap"):
         RESULTS_RACE_CATALOGUE.capacity(root)
-
-
-def test_a_template_derived_capacity_is_not_reported_to_the_seat_guard():
-    """The row collection is entries, not seated drivers, so it must not bound placement."""
-    assert QUALIFYING not in declared_capacities()
-    assert RACE not in declared_capacities()
 
 
 def test_mandatory_ids_cover_every_declared_row():

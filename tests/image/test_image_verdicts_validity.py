@@ -180,6 +180,8 @@ def test_a_sound_wrapped_field_passes(tmp_path, templates):
 
 
 def test_a_shape_inside_naming_a_missing_rectangle_is_refused(tmp_path, templates):
+    """The bounds check reads no data, so it refuses at configuration: a structural check
+    needs no division, round or classification (XIV.9)."""
     body = _svg(
         justification=(
             b'<text id="justification" style="font-size:17px;line-height:26px;'
@@ -189,6 +191,7 @@ def test_a_shape_inside_naming_a_missing_rectangle_is_refused(tmp_path, template
     report = _evaluate(tmp_path, body)
 
     assert not report.valid
+    assert report.failed_layer == LAYER_BOUNDS
     assert "justification" in (report.reason or "")
     assert "nowhere" in (report.reason or "")
 
@@ -252,21 +255,6 @@ def test_the_three_bounds_faults_are_distinguishable(tmp_path, templates):
         reasons.add(report.reason)
 
     assert len(reasons) == 3, reasons
-
-
-def test_the_bounds_check_reads_no_data_so_it_refuses_at_configuration(tmp_path, templates):
-    """A structural check needs no division, round or classification (XIV.9)."""
-    report = _evaluate(
-        tmp_path,
-        _svg(
-            justification=(
-                b'<text id="justification" style="font-size:17px;line-height:26px;'
-                b'shape-inside:url(#nowhere)">R.</text>'
-            )
-        ),
-    )
-    assert not report.valid
-    assert report.failed_layer == LAYER_BOUNDS
 
 
 # ── T050: season review names the template, and approval refuses ──────────

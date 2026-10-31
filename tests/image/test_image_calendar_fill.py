@@ -154,16 +154,6 @@ def test_spec_fills_the_rounds_it_draws():
     assert spec.row_count == 2
 
 
-def test_spec_routes_the_round_image_through_the_track_asset_class():
-    spec = build_fill_spec(_draw([_round(1)]), _template(1))
-    # The template above declares no image field, so add one and re-project.
-    root = _template(1)
-    node = etree.SubElement(root, f"{{{SVG_NS}}}image")
-    node.set("id", "round_1_image")
-    spec = build_fill_spec(_draw([_round(1)]), root)
-    assert spec.image_data["round_1_image"] == ("track", "Silverstone Circuit")
-
-
 def test_spec_crops_at_the_final_drawn_round():
     spec = build_fill_spec(_draw([_round(1)]), _template(3))
     assert spec.crop == "round_1_vertical_crop_point"

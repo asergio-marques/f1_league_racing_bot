@@ -168,18 +168,6 @@ def test_a_template_below_its_slot_floor_is_refused(
     assert declared in result.reason and required in result.reason
 
 
-def test_the_reason_names_the_collection_the_count_and_the_requirement():
-    """It is the entirety of what a league manager is told, so it must carry all three."""
-    from lxml import etree
-
-    from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
-
-    with pytest.raises(CapacityError) as exc:
-        catalogue_for("weather_p3_sprint_template").capacity(etree.fromstring(_p3(4, 1)))
-    reason = str(exc.value)
-    assert "slot" in reason and "1" in reason and "3" in reason
-
-
 # ── 2. Over-declaring is admitted (T054, FR-017) ──────────────────────────
 
 

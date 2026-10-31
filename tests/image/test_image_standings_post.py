@@ -260,41 +260,30 @@ async def test_both_render_so_two_messages_are_posted_and_no_section_falls_back(
     ], "drivers first, constructors after, each attached under its own render's name"
 
 
-async def test_the_drivers_failing_falls_back_to_the_drivers_section_alone(tmp_path):
-    """The constructors graphic still draws, so its table must not be repeated as text."""
+@pytest.mark.parametrize(
+    ("failing_key", "failing", "surviving"),
+    [(DRIVERS, "drivers", "constructors"), (CONSTRUCTORS, "constructors", "drivers")],
+    ids=["drivers-failing", "constructors-failing"],
+)
+async def test_a_failing_graphic_falls_back_to_its_own_section_alone(
+    tmp_path, failing_key, failing, surviving
+):
+    """The other graphic still draws, so its table must not be repeated as text."""
     sent = []
 
     async def render(bot, drawing, origin):
-        if drawing.template_key == DRIVERS:
+        if drawing.template_key == failing_key:
             return _decision(posts=False, problem=MagicMock(detail="no rows"))
-        return _decision(png=_drawn(tmp_path, "constructors"))
+        return _decision(png=_drawn(tmp_path, surviving))
 
     outcome = await _try_post(_bot(), _channel(sent), AsyncMock(side_effect=render))
 
-    assert outcome.fallback_championships == ["drivers"]
-    assert outcome.constructors.posted
+    assert outcome.fallback_championships == [failing]
+    assert getattr(outcome, surviving).posted
     assert len(sent) == 1
     assert (
         sent[0][1]["file"].filename
-        == "season3_division1_round4_standings_constructors.png"
-    )
-
-
-async def test_the_constructors_failing_falls_back_to_the_constructors_section_alone(tmp_path):
-    sent = []
-
-    async def render(bot, drawing, origin):
-        if drawing.template_key == CONSTRUCTORS:
-            return _decision(posts=False, problem=MagicMock(detail="no rows"))
-        return _decision(png=_drawn(tmp_path, "drivers"))
-
-    outcome = await _try_post(_bot(), _channel(sent), AsyncMock(side_effect=render))
-
-    assert outcome.fallback_championships == ["constructors"]
-    assert outcome.drivers.posted
-    assert len(sent) == 1
-    assert (
-        sent[0][1]["file"].filename == "season3_division1_round4_standings_drivers.png"
+        == f"season3_division1_round4_standings_{surviving}.png"
     )
 
 
@@ -309,7 +298,10 @@ async def test_both_failing_falls_back_to_both_sections_so_each_is_read_exactly_
 
     assert outcome.applicable, "the flow ran; it simply drew nothing"
     assert outcome.fallback_championships == ["drivers", "constructors"]
-    assert sent == [], "no graphic was posted"
+    assert sent == [], (
+        "no graphic was posted, and nothing was reported into the standings channel: "
+        "drivers read that channel, and a template fault is the manager's business"
+    )
 
 
 async def test_an_invalid_template_falls_that_championship_back_without_rendering(tmp_path):
@@ -395,16 +387,18 @@ async def test_each_replacement_is_produced_before_its_old_message_is_deleted(tm
     """FR-048. A render that fails must leave the league the standings it had.
 
     The poster deletes nothing (#439 6b): it posts each picture and reports the message it
-    replaces, which the change queue deletes by a job of its own once the picture stands."""
+    replaces, which the change queue deletes by a job of its own once the picture stands. It
+    saves nothing itself either."""
     png = tmp_path / "s.png"
     png.write_bytes(b"x")
-    sent, order = [], []
+    sent, order, stored = [], [], {}
 
     outcome = await _try_post(
         _bot(),
         _channel(sent, order),
         AsyncMock(return_value=_decision(png=png)),
         previous_ids={"drivers": 111, "constructors": 222},
+        stored=stored,
     )
 
     assert [step for step in order if step.startswith("posted")] and len(sent) == 2
@@ -413,6 +407,7 @@ async def test_each_replacement_is_produced_before_its_old_message_is_deleted(tm
     )
     assert outcome.drivers.replaces == [111]
     assert outcome.constructors.replaces == [222]
+    assert stored == {}, "the poster saved an id itself"
 
 
 async def test_each_graphic_records_the_one_message_it_occupies(tmp_path):
@@ -437,23 +432,6 @@ async def test_each_graphic_records_the_one_message_it_occupies(tmp_path):
 
     assert stored == {} and lists == {}, "the poster saved an id itself"
     assert [outcome.drivers.message_id, outcome.constructors.message_id] == [1001, 1002]
-
-
-async def test_the_two_message_ids_are_persisted_to_their_own_columns(tmp_path):
-    """Each championship's id is handed back under its own name for the change queue's job to
-    save to its own column (#439 6b); the poster writes neither."""
-    png = tmp_path / "s.png"
-    png.write_bytes(b"x")
-    sent, stored = [], {}
-
-    outcome = await _try_post(
-        _bot(), _channel(sent), AsyncMock(return_value=_decision(png=png)), stored=stored
-    )
-
-    assert stored == {}
-    assert outcome.drivers.message_id is not None
-    assert outcome.constructors.message_id is not None
-    assert outcome.drivers.message_id != outcome.constructors.message_id
 
 
 async def test_a_discord_failure_falls_back_to_text_rather_than_retrying_the_image(tmp_path):
@@ -521,19 +499,6 @@ async def test_a_fault_is_reported_to_the_log_channel_naming_the_championship():
     assert "drivers standings" in logged
     assert "constructors standings" in logged
     assert "Main round 5" in logged
-
-
-async def test_nothing_is_reported_into_the_standings_channel(tmp_path):
-    """Drivers read that channel; a template fault is the manager's business."""
-    sent = []
-
-    await _try_post(
-        _bot(),
-        _channel(sent),
-        AsyncMock(return_value=_decision(posts=False, problem=MagicMock(detail="bad"))),
-    )
-
-    assert sent == []
 
 
 async def test_notices_are_reported_alongside_a_graphic_that_did_draw(tmp_path):
@@ -1524,23 +1489,17 @@ async def _boundary(tmp_path, occasion, *, previous_ids=None, stored=None):
     return outcome, sent
 
 
-async def test_an_opening_posting_carries_no_message_text(tmp_path):
-    """The phrase is drawn on the sheet; a heading above it would say it twice."""
+@pytest.mark.parametrize("occasion_name", ["SEASON_OPENING", "SEASON_FINAL"])
+async def test_an_opening_posting_carries_no_message_text(tmp_path, occasion_name):
+    """The phrase is drawn on the sheet; a heading above it would say it twice. The
+    season's final classification is drawn the same way."""
     from leaguebot.core.models.classification_occasion import ClassificationOccasion
 
-    _outcome, sent = await _boundary(tmp_path, ClassificationOccasion.SEASON_OPENING)
+    _outcome, sent = await _boundary(tmp_path, getattr(ClassificationOccasion, occasion_name))
 
     assert len(sent) == 2
     assert [content for content, _kwargs in sent] == [None, None]
     assert all(kwargs.get("file") is not None for _content, kwargs in sent)
-
-
-async def test_a_final_posting_carries_no_message_text(tmp_path):
-    from leaguebot.core.models.classification_occasion import ClassificationOccasion
-
-    _outcome, sent = await _boundary(tmp_path, ClassificationOccasion.SEASON_FINAL)
-
-    assert [content for content, _kwargs in sent] == [None, None]
 
 
 async def test_an_ordinary_posting_still_carries_its_heading_and_label(tmp_path):
@@ -1581,27 +1540,3 @@ async def test_a_boundary_posting_neither_reads_nor_writes_the_round_s_slot(
 
     assert stored == {}, "a boundary posting must claim no round's slot"
     assert len(sent) == 2, "and must delete nothing it did not post"
-
-
-async def test_an_ordinary_posting_still_replaces_its_predecessor(tmp_path):
-    """A round's posting reports the predecessor it replaces, for the change queue's job to
-    delete once the new picture stands (#439 6b); it saves nothing itself."""
-    stored: dict = {}
-    sent: list = []
-    render = AsyncMock(
-        side_effect=[
-            _decision(png=_drawn(tmp_path, "drivers")),
-            _decision(png=_drawn(tmp_path, "constructors")),
-        ]
-    )
-    outcome = await _try_post(
-        _bot(),
-        _channel(sent),
-        render,
-        previous_ids={"drivers": 4242, "constructors": 4343},
-        stored=stored,
-    )
-
-    assert stored == {}
-    assert outcome.drivers.replaces == [4242]
-    assert outcome.constructors.replaces == [4343]

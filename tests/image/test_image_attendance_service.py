@@ -80,7 +80,11 @@ def _records(*specs):
 
 
 def test_a_division_holding_no_driver_is_fatal_and_names_the_division():
-    """XIV.12's floor, raised against the data before any template is in view."""
+    """XIV.12's floor, raised against the data before any template is in view.
+
+    A template declaring one row is perfectly valid; the division is what is at fault, so
+    the template goes unnamed.
+    """
     with pytest.raises(AttendanceDataError) as exc:
         resolve_drawing(
             division_name="Division 1",
@@ -90,14 +94,6 @@ def test_a_division_holding_no_driver_is_fatal_and_names_the_division():
         )
     assert "Division 1" in str(exc.value)
     assert "no driver" in str(exc.value)
-
-
-def test_the_floor_names_the_division_and_not_the_template():
-    """A template declaring one row is perfectly valid; the division is what is at fault."""
-    with pytest.raises(AttendanceDataError) as exc:
-        resolve_drawing(
-            division_name="Division 1", round_number=3, records=[], display_names={}
-        )
     assert "template" not in str(exc.value).lower()
 
 
@@ -156,13 +152,13 @@ def test_the_sheet_draws_no_position_even_though_it_is_ordered():
 # ── An empty cell means zero ──────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("value", [None, 0])
-def test_a_round_that_conferred_nothing_draws_an_empty_cell(value):
-    assert cell_text(value) == ""
-
-
-def test_a_round_that_conferred_points_draws_them():
-    assert cell_text(3) == "3"
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(None, ""), (0, ""), (3, "3")],
+    ids=["nothing-conferred", "zero-conferred", "points-conferred"],
+)
+def test_a_round_cell_draws_the_points_conferred_and_nothing_for_none(value, expected):
+    assert cell_text(value) == expected
 
 
 def test_every_emptying_of_a_cell_is_quiet():
@@ -225,7 +221,10 @@ def test_a_sanctioned_driver_carries_the_annotation():
 
 
 def test_the_annotation_reads_the_same_for_both_sanctions():
-    """The sheet is not where autoreserve and autosack are told apart (FR-017)."""
+    """The sheet is not where autoreserve and autosack are told apart (FR-017).
+
+    The graphic draws the plain literal; the message applies the emphasis.
+    """
     assert SANCTION_ANNOTATION == "Reached point limit"
 
 

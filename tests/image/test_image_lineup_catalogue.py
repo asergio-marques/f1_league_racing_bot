@@ -17,7 +17,10 @@ Covers:
   6. The seats are a *ceiling* (FR-018), exactly as the constructors grid's cars are.
   7. Reserve slots counted from the template through `singleton_capacity`, never `capacity`.
   8. Asset classes resolve for ordinal, nested and singleton fields alike.
-  9. The calendar is untouched by any of it.
+
+That the calendar is untouched by any of it is pinned by the calendar catalogue's own tests
+(`test_image_calendar_catalogue.py`), and that the lineup declares no fixed capacity by
+`test_only_the_specified_catalogues_are_populated` (`test_image_validity_layers.py`).
 """
 from __future__ import annotations
 
@@ -25,11 +28,8 @@ import pytest
 from lxml import etree
 
 from leaguebot.image.models.image_catalogues import (
-    CALENDAR_CATALOGUE,
     LINEUP_CATALOGUE,
     CapacityError,
-    catalogue_for,
-    declared_capacities,
 )
 
 SVG_NS = "http://www.w3.org/2000/svg"
@@ -258,27 +258,6 @@ def test_asset_classes_resolve_for_every_shape():
     assert LINEUP_CATALOGUE.asset_class_for("reserve_image") == "team"
     assert LINEUP_CATALOGUE.asset_class_for("reserve_driver_1_flag") == "flag"
     assert LINEUP_CATALOGUE.asset_class_for("division_name") is None
-
-
-# ── 9. Nothing else moved ─────────────────────────────────────────────────
-
-
-def test_the_calendar_is_untouched():
-    assert catalogue_for("calendar_template") is CALENDAR_CATALOGUE
-    assert CALENDAR_CATALOGUE.rows is not None
-    assert CALENDAR_CATALOGUE.rows.prefix == "round"
-
-
-def test_the_lineup_declares_no_fixed_capacity():
-    """`declared_capacities` carries only capacities fixed in code, and guards *drivers*.
-
-    The lineup belongs in neither sense: its block count is derived from the template, and
-    it counts teams rather than drivers.
-    """
-    caps = declared_capacities()
-
-    assert isinstance(caps, dict)
-    assert "lineup_template" not in caps
 
 
 # ── What the shipped file declares (047 FR-034 to FR-036) ─────────────────

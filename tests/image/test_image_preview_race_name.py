@@ -64,22 +64,22 @@ def _round(track_name="Silverstone Circuit", fmt="NORMAL"):
     return SimpleNamespace(round_number=1, track_name=track_name, format=fmt)
 
 
-async def test_a_round_is_named_by_its_grand_prix_and_not_its_circuit():
-    assert await _race_name(_bot(), _context(_round())) == "British Grand Prix"
-
-
-async def test_a_track_the_registry_does_not_hold_falls_back_to_the_circuit():
-    """``race_name`` is mandatory on the check-in call; a preview does not empty it."""
-    name = await _race_name(_bot(), _context(_round(track_name="Circuit Nowhere")))
-    assert name == "Circuit Nowhere"
-
-
-async def test_a_mystery_round_is_named_by_the_mystery_literal():
-    assert await _race_name(_bot(), _context(_round(fmt="MYSTERY"))) == MYSTERY_RACE_NAME
-
-
-async def test_a_round_with_no_track_at_all_names_nothing():
-    assert await _race_name(_bot(), _context(_round(track_name=None))) == ""
+@pytest.mark.parametrize(
+    ("round_kwargs", "expected"),
+    [
+        ({}, "British Grand Prix"),
+        # ``race_name`` is mandatory on the check-in call; a preview does not empty it.
+        ({"track_name": "Circuit Nowhere"}, "Circuit Nowhere"),
+        ({"fmt": "MYSTERY"}, MYSTERY_RACE_NAME),
+        ({"track_name": None}, ""),
+    ],
+    ids=["grand-prix", "unregistered-track", "mystery", "no-track"],
+)
+async def test_a_preview_draws_the_race_name_the_postings_read(round_kwargs, expected):
+    """A round is named by its grand prix and not its circuit; a track the registry does
+    not hold falls back to the circuit, a mystery round is named by the mystery literal,
+    and a round with no track at all names nothing."""
+    assert await _race_name(_bot(), _context(_round(**round_kwargs))) == expected
 
 
 async def test_no_preview_is_left_reading_the_round_for_its_race_name():

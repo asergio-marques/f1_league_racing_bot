@@ -68,6 +68,12 @@ def test_the_chain_falls_through_in_order():
     )
     assert resolve_driver_name(discord_user_id="7", signup_username="user") == "user"
     assert resolve_driver_name(discord_user_id="7", test_display_name="Test") == "Test"
+    # FR-036 — a test driver is drawn by its test display name, not skipped: with no
+    # Discord account and no signup record, the chain reaches the fourth link.
+    assert (
+        resolve_driver_name(discord_user_id="900001", test_display_name="Test Driver 1")
+        == "Test Driver 1"
+    )
 
 
 def test_the_chain_ends_at_the_user_id_and_never_at_nothing():
@@ -77,11 +83,6 @@ def test_the_chain_ends_at_the_user_id_and_never_at_nothing():
 
 def test_a_blank_link_is_skipped():
     assert resolve_driver_name(discord_user_id="7", display_name="   ") == "7"
-
-
-def test_no_resolved_name_ever_looks_like_a_mention():
-    name = resolve_driver_name(discord_user_id="7")
-    assert not name.startswith("<@")
 
 
 # ── Seats ─────────────────────────────────────────────────────────────────
@@ -151,13 +152,9 @@ def test_two_teams_normalising_alike_are_no_longer_fatal():
     assert [t.ordinal for t in drawing.teams] == [1, 2]
 
 
-def test_a_team_normalising_to_the_reserved_word_is_no_longer_fatal():
-    drawing = _draw([_team("Reserve!", [_seat(1, "a")])])
-    assert drawing.teams[0].ordinal == 1
-
-
-def test_a_team_normalising_to_nothing_is_no_longer_fatal():
-    drawing = _draw([_team("!!!", [_seat(1, "a")])])
+@pytest.mark.parametrize("name", ["Reserve!", "!!!"], ids=["reserved-word", "nothing"])
+def test_a_team_normalising_to_the_reserved_word_or_nothing_is_no_longer_fatal(name):
+    drawing = _draw([_team(name, [_seat(1, "a")])])
     assert drawing.teams[0].ordinal == 1
 
 

@@ -86,9 +86,19 @@ async def test_setting_the_same_slot_again_replaces_it(service):
     assert await service.get_tier_palette("Division 1") == {"accent": "#4ADE80"}
 
 
-async def test_two_tiers_are_independent(service):
-    await saves.set_tier_colour(service, "Division 1", "accent", "#3DD6F5")
-    await saves.set_tier_colour(service, "Division 2", "accent", "#A78BFA")
+async def _write_one_slot(service, tier, colour):
+    await saves.set_tier_colour(service, tier, "accent", colour)
+
+
+async def _write_in_bulk(service, tier, colour):
+    await saves.set_tier_colours(service, tier, {"accent": colour})
+
+
+@pytest.mark.parametrize("write", [_write_one_slot, _write_in_bulk], ids=["one slot", "bulk"])
+async def test_two_tiers_are_independent(service, write):
+    """Two tiers stay separate whichever writer stores them, one slot or in bulk."""
+    await write(service, "Division 1", "#3DD6F5")
+    await write(service, "Division 2", "#A78BFA")
     assert await service.get_tier_palette("Division 1") == {"accent": "#3DD6F5"}
     assert await service.get_tier_palette("Division 2") == {"accent": "#A78BFA"}
 
@@ -121,8 +131,11 @@ async def test_a_tier_is_found_however_its_name_is_spelled(service, written, rea
 
 
 async def test_a_nameless_division_is_refused(service):
+    """By the one-slot writer and the bulk writer alike."""
     with pytest.raises(UnknownConfigField):
         await saves.set_tier_colour(service, "   ", "accent", "#A78BFA")
+    with pytest.raises(UnknownConfigField):
+        await saves.set_tier_colours(service, "  ", {"accent": "#A78BFA"})
 
 
 async def test_a_nameless_division_reads_as_empty_rather_than_raising(service):
@@ -201,11 +214,6 @@ async def test_a_bulk_set_of_nothing_writes_nothing(service):
     assert await service.get_tier_palette("Division 1") == {}
 
 
-async def test_a_bulk_set_needs_a_division(service):
-    with pytest.raises(UnknownConfigField):
-        await saves.set_tier_colours(service, "  ", {"accent": "#A78BFA"})
-
-
 async def test_a_bulk_set_validates_every_slot(service):
     """One bad slot writes none of them — the division is the unit of atomicity."""
     with pytest.raises(InvalidSlot):
@@ -213,10 +221,3 @@ async def test_a_bulk_set_validates_every_slot(service):
             service, "Division 1", {"accent": "#A78BFA", "a{}b": "#F7F6F8"}
         )
     assert await service.get_tier_palette("Division 1") == {}
-
-
-async def test_two_tiers_stay_separate_under_bulk(service):
-    await saves.set_tier_colours(service, "Division 1", {"accent": "#3DD6F5"})
-    await saves.set_tier_colours(service, "Division 2", {"accent": "#A78BFA"})
-    assert await service.get_tier_palette("Division 1") == {"accent": "#3DD6F5"}
-    assert await service.get_tier_palette("Division 2") == {"accent": "#A78BFA"}
