@@ -308,6 +308,37 @@ async def test_the_wipe_leaves_no_scratch_behind(db_path, tmp_path):
     assert sorted(p.name for p in tmp_path.iterdir() if "fresh" in p.name) == []
 
 
+
+@pytest.mark.xfail(strict=True, reason="#540: a connection returned cleanly is not lent again yet")
+async def test_a_factory_reset_under_lent_connections_leaves_them_reading_the_fresh_database(
+    db_path, lending
+):
+    """A league's server and a driver are read through a connection that is then kept idle to be
+    lent again; the factory reset replaces the database under it. The same connection, lent to the
+    next caller, reads the fresh database: no server, no driver, and the packaged circuits."""
+    from unittest.mock import MagicMock
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES ('900', 'NOT_SIGNED_UP')"
+        )
+        await db.commit()
+    async with get_connection(db_path) as before:
+        (servers,) = await (await before.execute("SELECT COUNT(*) FROM server_configs")).fetchone()
+        (drivers,) = await (await before.execute("SELECT COUNT(*) FROM driver_profiles")).fetchone()
+    assert (servers, drivers) == (1, 1)
+
+    await factory_reset_service.wipe(db_path, MagicMock())
+
+    async with get_connection(db_path) as after:
+        assert after is before, "precondition: the connection idle before the reset is lent again"
+        (servers,) = await (await after.execute("SELECT COUNT(*) FROM server_configs")).fetchone()
+        (drivers,) = await (await after.execute("SELECT COUNT(*) FROM driver_profiles")).fetchone()
+        (tracks,) = await (await after.execute("SELECT COUNT(*) FROM tracks")).fetchone()
+    assert (servers, drivers) == (0, 0)
+    assert tracks > 0, "the packaged circuits are kept"
+
 # ── The Discord clean-up ──────────────────────────────────────────────────
 
 BOT_ID = 1000
