@@ -493,16 +493,15 @@ and nothing else does. Checking a connection out never waits: it takes an idle o
 because some code opens a second connection while its first is still open (a service reading
 through another service inside its own block), so two callers at once always have two. A connection
 is lent again only when it was given back clean and nothing on it differs from a new one; any other
-is closed, which rolls back what it held. A connection that a conversation's save confined to its
-own tables is closed on return, never lent, and nothing outside the database code leaves anything
-on a connection (a SQL function, an authoriser, a `row_factory`, a PRAGMA, an ATTACH or a temporary
-table), because the next caller would inherit it. The migrations and a restore keep out of this:
-the migrations use a connection of their own, so nothing holds the database open when they finish
-and a factory reset can delete the fresh copy it migrated, and a restore runs before any connection
-has been lent. The entry point closes the idle connections as the bot stops, as wiring, since each
-holds a thread that would keep the process alive. The cap, the closing of cursors on return and the
-reliance on the connection library's internals are in `get_connection`'s docstring, each pinned by
-a test.
+is closed, which rolls back what it held. A connection that a save confined to its tables is closed
+on return, never lent, and nothing outside the database code leaves anything on a connection (a SQL
+function, an authoriser, a `row_factory`, a PRAGMA, an ATTACH or a temporary table), because the
+next caller would inherit it. The migrations and a restore keep out of this: the migrations use a
+connection of their own, so nothing holds the database open when they finish and a factory reset
+can delete the fresh copy it migrated, and a restore runs before any connection has been lent. The
+entry point closes the idle connections as the bot stops, as wiring, since each holds a thread that
+would keep the process alive. The cap, the closing of cursors on return and the reliance on the
+connection library's internals are in `get_connection`'s docstring, each pinned by a test.
 
 *Rejected:* one connection held for the bot's life, since a service reading through another
 service inside its own block needs a second connection while its first is open, and one connection
