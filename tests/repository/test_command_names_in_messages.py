@@ -35,6 +35,7 @@ import ast
 import importlib
 import pkgutil
 import re
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -98,8 +99,12 @@ def _strings(tree: ast.AST):
             yield node.lineno, node.value
 
 
+@cache
 def _names_in(path: Path) -> list[tuple[int, str]]:
-    """Every command named in a string literal of one source file, with its line."""
+    """Every command named in a string literal of one source file, with its line.
+
+    Kept, because collection reads every file for `SOURCES_NAMING_COMMANDS` and each test then
+    asks again for its own."""
     tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
     found = {
         (line, name)

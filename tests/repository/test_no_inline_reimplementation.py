@@ -33,8 +33,9 @@ from __future__ import annotations
 import ast
 import pathlib
 
+from tests.support.source import package_sources
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-SRC = REPO_ROOT / "src"
 TESTS = REPO_ROOT / "tests"
 
 # A branch body that only inspects state, rather than standing in for the code under test.
@@ -42,17 +43,14 @@ _INSPECTING = ("assert", "pytest.skip", "pytest.fail", "return", "raise", "pass"
 
 
 def _src_function_names() -> set[str]:
-    """Every function and method name defined anywhere under `src/`."""
-    names: set[str] = set()
-    for path in sorted(SRC.rglob("*.py")):
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:  # pragma: no cover - a broken src/ fails its own tests
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                names.add(node.name)
-    return names
+    """Every function and method name defined anywhere under `src/`, from the parse the source
+    checks share (`tests/support/source.py`)."""
+    return {
+        node.name
+        for source in package_sources()
+        for node in ast.walk(source.tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
 
 
 def _called_names(node: ast.AST) -> set[str]:

@@ -13,14 +13,14 @@ from __future__ import annotations
 import ast
 import pathlib
 
+from tests.support.source import package_sources
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-SRC = REPO_ROOT / "src"
 NAIVE_UTC = {"utcnow", "utcfromtimestamp"}
 
 
-def _naive_utc_calls(path: pathlib.Path, root: pathlib.Path = REPO_ROOT) -> list[str]:
-    """Every naive-UTC call in *path*, in source order, as ``file:line name()``."""
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+def _naive_utc_in(tree: ast.Module, where: str) -> list[str]:
+    """Every naive-UTC call in *tree*, in source order, as ``where:line name()``."""
     calls = sorted(
         (node.lineno, node.func.attr)
         for node in ast.walk(tree)
@@ -28,12 +28,21 @@ def _naive_utc_calls(path: pathlib.Path, root: pathlib.Path = REPO_ROOT) -> list
         and isinstance(node.func, ast.Attribute)
         and node.func.attr in NAIVE_UTC
     )
-    where = path.relative_to(root).as_posix()
     return [f"{where}:{line} {name}()" for line, name in calls]
 
 
+def _naive_utc_calls(path: pathlib.Path, root: pathlib.Path = REPO_ROOT) -> list[str]:
+    """Every naive-UTC call in *path*, in source order, as ``file:line name()``."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return _naive_utc_in(tree, path.relative_to(root).as_posix())
+
+
 def test_src_never_calls_utcnow():
-    found = [hit for path in sorted(SRC.rglob("*.py")) for hit in _naive_utc_calls(path)]
+    found = [
+        hit
+        for source in package_sources()
+        for hit in _naive_utc_in(source.tree, f"src/leaguebot/{source.path}")
+    ]
     assert not found, (
         "Use datetime.now(timezone.utc) or datetime.fromtimestamp(ts, timezone.utc):\n  "
         + "\n  ".join(found)
