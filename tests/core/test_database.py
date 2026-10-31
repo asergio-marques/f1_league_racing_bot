@@ -6,7 +6,6 @@ import asyncio
 import logging
 import os
 import sqlite3
-import tempfile
 
 import aiosqlite
 import pytest
@@ -15,30 +14,15 @@ import pytest_asyncio
 from leaguebot.core.db.database import get_connection, run_migrations
 
 
-def _remove_database(db_path: str) -> None:
-    """Delete a database and the sidecars WAL leaves beside it.
-
-    A clean close checkpoints `-wal` and `-shm` away, so usually there is nothing to
-    remove — but an ungraceful teardown does leave them, and on Windows a leftover sidecar
-    is not merely litter: the suite runs on `windows-latest`, where an open file cannot be
-    deleted and a stray sidecar turns into a failure that never reproduces on Linux.
-    """
-    for suffix in ("", "-wal", "-shm", "-journal"):
-        try:
-            os.unlink(db_path + suffix)
-        except OSError:
-            pass
-
-
 def _stub_database(db_path: str) -> None:
     """Leave a small, valid, non-WAL database at *db_path*.
 
     `tests/conftest.py` swaps `run_migrations` for one that copies a prebuilt template
     whenever the target is absent or empty, and only delegates to the real migration runner
-    when the target already holds something. A `NamedTemporaryFile` is empty, so it takes
-    the copy path — which means a test wanting to prove what the *real* runner does has to
-    hand it a database that is already populated. This writes the smallest one that counts,
-    without building the schema by hand.
+    when the target already holds something. A path under `tmp_path` holds nothing yet, so
+    it takes the copy path — which means a test wanting to prove what the *real* runner does
+    has to hand it a database that is already populated. This writes the smallest one that
+    counts, without building the schema by hand.
     """
     conn = sqlite3.connect(db_path)
     try:
@@ -50,60 +34,52 @@ def _stub_database(db_path: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_migrations_creates_tables() -> None:
+async def test_run_migrations_creates_tables(tmp_path) -> None:
     """run_migrations() should create the core tables, among the rest."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
+    db_path = str(tmp_path / "bot.db")
 
-    try:
-        await run_migrations(db_path)
+    await run_migrations(db_path)
 
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-            )
-            tables = {row[0] for row in await cursor.fetchall()}
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
+        tables = {row[0] for row in await cursor.fetchall()}
 
-        expected = {
-            "schema_migrations",
-            "server_configs",
-            "seasons",
-            "divisions",
-            "rounds",
-            "sessions",
-            "phase_results",
-            "audit_entries",
-            "tracks",
-        }
-        assert expected.issubset(tables), f"Missing tables: {expected - tables}"
-    finally:
-        _remove_database(db_path)
+    expected = {
+        "schema_migrations",
+        "server_configs",
+        "seasons",
+        "divisions",
+        "rounds",
+        "sessions",
+        "phase_results",
+        "audit_entries",
+        "tracks",
+    }
+    assert expected.issubset(tables), f"Missing tables: {expected - tables}"
 
 
 @pytest.mark.asyncio
-async def test_run_migrations_idempotent() -> None:
+async def test_run_migrations_idempotent(tmp_path) -> None:
     """Running migrations twice should not raise or duplicate entries."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
+    db_path = str(tmp_path / "bot.db")
 
-    try:
-        await run_migrations(db_path)
+    await run_migrations(db_path)
 
-        async with get_connection(db_path) as db:
-            cursor = await db.execute("SELECT COUNT(*) FROM schema_migrations")
-            (count_after_first,) = await cursor.fetchone()
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM schema_migrations")
+        (count_after_first,) = await cursor.fetchone()
 
-        assert count_after_first >= 1  # at least one migration file recorded
+    assert count_after_first >= 1  # at least one migration file recorded
 
-        await run_migrations(db_path)  # Second run — should be a no-op
+    await run_migrations(db_path)  # Second run — should be a no-op
 
-        async with get_connection(db_path) as db:
-            cursor = await db.execute("SELECT COUNT(*) FROM schema_migrations")
-            (count_after_second,) = await cursor.fetchone()
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM schema_migrations")
+        (count_after_second,) = await cursor.fetchone()
 
-        assert count_after_second == count_after_first  # no duplicates
-    finally:
-        _remove_database(db_path)
+    assert count_after_second == count_after_first  # no duplicates
 
 
 @pytest.mark.asyncio
@@ -151,36 +127,28 @@ def test_the_baseline_is_the_only_migration() -> None:
 
 
 @pytest.mark.asyncio
-async def test_foreign_keys_enabled() -> None:
+async def test_foreign_keys_enabled(tmp_path) -> None:
     """get_connection should enable PRAGMA foreign_keys."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
+    db_path = str(tmp_path / "bot.db")
 
-    try:
-        async with get_connection(db_path) as db:
-            cursor = await db.execute("PRAGMA foreign_keys")
-            (fk,) = await cursor.fetchone()
-        assert fk == 1
-    finally:
-        _remove_database(db_path)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("PRAGMA foreign_keys")
+        (fk,) = await cursor.fetchone()
+    assert fk == 1
 
 
 @pytest.mark.asyncio
-async def test_the_baseline_seeds_every_track() -> None:
+async def test_the_baseline_seeds_every_track(tmp_path) -> None:
     """The schema seeds the 28 circuits a league can schedule."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
+    db_path = str(tmp_path / "bot.db")
 
-    try:
-        await run_migrations(db_path)
+    await run_migrations(db_path)
 
-        async with get_connection(db_path) as db:
-            # tracks table exists and has 28 seed rows
-            cursor = await db.execute("SELECT COUNT(*) FROM tracks")
-            (track_count,) = await cursor.fetchone()
-            assert track_count == 28, f"Expected 28 track rows, got {track_count}"
-    finally:
-        _remove_database(db_path)
+    async with get_connection(db_path) as db:
+        # tracks table exists and has 28 seed rows
+        cursor = await db.execute("SELECT COUNT(*) FROM tracks")
+        (track_count,) = await cursor.fetchone()
+        assert track_count == 28, f"Expected 28 track rows, got {track_count}"
 
 
 # ── Journal mode, durability and the busy timeout ────────────────────
@@ -191,28 +159,24 @@ async def test_the_baseline_seeds_every_track() -> None:
 
 
 @pytest.mark.asyncio
-async def test_migrations_leave_the_database_in_wal_mode() -> None:
+async def test_migrations_leave_the_database_in_wal_mode(tmp_path) -> None:
     """The real migration runner puts the database into WAL and leaves it there."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
+    db_path = str(tmp_path / "bot.db")
 
-    try:
-        # Populated first, so conftest's copy-a-template shortcut steps aside and the real
-        # runner is what actually gets exercised.
-        _stub_database(db_path)
+    # Populated first, so conftest's copy-a-template shortcut steps aside and the real
+    # runner is what actually gets exercised.
+    _stub_database(db_path)
 
-        await run_migrations(db_path)
+    await run_migrations(db_path)
 
-        async with get_connection(db_path) as db:
-            cursor = await db.execute("PRAGMA journal_mode")
-            (mode,) = await cursor.fetchone()
-        assert mode.lower() == "wal"
-    finally:
-        _remove_database(db_path)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("PRAGMA journal_mode")
+        (mode,) = await cursor.fetchone()
+    assert mode.lower() == "wal"
 
 
 @pytest.mark.asyncio
-async def test_the_schema_template_is_copied_in_wal_mode() -> None:
+async def test_the_schema_template_is_copied_in_wal_mode(tmp_path) -> None:
     """The copied template is in WAL too — which is what most fixtures actually get.
 
     Nearly every fixture in this suite hands `run_migrations` an empty path, so it receives
@@ -221,18 +185,14 @@ async def test_the_schema_template_is_copied_in_wal_mode() -> None:
     without re-applying it; this pins that, because if it ever stopped being true the whole
     suite would quietly test the wrong journal mode.
     """
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
+    db_path = str(tmp_path / "bot.db")
 
-    try:
-        await run_migrations(db_path)  # empty target -> template copy
+    await run_migrations(db_path)  # empty target -> template copy
 
-        async with get_connection(db_path) as db:
-            cursor = await db.execute("PRAGMA journal_mode")
-            (mode,) = await cursor.fetchone()
-        assert mode.lower() == "wal"
-    finally:
-        _remove_database(db_path)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("PRAGMA journal_mode")
+        (mode,) = await cursor.fetchone()
+    assert mode.lower() == "wal"
 
 
 @pytest.mark.asyncio
@@ -251,37 +211,29 @@ async def test_migrations_survive_a_database_that_cannot_take_wal(caplog) -> Non
 
 
 @pytest.mark.asyncio
-async def test_connections_carry_an_explicit_busy_timeout() -> None:
+async def test_connections_carry_an_explicit_busy_timeout(tmp_path) -> None:
     """The lock wait is a named decision, not whatever sqlite3 happens to default to."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
+    db_path = str(tmp_path / "bot.db")
 
-    try:
-        async with get_connection(db_path) as db:
-            cursor = await db.execute("PRAGMA busy_timeout")
-            (timeout_ms,) = await cursor.fetchone()
-        assert timeout_ms == 5000
-    finally:
-        _remove_database(db_path)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("PRAGMA busy_timeout")
+        (timeout_ms,) = await cursor.fetchone()
+    assert timeout_ms == 5000
 
 
 @pytest.mark.asyncio
-async def test_a_shorter_busy_timeout_can_be_asked_for() -> None:
+async def test_a_shorter_busy_timeout_can_be_asked_for(tmp_path) -> None:
     """An autocomplete racing Discord's three seconds must be able to give up sooner."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
+    db_path = str(tmp_path / "bot.db")
 
-    try:
-        async with get_connection(db_path, timeout=1.0) as db:
-            cursor = await db.execute("PRAGMA busy_timeout")
-            (timeout_ms,) = await cursor.fetchone()
-        assert timeout_ms == 1000
-    finally:
-        _remove_database(db_path)
+    async with get_connection(db_path, timeout=1.0) as db:
+        cursor = await db.execute("PRAGMA busy_timeout")
+        (timeout_ms,) = await cursor.fetchone()
+    assert timeout_ms == 1000
 
 
 @pytest.mark.asyncio
-async def test_connections_keep_full_durability(monkeypatch) -> None:
+async def test_connections_keep_full_durability(monkeypatch, tmp_path) -> None:
     """`synchronous` stays at FULL (2), and that is a decision rather than an oversight.
 
     WAL would make `synchronous=NORMAL` safe against corruption, and it is dramatically
@@ -298,22 +250,18 @@ async def test_connections_keep_full_durability(monkeypatch) -> None:
     what production calls — to see what the bot itself asks for.
     """
     monkeypatch.setattr(aiosqlite, "connect", aiosqlite.core.connect)
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
+    db_path = str(tmp_path / "bot.db")
 
-    try:
-        await run_migrations(db_path)
+    await run_migrations(db_path)
 
-        async with get_connection(db_path) as db:
-            cursor = await db.execute("PRAGMA journal_mode")
-            (mode,) = await cursor.fetchone()
-            cursor = await db.execute("PRAGMA synchronous")
-            (level,) = await cursor.fetchone()
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("PRAGMA journal_mode")
+        (mode,) = await cursor.fetchone()
+        cursor = await db.execute("PRAGMA synchronous")
+        (level,) = await cursor.fetchone()
 
-        assert mode.lower() == "wal", "precondition: WAL is what removes the contention"
-        assert level == 2, "expected FULL (2) — durability is preferred to commit latency"
-    finally:
-        _remove_database(db_path)
+    assert mode.lower() == "wal", "precondition: WAL is what removes the contention"
+    assert level == 2, "expected FULL (2) — durability is preferred to commit latency"
 
 
 # ── The suite's own databases (#256) ──────────────────────────────────

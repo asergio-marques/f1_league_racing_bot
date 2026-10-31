@@ -13,9 +13,6 @@ run. A season is completed explicitly, by `/season complete`, and in no other wa
 
 from __future__ import annotations
 
-import os
-import tempfile
-
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -81,56 +78,40 @@ async def _mark_all_phases_done(db_path: str, round_ids: list[int]) -> None:
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("seeded", [True, False], ids=["a-season", "no-season"])
-async def test_has_existing_season(seeded: bool) -> None:
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        if seeded:
-            await _seed_server(db_path, server_id=1)
-        svc = SeasonService(db_path)
-        assert await svc.has_existing_season() is seeded
-    finally:
-        os.unlink(db_path)
+async def test_has_existing_season(seeded: bool, tmp_path) -> None:
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    if seeded:
+        await _seed_server(db_path, server_id=1)
+    svc = SeasonService(db_path)
+    assert await svc.has_existing_season() is seeded
 
 
 @pytest.mark.parametrize("done", [False, True], ids=["pending", "done"])
-async def test_all_phases_complete(done: bool) -> None:
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        _, round_ids = await _seed_server(db_path, server_id=1)
-        if done:
-            await _mark_all_phases_done(db_path, round_ids)
-        svc = SeasonService(db_path)
-        assert await svc.all_phases_complete() is done
-    finally:
-        os.unlink(db_path)
+async def test_all_phases_complete(done: bool, tmp_path) -> None:
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    _, round_ids = await _seed_server(db_path, server_id=1)
+    if done:
+        await _mark_all_phases_done(db_path, round_ids)
+    svc = SeasonService(db_path)
+    assert await svc.all_phases_complete() is done
 
 
-async def test_get_last_scheduled_at_returns_latest() -> None:
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed_server(db_path, server_id=1)
-        svc = SeasonService(db_path)
-        last_at = await svc.get_last_scheduled_at()
-        assert last_at is not None
-        # The seeded rounds have scheduled_at '2026-04-01' and '2026-05-01'
-        assert last_at.year == 2026
-        assert last_at.month == 5
-    finally:
-        os.unlink(db_path)
+async def test_get_last_scheduled_at_returns_latest(tmp_path) -> None:
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed_server(db_path, server_id=1)
+    svc = SeasonService(db_path)
+    last_at = await svc.get_last_scheduled_at()
+    assert last_at is not None
+    # The seeded rounds have scheduled_at '2026-04-01' and '2026-05-01'
+    assert last_at.year == 2026
+    assert last_at.month == 5
 
 
-async def test_get_last_scheduled_at_returns_none_for_unknown_server() -> None:
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        svc = SeasonService(db_path)
-        assert await svc.get_last_scheduled_at() is None
-    finally:
-        os.unlink(db_path)
+async def test_get_last_scheduled_at_returns_none_for_unknown_server(tmp_path) -> None:
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    svc = SeasonService(db_path)
+    assert await svc.get_last_scheduled_at() is None
