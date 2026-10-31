@@ -61,8 +61,9 @@ _Identity = tuple[int, int]
 #: worker thread (`season_review_changes`) can ask for a connection from a loop of its own.
 #:
 #: Module state rather than a pool object handed to every service: lending sits behind
-#: `get_connection`, so no call site changes and no service is handed one more thing to pass on.
-#: It is empty at import and nothing is opened then.
+#: `get_connection`, so every caller still passes just a path, and no pool has to be built at
+#: start-up and handed to each plain-function service (architecture.md, "Services stay attached
+#: to the bot"). It is empty at import and nothing is opened then.
 _idle: dict[tuple[str, float], list[tuple[aiosqlite.Connection, _Identity]]] = {}
 _idle_lock = threading.Lock()
 
