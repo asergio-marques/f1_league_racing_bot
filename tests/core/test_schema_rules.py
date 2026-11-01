@@ -333,6 +333,16 @@ async def test_a_change_s_origins_match_the_enum(db_path):
     assert _check_list(db_path, "queued_changes", "origin") == {o.value for o in ChangeOrigin}
 
 
+@pytest.mark.xfail(strict=True, reason="#283: there is no DivisionStatus enum yet")
+async def test_a_division_s_and_a_round_s_statuses_match_their_enums(db_path):
+    """Each written twice, in the CHECK list and in its enum, and must not drift."""
+    from leaguebot.core.models.division import DivisionStatus
+    from leaguebot.core.models.round import RoundStatus
+
+    assert _check_list(db_path, "divisions", "status") == {s.value for s in DivisionStatus}
+    assert _check_list(db_path, "rounds", "status") == {s.value for s in RoundStatus}
+
+
 async def test_the_queue_holds_one_running_change(db_path):
     """One change runs at a time on a lane: an identity rule, so the schema holds it, not the
     worker. Here every change is on the league lane, which a change naming no lane is on."""

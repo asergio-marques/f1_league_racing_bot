@@ -92,23 +92,39 @@ async def test_a_season_inserted_without_a_stage_takes_its_status_default(db_pat
     assert await _row(db_path, season_id) == (status, stage)
 
 
-async def test_a_season_inserted_with_a_stage_keeps_it(db_path):
-    season_id = await _insert(db_path, "SETUP", "CONFIGURATION")
-    assert await _row(db_path, season_id) == ("SETUP", "CONFIGURATION")
+@pytest.mark.parametrize(
+    "status, stage",
+    [(status, stage) for status in SeasonStatus for stage in SeasonStage],
+    ids=lambda value: value.value,
+)
+async def test_every_status_and_stage_pair_is_held_by_the_triggers(db_path, status, stage):
+    """A season written with a status and a stage keeps the pair where the status admits the
+    stage (`STAGES_OF_STATUS`) and is refused otherwise, whether it is inserted with the pair or
+    has its stage moved to it, so the triggers and the mapping cannot drift apart."""
+    admitted = stage in STAGES_OF_STATUS[status]
 
-
-async def test_a_stage_its_status_does_not_admit_is_refused_on_insert(db_path):
-    with pytest.raises(sqlite3.IntegrityError, match="stage does not match"):
-        await _insert(db_path, "SETUP", "ONGOING")
-
-
-async def test_a_stage_its_status_does_not_admit_is_refused_on_update(db_path):
-    season_id = await _insert(db_path, "SETUP", "CONFIGURATION")
-    async with get_connection(db_path) as db:
+    if admitted:
+        season_id = await _insert(db_path, status.value, stage.value)
+        assert await _row(db_path, season_id) == (status.value, stage.value)
+        async with get_connection(db_path) as db:  # one live season at a time
+            await db.execute("DELETE FROM seasons")
+            await db.commit()
+    else:
         with pytest.raises(sqlite3.IntegrityError, match="stage does not match"):
-            await db.execute(
-                "UPDATE seasons SET stage = 'ONGOING' WHERE id = ?", (season_id,)
-            )
+            await _insert(db_path, status.value, stage.value)
+
+    season_id = await _insert(db_path, status.value, sorted(STAGES_OF_STATUS[status])[0].value)
+    async with get_connection(db_path) as db:
+        if admitted:
+            await db.execute("UPDATE seasons SET stage = ? WHERE id = ?", (stage.value, season_id))
+            await db.commit()
+        else:
+            with pytest.raises(sqlite3.IntegrityError, match="stage does not match"):
+                await db.execute(
+                    "UPDATE seasons SET stage = ? WHERE id = ?", (stage.value, season_id)
+                )
+    if admitted:
+        assert await _row(db_path, season_id) == (status.value, stage.value)
 
 
 async def test_a_status_written_alone_carries_the_stage_with_it(db_path):
