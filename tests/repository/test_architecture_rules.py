@@ -2077,6 +2077,10 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/test_roster_service.py", "add_test_drivers_in_bulk"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "clear_all_test_drivers"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "remove_test_driver"): (1, PASS["core"]),
+    # Results' pass
+    ("results/services/division_channels.py", "set_division_penalty_channel"): (1, PASS["results"]),
+    ("results/services/division_channels.py", "set_division_results_channel"): (1, PASS["results"]),
+    ("results/services/division_channels.py", "set_division_standings_channel"): (1, PASS["results"]),
     # Attendance's pass
     ("attendance/services/attendance_service.py", "AttendanceService.get_or_create_config"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.set_attendance_channel"): (1, PASS["attendance"]),
@@ -2085,9 +2089,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # Signup's pass
-    ("results/services/division_channels.py", "set_division_penalty_channel"): (1, PASS["results"]),
-    ("results/services/division_channels.py", "set_division_results_channel"): (1, PASS["results"]),
-    ("results/services/division_channels.py", "set_division_standings_channel"): (1, PASS["results"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
@@ -2103,11 +2104,12 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/signup_module_service.py", "SignupModuleService.set_close_at"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.snapshot_season_config"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.withdraw_approval"): (1, PASS["signup"]),
+    # Weather's pass
+    ("weather/services/forecast_channel.py", "set_division_forecast_channel"): (1, PASS["weather"]),
     # Image's pass
     ("image/services/driver_portrait_service.py", "_disown"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "_record"): (1, PASS["image"]),
     ("image/services/image_config_service.py", "ImageConfigService.create_with_defaults"): (1, PASS["image"]),
-    ("weather/services/forecast_channel.py", "set_division_forecast_channel"): (1, PASS["weather"]),
 }
 
 
