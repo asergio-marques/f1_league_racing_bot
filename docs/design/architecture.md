@@ -162,7 +162,7 @@ Each module signs up a function of its own, and core calls each in the order the
 hook names no module and no module's operation, so a module's part of the moment is the module's own
 code, and a module added later signs up without core changing. A hook keyed by a kind takes one
 function for each key instead, as a kind of timed job takes its one handler (see "Timed work and
-restarts") and core's graphics are asked of the image module. A link the dependency table allows
+restarts"). A link the dependency table allows
 between two modules is not one of core's hooks: there the module depended on may name what it asks
 of its dependant, as results does of attendance (below).
 
@@ -179,9 +179,13 @@ The image module is used by the others to draw their posts, and a module that fi
 posts text instead, as the image module specification's "Configuration" section (the
 `images config toggle` and its fallback) says. The image module draws what a module hands it, and
 imports no other module. Every other module may call the image module without an entry in the
-table. Core reaches it through a hook, so core's own graphics (the calendar, the lineup) are asked
-for rather than drawn by importing it. Where a module must let one that depends on it act (results
-after a round, for attendance), it does so through what the builder hands it, never by importing the
+table. Core reaches it through a protocol it declares, which the image module implements and the
+builder hands in, as results reaches attendance (below). Core's own graphics (the calendar, the
+lineup) are asked for through it, with the capacity guards, the artwork signature and the check
+that a calendar is wanted, rather than drawn by importing the module. That is not the rejected
+object of named operations above: a hook is a moment several modules take part in, and this is a
+question one module answers. Where a module must let one that depends on it act (results after a
+round, for attendance), it does so through what the builder hands it, never by importing the
 dependant.
 
 **Results reaches attendance through a protocol, handed in by the builder.** What attendance does
