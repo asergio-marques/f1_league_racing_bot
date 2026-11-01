@@ -119,7 +119,7 @@ jobs:
     # speed: the same suite has finished in twelve minutes on one run and been cut off at
     # twenty on another. Thirty-five leaves room for a slow runner and for the suite to grow;
     # a run that nears it is slower than it should be, not a bound to raise again.
-    timeout-minutes: 35
+    timeout-minutes: 20
 
     defaults:
       run:
@@ -163,7 +163,7 @@ jobs:
     # pauses and the runner's own stalls; `tests/conftest.py` freezes the collected suite out of
     # the collector's reach to shorten the first.
     - name: Github Action for testing the code
-      run: pytest tests/ -q -rs -m "not rasteriser" --durations=15 --junitxml=pytest-results.xml
+      run: pytest tests/ -v -rs -m "not rasteriser" --durations=15 --junitxml=pytest-results.xml -o faulthandler_timeout=120
 
     # Every test's time, kept for Windows so the two runners can be compared test by test
     # with `tools/compare_test_timings.py`. `if: always()` because a failed or slow run is when
