@@ -188,8 +188,9 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
 
     The row is read again under the lock, and a row already delivered is left alone (True).
 
-    Returns True if all chunks were delivered successfully, False otherwise.
-    Never raises. Never calls enqueue() (FR-009).
+    Returns True if all chunks were delivered successfully, False otherwise. A failure on the
+    Discord side (reading the log channel, finding it, sending) gives False; a fault reading or
+    writing the retry table raises. Never calls enqueue() (FR-009).
 
     On success: deletes the DB row and posts a delivery notification to the
     calculation log channel (best-effort; swallowed on failure), unless the row

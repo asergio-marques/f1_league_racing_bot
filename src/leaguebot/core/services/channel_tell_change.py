@@ -6,7 +6,8 @@ where Discord refuses the post or the channel is gone, to be tried again on the 
 discarded. The line mentions nobody but the member the payload's `mention` names, by id. It is
 repeatable: two requests for the same line are two lines.
 
-The mid-season confirmation's fallback and the review take-down's restart notice use it.
+The mid-season confirmation uses it, to tell the review's channel that the placements were not
+confirmed.
 `season_approval_tell_change` is left as it is: folding it in would be a refactor.
 """
 from __future__ import annotations

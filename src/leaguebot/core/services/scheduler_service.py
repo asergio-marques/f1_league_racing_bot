@@ -2,11 +2,13 @@
 
 Uses SQLAlchemyJobStore backed by **its own** SQLite file, separate from the league
 database, so jobs survive restarts. A job whose moment passed while the bot was stopped runs
-on start only if that moment is less than five minutes gone (`_GRACE_SECONDS`, every job's
-misfire grace). Later than that, APScheduler skips it with a warning in the host's log, and
-whatever should be caught up after a longer stop is caught up by the start-up recovery in
-`__main__.py`. What becomes of a job missed in a longer stop is its kind's handler's to decide
-(`docs/design/architecture.md`, "Timed work and restarts").
+on start only if that moment is less than five minutes gone (`_GRACE_SECONDS`, the misfire grace
+a job has unless it is armed with none). Later than that, APScheduler skips it with a warning in
+the host's log, and whatever should be caught up after a longer stop is caught up by the start-up
+recovery in `__main__.py`. A one-off timer and an overdue results submission are armed with no
+lateness limit, and fire at once on start whatever the stop. What becomes of a job missed in a
+longer stop is its kind's handler's to decide (`docs/design/architecture.md`, "Timed work and
+restarts").
 
 The separation is deliberate and is not tidiness. `SQLAlchemyJobStore` is synchronous, and
 it is attached to an `AsyncIOScheduler`, so every job it adds, updates or removes writes to
@@ -415,14 +417,16 @@ class SchedulerService:
     """The one place a job is made, found or removed (`docs/design/architecture.md`, "Timed
     work and restarts").
 
-    Every cancel is a clean-up, and none of them raises. A job that has already fired, or was
+    Every cancel is a clean-up, and removing a job never raises. A job that has already fired, or was
     never armed, is the ordinary case and what the caller wanted: APScheduler says so with
     `JobLookupError`, which is caught by name and passed over in silence. Any other failure —
     a job store that cannot be read or written — is a real fault, and is logged as a warning
     with its traceback and then swallowed. That broad handler is the second place
     architecture.md's "Errors and failures" allows one: the callers are teardown lists
     (a season cancelled, a module switched off, signups closed, a pack), where one job that
-    will not go must not stop the rest. `cancel_all` counts only the jobs that went.
+    will not go must not stop the rest. `cancel_all` counts only the jobs that went. A cancel that
+    lists the store first (`cancel_round`, `cancel_rounds`, `cancel_all`) does raise where the
+    store cannot be listed, before it removes anything.
     """
 
     def __init__(self, db_path: str, jobstore_path: str | None = None) -> None:
@@ -919,10 +923,10 @@ class SchedulerService:
         switching weather off silently stopped results collection and check-ins for the
         rest of the season while reporting that only weather jobs had been cancelled.
 
-        The weather *enable* rollback calls this too, and so leaves behind any ``results``
-        job its catch-up created. That is deliberate: a rollback that removed it would
-        destroy the round-arrival transition of a league whose results module is on, which
-        is the defect above by another route.
+        Disabling the weather module (`ModuleCog._disable_weather`) is the caller. Leaving the
+        ``results`` job in place is deliberate: removing it would destroy the round-arrival
+        transition of a league whose results module is on, which is the defect above by
+        another route.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -970,9 +974,9 @@ class SchedulerService:
     ) -> None:
         """Schedule only the result-submission job for each round.
 
-        Used when the results module is enabled but the weather module is not,
-        so ``schedule_round`` (which creates all weather + results jobs together)
-        was not called at approval time.
+        Used where ``schedule_round`` (which creates all weather + results jobs together) is
+        not called for a round: the weather module is off at approval, or a mystery round was
+        amended inside its first horizon. The round still needs this job to leave Not run.
 
         Args:
             division_meta: Mapping of ``division_id`` →
@@ -1179,9 +1183,9 @@ class SchedulerService:
     def schedule_portrait_refresh(self, time_of_day: str) -> None:
         """Schedule the league's daily driver-portrait refresh at *time_of_day* UTC.
 
-        **The one recurring trigger in this service, and deliberately so.** Every other job
-        here is a one-shot ``DateTrigger`` arming a single event of a round or a season, and
-        that shape is right for those: each fires once and is done. This one is a standing
+        **A recurring trigger, and deliberately so** (`schedule_amendment_sweep` is the other).
+        Every other job here is a one-shot ``DateTrigger`` arming a single event of a round or a
+        season, and that shape is right for those: each fires once and is done. This one is a standing
         instruction rather than an event, and re-arming it from inside its own callback would
         put the survival of the schedule at the mercy of the job body -- a refresh that raised
         would silently be the last one. A ``CronTrigger`` is re-armed by APScheduler itself

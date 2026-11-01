@@ -1225,7 +1225,7 @@ async def main() -> None:
         await _recover_orphaned_amend_channels(bot)
 
         # Close any submission channels that were left open by a previous run.
-        # Their wait_for loops died with the process, so we reset them here
+        # The paste they were waiting for died with the process, so we reset them here
         # so /test-mode advance can re-trigger submission.
         await _recover_orphaned_submission_channels(bot)
 

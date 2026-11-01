@@ -10,7 +10,7 @@
 -- it, with a test of its own.
 
 -- server_configs
--- One row, always. `server_id` is the claim on the league's server and is NULL while the bot
+-- At most one row: a fresh database holds none, and `/bot init` writes it. `server_id` is the claim on the league's server and is NULL while the bot
 -- serves none: `/bot pack` clears it and the four settings, and keeps the rest (issue #247).
 CREATE TABLE server_configs (
     id                     INTEGER PRIMARY KEY CHECK (id = 1),

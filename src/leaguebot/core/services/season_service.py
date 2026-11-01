@@ -777,7 +777,11 @@ class SeasonService:
             await db.commit()
 
     async def delete_division(self, division_id: int) -> None:
-        """Cascade-delete a division and all its child rows."""
+        """Delete a division with its rounds, teams and seats, in one transaction.
+
+        Refused while a driver is placed in it: the seat the placement points at has no delete
+        action, so removing the seats fails and the whole deletion rolls back.
+        """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id FROM rounds WHERE division_id = ?", (division_id,)

@@ -30,7 +30,7 @@ the graphics; `send_notice` and `delete_notice` are what those jobs call.
 **`send_notice` is also the season review's posting point** (`season_review_changes`): its
 pictures, report sections and question are sent through it with their other parts (*parts*), so
 that core keeps one send of its own rather than a second beside it for the review alone.
-`edit_notice` edits a notice in place, as the check-in call is edited when its window closes.
+`edit_notice` edits a notice in place; no job of the bot edits one yet.
 """
 
 from __future__ import annotations

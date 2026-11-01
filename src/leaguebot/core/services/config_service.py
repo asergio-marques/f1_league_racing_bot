@@ -77,7 +77,7 @@ class ConfigService:
         """Claim the league's server while no server holds the claim. Returns whether it did.
 
         Claim-only, and deliberately so. `/bot init` is the sole caller and runs once; every
-        later change to one of the three settings goes through the setters
+        later change to a setting goes through the setters
         below, which write a single column each.
 
         An upsert here used to overwrite `test_mode_active` from whatever the caller's

@@ -1,6 +1,6 @@
 """test_mode_service — Test mode state management and phase queue.
 
-Provides four async functions consumed by TestModeCog:
+Provides async functions consumed by TestModeCog, among them:
   - toggle_test_mode:             flip the test_mode_active flag in server_configs
   - toggle_test_mode_nationality: flip whether mock drivers carry a nationality
   - count_live_real_drivers:      how many real drivers stand in the way of enabling test mode

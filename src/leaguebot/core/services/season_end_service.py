@@ -74,18 +74,14 @@ async def write_driver_history_entries_on(
     - points_gap_to_winner: derived from final points vs the division winner's final points
     - cancelled: whether the driver's division was cancelled
 
-    **Idempotent, and deliberately so.** Ending a season is a run of separate writes with no
-    transaction around them, and the season's own row is flipped last — so a process that dies
-    part-way leaves the season still ACTIVE with its history already written, and the retry the
-    league is told to run would append a second set. `INSERT OR IGNORE` against the unique index
-    `idx_driver_history_unique` is what stands in for the atomicity the sequence does not have.
-    Do not relax it to a plain INSERT on the grounds that the guard above already returns early:
-    that guard reads the season *before* this runs, which is precisely the window that fails.
+    **Idempotent, and deliberately so.** Both ends of a season write the history in the one save
+    that flips the season's own row, last, so a failure rolls the history back with it. `INSERT OR
+    IGNORE` against the unique index `idx_driver_history_unique` is the backstop for an entry
+    already there: do not relax it to a plain INSERT on the grounds that the guard above already
+    returns early, since a second set would double a driver's history.
 
-    *force_cancelled* marks every entry cancelled without consulting the divisions. `/season
-    cancel` needs it because it writes history **before** cascading — writing afterwards would
-    read the right statuses but put the rows beyond reach of a retry, since the command refuses
-    once the season is no longer active, and a failure between the two would lose them for good.
+    *force_cancelled* marks every entry cancelled without consulting the divisions' statuses,
+    which `/season cancel` passes.
     """
     # Every driver × division a committed placement was ever held in this season.
     cursor = await db.execute(
