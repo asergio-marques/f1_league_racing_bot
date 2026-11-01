@@ -42,10 +42,6 @@ SIGNUP_CHANNEL = 700
 BUTTON_MESSAGE = 8800
 CLOSED_MESSAGE = 9900
 
-#: Why a test that calls the close fails until the close is handed its services by keyword.
-TAKES_SERVICES = "#283: the close still reads its services off the bot"
-
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -203,7 +199,6 @@ async def _handed_on(bot) -> object:
         DriverState.UNASSIGNED,
     ],
 )
-@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_a_driver_awaiting_approval_is_left_alone(tmp_path, state):
     """FR-002/FR-003: driver 101 has finished signing up as far as they are concerned, and the
     queue's close of the window (a season's end) must not undo that: they are not returned and
@@ -218,7 +213,6 @@ async def test_a_driver_awaiting_approval_is_left_alone(tmp_path, state):
     assert list(outcome.returned_ids) == []
 
 
-@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_a_job_already_gone_is_stepped_over(tmp_path):
     """Driver 101 is part-way through the wizard, but the scheduler no longer holds their
     inactivity or channel-delete job: the queue's close returns them all the same."""
@@ -242,7 +236,6 @@ async def test_a_job_already_gone_is_stepped_over(tmp_path):
     assert list(outcome.returned_ids) == ["101"]
 
 
-@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_a_driver_already_moved_on_is_neither_counted_nor_a_failure(tmp_path):
     """Driver 101's transition is refused as the state machine refuses a driver who has moved
     on since the queue's close read them (`ValueError`): they are not counted as returned, none
@@ -262,7 +255,6 @@ async def test_a_driver_already_moved_on_is_neither_counted_nor_a_failure(tmp_pa
 WIZARD_CHANNEL = 555
 
 
-@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_a_close_asked_not_to_hold_gives_the_drivers_it_returned_and_holds_nothing(tmp_path):
     """The season's end closes the window on the change queue, where each driver's notice and
     lock are jobs of their own: asked not to hold, the close returns driver 101 (still filling
@@ -362,7 +354,6 @@ async def _window_still_open(db_path) -> bool:
 
 
 @pytest.mark.parametrize("case", ["on the queue", "the mark fails"])
-@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_the_queue_s_close_marks_each_driver_it_returns_owed_in_the_same_save(tmp_path, case):
     """Driver 101, part-way through the wizard, is returned to Not Signed Up by the window's
     close, on the real services.
@@ -406,7 +397,6 @@ class _Killed(BaseException):
     """The bot's process killed: no handler of the bot's sees it, nothing more is saved."""
 
 
-@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_a_kill_part_way_through_the_queue_s_close_leaves_no_returned_driver_s_timer_armed(
     tmp_path,
 ):
@@ -473,7 +463,6 @@ async def test_a_kill_part_way_through_the_queue_s_close_leaves_no_returned_driv
     assert standing == {inactivity_job_id("102")}
 
 
-@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_a_driver_whose_return_fails_keeps_their_timers_and_channel_and_is_named(tmp_path):
     """A season's end closes the window on the change queue and finds drivers 101 and 102
     part-way through the wizard. The first driver's return goes through; the second's fails with
@@ -512,7 +501,6 @@ async def test_a_driver_whose_return_fails_keeps_their_timers_and_channel_and_is
     bot.signup_module_service.set_window_closed.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
     """The queue's close (a season's end) gives how many drivers it returned and which (issue
     #128): drivers 101 and 102, part-way through the wizard, are counted; 103, awaiting
@@ -538,7 +526,6 @@ async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_the_queue_s_close_writes_no_audit_of_the_window(tmp_path):
     """The queue's close serves a season's end and every division done. It writes no audit of
     the window's close: that record is written by the "Signups are now closed" post's own job,
@@ -550,7 +537,6 @@ async def test_the_queue_s_close_writes_no_audit_of_the_window(tmp_path):
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_a_server_with_no_signup_configuration_does_nothing(tmp_path):
     """No signup configuration exists: the close returns an outcome with nobody returned,
     closes nothing and audits nothing."""
@@ -599,7 +585,6 @@ _CAUSES = ["season end", "divisions done"]
 
 
 @pytest.mark.parametrize("cause", _CAUSES)
-@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_a_close_nobody_ran_on_the_queue_leaves_its_audit_and_line_to_the_closed_notice(
     tmp_path, cause
 ):
@@ -636,7 +621,6 @@ async def test_a_close_nobody_ran_on_the_queue_leaves_its_audit_and_line_to_the_
     "signups_open, enabled",
     [pytest.param(False, True, id="no window open"), pytest.param(True, False, id="module off")],
 )
-@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_a_close_nobody_ran_that_closes_nothing_writes_no_line(
     tmp_path, cause, signups_open, enabled
 ):

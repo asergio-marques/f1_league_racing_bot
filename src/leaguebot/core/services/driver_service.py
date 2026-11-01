@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
 
 import aiosqlite
@@ -413,6 +413,21 @@ class DriverService:
         if row is None:
             return None
         return _row_to_profile(row)
+
+    async def ids_in_states(self, states: Collection[DriverState]) -> list[str]:
+        """The Discord ids of the drivers whose state is one of *states*, in no set order.
+
+        The signup window's close reads the drivers still filling in the wizard through this,
+        since the driver table is core's alone to read.
+        """
+        placeholders = ",".join("?" for _ in states)
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                f"SELECT discord_user_id FROM driver_profiles "
+                f"WHERE current_state IN ({placeholders})",
+                tuple(state.value for state in states),
+            )
+            return [str(row["discord_user_id"]) for row in await cursor.fetchall()]
 
     async def current_account(self, discord_user_id) -> str:
         """The current account of the driver holding *discord_user_id*; see `current_account_of`."""

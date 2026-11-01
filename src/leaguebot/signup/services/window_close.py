@@ -13,10 +13,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin, StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.services.change_queue import ChangeQueue
+from leaguebot.core.services.driver_service import DriverService
+from leaguebot.core.services.module_service import ModuleService
+from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 log = logging.getLogger(__name__)
 
@@ -47,8 +49,9 @@ class ForcedCloseOutcome:
 
 
 async def execute_forced_close(
-    bot: LeagueBot,
     *,
+    signup_module_service: SignupModuleService,
+    driver_service: DriverService,
     audit_action: str,
     cancel_timers: Callable[[str], None],
 ) -> ForcedCloseOutcome:
@@ -78,54 +81,48 @@ async def execute_forced_close(
     close read them: they are not counted as returned, and it is not a failure. Only the drivers
     returned have their timers cancelled, so a driver whose return failed keeps signing up.
 
+    Whoever calls it hands in the two services it uses (`docs/design/architecture.md`, "Services
+    stay attached to the bot, and are built in one place").
+
     The count is of transitions that succeeded, read at the moment of closing. The
     confirmation ``/signup close`` shows may be up to five minutes older than that.
     """
-    cfg = await bot.signup_module_service.get_config()
+    cfg = await signup_module_service.get_config()
     if cfg is None:
         return ForcedCloseOutcome(returned=0)
 
-    async with get_connection(bot.db_path) as db:
-        placeholders = ",".join("?" for _ in RETURNED_BY_CLOSE)
-        cursor = await db.execute(
-            f"SELECT discord_user_id FROM driver_profiles "
-            f"WHERE current_state IN ({placeholders})",
-            (*[s.value for s in RETURNED_BY_CLOSE],),
-        )
-        rows = await cursor.fetchall()
-
     returned = 0
     returned_ids: list[str] = []
-    for row in rows:
+    for user_id in await driver_service.ids_in_states(RETURNED_BY_CLOSE):
         try:
             # The return and the end of the driver's signup are one save: their wizard is marked
             # over, so a restart never expires it, and owed its closing notice, which the queue's
             # jobs then give once. Signup writes its own table (`end_wizard_on`).
-            await bot.driver_service.transition(
-                row["discord_user_id"],
+            await driver_service.transition(
+                user_id,
                 DriverState.NOT_SIGNED_UP,
                 also_on=partial(
-                    bot.signup_module_service.end_wizard_on,
-                    discord_user_id=row["discord_user_id"],
+                    signup_module_service.end_wizard_on,
+                    discord_user_id=user_id,
                     closing_notice_owed=True,
                 ),
             )
             returned += 1
-            returned_ids.append(str(row["discord_user_id"]))
+            returned_ids.append(user_id)
             # Their timers go now, before the next driver's save and any await, so that a kill
             # part-way through the loop never leaves a returned driver's 24-hour timer in the
             # persistent jobstore to tell them their session expired as well as that signups
             # closed.
-            cancel_timers(str(row["discord_user_id"]))
+            cancel_timers(user_id)
         except ValueError:
             # The state machine's refusal: the driver moved on since they were read.
-            log.info("forced_close: driver %s had moved on", row["discord_user_id"])
+            log.info("forced_close: driver %s had moved on", user_id)
         except Exception as exc:
             # As every failure on the queue does, this raises. Each driver returned before this
             # one is saved and marked owed, their timers already cancelled: the stop keeps them on
             # the job for its next try.
             raise StepFailedOnDiscord(
-                f"driver {row['discord_user_id']} could not be returned to Not Signed Up",
+                f"driver {user_id} could not be returned to Not Signed Up",
                 result={"returned": list(returned_ids)},
             ) from exc
 
@@ -142,7 +139,13 @@ _UNATTENDED_CAUSES: dict[str, str] = {
 
 
 async def close_signups_unattended(
-    bot: LeagueBot, *, cause: str, cancel_timers: Callable[[str], None] | None = None
+    *,
+    change_queue: ChangeQueue,
+    module_service: ModuleService,
+    signup_module_service: SignupModuleService,
+    driver_service: DriverService,
+    cause: str,
+    cancel_timers: Callable[[str], None] | None = None,
 ) -> ForcedCloseOutcome | None:
     """Close the signup window where no member ran the close.
 
@@ -161,19 +164,22 @@ async def close_signups_unattended(
     done must give it; the close timer's and the restart's close is the queue's own, whose jobs
     cancel the timers themselves, and need not.
 
+    The change queue and the services it uses are handed in by its caller, the entry point's
+    close timer, restart sweep and season-end hooks, each of which holds the bot.
+
     Nothing is done where a window was not actually open: a module that is disabled produces
     nothing (the core specification, Modules), and a window not open needs no close, so both
     return ``None`` having touched nothing.
     """
     audit_action = _UNATTENDED_CAUSES[cause]
-    if not await bot.module_service.is_signup_enabled():
+    if not await module_service.is_signup_enabled():
         return None
-    cfg = await bot.signup_module_service.get_config()
+    cfg = await signup_module_service.get_config()
     if cfg is None or not cfg.signups_open:
         return None
 
     if cause in ("timer", "restart"):
-        await bot.change_queue.ask(
+        await change_queue.ask(
             "signup.close",
             {
                 "cause": cause,
@@ -190,5 +196,8 @@ async def close_signups_unattended(
     if cancel_timers is None:
         raise TypeError(f"the {cause}'s close returns drivers, so it is handed their timers")
     return await execute_forced_close(
-        bot, audit_action=audit_action, cancel_timers=cancel_timers
+        signup_module_service=signup_module_service,
+        driver_service=driver_service,
+        audit_action=audit_action,
+        cancel_timers=cancel_timers,
     )

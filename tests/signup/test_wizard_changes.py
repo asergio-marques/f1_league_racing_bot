@@ -363,7 +363,6 @@ async def test_a_created_channel_whose_save_failed_is_deleted_before_the_next_tr
     assert wizard is not None and int(wizard["signup_channel_id"]) == NEW_CHANNEL + 1
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the close still reads its services off the bot")
 async def test_sign_up_while_a_close_waits_on_the_queue_is_refused_as_closing(tmp_path):
     """The close time has come and the timer has asked the queue to close the window, which has
     not yet run. Kimi presses Sign Up: he is told, plainly, that signups are being closed and a

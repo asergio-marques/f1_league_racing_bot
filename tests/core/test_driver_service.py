@@ -16,7 +16,6 @@ from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.driver_service import DriverService
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the driver service cannot list drivers by state yet")
 async def test_drivers_in_states_are_listed(tmp_path):
     """Drivers 101 and 103 are part-way through signing up (Pending Signup Completion), 102 is
     approved and waiting for a seat (Unassigned), and 104 is Not Signed Up. Asked for the drivers

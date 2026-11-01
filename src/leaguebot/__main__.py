@@ -203,7 +203,12 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
 
     async def close_signups(bot_: LeagueBot, cause: str):
         return await close_signups_unattended(
-            bot_, cause=cause, cancel_timers=_cancel_wizard_timers(bot_)
+            change_queue=bot_.change_queue,
+            module_service=bot_.module_service,
+            signup_module_service=bot_.signup_module_service,
+            driver_service=bot_.driver_service,
+            cause=cause,
+            cancel_timers=_cancel_wizard_timers(bot_),
         )
 
     async def window_open() -> bool:
@@ -1165,7 +1170,13 @@ async def main() -> None:
 
         async def _signup_close_cb() -> None:
             from leaguebot.signup.services.window_close import close_signups_unattended
-            await close_signups_unattended(bot, cause="timer")
+            await close_signups_unattended(
+                change_queue=bot.change_queue,
+                module_service=bot.module_service,
+                signup_module_service=bot.signup_module_service,
+                driver_service=bot.driver_service,
+                cause="timer",
+            )
 
         bot.scheduler_service.register_signup_close_callback(_signup_close_cb)
 
@@ -1189,7 +1200,13 @@ async def main() -> None:
             if _close_dt <= now_utc:
                 log.info("on_ready: signup close_at is past — running forced close")
                 from leaguebot.signup.services.window_close import close_signups_unattended
-                await close_signups_unattended(bot, cause="restart")
+                await close_signups_unattended(
+                change_queue=bot.change_queue,
+                module_service=bot.module_service,
+                signup_module_service=bot.signup_module_service,
+                driver_service=bot.driver_service,
+                cause="restart",
+            )
             else:
                 from leaguebot.core.services.scheduler_service import SIGNUP_CLOSE_JOB_ID
                 if not bot.scheduler_service.has_job(SIGNUP_CLOSE_JOB_ID):
