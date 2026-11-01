@@ -1811,6 +1811,12 @@ def _docstrings(tree: ast.Module) -> set[int]:
     return found
 
 
+def _docstrings_among(nodes) -> set[int]:
+    """The ids of the docstrings among *nodes*, each ``(file, function, node)``: those of every
+    file whose module node is among them (`_docstrings`)."""
+    return {id_ for _path, _function, node in nodes if isinstance(node, ast.Module) for id_ in _docstrings(node)}
+
+
 @cache
 def _writes_by_function() -> tuple[Counter, Counter, Counter]:
     """Per function: writes refused, writes whose columns could not be read, and writes to a
@@ -1824,7 +1830,7 @@ def _writes_by_function() -> tuple[Counter, Counter, Counter]:
             spliced[(path, function)] += _spliced_writes(node)
         if (isinstance(node, ast.Constant) and isinstance(node.value, str)
                 and id(node) not in docstrings):
-            module = "entry point" if path == "__main__.py" else classify(f"src/leaguebot/{path}")
+            module = _module_of(path)
             for _table, columns_unread in _writes_refused(node.value, module):
                 refused[(path, function)] += 1
                 unread[(path, function)] += columns_unread
@@ -2273,29 +2279,29 @@ def _module_of(path: str) -> str:
     return "entry point" if path == "__main__.py" else classify(f"src/leaguebot/{path}")
 
 
-def _docstring_ids(nodes) -> set[int]:
-    """The ids of the docstrings among *nodes*, each ``(file, function, node)``: they describe SQL
-    rather than run it."""
-    found = set()
-    for _path, _function, node in nodes:
-        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            body = node.body
-            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
-                found.add(id(body[0].value))
-    return found
+#: The functions whose read of a core table names nothing but their module's own columns on it
+#: (`OWN_COLUMNS`) and the keys it joins on, allowed for good, and why: those columns are the
+#: module's alone, to read and to set (architecture.md, "The database"). A function that reads
+#: anything else on the table, or another table, is not here.
+READS_OF_OWN_COLUMNS = {
+    ("weather/services/draw_guard.py", "weather_enabled_on"):
+        "reads `server_configs.weather_module_enabled`, the weather module's own column",
+}
 
 
 def _reads_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
     """The reads among *nodes*, each ``(file, function, node)``, of a table the file's module does
     not own, counted by file and function: each table named after `FROM` or `JOIN` in a string of
-    SQL. The entry point owns no table, so each table it reads counts. The scan sees tables, not
-    columns, so a module's read of its own columns on a core table (`OWN_COLUMNS`) is counted too:
-    the module's design pass judges such an entry."""
+    SQL, a function in `READS_OF_OWN_COLUMNS` aside. The entry point owns no table, so each table
+    it reads counts. The scan sees tables, not columns, so a module's read of its own columns on a
+    core table (`OWN_COLUMNS`) is counted unless its function is named in `READS_OF_OWN_COLUMNS`."""
     nodes = list(nodes)
-    docstrings = _docstring_ids(nodes)
+    docstrings = _docstrings_among(nodes)
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in nodes:
         if not (isinstance(node, ast.Constant) and isinstance(node.value, str)) or id(node) in docstrings:
+            continue
+        if (path, function) in READS_OF_OWN_COLUMNS:
             continue
         module = _module_of(path)
         found[(path, function)] += sum(
@@ -2562,7 +2568,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/wizard_service.py", "WizardService.recover_gone_channels"):
         (1, PASS["signup"]),
     ("weather/services/draw_guard.py", "<module>"): (3, PASS["weather"]),
-    ("weather/services/draw_guard.py", "weather_enabled_on"): (1, PASS["weather"]),
     ("weather/services/forecast_changes.py", "_round_row"): (2, PASS["weather"]),
     ("weather/services/forecast_changes.py", "ask_forecast"): (2, PASS["weather"]),
     ("weather/services/forecast_changes.py", "ask_forecast_clean_up"): (2, PASS["weather"]),
@@ -2580,9 +2585,9 @@ def test_each_table_is_read_by_the_module_that_owns_it():
     owner (architecture.md, "Each table is read and written by its owner alone"). A string of SQL
     that names a table after `FROM` or `JOIN` is a read, wherever the string is built. The entry
     point owns no table, so every read in it counts. The scan sees tables and not columns, so a
-    module's read of its own columns on a core table (`OWN_COLUMNS`) is counted as well; the
-    module's design pass judges such an entry. A breach is keyed by the reading function, and listed
-    with the issue that will fix it."""
+    module's read of its own columns on a core table (`OWN_COLUMNS`) is counted as well, unless
+    its function is named for good in `READS_OF_OWN_COLUMNS`. A breach is keyed by the reading
+    function, and listed with the issue that will fix it."""
     _check(
         "each table is read by the module that owns it",
         _reads_outside_the_owner(),
@@ -2613,6 +2618,37 @@ def test_the_read_check_counts_a_table_named_after_from_or_join_that_the_file_s_
     assert _reads_outside_the_owner_among(_sample(source, "__main__.py")) == Counter(
         {("__main__.py", "handler"): 3}
     )
+
+
+def test_the_read_check_passes_a_function_that_reads_only_its_module_s_own_columns_on_a_core_table():
+    """A function named in `READS_OF_OWN_COLUMNS` is not counted; the same read in a function
+    not named is."""
+    path, function = next(iter(READS_OF_OWN_COLUMNS))
+    source = f"async def {function}(db):\n    await db.execute('SELECT weather_module_enabled FROM server_configs')\n"
+
+    assert _reads_outside_the_owner_among(_sample(source, path)) == Counter()
+    assert _reads_outside_the_owner_among(_sample(source.replace(function, "other"), path)) == Counter(
+        {(path, "other"): 1}
+    )
+
+
+def test_every_read_of_own_columns_allowed_for_good_still_reads_one():
+    """Each function in `READS_OF_OWN_COLUMNS` still reads a core table on which its module has
+    columns of its own (`OWN_COLUMNS`), with a reason: a rename cannot leave the exception
+    pointing at nothing."""
+    docstrings = _docstrings_among(_nodes())
+    held = set()
+    for path, function, node in _nodes():
+        if (path, function) not in READS_OF_OWN_COLUMNS or id(node) in docstrings:
+            continue
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            own = OWN_COLUMNS.get(_module_of(path), {})
+            for match in _READS.finditer(node.value):
+                if any(column in node.value for column in own.get(match.group("table"), ())):
+                    held.add((path, function))
+
+    assert held == set(READS_OF_OWN_COLUMNS)
+    assert all(READS_OF_OWN_COLUMNS.values())
 
 
 def test_a_listed_read_that_is_gone_fails_the_read_check():
@@ -2815,7 +2851,7 @@ def _sql_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
     """The reads of SQLite's clock among *nodes*, each ``(file, function, node)``, counted by file
     and function: each match in a string of SQL, a docstring aside."""
     nodes = list(nodes)
-    docstrings = _docstring_ids(nodes)
+    docstrings = _docstrings_among(nodes)
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in nodes:
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings:
