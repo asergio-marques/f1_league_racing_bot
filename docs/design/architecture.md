@@ -267,11 +267,12 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   in the refusal's save (`ChangeType.on_refused`), as a step asks a follow-on: the season's
   confirmation uses it to tell the review's channel of a refusal its member can no longer be told
   of. It may likewise ask one where a league admin discards a member's change stopped at its check
-  before any job of it started (`ChangeType.on_discarded`), saved with the Discard. A refusal hook
-  that raises stops its lane at the change's first job, as a check that raises does (save in a
-  member's settings change, described below), and the change is checked again at each try; a discard hook that raises is logged on the host and the
-  Discard goes ahead without it, Discard being the queue's last way past a stop. *Rejected:*
-  planning a step on the refused change, which would leave a refused change with jobs to run.
+  before any job of it started (`ChangeType.on_discarded`), saved with the Discard. A refusal
+  callback that raises stops its lane at the change's first job, as a check that raises does (save
+  in a member's settings change, described below), and the change is checked again at each try; a
+  discard callback that raises is logged on the host and the Discard goes ahead without it, Discard
+  being the queue's last way past a stop. *Rejected:* planning a step on the refused change, which
+  would leave a refused change with jobs to run.
   A change a timer, an event, or a handler or start step the sweep calls asked for is dropped once
   its work is no longer due, as a job that fires after its work was cancelled does nothing (see
   "Timed work and restarts"). Where it is refused by its check for any reason but that its work is
@@ -572,21 +573,22 @@ Save first, then post, then record what was posted in a save of its own.
 
 **Each table is read and written by its owner alone.** Every statement that reads or changes a table
 lives in the module that owns it, core included, and every other module asks the owner: a module
-asks core through core's services, which it may import, and core asks a module through a hook
-(above), since core imports no module. A query that would join another owner's table is split at
-that line, each half asked of its owner on the connection the asker was handed, where it has one, so
-that both halves read inside the same save. Each module's design file lists its tables, and the
-checks of this rule hold the owner of every table (see "How the rules are checked"), failing on a
-table added without one, on a statement that changes a table outside its owner, and on one that
-reads it there. Results records a round's attendance through `AttendanceAfterReview` (above), so the
-attendance tables are written by attendance's code, on the connection results' step was handed.
-Where a module keeps its own columns on a core table (weather on rounds, sessions and a division's
-forecast channel, attendance on rounds, and the weather and signup on/off flags on the settings
-row), that module's design file names those columns as an exception. Those columns are that module's
-alone, to read and to set, and core does not set them either; the rest of the row is core's. The
-other modules keep their on/off flag in their own settings table. A round's status is core's, though
-results moves it through the stages of a round's results: results asks core's service to set it, so
-a round can still be cancelled while results is switched off.
+asks core through core's services, which it may import, and core asks a module through a hook, or
+the image module through its protocol (above), since core imports no module. A query that would join
+another owner's table is split at that line, each half asked of its owner on the connection the
+asker was handed, where it has one, so that both halves read inside the same save. Each module's
+design file lists its tables, and the checks of this rule hold the owner of every table (see "How
+the rules are checked"), failing on a table added without one, on a statement that changes a table
+outside its owner, and on one that reads it there. Results records a round's attendance through
+`AttendanceAfterReview` (above), so the attendance tables are written by attendance's code, on the
+connection results' step was handed. Where a module keeps its own columns on a core table (weather
+on rounds, sessions and a division's forecast channel, attendance on rounds, and the weather and
+signup on/off flags on the settings row), that module's design file names those columns as an
+exception. Those columns are that module's alone, to read and to set, and core does not set them
+either; the rest of the row is core's. The other modules keep their on/off flag in their own
+settings table. A round's status is core's, though results moves it through the stages of a round's
+results: results asks core's service to set it, so a round can still be cancelled while results is
+switched off.
 
 *Rejected:* letting any module read any table, with the owner's design file naming the columns
 others read, which costs nothing today but leaves a change to a table reaching readers in other
@@ -1040,8 +1042,8 @@ to it would switch off the one failure path for every command.
    failure, once. The callback a change type may give for a Discard of a change before it started
    (`ChangeQueue._discard_follow_ons`) is not a failure path but a stated exception: its catch-all
    puts the error in the host's log alone, with no line to the log channel, and asks no follow-on,
-   because a Discard is the queue's last way past a stop and a hook that raises must not hold it;
-   the reader that says what dropping an undiscardable job would leave
+   because a Discard is the queue's last way past a stop and a callback that raises must not hold
+   it; the reader that says what dropping an undiscardable job would leave
    (`ChangeQueue._undiscardable_refusal`) is a stated exception likewise: its catch-all puts the
    error in the host's log with the full details, and the Discard is refused all the same, naming
    the job in place of the reason, its refusal recorded in the log channel as any refused press is,
