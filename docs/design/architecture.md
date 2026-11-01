@@ -1125,7 +1125,10 @@ later on its own.
   columns), core reading a module's service on the bot (an attribute `LeagueBot` types from a module's
   package, read from a file of core), SQLite's clock in a statement or a   package, read from a file of core), SQLite's clock in a statement or a column's default, a
   service reading the wall clock (the change queue's own default clock is the one place allowed,
-  `WALL_CLOCK_ALLOWED`), and a save outside a queued change. The job check and
+  `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that raises again, calls
+  `report_failure` or sits directly in a loop's body is in a place by its shape; the stated
+  exceptions and the guards around reporting are named for good, `CATCH_ALLS_ALLOWED`), and a save
+  outside a queued change. The job check and
   the check of cogs handling their own errors are absolute, with no list of breaches left to grow,
   and the log channel's check holds its six places for good; every other check lists today's
   breaches, each under the work that removes it. The check of a save outside a queued change counts
@@ -1148,7 +1151,6 @@ How the checks run, and how to work with the lists of today's breaches they hold
 under "Testing".
 
 Not every rule has its check yet. The rules about how things are built (the hooks, the one
-builder, start-up, the sweep) cannot be checked by reading the code until they exist. One that can
-is still to be built: a catch-all handler outside the five places. Until the
+builder, start-up, the sweep) cannot be checked by reading the code until they exist. Until the
 schema's owners are checked against the schema the migrations build, the owner map reads the
 baseline's text.

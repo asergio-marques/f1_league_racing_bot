@@ -3031,3 +3031,328 @@ def test_a_listed_clock_read_that_is_gone_fails_the_clock_checks():
             _wall_clock_reads_among(nodes),
             {(path, "handler"): (1, PASS["core"])},
         )
+
+
+# ── 17. A catch-all sits in one of the five places ──────────────────────────────────────────
+
+#: The functions whose catch-all is one of the five places and is not recognised by its shape, for
+#: good, and why: the stated exceptions and the guards around reporting (architecture.md, "A
+#: catch-all error handler"). A handler that re-raises, that calls `report_failure`, or that sits
+#: directly in the body of a loop needs no entry.
+CATCH_ALLS_ALLOWED = {
+    ("core/services/change_queue.py", "ChangeQueue._work_lane"):
+        "the lane's worker, a failure path: the error goes to the host's log and the worker pauses",
+    ("core/services/change_queue.py", "ChangeQueue._work"):
+        "the dispatcher, a failure path: a fault in starting the lanes goes to the host's log",
+    ("core/services/change_queue.py", "ChangeQueue._run_step"):
+        "the queue's catch of a step that raises, a failure path: it stops the lane or ends the job",
+    ("core/services/change_queue.py", "ChangeQueue._discard_follow_ons"):
+        "a stated exception: a hook that raises must not hold a Discard, the queue's last way past a stop",
+    ("core/services/change_queue.py", "ChangeQueue._undiscardable_refusal"):
+        "a stated exception: the Discard is refused all the same, whatever the reader does",
+    ("results/services/amend_end_changes.py", "_names_step.run"):
+        "a stated exception: a tie ordered by user id is the lesser fault than a round not put back",
+    ("core/utils/interaction_errors.py", "report_failure"):
+        "place 3, around reporting a failure, where the report itself might fail",
+    ("core/utils/log_lines.py", "refuse"):
+        "place 3, around telling the member of a refusal, which is still recorded",
+    ("core/utils/log_lines.py", "record_abandoned"):
+        "place 3, around recording that a confirmation ended",
+    ("core/services/output_router.py", "OutputRouter._tell"):
+        "place 3, around telling the member that the log channel failed, the router's own containment",
+    ("core/services/season_review_changes.py", "season_review_post_change.draw_and_post"):
+        "place 5, a picture that cannot be drawn is withheld and its fault is a line of the job",
+}
+
+
+def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
+    """The catch-all handlers among *nodes*, each ``(file, function, node)``, that are in none of
+    the five places, counted by file and function: a handler of `Exception`, `BaseException` or
+    nothing, that does not end by raising again, does not call `report_failure`, does not sit
+    directly in the body of a `for` or `async for`, and whose function is not in
+    `CATCH_ALLS_ALLOWED`."""
+    nodes = list(nodes)
+    in_a_loop = {
+        id(statement)
+        for _path, _function, node in nodes
+        if isinstance(node, (ast.For, ast.AsyncFor))
+        for statement in node.body
+    }
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in nodes:
+        if not isinstance(node, ast.Try) or id(node) in in_a_loop:
+            continue
+        for handler in node.handlers:
+            if not _is_broad(handler.type) or (path, function) in CATCH_ALLS_ALLOWED:
+                continue
+            if handler.body and isinstance(handler.body[-1], ast.Raise):
+                continue
+            if any(isinstance(call, ast.Call) and _call_name(call) == "report_failure"
+                   for call in ast.walk(handler)):
+                continue
+            found[(path, function)] += 1
+    return found
+
+
+#: Today's catch-alls in none of the five places, under the issue that removes each: a module's
+#: design pass for its own files, the pass of the module whose recovery the entry point's function
+#: carries, and the failure path of timed jobs, loops and background tasks. Some are a place the
+#: architecture does not yet state (a hook's catch in the change queue, a cosmetic step in the
+#: router): the design pass judges each, to a failure path or to a stated exception.
+KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
+    ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
+    ("__main__.py", "_recover_missed_check_in_calls"): (1, PASS["attendance"]),
+    ("__main__.py", "_recover_missed_cleanups"): (1, CLEANUPS),
+    ("__main__.py", "_recover_portrait_refresh_job"): (1, PASS["image"]),
+    ("__main__.py", "_recover_rsvp_views_and_deadlines"): (5, PASS["attendance"]),
+    ("__main__.py", "main.on_ready"): (2, PASS["core"]),
+    ("attendance/cogs/attendance_cog.py", "_record_failed"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "_round_grid"): (2, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "_seat_team_field"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "_sheet_attachment"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "enforce_attendance_sanctions"):
+        (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "_checkin_attachment"): (2, PASS["attendance"]),
+    ("core/cogs/bot_cog.py", "_clean_up"): (1, PASS["core"]),
+    ("core/cogs/bot_cog.py", "_reapply_hub_permissions"): (1, PASS["core"]),
+    ("core/cogs/driver_cog.py", "DriverCog.reassign"): (2, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._refresh_hub"): (1, PASS["core"]),
+    ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
+    ("core/cogs/season_cog.py", "SeasonCog._attendance_capacity_warning"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._build_image_review_section"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._calendar_capacity_warning"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._calendar_round_overflow"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._colour_shortfall_problems"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._image_configuration_faults"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._lineup_problems"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._portrait_configuration_blocker"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._portrait_review_lines"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._review_picture_gates"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._team_name_problems"): (1, PASS["core"]),
+    ("core/cogs/test_mode_cog.py", "TestModeCog.toggle"): (1, PASS["core"]),
+    ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
+    ("core/services/approval_checks.py", "channel_on_server"): (1, PASS["core"]),
+    ("core/services/calendar_post_service.py", "image_calendar_wanted"): (1, PASS["core"]),
+    ("core/services/calendar_post_service.py", "post_division_calendar"): (1, PASS["core"]),
+    ("core/services/calendar_post_service.py", "render_for_command"): (1, PASS["core"]),
+    ("core/services/change_queue.py", "ChangeQueue._acknowledge"): (1, PASS["core"]),
+    ("core/services/change_queue.py", "ChangeQueue._acknowledge_saved"): (2, PASS["core"]),
+    ("core/services/change_queue.py", "ChangeQueue._end_on_check_fault"): (1, PASS["core"]),
+    ("core/services/change_queue.py", "ChangeQueue._finish"): (2, PASS["core"]),
+    ("core/services/change_queue.py", "ChangeQueue._name_job"): (1, PASS["core"]),
+    ("core/services/change_queue.py", "ChangeQueue._post_notice"): (1, PASS["core"]),
+    ("core/services/change_queue.py", "ChangeQueue._refuse"): (1, PASS["core"]),
+    ("core/services/change_queue.py", "ChangeQueue._start"): (1, PASS["core"]),
+    ("core/services/change_queue.py", "ChangeQueue._step_failed"): (1, PASS["core"]),
+    ("core/services/change_queue.py", "ChangeQueue._tell"): (1, PASS["core"]),
+    ("core/services/change_queue.py", "ChangeQueue._tell_origin"): (1, PASS["core"]),
+    ("core/services/change_queue.py", "ChangeQueue._update_reply"): (1, PASS["core"]),
+    ("core/services/output_router.py", "OutputRouter._enqueue_if_configured"): (1, PASS["core"]),
+    ("core/services/output_router.py", "OutputRouter.strip_view"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._guard_image_capacity"):
+        (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._guard_reserve_capacity"):
+        (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._guard_sheet_capacity"):
+        (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._guard_standings_capacity"):
+        (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"):
+        (1, PASS["core"]),
+    ("core/services/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
+    ("core/services/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
+    ("core/services/scheduler_service.py", "SchedulerService._remove_job"): (1, PASS["core"]),
+    ("core/services/scheduler_service.py", "_amendment_sweep_job"): (1, BACKGROUND_FAILURES),
+    ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
+    ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
+    ("core/services/season_fingerprint_service.py", "take_fingerprint"): (1, PASS["core"]),
+    ("core/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"): (1, PASS["core"]),
+    ("core/utils/log_lines.py", "name_of_member"): (1, PASS["core"]),
+    ("core/utils/log_lines.py", "record_refusal"): (1, PASS["core"]),
+    ("image/cogs/image_cog.py", "ImageCog._division_autocomplete"): (1, PASS["image"]),
+    ("image/services/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),
+    ("image/services/driver_portrait_service.py", "portrait_aspect"): (1, PASS["image"]),
+    ("image/services/driver_portrait_service.py", "refresh_before_render"): (1, PASS["image"]),
+    ("image/services/driver_portrait_service.py", "refresh_portraits.fetch"): (1, PASS["image"]),
+    ("image/services/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
+    ("image/services/image_attendance_post.py", "attendance_enabled"): (1, PASS["image"]),
+    ("image/services/image_attendance_post.py", "render_sheet"): (1, PASS["image"]),
+    ("image/services/image_lineup_post.py", "_report"): (1, PASS["image"]),
+    ("image/services/image_lineup_post.py", "lineup_enabled"): (1, PASS["image"]),
+    ("image/services/image_lineup_post.py", "render_for_command"): (1, PASS["image"]),
+    ("image/services/image_lineup_post.py", "try_post"): (1, PASS["image"]),
+    ("image/services/image_preview_service.py", "build_rsvp_preview"): (1, PASS["image"]),
+    ("image/services/image_render_service.py", "ImageRenderService.render"): (3, PASS["image"]),
+    ("image/services/image_render_service.py", "ImageRenderService.report_notices"):
+        (1, PASS["image"]),
+    ("image/services/image_results_post.py", "_nationality_collected"): (1, PASS["image"]),
+    ("image/services/image_results_post.py", "report"): (1, PASS["image"]),
+    ("image/services/image_results_post.py", "report_notices"): (1, PASS["image"]),
+    ("image/services/image_results_post.py", "results_enabled"): (1, PASS["image"]),
+    ("image/services/image_results_post.py", "try_post"): (2, PASS["image"]),
+    ("image/services/image_rsvp_post.py", "rsvp_enabled"): (1, PASS["image"]),
+    ("image/services/image_rsvp_post.py", "try_attach"): (1, PASS["image"]),
+    ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
+    ("image/services/image_standings_post.py", "report"): (1, PASS["image"]),
+    ("image/services/image_standings_post.py", "report_notices"): (1, PASS["image"]),
+    ("image/services/image_standings_post.py", "standings_enabled"): (1, PASS["image"]),
+    ("image/services/image_standings_post.py", "try_post"): (1, PASS["image"]),
+    ("image/services/image_validity_service.py", "aspect_attaches_files"): (1, PASS["image"]),
+    ("image/services/image_verdict_banner_post.py", "banner_enabled"): (1, PASS["image"]),
+    ("image/services/image_verdict_banner_post.py", "render_banner"): (1, PASS["image"]),
+    ("image/services/image_verdict_banner_post.py", "try_post"): (2, PASS["image"]),
+    ("image/services/image_verdict_post.py", "_driver_nationality"): (1, PASS["image"]),
+    ("image/services/image_verdict_post.py", "_mention_names"): (1, PASS["image"]),
+    ("image/services/image_verdict_post.py", "_round_context"): (1, PASS["image"]),
+    ("image/services/image_verdict_post.py", "render_verdict"): (1, PASS["image"]),
+    ("image/services/image_verdict_post.py", "team_key_for_entry"): (1, PASS["image"]),
+    ("image/services/image_verdict_post.py", "team_name_for_entry"): (1, PASS["image"]),
+    ("image/services/image_verdict_post.py", "verdicts_enabled"): (1, PASS["image"]),
+    ("image/services/image_weather_post.py", "attach_forecast"): (1, PASS["image"]),
+    ("image/services/image_weather_post.py", "render_forecast"): (1, PASS["image"]),
+    ("image/services/image_weather_post.py", "weather_enabled"): (1, PASS["image"]),
+    ("image/utils/font_metrics.py", "_faces_of"): (3, PASS["image"]),
+    ("image/utils/font_metrics.py", "_families_of"): (4, PASS["image"]),
+    ("image/utils/font_metrics.py", "measure"): (1, PASS["image"]),
+    ("image/utils/svg_document.py", "_contained"): (2, PASS["image"]),
+    ("image/utils/svg_fill.py", "_mandatory_ids"): (1, PASS["image"]),
+    ("results/services/result_submission_service.py", "_ConfigSelectView._put_back"):
+        (1, PASS["results"]),
+    ("results/services/results_post_service.py", "produce_session_results"): (1, PASS["results"]),
+    ("results/services/results_post_service.py", "produce_standings"): (1, PASS["results"]),
+    ("results/services/review_recovery.py", "recover_review"): (1, PASS["results"]),
+    ("results/services/review_verdicts.py", "_sync_hint"): (1, PASS["results"]),
+    ("results/services/verdict_announcement_service.py", "_graphic_name"): (1, PASS["results"]),
+    ("results/services/verdict_announcement_service.py", "_send_verdict"): (1, PASS["results"]),
+    ("signup/cogs/signup_cog.py", "ConfirmCloseView.on_timeout"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.move_base_role_overwrite"):
+        (1, PASS["signup"]),
+    ("signup/services/signup_views.py", "_lapse_pending_reason"): (1, PASS["signup"]),
+    ("signup/services/signup_views.py", "_may_review_signup"): (1, PASS["signup"]),
+    ("signup/services/wizard_changes.py", "departed_placed_driver"): (1, PASS["signup"]),
+}
+
+
+def test_a_catch_all_handler_sits_in_one_of_the_five_places():
+    """A catch-all handler (`except Exception`) is allowed in five places only (architecture.md,
+    "A catch-all error handler"): on a failure path, where `report_failure` is called; around a
+    list worked item by item, where it sits directly in the loop's body; around reporting a
+    failure; around a clean-up that raises the error again; and around work a specification gives
+    a fallback for. The shape tells the first, second and fourth; the stated exceptions and the
+    guards of reporting are named for good in `CATCH_ALLS_ALLOWED`. Any other is a breach, listed
+    with the issue that will fix it."""
+    _check(
+        "a catch-all sits in one of the five places",
+        _catch_alls_outside_the_places_among(_nodes()),
+        KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES,
+    )
+
+
+def test_every_catch_all_allowed_for_good_still_exists():
+    """Each function named in `CATCH_ALLS_ALLOWED` still holds a catch-all, with its reason: a
+    rename cannot leave the exception pointing at nothing."""
+    held = {
+        (path, function)
+        for path, function, node in _nodes()
+        if isinstance(node, ast.ExceptHandler) and _is_broad(node.type)
+    }
+
+    assert set(CATCH_ALLS_ALLOWED) <= held
+    assert all(CATCH_ALLS_ALLOWED.values())
+
+
+_CATCH_ALL_SAMPLE = (
+    "async def handler(items, interaction):\n"
+    "    try:\n"
+    "        pass\n"
+    "    except Exception:\n"
+    "        log.warning('lost')\n"
+    "    try:\n"
+    "        pass\n"
+    "    except:\n"
+    "        log.warning('lost')\n"
+    "    try:\n"
+    "        pass\n"
+    "    except (ValueError, BaseException):\n"
+    "        log.warning('lost')\n"
+    "    try:\n"
+    "        pass\n"
+    "    except ValueError:\n"
+    "        log.warning('expected')\n"
+)
+
+
+def test_the_catch_all_check_counts_each_broad_handler_but_not_a_handler_of_a_named_error():
+    """A handler of `Exception`, of nothing, and of a tuple holding `BaseException` each count; a
+    handler of a named error does not."""
+    path = "core/services/sample_service.py"
+
+    assert _catch_alls_outside_the_places_among(_sample(_CATCH_ALL_SAMPLE, path)) == Counter(
+        {(path, "handler"): 3}
+    )
+
+
+def test_the_catch_all_check_passes_a_handler_in_each_of_the_places_its_shape_shows():
+    """A handler that ends by raising again, one that calls `report_failure`, and one directly in
+    a loop's body are in places; one whose `try` sits deeper than the loop's body (inside an `if`)
+    is not, nor is one that raises again only on one branch."""
+    path = "core/services/sample_service.py"
+    source = (
+        "async def handler(items, interaction):\n"
+        "    try:\n"
+        "        pass\n"
+        "    except Exception:\n"
+        "        cleanup()\n"
+        "        raise\n"
+        "    try:\n"
+        "        pass\n"
+        "    except Exception as exc:\n"
+        "        await report_failure(interaction, 'x', exc)\n"
+        "    for item in items:\n"
+        "        try:\n"
+        "            pass\n"
+        "        except Exception:\n"
+        "            log.exception('item')\n"
+        "    async for item in items:\n"
+        "        try:\n"
+        "            pass\n"
+        "        except Exception:\n"
+        "            log.exception('item')\n"
+        "    for item in items:\n"
+        "        if item:\n"
+        "            try:\n"
+        "                pass\n"
+        "            except Exception:\n"
+        "                log.exception('item')\n"
+        "    try:\n"
+        "        pass\n"
+        "    except Exception as exc:\n"
+        "        if exc:\n"
+        "            raise\n"
+    )
+
+    assert _catch_alls_outside_the_places_among(_sample(source, path)) == Counter({(path, "handler"): 2})
+
+
+def test_the_catch_all_check_passes_a_function_named_for_good():
+    """A function in `CATCH_ALLS_ALLOWED` may hold a catch-all that is in no place by its shape."""
+    path, function = "core/utils/interaction_errors.py", "report_failure"
+    source = f"async def {function}():\n    try:\n        pass\n    except Exception:\n        log.error('x')\n"
+
+    assert _catch_alls_outside_the_places_among(_sample(source, path)) == Counter()
+
+
+def test_a_listed_catch_all_that_is_gone_fails_the_check():
+    """A catch-all listed but no longer outside the places fails the rule, so its line is deleted
+    with it."""
+    path = "core/services/sample_service.py"
+    nodes = _sample("async def handler():\n    try:\n        pass\n    except ValueError:\n        pass\n", path)
+
+    with pytest.raises(AssertionError, match="Breaches fixed but still listed"):
+        _check(
+            "a catch-all sits in one of the five places",
+            _catch_alls_outside_the_places_among(nodes),
+            {(path, "handler"): (1, PASS["core"])},
+        )
