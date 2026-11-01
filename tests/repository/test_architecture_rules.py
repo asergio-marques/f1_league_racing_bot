@@ -2272,14 +2272,19 @@ def _module_of(path: str) -> str:
 
 
 #: The functions whose read of a core table names nothing but their module's own columns on it
-#: (`OWN_COLUMNS`) and the keys it joins on, allowed for good, and why: those columns are the
-#: module's alone, to read and to set (architecture.md, "The database"). A function that reads
-#: anything else on the table, or another table, is not here.
-READS_OF_OWN_COLUMNS = {
-    ("weather/services/draw_guard.py", "weather_enabled_on"):
+#: (`OWN_COLUMNS`) and the keys it joins on, allowed for good, each with the one table its
+#: allowance covers and why: those columns are the module's alone, to read and to set
+#: (architecture.md, "The database"). A function that reads anything else on the table is not
+#: here, and its read of any other table still counts.
+READS_OF_OWN_COLUMNS: dict[tuple[str, str], tuple[str, str]] = {
+    ("weather/services/draw_guard.py", "weather_enabled_on"): (
+        "server_configs",
         "reads `server_configs.weather_module_enabled`, the weather module's own column",
-    ("weather/services/forecast_channel.py", "set_division_forecast_channel"):
+    ),
+    ("weather/services/forecast_channel.py", "set_division_forecast_channel"): (
+        "divisions",
         "reads `divisions.forecast_channel_id`, the weather module's own column",
+    ),
 }
 
 
@@ -2289,7 +2294,7 @@ def _reads_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
     SQL. The entry point owns no table, so each table it reads counts. The scan sees tables, not
     columns, so a module's read of a core table it has columns of its own on (`OWN_COLUMNS`) is
     counted unless its function is named in `READS_OF_OWN_COLUMNS`; such a function is passed over
-    for those tables only, and a read of any other table in it still counts."""
+    for the one table its entry names, and a read of any other table in it still counts."""
     nodes = list(nodes)
     docstrings = _docstrings_among(nodes)
     found: Counter[tuple[str, str]] = Counter()
@@ -2297,12 +2302,13 @@ def _reads_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
         if not (isinstance(node, ast.Constant) and isinstance(node.value, str)) or id(node) in docstrings:
             continue
         module = _module_of(path)
-        passed_over = OWN_COLUMNS.get(module, {}) if (path, function) in READS_OF_OWN_COLUMNS else {}
+        allowed = READS_OF_OWN_COLUMNS.get((path, function))
+        passed_over = allowed[0] if allowed else None
         found[(path, function)] += sum(
             1
             for match in _READS.finditer(node.value)
             if not match.group("delete")
-            and match.group("table") not in passed_over
+            and match.group("table") != passed_over
             and TABLE_OWNER.get(match.group("table"), module) != module
         )
     return +found
@@ -2611,8 +2617,9 @@ def test_the_read_check_counts_a_table_named_after_from_or_join_that_the_file_s_
 
 
 def test_the_read_check_passes_a_function_that_reads_only_its_module_s_own_columns_on_a_core_table():
-    """A function named in `READS_OF_OWN_COLUMNS` is not counted; the same read in a function
-    not named is."""
+    """A function named in `READS_OF_OWN_COLUMNS` is not counted for its one table; the same read
+    in a function not named is, and so is the named function's read of any other table, even one
+    its module has columns of its own on."""
     path, function = next(iter(READS_OF_OWN_COLUMNS))
     source = f"async def {function}(db):\n    await db.execute('SELECT weather_module_enabled FROM server_configs')\n"
 
@@ -2624,24 +2631,33 @@ def test_the_read_check_passes_a_function_that_reads_only_its_module_s_own_colum
     also_another = source + "    await db.execute('SELECT current_state FROM driver_profiles')\n"
     assert _reads_outside_the_owner_among(_sample(also_another, path)) == Counter({(path, function): 1})
 
+    path, function = "weather/services/draw_guard.py", "weather_enabled_on"
+    source = (
+        f"async def {function}(db):\n"
+        "    await db.execute('SELECT weather_module_enabled FROM server_configs')\n"
+        "    await db.execute('SELECT name FROM rounds JOIN divisions d ON 1')\n"
+    )
+    assert _reads_outside_the_owner_among(_sample(source, path)) == Counter({(path, function): 2})
+
 
 def test_every_read_of_own_columns_allowed_for_good_still_reads_one():
-    """Each function in `READS_OF_OWN_COLUMNS` still reads a core table on which its module has
-    columns of its own (`OWN_COLUMNS`), with a reason: a rename cannot leave the exception
-    pointing at nothing."""
+    """Each function in `READS_OF_OWN_COLUMNS` still reads the core table its entry names, on
+    which its module has columns of its own (`OWN_COLUMNS`), with a reason: a rename cannot leave
+    the exception pointing at nothing."""
     docstrings = _docstrings_among(_nodes())
     held = set()
     for path, function, node in _nodes():
         if (path, function) not in READS_OF_OWN_COLUMNS or id(node) in docstrings:
             continue
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            own = OWN_COLUMNS.get(_module_of(path), {})
+            table = READS_OF_OWN_COLUMNS[(path, function)][0]
+            own = OWN_COLUMNS.get(_module_of(path), {}).get(table, ())
             for match in _READS.finditer(node.value):
-                if any(column in node.value for column in own.get(match.group("table"), ())):
+                if match.group("table") == table and any(column in node.value for column in own):
                     held.add((path, function))
 
     assert held == set(READS_OF_OWN_COLUMNS)
-    assert all(READS_OF_OWN_COLUMNS.values())
+    assert all(reason for _, reason in READS_OF_OWN_COLUMNS.values())
 
 
 def test_a_listed_read_that_is_gone_fails_the_read_check():
