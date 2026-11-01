@@ -1939,27 +1939,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
 }
 
 
-def test_every_table_has_an_owner():
-    """A table added to the schema is given its owner here, so the rule below covers it."""
-    assert set(TABLE_OWNER) == _declared_tables()
-
-
-def test_every_module_column_is_in_the_schema():
-    """A module's own column that the schema renamed or dropped would drop out of the rule below
-    without a word."""
-    schema = BASELINE.read_text(encoding="utf-8")
-    missing = sorted(
-        f"{table}.{column}"
-        for columns_of in OWN_COLUMNS.values()
-        for table, columns in columns_of.items()
-        for column in columns
-        if not re.search(
-            rf'CREATE TABLE "?{table}"?\s*\((?:[^;]*?)\b{column}\b', schema
-        )
-    )
-    assert missing == []
-
-
 def test_what_was_read_by_hand_is_still_what_it_was():
     """Each function read by hand is excused the statements that were read, and no more: one
     added since, or one gone, fails here until it is read again and the count set to match."""
@@ -3095,31 +3074,6 @@ def test_the_sql_clock_check_sees_each_way_of_reading_the_clock_and_leaves_a_doc
     assert _sql_clock_reads_among(_sample(source)) == Counter(
         {("core/services/sample_service.py", "handler"): 4}
     )
-
-
-def test_the_clock_default_scan_reads_each_column_that_defaults_to_the_clock():
-    """A column defaulting to the clock is named by its table and column, in either spelling and
-    wherever it sits in the text (its own line, after a leading comma, a one-line table); a default
-    that is not the clock is not."""
-    schema = (
-        'CREATE TABLE "a" (\n'
-        "    id INTEGER PRIMARY KEY,\n"
-        "    made TEXT NOT NULL DEFAULT (datetime('now')),\n"
-        "    kept TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
-        "    zero INTEGER NOT NULL DEFAULT 0\n"
-        ");\n"
-        "CREATE TABLE b (\n"
-        "    stamped TEXT DEFAULT (date('now'))\n"
-        ");\n"
-        "CREATE TABLE c (id INTEGER, made_at TEXT DEFAULT CURRENT_TIMESTAMP);\n"
-        "CREATE TABLE d (\n"
-        "    id INTEGER PRIMARY KEY, -- the key, used for joins\n"
-        "    note TEXT\n"
-        ", stamped_at TEXT NOT NULL DEFAULT (datetime('now')), n INTEGER NOT NULL DEFAULT 0\n"
-        ");\n"
-    )
-
-    assert _clock_defaults(schema) == ["a.made", "a.kept", "b.stamped", "c.made_at", "d.stamped_at"]
 
 
 @pytest.mark.parametrize(

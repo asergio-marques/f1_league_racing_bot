@@ -19,6 +19,13 @@ from pathlib import Path
 import pytest
 
 from leaguebot.core.db.database import run_migrations
+from tests.repository.test_architecture_rules import (
+    BASELINE,
+    OWN_COLUMNS,
+    TABLE_OWNER,
+    _clock_defaults,
+    _declared_tables,
+)
 
 LEAGUE = 2540
 
@@ -385,3 +392,52 @@ async def test_a_change_s_steps_go_with_it(db_path):
     db.commit()
     assert db.execute("SELECT COUNT(*) FROM queued_change_steps").fetchone() == (0,)
     db.close()
+
+
+# ── Which module owns each table, and the clock in the schema ─────────────────
+
+
+def test_every_table_has_an_owner():
+    """A table added to the schema is given its owner here, so the rule below covers it."""
+    assert set(TABLE_OWNER) == _declared_tables()
+
+
+def test_every_module_column_is_in_the_schema():
+    """A module's own column that the schema renamed or dropped would drop out of the rule below
+    without a word."""
+    schema = BASELINE.read_text(encoding="utf-8")
+    missing = sorted(
+        f"{table}.{column}"
+        for columns_of in OWN_COLUMNS.values()
+        for table, columns in columns_of.items()
+        for column in columns
+        if not re.search(
+            rf'CREATE TABLE "?{table}"?\s*\((?:[^;]*?)\b{column}\b', schema
+        )
+    )
+    assert missing == []
+
+
+def test_the_clock_default_scan_reads_each_column_that_defaults_to_the_clock():
+    """A column defaulting to the clock is named by its table and column, in either spelling and
+    wherever it sits in the text (its own line, after a leading comma, a one-line table); a default
+    that is not the clock is not."""
+    schema = (
+        'CREATE TABLE "a" (\n'
+        "    id INTEGER PRIMARY KEY,\n"
+        "    made TEXT NOT NULL DEFAULT (datetime('now')),\n"
+        "    kept TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
+        "    zero INTEGER NOT NULL DEFAULT 0\n"
+        ");\n"
+        "CREATE TABLE b (\n"
+        "    stamped TEXT DEFAULT (date('now'))\n"
+        ");\n"
+        "CREATE TABLE c (id INTEGER, made_at TEXT DEFAULT CURRENT_TIMESTAMP);\n"
+        "CREATE TABLE d (\n"
+        "    id INTEGER PRIMARY KEY, -- the key, used for joins\n"
+        "    note TEXT\n"
+        ", stamped_at TEXT NOT NULL DEFAULT (datetime('now')), n INTEGER NOT NULL DEFAULT 0\n"
+        ");\n"
+    )
+
+    assert _clock_defaults(schema) == ["a.made", "a.kept", "b.stamped", "c.made_at", "d.stamped_at"]
