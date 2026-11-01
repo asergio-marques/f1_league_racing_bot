@@ -15,6 +15,7 @@ unwrapped the way the other cog suites unwrap them.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -24,6 +25,7 @@ from leaguebot.core.cogs import test_mode_cog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.config_service import ConfigService
 from leaguebot.signup.services.signup_module_service import SignupModuleService
+from tests.support.scheduler import PausingScheduler
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 7272
@@ -218,6 +220,7 @@ def cog(db_path):
             signup_module_service=SignupModuleService(db_path),
             output_router=SimpleNamespace(post_log=AsyncMock()),
             change_queue=SimpleNamespace(ask=AsyncMock(return_value=1)),
+            scheduler_service=PausingScheduler(str(Path(db_path).with_name("scheduler.db"))),
         )
     )
 
