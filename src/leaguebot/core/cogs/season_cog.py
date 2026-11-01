@@ -4553,7 +4553,6 @@ class SeasonCog(commands.Cog):
             {
                 "name": d.name,
                 "role_id": d.role_id,
-                "channel_id": d.channel_id,
                 "tier": d.tier,
                 "rounds": d.rounds,
             }

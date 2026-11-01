@@ -1,9 +1,9 @@
 """Core's text helpers: the Discord timestamp and the listings core's messages share.
 
 A division list, a round list, a roster block and a fenced listing split across Discord's
-message limit are core's own wording, used by core's commands, by signup and by the
-weather module's and the entry point's callers alike.  They sit here, in core, so that no
-module reaches into another for them.
+message limit are core's own wording, used by core's commands and retry service, by signup's
+cog and by the entry point.  They sit here, in core, so that no module reaches into another for
+them.
 """
 
 from __future__ import annotations
