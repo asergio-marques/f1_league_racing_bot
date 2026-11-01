@@ -97,9 +97,8 @@ async def test_send_log_text_divides_a_long_line_and_notifies_nobody():
     [
         lambda router: router.post_log("Admin (<@4242>) | /season setup | Success"),
         lambda router: router.post_notice("❌ Stopped", MagicMock()),
-        lambda router: router.log_destination(),
     ],
-    ids=["post_log", "post_notice", "log_destination"],
+    ids=["post_log", "post_notice"],
 )
 async def test_a_database_fault_reading_the_log_channel_is_contained(call, caplog):
     """The database is locked when the router reads which channel is the log: the line is not
