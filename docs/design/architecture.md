@@ -1153,7 +1153,10 @@ later on its own.
   a connection of their own, opened with `sqlite3.connect` and never lent, are named for good.
 - **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
   **`tests/repository/test_import_roots.py`** check the one-league rule, the schema's own rules, and
-  that the bot is imported from one place: the installed package, never through `src`.
+  that the bot is imported from one place: the installed package, never through `src`. The schema's
+  checks, that every table has an owner, that every column a module keeps on a core table is in the
+  schema, and that no column's default is SQLite's clock, live in `test_schema_rules.py` and read
+  the schema the migrations build, not a migration file's text.
 
 How the checks run, and how to work with the lists of today's breaches they hold, is CLAUDE.md's,
 under "Testing".
