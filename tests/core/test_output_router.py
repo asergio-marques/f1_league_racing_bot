@@ -9,6 +9,8 @@ the league admins' role, which the router leaves bare and allows, and nothing el
 """
 from __future__ import annotations
 
+import logging
+import sqlite3
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -88,3 +90,28 @@ async def test_send_log_text_divides_a_long_line_and_notifies_nobody():
     assert [send.args[0] for send in sends] == chunk_message(content)
     for send in sends:
         assert send.kwargs["allowed_mentions"].to_dict() == discord.AllowedMentions.none().to_dict()
+
+
+@pytest.mark.xfail(strict=True, reason="#283: a failed read of the log channel raises")
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda router: router.post_log("Admin (<@4242>) | /season setup | Success"),
+        lambda router: router.post_notice("❌ Stopped", MagicMock()),
+        lambda router: router.log_destination(),
+    ],
+    ids=["post_log", "post_notice", "log_destination"],
+)
+async def test_a_database_fault_reading_the_log_channel_is_contained(call, caplog):
+    """The database is locked when the router reads which channel is the log: the line is not
+    posted and the call returns `None`, as for a line the channel refuses, and the fault goes to
+    the host's log with its traceback rather than to the caller."""
+    caplog.set_level(logging.ERROR)
+    router, channel = _router()
+    fault = sqlite3.OperationalError("database is locked")
+    router._config.get_server_config = AsyncMock(side_effect=fault)
+
+    assert await call(router) is None
+
+    channel.send.assert_not_awaited()
+    assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
