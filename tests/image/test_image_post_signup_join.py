@@ -186,8 +186,7 @@ class TestSignupRecordsJoin:
             )
             await db.execute(
                 "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-                "division_id, current_position, current_points, points_gap_to_first, "
-                "team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+                "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
                 (profile_id, season_id, division_id, seat_id),
             )
             await db.commit()

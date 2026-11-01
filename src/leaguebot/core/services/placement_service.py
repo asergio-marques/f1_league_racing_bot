@@ -1207,8 +1207,7 @@ class PlacementService:
             # scored there stay in that division's results, which is where they count.
             await db.execute(
                 "UPDATE driver_season_assignments "
-                "SET division_id = ?, team_seat_id = ?, current_position = 0, "
-                "    current_points = 0, points_gap_to_first = 0 "
+                "SET division_id = ?, team_seat_id = ? "
                 "WHERE id = ?",
                 (to_division_id, new_seat_id, source["id"]),
             )
@@ -1456,9 +1455,8 @@ class PlacementService:
             )
             cursor = await db.execute(
                 "INSERT INTO driver_season_assignments "
-                "(driver_profile_id, season_id, division_id, team_seat_id, "
-                " current_position, current_points, points_gap_to_first, committed) "
-                "VALUES (?, ?, ?, ?, 0, 0, 0, ?)",
+                "(driver_profile_id, season_id, division_id, team_seat_id, committed) "
+                "VALUES (?, ?, ?, ?, ?)",
                 (
                     driver_profile_id, season_id, division_id, seat_id,
                     None if committed is None else int(committed),

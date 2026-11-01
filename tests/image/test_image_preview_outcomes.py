@@ -119,8 +119,7 @@ async def league(db_path):
                 )
                 await db.execute(
                     "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-                    "division_id, current_position, current_points, points_gap_to_first, "
-                    "team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+                    "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
                     (profile_id, season_id, division_id, seat_id),
                 )
                 user_id += 1
@@ -532,8 +531,7 @@ class TestStandingsPreview:
             )["season_id"]
             await db.execute(
                 "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-                "division_id, current_position, current_points, points_gap_to_first, "
-                "team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+                "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
                 (profile_id, season_id, league, seat_id),
             )
             await db.commit()
@@ -605,8 +603,7 @@ class TestStandingsPreview:
                     )
                     await db.execute(
                         "INSERT INTO driver_season_assignments (driver_profile_id, "
-                        "season_id, division_id, current_position, current_points, "
-                        "points_gap_to_first, team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+                        "season_id, division_id, team_seat_id) VALUES (?, ?, ?, ?)",
                         (profile_id, season_id, league, seat_id),
                     )
                     user_id += 1
@@ -682,8 +679,7 @@ async def _seed_full_grid(db_path, division_id) -> None:
                 )
                 await db.execute(
                     "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-                    "division_id, current_position, current_points, points_gap_to_first, "
-                    "team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+                    "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
                     (profile_id, season_id, division_id, seat_id),
                 )
                 user_id += 1

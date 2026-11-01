@@ -1,4 +1,4 @@
-"""Team models: DefaultTeam, TeamInstance, TeamSeat, TeamRoleConfig dataclasses."""
+"""Team models: DefaultTeam, TeamInstance, TeamRoleConfig dataclasses."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -30,14 +30,6 @@ class TeamInstance:
     full_name: str
     max_seats: int  # -1 = unlimited
     is_reserve: bool
-
-
-@dataclass
-class TeamSeat:
-    id: int
-    team_instance_id: int
-    seat_number: int
-    driver_profile_id: int | None  # None = unassigned
 
 
 @dataclass

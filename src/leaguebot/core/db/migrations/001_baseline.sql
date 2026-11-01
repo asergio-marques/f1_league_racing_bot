@@ -71,10 +71,7 @@ CREATE TABLE driver_season_assignments (
     driver_profile_id    INTEGER NOT NULL REFERENCES driver_profiles(id),
     season_id            INTEGER NOT NULL REFERENCES seasons(id),
     division_id          INTEGER NOT NULL REFERENCES divisions(id),
-    current_position     INTEGER NOT NULL DEFAULT 0,
-    current_points       INTEGER NOT NULL DEFAULT 0,
-    points_gap_to_first  INTEGER NOT NULL DEFAULT 0
-, team_seat_id INTEGER REFERENCES team_seats(id), committed INTEGER);
+    team_seat_id INTEGER REFERENCES team_seats(id), committed INTEGER);
 
 -- team_instances
 CREATE TABLE team_instances (
