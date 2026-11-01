@@ -1132,9 +1132,8 @@ later on its own.
   that does not own it, a table read outside its owner (core's tables too; the scan sees tables, not
   columns, so a module's read of its own columns on a core table is named for good,
   `READS_OF_OWN_COLUMNS`), core reading a module's service on the bot (an attribute `LeagueBot`
-  types from a module's package, read from a file of core), SQLite's clock in a statement or a
-  column's default, a service reading the wall clock (the change queue's own default clock is the
-  one place allowed, `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that
+  types from a module's package, read from a file of core), SQLite's clock in a statement, a service reading the wall
+  clock (the change queue's own default clock is the one place allowed, `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that
   raises again, calls `report_failure` as a statement directly in its body, or sits directly in the
   body of a `for` loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the queue's
   failure paths, the stated exceptions, the guards around reporting and the fifth place's handlers),
