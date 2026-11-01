@@ -1154,6 +1154,4 @@ How the checks run, and how to work with the lists of today's breaches they hold
 under "Testing".
 
 Not every rule has its check yet. The rules about how things are built (the hooks, the one
-builder, start-up, the sweep) cannot be checked by reading the code until they exist. Until the
-schema's owners and its clock defaults are checked against the schema the migrations build, the
-owner map and the clock-default scan read the baseline's text.
+builder, start-up, the sweep) cannot be checked by reading the code until they exist.
