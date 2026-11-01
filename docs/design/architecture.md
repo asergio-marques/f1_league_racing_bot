@@ -1152,5 +1152,5 @@ under "Testing".
 
 Not every rule has its check yet. The rules about how things are built (the hooks, the one
 builder, start-up, the sweep) cannot be checked by reading the code until they exist. Until the
-schema's owners are checked against the schema the migrations build, the owner map reads the
-baseline's text.
+schema's owners and its clock defaults are checked against the schema the migrations build, the
+owner map and the clock-default scan read the baseline's text.
