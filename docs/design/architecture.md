@@ -1042,8 +1042,8 @@ to it would switch off the one failure path for every command.
    failure, once. The callback a change type may give for a Discard of a change before it started
    (`ChangeType.on_discarded`) is not a failure path but a stated exception: the catch-all around
    it (`ChangeQueue._discard_follow_ons`) puts the error in the host's log alone, with no line to
-   the log channel, and asks no follow-on, because a Discard is the queue's last way past a stop and a callback that raises must not hold
-   it; the reader that says what dropping an undiscardable job would leave
+   the log channel, and asks no follow-on, because a Discard is the queue's last way past a stop
+   and a callback that raises must not hold it; the reader that says what dropping an undiscardable job would leave
    (`ChangeQueue._undiscardable_refusal`) is a stated exception likewise: its catch-all puts the
    error in the host's log with the full details, and the Discard is refused all the same, naming
    the job in place of the reason, its refusal recorded in the log channel as any refused press is,

@@ -21,8 +21,8 @@ _MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "migrations")
 #:
 #: Sized for the longest *legitimate* write, not for Discord. Several commands hold the
 #: write lock for the length of a whole transaction — the factory reset among them — and a
-#: timeout shorter than the longest of those would turn a slow admin command into a failed one, which is a worse fault than
-#: the one being fixed. Callers that genuinely cannot wait ask for less; see
+#: timeout shorter than the longest of those would turn a slow admin command into a failed one,
+#: which is a worse fault than the one being fixed. Callers that genuinely cannot wait ask for less; see
 #: `AUTOCOMPLETE_TIMEOUT_SECONDS`.
 #:
 #: This is passed to `aiosqlite.connect` rather than issued as a PRAGMA: it is a

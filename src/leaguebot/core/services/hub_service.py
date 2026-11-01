@@ -266,11 +266,12 @@ async def refresh_panel(
     """Bring the panel in line with what is offered now: the body of the `hub.refresh` job.
 
     Edits the panel where it stands; posts it where there is none or it has been deleted (both
-    through the standing-post handler, notifying nobody), and
-    gives back `{"new": <id>, "channel_id": <id>}` for the job's record to save where it posted, and
+    through the standing-post handler, notifying nobody), and gives back
+    `{"new": <id>, "channel_id": <id>}` for the job's record to save where it posted, and
     `{"edited": <id>, "channel_id": <id>}`, which saves nothing, where it edited. Gives None only
-    where no hub channel is set. The panel's buttons are handed *queue*, and the channel is read through *config_service*. *kept* is what the job's
-    last try posted and could not record, removed before the panel is posted again.
+    where no hub channel is set. The panel's buttons are handed *queue*, and the channel is read
+    through *config_service*. *kept* is what the job's last try posted and could not record,
+    removed before the panel is posted again.
 
     Raises `StepFailedOnDiscord`, naming `/bot hub-channel`, where the channel set is no longer in
     the server, and where Discord refuses the edit or the post; `GuildUnavailable` where the
@@ -324,9 +325,10 @@ def hub_refresh_change(queue: ChangeQueue, config_service: ConfigService) -> Cha
     refreshed as a change of its own, after the steps of the change that asked for it. The payload's
     ``command`` names what caused it. A hub not set is not due. The panel is refreshed by one job,
     `refresh_panel`, which a refusal stops the queue at; *queue* is handed to the panel's buttons
-    and *config_service* is what reads the hub channel. A hub that has moved names the panel it left, ``old_channel_id`` and ``old_message_id``: the old
-    panel is deleted by a job of its own after the new is posted, by the shared delete step, so
-    that the league is never left without one and a refused deletion stops the queue.
+    and *config_service* is what reads the hub channel. A hub that has moved names the panel it
+    left, ``old_channel_id`` and ``old_message_id``: the old panel is deleted by a job of its own
+    after the new is posted, by the shared delete step, so that the league is never left without
+    one and a refused deletion stops the queue.
     Not repeatable: a refresh asked for a second time before the first starts is dropped, since the
     first will draw the panel as it stands then.
     """
