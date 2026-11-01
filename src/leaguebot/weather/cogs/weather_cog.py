@@ -20,6 +20,7 @@ from leaguebot.core.utils.channel_guard import league_manager_only, changes_noth
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import refuse
+from leaguebot.weather.services.forecast_channel import set_division_forecast_channel
 from leaguebot.weather.services.weather_settings import DEADLINE
 
 log = logging.getLogger(__name__)
@@ -212,7 +213,9 @@ class WeatherCog(commands.Cog):
             await refuse(interaction, refused, what=describe(interaction))
             return
 
-        old_id = await self.bot.season_service.set_division_forecast_channel(div.id, channel.id)
+        old_id = await set_division_forecast_channel(
+            self.bot.db_path, div.id, channel.id
+        )
         await audit_service.record_change(
             self.bot.db_path,
             actor_id=interaction.user.id,

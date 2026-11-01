@@ -27,6 +27,7 @@ that the refusal is the same whether the command or the change's check gives it.
 """
 from __future__ import annotations
 
+from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -422,13 +423,14 @@ async def test_the_bulk_amend_modal_is_not_shown_in_pending_completion(tmp_path)
 # The three things that stay open
 # ---------------------------------------------------------------------------
 
-#: Each module channel command, the service holding the setter it reaches, and that setter.
+#: Each module channel command, the service holding the setter it reaches, and that setter. A
+#: setter that is a function of its cog's own module (weather's and results') names no service.
 #: The cog is named with each so that the command can follow its code to another one.
 MODULE_CHANNEL_COMMANDS = {
-    "weather": (WeatherCog, "channel", "season_service", "set_division_forecast_channel"),
-    "results": (ResultsCog, "channel_results", "season_service", "set_division_results_channel"),
-    "standings": (ResultsCog, "channel_standings", "season_service", "set_division_standings_channel"),
-    "verdicts": (ResultsCog, "channel_verdicts", "season_service", "set_division_penalty_channel"),
+    "weather": (WeatherCog, "channel", None, "set_division_forecast_channel"),
+    "results": (ResultsCog, "channel_results", None, "set_division_results_channel"),
+    "standings": (ResultsCog, "channel_standings", None, "set_division_standings_channel"),
+    "verdicts": (ResultsCog, "channel_verdicts", None, "set_division_penalty_channel"),
     "rsvp": (AttendanceCog, "channel_rsvp", "attendance_service", "set_rsvp_channel"),
     "attendance": (AttendanceCog, "channel_attendance", "attendance_service", "set_attendance_channel"),
 }
@@ -447,14 +449,19 @@ async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_pa
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.attendance_service = MagicMock()
     bot.attendance_service.get_division_config = AsyncMock(return_value=None)
-    setattr(getattr(bot, service), setter, AsyncMock(return_value=None))
+    stub = AsyncMock(return_value=None)
+    if service is None:
+        stub_setter = patch(f"{cog_class.__module__}.{setter}", new=stub)
+    else:
+        setattr(getattr(bot, service), setter, stub)
+        stub_setter = nullcontext()
     cog = _cog(cog_class, bot)
     interaction = _interaction()
     channel = MagicMock(id=808, mention="<#808>")
     channel.name = which
     channel.permissions_for = MagicMock(return_value=SimpleNamespace(send_messages=True))
 
-    with patch(
+    with stub_setter, patch(
         "leaguebot.core.services.channel_registry_service.find_channel_use", new=AsyncMock(return_value=None)
     ):
         await undecorate(getattr(cog_class, command))(cog, interaction, "Pro", channel)
@@ -462,7 +469,7 @@ async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_pa
     said = _said(interaction)
     assert "✅" in said, said
     assert "❌" not in said, said
-    getattr(getattr(bot, service), setter).assert_awaited_once()
+    stub.assert_awaited_once()
 
 
 async def test_results_rounds_amend_is_not_turned_away_by_the_stage(tmp_path):

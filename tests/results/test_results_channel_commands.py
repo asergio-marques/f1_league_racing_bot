@@ -78,6 +78,19 @@ def _division():
     return SimpleNamespace(id=DIVISION_ID, name="Division 1", tier=1)
 
 
+@pytest.fixture(autouse=True)
+def setters(monkeypatch):
+    """The three setters the commands call, replaced by name: each records its call and gives
+    back no old channel."""
+    from leaguebot.results.cogs import results_cog
+
+    replaced = {}
+    for name in ("set_division_results_channel", "set_division_standings_channel", "set_division_penalty_channel"):
+        replaced[name] = AsyncMock(return_value=None)
+        monkeypatch.setattr(results_cog, name, replaced[name])
+    return replaced
+
+
 def _make_cog(
     db_path: str,
     *,
@@ -91,9 +104,6 @@ def _make_cog(
     bot.season_service = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(return_value=[_division()])
-    bot.season_service.set_division_results_channel = AsyncMock(return_value=None)
-    bot.season_service.set_division_standings_channel = AsyncMock(return_value=None)
-    bot.season_service.set_division_penalty_channel = AsyncMock(return_value=None)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
@@ -208,7 +218,7 @@ async def test_an_unknown_division_is_refused_by_name(tmp_path, monkeypatch):
     assert "not found" in _replied(interaction)
 
 
-async def test_a_division_is_matched_regardless_of_case(tmp_path, monkeypatch):
+async def test_a_division_is_matched_regardless_of_case(tmp_path, monkeypatch, setters):
     """A manager typing `division 1` means the same division."""
     _free(monkeypatch)
     db_path = await _make_db(tmp_path)
@@ -217,7 +227,7 @@ async def test_a_division_is_matched_regardless_of_case(tmp_path, monkeypatch):
 
     await cog._set_division_channel(interaction, "dIvIsIoN 1", _channel(), "results")
 
-    cog.bot.season_service.set_division_results_channel.assert_awaited_once()
+    setters["set_division_results_channel"].assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +235,7 @@ async def test_a_division_is_matched_regardless_of_case(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_channel_doing_another_job_is_refused_as_a_clash(tmp_path, monkeypatch):
+async def test_a_channel_doing_another_job_is_refused_as_a_clash(tmp_path, monkeypatch, setters):
     """Two settings sharing one channel interleave two kinds of posting, and the posting
     paths that edit or delete their last message would delete each other's."""
     _in_use(monkeypatch, ChannelUse("standings", "Division 1"))
@@ -235,11 +245,11 @@ async def test_a_channel_doing_another_job_is_refused_as_a_clash(tmp_path, monke
 
     await cog._set_division_channel(interaction, "Division 1", _channel(), "results")
 
-    cog.bot.season_service.set_division_results_channel.assert_not_awaited()
+    setters["set_division_results_channel"].assert_not_awaited()
     assert _replied(interaction) != ""
 
 
-async def test_re_setting_the_same_channel_is_refused_as_unchanged(tmp_path, monkeypatch):
+async def test_re_setting_the_same_channel_is_refused_as_unchanged(tmp_path, monkeypatch, setters):
     """Not a collision with something else. Telling a manager it clashes would send them
     looking for a conflict that does not exist."""
     _in_use(monkeypatch, ChannelUse("results", "Division 1"))
@@ -249,7 +259,7 @@ async def test_re_setting_the_same_channel_is_refused_as_unchanged(tmp_path, mon
 
     await cog._set_division_channel(interaction, "Division 1", _channel(), "results")
 
-    cog.bot.season_service.set_division_results_channel.assert_not_awaited()
+    setters["set_division_results_channel"].assert_not_awaited()
 
 
 async def test_the_two_refusals_do_not_read_alike(tmp_path, monkeypatch):
@@ -291,14 +301,14 @@ async def test_a_refused_assignment_writes_nothing(tmp_path, monkeypatch):
         ("standings", "set_division_standings_channel"),
     ],
 )
-async def test_moving_a_channel_says_it_was_updated(tmp_path, monkeypatch, channel_type, setter):
+async def test_moving_a_channel_says_it_was_updated(tmp_path, monkeypatch, channel_type, setter, setters):
     """A manager who meant a fresh assignment and is told it was *updated* has moved an
     existing one — worth noticing before the next post lands somewhere else. These two
     always said "set to" (issue #212)."""
     _free(monkeypatch)
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
-    getattr(cog.bot.season_service, setter).return_value = 111
+    setters[setter].return_value = 111
     interaction = _interaction()
 
     await cog._set_division_channel(interaction, "Division 1", _channel(), channel_type)
@@ -319,7 +329,7 @@ async def test_moving_a_channel_says_it_was_updated(tmp_path, monkeypatch, chann
     ],
 )
 async def test_each_channel_type_writes_its_own_column(
-    tmp_path, monkeypatch, channel_type, setter, label
+    tmp_path, monkeypatch, channel_type, setter, label, setters
 ):
     """Two near-identical branches. One calling the wrong setter would point a
     division's results at its standings channel, and only this would object."""
@@ -330,7 +340,7 @@ async def test_each_channel_type_writes_its_own_column(
 
     await cog._set_division_channel(interaction, "Division 1", _channel(), channel_type)
 
-    getattr(cog.bot.season_service, setter).assert_awaited_once()
+    setters[setter].assert_awaited_once()
     assert label in _replied(interaction)
     assert "set to" in _replied(interaction)
 
@@ -354,13 +364,13 @@ async def test_each_assignment_is_audited_against_its_division(
     assert json.loads(entry["new_value"])["channel_id"] == CHANNEL_ID
 
 
-async def test_the_audit_records_the_channel_being_replaced(tmp_path, monkeypatch):
+async def test_the_audit_records_the_channel_being_replaced(tmp_path, monkeypatch, setters):
     """A manager re-pointing a division's results needs the old channel recoverable from
     the log; without it there is no way back to what it was."""
     _free(monkeypatch)
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
-    cog.bot.season_service.set_division_results_channel = AsyncMock(return_value=660000)
+    setters["set_division_results_channel"].return_value = 660000
 
     await cog._set_division_channel(_interaction(), "Division 1", _channel(), "results")
 
@@ -446,19 +456,19 @@ async def test_the_verdicts_channel_outside_a_guild_is_refused(tmp_path, monkeyp
     assert "Cannot access that channel" in _replied(interaction)
 
 
-async def test_the_verdicts_division_is_matched_regardless_of_case(tmp_path, monkeypatch):
+async def test_the_verdicts_division_is_matched_regardless_of_case(tmp_path, monkeypatch, setters):
     _free(monkeypatch)
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
 
     await _verdicts(cog, _interaction(), name="dIvIsIoN 1")
 
-    cog.bot.season_service.set_division_penalty_channel.assert_awaited_once_with(
-        DIVISION_ID, CHANNEL_ID
+    setters["set_division_penalty_channel"].assert_awaited_once_with(
+        db_path, DIVISION_ID, CHANNEL_ID
     )
 
 
-async def test_a_verdicts_channel_already_doing_another_job_is_refused(tmp_path, monkeypatch):
+async def test_a_verdicts_channel_already_doing_another_job_is_refused(tmp_path, monkeypatch, setters):
     """The check runs before the write, and follows up, the command having deferred."""
     _in_use(monkeypatch, ChannelUse("results", "Division 2"))
     db_path = await _make_db(tmp_path)
@@ -469,7 +479,7 @@ async def test_a_verdicts_channel_already_doing_another_job_is_refused(tmp_path,
 
     assert "#verdicts is already the results channel for **Division 2**" in _replied(interaction)
     interaction.response.send_message.assert_not_awaited()
-    cog.bot.season_service.set_division_penalty_channel.assert_not_awaited()
+    setters["set_division_penalty_channel"].assert_not_awaited()
     assert await _audit(db_path) == []
 
 
@@ -492,13 +502,13 @@ async def test_the_verdicts_channel_is_set_and_audited(tmp_path, monkeypatch):
     assert json.loads(entry["new_value"]) == {"channel_id": CHANNEL_ID}
 
 
-async def test_moving_the_verdicts_channel_says_it_was_updated(tmp_path, monkeypatch):
+async def test_moving_the_verdicts_channel_says_it_was_updated(tmp_path, monkeypatch, setters):
     """And records the channel it replaced, which is what makes the audit answer "where were
     the verdicts going before?"."""
     _free(monkeypatch)
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
-    cog.bot.season_service.set_division_penalty_channel = AsyncMock(return_value=111)
+    setters["set_division_penalty_channel"].return_value = 111
     interaction = _interaction()
 
     await _verdicts(cog, interaction)
@@ -584,7 +594,7 @@ def _channel_refusals(setting: str, unknown: str):
         ),
     ],
 )
-async def test_every_channel_refusal_is_recorded(tmp_path, monkeypatch, command, reply, setup):
+async def test_every_channel_refusal_is_recorded(tmp_path, monkeypatch, command, reply, setup, setters):
     """The manager runs `/results channel results`, `standings` or `verdicts` for Division 1
     and is turned away: the module is off, no season is live, the division is not in the
     season, the channel already does another job or already does this one, or (verdicts) the
@@ -624,9 +634,9 @@ async def test_every_channel_refusal_is_recorded(tmp_path, monkeypatch, command,
     )
     assert await _audit(db_path) == []
     season_service = cog.bot.season_service
-    season_service.set_division_results_channel.assert_not_awaited()
-    season_service.set_division_standings_channel.assert_not_awaited()
-    season_service.set_division_penalty_channel.assert_not_awaited()
+    setters["set_division_results_channel"].assert_not_awaited()
+    setters["set_division_standings_channel"].assert_not_awaited()
+    setters["set_division_penalty_channel"].assert_not_awaited()
     if setup.get("results_off") or setup.get("may_post") is False:
         season_service.get_setup_or_active_season.assert_not_awaited()
     if setup.get("results_off"):

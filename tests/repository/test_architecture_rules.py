@@ -1864,10 +1864,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/services/season_service.py", "SeasonService.delete_round"): (2, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_season"): (15, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.duplicate_division"): (2, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.set_division_forecast_channel"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.set_division_penalty_channel"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.set_division_results_channel"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.set_division_standings_channel"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.sync_pending_config"): (1, PASS["core"]),
     ("core/services/season_service.py", "_sync_division_rounds"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_ensure_single_config"): (4, PASS["core"]),
@@ -2071,10 +2067,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/season_service.py", "SeasonService.duplicate_division"): (2, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.rename_division"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.renumber_rounds"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.set_division_forecast_channel"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.set_division_penalty_channel"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.set_division_results_channel"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.set_division_standings_channel"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.set_stage"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.sync_pending_config"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.add_default_team"): (1, PASS["core"]),
@@ -2099,6 +2091,9 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # Signup's pass
+    ("results/services/division_channels.py", "set_division_penalty_channel"): (1, PASS["results"]),
+    ("results/services/division_channels.py", "set_division_results_channel"): (1, PASS["results"]),
+    ("results/services/division_channels.py", "set_division_standings_channel"): (1, PASS["results"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
@@ -2118,6 +2113,7 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/driver_portrait_service.py", "_disown"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "_record"): (1, PASS["image"]),
     ("image/services/image_config_service.py", "ImageConfigService.create_with_defaults"): (1, PASS["image"]),
+    ("weather/services/forecast_channel.py", "set_division_forecast_channel"): (1, PASS["weather"]),
 }
 
 
@@ -2288,6 +2284,8 @@ def _module_of(path: str) -> str:
 READS_OF_OWN_COLUMNS = {
     ("weather/services/draw_guard.py", "weather_enabled_on"):
         "reads `server_configs.weather_module_enabled`, the weather module's own column",
+    ("weather/services/forecast_channel.py", "set_division_forecast_channel"):
+        "reads `divisions.forecast_channel_id`, the weather module's own column",
 }
 
 
@@ -2404,12 +2402,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/season_fingerprint_service.py", "take_fingerprint"): (21, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_season"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.get_divisions_with_results_config"):
-        (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.set_division_penalty_channel"):
-        (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.set_division_results_channel"):
-        (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.set_division_standings_channel"):
         (1, PASS["core"]),
     ("core/services/test_mode_service.py", "build_review_summary"): (5, PASS["core"]),
     ("core/services/test_mode_service.py", "get_next_pending_phase"): (5, PASS["core"]),

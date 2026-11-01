@@ -33,6 +33,11 @@ from leaguebot.results.services.points_settings import (
     RESERVES,
 )
 from leaguebot.results.services.points_config_service import ConfigNotFoundError
+from leaguebot.results.services.division_channels import (
+    set_division_penalty_channel,
+    set_division_results_channel,
+    set_division_standings_channel,
+)
 from leaguebot.results.services.results_post_service import reserves_in_standings
 from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import channel_refusal
@@ -1885,10 +1890,10 @@ class ResultsCog(commands.Cog):
             return
 
         if channel_type == "results":
-            old_id = await self.bot.season_service.set_division_results_channel(div.id, channel.id)
+            old_id = await set_division_results_channel(self.bot.db_path, div.id, channel.id)
             type_label = "Results"
         else:
-            old_id = await self.bot.season_service.set_division_standings_channel(div.id, channel.id)
+            old_id = await set_division_standings_channel(self.bot.db_path, div.id, channel.id)
             type_label = "Standings"
 
         await audit_service.record_change(
@@ -2019,7 +2024,7 @@ class ResultsCog(commands.Cog):
             await refuse(interaction, refused, what=describe(interaction))
             return
 
-        old_id = await self.bot.season_service.set_division_penalty_channel(div.id, channel.id)
+        old_id = await set_division_penalty_channel(self.bot.db_path, div.id, channel.id)
 
         await audit_service.record_change(
             self.bot.db_path,

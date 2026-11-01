@@ -19,6 +19,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.season_service import SeasonService
+from leaguebot.weather.services.forecast_channel import set_division_forecast_channel
 
 START = date(2026, 1, 1)
 BASE = datetime(2026, 3, 1, 18, 0, tzinfo=timezone.utc)
@@ -297,7 +298,7 @@ async def test_a_division_already_in_the_db_is_never_written(db_path):
     the next `/round add`. The sync leaves the row as the DB holds it, whatever the config says.
     """
     svc, season_id, divisions, (pro_id, _) = await _two_division_season(db_path)
-    await svc.set_division_forecast_channel(pro_id, 4242)
+    await set_division_forecast_channel(db_path, pro_id, 4242)
 
     divisions[0]["rounds"].append(_round(4))
     divisions[0]["channel_id"] = None
