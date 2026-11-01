@@ -90,7 +90,12 @@ async def test_the_idle_connections_are_closed_on_one_loop_for_the_whole_run(
     assert second._thread.is_alive(), "precondition: the connection is kept idle to be lent again"
 
     close_lent_connections()
-    close_lent_connections()
+    for idle in (first, second):
+        idle._thread.join(timeout=5)  # aiosqlite answers the close before its thread exits
+        assert not idle._thread.is_alive()
 
-    assert not first._thread.is_alive()
-    assert not second._thread.is_alive()
+    def handed_over(*_args, **_kwargs):
+        raise AssertionError("the closing was handed to its loop with nothing idle")
+
+    monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", handed_over)
+    close_lent_connections()

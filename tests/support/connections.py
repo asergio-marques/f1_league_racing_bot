@@ -50,12 +50,13 @@ def close_lent_connections() -> None:
     """Close every connection the bot keeps idle to lend again, and wait for their threads.
 
     Nothing is imported where nothing has imported the database module, and nothing is done
-    where it keeps no connections and is closing none.
+    where it keeps no connection idle. A minute is long enough for any closing; past it, the loop
+    has died, and that is raised rather than waited on by every hook to come.
     """
     database = sys.modules.get("leaguebot.core.db.database")
     close = getattr(database, "close_connections", None)
     if close is None:
         return
-    if not any(database._idle.values()) and not database._closing:
+    if not any(database._idle.values()):
         return
-    asyncio.run_coroutine_threadsafe(close(), _closing_loop()).result()
+    asyncio.run_coroutine_threadsafe(close(), _closing_loop()).result(timeout=60)
