@@ -2792,16 +2792,22 @@ WALL_CLOCK_ALLOWED = {
 
 
 def _clock_defaults(schema: str) -> list[str]:
-    """Each ``table.column`` of the schema text *schema* whose default is SQLite's clock."""
+    """Each ``table.column`` of the schema text *schema* whose default is SQLite's clock.
+
+    Read over the whole text, not line by line, so a column that follows a comma, or shares its line
+    with others, or sits in a one-line ``CREATE TABLE``, is found as one on its own line is. A match
+    belongs to the nearest ``CREATE TABLE`` before it, and to the column word that last opens a
+    definition (after a comma or the opening bracket) before it. Comments are dropped first: their
+    prose has commas of its own."""
+    schema = re.sub(r"--[^\n]*", "", schema)
+    tables = list(re.finditer(r'CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z_][a-z0-9_]*)"?', schema, re.IGNORECASE))
+    columns = list(re.finditer(r'[,(]\s*"?([a-z_][a-z0-9_]*)"?\s+[A-Za-z]', schema, re.IGNORECASE))
     found = []
-    table = ""
-    for line in schema.splitlines():
-        created = re.match(r'\s*CREATE TABLE\s+"?([a-z_][a-z0-9_]*)"?', line, re.IGNORECASE)
-        if created:
-            table = created.group(1)
-        column = re.match(r'\s+"?([a-z_][a-z0-9_]*)"?\s+[A-Z]', line)
-        if column and _CLOCK_DEFAULT.search(line):
-            found.append(f"{table}.{column.group(1)}")
+    for default in _CLOCK_DEFAULT.finditer(schema):
+        table = [t for t in tables if t.start() < default.start()][-1:]
+        column = [c for c in columns if c.start() < default.start()][-1:]
+        if table and column:
+            found.append(f"{table[0].group(1)}.{column[0].group(1)}")
     return found
 
 
@@ -2981,8 +2987,9 @@ def test_the_sql_clock_check_sees_each_way_of_reading_the_clock_and_leaves_a_doc
 
 
 def test_the_clock_default_scan_reads_each_column_that_defaults_to_the_clock():
-    """A column defaulting to the clock is named by its table and column, in either spelling; a
-    default that is not the clock is not."""
+    """A column defaulting to the clock is named by its table and column, in either spelling and
+    wherever it sits in the text (its own line, after a leading comma, a one-line table); a default
+    that is not the clock is not."""
     schema = (
         'CREATE TABLE "a" (\n'
         "    id INTEGER PRIMARY KEY,\n"
@@ -2993,9 +3000,15 @@ def test_the_clock_default_scan_reads_each_column_that_defaults_to_the_clock():
         "CREATE TABLE b (\n"
         "    stamped TEXT DEFAULT (date('now'))\n"
         ");\n"
+        "CREATE TABLE c (id INTEGER, made_at TEXT DEFAULT CURRENT_TIMESTAMP);\n"
+        "CREATE TABLE d (\n"
+        "    id INTEGER PRIMARY KEY, -- the key, used for joins\n"
+        "    note TEXT\n"
+        ", stamped_at TEXT NOT NULL DEFAULT (datetime('now')), n INTEGER NOT NULL DEFAULT 0\n"
+        ");\n"
     )
 
-    assert _clock_defaults(schema) == ["a.made", "a.kept", "b.stamped"]
+    assert _clock_defaults(schema) == ["a.made", "a.kept", "b.stamped", "c.made_at", "d.stamped_at"]
 
 
 @pytest.mark.parametrize(
