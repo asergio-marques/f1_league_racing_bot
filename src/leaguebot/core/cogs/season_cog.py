@@ -105,7 +105,7 @@ from leaguebot.core.utils.channel_guard import (
     changes_nothing,
 )
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
-from leaguebot.weather.utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
+from leaguebot.core.utils.formatting import discord_ts, format_division_list, format_round_list, format_roster_block
 from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse

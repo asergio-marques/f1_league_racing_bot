@@ -400,13 +400,14 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     )
     from leaguebot.core.models.change import PlannedStep
     from leaguebot.core.services.round_amend_change import AmendHooks
+    from leaguebot.core.utils.formatting import format_round_list
     from leaguebot.weather.services import phase_withdrawal
     from leaguebot.weather.services.forecast_changes import (
         DRAW_FORECAST,
         forecast_failure,
         forecast_steps,
     )
-    from leaguebot.weather.utils.message_builder import format_round_list, invalidation_message
+    from leaguebot.weather.utils.message_builder import invalidation_message
 
     async def windows() -> "tuple[AttendanceWindows | None, WeatherWindows]":
         return await bot.amendment_windows()

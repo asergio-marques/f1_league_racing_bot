@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.weather.utils.message_builder import DISCORD_MESSAGE_LIMIT, paginate_fenced
+from leaguebot.core.utils.formatting import DISCORD_MESSAGE_LIMIT, paginate_fenced
 
 HEADER = "**Fake Driver Roster — Challenger**"
 FOOTER = (

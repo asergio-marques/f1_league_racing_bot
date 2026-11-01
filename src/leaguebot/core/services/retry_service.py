@@ -40,7 +40,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.pending_message import PendingMessage
-from leaguebot.weather.utils.message_builder import discord_ts
+from leaguebot.core.utils.formatting import discord_ts
 
 if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot

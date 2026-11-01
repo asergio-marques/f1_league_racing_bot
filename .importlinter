@@ -139,12 +139,8 @@ ignore_imports =
     leaguebot.core.services.in_memory_state -> leaguebot.signup.services.signup_views
     leaguebot.core.cogs.module_cog -> leaguebot.signup.models.signup_module
     leaguebot.core.services.placement_service -> leaguebot.signup.models.signup_module
-    # #283: weather, and core's own formatting helpers, which still sit in weather's
-    # message builder:
+    # #283: weather:
     leaguebot.core.cogs.season_cog -> leaguebot.weather.services.weather_config_service
-    leaguebot.core.cogs.season_cog -> leaguebot.weather.utils.message_builder
-    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.utils.message_builder
-    leaguebot.core.services.retry_service -> leaguebot.weather.utils.message_builder
     # #284: the points amendment in the amendment service is results' code, to move there.
     leaguebot.core.services.amendment_service -> leaguebot.attendance.services.attendance_service
     leaguebot.core.services.amendment_service -> leaguebot.results.services.results_post_service
@@ -187,8 +183,6 @@ forbidden_modules =
     leaguebot.weather
 allow_indirect_imports = True
 ignore_imports =
-    # #283: core's timestamp helper, which still sits in weather's message builder.
-    leaguebot.signup.cogs.signup_cog -> leaguebot.weather.utils.message_builder
     # #286: the wizard formats lap times with results' formatter.
     leaguebot.signup.services.wizard_service -> leaguebot.results.utils.results_formatter
 

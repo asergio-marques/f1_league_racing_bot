@@ -53,7 +53,7 @@ from leaguebot.core.utils.channel_guard import league_manager_only, league_role_
 from leaguebot.core.utils.league_server import LeagueView, is_foreign_guild
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import name_of_member, record_abandoned, refuse
-from leaguebot.weather.utils.message_builder import discord_ts
+from leaguebot.core.utils.formatting import discord_ts
 
 log = logging.getLogger(__name__)
 
