@@ -88,12 +88,14 @@ _TEMPLATE_SCRATCH: Path | None = None
 def _install_template_migrations() -> None:
     """Build the schema once and copy it, instead of migrating for every test.
 
-    `run_migrations` applies each of the migration files in turn and commits after every
-    one, so raising a schema costs upwards of forty flushes to disk. Nearly every fixture
-    in this suite raises one per test. Linux absorbs that — its flushes are nearly free —
-    and a Windows runner does not: the same suite took three minutes on `ubuntu-latest`
-    and was still at a third of the way after twenty on `windows-latest`, because there
-    every flush is a durable write past a virus scanner.
+    `run_migrations` runs every statement of the baseline, and applies each migration file
+    as one transaction, committed with its recorded version, after switching the file to WAL
+    and making the table that records the versions: a handful of flushes to disk for every
+    schema raised, and nearly every fixture in this suite raises one per test. Linux absorbs
+    the flushes — they are nearly free there — and a Windows runner does not, since every
+    flush is a durable write past a virus scanner. When the chain was forty-odd files, each
+    committed apart, the suite took three minutes on `ubuntu-latest` and was still a third of
+    the way after twenty on `windows-latest`.
 
     So the migrations run once and the finished file is copied thereafter. Two cases must
     still migrate in earnest, and both are recognised rather than listed by name:
