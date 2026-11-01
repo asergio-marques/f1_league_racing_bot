@@ -2782,18 +2782,6 @@ _CLOCK_DEFAULT = re.compile(
 #: Where the schema's own defaults are listed, keyed by the schema file and ``table.column``.
 BASELINE_PATH = "core/db/migrations/001_baseline.sql"
 
-#: The columns whose default is SQLite's clock that the schema keeps for good, and why. The
-#: migrations are excepted from the rule: a default is the schema's own, filled when a row is
-#: inserted. Only a column that a later change takes the default off is listed as a breach.
-CLOCK_DEFAULTS_ALLOWED = {
-    (BASELINE_PATH, "season_signup_config.captured_at"): "the schema's own stamp of a row inserted",
-    (BASELINE_PATH, "signup_records.created_at"): "the schema's own stamp of a row inserted",
-    (BASELINE_PATH, "signup_records.updated_at"): "the schema's own stamp of a row inserted",
-    (BASELINE_PATH, "signup_windows.opened_at"): "the schema's own stamp of a row inserted",
-    (BASELINE_PATH, "signup_wizard_records.created_at"): "the schema's own stamp of a row inserted",
-    (BASELINE_PATH, "signup_wizard_records.last_activity_at"): "the schema's own stamp of a row inserted",
-}
-
 #: The functions allowed for good to read the wall clock in a service, and why.
 WALL_CLOCK_ALLOWED = {
     ("core/services/change_queue.py", "ChangeQueue.__init__"):
@@ -2828,12 +2816,12 @@ def _sql_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
 
 
 def _sql_clock_reads() -> Counter[tuple[str, str]]:
-    """The statements that read SQLite's clock, and the schema's defaults that do and are not
-    allowed for good (keyed by the schema file and ``table.column``)."""
+    """The statements that read SQLite's clock, and the schema's columns that default to it
+    (keyed by the schema file and ``table.column``): a default stamps a stored time from SQLite's
+    clock as a statement does, and the rule makes no exception for it."""
     found = _sql_clock_reads_among(_nodes())
     for column in _clock_defaults(BASELINE.read_text(encoding="utf-8")):
-        if (BASELINE_PATH, column) not in CLOCK_DEFAULTS_ALLOWED:
-            found[(BASELINE_PATH, column)] += 1
+        found[(BASELINE_PATH, column)] += 1
     return found
 
 
@@ -2864,6 +2852,13 @@ def _wall_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
 
 
 KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
+    ("core/db/migrations/001_baseline.sql", "season_signup_config.captured_at"): (1, PASS["signup"]),
+    ("core/db/migrations/001_baseline.sql", "signup_records.created_at"): (1, PASS["signup"]),
+    ("core/db/migrations/001_baseline.sql", "signup_records.updated_at"): (1, PASS["signup"]),
+    ("core/db/migrations/001_baseline.sql", "signup_windows.opened_at"): (1, PASS["signup"]),
+    ("core/db/migrations/001_baseline.sql", "signup_wizard_records.created_at"): (1, PASS["signup"]),
+    ("core/db/migrations/001_baseline.sql", "signup_wizard_records.last_activity_at"):
+        (1, PASS["signup"]),
     ("core/db/migrations/001_baseline.sql", "team_role_configs.updated_at"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
@@ -2939,7 +2934,7 @@ def test_no_statement_reads_sqlites_clock():
     """A stored time is written from the `now` handed in, never by SQLite's `datetime('now')`
     (architecture.md, "The time is always passed in"): no string of SQL anywhere in the package
     names `datetime('now')`, `date('now')`, `CURRENT_TIMESTAMP` and the like, and no column of the
-    schema defaults to the clock but those in `CLOCK_DEFAULTS_ALLOWED`. A breach is keyed by the
+    schema defaults to the clock. A breach is keyed by the
     function holding the statement, or by the schema file and ``table.column`` for a default, and
     listed with the issue that will fix it."""
     _check("no statement reads SQLite's clock", _sql_clock_reads(), KNOWN_SQL_CLOCK_READS)
@@ -2955,17 +2950,15 @@ def test_no_service_reads_the_wall_clock():
 
 
 def test_every_clock_allowed_for_good_still_exists():
-    """The change queue's default clock is read where it is allowed, and each column allowed to
-    default to the clock does so: a rename cannot leave the exception pointing at nothing."""
+    """The change queue's default clock is read where it is allowed: a rename cannot leave the
+    exception pointing at nothing."""
     read = Counter()
     for path, function, node in _nodes():
         if (path, function) in WALL_CLOCK_ALLOWED and _is_a_wall_clock(node):
             read[(path, function)] += 1
 
     assert set(read) == set(WALL_CLOCK_ALLOWED)
-    assert {(BASELINE_PATH, column) for column in _clock_defaults(BASELINE.read_text(encoding="utf-8"))} \
-        >= set(CLOCK_DEFAULTS_ALLOWED)
-    assert all(reason for reason in [*WALL_CLOCK_ALLOWED.values(), *CLOCK_DEFAULTS_ALLOWED.values()])
+    assert all(WALL_CLOCK_ALLOWED.values())
 
 
 def test_the_sql_clock_check_sees_each_way_of_reading_the_clock_and_leaves_a_docstring_alone():

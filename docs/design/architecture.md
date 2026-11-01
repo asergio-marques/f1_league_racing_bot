@@ -1123,10 +1123,9 @@ later on its own.
   use may, as a cog does; `league_guild` is the one a service calls), a table written by a module
   that does not own it, a table read outside its owner (core's tables too; the scan sees tables, not
   columns), core reading a module's service on the bot (an attribute `LeagueBot` types from a module's
-  package, read from a file of core), SQLite's clock in a statement or a column's default (the
-  schema's own stamps on signup's rows are kept), a service reading the wall clock (the change queue's
-  own default clock is the one place allowed, `WALL_CLOCK_ALLOWED`), and a save outside a queued
-  change. The job check and
+  package, read from a file of core), SQLite's clock in a statement or a   package, read from a file of core), SQLite's clock in a statement or a column's default, a
+  service reading the wall clock (the change queue's own default clock is the one place allowed,
+  `WALL_CLOCK_ALLOWED`), and a save outside a queued change. The job check and
   the check of cogs handling their own errors are absolute, with no list of breaches left to grow,
   and the log channel's check holds its six places for good; every other check lists today's
   breaches, each under the work that removes it. The check of a save outside a queued change counts
