@@ -273,8 +273,10 @@ def pytest_collection_finish(session):
 
 
 #: What one xdist worker takes at its peak over the full suite, in MB, and what the host is left
-#: for everything else. See `pytest_xdist_auto_num_workers`.
-_WORKER_MEMORY_MB = 450
+#: for everything else. See `pytest_xdist_auto_num_workers`. Measured on the Pi on 2026-11-01:
+#: the full suite on two workers peaked at 301 MB and 402 MB of resident memory, the larger being
+#: the worker that ran the source checks, against 621 MB for the whole suite in one process.
+_WORKER_MEMORY_MB = 400
 _MEMORY_RESERVE_MB = 512
 
 #: Where Linux says how much memory is free. Absent on Windows and macOS.
