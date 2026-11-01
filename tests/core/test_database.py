@@ -178,13 +178,7 @@ _FAILS = "INSERT INTO s4_nowhere (id) VALUES (1);"
     "failing",
     [
         pytest.param(0, id="at its first statement"),
-        pytest.param(
-            -1,
-            id="at its last statement",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#283: a migration failing part-way leaves its first tables"
-            ),
-        ),
+        pytest.param(-1, id="at its last statement"),
     ],
 )
 async def test_a_migration_failing_part_way_leaves_nothing_and_no_record(
@@ -212,7 +206,6 @@ async def test_a_migration_failing_part_way_leaves_nothing_and_no_record(
     assert "002_s4.sql" in versions
 
 
-@pytest.mark.xfail(strict=True, reason="#283: nothing checks a migration's foreign keys")
 async def test_a_migration_leaving_a_dangling_key_is_refused(tmp_path, monkeypatch) -> None:
     """A migration that leaves a row pointing at a parent that does not exist is refused by name,
     naming the table, and leaves nothing of itself applied or recorded."""
@@ -235,9 +228,6 @@ async def test_a_migration_leaving_a_dangling_key_is_refused(tmp_path, monkeypat
     assert "002_s4.sql" not in versions
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the migrations run with the keys on, so dropping a parent cascades"
-)
 async def test_rebuilding_a_parent_table_keeps_its_cascaded_children(tmp_path, monkeypatch) -> None:
     """A table rebuilt by SQLite's procedure (create the new table, copy the rows, drop the old,
     rename the new into place) keeps the rows of a table linked to it ``ON DELETE CASCADE``: the

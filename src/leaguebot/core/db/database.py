@@ -312,10 +312,11 @@ async def _migration_connection(db_path: str) -> AsyncIterator[aiosqlite.Connect
     migrates a fresh copy and then deletes it (`factory_reset_service.wipe`), and the last
     connection to close is the one that checkpoints the write-ahead log and removes it
     (`test_migrations_hold_no_connection_open_afterwards`).
+
+    Its foreign keys are left off, which `run_migrations` states in its docstring.
     """
     async with aiosqlite.connect(db_path, timeout=_BUSY_TIMEOUT_SECONDS) as db:
         db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA foreign_keys = ON")
         yield db
 
 
@@ -385,6 +386,14 @@ class DatabasePredatesBaselineError(RuntimeError):
     """The database records migrations the bot no longer carries. See `run_migrations`."""
 
 
+class MigrationBreaksForeignKeys(RuntimeError):
+    """A migration file left a row pointing at a missing parent. See `run_migrations`."""
+
+
+#: How many dangling rows a `MigrationBreaksForeignKeys` names.
+_DANGLING_ROWS_NAMED = 3
+
+
 async def run_migrations(db_path: str) -> None:
     """Apply all pending SQL migration files in order.
 
@@ -399,6 +408,25 @@ async def run_migrations(db_path: str) -> None:
     migration rather than the baseline alone, applying each file's drops and renames, since
     rebuilding a table creates a temporary one; until then a table a later migration adds is
     under no owner, and its writes go unchecked.
+
+    **Each file is applied whole, or not at all** (architecture.md, "A database update is applied
+    whole, or not at all"). For each pending file the foreign keys are switched off (a pragma
+    SQLite ignores inside a transaction, so it is issued first; the migrations' own connection is
+    never lent, so nothing has to switch them back), then the file runs in one transaction. Before
+    it commits, ``PRAGMA foreign_key_check`` must find no row pointing at a missing parent, or
+    :class:`MigrationBreaksForeignKeys` is raised naming the first few. The ``schema_migrations``
+    row is written in the same save. Any fault rolls the whole file back, the row with it, and is
+    raised again. This is SQLite's own procedure for changing a table: with the keys on, a rebuild
+    would delete the rows a cascade links to the table dropped.
+
+    **Three constraints on a migration file**, which that procedure puts on it:
+
+    - It carries no transaction control (``BEGIN``, ``COMMIT``, ``ROLLBACK``, ``SAVEPOINT``) and
+      no ``PRAGMA`` of its own; the runner owns both.
+    - It does not record its own version; the runner does, in the same save.
+    - A table rebuild follows SQLite's order: create the new table, copy the rows, drop the old
+      one, and rename the new one into place. It never renames the old table away, which would
+      repoint the keys that refer to it at the table renamed.
 
     **A database from before the baseline is refused, not migrated.** It records versions
     such as ``001_initial.sql`` that no longer exist, and the baseline applied over its tables
@@ -457,10 +485,28 @@ async def run_migrations(db_path: str) -> None:
                 sql = fh.read()
 
             log.info("Applying migration: %s", filename)
-            await db.executescript(sql)
-            await db.execute(
-                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
-                (version, datetime.now(timezone.utc).isoformat()),
-            )
-            await db.commit()
+            # The keys are switched off outside any transaction, where the pragma takes effect.
+            # The script's first line opens the transaction and `executescript` leaves it open, so
+            # the check and the version row fall inside it.
+            await db.execute("PRAGMA foreign_keys = OFF")
+            try:
+                await db.executescript("BEGIN IMMEDIATE;\n" + sql)
+                cursor = await db.execute("PRAGMA foreign_key_check")
+                dangling = list(await cursor.fetchall())
+                if dangling:
+                    first = dangling[:_DANGLING_ROWS_NAMED]
+                    named = ", ".join(f"{row[0]} row {row[1]} (parent {row[2]})" for row in first)
+                    raise MigrationBreaksForeignKeys(
+                        f"{version} leaves {len(dangling)} row(s) pointing at a missing parent: "
+                        f"{named}{', …' if len(dangling) > _DANGLING_ROWS_NAMED else ''}. "
+                        "Nothing was changed."
+                    )
+                await db.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                    (version, datetime.now(timezone.utc).isoformat()),
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
             log.info("Migration applied: %s", filename)
