@@ -2289,22 +2289,24 @@ READS_OF_OWN_COLUMNS = {
 def _reads_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
     """The reads among *nodes*, each ``(file, function, node)``, of a table the file's module does
     not own, counted by file and function: each table named after `FROM` or `JOIN` in a string of
-    SQL, a function in `READS_OF_OWN_COLUMNS` aside. The entry point owns no table, so each table
-    it reads counts. The scan sees tables, not columns, so a module's read of its own columns on a
-    core table (`OWN_COLUMNS`) is counted unless its function is named in `READS_OF_OWN_COLUMNS`."""
+    SQL. The entry point owns no table, so each table it reads counts. The scan sees tables, not
+    columns, so a module's read of a core table it has columns of its own on (`OWN_COLUMNS`) is
+    counted unless its function is named in `READS_OF_OWN_COLUMNS`; such a function is passed over
+    for those tables only, and a read of any other table in it still counts."""
     nodes = list(nodes)
     docstrings = _docstrings_among(nodes)
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in nodes:
         if not (isinstance(node, ast.Constant) and isinstance(node.value, str)) or id(node) in docstrings:
             continue
-        if (path, function) in READS_OF_OWN_COLUMNS:
-            continue
         module = _module_of(path)
+        passed_over = OWN_COLUMNS.get(module, {}) if (path, function) in READS_OF_OWN_COLUMNS else {}
         found[(path, function)] += sum(
             1
             for match in _READS.finditer(node.value)
-            if not match.group("delete") and TABLE_OWNER.get(match.group("table"), module) != module
+            if not match.group("delete")
+            and match.group("table") not in passed_over
+            and TABLE_OWNER.get(match.group("table"), module) != module
         )
     return +found
 
@@ -2622,6 +2624,9 @@ def test_the_read_check_passes_a_function_that_reads_only_its_module_s_own_colum
     assert _reads_outside_the_owner_among(_sample(source.replace(function, "other"), path)) == Counter(
         {(path, "other"): 1}
     )
+
+    also_another = source + "    await db.execute('SELECT current_state FROM driver_profiles')\n"
+    assert _reads_outside_the_owner_among(_sample(also_another, path)) == Counter({(path, function): 1})
 
 
 def test_every_read_of_own_columns_allowed_for_good_still_reads_one():
