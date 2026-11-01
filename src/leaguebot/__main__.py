@@ -1201,12 +1201,12 @@ async def main() -> None:
                 log.info("on_ready: signup close_at is past — running forced close")
                 from leaguebot.signup.services.window_close import close_signups_unattended
                 await close_signups_unattended(
-                change_queue=bot.change_queue,
-                module_service=bot.module_service,
-                signup_module_service=bot.signup_module_service,
-                driver_service=bot.driver_service,
-                cause="restart",
-            )
+                    change_queue=bot.change_queue,
+                    module_service=bot.module_service,
+                    signup_module_service=bot.signup_module_service,
+                    driver_service=bot.driver_service,
+                    cause="restart",
+                )
             else:
                 from leaguebot.core.services.scheduler_service import SIGNUP_CLOSE_JOB_ID
                 if not bot.scheduler_service.has_job(SIGNUP_CLOSE_JOB_ID):
