@@ -100,25 +100,32 @@ class OutputRouter:
         The one place outside the configuration that names the log channel. A caller about to
         erase the configuration (the factory reset) asks here first and hands the answer back to
         :meth:`post_log` as *channel*, once the configuration that would have named it is gone.
+
+        It is a query, not a line posted, so a database that refuses the read **raises** and is
+        not contained as :meth:`post_log` contains it: the callers act on the answer (the retry
+        worker and the queued delivery choose a channel by it, the factory reset erases on it),
+        and read ``None`` as a bot not yet set up.
         """
-        config = await self._read_config("log_destination", say_unset=False)
+        config = await self._config.get_server_config()
         return None if config is None else config.log_channel_id
 
-    async def _read_config(self, caller: str, *, say_unset: bool = True) -> "Optional[ServerConfig]":
-        """The server configuration, or ``None`` where there is none to give.
+    async def _read_config(self, caller: str) -> "Optional[ServerConfig]":
+        """The server configuration for a line to post, or ``None`` where it cannot be had.
 
-        ``None`` is a bot not yet set up, which *say_unset* writes to the host's log as the
-        callers that post do, or a database that refuses the read. The log writer contains its
-        own failures rather than raising them (`docs/design/architecture.md`), so a locked
-        database is written to the host's log with its traceback and the caller takes ``None``
-        as it takes a line it could not post.
+        ``None`` is a bot not yet set up, or a database that refuses the read. The log writer
+        contains its own failures rather than raising them (`docs/design/architecture.md`), so
+        either is written to the host's log, a locked database with its traceback, and the
+        caller takes ``None`` as it takes a line it could not post.
         """
         try:
             config = await self._config.get_server_config()
         except sqlite3.Error:
-            log.exception("%s: the server configuration could not be read, so the line is not posted", caller)
+            log.exception(
+                "%s: the server configuration could not be read, so the line is not posted",
+                caller,
+            )
             return None
-        if config is None and say_unset:
+        if config is None:
             log.error("%s: the bot is not set up, so there is no log channel", caller)
         return config
 
