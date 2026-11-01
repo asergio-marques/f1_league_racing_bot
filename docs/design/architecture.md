@@ -106,7 +106,7 @@ hooks without importing a module.
   service may call reaches a core service through the bot: `league_guild(bot)`
   (`core/utils/league_server.py`), the one route from a job or a service to the league's server,
   which reads the configuration service to find it. Handing the configuration service instead to
-  every service that posts would add a parameter to some forty callers for no rule gained.
+  every service that posts would add a parameter to each, for no rule gained.
 - **A module's own helpers** sit in its `utils/` folder, beside its services, under the same rules.
 - **A model** is plain data. It uses no Discord and no database, and no service or cog.
 - **The database code in core** opens connections, lends them again, closes them and applies
@@ -146,15 +146,16 @@ is turned on, when one is turned off, and when a warning names what will be swit
 It starts with one entry, attendance needing results (the attendance module specification's
 opening rules). Stewarding adds a second [STW-MOD-007].
 
-**Core reaches a module only through hooks.** Where something in core has to let the modules act
-(the bot starting, a timed event falling due, a round amended or cancelled, a round's results made
-final, placements confirmed, a review gathering its lines, a season ending, a season, division,
-round or driver deleted, a driver merged into another or turned down, a base role changed, the bot
-packed, test mode turned on, the bot's in-memory state cleared, the hub's panel gathering its
-options), core declares a hook. The builder signs each module up to it before the bot connects. Core
-calls whoever signed up, and never imports a module, the bot's type aside (see "How the code is laid
-out"). A module turned on or off is not a hook but a change of the module's own, which core asks for
-by its kind (see "Each module turns itself on and off").
+**Core reaches a module only through hooks, and the image module through a protocol it declares
+(below).** Where something in core has to let the modules act (the bot starting, a timed event
+falling due, a round amended or cancelled, a round's results made final, placements confirmed, a
+review gathering its lines, a season ending, a season, division, round or driver deleted, a driver
+merged into another or turned down, a base role changed, the bot packed, test mode turned on, the
+bot's in-memory state cleared, the hub's panel gathering its options), core declares a hook. The
+builder signs each module up to it before the bot connects. Core calls whoever signed up, and never
+imports a module, the bot's type aside (see "How the code is laid out"). A module turned on or off
+is not a hook but a change of the module's own, which core asks for by its kind (see "Each module
+turns itself on and off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
 the rows concerned, and the connection of the save it runs in, where the moment falls inside one.
@@ -162,9 +163,9 @@ Each module signs up a function of its own, and core calls each in the order the
 hook names no module and no module's operation, so a module's part of the moment is the module's own
 code, and a module added later signs up without core changing. A hook keyed by a kind takes one
 function for each key instead, as a kind of timed job takes its one handler (see "Timed work and
-restarts"). A link the dependency table allows
-between two modules is not one of core's hooks: there the module depended on may name what it asks
-of its dependant, as results does of attendance (below).
+restarts"). A link the dependency table allows between two modules is not one of core's hooks: there
+the module depended on may name what it asks of its dependant, as results does of attendance
+(below).
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
@@ -201,7 +202,8 @@ hands it to the review's change types, so results imports nothing of attendance 
 that do not apply" requires. Every other method checks the switch itself, on the connection it is
 handed where it writes, and does nothing while the module is off. A change type never reads the
 switch itself; one whose job serves attendance alone asks `enabled`. The placement service, which a
-sanction moves seats through, is handed to the protocol by the builder and not looked up on the bot.
+sanction moves seats through, is handed to attendance's implementation by the builder and not looked
+up on the bot.
 
 *Rejected:* results calling attendance's functions directly and checking the switch itself, which
 is the dependency the table forbids and leaves each caller to remember the switch.
@@ -242,11 +244,11 @@ which leaves every other change with the same risks. *Rejected:* each command wr
 audit record, which is how some settings came to have none.
 
 Beside the stop notice's presses and a restore's swap at start-up (both below), two changes stay off
-the queue, each a stated exception. `/bot pack` is refused while any lane holds a job, so it cannot
-be a job itself, and it saves in one transaction (`pack_service`'s docstring). The factory reset's
-wipe puts a freshly migrated database in place of the one the queue lives in (`wipe` in
-`factory_reset_service`); its clean-up of Discord is an exception of its own (see "Posting to
-Discord", and `clean_discord`'s docstring).
+the queue, each a stated exception. `/bot pack` is refused while any lane holds a job (the core
+specification's "Packing the bot for another server"), so it cannot be a job itself, and it saves in
+one transaction (`pack_service`'s docstring). The factory reset's wipe puts a freshly migrated
+database in place of the one the queue lives in (`wipe` in `factory_reset_service`); its clean-up of
+Discord is an exception of its own (see "Posting to Discord", and `clean_discord`'s docstring).
 
 - **The queue is kept in the database,** so a change waiting on it survives a stop.
 - **What whoever asked is told,** and when, is for the core specification, which gains it with the
@@ -421,7 +423,7 @@ Discord", and `clean_discord`'s docstring).
   refusal's, and the reply it returns. What the member is told and what the log channel records of
   either is the core specification's "How a change is carried out"; the full detail goes to the
   host's log. A step that is `undiscardable` may not carry `on_fault`, since it is a step a stop
-  must hold. `core/services/setting_change.py` builds both hooks for every settings command once.
+  must hold. `core/services/setting_change.py` builds both callbacks for every settings command once.
   *Rejected:* a step that catches its own fault, which would leave its partial writes on the save's
   connection and could not catch what fails after it returns, the queue's own audit and line writes
   and the commit; and stopping the lane for a setting, which would hold every other change for a
@@ -589,9 +591,10 @@ a round can still be cancelled while results is switched off.
 *Rejected:* letting any module read any table, with the owner's design file naming the columns
 others read, which costs nothing today but leaves a change to a table reaching readers in other
 modules that only the tests would find. *Rejected:* closing only the modules' tables and leaving
-core's open to every module, on the ground that modules depend on core. *Rejected:* moving each
-module's columns off core's tables now, which touches every reader of those columns before go-live
-for a cleaner line of ownership.
+core's open to every module, on the ground that modules depend on core, which leaves a change to a
+core table reaching readers in every module. *Rejected:* moving each module's columns off core's
+tables now, which touches every reader of those columns before go-live for a cleaner line of
+ownership.
 
 **A conversation's lane writes only its own conversation's tables, and that is held at run time.**
 A change type of a conversation's lane declares the tables its kind writes (`ChangeType.writes`):
@@ -742,7 +745,7 @@ Start-up:
    resolved beside the database) once, in the entry point, from the environment and the `.env` file,
    rather than on import. A module's own host setting (`INKSCAPE`, for the rasteriser) stays the
    module's, read when it is used and never on import; the entry point's `.env` load is what
-   supplies it. Read with the rest, it would put an image concern into the entry point's settings;
+   supplies it;
 2. swaps in a saved state waiting to be restored, before anything opens the database or the job
    store (the core specification's "Saving a state and returning to it");
 3. applies the migrations, before connecting to Discord;
@@ -1034,7 +1037,7 @@ to it would switch off the one failure path for every command.
    and for a check that raises as a member's change of a type that gives
    `ChangeType.on_check_fault`, ends the job instead and the lane goes on (see "A job that fails
    stops its lane"). Either way the fault is logged on the host and recorded in the log channel as a
-   failure, once. The hook a change type may give for a Discard of a change before it started
+   failure, once. The callback a change type may give for a Discard of a change before it started
    (`ChangeQueue._discard_follow_ons`) is not a failure path but a stated exception: its catch-all
    puts the error in the host's log alone, with no line to the log channel, and asks no follow-on,
    because a Discard is the queue's last way past a stop and a hook that raises must not hold it;
