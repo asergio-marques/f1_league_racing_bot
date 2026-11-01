@@ -113,7 +113,7 @@ def test_the_breakdown_is_printed_before_the_whole_repo_gate():
 
 def test_the_coverage_run_uses_the_faster_backend():
     """Not a scope change — a speed one. The default C tracer costs enough on a suite this
-    size to threaten the job's twenty-minute bound, and #208 added several thousand tests
+    size to threaten the job's ten-minute bound, and #208 added several thousand tests
     to it."""
     assert "COVERAGE_CORE: sysmon" in _workflow()
 

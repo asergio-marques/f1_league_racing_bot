@@ -12,7 +12,10 @@ env:
 jobs:
   python-test-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The job takes about four minutes with the suite on every core (#540; it took ten to fourteen
+    # in one process). Ten leaves room for a slow runner; a run that nears it is slower than it
+    # should be, not a bound to raise.
+    timeout-minutes: 10
 
     steps:
     - name: Checkout repository
@@ -35,7 +38,7 @@ jobs:
     #
     # `COVERAGE_CORE=sysmon` selects the sys.monitoring backend (Python 3.12+; this job is
     # on 3.13). The default C tracer costs enough on a large suite to matter against this
-    # job's twenty-minute bound — measured on the Pi at 3% of the suite in ten minutes,
+    # job's ten-minute bound — measured on the Pi at 3% of the suite in ten minutes,
     # against under four minutes for the whole of it under sysmon. `.coveragerc` scopes what
     # is measured; this only changes how.
     #
@@ -114,12 +117,12 @@ jobs:
   python-test-check-windows:
     runs-on: windows-latest
     # Without a bound this job runs to GitHub's six-hour default, and Windows minutes bill
-    # at twice Linux's. Windows runs the tests that touch a database about two and a half
-    # times slower than Linux (`tools/compare_test_timings.py`), and its runners vary widely in
-    # speed: the same suite has finished in twelve minutes on one run and been cut off at
-    # twenty on another. Thirty-five leaves room for a slow runner and for the suite to grow;
-    # a run that nears it is slower than it should be, not a bound to raise again.
-    timeout-minutes: 35
+    # at twice Linux's. Windows runs the tests some 1.6 times slower than Linux, summed test by
+    # test (`tools/compare_test_timings.py`), and its runners vary widely in speed. With the
+    # suite on every core the job takes six to seven minutes (#540; it took twenty-one to thirty
+    # in one process). Fifteen leaves room for a slow runner and for the suite to grow; a run
+    # that nears it is slower than it should be, not a bound to raise again.
+    timeout-minutes: 15
 
     defaults:
       run:
