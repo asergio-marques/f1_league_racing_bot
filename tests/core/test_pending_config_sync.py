@@ -64,7 +64,6 @@ def _division(name: str, tier: int, rounds: list[dict] | None = None) -> dict:
     return {
         "name": name,
         "role_id": 5000 + tier,
-        "channel_id": None,
         "tier": tier,
         "rounds": rounds if rounds is not None else [_round(n) for n in (1, 2, 3)],
     }
@@ -301,7 +300,6 @@ async def test_a_division_already_in_the_db_is_never_written(db_path):
     await set_division_forecast_channel(db_path, pro_id, 4242)
 
     divisions[0]["rounds"].append(_round(4))
-    divisions[0]["channel_id"] = None
     divisions[0]["role_id"] = 1
     await _sync(svc, season_id, divisions)
 
