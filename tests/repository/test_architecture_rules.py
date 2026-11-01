@@ -1661,12 +1661,10 @@ def test_the_lookup_rule_cites_the_architecture_s_rule():
 
 # ── 11. Each table is written by the module that owns it ────────────────────────────────────
 
-#: The schema, whose tables the rule is about.
-BASELINE = PACKAGE / "core" / "db" / "migrations" / "001_baseline.sql"
-
 #: The module that owns each table the schema declares (architecture.md, "The database"). Core
 #: owns the driver and the team (CLAUDE.md); a module owns the records of its own work, its
-#: settings, and the ids of what it posts.
+#: settings, and the ids of what it posts. `tests/core/test_schema_rules.py` holds it to the
+#: schema the migrations build.
 TABLE_OWNER: dict[str, str] = {
     # core
     "server_configs": "core", "seasons": "core", "divisions": "core", "rounds": "core",
@@ -1705,6 +1703,7 @@ TABLE_OWNER: dict[str, str] = {
 
 #: A module's own columns on a core table, which that module sets itself (architecture.md, "The
 #: database"). A round's status is not among them: results asks core to set it.
+#: `tests/core/test_schema_rules.py` holds each to the schema the migrations build.
 OWN_COLUMNS: dict[str, dict[str, frozenset[str]]] = {
     "weather": {
         "rounds": frozenset({"phase1_done", "phase2_done", "phase3_done"}),
@@ -1724,15 +1723,6 @@ _WRITES = re.compile(
 )
 #: The columns an `UPDATE` sets: everything from `SET` to the `WHERE`, or to the end.
 _SET = re.compile(r"\A\s+SET\s+(?P<columns>.*?)(?:\bWHERE\b|\bRETURNING\b|\Z)", re.S)
-
-
-def _declared_tables() -> set[str]:
-    return {
-        match.group(1)
-        for match in re.finditer(
-            r'CREATE TABLE (?:IF NOT EXISTS )?"?(\w+)"?', BASELINE.read_text(encoding="utf-8")
-        )
-    }
 
 
 def _columns_set(update_tail: str) -> set[str] | None:
@@ -2865,40 +2855,11 @@ _SQL_CLOCK = re.compile(
     re.IGNORECASE,
 )
 
-#: A column of the schema that takes SQLite's clock as its default.
-_CLOCK_DEFAULT = re.compile(
-    r"DEFAULT\s*\(?\s*(?:CURRENT_(?:TIMESTAMP|DATE|TIME)\b|(?:datetime|date|time)\s*\([^()]*'now')",
-    re.IGNORECASE,
-)
-
-#: Where the schema's own defaults are listed, keyed by the schema file and ``table.column``.
-BASELINE_PATH = "core/db/migrations/001_baseline.sql"
-
 #: The functions allowed for good to read the wall clock in a service, and why.
 WALL_CLOCK_ALLOWED = {
     ("core/services/change_queue.py", "ChangeQueue.__init__"):
         "the change queue's own default clock, `ChangeQueue.now`, which hands every service its time",
 }
-
-
-def _clock_defaults(schema: str) -> list[str]:
-    """Each ``table.column`` of the schema text *schema* whose default is SQLite's clock.
-
-    Read over the whole text, not line by line, so a column that follows a comma, or shares its line
-    with others, or sits in a one-line ``CREATE TABLE``, is found as one on its own line is. A match
-    belongs to the nearest ``CREATE TABLE`` before it, and to the column word that last opens a
-    definition (after a comma or the opening bracket) before it. Comments are dropped first: their
-    prose has commas of its own."""
-    schema = re.sub(r"--[^\n]*", "", schema)
-    tables = list(re.finditer(r'CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z_][a-z0-9_]*)"?', schema, re.IGNORECASE))
-    columns = list(re.finditer(r'[,(]\s*"?([a-z_][a-z0-9_]*)"?\s+[A-Za-z]', schema, re.IGNORECASE))
-    found = []
-    for default in _CLOCK_DEFAULT.finditer(schema):
-        table = [t for t in tables if t.start() < default.start()][-1:]
-        column = [c for c in columns if c.start() < default.start()][-1:]
-        if table and column:
-            found.append(f"{table[0].group(1)}.{column[0].group(1)}")
-    return found
 
 
 def _sql_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
@@ -2911,16 +2872,6 @@ def _sql_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings:
             found[(path, function)] += len(_SQL_CLOCK.findall(node.value))
     return +found
-
-
-def _sql_clock_reads() -> Counter[tuple[str, str]]:
-    """The statements that read SQLite's clock, and the schema's columns that default to it
-    (keyed by the schema file and ``table.column``): a default stamps a stored time from SQLite's
-    clock as a statement does, and the rule makes no exception for it."""
-    found = _sql_clock_reads_among(_nodes())
-    for column in _clock_defaults(BASELINE.read_text(encoding="utf-8")):
-        found[(BASELINE_PATH, column)] += 1
-    return found
 
 
 def _is_a_wall_clock(node: ast.AST) -> bool:
@@ -2950,14 +2901,6 @@ def _wall_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
 
 
 KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/db/migrations/001_baseline.sql", "season_signup_config.captured_at"): (1, PASS["signup"]),
-    ("core/db/migrations/001_baseline.sql", "signup_records.created_at"): (1, PASS["signup"]),
-    ("core/db/migrations/001_baseline.sql", "signup_records.updated_at"): (1, PASS["signup"]),
-    ("core/db/migrations/001_baseline.sql", "signup_windows.opened_at"): (1, PASS["signup"]),
-    ("core/db/migrations/001_baseline.sql", "signup_wizard_records.created_at"): (1, PASS["signup"]),
-    ("core/db/migrations/001_baseline.sql", "signup_wizard_records.last_activity_at"):
-        (1, PASS["signup"]),
-    ("core/db/migrations/001_baseline.sql", "team_role_configs.updated_at"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
     ("core/services/driver_service.py", "_merge"): (1, PASS["core"]),
@@ -2973,6 +2916,20 @@ KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
         (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.snapshot_season_config"):
         (1, PASS["signup"]),
+}
+
+#: The schema's columns that default to SQLite's clock, keyed by ``("schema", "table.column")``: a
+#: default stamps a stored time from SQLite's clock as a statement does, and the rule makes no
+#: exception for it. `tests/core/test_schema_rules.py` checks them against the schema the
+#: migrations build.
+KNOWN_CLOCK_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {
+    ("schema", "season_signup_config.captured_at"): (1, PASS["signup"]),
+    ("schema", "signup_records.created_at"): (1, PASS["signup"]),
+    ("schema", "signup_records.updated_at"): (1, PASS["signup"]),
+    ("schema", "signup_windows.opened_at"): (1, PASS["signup"]),
+    ("schema", "signup_wizard_records.created_at"): (1, PASS["signup"]),
+    ("schema", "signup_wizard_records.last_activity_at"): (1, PASS["signup"]),
+    ("schema", "team_role_configs.updated_at"): (1, PASS["core"]),
 }
 
 KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
@@ -3031,11 +2988,13 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
 def test_no_statement_reads_sqlites_clock():
     """A stored time is written from the `now` handed in, never by SQLite's `datetime('now')`
     (architecture.md, "The time is always passed in"): no string of SQL anywhere in the package
-    names `datetime('now')`, `date('now')`, `CURRENT_TIMESTAMP` and the like, and no column of the
-    schema defaults to the clock. A breach is keyed by the
-    function holding the statement, or by the schema file and ``table.column`` for a default, and
-    listed with the issue that will fix it."""
-    _check("no statement reads SQLite's clock", _sql_clock_reads(), KNOWN_SQL_CLOCK_READS)
+    names `datetime('now')`, `date('now')`, `CURRENT_TIMESTAMP` and the like. A breach is keyed by
+    the function holding the statement, and listed with the issue that will fix it. That no column
+    of the schema defaults to the clock is checked against the schema the migrations build, in
+    `tests/core/test_schema_rules.py`."""
+    _check(
+        "no statement reads SQLite's clock", _sql_clock_reads_among(_nodes()), KNOWN_SQL_CLOCK_READS
+    )
 
 
 def test_no_service_reads_the_wall_clock():

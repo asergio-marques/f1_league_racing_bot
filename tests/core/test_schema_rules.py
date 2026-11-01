@@ -14,17 +14,18 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+from collections import Counter
 from pathlib import Path
 
 import pytest
 
 from leaguebot.core.db.database import run_migrations
 from tests.repository.test_architecture_rules import (
-    BASELINE,
+    KNOWN_CLOCK_DEFAULTS,
     OWN_COLUMNS,
     TABLE_OWNER,
-    _clock_defaults,
-    _declared_tables,
+    _SQL_CLOCK,
+    _check,
 )
 
 LEAGUE = 2540
@@ -395,27 +396,79 @@ async def test_a_change_s_steps_go_with_it(db_path):
 
 
 # ── Which module owns each table, and the clock in the schema ─────────────────
+#
+# These read the schema `run_migrations` builds, never a migration file's text, so a table or a
+# column a later migration adds, renames or drops is seen as it stands (architecture.md, "The
+# database"). The maps they hold the schema to are the rules file's, which reads source and
+# imports no bot code.
 
 
-def test_every_table_has_an_owner():
-    """A table added to the schema is given its owner here, so the rule below covers it."""
-    assert set(TABLE_OWNER) == _declared_tables()
-
-
-def test_every_module_column_is_in_the_schema():
-    """A module's own column that the schema renamed or dropped would drop out of the rule below
-    without a word."""
-    schema = BASELINE.read_text(encoding="utf-8")
-    missing = sorted(
-        f"{table}.{column}"
-        for columns_of in OWN_COLUMNS.values()
-        for table, columns in columns_of.items()
-        for column in columns
-        if not re.search(
-            rf'CREATE TABLE "?{table}"?\s*\((?:[^;]*?)\b{column}\b', schema
+def _built_tables(db: sqlite3.Connection) -> list[str]:
+    """The tables of the built schema, in name order, SQLite's own and the versions' table aside."""
+    return [
+        row[0]
+        for row in db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' "
+            "AND name != 'schema_migrations' ORDER BY name"
         )
-    )
+    ]
+
+
+def _columns(db: sqlite3.Connection, table: str) -> list[tuple]:
+    """``PRAGMA table_info`` of *table*: each column as (cid, name, type, notnull, default, pk)."""
+    return db.execute(f'PRAGMA table_info("{table}")').fetchall()
+
+
+def _clock_defaults(db: sqlite3.Connection) -> list[str]:
+    """Each ``table.column`` of the schema in *db* whose default is SQLite's clock, tables in name
+    order and columns in the order they are declared. SQLite gives each default as its own text
+    (``CURRENT_TIMESTAMP``, ``datetime('now')``), which is read as a statement's would be."""
+    return [
+        f"{table}.{column[1]}"
+        for table in _built_tables(db)
+        for column in _columns(db, table)
+        if column[4] is not None and _SQL_CLOCK.search(column[4])
+    ]
+
+
+async def test_every_table_has_an_owner(db_path):
+    """A table added to the schema is given its owner in `TABLE_OWNER`, so the rule on writes in
+    `test_architecture_rules.py` covers it."""
+    db = sqlite3.connect(db_path)
+    try:
+        assert set(TABLE_OWNER) == set(_built_tables(db))
+    finally:
+        db.close()
+
+
+async def test_every_module_column_is_in_the_schema(db_path):
+    """A module's own column that the schema renamed or dropped would drop out of the rule on
+    writes without a word."""
+    db = sqlite3.connect(db_path)
+    try:
+        missing = sorted(
+            f"{table}.{column}"
+            for columns_of in OWN_COLUMNS.values()
+            for table, columns in columns_of.items()
+            for column in columns
+            if column not in {row[1] for row in _columns(db, table)}
+        )
+    finally:
+        db.close()
     assert missing == []
+
+
+async def test_no_column_defaults_to_sqlites_clock(db_path):
+    """A stored time is written from the `now` handed in (architecture.md, "The time is always
+    passed in"), and a column defaulting to SQLite's clock stamps one as `datetime('now')` in a
+    statement does. A breach is keyed by ``("schema", "table.column")`` and listed in the rules
+    file's `KNOWN_CLOCK_DEFAULTS` with the issue that will fix it."""
+    db = sqlite3.connect(db_path)
+    try:
+        found = Counter(("schema", column) for column in _clock_defaults(db))
+    finally:
+        db.close()
+    _check("no statement reads SQLite's clock", found, KNOWN_CLOCK_DEFAULTS)
 
 
 def test_the_clock_default_scan_reads_each_column_that_defaults_to_the_clock():
@@ -439,5 +492,11 @@ def test_the_clock_default_scan_reads_each_column_that_defaults_to_the_clock():
         ", stamped_at TEXT NOT NULL DEFAULT (datetime('now')), n INTEGER NOT NULL DEFAULT 0\n"
         ");\n"
     )
+    db = sqlite3.connect(":memory:")
+    try:
+        db.executescript(schema)
+        found = _clock_defaults(db)
+    finally:
+        db.close()
 
-    assert _clock_defaults(schema) == ["a.made", "a.kept", "b.stamped", "c.made_at", "d.stamped_at"]
+    assert found == ["a.made", "a.kept", "b.stamped", "c.made_at", "d.stamped_at"]
