@@ -2004,6 +2004,9 @@ SAVES_ALLOWED = {
     ("core/services/retry_service.py", "mark_failed"): "the retry queue for log lines",
     ("core/services/backup_service.py", "_write_empty_database"):
         "writes the scheduler's empty file, not the league's",
+    ("core/services/pack_service.py", "pack"):
+        "`/bot pack` stays off the queue, refused while any lane holds a job (architecture.md, "
+        "\"Every change goes through one queue\")",
 }
 
 
@@ -2048,7 +2051,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/module_service.py", "ModuleService.set_images_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_signup_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_weather_enabled"): (1, PASS["core"]),
-    ("core/services/pack_service.py", "pack"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.assign_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.delete_team_role_config"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.move_driver"): (1, PASS["core"]),
