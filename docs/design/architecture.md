@@ -65,9 +65,9 @@ its name, and several files are named for neither.
 Core holds what every module shares: the database connection and the migrations, the bot object
 (`LeagueBot`), the change queue, the scheduler service and the start-up sweep, the base classes
 for the command tree, buttons and forms, the failure paths (`report_failure`, the job runner, the
-bot's error handler for events, `bounded_autocomplete`, the helper that starts background work), and the handlers for
-each kind of post: the log writer, the notice handler, the standing-post handler and the
-bot-owned channel handler, each a service of its own in `core/services/`.
+bot's error handler for events, `bounded_autocomplete`, the helper that starts background work), and
+the handlers for each kind of post: the log writer, the notice handler, the standing-post handler
+and the bot-owned channel handler, each a service of its own in `core/services/`.
 
 **The entry point** (`__main__.py`) sits above core and the modules, and is the one place that
 imports every module at run time. It holds the builder, which makes every service, loads every
@@ -121,10 +121,9 @@ makes every service object, handing each the other services it needs, and a serv
 once it is built: nothing is wired into it after the bot starts. A test can call the builder to
 get the real set of services. A service that needs Discord itself, to post or to find a channel,
 is given the bot for that and nothing more. It does not use the bot to look up other services,
-save through `league_guild` (above),
-and a service that is a plain function is handed the services it needs by whoever calls it.
-Looking services up on the bot is what lets a hand-made fake bot in a test decide which code
-runs.
+save through `league_guild` (above), and a service that is a plain function is handed the services
+it needs by whoever calls it. Looking services up on the bot is what lets a hand-made fake bot in a
+test decide which code runs.
 
 *Rejected:* a separate container object holding the services, since the services still need the
 bot itself for Discord, so it would add a second object without removing the first.
@@ -149,24 +148,23 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 
 **Core reaches a module only through hooks.** Where something in core has to let the modules act
 (the bot starting, a timed event falling due, a round amended or cancelled, a round's results made
-final, placements
-confirmed, a review gathering its lines, a season ending, a season, division, round or driver
-deleted, a driver merged into another or turned down, a base role changed, the bot packed, test
-mode turned on, the bot's in-memory state cleared, the hub's panel gathering its options), core
-declares a hook. The builder signs each module up to it before the bot connects. Core calls whoever
-signed up, and never imports a module, the bot's type aside (see "How the code is laid out"). A
-module turned on or off is not a hook but a change of the module's own, which core asks for by its
-kind (see "Each module turns itself on and off").
+final, placements confirmed, a review gathering its lines, a season ending, a season, division,
+round or driver deleted, a driver merged into another or turned down, a base role changed, the bot
+packed, test mode turned on, the bot's in-memory state cleared, the hub's panel gathering its
+options), core declares a hook. The builder signs each module up to it before the bot connects. Core
+calls whoever signed up, and never imports a module, the bot's type aside (see "How the code is laid
+out"). A module turned on or off is not a hook but a change of the module's own, which core asks for
+by its kind (see "Each module turns itself on and off").
 
-**A hook core declares is a list of subscribers.** Core declares the moment and what it hands
-over: the rows concerned, and the connection of the step it runs in where the moment falls inside a
-save. Each module signs up a function of its own, and core calls each in the order they signed up.
-The hook names no module and no module's operation, so a module's part of the moment is the
-module's own code, and a module added later signs up without core changing. A hook keyed by a kind
-takes one function for each key instead, as a kind of timed job takes its one handler (see "Timed
-work and restarts") and core's graphics are asked of the image module. A link the dependency table
-allows between two modules is not one of core's hooks: there the module depended on may name what it
-asks of its dependant, as results does of attendance (below).
+**A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
+the rows concerned, and the connection of the save it runs in, where the moment falls inside one.
+Each module signs up a function of its own, and core calls each in the order they signed up. The
+hook names no module and no module's operation, so a module's part of the moment is the module's own
+code, and a module added later signs up without core changing. A hook keyed by a kind takes one
+function for each key instead, as a kind of timed job takes its one handler (see "Timed work and
+restarts") and core's graphics are asked of the image module. A link the dependency table allows
+between two modules is not one of core's hooks: there the module depended on may name what it asks
+of its dependant, as results does of attendance (below).
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
@@ -183,8 +181,8 @@ posts text instead, as the image module specification's "Configuration" section 
 imports no other module. Every other module may call the image module without an entry in the
 table. Core reaches it through a hook, so core's own graphics (the calendar, the lineup) are asked
 for rather than drawn by importing it. Where a module must let one that depends on it act (results
-after a round, for attendance), it does so through what the builder hands it, never by importing
-the dependant.
+after a round, for attendance), it does so through what the builder hands it, never by importing the
+dependant.
 
 **Results reaches attendance through a protocol, handed in by the builder.** What attendance does
 after a round's review (recording the round's attendance and its pardons, recalculating after an
@@ -195,12 +193,11 @@ attendance implements it on its own functions. The builder makes it once, attach
 hands it to the review's change types, so results imports nothing of attendance and the
 `.importlinter` exception for it is gone. Of its methods, `enabled` reports attendance's switch,
 `sync_hint` only words the hint naming the "attendance sync" command and reads no switch, and
-`change_sanction_roles` acts whatever the switch says, as the attendance specification's
-"Sanctions that do not apply" requires. Every other method checks the switch itself, on the
-connection it is handed where it writes, and does nothing while the module is off. A change type
-never reads the switch itself; one whose job serves attendance alone asks `enabled`. The placement
-service, which a sanction moves seats through, is handed to the protocol by the builder and not looked
-up on the bot.
+`change_sanction_roles` acts whatever the switch says, as the attendance specification's "Sanctions
+that do not apply" requires. Every other method checks the switch itself, on the connection it is
+handed where it writes, and does nothing while the module is off. A change type never reads the
+switch itself; one whose job serves attendance alone asks `enabled`. The placement service, which a
+sanction moves seats through, is handed to the protocol by the builder and not looked up on the bot.
 
 *Rejected:* results calling attendance's functions directly and checking the switch itself, which
 is the dependency the table forbids and leaves each caller to remember the switch.
@@ -216,8 +213,8 @@ here.
 A module's switch-on and switch-off are changes of its own, of the kinds `module.on:<name>` and
 `module.off:<name>`, which core's `/module` command asks for by kind. One that only saves the
 module's settings, with work after it that nothing waits on (the removal of its timed jobs), is a
-`Setting` (see "The record is the queue's"). One that posts or removes on Discord is a change type of
-its own. Where the dependency table makes one module's switch-off take another's with it, the
+`Setting` (see "The record is the queue's"). One that posts or removes on Discord is a change type
+of its own. Where the dependency table makes one module's switch-off take another's with it, the
 dependent module offers its switch-off as a function on the connection it is handed, and the builder
 hands it to the change that cascades, as results' switch-off is handed attendance's.
 
@@ -240,10 +237,10 @@ let a success be reported over a change only half done.
 which leaves every other change with the same risks. *Rejected:* each command writing its own
 audit record, which is how some settings came to have none.
 
-Beside the stop notice's presses and a restore's swap at start-up (both below), two changes stay
-off the queue, each a stated exception. `/bot pack` is refused while any lane holds a job, so it
-cannot be a job itself, and it saves in one transaction (`pack_service`'s docstring). The factory
-reset's wipe puts a freshly migrated database in place of the one the queue lives in (`wipe` in
+Beside the stop notice's presses and a restore's swap at start-up (both below), two changes stay off
+the queue, each a stated exception. `/bot pack` is refused while any lane holds a job, so it cannot
+be a job itself, and it saves in one transaction (`pack_service`'s docstring). The factory reset's
+wipe puts a freshly migrated database in place of the one the queue lives in (`wipe` in
 `factory_reset_service`); its clean-up of Discord is an exception of its own (see "Posting to
 Discord", and `clean_discord`'s docstring).
 
@@ -394,44 +391,46 @@ Discord", and `clean_discord`'s docstring).
 - **A job that fails stops its lane.** A lane is a list of jobs carried out in order, one at a
   time, and a job that fails, whether from Discord or from the bot (a post refused, a fault in the
   bot's own code, a check that raises as a change starts), stops that lane there until the job is
-  cleared, save for the two exceptions to this rule below. Nothing behind it on the lane runs: a change that makes the stopped job's work no longer due
-  cannot overtake it either. The other lanes carry on, a stop in one holding only that one. The change keeps its state and the stop is the job's own record
-  (when it first failed, how often it has been tried, when it is next due), so it survives a
-  restart. What the job's earlier steps saved stays saved, which is why anything that must be all
-  or nothing is saved in one step; the failed step's own save is rolled back, so a try runs it
-  afresh. Every job of a round's review is such a job, one a module cannot step over (the results
-  and attendance specifications say which, and what each stop leaves). A new change asked for meanwhile is
-  acknowledged as usual, joins the back of its lane and says that the lane is stopped.
+  cleared, save for the two exceptions to this rule below. Nothing behind it on the lane runs: a
+  change that makes the stopped job's work no longer due cannot overtake it either. The other lanes
+  carry on, a stop in one holding only that one. The change keeps its state and the stop is the
+  job's own record (when it first failed, how often it has been tried, when it is next due), so it
+  survives a restart. What the job's earlier steps saved stays saved, which is why anything that
+  must be all or nothing is saved in one step; the failed step's own save is rolled back, so a try
+  runs it afresh. Every job of a round's review is such a job, one a module cannot step over (the
+  results and attendance specifications say which, and what each stop leaves). A new change asked
+  for meanwhile is acknowledged as usual, joins the back of its lane and says that the lane is
+  stopped.
 
-  **Two exceptions: a league's settings, and roles moved after a driver's or team's change.** A change to one of a league's settings is one atomic
-  save of its value and its audit record (its line with them, or after the arming of the daily
-  portrait job; see "The record is the queue's"), and the work after it that the setting does not
-  need (checking it against the templates, arming or removing a timed job) is work nothing later
-  depends on. A fault in either leaves nothing half-done, nothing behind it on the lane waits on
-  it, and the member can simply ask again. So such a step carries `Step.on_fault`: where it raises,
-  the queue does not stop the lane but marks the job done with what `on_fault` returns, in a save
-  of its own with its lines, and the change carries on to its next step or finishes. A save that
-  faults has been rolled back whole, so nothing is saved but the mark and the failure line; a step
-  after the save leaves the setting saved. A change type may likewise give
-  `ChangeType.on_check_fault` for a check that raises as a **member's** change starts: the change
-  is ended as REFUSED in one save, with the failure line in place of a refusal's, and the reply it
-  returns. What the member is told and what the log channel records of either is the core
-  specification's "How a change is carried out"; the full detail goes to the host's log. A step that is `undiscardable` may not carry
-  `on_fault`, since it is a step a stop must hold. `core/services/setting_change.py` builds both hooks for every
-  settings command once. *Rejected:* a step that catches its own fault, which would leave its
-  partial writes on the save's connection and could not catch what fails after it returns, the
-  queue's own audit and line writes and the commit; and stopping the lane for a setting, which
-  would hold every other change for a fault the member can cure by asking again.
+  **Two exceptions: a league's settings, and roles moved after a driver's or team's change.** A
+  change to one of a league's settings is one atomic save of its value and its audit record (its
+  line with them, or after the arming of the daily portrait job; see "The record is the queue's"),
+  and the work after it that the setting does not need (checking it against the templates, arming or
+  removing a timed job) is work nothing later depends on. A fault in either leaves nothing
+  half-done, nothing behind it on the lane waits on it, and the member can simply ask again. So such
+  a step carries `Step.on_fault`: where it raises, the queue does not stop the lane but marks the
+  job done with what `on_fault` returns, in a save of its own with its lines, and the change carries
+  on to its next step or finishes. A save that faults has been rolled back whole, so nothing is
+  saved but the mark and the failure line; a step after the save leaves the setting saved. A change
+  type may likewise give `ChangeType.on_check_fault` for a check that raises as a **member's**
+  change starts: the change is ended as REFUSED in one save, with the failure line in place of a
+  refusal's, and the reply it returns. What the member is told and what the log channel records of
+  either is the core specification's "How a change is carried out"; the full detail goes to the
+  host's log. A step that is `undiscardable` may not carry `on_fault`, since it is a step a stop
+  must hold. `core/services/setting_change.py` builds both hooks for every settings command once.
+  *Rejected:* a step that catches its own fault, which would leave its partial writes on the save's
+  connection and could not catch what fails after it returns, the queue's own audit and line writes
+  and the commit; and stopping the lane for a setting, which would hold every other change for a
+  fault the member can cure by asking again.
 
-  The same holds for a member's roles moved after their driver's or their team's change. A
-  `/driver` or `/team` change saves the driver's or the team's rows and their audit record in one
-  step, and the role changes Discord makes after it are work that save does not need and nothing
-  later on the lane waits on. Each such step carries `Step.on_fault`, so a role Discord refuses is
-  reported and the queue goes on; what the member and the log channel are told is the core
-  specification's, which gains this exception with the work that builds it. Every other job, and a
-  bot's own change whose check raises, keeps the rule. *Rejected:* stopping the lane on a refused
-  role, as other jobs do, which would hold every change behind one lost permission until Retry or
-  Discard was pressed.
+  The same holds for a member's roles moved after their driver's or their team's change. A `/driver`
+  or `/team` change saves the driver's or the team's rows and their audit record in one step, and
+  the role changes Discord makes after it are work that save does not need and nothing later on the
+  lane waits on. Each such step carries `Step.on_fault`, so a role Discord refuses is reported and
+  the queue goes on; what the member and the log channel are told is the core specification's, which
+  gains this exception with the work that builds it. Every other job, and a bot's own change whose
+  check raises, keeps the rule. *Rejected:* stopping the lane on a refused role, as other jobs do,
+  which would hold every change behind one lost permission until Retry or Discard was pressed.
 
   Nothing overtakes the stopped job, so whatever runs outside the queue leaves alone what a change
   is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core
@@ -492,13 +491,13 @@ Discord", and `clean_discord`'s docstring).
   second rule beside "every failure stops its lane", which is the rule the core specification's
   "How a change is carried out" records. The lanes are not a job stepping aside: within each lane
   nothing overtakes, and a conversation runs apart only because its work is its own and what it
-  hands the league goes to the league lane's back. The two exceptions
-  (above) are not a job stepping aside either: the job is ended, not stopped, and nothing it
-  leaves undone is waited on. *Rejected:* a queue for each module, which
-  leaves the conversations of one module waiting on each other and the league's work split across
-  queues with no one order; and the league dropping a stopped conversation's job when it ends the conversation, which would let a
-  change overtake a stop. Also rejected: an automatic try after a restart, which
-  "When the bot stops" in the core specification rules out.
+  hands the league goes to the league lane's back. The two exceptions (above) are not a job stepping
+  aside either: the job is ended, not stopped, and nothing it leaves undone is waited on.
+  *Rejected:* a queue for each module, which leaves the conversations of one module waiting on each
+  other and the league's work split across queues with no one order; and the league dropping a
+  stopped conversation's job when it ends the conversation, which would let a change overtake a
+  stop. Also rejected: an automatic try after a restart, which "When the bot stops" in the core
+  specification rules out.
 - **A failure that cannot be recorded is logged, and the job tried again.** Where the stop's own
   save raises, nothing is marked stopped: the lane's catch-all (`ChangeQueue._work_lane`, one for each lane) puts the
   error in the host's log, that lane's worker pauses and looks again, and the job runs again, so that its
@@ -507,12 +506,12 @@ Discord", and `clean_discord`'s docstring).
 - **The record is the queue's.** The queue writes the records the specifications ask of a change:
   for every change to the league's configuration, an audit record and a log-channel line (the core
   specification's "The record of what changed"), and for any other change, whatever log line its own
-  specification asks for. No command writes them itself, but for `/bot pack` and the factory reset (above). A log line is put on the log line's own
-  retry queue in the same save as the step it records (`OutputRouter.queue_log_on`), so a stop
-  cannot lose it, and is delivered once the save has committed (`OutputRouter.deliver_queued`),
-  under the lock the retry loop shares, so the queue and the retry loop never both send it. The
-  queue is handed the router and writes through it, not through the bot, since a service does not
-  use the bot to look up other services (above).
+  specification asks for. No command writes them itself, but for `/bot pack` and the factory reset
+  (above). A log line is put on the log line's own retry queue in the same save as the step it
+  records (`OutputRouter.queue_log_on`), so a stop cannot lose it, and is delivered once the save
+  has committed (`OutputRouter.deliver_queued`), under the lock the retry loop shares, so the queue
+  and the retry loop never both send it. The queue is handed the router and writes through it, not
+  through the bot, since a service does not use the bot to look up other services (above).
 
   A league's settings share the mechanism rather than each forming its own: a command declares a
   `Setting` (its check, its save on a connection, its reply and the tables it writes) and
@@ -565,30 +564,30 @@ of a save holds up every other save in the bot for as long as Discord takes to a
 connection that tried to write would be kept waiting by the first until it gave up and failed.
 Save first, then post, then record what was posted in a save of its own.
 
-**Each table is read and written by its owner alone.** Every statement that reads or changes a
-table lives in the module that owns it, core included, and every other module asks the owner: a
-module asks core through core's services, which it may import, and core asks a module through a hook
+**Each table is read and written by its owner alone.** Every statement that reads or changes a table
+lives in the module that owns it, core included, and every other module asks the owner: a module
+asks core through core's services, which it may import, and core asks a module through a hook
 (above), since core imports no module. A query that would join another owner's table is split at
-that line, each half asked of its owner on the connection the asker was handed, where it has one,
-so that both halves read inside the same save. Each module's design file lists its tables, and the checks
-of this rule hold the owner of every table (see "How the rules are checked"), failing on a table
-added without one, on a statement that changes a table outside its owner, and on one that reads it
-there. Results records a round's attendance through `AttendanceAfterReview` (above), so the attendance tables are
-written by attendance's code, on the connection results' step was handed. Where a module keeps its
-own columns on a core table (weather on rounds, sessions and a division's forecast channel,
-attendance on rounds, and the weather and signup on/off flags on the settings row), that module's
-design file names those columns as an exception. Those columns are that module's alone, to read and
-to set, and core does not set them either; the rest of the row is core's. The other modules keep
-their on/off flag in their own settings table. A round's status is core's, though results moves it
-through the stages of a round's results: results asks core's service to set it, so a round can
-still be cancelled while results is switched off.
+that line, each half asked of its owner on the connection the asker was handed, where it has one, so
+that both halves read inside the same save. Each module's design file lists its tables, and the
+checks of this rule hold the owner of every table (see "How the rules are checked"), failing on a
+table added without one, on a statement that changes a table outside its owner, and on one that
+reads it there. Results records a round's attendance through `AttendanceAfterReview` (above), so the
+attendance tables are written by attendance's code, on the connection results' step was handed.
+Where a module keeps its own columns on a core table (weather on rounds, sessions and a division's
+forecast channel, attendance on rounds, and the weather and signup on/off flags on the settings
+row), that module's design file names those columns as an exception. Those columns are that module's
+alone, to read and to set, and core does not set them either; the rest of the row is core's. The
+other modules keep their on/off flag in their own settings table. A round's status is core's, though
+results moves it through the stages of a round's results: results asks core's service to set it, so
+a round can still be cancelled while results is switched off.
 
 *Rejected:* letting any module read any table, with the owner's design file naming the columns
 others read, which costs nothing today but leaves a change to a table reaching readers in other
 modules that only the tests would find. *Rejected:* closing only the modules' tables and leaving
-core's open to every module, on the ground that modules depend on core.
-*Rejected:* moving each module's columns off core's tables now, which touches every reader of those
-columns before go-live for a cleaner line of ownership.
+core's open to every module, on the ground that modules depend on core. *Rejected:* moving each
+module's columns off core's tables now, which touches every reader of those columns before go-live
+for a cleaner line of ownership.
 
 **A conversation's lane writes only its own conversation's tables, and that is held at run time.**
 A change type of a conversation's lane declares the tables its kind writes (`ChangeType.writes`):
@@ -599,12 +598,12 @@ delete on any table but those. The queue's own tables are always allowed (`QUEUE
 mark, its audit records, its log lines and the changes it asks for), so the mark, the lines and a
 follow-on pass, and an empty `writes` allows those alone. A write the authoriser refuses raises in
 the step, rolls its save back whole and stops the lane at that job, so it never lands; in a
-league's setting or a role move, whose steps end on a fault (see "A job that fails stops its lane"), it ends the
-job instead and the lane goes on. A change
-type whose `writes` is `None`, the default, is not restricted; most league change types leave it
-so, and a league change type may declare the tables it writes and be confined to them likewise, as
-replacing a round's results with its resubmission drafts does. What a conversation hands the league, it asks of the league lane (see "How a change
-is carried out").
+league's setting or a role move, whose steps end on a fault (see "A job that fails stops its lane"),
+it ends the job instead and the lane goes on. A change type whose `writes` is `None`, the default,
+is not restricted; most league change types leave it so, and a league change type may declare the
+tables it writes and be confined to them likewise, as replacing a round's results with its
+resubmission drafts does. What a conversation hands the league, it asks of the league lane (see "How
+a change is carried out").
 
 *Rejected:* trusting each step to keep to its tables, which a lane's own tests would never catch
 once the flows are many; and a separate connection for each lane, which SQLite would not make a
@@ -625,20 +624,20 @@ second writer.
 Once the bot is live, a CHECK, or a key declared inside a table, can only be changed by rebuilding
 the table, so which rules go in the schema is settled before more tables are added.
 
-**Deletes are proven by a test, and each module deletes its own rows.** Deleting a season,
-division, round or driver removes what hangs off it, and a list of other modules' tables kept by
-hand in core, not updated when a module added a table, has made a delete fail or leave rows behind.
-So core deletes only its own rows. For each kind of delete (a season, division, round or driver
-deleted, and a driver merged into another) it declares a hook, and each module signed up deletes or
-re-points its own rows on the connection core's delete is handed, in the same save, before core
-deletes its own, so no link is left pointing at a row that is gone. A link from a module's table to
-a core table takes no action on its own, so nothing a module keeps is removed by
-the database on core's behalf. A test fills a database with one row in every table, fails when a new
-table is not filled, and runs every kind of delete against it. Within one owner's tables, a link may
-be changed to delete automatically, one at a time, only where the linked rows plainly belong to what
-is being deleted. Never where the link is there to stop a delete, as a placed driver stops their
-division being deleted (the core specification's "Divisions"). A module's design file names any
-link of its own that is there for that reason.
+**Deletes are proven by a test, and each module deletes its own rows.** Deleting a season, division,
+round or driver removes what hangs off it, and a list of other modules' tables kept by hand in core,
+not updated when a module added a table, has made a delete fail or leave rows behind. So core
+deletes only its own rows. For each kind of delete (a season, division, round or driver deleted, and
+a driver merged into another) it declares a hook, and each module signed up deletes or re-points its
+own rows on the connection core's delete is handed, in the same save, before core deletes its own,
+so no link is left pointing at a row that is gone. A link from a module's table to a core table
+takes no action on its own, so nothing a module keeps is removed by the database on core's behalf. A
+test fills a database with one row in every table, fails when a new table is not filled, and runs
+every kind of delete against it. Within one owner's tables, a link may be changed to delete
+automatically, one at a time, only where the linked rows plainly belong to what is being deleted.
+Never where the link is there to stop a delete, as a placed driver stops their division being
+deleted (the core specification's "Divisions"). A module's design file names any link of its own
+that is there for that reason.
 
 *Rejected:* letting the schema delete a module's rows from core's, by a cascade on the module's
 link, which removes them without the module's code taking part. *Rejected:* letting the database
@@ -736,9 +735,9 @@ a single run, after a network drop, so start-up work does not belong in the hand
 Start-up:
 
 1. reads the settings (the token, the database's path and the job store's, an unset job store
-   resolved beside the database) once, in the entry point, from the environment and the `.env`
-   file, rather than on import. A module's own host setting (`INKSCAPE`, for the rasteriser) stays
-   the module's, read when it is used and never on import; the entry point's `.env` load is what
+   resolved beside the database) once, in the entry point, from the environment and the `.env` file,
+   rather than on import. A module's own host setting (`INKSCAPE`, for the rasteriser) stays the
+   module's, read when it is used and never on import; the entry point's `.env` load is what
    supplies it. Read with the rest, it would put an image concern into the entry point's settings;
 2. swaps in a saved state waiting to be restored, before anything opens the database or the job
    store (the core specification's "Saving a state and returning to it");
@@ -797,10 +796,10 @@ every time inside the bot is in UTC. The change queue's clock (`ChangeQueue.now`
 clock: whatever hands a service its `now`, a cog, a change type or the start-up sweep, reads it
 there, so that a test moving it moves every reading. A stored time is written from the `now` handed
 in, never by SQLite's `datetime('now')`, and in one form, ISO 8601 with its UTC offset, a round's
-moment included, so that no reader handles a naive time and no comparison of a naive time with an
+moment included, so that no reader handles a naive time and no equality test of a naive time with an
 aware one, which Python answers as unequal without an error, can arise. *Rejected:* keeping a
-round's moment without an offset and making it aware where it is read, which leaves every reader
-to remember the conversion. How tests treat `now` is CLAUDE.md's.
+round's moment without an offset and making it aware where it is read, which leaves every reader to
+remember the conversion. How tests treat `now` is CLAUDE.md's.
 
 ---
 
@@ -960,11 +959,11 @@ registry (`channel_registry_service`).
 
 **Each kind of starting point has one failure path.** Whatever fails in the end, the full error goes
 to the host's log and, but for an autocomplete (below), one line goes to the log channel, and
-reporting it never raises another error.
-A job the bot is trying again is reported as it first fails, again after the last of the bot's
-own tries, and at each Retry that fails, and not at the bot's other tries. A change that succeeds is recorded in the log channel
-as its specification asks; a failure always is. A command that asks for a change meets two in turn:
-`report_failure` if the request itself fails, and the queue once the change is under way.
+reporting it never raises another error. A job the bot is trying again is reported as it first
+fails, again after the last of the bot's own tries, and at each Retry that fails, and not at the
+bot's other tries. A change that succeeds is recorded in the log channel as its specification asks;
+a failure always is. A command that asks for a change meets two in turn: `report_failure` if the
+request itself fails, and the queue once the change is under way.
 
 - **Changes**, from whatever starting point, are reported by the queue: the outcome to whoever asked
   while their reply can still be updated, and otherwise to the log channel (see "How a change is
@@ -980,8 +979,8 @@ as its specification asks; a failure always is. A command that asks for a change
   `core/utils/league_server.py` beside the base classes, which the builder attaches to the bot.
   `LeagueBot` stays a type that declares the bot's attributes and does nothing else.
 - **Autocompletes** go through `bounded_autocomplete` (`core/utils/autocomplete.py`), which answers
-  with no choices and keeps the error for the host's log. It writes nothing to the log channel:
-  an autocomplete changes nothing, and Discord gives it no message to answer with.
+  with no choices and keeps the error for the host's log. It writes nothing to the log channel: an
+  autocomplete changes nothing, and Discord gives it no message to answer with.
 - **Background tasks** go through the helper that starts them.
 - **The start-up sweep** goes through the job runner, one step at a time, like a scheduled job.
 
@@ -1027,23 +1026,23 @@ to it would switch off the one failure path for every command.
    the job runs again, so that its failure is recorded then; beside it, the dispatcher's own
    catch-all (`ChangeQueue._work`) puts a fault in starting the lanes in the host's log and pauses
    before it looks again. The queue's catch of a step that raises is a failure path as well: it
-   stops the lane, or, for a step of a league's setting or a role move that gives `Step.on_fault`, and for a
-   check that raises as a member's change of a type that gives `ChangeType.on_check_fault`, ends
-   the job instead and the lane goes on (see "A job that fails stops its lane"). Either way the
-   fault is logged on the host and recorded in the log channel as a failure, once. The hook a change type may give for a Discard of a change before it
-   started (`ChangeQueue._discard_follow_ons`) is not a failure path but a stated exception: its
-   catch-all puts the error in the host's log alone, with no line to the log channel, and asks no
-   follow-on, because a Discard is the queue's last way past a stop and a hook that raises must
-   not hold it;
+   stops the lane, or, for a step of a league's setting or a role move that gives `Step.on_fault`,
+   and for a check that raises as a member's change of a type that gives
+   `ChangeType.on_check_fault`, ends the job instead and the lane goes on (see "A job that fails
+   stops its lane"). Either way the fault is logged on the host and recorded in the log channel as a
+   failure, once. The hook a change type may give for a Discard of a change before it started
+   (`ChangeQueue._discard_follow_ons`) is not a failure path but a stated exception: its catch-all
+   puts the error in the host's log alone, with no line to the log channel, and asks no follow-on,
+   because a Discard is the queue's last way past a stop and a hook that raises must not hold it;
    the reader that says what dropping an undiscardable job would leave
    (`ChangeQueue._undiscardable_refusal`) is a stated exception likewise: its catch-all puts the
    error in the host's log with the full details, and the Discard is refused all the same, naming
-   the job in place of the reason, its refusal recorded in the log channel as any refused press
-   is, because an undiscardable job is never dropped for want of its reason;
-   and the `names` job an amendment's lapse and its cancel share (`amend_end_changes._names_step`)
-   is a stated exception as well: its catch-all puts the error in the host's log and completes the
-   job with no names, so the revert goes ahead with a full tie ordered by user id, because a tie
-   so ordered is the lesser fault than a round not put back (its docstring says so);
+   the job in place of the reason, its refusal recorded in the log channel as any refused press is,
+   because an undiscardable job is never dropped for want of its reason; and the `names` job an
+   amendment's lapse and its cancel share (`amend_end_changes._names_step`) is a stated exception as
+   well: its catch-all puts the error in the host's log and completes the job with no names, so the
+   revert goes ahead with a full tie ordered by user id, because a tie so ordered is the lesser
+   fault than a round not put back (its docstring says so);
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
@@ -1051,10 +1050,10 @@ to it would switch off the one failure path for every command.
    amendment's save is (the results specification's "Changing points system mid-season");
 3. around reporting a failure, where the report itself might fail;
 4. around a clean-up that then raises the error again;
-5. around work a specification gives a fallback for, as a picture that cannot be drawn is posted
-   or shown as text (Constitution XIV): the handler returns the fault as a line of its job, or of
-   the posting it hands back, so that the fallback is recorded where the job's lines go, as the
-   season review's `draw_and_post` (`core/services/season_review_changes.py`) does.
+5. around work a specification gives a fallback for, as a picture that cannot be drawn is posted or
+   shown as text (Constitution XIV): the handler returns the fault as a line of its job, or of the
+   posting it hands back, so that the fallback is recorded where the job's lines go, as the season
+   review's `draw_and_post` (`core/services/season_review_changes.py`) does.
 
 In every case it keeps the full error details for the host's log. Beyond the first place's own
 catch-all, a command catches only the errors it expects by name, and only to turn them into a
@@ -1122,27 +1121,27 @@ later on its own.
   change queue through the bot, a service looking another service up on the bot (a helper the cogs
   use may, as a cog does; `league_guild` is the one a service calls), a table written by a module
   that does not own it, a table read outside its owner (core's tables too; the scan sees tables, not
-  columns), core reading a module's service on the bot (an attribute `LeagueBot` types from a module's
-  package, read from a file of core), SQLite's clock in a statement or a column's default, a
-  service reading the wall clock (the change queue's own default clock is the one place allowed,
-  `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that raises again, calls
-  `report_failure` or sits directly in a loop's body is in a place by its shape; the stated
-  exceptions and the guards around reporting are named for good, `CATCH_ALLS_ALLOWED`), and a save
-  outside a queued change. The job check and
-  the check of cogs handling their own errors are absolute, with no list of breaches left to grow,
-  and the log channel's check holds its six places for good; every other check lists today's
-  breaches, each under the work that removes it. The check of a save outside a queued change counts
-  each function's `.commit()` and `.executescript()` calls, and a function writing on a handed
-  connection commits nothing and is not counted. It allows for good the migrations run at start-up
-  (`run_migrations` and `_enable_wal`, the journal mode set on the database file itself), the
-  queue's own records, the retry queue for log lines, `/bot pack` (above), and
-  `backup_service._write_empty_database`,
-  which writes the scheduler's empty file and not the league's.
-  The connection-state check refuses, outside the database code, a SQL function added with
-  `create_function`, an authoriser, an assignment to `row_factory` or `isolation_level`, and a PRAGMA,
-  ATTACH or temporary table (`test_a_lent_connection_carries_only_what_the_database_code_sets`);
-  the few functions that set up a connection of their own, opened with `sqlite3.connect` and never
-  lent, are named for good.
+  columns, so a module's read of its own columns on a core table is named for good,
+  `READS_OF_OWN_COLUMNS`), core reading a module's service on the bot (an attribute `LeagueBot`
+  types from a module's package, read from a file of core), SQLite's clock in a statement or a
+  column's default, a service reading the wall clock (the change queue's own default clock is the
+  one place allowed, `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that
+  raises again, calls `report_failure` as a statement directly in its body, or sits directly in the
+  body of a `for` loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the queue's
+  failure paths, the stated exceptions, the guards around reporting and the fifth place's handlers),
+  and a save outside a queued change. The job check and the check of cogs handling their own errors
+  are absolute, with no list of breaches left to grow, and the log channel's check holds its six
+  places for good; every other check lists today's breaches, each under the work that removes it.
+  The check of a save outside a queued change counts each function's `.commit()` and
+  `.executescript()` calls, and a function writing on a handed connection commits nothing and is not
+  counted. It allows for good the migrations run at start-up (`run_migrations` and `_enable_wal`,
+  the journal mode set on the database file itself), the queue's own records, the retry queue for
+  log lines, `/bot pack` (above), and `backup_service._write_empty_database`, which writes the
+  scheduler's empty file and not the league's. The connection-state check refuses, outside the
+  database code, a SQL function added with `create_function`, an authoriser, an assignment to
+  `row_factory` or `isolation_level`, and a PRAGMA, ATTACH or temporary table
+  (`test_a_lent_connection_carries_only_what_the_database_code_sets`); the few functions that set up
+  a connection of their own, opened with `sqlite3.connect` and never lent, are named for good.
 - **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
   **`tests/repository/test_import_roots.py`** check the one-league rule, the schema's own rules, and
   that the bot is imported from one place: the installed package, never through `src`.
