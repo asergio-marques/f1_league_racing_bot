@@ -779,8 +779,9 @@ class SeasonService:
     async def delete_division(self, division_id: int) -> None:
         """Delete a division with its rounds, teams and seats, in one transaction.
 
-        Refused while a driver is placed in it: the seat the placement points at has no delete
-        action, so removing the seats fails and the whole deletion rolls back.
+        Fails while a driver is placed in it: the seat the placement points at has no delete
+        action, so removing the seats breaks the placement's foreign key, the whole deletion
+        rolls back and the error reaches the caller.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(

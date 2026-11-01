@@ -417,16 +417,17 @@ class SchedulerService:
     """The one place a job is made, found or removed (`docs/design/architecture.md`, "Timed
     work and restarts").
 
-    Every cancel is a clean-up, and removing a job never raises. A job that has already fired, or was
-    never armed, is the ordinary case and what the caller wanted: APScheduler says so with
+    Every cancel is a clean-up, and removing a job never raises. A job that has already fired, or
+    was never armed, is the ordinary case and what the caller wanted: APScheduler says so with
     `JobLookupError`, which is caught by name and passed over in silence. Any other failure —
     a job store that cannot be read or written — is a real fault, and is logged as a warning
     with its traceback and then swallowed. That broad handler is the second place
     architecture.md's "Errors and failures" allows one: the callers are teardown lists
     (a season cancelled, a module switched off, signups closed, a pack), where one job that
     will not go must not stop the rest. `cancel_all` counts only the jobs that went. A cancel that
-    lists the store first (`cancel_round`, `cancel_rounds`, `cancel_all`) does raise where the
-    store cannot be listed, before it removes anything.
+    first lists the store (`cancel_round`, `cancel_rounds`, `cancel_all`, `cancel_season_end`)
+    or reads the league database (`cancel_all_weather`) does raise where that cannot be read,
+    before it removes anything.
     """
 
     def __init__(self, db_path: str, jobstore_path: str | None = None) -> None:
@@ -975,8 +976,8 @@ class SchedulerService:
         """Schedule only the result-submission job for each round.
 
         Used where ``schedule_round`` (which creates all weather + results jobs together) is
-        not called for a round: the weather module is off at approval, or a mystery round was
-        amended inside its first horizon. The round still needs this job to leave Not run.
+        not called for a round: the weather module is off (at approval or at an
+        amendment), or a mystery round was amended inside its first horizon. The round still needs this job to leave Not run.
 
         Args:
             division_meta: Mapping of ``division_id`` →
