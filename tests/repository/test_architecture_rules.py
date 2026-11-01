@@ -3033,6 +3033,8 @@ def test_the_wall_clock_check_sees_each_read_in_a_services_file_but_not_elsewher
     assert _wall_clock_reads_among(_sample(source, "core/services/change_queue.py")) == Counter(
         {("core/services/change_queue.py", "handler"): 1}
     )
+    named = f"class ChangeQueue:\n    def __init__(self):\n        {line}\n"
+    assert _wall_clock_reads_among(_sample(named, "core/services/change_queue.py")) == Counter()
 
 
 def test_a_listed_clock_read_that_is_gone_fails_the_clock_checks():
@@ -3080,12 +3082,21 @@ CATCH_ALLS_ALLOWED = {
 }
 
 
+def _is_a_report(statement: ast.stmt) -> bool:
+    """Whether *statement* is a call of `report_failure`, awaited or not, standing on its own or
+    returned: the handler's way of reporting the failure it caught."""
+    value = statement.value if isinstance(statement, (ast.Expr, ast.Return)) else None
+    if isinstance(value, ast.Await):
+        value = value.value
+    return isinstance(value, ast.Call) and _call_name(value) == "report_failure"
+
+
 def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
     """The catch-all handlers among *nodes*, each ``(file, function, node)``, that are in none of
     the five places, counted by file and function: a handler of `Exception`, `BaseException` or
-    nothing, that does not end by raising again, does not call `report_failure`, does not sit
-    directly in the body of a `for` or `async for`, and whose function is not in
-    `CATCH_ALLS_ALLOWED`."""
+    nothing, that does not end by raising again, does not hold a call of `report_failure` as a
+    statement directly in its body, does not sit directly in the body of a `for` or `async for`,
+    and whose function is not in `CATCH_ALLS_ALLOWED`."""
     nodes = list(nodes)
     in_a_loop = {
         id(statement)
@@ -3102,8 +3113,7 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
                 continue
             if handler.body and isinstance(handler.body[-1], ast.Raise):
                 continue
-            if any(isinstance(call, ast.Call) and _call_name(call) == "report_failure"
-                   for call in ast.walk(handler)):
+            if any(_is_a_report(statement) for statement in handler.body):
                 continue
             found[(path, function)] += 1
     return found
@@ -3312,7 +3322,7 @@ def test_the_catch_all_check_counts_each_broad_handler_but_not_a_handler_of_a_na
 def test_the_catch_all_check_passes_a_handler_in_each_of_the_places_its_shape_shows():
     """A handler that ends by raising again, one that calls `report_failure`, and one directly in
     a loop's body are in places; one whose `try` sits deeper than the loop's body (inside an `if`)
-    is not, nor is one that raises again only on one branch."""
+    is not, nor is one that raises again, or calls `report_failure`, only on one branch."""
     path = "core/services/sample_service.py"
     source = (
         "async def handler(items, interaction):\n"
@@ -3346,9 +3356,14 @@ def test_the_catch_all_check_passes_a_handler_in_each_of_the_places_its_shape_sh
         "    except Exception as exc:\n"
         "        if exc:\n"
         "            raise\n"
+        "    try:\n"
+        "        pass\n"
+        "    except Exception as exc:\n"
+        "        if exc:\n"
+        "            await report_failure(interaction, 'x', exc)\n"
     )
 
-    assert _catch_alls_outside_the_places_among(_sample(source, path)) == Counter({(path, "handler"): 2})
+    assert _catch_alls_outside_the_places_among(_sample(source, path)) == Counter({(path, "handler"): 3})
 
 
 def test_the_catch_all_check_passes_a_function_named_for_good():
