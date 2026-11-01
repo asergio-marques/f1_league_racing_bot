@@ -71,7 +71,7 @@ async def send_log_text(channel: discord.TextChannel, content: str) -> None:
 
 
 class OutputRouter:
-    """Writes the log channel, each failure contained; see above."""
+    """Writes the log channel, a failure to post contained; `log_destination` raises by design."""
 
     def __init__(
         self,
