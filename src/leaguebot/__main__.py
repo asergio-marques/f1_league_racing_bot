@@ -188,7 +188,7 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     """What a season's end needs of signup, results, weather, image and the cog, handed it here so
     that core imports none of them. Each is looked up as it is called, so that nothing is bound
     before it is needed."""
-    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.signup.services.window_close import close_signups_unattended
     from leaguebot.core.models.change import PlannedStep
     from leaguebot.core.services import backup_service
     from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
@@ -519,7 +519,7 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     from leaguebot.results.services.rounds_sync_change import rounds_sync_change
     from leaguebot.signup.services.closing_steps import closing_change, reason_delete_change
-    from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
+    from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
     from leaguebot.signup.services.signup_off_change import signup_off_change
     from leaguebot.signup.services.window_changes import window_close_change, window_open_change
     from leaguebot.signup.services.review_changes import (
@@ -1164,7 +1164,7 @@ async def main() -> None:
         from datetime import datetime as _dt, timezone as _tz
 
         async def _signup_close_cb() -> None:
-            from leaguebot.core.cogs.module_cog import close_signups_unattended
+            from leaguebot.signup.services.window_close import close_signups_unattended
             await close_signups_unattended(bot, cause="timer")
 
         bot.scheduler_service.register_signup_close_callback(_signup_close_cb)
@@ -1188,7 +1188,7 @@ async def main() -> None:
                 return
             if _close_dt <= now_utc:
                 log.info("on_ready: signup close_at is past — running forced close")
-                from leaguebot.core.cogs.module_cog import close_signups_unattended
+                from leaguebot.signup.services.window_close import close_signups_unattended
                 await close_signups_unattended(bot, cause="restart")
             else:
                 from leaguebot.core.services.scheduler_service import SIGNUP_CLOSE_JOB_ID

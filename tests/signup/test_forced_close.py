@@ -32,7 +32,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.cogs.module_cog import execute_forced_close
+from leaguebot.signup.services.window_close import execute_forced_close
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.driver_profile import DriverState
 
@@ -567,7 +567,7 @@ async def test_a_close_nobody_ran_on_the_queue_leaves_its_audit_and_line_to_the_
     finished. The close returns both drivers, but writes no audit and no "🔒 Signups closed"
     line: the "Signups are now closed" post's own job writes both, with the window's close, so
     a discarded post leaves no record that signups closed."""
-    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.signup.services.window_close import close_signups_unattended
 
     db_path = await _make_db(
         tmp_path,
@@ -601,7 +601,7 @@ async def test_a_close_nobody_ran_that_closes_nothing_writes_no_line(
     """A close nobody ran finds no window open, or the signup module disabled: it writes no
     line, since only a window actually closed is recorded and a disabled module produces
     nothing."""
-    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.signup.services.window_close import close_signups_unattended
 
     db_path = await _make_db(tmp_path)
     bot = _unattended_bot(db_path, signups_open=signups_open, enabled=enabled)
@@ -690,7 +690,7 @@ async def test_a_season_end_s_close_is_refused_without_its_timer_canceller(tmp_p
     """A season's end closes the window through `close_signups_unattended`, which returns drivers
     and so must be handed what cancels their timers: without it, it raises before it returns
     anyone, rather than leave a returned driver's 24-hour timer standing."""
-    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.signup.services.window_close import close_signups_unattended
 
     db_path = await _make_db(
         tmp_path, name="fc_nocanceller", drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]

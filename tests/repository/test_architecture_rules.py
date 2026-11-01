@@ -188,7 +188,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (3, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_signup"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (3, PASS["core"]),
-    ("core/cogs/module_cog.py", "execute_forced_close"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._attendance_capacity_warning"): (4, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._calendar_capacity_warning"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._standings_capacity_lines"): (2, PASS["core"]),
@@ -1230,6 +1229,7 @@ KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/penalty_wizard.py", "_AppealsConfirmClearView.confirm_btn"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_ConfirmClearView.confirm_btn"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "_ConfigSelectView.__init__._cb"): (1, PASS["results"]),
+    ("signup/services/window_close.py", "close_signups_unattended"): (1, PASS["signup"]),
 }
 
 
@@ -1465,6 +1465,8 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/signup_views.py", "PreferredTeamsButtonView._make_team_callback.callback"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_may_review_signup"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_resolve_view_context"): (1, PASS["signup"]),
+    ("signup/services/window_close.py", "close_signups_unattended"): (2, PASS["signup"]),
+    ("signup/services/window_close.py", "execute_forced_close"): (3, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._signup_svc"): (1, PASS["signup"]),
 }
 
@@ -2561,6 +2563,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
         (1, PASS["signup"]),
     ("signup/services/window_changes.py", "return_drivers_step.return_drivers"):
         (1, PASS["signup"]),
+    ("signup/services/window_close.py", "execute_forced_close"): (1, PASS["signup"]),
     ("signup/services/wizard_answers.py", "_driver_open"): (1, PASS["signup"]),
     ("signup/services/wizard_changes.py", "departed_placed_driver"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.recover_correction_timeouts"):
@@ -2711,8 +2714,6 @@ KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/module_cog.py", "ModuleCog._disable_signup"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_images"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_signup"): (1, PASS["core"]),
-    ("core/cogs/module_cog.py", "close_signups_unattended"): (1, PASS["core"]),
-    ("core/cogs/module_cog.py", "execute_forced_close"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._attendance_capacity_warning"): (4, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._attendance_review_lines"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._build_image_review_section"): (5, PASS["core"]),

@@ -811,7 +811,7 @@ async def test_a_driver_with_no_signup_channel_is_listed_by_name_alone(tmp_path)
 def test_every_state_the_close_returns_is_one_the_confirmation_lists():
     """A state added to the close alone would drop drivers the confirmation never named, and
     one of them parked alone would let the close through with no confirmation at all."""
-    from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
+    from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
     from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES
 
     assert RETURNED_BY_CLOSE <= IN_PROGRESS_STATES

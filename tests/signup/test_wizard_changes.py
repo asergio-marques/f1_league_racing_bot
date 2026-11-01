@@ -368,7 +368,7 @@ async def test_sign_up_while_a_close_waits_on_the_queue_is_refused_as_closing(tm
     not yet run. Kimi presses Sign Up: he is told, plainly, that signups are being closed and a
     new signup cannot start; no `signup.start` change is asked, and when the queue runs no signup
     channel is created and he is not signing up."""
-    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.signup.services.window_close import close_signups_unattended
 
     league = await _league(tmp_path)
     await close_signups_unattended(league.bot, cause="timer")

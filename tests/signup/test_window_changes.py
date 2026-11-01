@@ -648,7 +648,7 @@ async def test_a_close_that_could_not_record_the_window_closed_names_the_close_t
     line says to run `/signup close-time cancel` first, and so does the not-closed text a season's
     end writes. Since `/signup close` refuses too while a season's end or wind-down is in hand,
     the line says to let that finish first."""
-    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.signup.services.window_close import close_signups_unattended
     from leaguebot.core.services.season_lifecycle_service import WINDOW_NOT_CLOSED
 
     league = await _close_league(tmp_path)
@@ -696,7 +696,7 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
     system, as an automatic close, and one "🔒 Signups closed automatically at their set time"
     line is written, its head showing the set time (and, for the restart, that it came at
     start-up); it names no member and states beneath it the one driver returned (signup :67)."""
-    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.signup.services.window_close import close_signups_unattended
     from tests.support.change_queue import queued_log_lines
 
     for cause in ("timer", "restart"):
@@ -776,7 +776,7 @@ async def _season_end_in_hand(league: SeasonLeague, kind: str, *, due: bool = Tr
 async def _auto_close(league: SeasonLeague, cause: str) -> None:
     """The window's close time has passed and the bot asks its close, by the timer or at a
     restart (*cause*)."""
-    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.signup.services.window_close import close_signups_unattended
 
     set_at = league.clock.now - timedelta(minutes=1)
     await league.write("UPDATE signup_module_config SET close_at = ?", set_at.isoformat())
