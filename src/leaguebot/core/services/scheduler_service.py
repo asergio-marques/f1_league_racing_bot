@@ -25,8 +25,9 @@ import logging
 import os
 import re
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Iterator
 from typing import TYPE_CHECKING, Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -571,6 +572,26 @@ class SchedulerService:
     def jobstore_path(self) -> str:
         """The file the job store lives in, which is never the league database."""
         return self._jobstore_path
+
+    @contextmanager
+    def paused(self) -> Iterator[None]:
+        """Hold the scheduler still for the block, resuming it however the block ends.
+
+        A scheduler that is not running is left as it is, neither paused nor resumed: resuming
+        one nobody paused would start one the bot deliberately left down. It is for the copy of
+        the job store (a backup, a factory reset's, the approval's), where the pause keeps
+        every job from firing while the copy is taken. It is not what keeps the copy whole:
+        a copy is synchronous on the event-loop thread, which also keeps ``add_job`` out, and
+        the copy goes through SQLite's backup API besides.
+        """
+        was_running = self._scheduler.running
+        if was_running:
+            self._scheduler.pause()
+        try:
+            yield
+        finally:
+            if was_running:
+                self._scheduler.resume()
 
     def start(self) -> None:
         global _GLOBAL_SERVICE

@@ -240,7 +240,7 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
 
     def discard_backup() -> object:
         return backup_service.discard(
-            bot.db_path, backup_service.jobstore_path_of(bot), raise_on_failure=True
+            bot.db_path, bot.scheduler_service.jobstore_path, raise_on_failure=True
         )
 
     async def owed_closing_notices() -> list[str]:

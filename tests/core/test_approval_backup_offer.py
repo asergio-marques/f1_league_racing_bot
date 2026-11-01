@@ -352,10 +352,6 @@ def _press(view, name, interaction):
     return getattr(type(view), name)(view, interaction, MagicMock())
 
 
-_NOT_PAUSED = "#283: the save reaches the private scheduler rather than SchedulerService.paused()"
-
-
-@pytest.mark.xfail(strict=True, reason=_NOT_PAUSED)
 async def test_the_scheduler_is_paused_for_the_copy():
     """Exactly as `/test-mode backup save` pauses it: the job store is written on the event
     loop, and a job added mid-copy tears."""
@@ -373,7 +369,6 @@ async def test_the_scheduler_is_paused_for_the_copy():
     assert scheduler.events == ["pause", "resume"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_PAUSED)
 async def test_a_paused_scheduler_is_resumed_even_when_the_copy_fails():
     """Otherwise a failed backup silently stops every scheduled session the league has."""
     from tests.support.scheduler import PausingScheduler

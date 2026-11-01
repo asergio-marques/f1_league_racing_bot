@@ -142,10 +142,6 @@ def test_constructing_a_service_does_not_redirect_running_jobs(tmp_path):
         second._scheduler._jobstores["default"].engine.dispose()
 
 
-_NO_PAUSED = "#283: the scheduler service has no paused()"
-
-
-@pytest.mark.xfail(strict=True, reason=_NO_PAUSED)
 def test_paused_pauses_and_resumes_the_scheduler():
     """A running scheduler is paused for the block and resumed after it, and resumed too where
     the block raises, the error going on to the caller."""
@@ -164,7 +160,6 @@ def test_paused_pauses_and_resumes_the_scheduler():
     assert service._scheduler.resume.call_count == 2
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_PAUSED)
 def test_a_stopped_scheduler_is_neither_paused_nor_resumed():
     """Resuming a scheduler nobody paused would start one the bot deliberately left down."""
     service = _service()

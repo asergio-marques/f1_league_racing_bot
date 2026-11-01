@@ -195,7 +195,7 @@ class TestModeCog(commands.Cog):
             discarded = False
             try:
                 discarded = backup_service.discard(
-                    self.bot.db_path, _jobstore_path(self.bot)
+                    self.bot.db_path, self.bot.scheduler_service.jobstore_path
                 )
             except Exception:  # noqa: BLE001 — a backup left behind is not worth the toggle
                 log.exception("test-mode toggle: could not discard the saved backup")
@@ -832,18 +832,14 @@ class TestModeCog(commands.Cog):
             return
 
         db_path = self.bot.db_path
-        scheduler = getattr(self.bot, "scheduler_service", None)
+        scheduler = self.bot.scheduler_service
 
-        # Paused around the copy. APScheduler writes its jobstore on the event-loop
-        # thread, so a job added mid-copy would be caught half-written; the backup API
-        # makes that unlikely and this makes it impossible.
-        paused = False
+        # Paused around the copy, so no job fires while it is taken. That does not make the
+        # copy whole: the copy is synchronous on the event-loop thread, which is what keeps
+        # `add_job` from writing the job store mid-copy, and it goes through SQLite's backup API.
         try:
-            if scheduler is not None and getattr(scheduler, "_scheduler", None) is not None:
-                if scheduler._scheduler.running:
-                    scheduler._scheduler.pause()
-                    paused = True
-            backup_service.save(db_path, _jobstore_path(self.bot))
+            with scheduler.paused():
+                backup_service.save(db_path, scheduler.jobstore_path)
         except backup_service.BackupFault as exc:
             # A copy, write or check that failed: a fault in the bot, and one that left the
             # previous backup as it was. Any other error goes to the tree's failure handler,
@@ -859,9 +855,6 @@ class TestModeCog(commands.Cog):
             # Locked: something the maintainer can act on, so a refusal.
             await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
-        finally:
-            if paused and scheduler is not None:
-                scheduler._scheduler.resume()
 
         state = backup_service.state(db_path)
         await interaction.followup.send(
@@ -1418,11 +1411,6 @@ def _format_roster_errors(errors: list[str]) -> str:
     return "\n".join(lines)
 
 
-#: Re-exported from the backup service, which owns it now that the season approval
-#: needs it too. Kept as a name here because this module's tests import it.
-_jobstore_path = backup_service.jobstore_path_of
-
-
 class _ConfirmRestoreView(LeagueView):
     """The confirmation on a restore, and the staging behind it."""
 
@@ -1450,7 +1438,7 @@ class _ConfirmRestoreView(LeagueView):
         await interaction.response.defer(ephemeral=True)
         bot = self._cog.bot
         try:
-            backup_service.stage_restore(bot.db_path, _jobstore_path(bot))
+            backup_service.stage_restore(bot.db_path, bot.scheduler_service.jobstore_path)
         except backup_service.BackupFault as exc:
             # A copy or write that failed. Staging undoes itself, so nothing stands.
             await report_failure(

@@ -21,8 +21,6 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from leaguebot.core.cogs.season_cog import (
     SeasonCog,
     _BackupBeforeApprovalView,
@@ -189,10 +187,6 @@ async def test_a_backup_that_cannot_be_taken_does_not_refuse_the_season(tmp_path
     assert "anyway" in _reply(interaction)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the save reaches the private scheduler rather than SchedulerService.paused()",
-)
 async def test_the_scheduler_is_resumed_after_a_failed_save(tmp_path):
     cog = _cog(db_path=str(tmp_path / "nothing-here.db"))
     view = _view(cog)

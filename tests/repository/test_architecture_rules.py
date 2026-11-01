@@ -440,9 +440,6 @@ def _scheduler_reached_around() -> Counter[tuple[str, str]]:
 
 
 KNOWN_SCHEDULER_REACHED_AROUND: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset"): (1, PASS["core"]),
-    ("core/cogs/season_cog.py", "_BackupBeforeApprovalView.save"): (3, PASS["core"]),
-    ("core/cogs/test_mode_cog.py", "TestModeCog.backup_save"): (3, PASS["core"]),
     ("signup/services/wizard_service.py", "WizardService.__init__"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.move_held_channel"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
@@ -1448,7 +1445,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (1, PASS["attendance"]),
     ("attendance/services/sheet_posting.py", "sheet_step.still_due"): (1, PASS["attendance"]),
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
-    ("core/services/backup_service.py", "jobstore_path_of"): (1, PASS["core"]),
     ("core/services/calendar_post_service.py", "image_calendar_wanted"): (2, PASS["core"]),
     ("core/services/calendar_post_service.py", "render_calendar_image"): (2, PASS["core"]),
     ("core/services/hub_service.py", "_hub_channel"): (1, PASS["core"]),

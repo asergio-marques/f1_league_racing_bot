@@ -828,15 +828,9 @@ class BotCog(commands.Cog):
         db_path = self.bot.db_path
         scheduler = self.bot.scheduler_service
 
-        paused = False
         try:
-            inner = getattr(scheduler, "_scheduler", None)
-            if inner is not None and inner.running:
-                inner.pause()
-                paused = True
-            backup = factory_reset_service.take_backup(
-                db_path, backup_service.jobstore_path_of(self.bot)
-            )
+            with scheduler.paused():
+                backup = factory_reset_service.take_backup(db_path, scheduler.jobstore_path)
         except backup_service.BackupFault as exc:
             # A copy, a write or a check that failed is a fault in the bot, not a refusal, and
             # nothing has been erased: the reply says so without naming the error.
@@ -847,9 +841,6 @@ class BotCog(commands.Cog):
                 outcome="Nothing was erased: the backup could not be taken.",
             )
             return
-        finally:
-            if paused:
-                scheduler._scheduler.resume()
 
         targets = await factory_reset_service.gather_targets(db_path)
         # The wipe takes the configuration and with it any way to find the log channel, so

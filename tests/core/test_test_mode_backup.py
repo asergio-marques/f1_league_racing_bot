@@ -205,10 +205,6 @@ async def test_save_takes_a_backup_of_both_databases(live):
     assert bs.backup_path(live.jobs).is_file()
 
 
-_NOT_PAUSED = "#283: the save reaches the private scheduler rather than SchedulerService.paused()"
-
-
-@pytest.mark.xfail(strict=True, reason=_NOT_PAUSED)
 async def test_save_pauses_the_scheduler_and_resumes_it(live):
     """APScheduler writes its job store on the event loop; a job added mid-copy would be
     caught half-written."""
@@ -219,7 +215,6 @@ async def test_save_pauses_the_scheduler_and_resumes_it(live):
     assert cog.bot.scheduler_service.events == ["pause", "resume"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_PAUSED)
 async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
     """A backup that leaves the bot's scheduler paused has broken the season to save it.
 
@@ -243,7 +238,6 @@ async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_PAUSED)
 async def test_a_save_whose_scheduler_copy_fails_says_the_previous_backup_is_unchanged(live):
     """Neither backup is replaced until both copies are taken, so a scheduler copy that fails
     leaves the previous pair standing, and the reply may say so (#482, special case 11)."""
@@ -268,7 +262,6 @@ async def test_a_save_whose_scheduler_copy_fails_says_the_previous_backup_is_unc
     assert cog.bot.scheduler_service.events == ["pause", "resume"] * 2
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_PAUSED)
 async def test_a_save_that_fails_unexpectedly_reaches_the_failure_line(live, monkeypatch):
     """A fault the save did not undo — here the second backup cannot be written once the first
     has been replaced — reaches the tree's failure handler: the standard reply saying the save
@@ -605,9 +598,6 @@ async def test_a_staged_restore_is_recorded(live):
 # ── Where the scheduler's database is ─────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the save asks the private _jobstore_path, not jobstore_path"
-)
 async def test_the_jobstore_path_is_asked_of_the_scheduler(live):
     """Rather than guessed, so a `SCHEDULER_DB_PATH` that moved it is still backed up: the
     scheduler keeps its jobs in another folder than the league's database, and a save backs up

@@ -5148,19 +5148,11 @@ class _BackupBeforeApprovalView(LeagueView):
         await interaction.response.defer(ephemeral=True)
         from leaguebot.core.services import backup_service
 
-        scheduler = getattr(self._cog.bot, "scheduler_service", None)
-        paused = False
+        scheduler = self._cog.bot.scheduler_service
         try:
-            # Paused for the copy exactly as `/test-mode backup save` pauses it: the job
-            # store is written on the event loop, and a job added mid-copy tears.
-            if scheduler is not None and getattr(scheduler, "_scheduler", None) is not None:
-                if scheduler._scheduler.running:
-                    scheduler._scheduler.pause()
-                    paused = True
-            backup_service.save(
-                self._cog.bot.db_path,
-                backup_service.jobstore_path_of(self._cog.bot),
-            )
+            # Paused for the copy exactly as `/test-mode backup save` pauses it.
+            with scheduler.paused():
+                backup_service.save(self._cog.bot.db_path, scheduler.jobstore_path)
         except backup_service.BackupFault as exc:
             # A fault in the bot's own copy: the standard failure form, in place of the
             # fault's text, which a manager cannot act on. The details go to the host's log.
@@ -5198,9 +5190,6 @@ class _BackupBeforeApprovalView(LeagueView):
             self.answer = "skip"
             self.stop()
             return
-        finally:
-            if paused and scheduler is not None:
-                scheduler._scheduler.resume()
 
         # Its own line, so the record holds the backup whatever the approval then does.
         await self._cog.bot.output_router.post_log(
