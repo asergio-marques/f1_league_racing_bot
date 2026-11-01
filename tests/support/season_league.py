@@ -1062,10 +1062,7 @@ async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: b
     bot = league.bot
     _wizard_double(league)
     _signup_services(league)
-    # Named twice until #283's build has the season's end ask the public `jobstore_path`.
-    bot.scheduler_service.jobstore_path = bot.scheduler_service._jobstore_path = os.path.join(
-        str(tmp_path), "jobs.sqlite"
-    )
+    bot.scheduler_service.jobstore_path = os.path.join(str(tmp_path), "jobs.sqlite")
     if test_mode:
         from leaguebot.core.services.backup_service import backup_path
 

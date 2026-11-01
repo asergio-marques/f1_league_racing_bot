@@ -8,7 +8,9 @@ import graph cannot see.
 **Where today's code breaks a rule, the breach is listed here**, in the `KNOWN_...` table above
 its test, with the issue that will fix it. A test fails in two ways: when a breach appears that
 is not listed, and when a listed breach has gone but its line is still here. So each list can
-only get shorter. Fix a breach and delete (or lower) its line in the same commit.
+only get shorter. Fix a breach and delete (or lower) its line in the same commit. One list is
+checked elsewhere: `KNOWN_CLOCK_DEFAULTS`, keyed ``("schema", "table.column")``, is held against
+the built schema by `tests/core/test_schema_rules.py`, which imports it from here.
 
 A breach is counted per function, as ``(file, function): (how many, issue)``. The file is
 relative to the package, `src/leaguebot/`, and the function is its dotted name inside the file (``Class.method``,

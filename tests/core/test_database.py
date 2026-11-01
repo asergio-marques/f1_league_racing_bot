@@ -1,4 +1,5 @@
-"""Integration tests for database.py — migration runner and connection helper."""
+"""Integration tests for database.py: the migration runner, each file applied whole with its keys
+checked and its version recorded in the same save, and the connections it lends."""
 
 from __future__ import annotations
 
@@ -208,7 +209,9 @@ async def test_a_migration_failing_part_way_leaves_nothing_and_no_record(
 
 async def test_a_migration_leaving_a_dangling_key_is_refused(tmp_path, monkeypatch) -> None:
     """A migration that leaves a row pointing at a parent that does not exist is refused by name,
-    naming the table, and leaves nothing of itself applied or recorded."""
+    naming the table, and leaves nothing of itself applied or recorded. A file runs with the keys
+    off, so the database itself takes the dangling insert; the runner's check before the commit
+    is what refuses it."""
     from leaguebot.core.db.database import MigrationBreaksForeignKeys
 
     db_path = await _migrated_with(tmp_path, monkeypatch, {"002_s4.sql": """

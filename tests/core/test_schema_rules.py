@@ -1,4 +1,6 @@
-"""The rules the schema itself holds: keys, cascades and uniqueness.
+"""The rules the schema itself holds: keys, cascades and uniqueness, an owning module for every
+table, every column a module keeps on another's table, and no column stamping its own time from
+SQLite's clock but those `KNOWN_CLOCK_DEFAULTS` lists.
 
 Issue #254 squashed the migration chain into one baseline and removed the tests that proved
 each historic migration carried data across. Several of those tests also pinned a rule of the
