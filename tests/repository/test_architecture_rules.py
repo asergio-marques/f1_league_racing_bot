@@ -1380,11 +1380,44 @@ def _locals_bound_to_the_bot(nodes) -> dict[tuple[str, str], set[str]]:
     return bound
 
 
+#: The helpers in core the cogs use, which reach core's services through the bot as a cog does
+#: (architecture.md, "How the code is laid out"), by file and function, what a function nests
+#: included: the tier guards on a command, the autocomplete, and the checks that admit an
+#: interaction to the league's server. The lookup check does not count them.
+COG_FACING_HELPERS = frozenset({
+    ("core/utils/autocomplete.py", "team_autocomplete"),
+    ("core/utils/channel_guard.py", "_tier_guard"),
+    ("core/utils/channel_guard.py", "bot_setup_only"),
+    ("core/utils/channel_guard.py", "server_owner_only"),
+    ("core/utils/league_server.py", "admits"),
+    ("core/utils/league_server.py", "is_foreign_guild"),
+})
+
+#: The helpers a service calls that may look a core service up on the bot, for good, with the reason.
+LOOKUPS_ALLOWED: dict[tuple[str, str], str] = {
+    ("core/utils/league_server.py", "league_guild"): (
+        "the one route from a job or a service to the league's server, which reads the "
+        "configuration service to find it: handing the configuration service instead to every "
+        "service that posts would add a parameter to each, for no rule gained (architecture.md, "
+        "\"How the code is laid out\")"
+    ),
+}
+
+
+def _passed_over_by_the_lookup_check(path: str, function: str) -> bool:
+    """Whether *function* in *path* is, or is nested in, a cog-facing helper or an allowed lookup."""
+    return any(
+        file == path and (function == name or function.startswith(f"{name}."))
+        for file, name in COG_FACING_HELPERS | LOOKUPS_ALLOWED.keys()
+    )
+
+
 def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
     """The services among *nodes* that a service or a helper looks up on the bot, ``bot.X_service``
     or ``getattr(bot, "X_service")``, the bot reached as `_reaches_the_bot` reads it or through a
     local name bound to it (`_locals_bound_to_the_bot`), counted by file and function. The change
-    queue is the queue check's, and not counted here."""
+    queue is the queue check's, and not counted here; nor are the cog-facing helpers
+    (`COG_FACING_HELPERS`) and the lookups allowed for good (`LOOKUPS_ALLOWED`)."""
     nodes = list(nodes)
     bound = _locals_bound_to_the_bot(nodes)
 
@@ -1393,7 +1426,7 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
 
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in nodes:
-        if not _is_a_service_or_helper(path):
+        if not _is_a_service_or_helper(path) or _passed_over_by_the_lookup_check(path, function):
             continue
         name = _attribute_read_on_the_bot(node)
         if name is None and isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) \
@@ -1424,12 +1457,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/placement_service.py", "PlacementService._guard_sheet_capacity"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_standings_capacity"): (1, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
-    ("core/utils/autocomplete.py", "team_autocomplete"): (1, PASS["core"]),
-    ("core/utils/channel_guard.py", "_tier_guard.decorate.wrapper"): (1, PASS["core"]),
-    ("core/utils/channel_guard.py", "bot_setup_only.wrapper"): (1, PASS["core"]),
-    ("core/utils/channel_guard.py", "server_owner_only.wrapper"): (1, PASS["core"]),
-    ("core/utils/league_server.py", "is_foreign_guild"): (1, PASS["core"]),
-    ("core/utils/league_server.py", "league_guild"): (1, PASS["core"]),
     ("image/services/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "refresh_before_render"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "run_daily_refresh"): (1, PASS["image"]),
@@ -1472,8 +1499,10 @@ def test_no_service_looks_another_service_up_on_the_bot():
     """A service or a helper is handed the services it needs by whoever builds it, and never looks
     one up on the bot (architecture.md, "How modules and core fit together": "Services stay
     attached to the bot, and are built in one place"; #439 slice 6b, folded in at Gate 1). A cog
-    may look a service up there. Today's lookups are listed under the pass of the module whose
-    file makes them; a lookup a design pass removes deletes its line in that commit."""
+    may look a service up there, and so may a helper in core the cogs use, as a cog does; of the
+    helpers a service calls, `league_guild` alone may, for good. Today's lookups are listed under
+    the pass of the module whose file makes them; a lookup a design pass removes deletes its line
+    in that commit."""
     _check(
         "no service looks another service up on the bot",
         _service_lookups_among(_nodes()),
@@ -1512,6 +1541,49 @@ def test_the_lookup_check_does_not_count_a_cog_s_lookup():
     path = "signup/cogs/sample_cog.py"
 
     assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter()
+
+
+def test_the_lookup_check_does_not_count_a_cog_facing_helper_or_league_guild():
+    """A lookup in a helper in core the cogs use, a tier guard's wrapper or `is_foreign_guild`, is
+    not counted, as a cog's is not; nor is `league_guild`'s, allowed for good. One in another
+    function of the same file is counted, and the same functions in a service are counted."""
+    lookup = "    bot.config_service.get()\n"
+    guards = (
+        "def server_owner_only(func):\n"
+        "    async def wrapper(bot, interaction):\n"
+        f"    {lookup}"
+        "    return wrapper\n"
+        f"async def elsewhere(bot):\n{lookup}"
+    )
+    server = (
+        f"async def is_foreign_guild(bot, guild_id):\n{lookup}"
+        f"async def league_guild(bot):\n{lookup}"
+        f"async def elsewhere(bot):\n{lookup}"
+    )
+    service = "core/services/sample_service.py"
+
+    for path, source in (
+        ("core/utils/channel_guard.py", guards), ("core/utils/league_server.py", server),
+    ):
+        assert _service_lookups_among(_sample(source, path)) == Counter({(path, "elsewhere"): 1})
+    assert _service_lookups_among(_sample(guards, service)) == Counter({
+        (service, "server_owner_only.wrapper"): 1, (service, "elsewhere"): 1,
+    })
+    assert _service_lookups_among(_sample(server, service)) == Counter({
+        (service, name): 1 for name in ("is_foreign_guild", "league_guild", "elsewhere")
+    })
+
+
+def test_every_helper_the_lookup_check_passes_over_is_in_the_source():
+    """Each cog-facing helper and each allowed lookup names a function the source holds, and each
+    allowed lookup gives its reason, so an entry outliving its function, or one added without a
+    reason, fails."""
+    functions = _functions_among(_nodes())
+
+    assert all(reason.strip() for reason in LOOKUPS_ALLOWED.values())
+    assert sorted(
+        key for key in COG_FACING_HELPERS | LOOKUPS_ALLOWED.keys() if key not in functions
+    ) == []
 
 
 def test_the_lookup_check_follows_a_local_bound_to_the_bot():

@@ -525,27 +525,35 @@ async def test_a_burst_of_stale_presses_asks_one_refresh(league):
 # ── Who may see the hub ───────────────────────────────────────────────────
 
 
+#: The hub's permissions are handed the configuration service, rather than looking it up on the bot.
+_HANDED_THE_CONFIGURATION = (
+    "#283: the hub's permissions still look the configuration service up on the bot"
+)
+
+
 def _overwrites(channel) -> dict:
     return channel.edit.await_args.kwargs["overwrites"]
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_THE_CONFIGURATION)
 async def test_with_no_base_role_every_member_sees_the_hub_and_none_posts(db_path):
     """Decided 2026-09-22: the hub serves every member where the league has no base role."""
     channel = _hub_channel()
     guild = _guild(channel)
 
-    assert await apply_hub_permissions(_bot(db_path, guild), guild, channel) is None
+    assert await apply_hub_permissions(ConfigService(db_path), guild, channel) is None
 
     everyone = _overwrites(channel)[guild.default_role]
     assert (everyone.view_channel, everyone.send_messages) == (True, False)
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_THE_CONFIGURATION)
 async def test_with_a_base_role_only_its_holders_see_the_hub(db_path):
     await _configure(db_path, base_role_id=BASE_ROLE)
     channel = _hub_channel()
     guild = _guild(channel)
 
-    await apply_hub_permissions(_bot(db_path, guild), guild, channel)
+    await apply_hub_permissions(ConfigService(db_path), guild, channel)
 
     overwrites = _overwrites(channel)
     assert overwrites[guild.default_role].view_channel is False
@@ -553,13 +561,14 @@ async def test_with_a_base_role_only_its_holders_see_the_hub(db_path):
     assert (base.view_channel, base.send_messages) == (True, False)
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_THE_CONFIGURATION)
 async def test_both_tier_roles_see_the_hub_and_neither_posts(db_path):
     """The panel is the only message there; a manager's post would push it out of sight."""
     await _configure(db_path, base_role_id=BASE_ROLE)
     channel = _hub_channel()
     guild = _guild(channel)
 
-    await apply_hub_permissions(_bot(db_path, guild), guild, channel)
+    await apply_hub_permissions(ConfigService(db_path), guild, channel)
 
     for role_id in (MANAGER_ROLE, ADMIN_ROLE):
         tier = _overwrites(channel)[guild._roles[role_id]]
@@ -568,31 +577,36 @@ async def test_both_tier_roles_see_the_hub_and_neither_posts(db_path):
     assert (me.view_channel, me.send_messages) == (True, True)
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_THE_CONFIGURATION)
 async def test_a_deleted_base_role_keeps_the_hub_closed_and_says_so(db_path):
     """Opening it to everyone would read a deleted role as a league that chose none."""
     await _configure(db_path, base_role_id=BASE_ROLE)
     channel = _hub_channel()
     guild = _guild(channel, roles=(MANAGER_ROLE, ADMIN_ROLE))
 
-    fault = await apply_hub_permissions(_bot(db_path, guild), guild, channel)
+    fault = await apply_hub_permissions(ConfigService(db_path), guild, channel)
 
     assert _overwrites(channel)[guild.default_role].view_channel is False
     assert f"id {BASE_ROLE}" in fault and "/bot base-role" in fault
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_THE_CONFIGURATION)
 async def test_permissions_are_applied_again_to_the_hub_set(db_path):
     await _configure(db_path, hub_channel_id=HUB)
     channel = _hub_channel()
+    bot = _bot(db_path, _guild(channel))
 
-    assert await reapply_hub_permissions(_bot(db_path, _guild(channel))) is None
+    assert await reapply_hub_permissions(bot, bot.config_service) is None
 
     channel.edit.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=_HANDED_THE_CONFIGURATION)
 async def test_permissions_are_left_alone_while_no_hub_is_set(db_path):
     channel = _hub_channel()
+    bot = _bot(db_path, _guild(channel))
 
-    assert await reapply_hub_permissions(_bot(db_path, _guild(channel))) is None
+    assert await reapply_hub_permissions(bot, bot.config_service) is None
 
     channel.edit.assert_not_awaited()
 
