@@ -336,10 +336,13 @@ def _button_interaction():
 
 
 async def _view(cog=None, *, scheduler=None):
+    """The backup question on *cog*'s bot, whose scheduler is *scheduler*, or by default one
+    that can be paused and names a job store no test reads, as the bot always carries one."""
     from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
+    from tests.support.scheduler import PausingScheduler
 
     cog = cog or _make_cog()
-    cog.bot.scheduler_service = scheduler
+    cog.bot.scheduler_service = scheduler or PausingScheduler("/tmp/not-read-jobs.db")
     return _BackupBeforeApprovalView(cog, timeout=60)
 
 
@@ -464,7 +467,9 @@ def _recording_cog() -> SeasonCog:
     guild = MagicMock()
     guild.get_member = MagicMock(side_effect=lambda uid: alex if uid == 77 else None)
     cog.bot.get_guild = MagicMock(return_value=guild)
-    cog.bot.scheduler_service = None
+    from tests.support.scheduler import PausingScheduler
+
+    cog.bot.scheduler_service = PausingScheduler("/tmp/not-read-jobs.db")
     return cog
 
 
