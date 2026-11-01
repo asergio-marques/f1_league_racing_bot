@@ -1123,7 +1123,7 @@ later on its own.
   use may, as a cog does; `league_guild` is the one a service calls), a table written by a module
   that does not own it, a table read outside its owner (core's tables too; the scan sees tables, not
   columns), core reading a module's service on the bot (an attribute `LeagueBot` types from a module's
-  package, read from a file of core), SQLite's clock in a statement or a   package, read from a file of core), SQLite's clock in a statement or a column's default, a
+  package, read from a file of core), SQLite's clock in a statement or a column's default, a
   service reading the wall clock (the change queue's own default clock is the one place allowed,
   `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that raises again, calls
   `report_failure` or sits directly in a loop's body is in a place by its shape; the stated
