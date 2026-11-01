@@ -1,6 +1,6 @@
 """The channel a division's forecast is posted in.
 
-`/division channel weather` sets it. The column is the weather module's own, on core's
+`/weather channel` sets it. The column is the weather module's own, on core's
 `divisions` table (architecture.md, "The database").
 """
 
