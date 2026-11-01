@@ -977,7 +977,8 @@ class SchedulerService:
 
         Used where ``schedule_round`` (which creates all weather + results jobs together) is
         not called for a round: the weather module is off (at approval or at an
-        amendment), or a mystery round was amended inside its first horizon. The round still needs this job to leave Not run.
+        amendment), or a mystery round was amended inside its first horizon. The round still
+        needs this job to leave Not run.
 
         Args:
             division_meta: Mapping of ``division_id`` →
@@ -1186,10 +1187,10 @@ class SchedulerService:
 
         **A recurring trigger, and deliberately so** (`schedule_amendment_sweep` is the other).
         Every other job here is a one-shot ``DateTrigger`` arming a single event of a round or a
-        season, and that shape is right for those: each fires once and is done. This one is a standing
-        instruction rather than an event, and re-arming it from inside its own callback would
-        put the survival of the schedule at the mercy of the job body -- a refresh that raised
-        would silently be the last one. A ``CronTrigger`` is re-armed by APScheduler itself
+        season, and that shape is right for those: each fires once and is done. This one is a
+        standing instruction rather than an event, and re-arming it from inside its own callback
+        would put the survival of the schedule at the mercy of the job body -- a refresh that
+        raised would silently be the last one. A ``CronTrigger`` is re-armed by APScheduler itself
         and outlives a failing run.
 
         *time_of_day* is ``HH:MM`` read as UTC, matching every other trigger in this service.

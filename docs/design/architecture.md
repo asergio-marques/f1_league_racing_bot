@@ -1040,18 +1040,18 @@ to it would switch off the one failure path for every command.
    `ChangeType.on_check_fault`, ends the job instead and the lane goes on (see "A job that fails
    stops its lane"). Either way the fault is logged on the host and recorded in the log channel as a
    failure, once. The callback a change type may give for a Discard of a change before it started
-   (`ChangeType.on_discarded`) is not a failure path but a stated exception: the catch-all around
-   it (`ChangeQueue._discard_follow_ons`) puts the error in the host's log alone, with no line to
-   the log channel, and asks no follow-on, because a Discard is the queue's last way past a stop
-   and a callback that raises must not hold it; the reader that says what dropping an undiscardable job would leave
-   (`ChangeQueue._undiscardable_refusal`) is a stated exception likewise: its catch-all puts the
-   error in the host's log with the full details, and the Discard is refused all the same, naming
-   the job in place of the reason, its refusal recorded in the log channel as any refused press is,
-   because an undiscardable job is never dropped for want of its reason; and the `names` job an
-   amendment's lapse and its cancel share (`amend_end_changes._names_step`) is a stated exception as
-   well: its catch-all puts the error in the host's log and completes the job with no names, so the
-   revert goes ahead with a full tie ordered by user id, because a tie so ordered is the lesser
-   fault than a round not put back (its docstring says so);
+   (`ChangeType.on_discarded`) is not a failure path but a stated exception: the catch-all around it
+   (`ChangeQueue._discard_follow_ons`) puts the error in the host's log alone, with no line to the
+   log channel, and asks no follow-on, because a Discard is the queue's last way past a stop and a
+   callback that raises must not hold it; the reader that says what dropping an undiscardable job
+   would leave (`ChangeQueue._undiscardable_refusal`) is a stated exception likewise: its catch-all
+   puts the error in the host's log with the full details, and the Discard is refused all the same,
+   naming the job in place of the reason, its refusal recorded in the log channel as any refused
+   press is, because an undiscardable job is never dropped for want of its reason; and the `names`
+   job an amendment's lapse and its cancel share (`amend_end_changes._names_step`) is a stated
+   exception as well: its catch-all puts the error in the host's log and completes the job with no
+   names, so the revert goes ahead with a full tie ordered by user id, because a tie so ordered is
+   the lesser fault than a round not put back (its docstring says so);
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
