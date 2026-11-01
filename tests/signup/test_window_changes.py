@@ -70,6 +70,9 @@ DRIVER_ROLE = 555002
 CLOSED_NOTICE = 9001
 #: The permissions the bot needs on the signup channel to post the Sign Up button.
 NEEDED = ("**View Channel**", "**Send Messages**", "**Embed Links**")
+#: Why a test that asks the close nobody ran fails until the close is handed its services by
+#: keyword.
+TAKES_SERVICES = "#283: the close still reads its services off the bot"
 
 
 
@@ -639,6 +642,7 @@ async def test_a_discarded_lock_says_the_channel_stays_open_to_typing_until_it_d
     assert "will not delete itself" not in said
 
 
+@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_a_close_that_could_not_record_the_window_closed_names_the_close_time_command_first(
     tmp_path,
 ):
@@ -655,7 +659,13 @@ async def test_a_close_that_could_not_record_the_window_closed_names_the_close_t
     await league.write("UPDATE signup_module_config SET close_at = ?", "2026-10-13T11:00:00+00:00")
     league.channel(LEAGUE_SIGNUP_CHANNEL).fail_when = lambda content, _kwargs: CLOSED_TEXT in str(content)
 
-    await close_signups_unattended(league.bot, cause="timer")
+    await close_signups_unattended(
+        change_queue=league.bot.change_queue,
+        module_service=league.bot.module_service,
+        signup_module_service=league.bot.signup_module_service,
+        driver_service=league.bot.driver_service,
+        cause="timer",
+    )
     await run_queue(league.bot)
     await discard_job(league.bot)
 
@@ -687,6 +697,7 @@ async def test_a_confirm_after_the_window_changed_is_refused_when_it_runs(tmp_pa
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(tmp_path):
     """Two leagues, each with Kimi still filling in the wizard: in one the close timer fires, in
     the other the bot starts after the close time (`close_signups_unattended` with the cause
@@ -704,7 +715,13 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
         set_at = league.clock.now - timedelta(minutes=1)
         await league.write("UPDATE signup_module_config SET close_at = ?", set_at.isoformat())
 
-        await close_signups_unattended(league.bot, cause=cause)
+        await close_signups_unattended(
+            change_queue=league.bot.change_queue,
+            module_service=league.bot.module_service,
+            signup_module_service=league.bot.signup_module_service,
+            driver_service=league.bot.driver_service,
+            cause=cause,
+        )
 
         [change] = await _changes_of(league, CLOSE_KIND)
         assert change["origin"] == "BOT", cause
@@ -780,10 +797,17 @@ async def _auto_close(league: SeasonLeague, cause: str) -> None:
 
     set_at = league.clock.now - timedelta(minutes=1)
     await league.write("UPDATE signup_module_config SET close_at = ?", set_at.isoformat())
-    await close_signups_unattended(league.bot, cause=cause)
+    await close_signups_unattended(
+        change_queue=league.bot.change_queue,
+        module_service=league.bot.module_service,
+        signup_module_service=league.bot.signup_module_service,
+        driver_service=league.bot.driver_service,
+        cause=cause,
+    )
 
 
 @pytest.mark.parametrize("kind", SEASON_ENDS)
+@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_the_bot_s_close_leaves_a_season_whose_end_is_in_hand_to_it(tmp_path, kind):
     """Two leagues, each with Kimi still filling in the wizard: in one the close timer fires, in
     the other the bot starts after the close time, and each asks the close. Before it runs, the
@@ -816,6 +840,7 @@ async def test_the_bot_s_close_leaves_a_season_whose_end_is_in_hand_to_it(tmp_pa
     ("season.complete", True, None), (WIND_DOWN_KIND, True, None),
     (WIND_DOWN_KIND, False, "PLACEMENTS"),
 ))
+@pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)
 async def test_a_close_cut_off_after_returning_its_drivers_tells_them_and_leaves_the_season_to_its_end(
     tmp_path, kind, due, moved,
 ):
@@ -926,7 +951,10 @@ async def test_a_member_s_close_names_the_job_of_an_end_still_doing_one(tmp_path
     assert f"job #{job}" in reply, reply
 
 
-@pytest.mark.parametrize("asked", ("timer", "command"))
+@pytest.mark.parametrize(
+    "asked",
+    (pytest.param("timer", marks=pytest.mark.xfail(strict=True, reason=TAKES_SERVICES)), "command"),
+)
 async def test_a_wind_down_its_check_will_drop_holds_no_close_back(tmp_path, asked):
     """Season 7 is raced with signups open (Ongoing, signups open) and two divisions, the first
     finished and the second not. The first division's appeals are approved, and the bot asks a

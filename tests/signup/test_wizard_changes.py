@@ -363,6 +363,7 @@ async def test_a_created_channel_whose_save_failed_is_deleted_before_the_next_tr
     assert wizard is not None and int(wizard["signup_channel_id"]) == NEW_CHANNEL + 1
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the close still reads its services off the bot")
 async def test_sign_up_while_a_close_waits_on_the_queue_is_refused_as_closing(tmp_path):
     """The close time has come and the timer has asked the queue to close the window, which has
     not yet run. Kimi presses Sign Up: he is told, plainly, that signups are being closed and a
@@ -371,7 +372,13 @@ async def test_sign_up_while_a_close_waits_on_the_queue_is_refused_as_closing(tm
     from leaguebot.signup.services.window_close import close_signups_unattended
 
     league = await _league(tmp_path)
-    await close_signups_unattended(league.bot, cause="timer")
+    await close_signups_unattended(
+        change_queue=league.bot.change_queue,
+        module_service=league.bot.module_service,
+        signup_module_service=league.bot.signup_module_service,
+        driver_service=league.bot.driver_service,
+        cause="timer",
+    )
 
     press = await _press_sign_up(league)
 
