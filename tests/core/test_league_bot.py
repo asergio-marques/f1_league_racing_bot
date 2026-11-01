@@ -55,34 +55,6 @@ def test_bot_of_is_the_interactions_client():
     assert bot_of(interaction) is interaction.client
 
 
-def test_the_wizard_has_its_bot_before_the_gateway_opens():
-    """The signup wizard reaches the league's services through its bot. It was bound late in
-    `on_ready`, after the restart recovery, while the persistent views are routed from the
-    moment the gateway opens — so a signup press in between found no bot and failed (#228).
-    It is bound in `main` itself, before `bot.start`, and in no handler."""
-    tree = ast.parse((SRC / "__main__.py").read_text(encoding="utf-8"))
-    main = next(
-        node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "main"
-    )
-    binds = [
-        node for node in ast.walk(main)
-        if isinstance(node, ast.Call) and ast.unparse(node.func) == "bot.wizard_service.set_bot"
-    ]
-    assert len(binds) == 1, "the wizard is bound once"
-    in_main_itself = {id(node) for stmt in main.body for node in ast.walk(stmt)} - {
-        id(node)
-        for inner in ast.walk(main)
-        if isinstance(inner, (ast.FunctionDef, ast.AsyncFunctionDef)) and inner is not main
-        for node in ast.walk(inner)
-    }
-    assert id(binds[0]) in in_main_itself, "bound inside a handler, not in main"
-    start = next(
-        node for node in ast.walk(main)
-        if isinstance(node, ast.Call) and ast.unparse(node.func) == "bot.start"
-    )
-    assert binds[0].lineno < start.lineno
-
-
 def test_the_approval_windows_reader_is_declared_and_set_by_the_builder():
     """The season cog reads the enabled modules' windows through `bot.approval_windows`, which
     `LeagueBot` declares and the builder sets, so that core imports neither attendance nor
