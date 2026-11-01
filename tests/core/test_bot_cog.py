@@ -1130,7 +1130,10 @@ def _owner_interaction(user_id: int = OWNER_ID) -> MagicMock:
 def _resetting_bot(db_path: str, tmp_path) -> MagicMock:
     bot = _packing_bot(db_path)
     bot.scheduler_service._scheduler.running = False
-    bot.scheduler_service._jobstore_path = str(tmp_path / "scheduler.db")
+    # Named twice until #283's build has the reset ask the public `jobstore_path`.
+    bot.scheduler_service.jobstore_path = bot.scheduler_service._jobstore_path = str(
+        tmp_path / "scheduler.db"
+    )
     bot.user.id = 1000
     # Asked before the wipe where the reset's closing line goes (#482): the configured log
     # channel, as the router reads it while the configuration is still there.

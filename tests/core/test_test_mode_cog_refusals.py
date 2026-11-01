@@ -158,7 +158,6 @@ def _former_driver_refused(cog, monkeypatch):
 
 
 def _locked(cog, monkeypatch):
-    monkeypatch.setattr(cog_module, "_jobstore_path", lambda bot: "/tmp/does-not-matter.jobs.db")
     monkeypatch.setattr(
         backup_service,
         "save",

@@ -22,8 +22,8 @@ import pytest
 # Imported under another name: pytest tries to *collect* any class whose name
 # begins with "Test", and warns that it cannot because the cog takes arguments.
 from leaguebot.core.cogs.test_mode_cog import TestModeCog as Cog
-from leaguebot.core.cogs.test_mode_cog import _jobstore_path
 from leaguebot.core.services import backup_service as bs
+from tests.support.scheduler import PausingScheduler
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 4400
@@ -59,10 +59,7 @@ def _cog(live, *, test_mode: bool = True):
         return_value=SimpleNamespace(test_mode_active=test_mode)
     )
     # A scheduler that reports where its jobs are and can be paused, as the real one can.
-    cog.bot.scheduler_service = SimpleNamespace(
-        _jobstore_path=str(live.jobs),
-        _scheduler=MagicMock(running=True),
-    )
+    cog.bot.scheduler_service = PausingScheduler(str(live.jobs))
     # A log channel that can be written to, as every command's success, refusal and failure
     # now writes a line there (#482).
     cog.bot.output_router.post_log = AsyncMock()
@@ -208,6 +205,10 @@ async def test_save_takes_a_backup_of_both_databases(live):
     assert bs.backup_path(live.jobs).is_file()
 
 
+_NOT_PAUSED = "#283: the save reaches the private scheduler rather than SchedulerService.paused()"
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_PAUSED)
 async def test_save_pauses_the_scheduler_and_resumes_it(live):
     """APScheduler writes its job store on the event loop; a job added mid-copy would be
     caught half-written."""
@@ -215,10 +216,10 @@ async def test_save_pauses_the_scheduler_and_resumes_it(live):
 
     await _body(Cog.backup_save)(cog, _interaction())
 
-    cog.bot.scheduler_service._scheduler.pause.assert_called_once()
-    cog.bot.scheduler_service._scheduler.resume.assert_called_once()
+    assert cog.bot.scheduler_service.events == ["pause", "resume"]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_PAUSED)
 async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
     """A backup that leaves the bot's scheduler paused has broken the season to save it.
 
@@ -231,7 +232,7 @@ async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
 
     await _through_the_tree(Cog.backup_save, cog, interaction)
 
-    cog.bot.scheduler_service._scheduler.resume.assert_called_once()
+    assert cog.bot.scheduler_service.events == ["pause", "resume"]
     reply = _reply(interaction)
     assert reply.startswith("❌ `/test-mode backup save` stopped on a fault in the bot")
     assert "The previous backup is unchanged." in reply
@@ -242,6 +243,7 @@ async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_PAUSED)
 async def test_a_save_whose_scheduler_copy_fails_says_the_previous_backup_is_unchanged(live):
     """Neither backup is replaced until both copies are taken, so a scheduler copy that fails
     leaves the previous pair standing, and the reply may say so (#482, special case 11)."""
@@ -263,9 +265,10 @@ async def test_a_save_whose_scheduler_copy_fails_says_the_previous_backup_is_unc
         f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — BackupFault."
     )
     assert bs.backup_path(live.db).read_bytes() == league_backup
-    cog.bot.scheduler_service._scheduler.resume.assert_called()
+    assert cog.bot.scheduler_service.events == ["pause", "resume"] * 2
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_PAUSED)
 async def test_a_save_that_fails_unexpectedly_reaches_the_failure_line(live, monkeypatch):
     """A fault the save did not undo — here the second backup cannot be written once the first
     has been replaced — reaches the tree's failure handler: the standard reply saying the save
@@ -290,7 +293,7 @@ async def test_a_save_that_fails_unexpectedly_reaches_the_failure_line(live, mon
     assert line.startswith(
         f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — OSError."
     )
-    cog.bot.scheduler_service._scheduler.resume.assert_called_once()
+    assert cog.bot.scheduler_service.events == ["pause", "resume"]
 
 
 async def test_a_save_is_recorded(live):
@@ -602,15 +605,19 @@ async def test_a_staged_restore_is_recorded(live):
 # ── Where the scheduler's database is ─────────────────────────────────────
 
 
-def test_the_jobstore_path_is_asked_of_the_scheduler(live):
-    """Rather than guessed, so a `SCHEDULER_DB_PATH` that moved it is still backed up."""
+@pytest.mark.xfail(
+    strict=True, reason="#283: the save asks the private _jobstore_path, not jobstore_path"
+)
+async def test_the_jobstore_path_is_asked_of_the_scheduler(live):
+    """Rather than guessed, so a `SCHEDULER_DB_PATH` that moved it is still backed up: the
+    scheduler keeps its jobs in another folder than the league's database, and a save backs up
+    the job store it names there."""
+    moved = live.dir / "elsewhere" / "jobs.db"
+    moved.parent.mkdir()
+    _database(moved)
     cog = _cog(live)
+    cog.bot.scheduler_service = PausingScheduler(str(moved))
 
-    assert _jobstore_path(cog.bot) == str(live.jobs)
+    await _body(Cog.backup_save)(cog, _interaction())
 
-
-def test_the_jobstore_path_falls_back_to_the_default(live):
-    """A bot with no scheduler attached still has a conventional place for one."""
-    bot = SimpleNamespace(db_path=str(live.db), scheduler_service=None)
-
-    assert _jobstore_path(bot).endswith("scheduler.db")
+    assert bs.backup_path(moved).is_file()

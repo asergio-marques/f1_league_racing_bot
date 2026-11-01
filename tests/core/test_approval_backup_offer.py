@@ -349,27 +349,33 @@ def _press(view, name, interaction):
     return getattr(type(view), name)(view, interaction, MagicMock())
 
 
+_NOT_PAUSED = "#283: the save reaches the private scheduler rather than SchedulerService.paused()"
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_PAUSED)
 async def test_the_scheduler_is_paused_for_the_copy():
     """Exactly as `/test-mode backup save` pauses it: the job store is written on the event
     loop, and a job added mid-copy tears."""
-    scheduler = MagicMock()
-    scheduler._scheduler = MagicMock()
-    scheduler._scheduler.running = True
+    from tests.support.scheduler import PausingScheduler
+
+    scheduler = PausingScheduler("/tmp/not-read-jobs.db")
     view = await _view(scheduler=scheduler)
+    during: list[list[str]] = []
 
     with patch("leaguebot.core.services.backup_service.save") as save:
-        save.side_effect = lambda *a, **k: scheduler._scheduler.pause.assert_called_once()
+        save.side_effect = lambda *a, **k: during.append(list(scheduler.events))
         await _press(view, "save", _button_interaction())
 
-    scheduler._scheduler.pause.assert_called_once()
-    scheduler._scheduler.resume.assert_called_once()
+    assert during == [["pause"]]
+    assert scheduler.events == ["pause", "resume"]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_PAUSED)
 async def test_a_paused_scheduler_is_resumed_even_when_the_copy_fails():
     """Otherwise a failed backup silently stops every scheduled session the league has."""
-    scheduler = MagicMock()
-    scheduler._scheduler = MagicMock()
-    scheduler._scheduler.running = True
+    from tests.support.scheduler import PausingScheduler
+
+    scheduler = PausingScheduler("/tmp/not-read-jobs.db")
     view = await _view(scheduler=scheduler)
 
     from leaguebot.core.services import backup_service
@@ -377,21 +383,7 @@ async def test_a_paused_scheduler_is_resumed_even_when_the_copy_fails():
     with patch("leaguebot.core.services.backup_service.save", side_effect=backup_service.BackupError("nope")):
         await _press(view, "save", _button_interaction())
 
-    scheduler._scheduler.resume.assert_called_once()
-
-
-async def test_a_scheduler_that_was_not_running_is_not_resumed():
-    """Resuming one nobody paused would start a scheduler the bot deliberately left down."""
-    scheduler = MagicMock()
-    scheduler._scheduler = MagicMock()
-    scheduler._scheduler.running = False
-    view = await _view(scheduler=scheduler)
-
-    with patch("leaguebot.core.services.backup_service.save"):
-        await _press(view, "save", _button_interaction())
-
-    scheduler._scheduler.pause.assert_not_called()
-    scheduler._scheduler.resume.assert_not_called()
+    assert scheduler.events == ["pause", "resume"]
 
 
 async def test_a_backup_that_cannot_be_taken_still_approves():
