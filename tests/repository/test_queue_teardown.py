@@ -61,6 +61,10 @@ async def test_stop_started_queues_waits_on_no_idle_lent_connection(tmp_path, sh
     change_queue.stop_started_queues(started_before=before)
 
     assert time.monotonic() - start < short_grace / 2
+    # Python drops a thread from `threading.enumerate()` a moment before it has finished exiting,
+    # so the stop's wait can pass over one that is on its way out, and `is_alive()` taken at once
+    # can still be true. One the stop never closed would run on, and fail this all the same.
+    idle._thread.join(timeout=5)
     assert not idle._thread.is_alive()
 
 
