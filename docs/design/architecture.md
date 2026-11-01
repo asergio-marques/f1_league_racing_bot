@@ -1040,9 +1040,9 @@ to it would switch off the one failure path for every command.
    `ChangeType.on_check_fault`, ends the job instead and the lane goes on (see "A job that fails
    stops its lane"). Either way the fault is logged on the host and recorded in the log channel as a
    failure, once. The callback a change type may give for a Discard of a change before it started
-   (`ChangeQueue._discard_follow_ons`) is not a failure path but a stated exception: its catch-all
-   puts the error in the host's log alone, with no line to the log channel, and asks no follow-on,
-   because a Discard is the queue's last way past a stop and a callback that raises must not hold
+   (`ChangeType.on_discarded`) is not a failure path but a stated exception: the catch-all around
+   it (`ChangeQueue._discard_follow_ons`) puts the error in the host's log alone, with no line to
+   the log channel, and asks no follow-on, because a Discard is the queue's last way past a stop and a callback that raises must not hold
    it; the reader that says what dropping an undiscardable job would leave
    (`ChangeQueue._undiscardable_refusal`) is a stated exception likewise: its catch-all puts the
    error in the host's log with the full details, and the Discard is refused all the same, naming
