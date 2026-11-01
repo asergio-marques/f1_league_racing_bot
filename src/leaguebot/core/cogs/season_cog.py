@@ -3099,7 +3099,6 @@ class SeasonCog(commands.Cog):
                 division_id=src_div.id,
                 name=new_name,
                 role_id=role.id,
-                forecast_channel_id=None,
                 day_offset=day_offset,
                 hour_offset=hour_offset,
                 tier=tier,

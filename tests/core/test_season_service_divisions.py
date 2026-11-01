@@ -111,10 +111,10 @@ async def test_a_duplicate_carries_its_own_name_role_and_tier(tmp_path):
     service = SeasonService(db_path)
     source = await _source(db_path)
 
-    copy = await service.duplicate_division(source, "Am", 556, forecast_channel_id=601, tier=2)
+    copy = await service.duplicate_division(source, "Am", 556, tier=2)
 
     assert (copy.name, copy.mention_role_id, copy.forecast_channel_id, copy.tier) == (
-        "Am", 556, 601, 2
+        "Am", 556, None, 2
     )
     assert copy.season_id == SEASON_ID
 

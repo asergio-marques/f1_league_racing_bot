@@ -396,13 +396,12 @@ class SeasonService:
                 if div_id is None:
                     cursor = await db.execute(
                         "INSERT INTO divisions "
-                        "(season_id, name, mention_role_id, forecast_channel_id, tier) "
-                        "VALUES (?, ?, ?, ?, ?)",
+                        "(season_id, name, mention_role_id, tier) "
+                        "VALUES (?, ?, ?, ?)",
                         (
                             season_id,
                             div_data["name"],
                             div_data["role_id"],
-                            div_data["channel_id"],
                             div_data.get("tier", 0),
                         ),
                     )
@@ -812,7 +811,6 @@ class SeasonService:
         division_id: int,
         name: str,
         role_id: int,
-        forecast_channel_id: int | None = None,
         day_offset: int = 0,
         hour_offset: float = 0.0,
         tier: int = 0,
@@ -841,9 +839,9 @@ class SeasonService:
                     )
 
             cursor = await db.execute(
-                "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id, tier)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (season_id, name, role_id, forecast_channel_id, tier),
+                "INSERT INTO divisions (season_id, name, mention_role_id, tier)"
+                " VALUES (?, ?, ?, ?)",
+                (season_id, name, role_id, tier),
             )
             await db.commit()
             new_div_id = inserted_id(cursor)
@@ -853,9 +851,8 @@ class SeasonService:
                 new_dt = rnd.scheduled_at + delta
                 await db.execute(
                     "INSERT INTO rounds"
-                    " (division_id, round_number, format, track_name, scheduled_at,"
-                    "  phase1_done, phase2_done, phase3_done)"
-                    " VALUES (?, ?, ?, ?, ?, 0, 0, 0)",
+                    " (division_id, round_number, format, track_name, scheduled_at)"
+                    " VALUES (?, ?, ?, ?, ?)",
                     (
                         new_div_id,
                         rnd.round_number,  # will be renumbered next
@@ -1448,9 +1445,8 @@ async def _sync_division_rounds(db, division_id: int, rounds: list[dict]) -> Non
             continue
         await db.execute(
             "INSERT INTO rounds "
-            "(division_id, round_number, format, track_name, "
-            " scheduled_at, phase1_done, phase2_done, phase3_done) "
-            "VALUES (?, ?, ?, ?, ?, 0, 0, 0)",
+            "(division_id, round_number, format, track_name, scheduled_at) "
+            "VALUES (?, ?, ?, ?, ?)",
             (division_id, r["round_number"], *key),
         )
 
