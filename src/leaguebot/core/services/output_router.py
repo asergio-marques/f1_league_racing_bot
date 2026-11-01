@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import sqlite3
 from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Optional
@@ -45,6 +46,7 @@ from leaguebot.core.utils.messages import chunk_message
 _MENTION_RE = re.compile(rf"((?:{USER_MENTION})|(?:{ROLE_MENTION}))")
 
 if TYPE_CHECKING:
+    from leaguebot.core.models.server_config import ServerConfig
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.utils.league_bot import LeagueBot
 
@@ -99,8 +101,26 @@ class OutputRouter:
         erase the configuration (the factory reset) asks here first and hands the answer back to
         :meth:`post_log` as *channel*, once the configuration that would have named it is gone.
         """
-        config = await self._config.get_server_config()
+        config = await self._read_config("log_destination", say_unset=False)
         return None if config is None else config.log_channel_id
+
+    async def _read_config(self, caller: str, *, say_unset: bool = True) -> "Optional[ServerConfig]":
+        """The server configuration, or ``None`` where there is none to give.
+
+        ``None`` is a bot not yet set up, which *say_unset* writes to the host's log as the
+        callers that post do, or a database that refuses the read. The log writer contains its
+        own failures rather than raising them (`docs/design/architecture.md`), so a locked
+        database is written to the host's log with its traceback and the caller takes ``None``
+        as it takes a line it could not post.
+        """
+        try:
+            config = await self._config.get_server_config()
+        except sqlite3.Error:
+            log.exception("%s: the server configuration could not be read, so the line is not posted", caller)
+            return None
+        if config is None and say_unset:
+            log.error("%s: the bot is not set up, so there is no log channel", caller)
+        return config
 
     async def post_log(
         self, content: str, *, channel: "Optional[int]" = None
@@ -139,9 +159,8 @@ class OutputRouter:
                 channel, content, enqueue_on_failure=False, fallback_label="log",
                 return_first=True,
             )
-        config = await self._config.get_server_config()
+        config = await self._read_config("post_log")
         if config is None:
-            log.error("post_log: the bot is not set up, so there is no log channel")
             return None
 
         channel_id = config.log_channel_id
@@ -176,9 +195,8 @@ class OutputRouter:
         Returns the message, which carries the view, or ``None`` where it could not be posted or
         the bot is not set up.
         """
-        config = await self._config.get_server_config()
+        config = await self._read_config("post_notice")
         if config is None:
-            log.error("post_notice: the bot is not set up, so there is no log channel")
             return None
         channel_id = config.log_channel_id
         message = await self._send(

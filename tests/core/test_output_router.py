@@ -92,7 +92,6 @@ async def test_send_log_text_divides_a_long_line_and_notifies_nobody():
         assert send.kwargs["allowed_mentions"].to_dict() == discord.AllowedMentions.none().to_dict()
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a failed read of the log channel raises")
 @pytest.mark.parametrize(
     "call",
     [
