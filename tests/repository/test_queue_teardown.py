@@ -10,6 +10,7 @@ eighty seconds a full run, from `tests/core/test_track_service.py` alone, when t
 
 from __future__ import annotations
 
+import asyncio
 import os
 import threading
 import time
@@ -61,3 +62,35 @@ async def test_stop_started_queues_waits_on_no_idle_lent_connection(tmp_path, sh
 
     assert time.monotonic() - start < short_grace / 2
     assert not idle._thread.is_alive()
+
+
+async def test_the_idle_connections_are_closed_on_one_loop_for_the_whole_run(
+    tmp_path, lending, monkeypatch
+):
+    """Closing the idle connections around every test builds no event loop each time (#540). A
+    Windows loop makes its wake-up pipe from loopback TCP sockets, and three loops a test ran the
+    runner out of ephemeral ports a third of the way through the suite. So once the closing has
+    its loop, closing again builds none, and still ends every idle connection's thread; with
+    nothing idle, nothing is handed to it at all."""
+    from tests.support.connections import close_lent_connections
+
+    db_path = os.path.join(str(tmp_path), "lent.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as first:
+        pass
+    close_lent_connections()  # the closing has its loop from here on, whatever ran before
+
+    def no_new_loop():
+        raise AssertionError("a new event loop was built to close the idle connections")
+
+    monkeypatch.setattr(asyncio, "new_event_loop", no_new_loop)
+    monkeypatch.setattr(asyncio.events, "new_event_loop", no_new_loop)  # how `asyncio.run` builds one
+    async with get_connection(db_path) as second:
+        pass
+    assert second._thread.is_alive(), "precondition: the connection is kept idle to be lent again"
+
+    close_lent_connections()
+    close_lent_connections()
+
+    assert not first._thread.is_alive()
+    assert not second._thread.is_alive()
