@@ -399,15 +399,16 @@ async def run_migrations(db_path: str) -> None:
 
     **The schema starts from one baseline** (issue #254). The 61 migrations that built it
     before the bot went live were squashed into ``001_baseline.sql``; git keeps them. Until
-    go-live, which is release ``v1.0.0`` (#259), the baseline may be edited in place. From
-    go-live on it is never edited again: every schema change is a new migration numbered after
-    it, carrying a test of its own, and no applied file is ever changed. At go-live, also
-    consider recording a checksum of each applied file and refusing one that has changed
-    since, which would enforce that rule. And make the check that every table has an owning
-    module (`_declared_tables` in `tests/repository/test_architecture_rules.py`) read every
-    migration rather than the baseline alone, applying each file's drops and renames, since
-    rebuilding a table creates a temporary one; until then a table a later migration adds is
-    under no owner, and its writes go unchecked.
+    go-live, which is release ``v1.0.0`` (#259), the baseline may be edited in place.
+
+    **At go-live**, in one place so nothing is missed on the day:
+
+    - The baseline is frozen. Every later schema change is a new migration numbered after it,
+      with a test of its own, and no applied file is ever changed.
+    - ``test_the_baseline_is_the_only_migration`` admits each numbered migration after the
+      baseline.
+    - A test pinning the SHA-256 of each migration file (read with universal newlines) is added,
+      so an edited applied file fails the suite.
 
     **Each file is applied whole, or not at all** (architecture.md, "A database update is applied
     whole, or not at all"). For each pending file the foreign keys are switched off (a pragma

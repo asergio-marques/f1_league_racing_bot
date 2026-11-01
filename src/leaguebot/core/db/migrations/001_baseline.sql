@@ -5,9 +5,8 @@
 -- before they were deleted. Each table carries the comments SQLite kept inside its CREATE
 -- statement; comments that stood above a statement live on in the history of those files.
 --
--- Until go-live, which is release v1.0.0 (#259), this file may be edited in place. From
--- go-live on it is never edited again: every schema change is a new migration numbered after
--- it, with a test of its own.
+-- Until go-live, which is release v1.0.0 (#259), this file may be edited in place. What changes
+-- at go-live is listed under "At go-live" in the docstring of `run_migrations`.
 
 -- server_configs
 -- At most one row: a fresh database holds none, and `/bot init` writes it. `server_id` is the
