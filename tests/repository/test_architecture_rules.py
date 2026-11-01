@@ -2762,3 +2762,279 @@ def test_a_listed_module_lookup_in_core_that_is_gone_fails_the_check():
             _module_lookups_in_core_among(nodes, frozenset({"wizard_service"})),
             {(path, "handler"): (1, PASS["core"])},
         )
+
+
+# ── 16. The time is passed in ───────────────────────────────────────────────────────────────
+
+#: SQLite's clock in a statement: a function of `'now'`, or one of the `CURRENT_...` keywords.
+_SQL_CLOCK = re.compile(
+    r"\bCURRENT_(?:TIMESTAMP|DATE|TIME)\b"
+    r"|\b(?:datetime|date|time|julianday|unixepoch|strftime)\s*\([^()]*'now'",
+    re.IGNORECASE,
+)
+
+#: A column of the schema that takes SQLite's clock as its default.
+_CLOCK_DEFAULT = re.compile(
+    r"DEFAULT\s*\(?\s*(?:CURRENT_(?:TIMESTAMP|DATE|TIME)\b|(?:datetime|date|time)\s*\([^()]*'now')",
+    re.IGNORECASE,
+)
+
+#: Where the schema's own defaults are listed, keyed by the schema file and ``table.column``.
+BASELINE_PATH = "core/db/migrations/001_baseline.sql"
+
+#: The columns whose default is SQLite's clock that the schema keeps for good, and why. The
+#: migrations are excepted from the rule: a default is the schema's own, filled when a row is
+#: inserted. Only a column that a later change takes the default off is listed as a breach.
+CLOCK_DEFAULTS_ALLOWED = {
+    (BASELINE_PATH, "season_signup_config.captured_at"): "the schema's own stamp of a row inserted",
+    (BASELINE_PATH, "signup_records.created_at"): "the schema's own stamp of a row inserted",
+    (BASELINE_PATH, "signup_records.updated_at"): "the schema's own stamp of a row inserted",
+    (BASELINE_PATH, "signup_windows.opened_at"): "the schema's own stamp of a row inserted",
+    (BASELINE_PATH, "signup_wizard_records.created_at"): "the schema's own stamp of a row inserted",
+    (BASELINE_PATH, "signup_wizard_records.last_activity_at"): "the schema's own stamp of a row inserted",
+}
+
+#: The functions allowed for good to read the wall clock in a service, and why.
+WALL_CLOCK_ALLOWED = {
+    ("core/services/change_queue.py", "ChangeQueue.__init__"):
+        "the change queue's own default clock, `ChangeQueue.now`, which hands every service its time",
+}
+
+
+def _clock_defaults(schema: str) -> list[str]:
+    """Each ``table.column`` of the schema text *schema* whose default is SQLite's clock."""
+    found = []
+    table = ""
+    for line in schema.splitlines():
+        created = re.match(r'\s*CREATE TABLE\s+"?([a-z_][a-z0-9_]*)"?', line, re.IGNORECASE)
+        if created:
+            table = created.group(1)
+        column = re.match(r'\s+"?([a-z_][a-z0-9_]*)"?\s+[A-Z]', line)
+        if column and _CLOCK_DEFAULT.search(line):
+            found.append(f"{table}.{column.group(1)}")
+    return found
+
+
+def _sql_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
+    """The reads of SQLite's clock among *nodes*, each ``(file, function, node)``, counted by file
+    and function: each match in a string of SQL, a docstring aside."""
+    nodes = list(nodes)
+    docstrings = _docstring_ids(nodes)
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in nodes:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings:
+            found[(path, function)] += len(_SQL_CLOCK.findall(node.value))
+    return +found
+
+
+def _sql_clock_reads() -> Counter[tuple[str, str]]:
+    """The statements that read SQLite's clock, and the schema's defaults that do and are not
+    allowed for good (keyed by the schema file and ``table.column``)."""
+    found = _sql_clock_reads_among(_nodes())
+    for column in _clock_defaults(BASELINE.read_text(encoding="utf-8")):
+        if (BASELINE_PATH, column) not in CLOCK_DEFAULTS_ALLOWED:
+            found[(BASELINE_PATH, column)] += 1
+    return found
+
+
+def _is_a_wall_clock(node: ast.AST) -> bool:
+    """Whether *node* is a read of the wall clock: ``datetime.now``, ``datetime.utcnow``,
+    ``date.today``, ``datetime.today`` or ``time.time``, under the module's name or the class's."""
+    if not isinstance(node, ast.Attribute):
+        return False
+    base = node.value
+    name = base.id if isinstance(base, ast.Name) else base.attr if isinstance(base, ast.Attribute) else ""
+    return (
+        (node.attr in ("now", "utcnow") and name == "datetime")
+        or (node.attr == "today" and name in ("date", "datetime"))
+        or (node.attr == "time" and isinstance(base, ast.Name) and name == "time")
+    )
+
+
+def _wall_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
+    """The reads of the wall clock among *nodes*, each ``(file, function, node)``, made in a
+    ``services`` file (any module's) outside the functions allowed for good, counted by file and
+    function. A reference to the clock, as a default argument, counts as a call does."""
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in nodes:
+        if _kind(path) == "services" and (path, function) not in WALL_CLOCK_ALLOWED \
+                and _is_a_wall_clock(node):
+            found[(path, function)] += 1
+    return found
+
+
+KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
+    ("core/db/migrations/001_baseline.sql", "team_role_configs.updated_at"): (1, PASS["core"]),
+    ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
+    ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
+    ("core/services/driver_service.py", "_merge"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.rename_team_role_config"):
+        (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.set_team_role_config"):
+        (1, PASS["core"]),
+    ("core/services/season_lifecycle_service.py", "_turn_down_on"): (1, PASS["core"]),
+    ("core/services/season_lifecycle_service.py", "run_driver_pass_on"): (1, PASS["core"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.save_record_on"):
+        (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.set_window_closed_on"):
+        (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.snapshot_season_config"):
+        (1, PASS["signup"]),
+}
+
+KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
+    ("attendance/services/attendance_service.py", "AttendanceService.insert_embed_message_on"):
+        (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "write_distribution_on"): (1, PASS["attendance"]),
+    ("core/services/backup_service.py", "set_lock"): (1, PASS["core"]),
+    ("core/services/factory_reset_service.py", "clean_discord"): (1, PASS["core"]),
+    ("core/services/factory_reset_service.py", "take_backup"): (1, PASS["core"]),
+    ("core/services/lineup_posting.py", "record_lineup_on"): (1, PASS["core"]),
+    ("core/services/output_router.py", "OutputRouter._warn_member"): (1, PASS["core"]),
+    ("core/services/output_router.py", "OutputRouter.queue_log_on"): (1, PASS["core"]),
+    ("core/services/pack_service.py", "pack"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.assign_driver"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.delete_team_role_config"):
+        (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.move_on"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.rename_team_role_config"):
+        (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.sack_on"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.set_team_role_config"):
+        (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.unassign_driver"): (1, PASS["core"]),
+    ("core/services/retry_service.py", "attempt_delivery"): (1, PASS["core"]),
+    ("core/services/retry_service.py", "enqueue"): (1, PASS["core"]),
+    ("core/services/retry_service.py", "mark_failed"): (1, PASS["core"]),
+    ("core/services/scheduler_service.py", "SchedulerService.schedule_attendance_round"):
+        (1, PASS["core"]),
+    ("core/services/scheduler_service.py", "SchedulerService.schedule_round_cleanups"):
+        (1, PASS["core"]),
+    ("core/services/season_review_changes.py", "season_review_post_change.arm_expiry"):
+        (1, PASS["core"]),
+    ("core/services/season_review_changes.py", "season_review_post_change.post_question"):
+        (1, PASS["core"]),
+    ("core/services/team_service.py", "TeamService.modify_default_team"): (1, PASS["core"]),
+    ("core/services/test_mode_service.py", "build_review_summary"): (1, PASS["core"]),
+    ("core/services/test_mode_service.py", "get_next_pending_phase"): (1, PASS["core"]),
+    ("core/services/test_mode_service.py", "get_passed_over_steps"): (1, PASS["core"]),
+    ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
+    ("results/services/result_submission_service.py", "_save_session_result_in_tx"):
+        (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "amend_round_results_on"):
+        (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "snapshot_before_amendment_on"):
+        (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "sweep_expired_amendments"):
+        (1, PASS["results"]),
+    ("results/services/results_off_change.py", "results_off_change.switch_off"):
+        (1, PASS["results"]),
+    ("signup/services/wizard_service.py", "WizardService._lock_channel"): (1, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService.move_held_channel"): (1, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
+}
+
+
+def test_no_statement_reads_sqlites_clock():
+    """A stored time is written from the `now` handed in, never by SQLite's `datetime('now')`
+    (architecture.md, "The time is always passed in"): no string of SQL anywhere in the package
+    names `datetime('now')`, `date('now')`, `CURRENT_TIMESTAMP` and the like, and no column of the
+    schema defaults to the clock but those in `CLOCK_DEFAULTS_ALLOWED`. A breach is keyed by the
+    function holding the statement, or by the schema file and ``table.column`` for a default, and
+    listed with the issue that will fix it."""
+    _check("no statement reads SQLite's clock", _sql_clock_reads(), KNOWN_SQL_CLOCK_READS)
+
+
+def test_no_service_reads_the_wall_clock():
+    """A service takes a `now` argument rather than reading the clock (architecture.md, "The time
+    is always passed in"): `datetime.now`, `datetime.utcnow`, `date.today` and `time.time` are not
+    read in a `services` file of any module, except the change queue's own default clock
+    (`WALL_CLOCK_ALLOWED`). A breach is keyed by the reading function, and listed with the issue
+    that will fix it."""
+    _check("no service reads the wall clock", _wall_clock_reads_among(_nodes()), KNOWN_WALL_CLOCK_READS)
+
+
+def test_every_clock_allowed_for_good_still_exists():
+    """The change queue's default clock is read where it is allowed, and each column allowed to
+    default to the clock does so: a rename cannot leave the exception pointing at nothing."""
+    read = Counter()
+    for path, function, node in _nodes():
+        if (path, function) in WALL_CLOCK_ALLOWED and _is_a_wall_clock(node):
+            read[(path, function)] += 1
+
+    assert set(read) == set(WALL_CLOCK_ALLOWED)
+    assert {(BASELINE_PATH, column) for column in _clock_defaults(BASELINE.read_text(encoding="utf-8"))} \
+        >= set(CLOCK_DEFAULTS_ALLOWED)
+    assert all(reason for reason in [*WALL_CLOCK_ALLOWED.values(), *CLOCK_DEFAULTS_ALLOWED.values()])
+
+
+def test_the_sql_clock_check_sees_each_way_of_reading_the_clock_and_leaves_a_docstring_alone():
+    """A function of `'now'` and a `CURRENT_...` keyword count, in any case; a docstring that
+    names one and a string that does not read the clock do not."""
+    source = (
+        'async def handler(db):\n'
+        '    """Stamps with datetime(\'now\')."""\n'
+        '    await db.execute("INSERT INTO t (at) VALUES (datetime(\'now\'))")\n'
+        '    await db.execute("UPDATE t SET at = date(\'now\'), b = CURRENT_TIMESTAMP")\n'
+        '    await db.execute("SELECT strftime(\'%s\', \'now\')")\n'
+        '    await db.execute("INSERT INTO t (at) VALUES (?)")\n'
+    )
+
+    assert _sql_clock_reads_among(_sample(source)) == Counter(
+        {("core/services/sample_service.py", "handler"): 4}
+    )
+
+
+def test_the_clock_default_scan_reads_each_column_that_defaults_to_the_clock():
+    """A column defaulting to the clock is named by its table and column, in either spelling; a
+    default that is not the clock is not."""
+    schema = (
+        'CREATE TABLE "a" (\n'
+        "    id INTEGER PRIMARY KEY,\n"
+        "    made TEXT NOT NULL DEFAULT (datetime('now')),\n"
+        "    kept TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
+        "    zero INTEGER NOT NULL DEFAULT 0\n"
+        ");\n"
+        "CREATE TABLE b (\n"
+        "    stamped TEXT DEFAULT (date('now'))\n"
+        ");\n"
+    )
+
+    assert _clock_defaults(schema) == ["a.made", "a.kept", "b.stamped"]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        pytest.param("datetime.now(timezone.utc)", id="datetime.now"),
+        pytest.param("datetime.datetime.now()", id="the module's datetime.now"),
+        pytest.param("datetime.utcnow()", id="utcnow"),
+        pytest.param("date.today()", id="date.today"),
+        pytest.param("time.time()", id="time.time"),
+        pytest.param("(lambda: datetime.now)", id="a reference"),
+    ],
+)
+def test_the_wall_clock_check_sees_each_read_in_a_services_file_but_not_elsewhere(line):
+    """Each way of reading the clock is counted in a services file of any module, and not in a
+    cog, nor in a function named for good; a time handed in is not."""
+    source = f"def handler(now):\n    {line}\n    return now.isoformat()\n"
+    path = "weather/services/sample_service.py"
+
+    assert _wall_clock_reads_among(_sample(source, path)) == Counter({(path, "handler"): 1})
+    assert _wall_clock_reads_among(_sample(source, "weather/cogs/sample_cog.py")) == Counter()
+    assert _wall_clock_reads_among(_sample(source, "core/services/change_queue.py")) == Counter(
+        {("core/services/change_queue.py", "handler"): 1}
+    )
+
+
+def test_a_listed_clock_read_that_is_gone_fails_the_clock_checks():
+    """A read listed but no longer made fails the rule, so its line is deleted with it."""
+    path = "core/services/sample_service.py"
+    nodes = _sample("def handler(now):\n    return now\n", path)
+
+    with pytest.raises(AssertionError, match="Breaches fixed but still listed"):
+        _check(
+            "no service reads the wall clock",
+            _wall_clock_reads_among(nodes),
+            {(path, "handler"): (1, PASS["core"])},
+        )
