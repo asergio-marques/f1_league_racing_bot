@@ -2624,3 +2624,141 @@ def test_a_listed_read_that_is_gone_fails_the_read_check():
             _reads_outside_the_owner_among(nodes),
             {(path, "handler"): (1, PASS["core"])},
         )
+
+
+# ── 15. Core reads no module's service on the bot ───────────────────────────────────────────
+
+
+@cache
+def _module_attributes_of_the_bot() -> frozenset[str]:
+    """The attributes `LeagueBot` declares with a type from a module's package: a module's service,
+    or the module's share of a hook. What core's own services are typed with is not among them."""
+    return frozenset(
+        name
+        for name, (dotted, _cls) in _bot_attributes(_sources(), _files_by_module_name()).items()
+        if dotted.split(".")[1] != "core"
+    )
+
+
+def _module_lookups_in_core_among(nodes, attributes: frozenset[str]) -> Counter[tuple[str, str]]:
+    """The reads among *nodes*, each ``(file, function, node)``, of one of *attributes* on the bot
+    from a file of core (its cogs, services and utils; the entry point builds the bot and is not
+    core), counted by file and function. The bot is reached as `_reaches_the_bot` reads it, or
+    through a local name bound to it (`_locals_bound_to_the_bot`), as the lookup check follows it."""
+    nodes = list(nodes)
+    bound = _locals_bound_to_the_bot(nodes)
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in nodes:
+        if _module_of(path) != "core":
+            continue
+        name = _attribute_read_on_the_bot(node)
+        if name is None and isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) \
+                and isinstance(node.value, ast.Name) and node.value.id in _visible(bound, path, function):
+            name = node.attr
+        elif (name is None and isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "getattr" and len(node.args) >= 2
+                and isinstance(node.args[0], ast.Name) and node.args[0].id in _visible(bound, path, function)
+                and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str)):
+            name = node.args[1].value
+        if name in attributes:
+            found[(path, function)] += 1
+    return found
+
+
+KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
+    ("core/cogs/bot_cog.py", "BotCog._set_league_role"): (1, PASS["core"]),
+    ("core/cogs/driver_cog.py", "DriverCog.reassign"): (1, PASS["core"]),
+    ("core/cogs/driver_cog.py", "DriverCog.reject"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._disable_signup"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._enable_images"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._enable_signup"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "close_signups_unattended"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "execute_forced_close"): (2, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._attendance_capacity_warning"): (4, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._attendance_review_lines"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._build_image_review_section"): (5, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._calendar_capacity_warning"): (3, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._calendar_round_overflow"): (2, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._colour_shortfall_problems"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._configuration_faults"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._do_approve"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._do_confirm_configuration"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._image_configuration_faults"): (2, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._lineup_problems"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._portrait_configuration_blocker"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._portrait_review_lines"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._signup_review_lines"): (3, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
+    ("core/services/calendar_post_service.py", "image_calendar_wanted"): (1, PASS["core"]),
+    ("core/services/calendar_post_service.py", "render_calendar_image"): (2, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._guard_reserve_capacity"):
+        (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._guard_sheet_capacity"):
+        (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._guard_standings_capacity"):
+        (1, PASS["core"]),
+    ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
+}
+
+
+def test_core_reads_no_module_s_service_on_the_bot():
+    """Core reaches a module only through the hooks the module subscribes (architecture.md, "Core
+    reaches a module only through hooks"), so no file of core reads on the bot an attribute that
+    `LeagueBot` types from a module's package: ``bot.X``, ``self.bot.X``, ``interaction.client.X``,
+    ``bot_of(…).X``, ``getattr(bot, "X")``, or either through a local bound to the bot. A breach is
+    keyed by the reading function, and listed with the issue that will fix it."""
+    _check(
+        "core reads no module's service on the bot",
+        _module_lookups_in_core_among(_nodes(), _module_attributes_of_the_bot()),
+        KNOWN_MODULE_LOOKUPS_IN_CORE,
+    )
+
+
+def test_the_module_attributes_of_the_bot_are_the_ones_typed_from_a_module():
+    """The attributes the check holds core to are read from `LeagueBot`'s declarations: a module's
+    services are among them, core's own are not."""
+    attributes = _module_attributes_of_the_bot()
+
+    assert {"attendance_service", "wizard_service", "image_render_service"} <= attributes
+    assert not attributes & {"season_service", "change_queue", "output_router", "db_path"}
+
+
+_MODULE_LOOKUP_SAMPLE = (
+    "async def handler(self, bot, interaction, ctx):\n"
+    "    self.bot.wizard_service\n"
+    "    bot.attendance_service\n"
+    "    interaction.client.wizard_service\n"
+    "    bot_of(interaction).image_render_service\n"
+    "    getattr(bot, 'wizard_service', None)\n"
+    "    _bot = bot_of(interaction)\n"
+    "    _bot.attendance_service\n"
+    "    self.bot.season_service\n"
+)
+
+
+def test_the_module_lookup_check_counts_each_way_of_reading_a_module_s_service_in_core():
+    """In a file of core, each way of reading a module's attribute on the bot is counted, a local
+    bound to the bot included, and a core service is not; a module's own file and the entry point
+    are not core."""
+    attributes = frozenset({"wizard_service", "attendance_service", "image_render_service"})
+
+    for path in ("core/cogs/sample_cog.py", "core/services/sample_service.py", "core/utils/sample_helper.py"):
+        assert _module_lookups_in_core_among(_sample(_MODULE_LOOKUP_SAMPLE, path), attributes) == Counter(
+            {(path, "handler"): 6}
+        )
+    for path in ("signup/cogs/sample_cog.py", "__main__.py"):
+        assert _module_lookups_in_core_among(_sample(_MODULE_LOOKUP_SAMPLE, path), attributes) == Counter()
+
+
+def test_a_listed_module_lookup_in_core_that_is_gone_fails_the_check():
+    """A lookup listed but no longer made fails the rule, so its line is deleted with it."""
+    path = "core/services/sample_service.py"
+    nodes = _sample("async def handler(bot):\n    bot.season_service\n", path)
+
+    with pytest.raises(AssertionError, match="Breaches fixed but still listed"):
+        _check(
+            "core reads no module's service on the bot",
+            _module_lookups_in_core_among(nodes, frozenset({"wizard_service"})),
+            {(path, "handler"): (1, PASS["core"])},
+        )
