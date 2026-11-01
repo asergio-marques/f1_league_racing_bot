@@ -69,6 +69,7 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.config_service import ConfigService
 from leaguebot.core.services.standing_post_handler import edit_standing, post_standing
 from leaguebot.core.services.standing_posts import delete_replaced_step, remove_kept
 from leaguebot.core.utils.in_a_job import posts_in_a_job
@@ -220,13 +221,15 @@ async def press(
 # ── Posting and refreshing the panel ──────────────────────────────────────
 
 
-async def _hub_channel(bot: LeagueBot) -> tuple[Any, discord.Guild | None, Any, str | None]:
+async def _hub_channel(
+    bot: LeagueBot, config_service: ConfigService
+) -> tuple[Any, discord.Guild | None, Any, str | None]:
     """The server configuration, the league's guild, the hub channel and a fault, where any.
 
     The channel is None, with no fault, where no hub is set or the league's server is not to
     hand; None with a fault where the channel set is no longer in the server.
     """
-    cfg = await bot.config_service.get_server_config()
+    cfg = await config_service.get_server_config()
     if cfg is None or cfg.hub_channel_id is None:
         return cfg, None, None, None
     guild = await league_guild(bot)
@@ -240,8 +243,8 @@ async def _hub_channel(bot: LeagueBot) -> tuple[Any, discord.Guild | None, Any, 
     return cfg, guild, channel, None
 
 
-async def _hub_is_set(bot: LeagueBot) -> bool:
-    cfg, _guild, _channel, _fault = await _hub_channel(bot)
+async def _hub_is_set(bot: LeagueBot, config_service: ConfigService) -> bool:
+    cfg, _guild, _channel, _fault = await _hub_channel(bot, config_service)
     return cfg is not None and cfg.hub_channel_id is not None
 
 
@@ -255,7 +258,10 @@ async def set_hub_message_on(db: aiosqlite.Connection, message_id: int | None) -
 
 @posts_in_a_job
 async def refresh_panel(
-    bot: LeagueBot, queue: ChangeQueue, kept: dict[str, Any] | None = None
+    bot: LeagueBot,
+    queue: ChangeQueue,
+    config_service: ConfigService,
+    kept: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Bring the panel in line with what is offered now: the body of the `hub.refresh` job.
 
@@ -263,7 +269,7 @@ async def refresh_panel(
     through the standing-post handler, notifying nobody), and
     gives back `{"new": <id>, "channel_id": <id>}` for the job's record to save where it posted, and
     `{"edited": <id>, "channel_id": <id>}`, which saves nothing, where it edited. Gives None only
-    where no hub channel is set. The panel's buttons are handed *queue*. *kept* is what the job's
+    where no hub channel is set. The panel's buttons are handed *queue*, and the channel is read through *config_service*. *kept* is what the job's
     last try posted and could not record, removed before the panel is posted again.
 
     Raises `StepFailedOnDiscord`, naming `/bot hub-channel`, where the channel set is no longer in
@@ -271,7 +277,7 @@ async def refresh_panel(
     league's server is not to hand.
     """
     await remove_kept(bot, kept)
-    cfg, _guild, channel, fault = await _hub_channel(bot)
+    cfg, _guild, channel, fault = await _hub_channel(bot, config_service)
     if cfg is None or cfg.hub_channel_id is None:
         return None
     if channel is None:
@@ -311,14 +317,14 @@ _REFRESH_STEP = "refresh"
 DELETE_OLD = "delete_old"
 
 
-def hub_refresh_change(queue: ChangeQueue) -> ChangeType:
+def hub_refresh_change(queue: ChangeQueue, config_service: ConfigService) -> ChangeType:
     """The change that brings the hub's panel up to date, asked for by the bot.
 
     Asked in the save of whatever may have changed what the panel offers, so that the panel is
     refreshed as a change of its own, after the steps of the change that asked for it. The payload's
     ``command`` names what caused it. A hub not set is not due. The panel is refreshed by one job,
-    `refresh_panel`, which a refusal stops the queue at; *queue* is handed to the panel's buttons.
-    A hub that has moved names the panel it left, ``old_channel_id`` and ``old_message_id``: the old
+    `refresh_panel`, which a refusal stops the queue at; *queue* is handed to the panel's buttons
+    and *config_service* is what reads the hub channel. A hub that has moved names the panel it left, ``old_channel_id`` and ``old_message_id``: the old
     panel is deleted by a job of its own after the new is posted, by the shared delete step, so
     that the league is never left without one and a refused deletion stops the queue.
     Not repeatable: a refresh asked for a second time before the first starts is dropped, since the
@@ -326,15 +332,15 @@ def hub_refresh_change(queue: ChangeQueue) -> ChangeType:
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await _hub_is_set(ctx.bot):
+        if not await _hub_is_set(ctx.bot, config_service):
             return Verdict.not_due("no hub channel is set")
         return Verdict.go()
 
     async def still_due(ctx: StepContext) -> bool:
-        return await _hub_is_set(ctx.bot)
+        return await _hub_is_set(ctx.bot, config_service)
 
     async def refresh(ctx: StepContext) -> StepResult:
-        posted = await refresh_panel(ctx.bot, queue, ctx.kept)
+        posted = await refresh_panel(ctx.bot, queue, config_service, ctx.kept)
         if posted is None:
             return StepResult()
         old_channel, old_message = ctx.payload.get("old_channel_id"), ctx.payload.get("old_message_id")
@@ -384,13 +390,15 @@ def hub_refresh_change(queue: ChangeQueue) -> ChangeType:
 # ── Who may see the hub ───────────────────────────────────────────────────
 
 
-async def apply_hub_permissions(bot: LeagueBot, guild: discord.Guild, channel: Any) -> str | None:
+async def apply_hub_permissions(
+    config_service: ConfigService, guild: discord.Guild, channel: Any
+) -> str | None:
     """Make *channel* the hub's: read-only to all but the bot. Returns a fault, or None.
 
     Replaces the channel's own overwrites. See the module docstring for who may see it, and
     for why a base role deleted from the server keeps the hub closed.
     """
-    cfg = await bot.config_service.get_server_config()
+    cfg = await config_service.get_server_config()
     base_role_id = cfg.base_role_id if cfg is not None else None
     base_role = guild.get_role(base_role_id) if base_role_id is not None else None
     fault = None
@@ -423,12 +431,15 @@ async def apply_hub_permissions(bot: LeagueBot, guild: discord.Guild, channel: A
     return fault
 
 
-async def reapply_hub_permissions(bot: LeagueBot) -> str | None:
-    """Apply the hub's permissions again, after one of the roles they name has changed."""
-    _cfg, guild, channel, fault = await _hub_channel(bot)
+async def reapply_hub_permissions(bot: LeagueBot, config_service: ConfigService) -> str | None:
+    """Apply the hub's permissions again, after one of the roles they name has changed.
+
+    *bot* finds the league's guild; *config_service* is what reads the hub channel and the roles.
+    """
+    _cfg, guild, channel, fault = await _hub_channel(bot, config_service)
     if channel is None or guild is None:
         return fault
-    return await apply_hub_permissions(bot, guild, channel)
+    return await apply_hub_permissions(config_service, guild, channel)
 
 
 # ── Start-up ──────────────────────────────────────────────────────────────

@@ -807,7 +807,7 @@ def register_change_types(bot: LeagueBot) -> None:
             attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
         )
     )
-    bot.change_queue.register(hub_refresh_change(bot.change_queue))
+    bot.change_queue.register(hub_refresh_change(bot.change_queue, bot.config_service))
     bot.change_queue.register(calendar_sync_change(bot.season_service))
     bot.change_queue.register(lineup_post_change(bot.placement_service))
     bot.change_queue.register(sheet_post_change())

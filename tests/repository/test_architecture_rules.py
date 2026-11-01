@@ -1447,8 +1447,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
     ("core/services/calendar_post_service.py", "image_calendar_wanted"): (2, PASS["core"]),
     ("core/services/calendar_post_service.py", "render_calendar_image"): (2, PASS["core"]),
-    ("core/services/hub_service.py", "_hub_channel"): (1, PASS["core"]),
-    ("core/services/hub_service.py", "apply_hub_permissions"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_reserve_capacity"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_sheet_capacity"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_standings_capacity"): (1, PASS["core"]),

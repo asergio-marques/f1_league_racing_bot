@@ -650,7 +650,7 @@ class BotCog(commands.Cog):
         moved = old_channel_id is not None and old_channel_id != channel.id
         if old_channel_id is not None and moved:
             faults += await _stand_down_old_hub(guild, old_channel_id)
-        fault = await hub_service.apply_hub_permissions(self.bot, guild, channel)
+        fault = await hub_service.apply_hub_permissions(self.bot.config_service, guild, channel)
         if fault is not None:
             faults.append(fault)
         # The panel is posted by the change queue, which stops for a refusal.
@@ -943,7 +943,7 @@ async def _reapply_hub_permissions(
     from leaguebot.core.services.hub_service import reapply_hub_permissions
 
     try:
-        fault = await reapply_hub_permissions(bot)
+        fault = await reapply_hub_permissions(bot, bot.config_service)
     except Exception:  # noqa: BLE001 — see the docstring
         log.exception("the hub's permissions could not be applied again")
         return
