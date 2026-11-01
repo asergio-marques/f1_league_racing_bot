@@ -21,8 +21,6 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from leaguebot.core.cogs.season_cog import (
     SeasonCog,
     _BackupBeforeApprovalView,
