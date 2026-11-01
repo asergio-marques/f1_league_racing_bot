@@ -47,7 +47,10 @@ AUTOCOMPLETE_TIMEOUT_SECONDS = 1.0
 #: Pinned by `test_no_more_than_four_idle_connections_are_kept`. Four covers the most that run
 #: at once in practice (a step's save, a service it reads through inside that block, and a reader
 #: or two); one asking beyond that opens its own and closes it on return, as every caller did before
-#: connections were lent. Zero switches lending off.
+#: connections were lent. Zero switches lending off. Lending was kept on what it measured: the
+#: change-queue tests of `test_season_approval_change.py`, in one process on the Pi, took 55 s with
+#: four kept against 161 s with none (2026-11-01), the schema read by every fresh connection being
+#: most of the difference.
 _IDLE_CONNECTIONS_KEPT = 4
 
 #: Who has called ``never_lend``: connections that are closed on return, whatever else is true.
