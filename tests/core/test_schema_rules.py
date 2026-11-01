@@ -333,7 +333,6 @@ async def test_a_change_s_origins_match_the_enum(db_path):
     assert _check_list(db_path, "queued_changes", "origin") == {o.value for o in ChangeOrigin}
 
 
-@pytest.mark.xfail(strict=True, reason="#283: there is no DivisionStatus enum yet")
 async def test_a_division_s_and_a_round_s_statuses_match_their_enums(db_path):
     """Each written twice, in the CHECK list and in its enum, and must not drift."""
     from leaguebot.core.models.division import DivisionStatus
