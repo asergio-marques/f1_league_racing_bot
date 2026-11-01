@@ -19,7 +19,7 @@ retained runs overran the 923 MB tmpfs `/tmp` sits on the Raspberry Pi, which fa
 rasteriser tests with 0-byte PNGs. It also sets `tmp_path_retention_policy = failed`, which
 drops each *passing* test's directory as it finishes — the count alone acts only at session
 end, and one run's accumulated scratch reached 817 MB and filled the tmpfs before it could.
-The template scratch below is the one thing pytest does not own, so `pytest_sessionstart`
+The template scratch below is the one thing pytest does not own, so `_sweep_stale_templates`
 sweeps it to the same schedule.
 
 **`BOT_TOKEN` is given a placeholder before any test module is collected.** The entry point,
@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import atexit
 import functools
+import gc
 import os
 import shutil
 import sys
@@ -45,6 +46,9 @@ import threading
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
+
+from tests.support.connections import close_lent_connections
 
 # Before any test module is imported — see the module docstring.
 os.environ.setdefault("BOT_TOKEN", "not-a-real-token")
@@ -170,7 +174,12 @@ def _install_unsynced_connections() -> None:
     straight to `sqlite3.connect`, so a `factory` makes the setting as the connection opens,
     on its own thread and with no round trip of its own, and it reaches the fixtures that
     seed through aiosqlite directly as well as everything that goes through
-    `get_connection`. A caller's own `factory` wins. Plain `sqlite3.connect` is left alone,
+    `get_connection`. **The bot's own factory is kept, made unsynced:** `get_connection` hands
+    aiosqlite a `sqlite3.Connection` subclass of `leaguebot.core.db.database`'s, which records
+    the cursors it must close before lending the connection again, so it is swapped for a
+    subclass of itself that also turns the flush off. Swapping it for `UnsyncedConnection`
+    would lose that, and keeping it as it is would keep FULL. Any other factory a caller
+    passes wins as it is. Plain `sqlite3.connect` is left alone,
     and so is the scheduler's job store, which goes through SQLAlchemy and keeps a FULL pin
     of its own. Nothing in `src/` changes: a seam there would put test machinery in the bot.
 
@@ -190,9 +199,25 @@ def _install_unsynced_connections() -> None:
             super().__init__(*args, **kwargs)
             self.execute("PRAGMA synchronous = OFF")
 
+    unsynced: dict[type, type] = {}
+
+    def unsynced_bot_factory(factory: type) -> type:
+        if factory not in unsynced:
+            def __init__(self, *args, **kwargs) -> None:
+                factory.__init__(self, *args, **kwargs)
+                self.execute("PRAGMA synchronous = OFF")
+
+            name = f"Unsynced{factory.__name__}"
+            unsynced[factory] = type(name, (factory,), {"__init__": __init__})
+        return unsynced[factory]
+
     @functools.wraps(real)
     def connect(database, **kwargs):
-        kwargs.setdefault("factory", UnsyncedConnection)
+        factory = kwargs.get("factory")
+        if factory is None:
+            kwargs["factory"] = UnsyncedConnection
+        elif factory.__module__ == "leaguebot.core.db.database":
+            kwargs["factory"] = unsynced_bot_factory(factory)
         return real(database, **kwargs)
 
     aiosqlite.connect = connect
@@ -201,7 +226,7 @@ def _install_unsynced_connections() -> None:
 _install_unsynced_connections()
 
 
-def pytest_sessionstart(session):
+def _sweep_stale_templates() -> None:
     """Clear template scratch that an earlier run was killed before cleaning up.
 
     `_install_template_migrations` puts its templates in a `tempfile.mkdtemp` outside the
@@ -210,11 +235,100 @@ def pytest_sessionstart(session):
     gets to. Each leak is small, but it lands on the very tmpfs that retention setting
     exists to protect. Only directories carrying this module's own prefix are removed, and
     never the one this run is using.
+
+    **Only the process that starts the session sweeps, never an xdist worker** (#540). Every
+    worker imports this module and makes template scratch of its own, so a worker sweeping as it
+    starts deletes the live templates of the workers that started before it: `test_schema_rules.py`,
+    which raises a schema while it is collected, failed with "unable to open database file". So
+    `pytest_sessionstart` calls this where the config carries no `workerinput`: in the controller,
+    whose own `pytest_sessionstart` runs before xdist's starts the workers (that one is `trylast`),
+    or in a run without workers. A session start rather than `pytest_configure`, which `--help` and
+    `--markers` run too, outside any session and outside the lock: a sweep there would take a
+    running session's templates.
     """
     root = Path(tempfile.gettempdir())
     for stale in root.glob(f"{_TEMPLATE_PREFIX}*"):
         if stale != _TEMPLATE_SCRATCH and stale.is_dir():
             shutil.rmtree(stale, ignore_errors=True)
+
+
+def pytest_sessionstart(session):
+    if not hasattr(session.config, "workerinput"):
+        _sweep_stale_templates()
+
+
+def pytest_collection_finish(session):
+    """Put everything collected out of the garbage collector's reach (#540).
+
+    The collected suite — every test module, its fixtures and parameters, some 340,000 objects
+    for the core tests alone — lives to the end of the run, and the collector's full passes
+    walked all of it again each time: on the Pi they took about a tenth of the core tests' run,
+    in pauses of up to 1.4 seconds that lengthened as the run went on. `gc.freeze` moves what
+    exists now into a generation the collector never scans. On the core tests with three workers
+    it cut each worker's full collections by some 40% and the run from 10:36 to 9:49 (Pi,
+    2026-10-31). The collect first, so that garbage left by collection is not frozen with it.
+    """
+    gc.collect()
+    gc.freeze()
+
+
+#: What one xdist worker takes at its peak over the full suite, in MB, and what the host is left
+#: for everything else. See `pytest_xdist_auto_num_workers`. Measured on the Pi on 2026-11-01:
+#: the full suite on two workers peaked at 301 MB and 402 MB of resident memory, the larger being
+#: the worker that ran the source checks, against 621 MB for the whole suite in one process.
+_WORKER_MEMORY_MB = 400
+_MEMORY_RESERVE_MB = 512
+
+#: Where Linux says how much memory is free. Absent on Windows and macOS.
+_MEMINFO = Path("/proc/meminfo")
+
+
+def _free_memory_mb() -> int | None:
+    """The memory the host can give the run, in MB: what is available plus the free swap, or
+    None where the host does not say."""
+    try:
+        text = _MEMINFO.read_text(encoding="ascii")
+    except OSError:
+        return None
+    fields: dict[str, int] = {}
+    for line in text.splitlines():
+        name, _, rest = line.partition(":")
+        if rest.split():
+            fields[name] = int(rest.split()[0])
+    if "MemAvailable" not in fields:
+        return None
+    return (fields["MemAvailable"] + fields.get("SwapFree", 0)) // 1024
+
+
+def _cores() -> int:
+    """The cores this process may run on, as xdist counts them without `psutil`, which the suite
+    does not install."""
+    if hasattr(os, "sched_getaffinity"):
+        return len(os.sched_getaffinity(0))
+    return os.cpu_count() or 1
+
+
+def pytest_xdist_auto_num_workers(config):
+    """Run as many workers as the host has memory for, up to one a core (#540).
+
+    `pytest.ini` asks for `-n auto`, which xdist reads as one worker a core. Each worker holds the
+    whole collected suite and grows as it runs, to some `_WORKER_MEMORY_MB` at its peak. A hosted
+    runner has memory to spare for four, but the Raspberry Pi the bot is developed on has 1.8 GB
+    shared with the editor and the agents working on it, and at three workers its swap filled
+    completely, which invites the out-of-memory killer into the editor's session. So the count is
+    what the host's available memory and free swap hold once `_MEMORY_RESERVE_MB` is set aside,
+    clamped between one and the core count: about two on the Pi as it is used, four on CI.
+
+    Returning None leaves the count to xdist: where `PYTEST_XDIST_AUTO_NUM_WORKERS` names one,
+    which a host may set to override this, and where the host does not say what is free, as on
+    Windows, whose runner has memory to spare.
+    """
+    if os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS"):
+        return None
+    free = _free_memory_mb()
+    if free is None:
+        return None
+    return max(1, min(_cores(), (free - _MEMORY_RESERVE_MB) // _WORKER_MEMORY_MB))
 
 
 def pytest_collection_modifyitems(config, items):
@@ -244,6 +358,10 @@ def pytest_runtest_call(item):
     Only the database threads started during the test's call are waited for: one a fixture opened
     in set-up stays alive until its teardown, and waiting on it would cost every such test the
     whole grace period (`test_stop_started_queues_waits_on_no_thread_a_fixture_holds`).
+
+    The connections the bot keeps idle to lend again are closed here too, before that wait, which
+    would otherwise wait on each of their threads (`stop_started_queues`); and where the test
+    started no queue, closed all the same.
     """
     before = set(threading.enumerate())
     try:
@@ -252,6 +370,51 @@ def pytest_runtest_call(item):
         queues = sys.modules.get("tests.support.change_queue")
         if queues is not None:
             queues.stop_started_queues(started_before=before)
+        else:
+            close_lent_connections()
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_setup(item):
+    """Close the connections the bot keeps idle once the test's fixtures are set up (#540).
+
+    A fixture that seeds its database through `get_connection` gives its connection back to be
+    lent again; closed here, it is not counted among the threads alive before the test's call,
+    and the test starts with nothing lent from a database but its own
+    (`tests/support/connections.py`).
+    """
+    try:
+        return (yield)
+    finally:
+        close_lent_connections()
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(item, nextitem):
+    """Close the connections the bot keeps idle once the test's fixtures are torn down (#540), so
+    that none holds the test's `tmp_path` database open as pytest deletes it, which Windows
+    refuses, and none is lent to the next test (`tests/support/connections.py`)."""
+    try:
+        return (yield)
+    finally:
+        close_lent_connections()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Close the connections the bot keeps idle as the session ends (#540): each holds a thread
+    that is not a daemon, which would keep the process alive past the run."""
+    close_lent_connections()
+
+
+@pytest_asyncio.fixture
+async def lending(monkeypatch):
+    """Switch on the lending of connections for this test: up to four are kept idle once given
+    back cleanly, whatever the bot's own cap is set to, and closed as the test ends (#540)."""
+    from leaguebot.core.db import database
+
+    monkeypatch.setattr(database, "_IDLE_CONNECTIONS_KEPT", 4)
+    yield
+    await database.close_connections()
 
 
 @pytest.fixture(autouse=True)

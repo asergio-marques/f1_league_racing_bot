@@ -3071,6 +3071,9 @@ is how the tests import it:
 pytest
 ```
 
+The run spreads itself over as many worker processes as the machine has cores and free memory for.
+`pytest -n 0` runs it in one process, as a debugger needs.
+
 ---
 
 ## Architecture

@@ -25,9 +25,10 @@ English, testing, the documentation layout. Neither document is restated here.
 
 Three constraints shape every stage below. Do not design around them a second time.
 
-**Analysis parallelises; the test suite does not.** `pytest_sessionstart` in `tests/conftest.py`
-removes every schema-template directory except its own, so a second pytest session destroys the
-first's templates mid-run. `pytest.ini` adds that `tmp_path_retention_count = 0` suppresses the
+**Analysis parallelises; test sessions do not.** One session spreads its tests over xdist workers
+by itself (`pytest.ini`); a second session at once is what breaks. The sweep at the start of a
+session (`_sweep_stale_templates` in `tests/conftest.py`) removes every schema-template directory
+but its own, so a second pytest session destroys the first's templates mid-run. `pytest.ini` adds that `tmp_path_retention_count = 0` suppresses the
 in-use lock file, so concurrent runs also clear each other's `tmp_path` trees. `/tmp` is a 923 MB
 tmpfs on the Pi and one run's scratch has measured 817 MB. Either failure arrives dishonestly, as a
 mass failure scattered across unrelated modules rather than as a lock error. Stage 4 serialises

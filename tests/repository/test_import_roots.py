@@ -22,6 +22,8 @@ import ast
 import configparser
 from pathlib import Path
 
+from tests.support.source import package_sources
+
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
 
@@ -36,9 +38,9 @@ def _names_the_src_package(node: ast.AST) -> bool:
 
 def test_no_module_in_src_imports_it_as_the_src_package():
     offenders = sorted(
-        f"{path.relative_to(SRC).as_posix()}:{node.lineno}"
-        for path in SRC.rglob("*.py")
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        f"leaguebot/{source.path}:{node.lineno}"
+        for source in package_sources()
+        for node in ast.walk(source.tree)
         if _names_the_src_package(node)
     )
     assert offenders == [], (

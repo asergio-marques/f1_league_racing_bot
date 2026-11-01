@@ -97,7 +97,8 @@ In the virtualenv the README's Setup builds, which holds the pinned requirements
 pytest tests/ -q
 ```
 
-Run it before and after a change and compare. The suite is expected to pass in full; any failure
+It spreads itself over as many worker processes as the machine has cores and free memory for
+(`pytest.ini`); `-n 0` runs it in one. Run it before and after a change and compare. The suite is expected to pass in full; any failure
 is a real one, so confirm it on a clean tree before writing it off as pre-existing.
 
 Every change to production code carries its unit tests with it, in the same change.
@@ -140,6 +141,7 @@ Before opening a pull request, check where your change left the module you touch
 
 ```
 COVERAGE_CORE=sysmon python3 -m coverage run -m pytest tests/ -q -m "not rasteriser"
+python3 -m coverage combine -q
 python3 -m coverage json -q -o coverage.json
 python3 tools/coverage_by_module.py coverage.json --fail-under 75
 ```

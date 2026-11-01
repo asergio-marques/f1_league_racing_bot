@@ -7,108 +7,93 @@ migration 009 (T033); since the squash into one baseline (#254) it checks today'
 
 from __future__ import annotations
 
-import os
-import tempfile
-
 import pytest
 
 
 @pytest.mark.asyncio
-async def test_the_signup_module_tables_exist() -> None:
+async def test_the_signup_module_tables_exist(tmp_path) -> None:
     """The schema holds the signup module's tables."""
     from leaguebot.core.db.database import run_migrations, get_connection
 
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
+    db_path = str(tmp_path / "bot.db")
 
-    try:
-        await run_migrations(db_path)
+    await run_migrations(db_path)
 
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-            )
-            tables = {row[0] for row in await cursor.fetchall()}
-
-        # New tables must exist
-        expected_new = {
-            "signup_module_config",
-            "signup_module_settings",
-            "signup_availability_slots",
-        }
-        assert expected_new.issubset(tables), (
-            f"Missing tables: {expected_new - tables}"
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         )
-    finally:
-        os.unlink(db_path)
+        tables = {row[0] for row in await cursor.fetchall()}
+
+    # New tables must exist
+    expected_new = {
+        "signup_module_config",
+        "signup_module_settings",
+        "signup_availability_slots",
+    }
+    assert expected_new.issubset(tables), (
+        f"Missing tables: {expected_new - tables}"
+    )
 
 
 @pytest.mark.asyncio
-async def test_forecast_channel_id_is_nullable() -> None:
+async def test_forecast_channel_id_is_nullable(tmp_path) -> None:
     """divisions.forecast_channel_id must accept NULL."""
     from leaguebot.core.db.database import run_migrations, get_connection
 
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
+    db_path = str(tmp_path / "bot.db")
 
-    try:
-        await run_migrations(db_path)
+    await run_migrations(db_path)
 
-        async with get_connection(db_path) as db:
-            # Insert a server config and season first (FK chain)
-            await db.execute(
-                "INSERT INTO server_configs (server_id, interaction_role_id, "
-                "interaction_channel_id, log_channel_id) VALUES (1, 0, 0, 0)"
-            )
-            await db.execute(
-                "INSERT INTO seasons (season_number, status, start_date) "
-                "VALUES (1, 'SETUP', '2025-01-01T00:00:00')"
-            )
-            cursor = await db.execute("SELECT last_insert_rowid()")
-            (season_id,) = await cursor.fetchone()
+    async with get_connection(db_path) as db:
+        # Insert a server config and season first (FK chain)
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (1, 0, 0, 0)"
+        )
+        await db.execute(
+            "INSERT INTO seasons (season_number, status, start_date) "
+            "VALUES (1, 'SETUP', '2025-01-01T00:00:00')"
+        )
+        cursor = await db.execute("SELECT last_insert_rowid()")
+        (season_id,) = await cursor.fetchone()
 
-            # Insert division with NULL forecast_channel_id — must not raise
-            await db.execute(
-                "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id, tier) "
-                "VALUES (?, 'Div A', 0, NULL, 1)",
-                (season_id,),
-            )
-            await db.commit()
+        # Insert division with NULL forecast_channel_id — must not raise
+        await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id, tier) "
+            "VALUES (?, 'Div A', 0, NULL, 1)",
+            (season_id,),
+        )
+        await db.commit()
 
-            cursor = await db.execute(
-                "SELECT forecast_channel_id FROM divisions LIMIT 1"
-            )
-            row = await cursor.fetchone()
-            assert row[0] is None, "forecast_channel_id should be NULL"
-    finally:
-        os.unlink(db_path)
+        cursor = await db.execute(
+            "SELECT forecast_channel_id FROM divisions LIMIT 1"
+        )
+        row = await cursor.fetchone()
+        assert row[0] is None, "forecast_channel_id should be NULL"
 
 
 @pytest.mark.asyncio
-async def test_module_flag_columns_default_to_zero() -> None:
+async def test_module_flag_columns_default_to_zero(tmp_path) -> None:
     """server_configs must have weather_module_enabled and signup_module_enabled defaulting to 0."""
     from leaguebot.core.db.database import run_migrations, get_connection
 
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
+    db_path = str(tmp_path / "bot.db")
 
-    try:
-        await run_migrations(db_path)
+    await run_migrations(db_path)
 
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "INSERT INTO server_configs (server_id, interaction_role_id, "
-                "interaction_channel_id, log_channel_id) VALUES (2, 0, 0, 0)"
-            )
-            await db.commit()
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (2, 0, 0, 0)"
+        )
+        await db.commit()
 
-            cursor = await db.execute(
-                "SELECT weather_module_enabled, signup_module_enabled "
-                "FROM server_configs WHERE server_id = 2"
-            )
-            row = await cursor.fetchone()
+        cursor = await db.execute(
+            "SELECT weather_module_enabled, signup_module_enabled "
+            "FROM server_configs WHERE server_id = 2"
+        )
+        row = await cursor.fetchone()
 
-        assert row[0] == 0, "weather_module_enabled should default to 0"
-        assert row[1] == 0, "signup_module_enabled should default to 0"
-    finally:
-        os.unlink(db_path)
+    assert row[0] == 0, "weather_module_enabled should default to 0"
+    assert row[1] == 0, "signup_module_enabled should default to 0"

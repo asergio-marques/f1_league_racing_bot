@@ -30,7 +30,8 @@ Run it in two steps, the first under the suite's lock where other runs may start
     python tools/per_test_coverage.py list --data .coverage.per-test --scope tests/core > core.json
 
 `run` takes the rest of its arguments as pytest's, and measures what `.coveragerc` scopes, which is
-`src/`. **It uses coverage's C tracer, `ctrace`, never `sysmon`,** though `sysmon` is far faster on
+`src/`. It runs the tests in its own process (`-n 0`), not in the xdist workers `pytest.ini` asks
+for, because the contexts are switched where pytest calls each test. **It uses coverage's C tracer, `ctrace`, never `sysmon`,** though `sysmon` is far faster on
 the Raspberry Pi (`tools/coverage_by_module.py`): `sysmon` stops reporting a line once any test has
 run it, so every test after the first to reach a line is recorded without it, and the containment
 this tool rests on comes out wrong. `list` prints JSON: `candidates`, each with its line
@@ -97,11 +98,17 @@ def run(data: str, pytest_args: list[str]) -> int:
     import pytest
 
     cov = coverage.Coverage(data_file=data, config_file=True)
+    # One process, one data file. `.coveragerc` follows the suite into xdist's workers
+    # (`patch = subprocess`, which turns `parallel` on), and `pytest.ini` asks for them; the
+    # contexts are switched in this process alone, so the tests must run in it, and the data must
+    # land in *data* itself rather than a file named after the host and the process.
+    cov.set_option("run:patch", [])
+    cov.set_option("run:parallel", False)
     cov.erase()
     contexts = _Contexts(cov)
     cov.start()
     try:
-        status = pytest.main(pytest_args, plugins=[contexts])
+        status = pytest.main(["-n", "0", *pytest_args], plugins=[contexts])
     finally:
         cov.stop()
         cov.save()

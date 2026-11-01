@@ -21,6 +21,7 @@ being guarded against is deletion, not restructuring.
 from __future__ import annotations
 
 import configparser
+import re
 from pathlib import Path
 
 import pytest
@@ -112,7 +113,7 @@ def test_the_breakdown_is_printed_before_the_whole_repo_gate():
 
 def test_the_coverage_run_uses_the_faster_backend():
     """Not a scope change — a speed one. The default C tracer costs enough on a suite this
-    size to threaten the job's twenty-minute bound, and #208 added several thousand tests
+    size to threaten the job's ten-minute bound, and #208 added several thousand tests
     to it."""
     assert "COVERAGE_CORE: sysmon" in _workflow()
 
@@ -137,3 +138,19 @@ def test_the_tools_directory_is_not_measured_either():
     source = _coveragerc().get("run", "source").strip()
 
     assert "tools" not in [part.strip() for part in source.splitlines()]
+
+
+def test_every_worker_is_measured():
+    """The tests run in xdist's workers (#540), which `coverage run` does not follow by itself:
+    without `patch = subprocess` the gate would read the controller, which runs no test, and fail
+    every build on a coverage of nothing. Each worker then writes a data file of its own, so the
+    workflow joins them before the first report reads one."""
+    patches = [part.strip() for part in _coveragerc().get("run", "patch").split(",")]
+    workflow = _workflow()
+
+    combine = re.search(r"^\s+coverage combine\b", workflow, re.MULTILINE)
+    report = re.search(r"^\s+coverage json\b", workflow, re.MULTILINE)
+
+    assert "subprocess" in patches
+    assert combine and report, "the workflow runs no combine, or no report"
+    assert combine.start() < report.start()

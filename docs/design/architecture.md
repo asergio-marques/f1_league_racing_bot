@@ -105,10 +105,11 @@ hooks without importing a module.
   checker (below). Each handler for a kind of post is a service in core, not a helper.
 - **A module's own helpers** sit in its `utils/` folder, beside its services, under the same rules.
 - **A model** is plain data. It uses no Discord and no database, and no service or cog.
-- **The database code in core** opens connections and applies migrations, and imports nothing else
-  of the bot's.
-- **The entry point** builds the services, wires them together and starts the bot. It holds no
-  rules and no database code of its own.
+- **The database code in core** opens connections, lends them again, closes them and applies
+  migrations, and imports nothing else of the bot's.
+- **The entry point** builds the services, wires them together and starts the bot, and calls core's
+  database code to close the connections as the bot stops. It holds no rules and no database code
+  of its own.
 
 **Services stay attached to the bot, and are built in one place.** The bot object keeps a typed
 attribute for each service object. Most services are plain functions and need none. The builder
@@ -483,6 +484,29 @@ audit record, which is how some settings came to have none.
 
 **All database code is in services**, or in core's database code for connections and migrations.
 A cog never opens a connection, and neither does the entry point.
+
+**Connections are lent again, not opened for every operation.** Opening one starts a thread and
+makes SQLite read the whole schema before its first statement, and a change opens a great many.
+`get_connection` therefore keeps a few connections idle and lends them to the next caller for the
+same database, and each block still has one connection to itself. Core's database code does this
+and nothing else does. Checking a connection out never waits: it takes an idle one or opens one,
+because some code opens a second connection while its first is still open (a service reading
+through another service inside its own block), so two callers at once always have two. A connection
+is lent again only when it was given back clean and nothing on it differs from a new one; any other
+is closed, which rolls back what it held. A connection that a save confined to its tables is closed
+on return, never lent, and nothing outside the database code leaves anything on a connection (a SQL
+function, an authoriser, a `row_factory`, a PRAGMA, an ATTACH or a temporary table), because the
+next caller would inherit it. The migrations and a restore keep out of this: the migrations use a
+connection of their own, so nothing holds the database open when they finish and a factory reset
+can delete the fresh copy it migrated, and a restore runs before any connection has been lent. The
+entry point closes the idle connections as the bot stops, as wiring, since each holds a thread that
+would keep the process alive. The cap, the closing of cursors on return and the reliance on the
+connection library's internals are in `get_connection`'s docstring, each pinned by a test.
+
+*Rejected:* one connection held for the bot's life, since a service reading through another
+service inside its own block needs a second connection while its first is open, and one connection
+cannot be two. *Rejected:* a capped pool whose checkout waits for a free connection, since that
+second read would wait on the block that asked for it, and neither would finish.
 
 **A step saves in one go.** The queue opens a saving step's connection and hands it down; the step
 makes its changes on it, and they commit, with the step's mark and any audit record, all together
@@ -1023,6 +1047,11 @@ later on its own.
   (`run_migrations` and `_enable_wal`, the journal mode set on the database file itself), the
   queue's own records, the retry queue for log lines, and `backup_service._write_empty_database`,
   which writes the scheduler's empty file and not the league's.
+  The connection-state check refuses, outside the database code, a SQL function added with
+  `create_function`, an authoriser, an assignment to `row_factory` or `isolation_level`, and a PRAGMA,
+  ATTACH or temporary table (`test_a_lent_connection_carries_only_what_the_database_code_sets`);
+  the few functions that set up a connection of their own, opened with `sqlite3.connect` and never
+  lent, are named for good.
 - **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
   **`tests/repository/test_import_roots.py`** check the one-league rule, the schema's own rules, and
   that the bot is imported from one place: the installed package, never through `src`.

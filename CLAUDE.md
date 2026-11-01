@@ -126,9 +126,11 @@ the tests and the settings files that pin them.
   failure is real: never write one off as pre-existing without confirming it on a clean tree. No
   measured duration or test count belongs in this file: measure when you need to know, and keep the
   answer somewhere cheap to correct.
-- **Never run two pytest sessions at once.** They race on the shared schema template and fake a mass
-  failure across unrelated modules. Where agents work in parallel, every run goes behind
-  `flock -w 3600 /tmp/f1-pytest.lock`, as the `fix-issues` skill gives it.
+- **Never run two pytest sessions at once.** One session runs its tests in xdist workers, as
+  `pytest.ini` asks, sized to the host's free memory (`-n 0` for one process); two sessions race on
+  the shared schema template and each other's scratch, and fake a mass failure across unrelated
+  modules. Where agents work in parallel, every run goes behind `flock -w 3600 /tmp/f1-pytest.lock`,
+  as the `fix-issues` skill gives it.
 - **Every change to production code carries its unit tests,** updated or added in the same change,
   and the suite is run. A change reported complete without a run, or leaving tests that no longer
   exercise the new behaviour, is not complete. Every implementation task is covered by a test that
@@ -158,6 +160,7 @@ the tests and the settings files that pin them.
 
   ```
   COVERAGE_CORE=sysmon python3 -m coverage run -m pytest tests/ -q -m "not rasteriser"
+  python3 -m coverage combine -q
   python3 -m coverage json -q -o coverage.json
   python3 tools/coverage_by_module.py coverage.json --module weather
   ```

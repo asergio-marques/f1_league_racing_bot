@@ -10,6 +10,7 @@ eighty seconds a full run, from `tests/core/test_track_service.py` alone, when t
 
 from __future__ import annotations
 
+import asyncio
 import os
 import threading
 import time
@@ -43,3 +44,62 @@ async def test_stop_started_queues_waits_on_no_thread_a_fixture_holds(tmp_path, 
         start = time.monotonic()
         change_queue.stop_started_queues()
         assert time.monotonic() - start >= short_grace * 0.9
+
+
+async def test_stop_started_queues_waits_on_no_idle_lent_connection(tmp_path, short_grace, lending):
+    """A connection the test's call gave back cleanly, kept idle to be lent again, is closed before
+    the wait rather than waited on: the stop returns well inside the grace period, and the idle
+    connection's thread has ended."""
+    db_path = os.path.join(str(tmp_path), "teardown.db")
+    await run_migrations(db_path)
+    before = set(threading.enumerate())
+    async with get_connection(db_path) as idle:
+        await (await idle.execute("SELECT 1")).fetchall()
+    assert idle._thread.is_alive(), "precondition: the connection is kept idle to be lent again"
+
+    start = time.monotonic()
+    change_queue.stop_started_queues(started_before=before)
+
+    assert time.monotonic() - start < short_grace / 2
+    # Python drops a thread from `threading.enumerate()` a moment before it has finished exiting,
+    # so the stop's wait can pass over one that is on its way out, and `is_alive()` taken at once
+    # can still be true. One the stop never closed would run on, and fail this all the same.
+    idle._thread.join(timeout=5)
+    assert not idle._thread.is_alive()
+
+
+async def test_the_idle_connections_are_closed_on_one_loop_for_the_whole_run(
+    tmp_path, lending, monkeypatch
+):
+    """Closing the idle connections around every test builds no event loop each time (#540). A
+    Windows loop makes its wake-up pipe from loopback TCP sockets, and three loops a test ran the
+    runner out of ephemeral ports a third of the way through the suite. So once the closing has
+    its loop, closing again builds none, and still ends every idle connection's thread; with
+    nothing idle, nothing is handed to it at all."""
+    from tests.support.connections import close_lent_connections
+
+    db_path = os.path.join(str(tmp_path), "lent.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as first:
+        pass
+    close_lent_connections()  # the closing has its loop from here on, whatever ran before
+
+    def no_new_loop():
+        raise AssertionError("a new event loop was built to close the idle connections")
+
+    monkeypatch.setattr(asyncio, "new_event_loop", no_new_loop)
+    monkeypatch.setattr(asyncio.events, "new_event_loop", no_new_loop)  # how `asyncio.run` builds one
+    async with get_connection(db_path) as second:
+        pass
+    assert second._thread.is_alive(), "precondition: the connection is kept idle to be lent again"
+
+    close_lent_connections()
+    for idle in (first, second):
+        idle._thread.join(timeout=5)  # aiosqlite answers the close before its thread exits
+        assert not idle._thread.is_alive()
+
+    def handed_over(*_args, **_kwargs):
+        raise AssertionError("the closing was handed to its loop with nothing idle")
+
+    monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", handed_over)
+    close_lent_connections()

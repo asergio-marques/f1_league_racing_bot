@@ -469,32 +469,35 @@ async def test_turning_results_off_and_closing_its_rounds_land_in_one_save(tmp_p
     clean = await _seed(tmp_path / "clean")
     bot = _league(clean.db_path)
     await _confirm(bot)
-    real_connect = aiosqlite.connect
-    open_now = {"open": 0, "most": 0}
+    # Every connection is opened afresh and closed on return for the count: one lent again would
+    # be in use without being opened, and so missed. The count is taken where aiosqlite starts a
+    # connection's thread and where it closes it, however the connection is opened and closed.
+    from leaguebot.core.db import database
 
-    class _Counted:
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            self._connection = real_connect(*args, **kwargs)
+    await database.close_connections()
+    open_now: set[int] = set()
+    most = 0
+    real_await = aiosqlite.Connection.__await__
+    real_close = aiosqlite.Connection.close
 
-        async def __aenter__(self) -> Any:
-            db = await self._connection.__aenter__()
-            open_now["open"] += 1
-            open_now["most"] = max(open_now["most"], open_now["open"])
-            return db
+    def _counted_await(self: aiosqlite.Connection) -> Any:
+        nonlocal most
+        open_now.add(id(self))
+        most = max(most, len(open_now))
+        return real_await(self)
 
-        async def __aexit__(self, *exc: Any) -> Any:
-            open_now["open"] -= 1
-            return await self._connection.__aexit__(*exc)
-
-        def __await__(self):
-            return self._connection.__await__()
+    async def _counted_close(self: aiosqlite.Connection) -> None:
+        open_now.discard(id(self))
+        await real_close(self)
 
     with monkeypatch.context() as patched:
-        patched.setattr(aiosqlite, "connect", _Counted)
+        patched.setattr(database, "_IDLE_CONNECTIONS_KEPT", 0)
+        patched.setattr(aiosqlite.Connection, "__await__", _counted_await)
+        patched.setattr(aiosqlite.Connection, "close", _counted_close)
         await run_queue(bot, steps=1)
 
     assert await _flag(clean.db_path) == 0
-    assert open_now["most"] == 1
+    assert most == 1
 
 
 async def test_a_fault_before_anything_is_saved_says_nothing_was_changed(tmp_path):

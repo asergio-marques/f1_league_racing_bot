@@ -38,6 +38,7 @@ tolerated because it has no home.
 The default floor is 0, so running it by hand is still a report.
 
     COVERAGE_CORE=sysmon python3 -m coverage run -m pytest tests/ -q -m "not rasteriser"
+    python3 -m coverage combine -q
     python3 -m coverage json -q -o coverage.json
     python3 tools/coverage_by_module.py coverage.json
     python3 tools/coverage_by_module.py coverage.json --module weather

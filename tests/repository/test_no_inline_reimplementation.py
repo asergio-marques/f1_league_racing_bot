@@ -33,8 +33,9 @@ from __future__ import annotations
 import ast
 import pathlib
 
+from tests.support.source import package_sources
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-SRC = REPO_ROOT / "src"
 TESTS = REPO_ROOT / "tests"
 
 # A branch body that only inspects state, rather than standing in for the code under test.
@@ -42,17 +43,14 @@ _INSPECTING = ("assert", "pytest.skip", "pytest.fail", "return", "raise", "pass"
 
 
 def _src_function_names() -> set[str]:
-    """Every function and method name defined anywhere under `src/`."""
-    names: set[str] = set()
-    for path in sorted(SRC.rglob("*.py")):
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:  # pragma: no cover - a broken src/ fails its own tests
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                names.add(node.name)
-    return names
+    """Every function and method name defined anywhere under `src/`, from the parse the source
+    checks share (`tests/support/source.py`)."""
+    return {
+        node.name
+        for source in package_sources()
+        for node in ast.walk(source.tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
 
 
 def _called_names(node: ast.AST) -> set[str]:
@@ -72,6 +70,21 @@ def _test_files() -> list[pathlib.Path]:
     return sorted(TESTS.rglob("*.py"))
 
 
+def _functions(node: ast.AST) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Every function defined in *node*, at any depth, found by descending through statements
+    alone. A function is a statement, so none is missed, and the expressions that make up most of
+    a test file are left unvisited here: they are walked once, in each test function, where the
+    branches are looked for."""
+    found: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+    for child in ast.iter_child_nodes(node):
+        if not isinstance(child, (ast.stmt, ast.excepthandler, ast.match_case)):
+            continue
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            found.append(child)
+        found.extend(_functions(child))
+    return found
+
+
 def _offenders() -> list[str]:
     src_names = _src_function_names()
     found: list[str] = []
@@ -81,9 +94,7 @@ def _offenders() -> list[str]:
             tree = ast.parse(source)
         except SyntaxError:  # pragma: no cover - collection would fail first
             continue
-        for func in ast.walk(tree):
-            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
+        for func in _functions(tree):
             if not func.name.startswith("test"):
                 continue
             for branch in ast.walk(func):

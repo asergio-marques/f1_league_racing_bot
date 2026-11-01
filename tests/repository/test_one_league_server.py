@@ -32,6 +32,7 @@ from leaguebot.core.utils.league_server import (
     league_guild,
     warn_if_serving_several,
 )
+from tests.support.source import package_sources
 
 LEAGUE = 5550
 ELSEWHERE = 5551
@@ -256,10 +257,10 @@ _DISCORD_UI_BASES = ("View", "Modal", "LayoutView", "BaseView", "DynamicItem")
 
 
 def _src_trees():
-    src = os.path.join(os.path.dirname(__file__), "..", "..", "src", "leaguebot")
-    for path in sorted(glob.glob(os.path.join(src, "**", "*.py"), recursive=True)):
-        with open(path, encoding="utf-8") as fh:
-            yield os.path.relpath(path, src).replace(os.sep, "/"), ast.parse(fh.read())
+    """Every file of the package, as ``(path relative to it, parsed tree)``, from the parse the
+    source checks share (`tests/support/source.py`)."""
+    for source in package_sources():
+        yield source.path, source.tree
 
 
 def test_every_view_and_modal_derives_from_the_league_s_own():

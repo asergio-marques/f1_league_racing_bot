@@ -393,7 +393,8 @@ async def test_a_command_s_own_refusal_records_one_line_naming_it(
     tmp_path, name, arguments, config, reply
 ):
     """The reply is the one given today; the log channel gains one "⛔" line naming the
-    command, and nothing is stored."""
+    command, and nothing is stored. That line names the command, so none names the config group
+    bare, as every image line did whatever the command (A8)."""
     league = await _league(tmp_path, **config)
     before = await _stored(league.db_path)
 
@@ -539,7 +540,8 @@ async def test_a_success_records_one_line_naming_its_own_command(
 ):
     """Acknowledged at once; once run, the reply is today's success and the log channel holds
     one line, "Race Control (`<@42>`) | /<command> | Success", with what was set beneath, saved
-    with its audit entry."""
+    with its audit entry. The one line names the command, so none names the config group bare,
+    "| /images config |" (A8)."""
     league = await _league(tmp_path, **config)
 
     asked = await _run_with(league, name, *arguments)
@@ -606,21 +608,6 @@ async def test_a_part_applied_import_lists_the_blocks_it_passed_over(tmp_path):
     assert passed_over, details
     assert "Bad" in "\n".join(details[passed_over[0]:]), details
     assert (await _stored(league.db_path))["image_tier_colour"] == [("good", "accent", "#A78BFA")]
-
-
-async def test_no_line_names_the_config_group_bare(tmp_path):
-    """A8: across every success and every refusal above, no line reads "| /images config |",
-    the name every image line carried whatever the command."""
-    lines = []
-    for index, case in enumerate(SUCCESSES + OWN_REFUSALS):
-        name, arguments, config, *_rest = case.values
-        (tmp_path / str(index)).mkdir()
-        league = await _league(tmp_path / str(index), **config)
-        await _run_with(league, name, *arguments)
-        lines += logged(league.bot)
-
-    assert lines
-    assert not [line for line in lines if "| /images config |" in line], lines
 
 
 # ── A20 (N1): a value already held changes nothing ────────────────────────

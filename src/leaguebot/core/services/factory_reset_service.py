@@ -181,7 +181,11 @@ async def wipe(
     API, so the result is exactly what a first start produces — the packaged circuits and
     nothing else, the counters reset, with no list of tables here to fall out of step with
     the schema. The backup API writes through SQLite's own locking, so it is safe while the
-    bot's short-lived connections come and go.
+    bot's connections come and go, and while idle ones wait to be lent: they read the new
+    contents at their next statement, the file being written in place
+    (`test_a_factory_reset_under_lent_connections_leaves_them_reading_the_fresh_database`).
+    The fresh copy is migrated on a connection of its own, so nothing holds it open when it is
+    deleted.
 
     **One counter is carried over: the job number.** A job's number is never reused, so the fresh
     database is told the highest the live one has issued before it replaces it.

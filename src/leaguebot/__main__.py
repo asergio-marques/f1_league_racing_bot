@@ -1350,8 +1350,16 @@ async def main() -> None:
             delete_after=15,
         )
 
-    async with bot:
-        await bot.start(TOKEN)
+    from leaguebot.core.db.database import close_connections
+
+    try:
+        async with bot:
+            await bot.start(TOKEN)
+    finally:
+        # The connections kept idle to be lent again each hold a thread that is not a daemon;
+        # left open they would hang a Ctrl-C. Closed after the bot has closed, so that nothing
+        # it does while closing opens one that is then left (`get_connection`).
+        await close_connections()
 
 
 async def _recover_missed_phases(bot: LeagueBot) -> None:

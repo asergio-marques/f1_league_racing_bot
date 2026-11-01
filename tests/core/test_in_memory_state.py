@@ -133,6 +133,10 @@ EXEMPT = {
     # The interactions whose member has been warned that the log channel failed, by id; each
     # lapses with its interaction's 14 minutes (#439).
     ("core/services/output_router.py", "_warned"),
+    # The connections kept idle to be lent again: the bot's wiring, not league data. Each is
+    # re-checked against the database file's identity before it is lent, so a factory reset or a
+    # restore that replaces the file leaves none serving the old one (#540).
+    ("core/db/database.py", "_idle"),
 }
 
 

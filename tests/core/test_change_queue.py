@@ -1388,7 +1388,12 @@ async def _numbered(env, *payloads: int) -> int:
 
 async def test_a_job_after_a_restored_state_is_numbered_above_every_job_before_it(env, tmp_path):
     """A state saved after job #1, then jobs #2 and #3 done, then the state restored: the next job
-    asked for is numbered above #3, so no number in the log channel names two jobs."""
+    asked for is numbered above #3, so no number in the log channel names two jobs.
+
+    The connections kept idle to be lent again are closed before the restore is applied, as they
+    are when the bot stops: the restore is applied at the next start, before any is opened, and
+    Windows refuses to replace a file one still holds open."""
+    from leaguebot.core.db.database import close_connections
     from leaguebot.core.services import backup_service
 
     _queue(env, _type(steps=[_act("a", [])]))
@@ -1398,6 +1403,7 @@ async def test_a_job_after_a_restored_state_is_numbered_above_every_job_before_i
     highest = await _numbered(env, 2, 3)
 
     backup_service.stage_restore(env.db_path, jobstore)
+    await close_connections()
     assert backup_service.apply_staged_restore(env.db_path, jobstore) is True
     _queue(env, _type(steps=[_act("a", [])]))
     await _ask(env, payload={"n": 4})

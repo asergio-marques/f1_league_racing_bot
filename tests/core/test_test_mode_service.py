@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 from datetime import datetime, timezone, timedelta
 
 import pytest
@@ -92,43 +91,31 @@ async def _seed(db_path: str, rounds: list[dict]) -> None:
 # toggle_test_mode
 # ---------------------------------------------------------------------------
 
-async def test_toggle_enables_test_mode() -> None:
+async def test_toggle_enables_test_mode(tmp_path) -> None:
     """First toggle flips flag from 0 → 1 and returns True."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [])
-        result = await toggle_test_mode(db_path)
-        assert result is True
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [])
+    result = await toggle_test_mode(db_path)
+    assert result is True
 
 
-async def test_toggle_disables_test_mode() -> None:
+async def test_toggle_disables_test_mode(tmp_path) -> None:
     """Second toggle flips flag back from 1 → 0 and returns False."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [])
-        await toggle_test_mode(db_path)   # enable
-        result = await toggle_test_mode(db_path)  # disable
-        assert result is False
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [])
+    await toggle_test_mode(db_path)   # enable
+    result = await toggle_test_mode(db_path)  # disable
+    assert result is False
 
 
-async def test_toggle_missing_config_returns_false() -> None:
+async def test_toggle_missing_config_returns_false(tmp_path) -> None:
     """toggle_test_mode returns False when there is no config row."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)  # no seed — no server_config row
-        result = await toggle_test_mode(db_path)
-        assert result is False
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)  # no seed — no server_config row
+    result = await toggle_test_mode(db_path)
+    assert result is False
 
 
 # ---------------------------------------------------------------------------
@@ -145,197 +132,149 @@ async def _add_driver(db_path: str, user_id: str, state: str, *, test: bool = Fa
         await db.commit()
 
 
-async def test_an_empty_server_holds_no_real_drivers() -> None:
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [])
+async def test_an_empty_server_holds_no_real_drivers(tmp_path) -> None:
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [])
 
-        assert await count_live_real_drivers(db_path) == 0
-    finally:
-        os.unlink(db_path)
+    assert await count_live_real_drivers(db_path) == 0
 
 
 @pytest.mark.parametrize(
     "state",
     ["PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL", "UNASSIGNED", "ASSIGNED"],
 )
-async def test_every_live_state_counts(state: str) -> None:
+async def test_every_live_state_counts(state: str, tmp_path) -> None:
     """Anyone the league is holding — mid-signup, approved or placed — is a real driver."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [])
-        await _add_driver(db_path, "5001", state)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [])
+    await _add_driver(db_path, "5001", state)
 
-        assert await count_live_real_drivers(db_path) == 1
-    finally:
-        os.unlink(db_path)
+    assert await count_live_real_drivers(db_path) == 1
 
 
-async def test_a_former_driver_does_not_count() -> None:
+async def test_a_former_driver_does_not_count(tmp_path) -> None:
     """A retained NOT_SIGNED_UP row is someone who has left, not a driver in the league."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [])
-        await _add_driver(db_path, "5002", "NOT_SIGNED_UP")
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [])
+    await _add_driver(db_path, "5002", "NOT_SIGNED_UP")
 
-        assert await count_live_real_drivers(db_path) == 0
-    finally:
-        os.unlink(db_path)
+    assert await count_live_real_drivers(db_path) == 0
 
 
-async def test_fake_drivers_do_not_count() -> None:
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [])
-        await _add_driver(db_path, "9000000000000000001", "ASSIGNED", test=True)
-        await _add_driver(db_path, "5003", "ASSIGNED")
+async def test_fake_drivers_do_not_count(tmp_path) -> None:
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [])
+    await _add_driver(db_path, "9000000000000000001", "ASSIGNED", test=True)
+    await _add_driver(db_path, "5003", "ASSIGNED")
 
-        assert await count_live_real_drivers(db_path) == 1
-    finally:
-        os.unlink(db_path)
+    assert await count_live_real_drivers(db_path) == 1
 
 
 # ---------------------------------------------------------------------------
 # toggle_test_mode_nationality
 # ---------------------------------------------------------------------------
 
-async def test_nationality_toggle_starts_on() -> None:
+async def test_nationality_toggle_starts_on(tmp_path) -> None:
     """Migration 042 defaults it on, as the signup setting it parallels defaults on."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [])
-        async with get_connection(db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT test_mode_nationality_required FROM server_configs "
-                    "WHERE server_id = 1"
-                )
-            ).fetchone()
-        assert row["test_mode_nationality_required"] == 1
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [])
+    async with get_connection(db_path) as db:
+        row = await (
+            await db.execute(
+                "SELECT test_mode_nationality_required FROM server_configs "
+                "WHERE server_id = 1"
+            )
+        ).fetchone()
+    assert row["test_mode_nationality_required"] == 1
 
 
-async def test_nationality_toggle_disables_then_enables() -> None:
+async def test_nationality_toggle_disables_then_enables(tmp_path) -> None:
     """First toggle flips 1 → 0, the second back again."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [])
-        assert await toggle_test_mode_nationality(db_path) is False
-        assert await toggle_test_mode_nationality(db_path) is True
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [])
+    assert await toggle_test_mode_nationality(db_path) is False
+    assert await toggle_test_mode_nationality(db_path) is True
 
 
-async def test_nationality_toggle_leaves_test_mode_itself_alone() -> None:
+async def test_nationality_toggle_leaves_test_mode_itself_alone(tmp_path) -> None:
     """Two switches, not one: flipping nationality must not disturb test mode."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [])
-        await toggle_test_mode(db_path)  # enable test mode
-        await toggle_test_mode_nationality(db_path)
-        async with get_connection(db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT test_mode_active FROM server_configs WHERE server_id = 1"
-                )
-            ).fetchone()
-        assert row["test_mode_active"] == 1
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [])
+    await toggle_test_mode(db_path)  # enable test mode
+    await toggle_test_mode_nationality(db_path)
+    async with get_connection(db_path) as db:
+        row = await (
+            await db.execute(
+                "SELECT test_mode_active FROM server_configs WHERE server_id = 1"
+            )
+        ).fetchone()
+    assert row["test_mode_active"] == 1
 
 
-async def test_nationality_toggle_missing_config_returns_false() -> None:
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)  # no seed — no server_config row
-        assert await toggle_test_mode_nationality(db_path) is False
-    finally:
-        os.unlink(db_path)
+async def test_nationality_toggle_missing_config_returns_false(tmp_path) -> None:
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)  # no seed — no server_config row
+    assert await toggle_test_mode_nationality(db_path) is False
 
 
 # ---------------------------------------------------------------------------
 # get_next_pending_phase — queue ordering
 # ---------------------------------------------------------------------------
 
-async def test_empty_queue_returns_none() -> None:
+async def test_empty_queue_returns_none(tmp_path) -> None:
     """All phases done → get_next_pending_phase returns None."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [
-            {"phase1_done": 1, "phase2_done": 1, "phase3_done": 1},
-        ])
-        result = await get_next_pending_phase(db_path)
-        assert result is None
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [
+        {"phase1_done": 1, "phase2_done": 1, "phase3_done": 1},
+    ])
+    result = await get_next_pending_phase(db_path)
+    assert result is None
 
 
-async def test_mystery_round_notice_pending_returns_entry() -> None:
+async def test_mystery_round_notice_pending_returns_entry(tmp_path) -> None:
     """Mystery round with notice unsent (phase1_done=0) returns a phase_number=0 entry."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [
-            {"format": "MYSTERY", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
-        ])
-        result = await get_next_pending_phase(db_path)
-        assert result is not None
-        assert result["phase_number"] == 0
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [
+        {"format": "MYSTERY", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
+    ])
+    result = await get_next_pending_phase(db_path)
+    assert result is not None
+    assert result["phase_number"] == 0
 
 
-async def test_mystery_round_notice_done_excluded() -> None:
+async def test_mystery_round_notice_done_excluded(tmp_path) -> None:
     """Mystery round with notice already sent (phase1_done=1) must not appear in queue."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [
-            {"format": "MYSTERY", "phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
-        ])
-        result = await get_next_pending_phase(db_path)
-        assert result is None
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [
+        {"format": "MYSTERY", "phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
+    ])
+    result = await get_next_pending_phase(db_path)
+    assert result is None
 
 
-async def test_phase_number_ordering_within_round() -> None:
+async def test_phase_number_ordering_within_round(tmp_path) -> None:
     """Phase 1 done, Phase 2 not done → returns phase_number 2."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [
-            {"phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
-        ])
-        result = await get_next_pending_phase(db_path)
-        assert result is not None
-        assert result["phase_number"] == 2
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [
+        {"phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
+    ])
+    result = await get_next_pending_phase(db_path)
+    assert result is not None
+    assert result["phase_number"] == 2
 
 
-async def test_earliest_scheduled_round_comes_first() -> None:
+async def test_earliest_scheduled_round_comes_first(tmp_path) -> None:
     """The round with the earlier scheduled_at is returned first."""
     earlier = (datetime.now(timezone.utc) + timedelta(days=5)).strftime(
         "%Y-%m-%dT%H:%M:%S"
@@ -343,153 +282,125 @@ async def test_earliest_scheduled_round_comes_first() -> None:
     later = (datetime.now(timezone.utc) + timedelta(days=10)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [
-            {"track_name": "Monza",   "scheduled_at": later,   "phase1_done": 0},
-            {"track_name": "Bahrain", "scheduled_at": earlier, "phase1_done": 0},
-        ])
-        result = await get_next_pending_phase(db_path)
-        assert result is not None
-        assert result["track_name"] == "Bahrain"
-        assert result["phase_number"] == 1
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [
+        {"track_name": "Monza",   "scheduled_at": later,   "phase1_done": 0},
+        {"track_name": "Bahrain", "scheduled_at": earlier, "phase1_done": 0},
+    ])
+    result = await get_next_pending_phase(db_path)
+    assert result is not None
+    assert result["track_name"] == "Bahrain"
+    assert result["phase_number"] == 1
 
 
-async def test_division_id_tiebreak_same_scheduled_at() -> None:
+async def test_division_id_tiebreak_same_scheduled_at(tmp_path) -> None:
     """When two rounds have the same scheduled_at, lower division id comes first."""
     shared_sched = (datetime.now(timezone.utc) + timedelta(days=7)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [
-            # division_id=2 listed first in rounds to ensure ordering is by d.id not insert order
-            {
-                "division_id": 2,
-                "track_name": "Imola",
-                "scheduled_at": shared_sched,
-                "phase1_done": 0,
-            },
-            {
-                "division_id": 1,
-                "track_name": "Bahrain",
-                "scheduled_at": shared_sched,
-                "phase1_done": 0,
-            },
-        ])
-        result = await get_next_pending_phase(db_path)
-        assert result is not None
-        assert result["division_id"] == 1
-        assert result["track_name"] == "Bahrain"
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [
+        # division_id=2 listed first in rounds to ensure ordering is by d.id not insert order
+        {
+            "division_id": 2,
+            "track_name": "Imola",
+            "scheduled_at": shared_sched,
+            "phase1_done": 0,
+        },
+        {
+            "division_id": 1,
+            "track_name": "Bahrain",
+            "scheduled_at": shared_sched,
+            "phase1_done": 0,
+        },
+    ])
+    result = await get_next_pending_phase(db_path)
+    assert result is not None
+    assert result["division_id"] == 1
+    assert result["track_name"] == "Bahrain"
 
 
-async def test_no_active_season_returns_none() -> None:
+async def test_no_active_season_returns_none(tmp_path) -> None:
     """Returns None when there is no season in ACTIVE status."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "INSERT INTO server_configs "
-                "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-                "VALUES (1, 100, 200, 300)"
-            )
-            await db.execute(
-                "INSERT INTO seasons (id, start_date, status) "
-                "VALUES (1, '2026-01-01', 'SETUP')"  # SETUP, not ACTIVE
-            )
-            await db.commit()
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs "
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+            "VALUES (1, 100, 200, 300)"
+        )
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status) "
+            "VALUES (1, '2026-01-01', 'SETUP')"  # SETUP, not ACTIVE
+        )
+        await db.commit()
 
-        result = await get_next_pending_phase(db_path)
-        assert result is None
-    finally:
-        os.unlink(db_path)
+    result = await get_next_pending_phase(db_path)
+    assert result is None
 
 
-async def test_returns_phase1_for_fresh_round() -> None:
+async def test_returns_phase1_for_fresh_round(tmp_path) -> None:
     """A round with all phases pending returns phase_number=1."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [
-            {"track_name": "Japan", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
-        ])
-        result = await get_next_pending_phase(db_path)
-        assert result is not None
-        assert result["phase_number"] == 1
-        assert result["track_name"] == "Japan"
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [
+        {"track_name": "Japan", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
+    ])
+    result = await get_next_pending_phase(db_path)
+    assert result is not None
+    assert result["phase_number"] == 1
+    assert result["track_name"] == "Japan"
 
 
 # ---------------------------------------------------------------------------
 # build_review_summary
 # ---------------------------------------------------------------------------
 
-async def test_review_no_active_season() -> None:
+async def test_review_no_active_season(tmp_path) -> None:
     """Returns informative string when no active season exists."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        # No server_config or season seeded
-        summary = await build_review_summary(db_path)
-        assert "No active season" in summary
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    # No server_config or season seeded
+    summary = await build_review_summary(db_path)
+    assert "No active season" in summary
 
 
-async def test_review_shows_phase_status() -> None:
+async def test_review_shows_phase_status(tmp_path) -> None:
     """Summary includes P1/P2/P3 completion indicators for non-Mystery rounds."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed_with_weather(db_path, [
-            {"phase1_done": 1, "phase2_done": 0, "phase3_done": 0, "track_name": "Monaco"},
-        ])
-        summary = await build_review_summary(db_path)
-        assert "Monaco" in summary
-        assert "P1: ✅" in summary
-        assert "P2: ⏳" in summary
-        assert "P3: ⏳" in summary
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"phase1_done": 1, "phase2_done": 0, "phase3_done": 0, "track_name": "Monaco"},
+    ])
+    summary = await build_review_summary(db_path)
+    assert "Monaco" in summary
+    assert "P1: ✅" in summary
+    assert "P2: ⏳" in summary
+    assert "P3: ⏳" in summary
 
 
-async def test_review_mystery_round_shows_notice_not_phases() -> None:
+async def test_review_mystery_round_shows_notice_not_phases(tmp_path) -> None:
     """Mystery rounds show 'Notice' status, not P1/P2/P3."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed_with_weather(db_path, [
-            {
-                "format": "MYSTERY",
-                "track_name": "Silverstone",
-                "phase1_done": 0,
-                "phase2_done": 0,
-                "phase3_done": 0,
-            },
-        ])
-        summary = await build_review_summary(db_path)
-        assert "Silverstone" in summary
-        assert "Notice: ⏳" in summary
-        assert "P1:" not in summary
-        assert "P2:" not in summary
-        assert "P3:" not in summary
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {
+            "format": "MYSTERY",
+            "track_name": "Silverstone",
+            "phase1_done": 0,
+            "phase2_done": 0,
+            "phase3_done": 0,
+        },
+    ])
+    summary = await build_review_summary(db_path)
+    assert "Silverstone" in summary
+    assert "Notice: ⏳" in summary
+    assert "P1:" not in summary
+    assert "P2:" not in summary
+    assert "P3:" not in summary
 
 
 # ---------------------------------------------------------------------------
@@ -534,120 +445,104 @@ async def _seed_with_attendance(db_path: str, rounds: list[dict]) -> None:
         await db.commit()
 
 
-async def test_misfired_fallback_returns_phase1() -> None:
+async def test_misfired_fallback_returns_phase1(tmp_path) -> None:
     """Empty scheduler + weather enabled → phase 1 returned via DB flag fallback."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed_with_weather(db_path, [
-            {"track_name": "Monza", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
-        ])
-        result = await get_next_pending_phase(db_path, _StubScheduler())
-        assert result is not None
-        assert result["phase_number"] == 1
-        assert result["track_name"] == "Monza"
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Monza", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
+    ])
+    result = await get_next_pending_phase(db_path, _StubScheduler())
+    assert result is not None
+    assert result["phase_number"] == 1
+    assert result["track_name"] == "Monza"
 
 
-async def test_misfired_fallback_respects_phase_flags() -> None:
+async def test_misfired_fallback_respects_phase_flags(tmp_path) -> None:
     """phase1_done=1, phase2_done=0 → fallback returns phase 2, not phase 1."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed_with_weather(db_path, [
-            {"track_name": "Spa", "phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
-        ])
-        result = await get_next_pending_phase(db_path, _StubScheduler())
-        assert result is not None
-        assert result["phase_number"] == 2
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Spa", "phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
+    ])
+    result = await get_next_pending_phase(db_path, _StubScheduler())
+    assert result is not None
+    assert result["phase_number"] == 2
 
 
-async def test_misfired_fallback_weather_disabled_skips_phases() -> None:
+async def test_misfired_fallback_weather_disabled_skips_phases(tmp_path) -> None:
     """Weather module disabled → weather phases never returned even with empty scheduler."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        # _seed leaves weather_module_enabled=0 (default)
-        await _seed(db_path, [
-            {"track_name": "Monza", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
-        ])
-        result = await get_next_pending_phase(db_path, _StubScheduler())
-        assert result is None
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    # _seed leaves weather_module_enabled=0 (default)
+    await _seed(db_path, [
+        {"track_name": "Monza", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
+    ])
+    result = await get_next_pending_phase(db_path, _StubScheduler())
+    assert result is None
 
 
-async def test_misfired_fallback_canonical_order() -> None:
+async def test_misfired_fallback_canonical_order(tmp_path) -> None:
     """Canonical order: P1 → RSVP-notice → P2 → RSVP-last → P3 → RSVP-deadline.
 
     Steps through one full round by calling get_next_pending_phase and manually
     advancing the relevant DB flag / RSVP row between each call.
     """
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed_with_attendance(db_path, [
-            {"track_name": "Monaco", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
-        ])
-        stub = _StubScheduler()
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed_with_attendance(db_path, [
+        {"track_name": "Monaco", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
+    ])
+    stub = _StubScheduler()
 
-        # Step 1 — phase 1
-        r = await get_next_pending_phase(db_path, stub)
-        assert r is not None and r["phase_number"] == 1
-        async with get_connection(db_path) as db:
-            await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = 1")
-            await db.commit()
+    # Step 1 — phase 1
+    r = await get_next_pending_phase(db_path, stub)
+    assert r is not None and r["phase_number"] == 1
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = 1")
+        await db.commit()
 
-        # Step 2 — RSVP notice (phase 5)
-        r = await get_next_pending_phase(db_path, stub)
-        assert r is not None and r["phase_number"] == 5
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "INSERT INTO rsvp_embed_messages "
-                "(round_id, division_id, message_id, channel_id, posted_at) "
-                "VALUES (1, 1, 'msg1', 'ch1', '2026-01-01T00:00:00')"
-            )
-            await db.commit()
+    # Step 2 — RSVP notice (phase 5)
+    r = await get_next_pending_phase(db_path, stub)
+    assert r is not None and r["phase_number"] == 5
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages "
+            "(round_id, division_id, message_id, channel_id, posted_at) "
+            "VALUES (1, 1, 'msg1', 'ch1', '2026-01-01T00:00:00')"
+        )
+        await db.commit()
 
-        # Step 3 — phase 2
-        r = await get_next_pending_phase(db_path, stub)
-        assert r is not None and r["phase_number"] == 2
-        async with get_connection(db_path) as db:
-            await db.execute("UPDATE rounds SET phase2_done = 1 WHERE id = 1")
-            await db.commit()
+    # Step 3 — phase 2
+    r = await get_next_pending_phase(db_path, stub)
+    assert r is not None and r["phase_number"] == 2
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET phase2_done = 1 WHERE id = 1")
+        await db.commit()
 
-        # Step 4 — RSVP last-notice (phase 6)
-        r = await get_next_pending_phase(db_path, stub)
-        assert r is not None and r["phase_number"] == 6
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "UPDATE rsvp_embed_messages SET last_notice_msg_id = 'msg2' "
-                "WHERE round_id = 1 AND division_id = 1"
-            )
-            await db.commit()
+    # Step 4 — RSVP last-notice (phase 6)
+    r = await get_next_pending_phase(db_path, stub)
+    assert r is not None and r["phase_number"] == 6
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE rsvp_embed_messages SET last_notice_msg_id = 'msg2' "
+            "WHERE round_id = 1 AND division_id = 1"
+        )
+        await db.commit()
 
-        # Step 5 — phase 3
-        r = await get_next_pending_phase(db_path, stub)
-        assert r is not None and r["phase_number"] == 3
-        async with get_connection(db_path) as db:
-            await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = 1")
-            await db.commit()
+    # Step 5 — phase 3
+    r = await get_next_pending_phase(db_path, stub)
+    assert r is not None and r["phase_number"] == 3
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = 1")
+        await db.commit()
 
-        # Step 6 — RSVP deadline (phase 7)
-        r = await get_next_pending_phase(db_path, stub)
-        assert r is not None and r["phase_number"] == 7
-    finally:
-        os.unlink(db_path)
+    # Step 6 — RSVP deadline (phase 7)
+    r = await get_next_pending_phase(db_path, stub)
+    assert r is not None and r["phase_number"] == 7
 
 
-async def test_earlier_misfired_round_beats_later_scheduler_job() -> None:
+async def test_earlier_misfired_round_beats_later_scheduler_job(tmp_path) -> None:
     """Earlier round with misfired phases must be advanced before a later
     round whose scheduler job is still pending. The earlier round is still to be raced: a
     raced round's weather steps are passed over (#439)."""
@@ -657,27 +552,23 @@ async def test_earlier_misfired_round_beats_later_scheduler_job() -> None:
     later = (datetime.now(timezone.utc) + timedelta(days=5)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed_with_weather(db_path, [
-            {"track_name": "Bahrain",  "scheduled_at": earlier, "phase1_done": 0, "division_id": 1},
-            {"track_name": "Monza",    "scheduled_at": later,   "phase1_done": 0, "division_id": 1},
-        ])
-        # Scheduler only knows about round 2 (round 1 jobs evicted after misfire)
-        stub = _StubScheduler([{
-            "job_id": "phase1_r2",
-            "round_id": 2,
-            "phase_number": 1,
-            "next_run_time": datetime.now(timezone.utc) + timedelta(days=5),
-        }])
-        result = await get_next_pending_phase(db_path, stub)
-        assert result is not None
-        assert result["track_name"] == "Bahrain"   # earlier round wins
-        assert result["phase_number"] == 1
-    finally:
-        os.unlink(db_path)
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Bahrain",  "scheduled_at": earlier, "phase1_done": 0, "division_id": 1},
+        {"track_name": "Monza",    "scheduled_at": later,   "phase1_done": 0, "division_id": 1},
+    ])
+    # Scheduler only knows about round 2 (round 1 jobs evicted after misfire)
+    stub = _StubScheduler([{
+        "job_id": "phase1_r2",
+        "round_id": 2,
+        "phase_number": 1,
+        "next_run_time": datetime.now(timezone.utc) + timedelta(days=5),
+    }])
+    result = await get_next_pending_phase(db_path, stub)
+    assert result is not None
+    assert result["track_name"] == "Bahrain"   # earlier round wins
+    assert result["phase_number"] == 1
 
 
 # ---------------------------------------------------------------------------
