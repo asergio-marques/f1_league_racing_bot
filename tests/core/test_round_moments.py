@@ -34,7 +34,6 @@ _CALL = {
 _RESULTS = {"results": timedelta(0)}
 
 
-@pytest.mark.xfail(strict=True, reason="#283: no round_event_moments yet")
 @pytest.mark.parametrize(
     ("scheduled_at", "weather", "check_in", "offsets"),
     [

@@ -42,7 +42,11 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import Round, RoundFormat
-from leaguebot.core.models.round_moments import POST_RACE_CLEANUP_DELAY
+from leaguebot.core.models.round_moments import (
+    POST_RACE_CLEANUP_DELAY,
+    ROUND_JOB_KINDS,
+)
+from leaguebot.core.models.round_moments import WEATHER_JOB_KINDS as _WEATHER_JOB_PREFIXES
 
 if TYPE_CHECKING:
     pass
@@ -78,16 +82,12 @@ class _JobScheduler(AsyncIOScheduler):
 # modules' jobs down with it.
 _JOB_SUFFIX_RE = re.compile(r"_s\d+_d\d+_r\d+(?:_id\d+)?$")
 
-# The event-type prefixes of the jobs the **weather module** owns: its three forecast
-# phases and the post-race cleanup that deletes what they posted.
-#
-# A round's job names its owner twice over: its ID prefix and the ``kind`` it is stored with
-# are the same (`ROUND_JOB_KINDS`). All nine of a round's jobs — these four, the result
-# submission and the four attendance jobs — carry the same ``key`` kwarg (the round id), so the
-# key says which round a job belongs to and nothing about which module it is for. The kind says
-# it, and so does the prefix; `cancel_round(only=...)` reads the prefix, which
-# ``_JOB_SUFFIX_RE`` above exposes, because that is what its callers already hold.
-_WEATHER_JOB_PREFIXES = frozenset({"weather_p1", "weather_p2", "weather_p3", "cleanup"})
+# A round's job names its owner twice over: its ID prefix and the ``kind`` it is stored with are
+# the same (`ROUND_JOB_KINDS`, with the weather module's four in `_WEATHER_JOB_PREFIXES`). All
+# nine of a round's jobs carry the same ``key`` kwarg (the round id), so the key says which round
+# a job belongs to and nothing about which module it is for. The kind says it, and so does the
+# prefix; `cancel_round(only=...)` reads the prefix, which ``_JOB_SUFFIX_RE`` above exposes,
+# because that is what its callers already hold.
 
 
 def _round_job_suffix(rnd: "Round", season_number: int, division_tier: int) -> str:
@@ -139,13 +139,6 @@ SIGNUP_CLOSE_JOB_ID = "signup_close"
 SIGNUP_CLOSE_KIND = "signup_close"
 PORTRAIT_REFRESH_KIND = "portrait_refresh"
 AMENDMENT_SWEEP_KIND = "amendment_sweep"
-
-#: The kinds of a round's nine jobs: each is its job id's prefix (`_job_event_type`), and its key
-#: the round id. A job is a round's where its kind is one of these; another job's key, an
-#: amendment's lapse timer's for one, is no round's, however it is numbered.
-ROUND_JOB_KINDS = _WEATHER_JOB_PREFIXES | {
-    "results", "rsvp_notice", "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup",
-}
 
 
 def _round_of(job: Any) -> int | None:
