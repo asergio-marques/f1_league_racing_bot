@@ -512,13 +512,20 @@ def _entry_build() -> Any:
 
 
 async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: Any = None,
-                     season_service: Any = None, real_config: bool = False) -> Any:
+                     attendance_hook_of: Any = None, season_service: Any = None,
+                     real_config: bool = False) -> Any:
     """The bot of a hand-made test league on *db_path*, the Discord side `league_double` gives
     stubbed over it, its scheduler *scheduler* (a bare double if None), its attendance hook
     *attendance_hook* (`attendance_hook_double`'s if None) and, where given, its season service
     *season_service*; its queue is attached by `league_queue`, once the league has set its own
     services (#283). With *real_config*, the league's config service reads the database, as a
     league building its own `ConfigService` has it.
+
+    *attendance_hook_of*, where given, makes the hook in place of *attendance_hook*: called with
+    the bot and *db_path* as the builder makes attendance's hook, so that a league can hand it
+    the real `AttendanceAfterReview`, which holds the bot, with a placement service of its own.
+    A factory calling the real class holds it from before the call, since the builder's is the
+    double for the build's length.
 
     Where the entry point has its builder, the bot is the one `build` makes, on settings for
     *db_path* (the job store `jobs.db` beside it), handed the doubles in place of the scheduler,
@@ -531,13 +538,15 @@ async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: An
     from unittest.mock import patch
 
     scheduler = scheduler if scheduler is not None else MagicMock()
-    if attendance_hook is None:
+    if attendance_hook is None and attendance_hook_of is None:
         attendance_hook = attendance_hook_double()
     entry = _entry_build()
     if entry is None:
         bot = league_double(db_path)
         bot.scheduler_service = scheduler
-        bot.attendance_after_review = attendance_hook
+        bot.attendance_after_review = (
+            attendance_hook if attendance_hook_of is None else attendance_hook_of(bot, db_path)
+        )
         if season_service is not None:
             bot.season_service = season_service
         return bot
@@ -546,13 +555,16 @@ async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: An
                              jobstore_path=os.path.join(os.path.dirname(db_path), "jobs.db"))
     import leaguebot.__main__ as entry_point
 
-    doubles = {"scheduler": scheduler, "attendance_hook": attendance_hook,
+    doubles = {"scheduler": scheduler, "attendance_hook": attendance_hook or attendance_hook_of,
                "season_service": season_service}
     with ExitStack() as stack:
         for key, (module_name, name) in _DOUBLED_AT_BUILD.items():
             if doubles[key] is None:
                 continue
             made = MagicMock(return_value=doubles[key])
+            if key == "attendance_hook" and attendance_hook_of is not None:
+                made = MagicMock(side_effect=lambda bot, *_args, **_kwargs: attendance_hook_of(
+                    bot, db_path))
             stack.enter_context(patch.object(importlib.import_module(module_name), name, made))
             if hasattr(entry_point, name):
                 stack.enter_context(patch.object(entry_point, name, made))

@@ -26,6 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.services.penalty_service import StagedPenalty
 from leaguebot.results.models.points_config import SessionType
@@ -34,7 +35,6 @@ from leaguebot.results.services.verdict_announcement_service import (
     describe_penalty,
 )
 from tests.support.change_queue import (
-    attach_queue,
     discard_job,
     http_error,
     member_interaction,
@@ -305,12 +305,12 @@ SANCTIONS_ANNOUNCE = "attendance.sanctions.announce"
 
 
 async def _announce_lewis_s_autoreserve(league: ReviewLeague) -> None:
-    """Hand the change types attendance's real hook, then ask the queue, as the bot and as the
-    sync asks it, to announce Lewis's move to reserve in round 3 of Pro, and run it."""
+    """Ask the queue, as the bot and as the sync asks it, to announce Lewis's move to reserve in
+    round 3 of Pro, and run it: the league is built with attendance's real hook
+    (`_real_attendance_hook`)."""
     from leaguebot.core.models.change import ChangeOrigin
     from tests.support.review_league import candidate
 
-    _real_attendance_hook(league)
     await league.bot.change_queue.ask(
         SANCTIONS_ANNOUNCE,
         {
@@ -328,7 +328,7 @@ async def test_a_sync_s_sanction_card_is_drawn_under_the_driver_s_server_name(tm
     Lewis (101), known to the server as "Lewis", to reserve, and asks the queue to announce it:
     the queue runs whole, and the sanction's card is drawn under "Lewis", never his user id
     (#141; image spec: a graphic names a person by their display name on the server)."""
-    league = await review_league(tmp_path, attendance=True)
+    league = await review_league(tmp_path, attendance=True, attendance_hook=_real_attendance_hook)
 
     await _announce_lewis_s_autoreserve(league)
 
@@ -340,7 +340,7 @@ async def test_a_sync_s_sanction_card_is_drawn_under_the_driver_s_server_name(tm
 async def test_a_sync_s_sanction_card_as_text_mentions_the_driver(tmp_path):
     """As above, but with image generation off: the card is posted as text in Pro's verdicts
     channel (704), mentioning Lewis as <@101> and saying he was moved to reserve."""
-    league = await review_league(tmp_path, attendance=True)
+    league = await review_league(tmp_path, attendance=True, attendance_hook=_real_attendance_hook)
 
     await _announce_lewis_s_autoreserve(league)
 
@@ -597,16 +597,8 @@ async def test_a_sheet_or_sanction_stop_names_what_to_repair(tmp_path, seed, job
     3's reports: the queue stops at the sheet, or at the check of Lewis's sanction ahead of its
     save, and the stop line's fault
     is the reason the hook gave, which says what to repair, never the name of an exception."""
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
-
-    league = await review_league(tmp_path, attendance=True)
+    league = await review_league(tmp_path, attendance=True, attendance_hook=_real_attendance_hook)
     await seed(league)
-    placement = MagicMock()
-    for name in ("sack_driver", "move_driver", "refresh_lineup", "guard_move", "sack_on",
-                 "move_on"):
-        setattr(placement, name, AsyncMock(return_value=None))
-    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
-    attach_queue(league.bot, league.db_path, now=NOW)
 
     await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
@@ -626,17 +618,15 @@ async def test_a_sheet_or_sanction_stop_names_what_to_repair(tmp_path, seed, job
 AMEND_APPEALS_PROMPT = 8952
 
 
-def _real_attendance_hook(league: ReviewLeague) -> None:
-    """Hand the change types attendance's real hook, `AttendanceAfterReview`, with a placement
-    service that does nothing, so that the sheet is posted by `post_attendance_sheet` itself."""
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
-
+def _real_attendance_hook(bot: Any, _db_path: str) -> Any:
+    """Attendance's real hook, `AttendanceAfterReview`, for *bot*, with a placement service that
+    does nothing, so that the sheet is posted by `post_attendance_sheet` itself: handed to the
+    league as it is built (`review_league`'s *attendance_hook*), so the change types hold it."""
     placement = MagicMock()
     for name in ("sack_driver", "move_driver", "refresh_lineup", "guard_move", "sack_on",
                  "move_on"):
         setattr(placement, name, AsyncMock(return_value=None))
-    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
-    attach_queue(league.bot, league.db_path, now=NOW)
+    return AttendanceAfterReview(bot, placement)
 
 
 def _sheet_stop(league: ReviewLeague) -> str:
@@ -651,8 +641,7 @@ async def test_a_review_s_attendance_sheet_with_no_channel_stops_the_queue_namin
     """Attendance is on, and division 11 (Pro) was never given an attendance channel. Alex
     approves round 3's reports: the queue stops at the sheet, its stop line naming the command
     that sets the channel, rather than the sheet completing having posted nothing."""
-    league = await review_league(tmp_path, attendance=True)
-    _real_attendance_hook(league)
+    league = await review_league(tmp_path, attendance=True, attendance_hook=_real_attendance_hook)
 
     await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
@@ -666,7 +655,8 @@ async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(t
     approved, its appeals prompt standing in the amendment channel. Attendance is on and Pro was
     never given an attendance channel. Alex approves the amendment's appeals stage with nothing
     staged: the rebuild stops the queue at the sheet, naming the command that sets the channel."""
-    league = await review_league(tmp_path, attendance=True, round_status="FINAL")
+    league = await review_league(tmp_path, attendance=True, round_status="FINAL",
+                                 attendance_hook=_real_attendance_hook)
     async with get_connection(league.db_path) as db:
         await db.execute(
             "UPDATE round_submission_channels SET closed = 1, in_penalty_review = 0"
@@ -681,7 +671,6 @@ async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(t
         )
         await db.commit()
     league.channel(AMEND_CHANNEL).seed(AMEND_APPEALS_PROMPT, "the amendment's appeals")
-    _real_attendance_hook(league)
 
     await league.bot.change_queue.ask(
         "results.amendment.appeals.approve",
@@ -713,9 +702,16 @@ async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_comm
     naming the command that sets the channel, rather than the lineup completing having posted
     nothing."""
     from leaguebot.core.services.placement_service import PlacementService
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
 
-    league = await review_league(tmp_path, attendance=True)
+    def _hook(bot: Any, db_path: str) -> Any:
+        placement = PlacementService(db_path, bot)
+        placement._grant_roles = AsyncMock()
+        placement._revoke_roles = AsyncMock()
+        placement.grant_roles = AsyncMock()
+        placement.revoke_roles = AsyncMock()
+        return AttendanceAfterReview(bot, placement)
+
+    league = await review_league(tmp_path, attendance=True, attendance_hook=_hook)
     async with get_connection(league.db_path) as db:
         await db.execute("UPDATE attendance_config SET autoreserve_threshold = 1")
         seat = await db.execute(
@@ -751,13 +747,6 @@ async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_comm
     league.channels[ATTENDANCE_CHANNEL] = channel(ATTENDANCE_CHANNEL, league.events)
     set_user(league.bot, MagicMock(id=9000))
     league.bot.user.__str__.return_value = "LeagueBot"
-    placement = PlacementService(league.db_path, league.bot)
-    placement._grant_roles = AsyncMock()
-    placement._revoke_roles = AsyncMock()
-    placement.grant_roles = AsyncMock()
-    placement.revoke_roles = AsyncMock()
-    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
-    attach_queue(league.bot, league.db_path, now=NOW)
 
     await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
@@ -778,10 +767,13 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
     Permissions). Alex approves round 3's reports: Lewis is moved to the Reserve team, and the
     queue stops at the job changing his roles, its notice naming it, rather than the approval
     going on as though his roles had been changed."""
-    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
     from leaguebot.core.services.placement_service import PlacementService
 
-    league = await review_league(tmp_path, attendance=True)
+    league = await review_league(
+        tmp_path, attendance=True,
+        attendance_hook=lambda bot, db_path: AttendanceAfterReview(
+            bot, PlacementService(db_path, bot)),
+    )
     await _no_reserve_team(league)
     async with get_connection(league.db_path) as db:
         reserve = await db.execute(
@@ -826,9 +818,6 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
     )
     set_user(league.bot, MagicMock(id=9000))
     league.bot.user.__str__.return_value = "LeagueBot"
-    placement = PlacementService(league.db_path, league.bot)
-    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
-    attach_queue(league.bot, league.db_path, now=NOW)
 
     await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)

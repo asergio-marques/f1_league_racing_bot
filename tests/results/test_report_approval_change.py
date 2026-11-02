@@ -444,11 +444,16 @@ async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp
     records it, the old one still standing; then a `delete_message` job of the review deletes
     the old sheet."""
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
-    from tests.support.change_queue import attach_queue
-    from tests.support.review_league import NOW, channel
+    from tests.support.review_league import channel
 
     sheet_channel, old_sheet = 707, 8805
-    league = await review_league(tmp_path, attendance=True)
+    placement = MagicMock()
+    for name in ("sack_driver", "move_driver", "refresh_lineup"):
+        setattr(placement, name, AsyncMock(return_value=None))
+    league = await review_league(
+        tmp_path, attendance=True,
+        attendance_hook=lambda bot, _db_path: AttendanceAfterReview(bot, placement),
+    )
     league.channels[sheet_channel] = channel(sheet_channel, league.events)
     league.channels[sheet_channel].guild = league.guild
     league.channel(sheet_channel).seed(old_sheet, "Pro's attendance sheet")
@@ -459,11 +464,6 @@ async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp
             (DIVISION_ID, str(sheet_channel), str(old_sheet)),
         )
         await db.commit()
-    placement = MagicMock()
-    for name in ("sack_driver", "move_driver", "refresh_lineup"):
-        setattr(placement, name, AsyncMock(return_value=None))
-    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
-    attach_queue(league.bot, league.db_path, now=NOW)
 
     await _approve(league, staged=[penalty(LEWIS)])
     await run_until_done(league, "attendance_sheet")
@@ -1545,10 +1545,24 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     once, by the review's own job, not by the move as well (core spec: "posted once")."""
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
     from leaguebot.core.services.placement_service import LineupPosted, PlacementService
-    from tests.support.change_queue import attach_queue
-    from tests.support.review_league import NOW, channel
+    from tests.support.review_league import channel
 
-    league = await review_league(tmp_path, attendance=True)
+    placements: list[Any] = []
+
+    def _hook(bot: Any, db_path: str) -> Any:
+        placement = PlacementService(db_path, bot)
+        placements.append(placement)
+        placement._grant_roles = AsyncMock()
+        placement._revoke_roles = AsyncMock()
+        placement.grant_roles = AsyncMock()
+        placement.revoke_roles = AsyncMock()
+        # Pro has no lineup channel of its own here: the post is stood in for, as one posted.
+        placement._refresh_lineup_post = AsyncMock(return_value=LineupPosted(
+            message_id=9100, channel_id=9101, previous=None, division_name="Pro", form="text",
+        ))
+        return AttendanceAfterReview(bot, placement)
+
+    league = await review_league(tmp_path, attendance=True, attendance_hook=_hook)
     await _lewis_owed_an_autoreserve(league)
     # Pro's attendance channel is set, as a missing one now stops the queue at the sheet.
     league.channels[707] = channel(707, league.events)
@@ -1562,17 +1576,6 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
         await db.commit()
     set_user(league.bot, MagicMock(id=9000))
     league.bot.user.__str__.return_value = "LeagueBot"
-    placement = PlacementService(league.db_path, league.bot)
-    placement._grant_roles = AsyncMock()
-    placement._revoke_roles = AsyncMock()
-    placement.grant_roles = AsyncMock()
-    placement.revoke_roles = AsyncMock()
-    # Pro has no lineup channel of its own here: the post is stood in for, as one posted.
-    placement._refresh_lineup_post = AsyncMock(return_value=LineupPosted(
-        message_id=9100, channel_id=9101, previous=None, division_name="Pro", form="text",
-    ))
-    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
-    attach_queue(league.bot, league.db_path, now=NOW)
 
     await _approve(league, staged=[penalty(LEWIS)])
     await run_queue(league.bot)
@@ -1585,6 +1588,7 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
         "JOIN team_instances ti ON ti.id = ts.team_instance_id "
         "WHERE dsa.driver_profile_id = ?", LEWIS_PROFILE,
     ) == 1, "Lewis was not moved to the Reserve team"
+    [placement] = placements
     posted = [call.args[1] for call in placement._refresh_lineup_post.await_args_list]
     assert posted == [DIVISION_ID]
 

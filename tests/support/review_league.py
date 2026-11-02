@@ -11,7 +11,8 @@ channel deletion in one list of events, in order, each carrying the league's ser
 image generation is off. Attendance is reached
 through the hook the builder hands the change types, `bot.attendance_after_review`, here an
 `AttendanceDouble` that checks the switch as the real hook does, records each call, and writes its
-record on the save it is handed into a table of the test's own (`attendance_recorded`).
+record on the save it is handed into a table of the test's own (`attendance_recorded`); or, where
+the league is given `attendance_hook`, the hook it makes from the bot, the real one among them.
 """
 from __future__ import annotations
 
@@ -353,17 +354,22 @@ class ReviewLeague:
     """The bot with its queue and attendance hook, its channels, and what they saw; the bot is
     there once `build` has run."""
 
-    def __init__(self, db_path: str, *, attendance: bool) -> None:
+    def __init__(self, db_path: str, *, attendance: bool, attendance_hook: Any = None) -> None:
         self.db_path = db_path
         self.attendance_on = attendance
         self.events: list[tuple[str, int, int]] = []
         self.attendance = AttendanceDouble(self)
+        self.attendance_hook = attendance_hook
 
     async def build(self) -> None:
-        """The league's bot (`league_bot`), its attendance hook `attendance`, with its channels,
-        server and queue."""
+        """The league's bot (`league_bot`), its attendance hook `attendance`, or the one
+        `attendance_hook` makes where the league was given it, with its channels, server and
+        queue."""
         db_path = self.db_path
-        self.bot = await league_bot(db_path, attendance_hook=self.attendance)
+        if self.attendance_hook is None:
+            self.bot = await league_bot(db_path, attendance_hook=self.attendance)
+        else:
+            self.bot = await league_bot(db_path, attendance_hook_of=self.attendance_hook)
         self.channels = {
             cid: channel(cid, self.events)
             for cid in (RESULTS_CHANNEL, STANDINGS_CHANNEL, SUBMISSION_CHANNEL, VERDICTS_CHANNEL,
@@ -541,14 +547,19 @@ async def review_league(
     tmp_path: Any, *, attendance: bool = False, config_name: str | None = "Standard",
     round_status: str = "AWAITING_REPORT_VERDICTS", verdicts_channel: bool = True,
     other_division: bool = True, appeals_prompt: int | None = None,
+    attendance_hook: Any = None,
 ) -> ReviewLeague:
-    """The league of `make_db`, its bot built with a real queue and the real change types."""
+    """The league of `make_db`, its bot built with a real queue and the real change types.
+
+    *attendance_hook*, where given, makes attendance's hook from the bot and the database path
+    (`league_bot`'s *attendance_hook_of*), so that the change types are registered holding it,
+    in place of `AttendanceDouble`."""
     db_path = await make_db(
         tmp_path, attendance=attendance, config_name=config_name, round_status=round_status,
         verdicts_channel=verdicts_channel, other_division=other_division,
         appeals_prompt=appeals_prompt,
     )
-    league = ReviewLeague(db_path, attendance=attendance)
+    league = ReviewLeague(db_path, attendance=attendance, attendance_hook=attendance_hook)
     await league.build()
     return league
 
