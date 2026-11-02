@@ -44,9 +44,8 @@ round: nothing this module reports would have been scheduled, and nothing it pas
 have been skipped. For the weather phases it is very slightly stricter than the scheduler's
 300-second misfire grace, which is the safe direction — better to refuse a job that might
 just have squeezed in than to admit one the scheduler will throw away. `test_a_window_exactly
-_now_is_overdue` and `test_the_window_offsets_match_the_scheduler` pin both halves of that,
-because the offsets live here *and* in `scheduler_service` and would otherwise drift apart
-without a failing test to say so.
+_now_is_overdue` pins both halves of that. The offsets are not worked out here: they come from
+`round_event_moments`, which the scheduler's arming reads too, so the two cannot drift apart.
 
 Pure by design: no database, no Discord, and ``now`` passed in rather than read from the
 wall clock, so the tests can pin a date and a moment together.
@@ -54,10 +53,15 @@ wall clock, so the tests can pin a date and a moment together.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 from leaguebot.core.models.round import Round, RoundStatus
-from leaguebot.core.models.round_moments import AttendanceWindows, WeatherWindows
+from leaguebot.core.models.round_moments import (
+    AttendanceWindows,
+    WeatherWindows,
+    as_utc,
+    round_event_moments,
+)
 
 
 @dataclass(frozen=True)
@@ -75,13 +79,6 @@ class OverdueWindow:
     label: str
     lead: str
     fire_at: datetime
-
-
-def _as_utc(moment: datetime) -> datetime:
-    """Naive datetimes out of the database are UTC, as they are everywhere else here."""
-    if moment.tzinfo is None:
-        return moment.replace(tzinfo=timezone.utc)
-    return moment
 
 
 def overdue_windows(
@@ -109,7 +106,7 @@ def overdue_windows(
         modules. Reading this answer alone as "the season may be approved" is #181.
     """
     found: list[OverdueWindow] = []
-    now = _as_utc(now)
+    now = as_utc(now)
 
     for division_name, rnd in rounds:
         # A cancelled round has no work left to lose, and refusing a season because of one
@@ -117,21 +114,18 @@ def overdue_windows(
         if rnd.status == RoundStatus.CANCELLED.value:
             continue
 
-        scheduled_at = _as_utc(rnd.scheduled_at)
+        scheduled_at = as_utc(rnd.scheduled_at)
+        moments = round_event_moments(scheduled_at, weather=weather, attendance=attendance)
         windows: list[tuple[str, str, datetime]] = []
 
         if attendance is not None:
-            windows.append((
-                "Check-in call",
-                _days(attendance.notice_days),
-                scheduled_at - timedelta(days=attendance.notice_days),
-            ))
-            # Zero disables the last notice outright, exactly as the scheduler reads it.
-            if attendance.last_notice_hours > 0:
+            windows.append(("Check-in call", _days(attendance.notice_days), moments["rsvp_notice"]))
+            # Absent from the moments where the last notice is 0 hours: no last notice at all.
+            if "rsvp_last_notice" in moments:
                 windows.append((
                     "Check-in last notice",
                     _hours(attendance.last_notice_hours),
-                    scheduled_at - timedelta(hours=attendance.last_notice_hours),
+                    moments["rsvp_last_notice"],
                 ))
             # Zero means the deadline is the round's own start time — the documented
             # meaning of the setting, not an absent window.
@@ -139,24 +133,14 @@ def overdue_windows(
                 "Check-in deadline",
                 _hours(attendance.deadline_hours) if attendance.deadline_hours > 0
                 else "at the round",
-                scheduled_at - timedelta(hours=attendance.deadline_hours),
+                moments["rsvp_deadline"],
             ))
 
         if weather is not None:
+            windows.append(("Weather Phase 1", _days(weather.phase_1_days), moments["weather_p1"]))
+            windows.append(("Weather Phase 2", _days(weather.phase_2_days), moments["weather_p2"]))
             windows.append((
-                "Weather Phase 1",
-                _days(weather.phase_1_days),
-                scheduled_at - timedelta(days=weather.phase_1_days),
-            ))
-            windows.append((
-                "Weather Phase 2",
-                _days(weather.phase_2_days),
-                scheduled_at - timedelta(days=weather.phase_2_days),
-            ))
-            windows.append((
-                "Weather Phase 3",
-                _hours(weather.phase_3_hours),
-                scheduled_at - timedelta(hours=weather.phase_3_hours),
+                "Weather Phase 3", _hours(weather.phase_3_hours), moments["weather_p3"]
             ))
 
         for label, lead, fire_at in windows:
@@ -227,14 +211,14 @@ def calendar_faults(
     # Normalised exactly as `overdue_windows` normalises it, so a naive ``now`` compares
     # here rather than raising, and the two halves of this module cannot disagree about
     # what moment they were asked about.
-    now = _as_utc(now)
+    now = as_utc(now)
 
     # Ordered by moment, and by round number where two share one, so that three hosts whose
     # databases need not agree about row order still reach the same answer.
     def _order(rnd: Round) -> tuple[datetime, int]:
-        return (_as_utc(rnd.scheduled_at), rnd.round_number)
+        return (as_utc(rnd.scheduled_at), rnd.round_number)
 
-    past = [rnd for rnd in live if _as_utc(rnd.scheduled_at) <= now]
+    past = [rnd for rnd in live if as_utc(rnd.scheduled_at) <= now]
     latest_past = max(past, key=_order) if past else None
 
     # The windows are the same evaluation `overdue_windows` performs for the report — asked

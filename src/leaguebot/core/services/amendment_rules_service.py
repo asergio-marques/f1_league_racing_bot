@@ -9,9 +9,9 @@ carries the answer out.
 
 **Pure by design**: no database, no Discord, and ``now`` passed in rather than read from the wall
 clock, so the tests can pin a date and a moment together. Modelled on `approval_window_service`,
-which answers the neighbouring question at the confirmation of placements, and which owns the window offsets
-both modules read — the two must not drift, and `test_the_window_offsets_match_the_scheduler`
-already pins those offsets against the scheduler.
+which answers the neighbouring question at the confirmation of placements. The window offsets
+both modules read, and the scheduler's arming with them, come from `round_event_moments`, so the
+three cannot drift.
 
 **One question answers almost all of it.** For every window a round carries — the check-in call,
 its last notice, its deadline, and the three forecast phases — ask: *would this have run already,
@@ -43,12 +43,17 @@ the caller's job; this module is given a ``now`` and answers for that moment alo
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from collections.abc import Mapping
 from typing import Any
 
 from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundFormat, RoundStatus
-from leaguebot.core.models.round_moments import AttendanceWindows, WeatherWindows
+from leaguebot.core.models.round_moments import (
+    AttendanceWindows,
+    WeatherWindows,
+    as_utc,
+    round_event_moments,
+)
 
 #: The fields of a round a league may amend.
 AMENDABLE_FIELDS = frozenset({"track_name", "format", "scheduled_at"})
@@ -116,19 +121,12 @@ class AmendmentVerdict:
         return deadline is not None and deadline.stands
 
 
-def _as_utc(moment: datetime) -> datetime:
-    """Naive datetimes out of the database are UTC, as they are everywhere else here."""
-    if moment.tzinfo is None:
-        return moment.replace(tzinfo=timezone.utc)
-    return moment
-
-
 def _amended_moment(rnd: Round, changes: dict[str, Any]) -> datetime:
     """The round's moment once *changes* are in — the new one, or its present one."""
     moment = changes.get("scheduled_at", rnd.scheduled_at)
     if not isinstance(moment, datetime):
         moment = datetime.fromisoformat(str(moment))
-    return _as_utc(moment)
+    return as_utc(moment)
 
 
 def amendment_changes_nothing(standing: Mapping[str, Any], changes: Mapping[str, Any]) -> bool:
@@ -153,7 +151,7 @@ def amendment_changes_nothing(standing: Mapping[str, Any], changes: Mapping[str,
     for field, value in changes.items():
         held = standing.get(field)
         if isinstance(value, datetime) and isinstance(held, datetime):
-            if _as_utc(value) != _as_utc(held):
+            if as_utc(value) != as_utc(held):
                 return False
         elif value != held:
             return False
@@ -196,7 +194,7 @@ def judge_amendment(
         An `AmendmentVerdict`. Where `refusals` is non-empty the rest describes the amendment
         that was refused and must not be acted upon.
     """
-    now = _as_utc(now)
+    now = as_utc(now)
     refusals: list[str] = []
     warnings: list[str] = []
 
@@ -213,7 +211,7 @@ def judge_amendment(
     if rnd.status not in ROUND_CANCELLABLE:
         refusals.append(status_refusal(rnd.status))
 
-    new_moment = _amended_moment(rnd, changes) if not unknown else _as_utc(rnd.scheduled_at)
+    new_moment = _amended_moment(rnd, changes) if not unknown else as_utc(rnd.scheduled_at)
     moment_moved = "scheduled_at" in changes
 
     # ── Where the round may be moved to ────────────────────────────────────────────────────
@@ -237,21 +235,18 @@ def judge_amendment(
     # ── The check-in windows ───────────────────────────────────────────────────────────────
     check_in: dict[str, WindowOutcome] = {}
     if attendance is not None:
+        moments = round_event_moments(new_moment, weather=None, attendance=attendance)
         windows = [
-            ("call", "Check-in call", new_moment - timedelta(days=attendance.notice_days)),
-            # Zero disables the last notice outright, exactly as the scheduler reads it.
+            ("call", "Check-in call", moments["rsvp_notice"]),
+            # Absent from the moments where the last notice is 0 hours: no last notice at all.
             *(
-                [(
-                    "last_notice",
-                    "Check-in last notice",
-                    new_moment - timedelta(hours=attendance.last_notice_hours),
-                )]
-                if attendance.last_notice_hours > 0
+                [("last_notice", "Check-in last notice", moments["rsvp_last_notice"])]
+                if "rsvp_last_notice" in moments
                 else []
             ),
             # Zero means the deadline is the round's own start time — the documented meaning of
             # the setting, not an absent window.
-            ("deadline", "Check-in deadline", new_moment - timedelta(hours=attendance.deadline_hours)),
+            ("deadline", "Check-in deadline", moments["rsvp_deadline"]),
         ]
         for key, label, fire_at in windows:
             # ``<=`` rather than ``<``: a window falling exactly now counts as having passed,
@@ -281,12 +276,9 @@ def judge_amendment(
     # ── The forecast phases ────────────────────────────────────────────────────────────────
     phases: dict[int, WindowOutcome] = {}
     if weather is not None:
-        for number, offset in (
-            (1, timedelta(days=weather.phase_1_days)),
-            (2, timedelta(days=weather.phase_2_days)),
-            (3, timedelta(hours=weather.phase_3_hours)),
-        ):
-            fire_at = new_moment - offset
+        moments = round_event_moments(new_moment, weather=weather, attendance=None)
+        for number in (1, 2, 3):
+            fire_at = moments[f"weather_p{number}"]
             phases[number] = WindowOutcome(
                 label=f"Weather Phase {number}", fire_at=fire_at, stands=fire_at <= now
             )
