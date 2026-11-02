@@ -1132,9 +1132,10 @@ later on its own.
   that does not own it, a table read outside its owner (core's tables too; the scan sees tables, not
   columns, so a module's read of its own columns on a core table is named for good,
   `READS_OF_OWN_COLUMNS`), core reading a module's service on the bot (an attribute `LeagueBot`
-  types from a module's package, read from a file of core), SQLite's clock in a statement, a service reading the wall
-  clock (the change queue's own default clock is the one place allowed, `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that
-  raises again, calls `report_failure` as a statement directly in its body, or sits directly in the
+  types from a module's package, read from a file of core), SQLite's clock in a statement, a service
+  reading the wall clock (the change queue's own default clock is the one place allowed,
+  `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that raises again, calls
+  `report_failure` as a statement directly in its body, or sits directly in the
   body of a `for` loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the queue's
   failure paths, the stated exceptions, the guards around reporting and the fifth place's handlers),
   and a save outside a queued change. The job check and the check of cogs handling their own errors
@@ -1155,7 +1156,8 @@ later on its own.
   that the bot is imported from one place: the installed package, never through `src`. The schema's
   checks, that every table has an owner, that every column a module keeps on a core table is in the
   schema, and that no column's default is SQLite's clock, live in `test_schema_rules.py` and read
-  the schema the migrations build, not a migration file's text.
+  the schema the migrations build, not a migration file's text; the rule they hold is under "The
+  database".
 
 How the checks run, and how to work with the lists of today's breaches they hold, is CLAUDE.md's,
 under "Testing".

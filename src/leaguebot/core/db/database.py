@@ -422,8 +422,9 @@ async def run_migrations(db_path: str) -> None:
 
     **Three constraints on a migration file**, which that procedure puts on it:
 
-    - It carries no transaction control (``BEGIN``, ``COMMIT``, ``ROLLBACK``, ``SAVEPOINT``) and
-      no ``PRAGMA`` of its own; the runner owns both.
+    - It carries no transaction statement (``BEGIN TRANSACTION``, ``COMMIT``, ``ROLLBACK``,
+      ``SAVEPOINT``; a trigger's ``BEGIN … END`` is not one) and no ``PRAGMA`` of its own; the
+      runner owns both.
     - It does not record its own version; the runner does, in the same save.
     - A table rebuild follows SQLite's order: create the new table, copy the rows, drop the old
       one, and rename the new one into place. It never renames the old table away, which would
