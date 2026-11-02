@@ -126,13 +126,17 @@ _START_UP_STEPS = [
 ]
 
 
-#: The steps the order rules name, each with the entry point's recovery it runs, in that order.
-_ORDERED_RECOVERIES = {
+#: The steps whose recovery is a function of the entry point, each with that function, which the
+#: step hands the bot alone.
+_RECOVERIES_IN_THE_ENTRY_POINT = {
+    "portrait refresh job": "_recover_portrait_refresh_job",
     "orphaned amend channels": "_recover_orphaned_amend_channels",
     "orphaned submission channels": "_recover_orphaned_submission_channels",
+    "missed phases": "_recover_missed_phases",
     "missed check-in calls": "_recover_missed_check_in_calls",
     "RSVP views and deadlines": "_recover_rsvp_views_and_deadlines",
     "missed clean-ups": "_recover_missed_cleanups",
+    "pending setups": "_recover_pending_setups",
 }
 
 
@@ -153,36 +157,73 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     - **the hub among them**, its step handing the hub's recovery the change queue, which it asks
       for the panel (the recovery itself is tested in `test_hub_service.py`).
 
-    Each step these rules order is run, its recovery stubbed, and is seen to run its own recovery
-    for the bot, so that a name cannot stand over another step's recovery.
+    Every step is then run on its own, each recovery stubbed to record what it was handed, and is
+    seen to run its own recovery once, for the bot, and no other step's, so that a name cannot
+    stand over another step's recovery. The amendment sweep arms the bot's scheduler's sweep; the
+    signup close timer, a close still ahead on record, re-arms it on the bot's scheduler; the
+    expired review prompts, a review left standing, ask the bot's queue for its take-down ending
+    `restart`; the hub hands its recovery the bot and its queue; the wizards are recovered by the
+    bot's wizard service; and each other step hands its recovery in the entry point the bot.
     """
     import leaguebot.__main__ as bot_module
-    from unittest.mock import AsyncMock
 
-    from leaguebot.core.services import hub_service
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services import hub_service, season_review_changes
+    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.signup.services.wizard_service import WizardService
+    from tests.support.review_prompts import store_review_prompt
 
-    recover_hub = AsyncMock()
-    monkeypatch.setattr(hub_service, "recover_hub", recover_hub)
-    monkeypatch.setattr(bot_module, "recover_hub", recover_hub, raising=False)
-    recoveries = {name: AsyncMock() for name in _ORDERED_RECOVERIES.values()}
-    for function, recovery in recoveries.items():
-        monkeypatch.setattr(bot_module, function, recovery)
+    ran: list[tuple] = []
+
+    def recovery(name: str):
+        async def recover(*args, **kwargs) -> None:
+            ran.append((name, args, kwargs))
+        return recover
+
+    def scheduling(name: str):
+        def schedule(*args, **kwargs) -> None:
+            ran.append((name, args, kwargs))
+        return schedule
+
+    for function in _RECOVERIES_IN_THE_ENTRY_POINT.values():
+        monkeypatch.setattr(bot_module, function, recovery(function))
+    monkeypatch.setattr(hub_service, "recover_hub", recovery("recover_hub"))
+    monkeypatch.setattr(bot_module, "recover_hub", recovery("recover_hub"), raising=False)
+    monkeypatch.setattr(season_review_changes, "take_review_down", recovery("take_review_down"))
+    monkeypatch.setattr(WizardService, "recover_wizards", recovery("recover_wizards"))
+    for method in ("schedule_amendment_sweep", "schedule_signup_close_timer"):
+        monkeypatch.setattr(SchedulerService, method, scheduling(method))
+    monkeypatch.setattr(SchedulerService, "has_job", lambda self, job_id: False)
     bot = await built_bot(tmp_path, now=_NOW)
+    close_at = "2099-03-01T12:00:00+00:00"
+    async with get_connection(bot.db_path) as db:
+        await db.execute("INSERT INTO signup_module_config (id, close_at) VALUES (1, ?)",
+                         (close_at,))
+        await store_review_prompt(db, season_id=1, channel_id=7, message_id=42, reviewer_id=9,
+                                  review="/season config-review")
+        await db.commit()
     names = [name for name, _ in bot.start_up_steps]
 
     assert names == _START_UP_STEPS
     assert names.index("orphaned amend channels") < names.index("orphaned submission channels")
     assert names.index("missed check-in calls") < names.index("RSVP views and deadlines")
     assert names.index("RSVP views and deadlines") < names.index("missed clean-ups")
-    steps = dict(bot.start_up_steps)
-    for step, function in _ORDERED_RECOVERIES.items():
-        for recovery in recoveries.values():
-            recovery.reset_mock()
-        await steps[step]()
-        assert [f for f, r in recoveries.items() if r.await_count] == [function], step
-        recoveries[function].assert_awaited_once_with(bot)
-    await steps["hub"]()
-    recover_hub.assert_awaited_once_with(bot, queue=bot.change_queue)
+    scheduler = bot.scheduler_service
+    expected = {
+        "amendment sweep": ("schedule_amendment_sweep", (scheduler,), {}),
+        "signup close timer": ("schedule_signup_close_timer", (scheduler, close_at), {}),
+        "expired review prompts": ("take_review_down", (bot.change_queue, bot.db_path, 42,
+                                                        season_review_changes.RESTART), {}),
+        "hub": ("recover_hub", (bot,), {"queue": bot.change_queue}),
+        "wizards": ("recover_wizards", (bot.wizard_service,), {}),
+    } | {
+        step: (function, (bot,), {}) for step, function in _RECOVERIES_IN_THE_ENTRY_POINT.items()
+    }
+    assert sorted(expected) == sorted(_START_UP_STEPS)
+    for step, run in bot.start_up_steps:
+        ran.clear()
+        await run()
+        assert ran == [expected[step]], step
 
 
 @pytest.mark.xfail(strict=True, reason="#283: main applies the migrations in on_ready, after the "
