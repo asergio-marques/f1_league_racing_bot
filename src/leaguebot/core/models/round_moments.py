@@ -58,6 +58,16 @@ def as_utc(moment: datetime) -> datetime:
     return moment
 
 
+def clean_up_moment(scheduled_at: datetime) -> datetime:
+    """When a round's clean-ups fall, `POST_RACE_CLEANUP_DELAY` after its moment, in UTC.
+
+    The forecast's and the check-in's fall together and depend on no lead time, so the callers
+    that need only this, the arming of a clean-up and the amendment's test of one due, ask for
+    it here and `round_event_moments` places both clean-ups by it.
+    """
+    return as_utc(scheduled_at) + POST_RACE_CLEANUP_DELAY
+
+
 def round_event_moments(
     scheduled_at: datetime,
     *,
@@ -83,12 +93,12 @@ def round_event_moments(
         moments["weather_p1"] = at - timedelta(days=weather.phase_1_days)
         moments["weather_p2"] = at - timedelta(days=weather.phase_2_days)
         moments["weather_p3"] = at - timedelta(hours=weather.phase_3_hours)
-        moments["cleanup"] = at + POST_RACE_CLEANUP_DELAY
+        moments["cleanup"] = clean_up_moment(at)
     if attendance is not None:
         moments["rsvp_notice"] = at - timedelta(days=attendance.notice_days)
         if attendance.last_notice_hours > 0:
             moments["rsvp_last_notice"] = at - timedelta(hours=attendance.last_notice_hours)
         moments["rsvp_deadline"] = at - timedelta(hours=max(attendance.deadline_hours, 0))
-        moments["rsvp_cleanup"] = at + POST_RACE_CLEANUP_DELAY
+        moments["rsvp_cleanup"] = clean_up_moment(at)
     moments["results"] = at
     return moments

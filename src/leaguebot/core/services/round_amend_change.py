@@ -63,6 +63,7 @@ from leaguebot.core.models.round_moments import (
     AttendanceWindows,
     WeatherWindows,
     as_utc,
+    clean_up_moment,
     round_event_moments,
 )
 from leaguebot.core.services import cancellation_notice_service as notices
@@ -653,9 +654,7 @@ def _round_change(
                 )
             return StepResult(
                 result={"armed": True, "round_number": rnd.round_number},
-                then=clean_ups_due(
-                    rnd, weather=weather, standing=dict(found), call_left=bool(found["called"])
-                ),
+                then=clean_ups_due(rnd, standing=dict(found), call_left=bool(found["called"])),
             )
         draw = phases_due(rnd, weather) if weather_on else []
         if weather_on and (
@@ -700,15 +699,12 @@ def _round_change(
         return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
 
     def clean_ups_due(
-        rnd: Round, *, weather: dict[str, Any], standing: Mapping[str, Any], call_left: bool
+        rnd: Round, *, standing: Mapping[str, Any], call_left: bool
     ) -> tuple[PlannedStep, ...]:
         """The clean-ups a day after the round, planned where that day has come: the forecast
         (whichever of Phases 1 to 3 still stands) and the standing check-in call."""
         planned: list[PlannedStep] = []
-        clean_up_at = round_event_moments(
-            rnd.scheduled_at, weather=WeatherWindows(**weather), attendance=None
-        )["cleanup"]
-        if clean_up_at <= now():
+        if clean_up_moment(rnd.scheduled_at) <= now():
             if standing["forecast_posted"]:
                 phases = sorted(
                     {int(n) for n in str(standing["forecast_phases"] or "").split(",") if n}
@@ -765,9 +761,7 @@ def _round_change(
         if posted:
             planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": after["track"]}))
         planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
-        planned += clean_ups_due(
-            rnd, weather=judgement["windows"]["weather"], standing=standing, call_left=call_left
-        )
+        planned += clean_ups_due(rnd, standing=standing, call_left=call_left)
         return tuple(planned)
 
     async def never_runs(ctx: StepContext) -> str:

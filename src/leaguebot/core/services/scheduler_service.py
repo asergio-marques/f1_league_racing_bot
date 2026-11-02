@@ -46,6 +46,7 @@ from leaguebot.core.models.round_moments import (
     ROUND_JOB_KINDS,
     AttendanceWindows,
     WeatherWindows,
+    clean_up_moment,
     round_event_moments,
 )
 from leaguebot.core.models.round_moments import WEATHER_JOB_KINDS as _WEATHER_JOB_PREFIXES
@@ -91,11 +92,6 @@ _JOB_SUFFIX_RE = re.compile(r"_s\d+_d\d+_r\d+(?:_id\d+)?$")
 # prefix; `cancel_round(only=...)` reads the prefix, which ``_JOB_SUFFIX_RE`` above exposes,
 # because that is what its callers already hold.
 
-
-#: The clean-ups' moments do not depend on any lead time, so the windows `round_event_moments`
-#: asks for to place them are the zero ones.
-_CLEAN_UP_ONLY_WEATHER = WeatherWindows(0, 0, 0)
-_CLEAN_UP_ONLY_ATTENDANCE = AttendanceWindows(0, 0, 0)
 
 
 def _round_job_suffix(rnd: "Round", season_number: int, division_tier: int) -> str:
@@ -538,9 +534,7 @@ class SchedulerService:
 
         if check_in:
             suffix = _round_job_suffix(rnd, season_number, division_tier)
-            cleanup_fire_at = round_event_moments(
-                rnd.scheduled_at, weather=None, attendance=_CLEAN_UP_ONLY_ATTENDANCE
-            )["rsvp_cleanup"]
+            cleanup_fire_at = clean_up_moment(rnd.scheduled_at)
             rsvp_job_id = f"rsvp_cleanup{suffix}"
             if cleanup_fire_at > now:
                 self._scheduler.add_job(
@@ -564,9 +558,7 @@ class SchedulerService:
         read: the job is armed past-dated too, as ever.
         """
         suffix = _round_job_suffix(rnd, season_number, division_tier)
-        cleanup_fire_at = round_event_moments(
-            rnd.scheduled_at, weather=_CLEAN_UP_ONLY_WEATHER, attendance=None
-        )["cleanup"]
+        cleanup_fire_at = clean_up_moment(rnd.scheduled_at)
         cleanup_job_id = f"cleanup{suffix}"
         self._scheduler.add_job(
             _one_off_timer_job,
