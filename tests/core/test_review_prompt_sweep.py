@@ -1,8 +1,9 @@
 """The season-review approve button, swept away by a restart.
 
-The button expires five minutes after `/season placements-review` posts it. A bot restarted inside
-that window leaves a public review offering a button whose five minutes nothing is counting, and
-nothing else would ever clear it.
+The button expires five minutes after `/season placements-review` posts it, by a persistent
+one-off `review_expiry` timer with no lateness limit. The scheduler is held paused until start-up
+has ended, so after a restart the take-down below is always asked first, and a timer that fires
+late finds the row gone or already being taken down.
 
 Every row surviving to startup is expired by definition: the bot was down, so the five minutes
 cannot have been served. Since #439 (slice 6b, C98) the restart's sweep deletes and posts nothing
