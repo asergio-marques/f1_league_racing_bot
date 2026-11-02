@@ -986,9 +986,9 @@ request itself fails, and the queue once the change is under way.
 - **Scheduled jobs and repeating loops** go through one job runner.
 - **Discord events** (a message, a member leaving) go through one error handler, a function in
   `core/utils/league_server.py` beside the base classes, which the builder attaches to the bot.
-  `LeagueBot` declares the bot's attributes, and its one behaviour is `setup_hook`, which starts once
-  per run, at login, what the builder hands it (the retry loop for undelivered log lines); the error
-  handler is a function the builder attaches, never a method of the bot.
+  `LeagueBot` declares the bot's attributes, and its one behaviour is `setup_hook`, which, once per
+  run and at login, starts what the builder hands it (the retry loop for undelivered log lines). The
+  error handler is never a method of the bot.
 - **Autocompletes** go through `bounded_autocomplete` (`core/utils/autocomplete.py`), which answers
   with no choices and keeps the error for the host's log. It writes nothing to the log channel: an
   autocomplete changes nothing, and Discord gives it no message to answer with.
