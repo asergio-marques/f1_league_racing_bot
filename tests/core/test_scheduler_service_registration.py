@@ -1,14 +1,9 @@
 """The scheduler service's registration, its result-only scheduling and its signup timer.
 
-Issue #208. The callback registrations, `schedule_all_rounds`, `schedule_result_submission_jobs`,
-the signup close timer and the season-end cancellation were uncovered. They are thin, and each
-has one property that matters more than its size suggests.
-
-**Every callback registers under the attribute its job function reads.** The module-level job
-functions reach the service through a global and read one attribute each; a registration that
-wrote a different name would leave the job skipping silently for ever, logging only that no
-callback was registered. The pairing is tested for all of them together, because that is the
-shape the mistake would take.
+Issue #208. `schedule_all_rounds`, `schedule_result_submission_jobs`, the signup close timer and
+the season-end cancellation were uncovered. They are thin, and each has one property that matters
+more than its size suggests. What every job is stored with, and that each kind's handler is reached
+through the one runner, is pinned in `test_scheduler_one_off.py`.
 
 **The service registers itself as the global only when it starts.** Constructing a second
 service — a test, a reset — must not redirect jobs already firing at the running one.
@@ -51,19 +46,6 @@ def _service():
     service._jobstore_path = "/tmp/not-read-jobs.db"
     service._scheduler = MagicMock()
     service._scheduler.running = False
-    service._phase_callbacks = {}
-    for attr in (
-        "_signup_close_callback",
-        "_portrait_refresh_callback",
-        "_mystery_notice_callback",
-        "_forecast_cleanup_callback",
-        "_result_submission_callback",
-        "_rsvp_notice_callback",
-        "_rsvp_last_notice_callback",
-        "_rsvp_deadline_callback",
-        "_rsvp_cleanup_callback",
-    ):
-        setattr(service, attr, None)
     return service
 
 
@@ -82,41 +64,8 @@ def _added(service) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Registration
+# Starting
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "register,attribute",
-    [
-        ("register_mystery_notice_callback", "_mystery_notice_callback"),
-        ("register_forecast_cleanup_callback", "_forecast_cleanup_callback"),
-        ("register_result_submission_callback", "_result_submission_callback"),
-        ("register_rsvp_notice_callback", "_rsvp_notice_callback"),
-        ("register_rsvp_last_notice_callback", "_rsvp_last_notice_callback"),
-        ("register_rsvp_deadline_callback", "_rsvp_deadline_callback"),
-        ("register_rsvp_cleanup_callback", "_rsvp_cleanup_callback"),
-        ("register_signup_close_callback", "_signup_close_callback"),
-        ("register_portrait_refresh_callback", "_portrait_refresh_callback"),
-    ],
-)
-def test_each_callback_registers_where_its_job_reads_it(register, attribute):
-    """A registration writing a different name leaves the job skipping silently for ever."""
-    service = _service()
-    callback = MagicMock()
-
-    getattr(service, register)(callback)
-
-    assert getattr(service, attribute) is callback
-
-
-def test_the_three_phase_callbacks_are_keyed_by_phase():
-    service = _service()
-    p1, p2, p3 = MagicMock(), MagicMock(), MagicMock()
-
-    service.register_callbacks(p1, p2, p3)
-
-    assert service._phase_callbacks == {1: p1, 2: p2, 3: p3}
 
 
 def test_starting_makes_the_service_the_one_jobs_reach():
@@ -226,10 +175,9 @@ def test_a_results_only_league_gets_a_submission_job_per_round():
         [_round(21), _round(22, number=4)], division_meta={11: (7, 1)}
     )
 
-    assert len(_added(service)) == 2
-    assert all(
-        c.args[0] is scheduler_module._result_submission_job_wrapper for c in _added(service)
-    )
+    assert [c.kwargs["id"] for c in _added(service)] == [
+        "results_s7_d1_r3_id21", "results_s7_d1_r4_id22",
+    ]
 
 
 def test_the_submission_job_fires_at_the_round_start():
@@ -250,7 +198,6 @@ def test_the_submission_job_id_carries_the_round_id():
     job = _added(service)[0].kwargs
     assert job["id"] == "results_s7_d1_r3_id21"
     assert job["replace_existing"] is True
-    assert job["kwargs"] == {"round_id": 21}
 
 
 def test_a_naive_round_time_is_read_as_utc():
@@ -270,12 +217,10 @@ def test_a_submission_run_at_once_replaces_the_round_s_job_and_runs_however_late
     service.run_result_submission_now(_round(21, number=3), season_number=7, division_tier=1)
 
     [added] = _added(service)
-    assert added.args[0] is scheduler_module._result_submission_job_wrapper
     assert added.kwargs.get("trigger") is None
     assert added.kwargs["id"] == "results_s7_d1_r3_id21"
     assert added.kwargs["replace_existing"] is True
     assert added.kwargs["misfire_grace_time"] is None
-    assert added.kwargs["kwargs"] == {"round_id": 21}
 
 
 def test_a_phase_left_out_is_not_armed_and_the_rest_of_the_round_is():
@@ -327,10 +272,8 @@ def test_the_check_in_cleanup_is_armed_a_day_after_the_round():
 
     cleanup = _attendance_jobs(service, _round_starting(start))["rsvp_cleanup_s7_d1_r3_id21"]
 
-    assert cleanup.args[0] is scheduler_module._rsvp_cleanup_job
     assert cleanup.kwargs["trigger"].run_date == start + timedelta(hours=24)
     assert cleanup.kwargs["replace_existing"] is True
-    assert cleanup.kwargs["kwargs"] == {"round_id": 21}
 
 
 def test_a_check_in_cleanup_already_due_is_not_armed():
@@ -367,9 +310,7 @@ def test_the_signup_timer_is_armed_for_the_league():
     service.schedule_signup_close_timer("2026-03-01T20:00:00")
 
     job = _added(service)[0]
-    assert job.args[0] is scheduler_module._signup_close_timer_job
     assert job.kwargs["id"] == "signup_close"
-    assert "kwargs" not in job.kwargs
     assert job.kwargs["trigger"].run_date == datetime(2026, 3, 1, 20, tzinfo=timezone.utc)
 
 
