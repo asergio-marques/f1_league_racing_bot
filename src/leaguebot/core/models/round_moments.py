@@ -1,7 +1,8 @@
 """When a round's timed events fall: the lead times that place them, and the delay after the race.
 
-`round_event_moments` is the one place that works out when each of a round's events falls, keyed
-by the kind its job is stored with (`ROUND_JOB_KINDS`). The scheduler's arming, the approval's
+`round_event_moments` is the one function that works out when each of a round's events falls,
+keyed by the kind its job is stored with (`ROUND_JOB_KINDS`); `clean_up_moment` gives the clean-ups'
+alone, and `round_event_moments` places them by it. The scheduler's arming, the approval's
 overdue windows and the amendment's rules all read it, so the rules every copy once carried hold
 in one place: a last notice of 0 hours is no last notice, a deadline of 0 hours is the round's own
 moment, and a moment stored without a zone is UTC.

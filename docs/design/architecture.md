@@ -709,7 +709,8 @@ sweep to apply, which puts a module's rule in core.
 round's job is named from the round and the event, so arming it again replaces the old one instead
 of adding a second (the `_round_job_suffix` docstring in the scheduler service). A round's timed
 work is armed by the scheduler service's own functions. Each reads when the round's events fall
-from one function, `round_event_moments`. `schedule_round` arms its forecasts, and its results
+from `round_event_moments`, or, for a clean-up alone, from `clean_up_moment`, by which
+`round_event_moments` places the clean-ups too. `schedule_round` arms its forecasts, and its results
 submission through `schedule_result_submission_jobs`, which also arms the submission alone.
 `schedule_all_rounds` arms a season's rounds through `schedule_round`. `schedule_attendance_round`
 arms its check-in. Beside them, `run_result_submission_now` runs at once
