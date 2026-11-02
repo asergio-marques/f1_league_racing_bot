@@ -84,7 +84,11 @@ async def _league(tmp_path: Any, *, manage_channels: bool = True,
                   category_size: int = 3) -> SeasonLeague:
     """`setup_league` at Signups with the window open; the signup channel in the category
     "Signups", holding *category_size* channels, the bot allowed to manage channels there or
-    not; each channel the bot creates recorded, its creations in `league.created`."""
+    not; each channel the bot creates recorded, its creations in `league.created`.
+
+    The league's team service is swapped on the bot after its queue has registered the real
+    change types, so the signup's start reads it when it runs (`lambda: bot.team_service`), as
+    the builder keeps it (#283)."""
     os.makedirs(str(tmp_path), exist_ok=True)
     league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
     category = MagicMock(spec=discord.CategoryChannel)

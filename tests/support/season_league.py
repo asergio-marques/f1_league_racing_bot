@@ -1058,6 +1058,12 @@ async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: b
     button standing there (`SIGNUP_BUTTON`).
     *held*: the league's driver role (820) set, and every real driver holding their division
     role, their team role and the driver role; the test driver holds none.
+
+    The three services are swapped on the bot after the league's queue has registered the real
+    change types, which therefore read them when they run, not when registered: the signup module
+    and driver services through `lambda: bot.signup_module_service` and `lambda: bot.driver_service`,
+    the wizard service through the season's end's hold and lock, which read `bot.wizard_service`
+    when called. The builder keeps those reads late (#283).
     """
     bot = league.bot
     _wizard_double(league)
