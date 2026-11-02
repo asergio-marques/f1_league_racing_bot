@@ -15,13 +15,14 @@ and the others off unless said otherwise.
 reads the host's clock (the review's five minutes, the dates gate), and the queue reads the
 league's `clock`, which a test moves on (`league.clock.advance`).
 
-The bot is `league_double`'s, with a real `SeasonService`, `PlacementService`, `ModuleService`
-and `ConfigService`, a real queue with the real change types (`attach_queue`), the builder's
-reader of the enabled modules' windows as `bot.approval_windows`, and a real `SeasonCog` holding
-the season's setup in memory. The scheduler is a double recording each `schedule_*` call in
-`league.armed`. The league's server holds every channel above, the review's channel (610) among
-them, the roles above and the three drivers; `absent`, `fetch_fails`, `grant_fails` and
-`roles_gone` make Discord answer otherwise.
+The bot is `league_bot`'s: the one the entry point's `build` makes, every service and change type
+the builder's, or, until it has one, `league_double`'s with a real `SeasonService`,
+`PlacementService`, `ModuleService` and `ConfigService` and a real queue with the real change types
+(`league_queue`). Either way it reads the enabled modules' windows through the builder's reader as
+`bot.approval_windows`, and a real `SeasonCog` holds the season's setup in memory. The
+scheduler is a double recording each `schedule_*` call in `league.armed`. The league's server
+holds every channel above, the review's channel (610) among them, the roles above and the three
+drivers; `absent`, `fetch_fails`, `grant_fails` and `roles_gone` make Discord answer otherwise.
 
 Two of the press's gates read the season through helpers whose own tests stand elsewhere, and are
 answered "nothing wrong" here unless a test says otherwise: the team names and the lineups
@@ -90,13 +91,15 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     SERVER_ID,
     Clock,
-    attach_queue,
     change_rows,
     http_error,
-    league_double,
+    is_built,
+    league_bot,
+    league_queue,
     member_interaction,
     restart_queue,
     seed_server,
+    set_guilds,
     tier_member,
 )
 from tests.support.review_league import channel
@@ -164,12 +167,6 @@ class SeasonLeague:
     """The bot double with its queue, cog, server and channels, and what they saw."""
 
     def __init__(self, db_path: str, now: datetime, *, images: bool) -> None:
-        from leaguebot.core.cogs.season_cog import SeasonCog
-        from leaguebot.core.services.config_service import ConfigService
-        from leaguebot.core.services.module_service import ModuleService
-        from leaguebot.core.services.placement_service import PlacementService
-        from leaguebot.core.services.season_service import SeasonService
-
         self.db_path = db_path
         self.clock = Clock(now)
         self.events: list[tuple[str, int, int]] = []
@@ -212,7 +209,24 @@ class SeasonLeague:
         self.locked: list[int] = []
         #: What the signup window's close raises as it records the window closed, if anything.
         self.close_fails: BaseException | None = None
-        self.bot = bot = league_double(db_path)
+        self.images_on = images
+
+    async def build(self) -> None:
+        """The league's bot (`league_bot`), its server, services, cog and queue."""
+        from leaguebot.core.cogs.season_cog import SeasonCog
+        from leaguebot.core.services.config_service import ConfigService
+        from leaguebot.core.services.module_service import ModuleService
+        from leaguebot.core.services.placement_service import PlacementService
+        from leaguebot.core.services.season_service import SeasonService
+
+        db_path = self.db_path
+        scheduler = MagicMock()
+        scheduler.schedule_all_rounds = MagicMock(side_effect=self._arm("weather"))
+        scheduler.schedule_result_submission_jobs = MagicMock(side_effect=self._arm("results"))
+        scheduler.schedule_attendance_round = MagicMock(side_effect=self._arm("attendance"))
+        scheduler.schedule_round = MagicMock(side_effect=self._arm("weather"))
+        scheduler.schedule_round_cleanups = MagicMock(side_effect=self._arm("cleanups"))
+        self.bot = bot = await league_bot(db_path, scheduler=scheduler, real_config=True)
         ids = [REVIEW_CHANNEL]
         for _name, _tier, _role, chans in DIVISIONS.values():
             ids += list(vars(chans).values())
@@ -243,30 +257,24 @@ class SeasonLeague:
         bot.get_channel = MagicMock(side_effect=_get)
         bot.fetch_channel = AsyncMock(side_effect=_fetch)
         bot.get_guild = MagicMock(return_value=guild)
-        bot.guilds = [guild]
-        bot.config_service = ConfigService(db_path)
-        bot.module_service = ModuleService(db_path)
-        bot.season_service = SeasonService(db_path)
+        set_guilds(bot, [guild])
+        if not is_built(bot):
+            # The builder's own, on the built bot.
+            bot.config_service = ConfigService(db_path)
+            bot.module_service = ModuleService(db_path)
+            bot.season_service = SeasonService(db_path)
+            bot.placement_service = PlacementService(db_path, bot)
         _attach_amendment_service(bot, db_path)
-        bot.placement_service = PlacementService(db_path, bot)
         bot.attendance_service.get_or_create_config = AsyncMock(side_effect=self._attendance)
         bot.image_config_service.get_config = AsyncMock(return_value=None)
         bot.image_config_service.get_toggles = AsyncMock(return_value={})
         bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
-        scheduler = MagicMock()
-        scheduler.schedule_all_rounds = MagicMock(side_effect=self._arm("weather"))
-        scheduler.schedule_result_submission_jobs = MagicMock(side_effect=self._arm("results"))
-        scheduler.schedule_attendance_round = MagicMock(side_effect=self._arm("attendance"))
-        scheduler.schedule_round = MagicMock(side_effect=self._arm("weather"))
-        scheduler.schedule_round_cleanups = MagicMock(side_effect=self._arm("cleanups"))
-        bot.scheduler_service = scheduler
         bot.approval_windows = lambda: _approval_windows(self)
         bot.amendment_windows = lambda: _amendment_windows(self)
         self.cog = SeasonCog(bot)
         self._hold_setup(self.cog, key=ADMIN_ID)
         bot.get_cog = MagicMock(side_effect=lambda name: self.cog if name == "SeasonCog" else None)
-        self.images_on = images
-        attach_queue(bot, db_path, now=self.clock)
+        league_queue(bot, db_path, now=self.clock)
 
     # ── The Discord side ────────────────────────────────────────────────────────
 
@@ -605,6 +613,7 @@ async def season_league(
         await set_module_flag(db_path, modules, name, on)
     league = SeasonLeague(db_path, now, images=images)
     holder["league"] = league
+    await league.build()
     await league.set_test_mode(test_mode)
     return league
 

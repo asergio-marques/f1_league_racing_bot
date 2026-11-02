@@ -432,20 +432,34 @@ def league_double(db_path: str) -> Any:
     is `SERVER_ID`, as `config_service.get_league_server_id` gives it; `bot.get_guild` finds no
     guild for it until a test gives one.
     `bot.attendance_after_review` is the attendance hook the builder hands the review's change
-    types (#439), as a league with attendance off sees it: every method does nothing, no driver
-    is owed a sanction, and the sync hint names `/attendance sync`. A test that runs the hook
-    replaces it.
+    types (#439), as a league with attendance off sees it (`attendance_hook_double`). A test that
+    runs the hook replaces it.
     """
     from leaguebot.core.services.output_router import OutputRouter
 
     bot = MagicMock()
     bot.db_path = db_path
+    _stub_discord(bot)
+    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
+    bot.attendance_after_review = attendance_hook_double()
+    return bot
+
+
+def _stub_discord(bot: Any, *, real_config: bool = False) -> None:
+    """The Discord side `league_double` gives, over *bot*: the log and interaction channels,
+    recording what each is sent and found by id, no guild, a double of every partial messageable,
+    and, unless *real_config*, the
+    league's server and channels as the config service reads them."""
     bot.log_channel = text_channel(LOG_CHANNEL_ID)
     bot.interaction_channel = text_channel(INTERACTION_CHANNEL_ID)
     channels = {LOG_CHANNEL_ID: bot.log_channel, INTERACTION_CHANNEL_ID: bot.interaction_channel}
     bot.get_channel = MagicMock(side_effect=channels.get)
     bot.fetch_channel = AsyncMock(side_effect=lambda cid: channels[cid])
     bot.get_guild = MagicMock(return_value=None)
+    # A message reached by id alone, as the views' recoveries reach theirs.
+    bot.get_partial_messageable = MagicMock()
+    if real_config:
+        return
     bot.config_service.get_server_config = AsyncMock(
         return_value=MagicMock(
             server_id=SERVER_ID,
@@ -456,7 +470,12 @@ def league_double(db_path: str) -> Any:
         )
     )
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
+
+
+def attendance_hook_double() -> Any:
+    """Attendance's share of a round's review as a league with attendance off sees it: every
+    method does nothing, no driver is owed a sanction, and the sync hint names
+    `/attendance sync`."""
     hook = MagicMock()
     for name in ("record_on", "rewrite_pardons_on", "recalculate_on", "post_sheet",
                  "apply_sanction", "announce_sanction", "refresh_lineup", "record_sheet_on",
@@ -465,8 +484,99 @@ def league_double(db_path: str) -> Any:
     hook.sanction_candidates = AsyncMock(return_value=[])
     hook.sync_hint = AsyncMock(return_value="Repair the cause, then run `/attendance sync`.")
     hook.pardons_to_review = AsyncMock(side_effect=lambda pardons: list(pardons))
-    bot.attendance_after_review = hook
+    return hook
+
+
+#: Where the bridge marks a bot the entry point's `build` made (`league_bot`).
+_BUILT = "_change_queue_test_built"
+
+#: The classes `league_bot` hands the builder a double of, so that the change types it
+#: registers hold the double, as they hold `league_double`'s: by name, as `build` imports them.
+_DOUBLED_AT_BUILD = {
+    "scheduler": ("leaguebot.core.services.scheduler_service", "SchedulerService"),
+    "attendance_hook": ("leaguebot.attendance.services.attendance_after_review",
+                        "AttendanceAfterReview"),
+}
+
+
+def _entry_build() -> Any:
+    """The entry point's `(Settings, build)`, or None while the entry point has no builder."""
+    try:
+        from leaguebot.__main__ import Settings, build
+    except ImportError:
+        return None
+    return Settings, build
+
+
+async def league_bot(db_path: str, *, scheduler: Any = None, real_config: bool = False) -> Any:
+    """The bot of a hand-made test league on *db_path*, the Discord side `league_double` gives
+    stubbed over it, its scheduler *scheduler* (a bare double if None) and its attendance hook
+    `attendance_hook_double`'s; its queue is attached by `league_queue`, once the league has set
+    its own services (#283). With *real_config*, the league's config service reads the database,
+    as a league building its own `ConfigService` has it.
+
+    Where the entry point has its builder, the bot is the one `build` makes, on settings for
+    *db_path* (the job store `jobs.db` beside it), handed the two doubles in place of the
+    scheduler and attendance's hook as it builds them, so the change types it registers hold
+    the doubles; every other service is the builder's. Until then it is `league_double`'s, with
+    *scheduler* set. A league tells the two apart by `is_built`."""
+    import importlib
+    import os
+    from contextlib import ExitStack
+    from unittest.mock import patch
+
+    scheduler = scheduler if scheduler is not None else MagicMock()
+    entry = _entry_build()
+    if entry is None:
+        bot = league_double(db_path)
+        bot.scheduler_service = scheduler
+        return bot
+    settings_type, build = entry
+    settings = settings_type(token="not-a-real-token", db_path=db_path,
+                             jobstore_path=os.path.join(os.path.dirname(db_path), "jobs.db"))
+    import leaguebot.__main__ as entry_point
+
+    doubles = {"scheduler": scheduler, "attendance_hook": attendance_hook_double()}
+    with ExitStack() as stack:
+        for key, (module_name, name) in _DOUBLED_AT_BUILD.items():
+            made = MagicMock(return_value=doubles[key])
+            stack.enter_context(patch.object(importlib.import_module(module_name), name, made))
+            if hasattr(entry_point, name):
+                stack.enter_context(patch.object(entry_point, name, made))
+        bot = await maybe_await(build(settings))
+    _stub_discord(bot, real_config=real_config)
+    # A bot that has not logged in has no user of its own.
+    bot._connection.user = MagicMock()
+    setattr(bot, _BUILT, settings)
     return bot
+
+
+def is_built(bot: Any) -> bool:
+    """Whether *bot* is the one the entry point's `build` made (`league_bot`). Read from the
+    bot's own attributes, since a `MagicMock` double answers any name."""
+    return vars(bot).get(_BUILT) is not None
+
+
+def set_guilds(bot: Any, guilds: list[Any]) -> None:
+    """The servers *bot* is in: on the built bot, as its connection holds them, since a
+    `discord.Client`'s `guilds` cannot be set."""
+    if is_built(bot):
+        bot._connection._guilds = {guild.id: guild for guild in guilds}
+    else:
+        bot.guilds = guilds
+
+
+def league_queue(bot: Any, db_path: str, *, now: datetime | Clock) -> Any:
+    """The league's change queue, its clock *now*: on the built bot, the builder's queue with the
+    change types it registered, the clock pinned; else a real queue with the real change types,
+    registered now (`attach_queue`)."""
+    if not is_built(bot):
+        return attach_queue(bot, db_path, now=now)
+    clock = now if isinstance(now, Clock) else Clock(now)
+    # The builder's queue reads the host's clock; the test's is pinned.
+    bot.change_queue._clock = clock
+    setattr(bot, _SETUP, _Setup(db_path, clock, bot.output_router, real_types=True))
+    return bot.change_queue
 
 
 class _Member:

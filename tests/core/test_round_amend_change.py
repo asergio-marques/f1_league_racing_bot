@@ -2367,12 +2367,15 @@ async def test_a_superseded_forecast_that_will_not_delete_is_named_as_superseded
 async def test_an_amendment_s_call_saves_its_record_in_the_job(tmp_path, monkeypatch):
     """Attendance on. Pro's round 3, its call standing and answered (Lewis accepted, Max not), is
     brought forward to three days out, so its call is taken down and posted again. The attendance
-    service's own committing writers are left as the league's doubles, which write nothing: the
-    call posted again is recorded all the same, by the job that posted it, its message the one
-    standing in Pro's check-in channel and the round's attendance rows kept, and the job is done
-    with its record in one save (slice 6's A21, deferred until now)."""
+    service's own committing writers are doubles here, which write nothing: the call posted again is
+    recorded all the same, by the job that posted it, its message the one standing in Pro's check-in
+    channel and the round's attendance rows kept, and the job is done with its record in one save
+    (slice 6's A21, deferred until now)."""
     league = await ongoing_league(tmp_path, attendance=True)
     _real_call(league, monkeypatch)
+    attendance = league.bot.attendance_service
+    attendance.insert_embed_message = MagicMock()
+    attendance.bulk_insert_attendance_rows = MagicMock()
     await _amended(league, scheduled_at=_at(league, days=3))
 
     await run_queue(league.bot)
@@ -2387,8 +2390,8 @@ async def test_an_amendment_s_call_saves_its_record_in_the_job(tmp_path, monkeyp
     assert len(await league.rows(
         "SELECT * FROM driver_round_attendance WHERE round_id = ?", R3
     )) == 2
-    league.bot.attendance_service.insert_embed_message.assert_not_called()
-    league.bot.attendance_service.bulk_insert_attendance_rows.assert_not_called()
+    attendance.insert_embed_message.assert_not_called()
+    attendance.bulk_insert_attendance_rows.assert_not_called()
 
 
 async def test_an_amendment_s_call_posted_again_writes_no_post_check_in_line(tmp_path, reposts):
