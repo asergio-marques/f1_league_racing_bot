@@ -441,20 +441,22 @@ class SchedulerService:
             job_defaults={"misfire_grace_time": _GRACE_SECONDS},
             timezone="UTC",
         )
-        # Phase callbacks injected after bot starts (to avoid circular imports)
+        # Phase callbacks registered by the builder, before the scheduler starts (to avoid circular
+        # imports)
         self._phase_callbacks: dict[int, Callable] = {}
-        # Signup auto-close callback injected after bot starts
+        # Signup auto-close callback registered by the builder, before the scheduler starts
         self._signup_close_callback: "Callable | None" = None
         self._portrait_refresh_callback: "Callable | None" = None
-        # Amendment sweep callback injected after bot starts (#345)
+        # Amendment sweep callback registered by the builder, before the scheduler starts (#345)
         self._amendment_sweep_callback: "Callable | None" = None
-        # Mystery notice callback injected after bot starts
+        # Mystery notice callback registered by the builder, before the scheduler starts
         self._mystery_notice_callback: "Callable | None" = None
-        # Post-race forecast cleanup callback injected after bot starts
+        # Post-race forecast cleanup callback registered by the builder, before the scheduler
+        # starts
         self._forecast_cleanup_callback: "Callable | None" = None
-        # Result submission callback injected after bot starts
+        # Result submission callback registered by the builder, before the scheduler starts
         self._result_submission_callback: "Callable | None" = None
-        # RSVP callbacks injected after bot starts
+        # RSVP callbacks registered by the builder, before the scheduler starts
         self._rsvp_notice_callback: "Callable | None" = None
         self._rsvp_last_notice_callback: "Callable | None" = None
         self._rsvp_deadline_callback: "Callable | None" = None
@@ -468,7 +470,8 @@ class SchedulerService:
         phase2_cb: Callable,
         phase3_cb: Callable,
     ) -> None:
-        """Register async callables for each phase. Called from __main__.py on_ready."""
+        """Register async callables for each phase. Called by `build` in __main__.py, before the
+        scheduler is started."""
         self._phase_callbacks[1] = phase1_cb
         self._phase_callbacks[2] = phase2_cb
         self._phase_callbacks[3] = phase3_cb
@@ -477,7 +480,7 @@ class SchedulerService:
         """Register the async callable invoked when a Mystery round notice fires.
 
         The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
+        Called by `build` in __main__.py, before the scheduler is started.
         """
         self._mystery_notice_callback = callback
 
@@ -485,7 +488,7 @@ class SchedulerService:
         """Register the async callable invoked 24 h after a round start.
 
         The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
+        Called by `build` in __main__.py, before the scheduler is started.
         """
         self._forecast_cleanup_callback = callback
 
@@ -493,7 +496,7 @@ class SchedulerService:
         """Register the async callable invoked at round start time for result submission.
 
         The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
+        Called by `build` in __main__.py, before the scheduler is started.
         """
         self._result_submission_callback = callback
 
@@ -501,7 +504,7 @@ class SchedulerService:
         """Register the async callable invoked when an RSVP notice job fires.
 
         The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
+        Called by `build` in __main__.py, before the scheduler is started.
         """
         self._rsvp_notice_callback = callback
 
@@ -509,7 +512,7 @@ class SchedulerService:
         """Register the async callable invoked when an RSVP last-notice job fires.
 
         The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
+        Called by `build` in __main__.py, before the scheduler is started.
         """
         self._rsvp_last_notice_callback = callback
 
@@ -517,7 +520,7 @@ class SchedulerService:
         """Register the async callable invoked when an RSVP deadline job fires.
 
         The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
+        Called by `build` in __main__.py, before the scheduler is started.
         """
         self._rsvp_deadline_callback = callback
 
@@ -525,7 +528,7 @@ class SchedulerService:
         """Register the async callable invoked when a round's check-in cleanup job fires.
 
         The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
+        Called by `build` in __main__.py, before the scheduler is started.
         """
         self._rsvp_cleanup_callback = callback
 
@@ -1249,7 +1252,7 @@ class SchedulerService:
         """Register the async callable invoked when the signup close timer fires.
 
         The callable takes no arguments.
-        Called from __main__.py on_ready after the scheduler is started.
+        Called by `build` in __main__.py, before the scheduler is started.
         """
         self._signup_close_callback = callback
 

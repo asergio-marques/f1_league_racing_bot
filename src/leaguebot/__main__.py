@@ -1006,8 +1006,10 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
     mystery notice, the forecast clean-up, the result submission, the four check-in callbacks, the
     portrait refresh, the amendment sweep and the signup close.
 
-    Each asks the change queue, reading it from the bot when it fires. Called by :func:`build`, so
-    that every kind is registered before the bot starts and before the scheduler does.
+    Each asks the change queue. Weather's callbacks hold the queue they were handed here
+    (`timer_callbacks`); the others read it from the bot when they fire. The bot keeps the one
+    queue `build` made, so the two come to the same. Called by :func:`build`, so that every kind is
+    registered before the bot starts and before the scheduler does.
     """
     # Wire weather's callbacks into the scheduler: each asks the change queue
     from leaguebot.weather.services.forecast_changes import timer_callbacks

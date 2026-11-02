@@ -429,7 +429,8 @@ class WizardService:
 
 
     async def recover_wizards(self) -> None:
-        """Called in on_ready: re-arm inactivity jobs for non-UNENGAGED wizards.
+        """Called at start-up, after the scheduler has started: re-arm inactivity jobs for
+        non-UNENGAGED wizards.
 
         For each active wizard, if the inactivity deadline (last_activity_at
         + 24 h) is still in the future, re-arm the signup's timer with the
