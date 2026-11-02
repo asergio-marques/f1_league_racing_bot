@@ -23,12 +23,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
-from leaguebot.core.services.approval_window_service import (
-    AttendanceWindows,
-    WeatherWindows,
-    calendar_faults,
-    overdue_windows,
-)
+from leaguebot.core.models.round_moments import AttendanceWindows, WeatherWindows
+from leaguebot.core.services.approval_window_service import calendar_faults, overdue_windows
 
 #: The moment every test judges against. Fixed, so the dates below mean the same thing on
 #: every host and in every year.

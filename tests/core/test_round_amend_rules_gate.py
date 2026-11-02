@@ -85,7 +85,7 @@ async def _cog(db_path, *, attendance: bool = True):
     async def _windows():
         """The builder's reader of the windows an amendment is judged against
         (`LeagueBot.amendment_windows`): attendance's where it is on, weather's always."""
-        from leaguebot.core.services.approval_window_service import (
+        from leaguebot.core.models.round_moments import (
             AttendanceWindows,
             WeatherWindows,
         )

@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.calendar_post_service import CalendarCommandOutcome
     from leaguebot.image.services.image_lineup_post import LineupPostOutcome
     from leaguebot.core.services.cancellation_changes import CancellationHooks, SubmissionHooks
-    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.core.models.round_moments import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.round_amend_change import AmendHooks
     from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
 
@@ -124,7 +124,7 @@ async def read_approval_windows(
     where attendance and weather meet core, so the season's approval reads them through
     `bot.approval_windows`, which is this, and core imports neither module (#439).
     """
-    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.core.models.round_moments import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.round_amend_change import AmendHooks
 
     attendance = None
@@ -161,7 +161,7 @@ async def read_amendment_windows(
     format rules turn on. `/round amend` offers and judges through `bot.amendment_windows`, which
     is this, and so does its change on the queue, so the two cannot read different windows (#439).
     """
-    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.core.models.round_moments import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.round_amend_change import AmendHooks
     from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
 
@@ -1821,7 +1821,7 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     from leaguebot.weather.services.forecast_changes import ask_forecast_clean_up
     from leaguebot.attendance.services.check_in_changes import ask_check_in_clean_up
     from leaguebot.core.models.change import ChangeOrigin
-    from leaguebot.core.services.scheduler_service import POST_RACE_CLEANUP_DELAY
+    from leaguebot.core.models.round_moments import POST_RACE_CLEANUP_DELAY
 
     now = datetime.now(timezone.utc)
 

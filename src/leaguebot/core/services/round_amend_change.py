@@ -59,7 +59,11 @@ from leaguebot.core.services.amendment_rules_service import (
     judge_amendment,
     status_refusal,
 )
-from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+from leaguebot.core.models.round_moments import (
+    POST_RACE_CLEANUP_DELAY,
+    AttendanceWindows,
+    WeatherWindows,
+)
 from leaguebot.core.services import cancellation_notice_service as notices
 from leaguebot.core.services.cancellation_changes import ROUND_REARM, cancellation_holding_amendment
 from leaguebot.core.services.change_queue import (
@@ -71,7 +75,6 @@ from leaguebot.core.services.change_queue import (
     StepView,
     in_hand,
 )
-from leaguebot.core.services.scheduler_service import POST_RACE_CLEANUP_DELAY
 from leaguebot.core.services.season_service import renumber_rounds_on, round_called
 from leaguebot.core.services.notice_handler import send_notice
 from leaguebot.core.utils.league_server import league_guild

@@ -423,7 +423,7 @@ class SeasonLeague:
 
 async def _approval_windows(league: SeasonLeague) -> Any:
     """The builder's reader of the enabled modules' windows (`LeagueBot.approval_windows`)."""
-    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.core.models.round_moments import AttendanceWindows, WeatherWindows
 
     modules = league.bot.module_service
     attendance = weather = None
@@ -461,7 +461,7 @@ async def _amendment_windows(league: SeasonLeague) -> Any:
     """The builder's reader of the windows an amendment is judged against
     (`LeagueBot.amendment_windows`): attendance's only where it is on, weather's always, since a
     forecast posted while weather was on is still posted."""
-    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.core.models.round_moments import AttendanceWindows, WeatherWindows
     from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
 
     attendance = None

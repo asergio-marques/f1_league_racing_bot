@@ -42,6 +42,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import Round, RoundFormat
+from leaguebot.core.models.round_moments import POST_RACE_CLEANUP_DELAY
 
 if TYPE_CHECKING:
     pass
@@ -49,13 +50,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _GRACE_SECONDS = 300  # 5-minute misfire grace period
-
-#: How long after a round's scheduled start its posted messages come down: the weather module's
-#: forecast, whichever of Phases 1 to 3 still stands, and the attendance module's check-in call
-#: with its last notice and its distribution message (#425). One figure for both, so a round's
-#: channels clear together.
-POST_RACE_CLEANUP_DELAY = timedelta(hours=24)
-
 
 class _JobScheduler(AsyncIOScheduler):
     """An `AsyncIOScheduler` whose jobs run in a context of their own.

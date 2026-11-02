@@ -12,7 +12,7 @@ import pytest
 
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
 from leaguebot.core.services.amendment_rules_service import judge_amendment
-from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+from leaguebot.core.models.round_moments import AttendanceWindows, WeatherWindows
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
 

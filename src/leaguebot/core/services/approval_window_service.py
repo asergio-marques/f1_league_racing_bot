@@ -57,24 +57,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from leaguebot.core.models.round import Round, RoundStatus
-
-
-@dataclass(frozen=True)
-class AttendanceWindows:
-    """The three check-in lead times, as `attendance_config` stores them."""
-
-    notice_days: int
-    last_notice_hours: int
-    deadline_hours: int
-
-
-@dataclass(frozen=True)
-class WeatherWindows:
-    """The three forecast phase horizons, as `weather_pipeline_config` stores them."""
-
-    phase_1_days: int
-    phase_2_days: int
-    phase_3_hours: int
+from leaguebot.core.models.round_moments import AttendanceWindows, WeatherWindows
 
 
 @dataclass(frozen=True)

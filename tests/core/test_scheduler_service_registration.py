@@ -30,6 +30,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import leaguebot.core.services.scheduler_service as scheduler_module
+from leaguebot.core.models.round_moments import POST_RACE_CLEANUP_DELAY
 from leaguebot.core.services.scheduler_service import SchedulerService
 
 
@@ -310,7 +311,7 @@ def test_a_round_s_forecast_and_check_in_come_down_together():
 
     forecast = jobs["cleanup_s7_d1_r3_id21"].kwargs["trigger"].run_date
     check_in = jobs["rsvp_cleanup_s7_d1_r3_id21"].kwargs["trigger"].run_date
-    assert forecast == check_in == rnd.scheduled_at + scheduler_module.POST_RACE_CLEANUP_DELAY
+    assert forecast == check_in == rnd.scheduled_at + POST_RACE_CLEANUP_DELAY
 
 
 # ---------------------------------------------------------------------------
