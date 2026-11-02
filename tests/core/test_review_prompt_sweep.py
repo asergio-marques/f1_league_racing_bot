@@ -12,7 +12,7 @@ reviewer, record the lapse and drop the row. A message or a channel already gone
 a deletion Discord refuses stops the queue, the row standing until Retry or Discard, rather than
 being lost quietly.
 
-The league: `league_double`'s, its review channel 700 found on the league's server, Alex (4242) the
+The league: `league_bot`'s, its review channel 700 found on the league's server, Alex (4242) the
 reviewer of season 1's placements.
 """
 from __future__ import annotations
@@ -32,18 +32,19 @@ from leaguebot.__main__ import _recover_expired_review_prompts
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import ChangeOrigin
 from tests.support.change_queue import (
+    Clock,
     INTERACTION_CHANNEL_ID,
     LOG_CHANNEL_ID,
     SERVER_ID,
-    Clock,
-    attach_queue,
     change_rows,
     history_channel,
     http_error,
-    league_double,
+    league_bot,
+    league_queue,
     post_in,
     run_queue,
     seed_server,
+    set_user,
     stopped_job,
 )
 from tests.support.review_prompts import store_review_prompt
@@ -109,11 +110,11 @@ async def league(tmp_path):
     db_path = str(tmp_path / "prompts.db")
     await run_migrations(db_path)
     await seed_server(db_path)
-    bot = league_double(db_path)
-    bot.user = BOT_USER
+    bot = await league_bot(db_path)
+    set_user(bot, BOT_USER)
     channel = _review_channel()
     _server(bot, channel)
-    attach_queue(bot, db_path, now=Clock(NOW))
+    league_queue(bot, db_path, now=Clock(NOW))
     return SimpleNamespace(db_path=db_path, bot=bot, channel=channel)
 
 
