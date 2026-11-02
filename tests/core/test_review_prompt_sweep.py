@@ -25,10 +25,6 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-
-# `__main__.py` reads the token at import time and raises without it; `tests/conftest.py` gives it
-# a placeholder before collection, so every file importing `bot` can do so at module level.
-from leaguebot.__main__ import _recover_expired_review_prompts
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import ChangeOrigin
 from tests.support.change_queue import (
@@ -55,6 +51,8 @@ REVIEWER_ID = 4242
 PLACEMENTS = "/season placements-review"
 TAKE_DOWN = "season.review.take_down"
 BOT_USER = SimpleNamespace(id=1, name="LeagueBot")
+_NOT_MOVED = ("#283: the season review's take-down at start-up is still the entry point's, "
+              "not season_review_changes.recover_expired_review_prompts")
 
 
 
@@ -151,13 +149,22 @@ async def _take_downs(env: Any) -> list[dict[str, Any]]:
     return [row for row in await change_rows(env.db_path) if row["kind"] == TAKE_DOWN]
 
 
+async def _sweep(bot: Any) -> None:
+    """The restart's take-down of the standing reviews, as the builder's start-up step runs it:
+    core's season review handed the factory of the reviews' views the builder makes."""
+    from leaguebot.__main__ import _approve_view_for
+    from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
+
+    await recover_expired_review_prompts(bot, approve_view=_approve_view_for(bot))
+
+
 async def _restart(env: Any) -> None:
     """The bot starts: the sweep runs, deleting and posting nothing itself and asking one
     take-down of the queue for each review standing; then the queue runs."""
     standing = len(await _rows(env.db_path))
     asked = len(await _take_downs(env))
     deleted, sent = len(env.channel.deleted), len(env.channel.sent)
-    await _recover_expired_review_prompts(env.bot)
+    await _sweep(env.bot)
     assert (len(env.channel.deleted), len(env.channel.sent)) == (deleted, sent)
     assert len(await _take_downs(env)) - asked == standing
     await run_queue(env.bot)
@@ -167,6 +174,7 @@ def _lapses(env: Any) -> list[str]:
     return [line for line in env.bot.log_channel.sent if line.startswith("⌛ ")]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_the_notice_pings_the_reviewer(league):
     """Alex's question stands at a restart. Once the queue runs, channel 700 is told the review
     expired, pinging Alex and naming `/season placements-review`."""
@@ -180,6 +188,7 @@ async def test_the_notice_pings_the_reviewer(league):
     assert PLACEMENTS in notice
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_the_row_is_cleared(league):
     """Alex's review question stands in channel 700 when the bot starts. The sweep deletes
     nothing itself and asks one take-down of the queue; once the queue runs, the question is
@@ -195,6 +204,7 @@ async def test_the_row_is_cleared(league):
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_message_already_gone_still_clears_its_row(league):
     """Alex's question was deleted by hand while the bot was down: its row stands, the message
     does not. The take-down's delete completes as gone, the notice is still posted once, the row
@@ -210,6 +220,7 @@ async def test_a_message_already_gone_still_clears_its_row(league):
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_an_unreachable_channel_still_clears_its_row(league):
     """Channel 700 itself is gone: neither the cache nor a fetch finds it. The take-down completes
     with the channel gone, nothing is posted anywhere in its place, the row is cleared and the
@@ -225,6 +236,7 @@ async def test_an_unreachable_channel_still_clears_its_row(league):
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_channel_missing_from_the_cache_is_fetched(league):
     """The sweep runs during startup, where the cache may not yet hold every channel.
 
@@ -243,6 +255,7 @@ async def test_a_channel_missing_from_the_cache_is_fetched(league):
     assert await _rows(league.db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_fetch_that_fails_stops_the_queue_keeping_its_row(league):
     """Channel 700 is missing from the cache, and Discord fails the fetch (500). The take-down
     stops the queue rather than clearing the row: Alex's review still stands in the record, to
@@ -258,6 +271,7 @@ async def test_a_fetch_that_fails_stops_the_queue_keeping_its_row(league):
     assert len(await _rows(league.db_path)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_refused_delete_stops_the_queue(league):
     """Discord refuses to delete Alex's question (403). The take-down stops the queue at that
     delete, nothing lost quietly: the question still stands, and so does its row."""
@@ -274,6 +288,7 @@ async def test_a_refused_delete_stops_the_queue(league):
     assert len(await _rows(league.db_path)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_nothing_standing_does_nothing(league):
     """No review stands when the bot starts: no take-down is asked and nothing is posted."""
     await _restart(league)
@@ -282,16 +297,18 @@ async def test_nothing_standing_does_nothing(league):
     assert league.channel.sent == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_an_unreadable_database_is_survived():
     """A sweep that raises would stop the bot finishing its startup."""
     bot = MagicMock()
     bot.db_path = "/nonexistent/nowhere.db"
-    await _recover_expired_review_prompts(bot)
+    await _sweep(bot)
 
 
 # ── #482: what the sweep records, and one row per standing prompt ─────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 @pytest.mark.parametrize("review", [PLACEMENTS, "/season config-review"])
 async def test_a_cleared_prompt_records_its_lapse_naming_the_reviewer_and_the_review(
     league, review
@@ -315,6 +332,7 @@ async def test_a_cleared_prompt_records_its_lapse_naming_the_reviewer_and_the_re
     assert review in beneath and "again" in beneath, lines[0]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_an_older_review_lapsing_leaves_a_newer_ones_record_for_the_restart(league):
     """F1. Two placements reviews stand in channel 700, Alex's older question and his newer one.
     The older's five minutes run, and its timer asks its take-down; once the queue runs, only the
@@ -348,6 +366,7 @@ async def test_an_older_review_lapsing_leaves_a_newer_ones_record_for_the_restar
     assert await _rows(league.db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_review_standing_at_a_restart_has_its_report_deleted_with_its_prompt(league):
     """F2. Alex's placements review stands in channel 700: its report (two messages) and its
     question. The bot restarts; once the queue runs, the report goes with the question, each
@@ -366,6 +385,7 @@ async def test_a_review_standing_at_a_restart_has_its_report_deleted_with_its_pr
     assert await _rows(league.db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_prompt_whose_report_list_cannot_be_read_is_still_cleared(league):
     """A standing prompt whose recorded report is unreadable (written by hand, say) is still
     swept: its question is deleted, the notice posted, its lapse recorded and its row cleared,
@@ -384,6 +404,7 @@ async def test_a_prompt_whose_report_list_cannot_be_read_is_still_cleared(league
     assert await _rows(league.db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 @pytest.mark.parametrize(
     ("review", "verb", "custom_id"),
     [
@@ -401,7 +422,7 @@ async def test_each_standing_review_is_routed_under_its_own_button(league, revie
     await _store(league, question.id, review=review, verb=verb)
     league.bot.add_view = MagicMock()
 
-    await _recover_expired_review_prompts(league.bot)
+    await _sweep(league.bot)
 
     league.bot.add_view.assert_called_once()
     routed = league.bot.add_view.call_args.args[0]

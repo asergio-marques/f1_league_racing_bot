@@ -35,6 +35,7 @@ import os
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
 import leaguebot.__main__ as bot_module
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -92,6 +93,8 @@ def _stub_bot(db_path: str):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_an_unreadable_prompt_table_does_not_stop_the_start_up(tmp_path):
     """This runs inside start-up; a failure to read one table must not stop the bot
     starting at all."""
@@ -99,7 +102,10 @@ async def test_an_unreadable_prompt_table_does_not_stop_the_start_up(tmp_path):
     stub = _stub_bot(db_path)
     stub.db_path = os.path.join(str(tmp_path), "does-not-exist-at-all.db")
 
-    await bot_module._recover_expired_review_prompts(stub)  # must not raise
+    from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
+
+    await recover_expired_review_prompts(  # must not raise
+        stub, approve_view=bot_module._approve_view_for(stub))
 
 
 # ---------------------------------------------------------------------------
