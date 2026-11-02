@@ -21,16 +21,10 @@ from leaguebot.core.cogs.retry_cog import RetryCog
 
 
 def _retry_cog():
-    """A `RetryCog` built without starting its loop.
-
-    `__init__` calls `retry_loop.start()`, which needs a running scheduler and would leave
-    a live task behind after the test; the loop body is what is under test.
-    """
+    """A `RetryCog` over a bot double; its loop is not started, only its body is run."""
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
-    cog = RetryCog.__new__(RetryCog)
-    cog._bot = bot
-    return cog
+    return RetryCog(bot)
 
 
 def _pending(entries, error=None):
