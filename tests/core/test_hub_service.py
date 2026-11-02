@@ -40,10 +40,11 @@ from leaguebot.core.utils.league_server import LeagueView
 from tests.support.change_queue import (
     SERVER_ID as LEAGUE_SERVER_ID,
     Clock,
-    attach_queue,
     change_rows,
     http_error,
-    league_double,
+    is_built,
+    league_bot,
+    league_queue,
     member_interaction,
     retry_job,
     run_queue,
@@ -301,7 +302,7 @@ def _bot(db_path, guild):
 # reported in a line; the panel's id is saved by the job's record, with its mark; a hub not set
 # is not due. A stale press and the start-up ask for the refresh rather than making it.
 #
-# The league: `league_double`'s, its configuration read from the database, with the hub set to
+# The league: `league_bot`'s, its configuration read from the database, with the hub set to
 # channel 7900, which the league's server finds. Nothing of the change that is not built yet is
 # imported at the head of the file.
 
@@ -316,18 +317,19 @@ async def league(tmp_path):
     await run_migrations(path)
     await seed_server(path)
     await _configure(path, hub_channel_id=HUB)
-    bot = league_double(path)
-    bot.config_service = ConfigService(path)
-    from leaguebot.core.services.output_router import OutputRouter
+    bot = await league_bot(path, real_config=True)
+    if not is_built(bot):
+        # The builder's own, on the built bot.
+        from leaguebot.core.services.output_router import OutputRouter
 
-    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=path)
+        bot.config_service = ConfigService(path)
+        bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=path)
     hub = text_channel(HUB)
     guild = MagicMock(spec=discord.Guild)
     guild.id = LEAGUE_SERVER_ID
     guild.get_channel = MagicMock(side_effect={HUB: hub}.get)
     bot.get_guild = MagicMock(return_value=guild)
-    bot.add_view = MagicMock()
-    attach_queue(bot, path, now=Clock(NOW))
+    league_queue(bot, path, now=Clock(NOW))
     return SimpleNamespace(db_path=path, bot=bot, hub=hub, guild=guild)
 
 
