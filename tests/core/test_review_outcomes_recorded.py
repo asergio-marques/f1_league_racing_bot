@@ -96,17 +96,17 @@ async def _standing(tmp_path, review: str):
 
     from leaguebot.core.db.database import get_connection, run_migrations
     from tests.support.change_queue import (
-        INTERACTION_CHANNEL_ID, LOG_CHANNEL_ID, SERVER_ID, Clock, attach_queue, history_channel,
-        http_error, league_double, post_in, seed_server,
+        INTERACTION_CHANNEL_ID, LOG_CHANNEL_ID, SERVER_ID, Clock, history_channel, http_error,
+        league_bot, league_queue, post_in, seed_server, set_user,
     )
     from tests.support.review_prompts import store_review_prompt
 
     db_path = str(tmp_path / "queue.db")
     await run_migrations(db_path)
     await seed_server(db_path)
-    bot = league_double(db_path)
+    bot = await league_bot(db_path)
     me = SimpleNamespace(id=1, name="LeagueBot")
-    bot.user = me
+    set_user(bot, me)
     channel = history_channel(REVIEW_CHANNEL)
     channel.sent = []
 
@@ -135,7 +135,7 @@ async def _standing(tmp_path, review: str):
     bot.get_channel = MagicMock(side_effect=known.get)
     bot.fetch_channel = AsyncMock(side_effect=_fetch)
     bot.get_guild = MagicMock(return_value=guild)
-    attach_queue(bot, db_path, now=Clock(NOW))
+    league_queue(bot, db_path, now=Clock(NOW))
     async with get_connection(db_path) as db:
         await store_review_prompt(
             db, season_id=1, channel_id=REVIEW_CHANNEL, message_id=channel.q.id,
