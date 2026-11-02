@@ -1323,6 +1323,9 @@ async def main() -> None:
     if apply_staged_restore(settings.db_path, settings.jobstore_path):
         log.info("Started on a restored database.")
 
+    # Applied before the bot is built and connects, so every service meets the finished schema.
+    await run_migrations(settings.db_path)
+
     bot = await build(settings)
 
     @bot.event
@@ -1330,9 +1333,6 @@ async def main() -> None:
         # `on_ready` fires once the bot has logged in, which is when it has a user.
         assert bot.user is not None
         log.info("Logged in as %s (id=%s)", bot.user, bot.user.id)
-
-        # Run DB migrations on startup
-        await run_migrations(settings.db_path)
 
         # Start the persistent APScheduler
         bot.scheduler_service.start()
