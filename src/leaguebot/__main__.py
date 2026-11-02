@@ -648,6 +648,11 @@ def register_change_types(bot: LeagueBot) -> None:
             queue=bot.change_queue, server_config=bot.config_service.get_server_config
         )
     )
+    # A change type or timer helper whose parameter is a getter of the queue (`queue_of`, `queue`
+    # given a lambda) is handed `lambda: bot.change_queue`, as its signature asks: it reads the
+    # bot's queue when it runs. The bot keeps the one queue `build` made, and the tests'
+    # `restart_queue` sets a new one on it and registers again, which a getter and a queue handed
+    # over would both follow; the getter is kept for the signature's sake.
     bot.change_queue.register(
         amend_open_change(
             modules=bot.module_service, server_config=bot.config_service.get_server_config,
@@ -658,6 +663,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(amend_cancel_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(amend_lapse_change(now=lambda: bot.change_queue.now()))
 
+    # The timer asks the queue when it fires, by the helper's getter, as above.
     bot.scheduler_service.register_timer(
         AMEND_TIMER, amend_lapse_timer(bot.db_path, lambda: bot.change_queue)
     )
@@ -684,9 +690,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         closing_change(now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once)
     )
-    # The signup, driver and team services, and the queue, are read when a change runs and not
-    # handed over here: a test swaps each on the bot after registering, and `restart_queue`
-    # builds a new queue and registers again.
+    # The queue is a getter here as well, read when the change runs.
     bot.change_queue.register(
         window_open_change(
             modules=bot.module_service, signup=bot.signup_module_service,
@@ -695,6 +699,8 @@ def register_change_types(bot: LeagueBot) -> None:
             queue=lambda: bot.change_queue,
         )
     )
+    # The signup, driver and team services are read when a change runs and not handed over in the
+    # changes that follow: a test swaps each on the bot after registering.
     bot.change_queue.register(
         window_close_change(
             signup_module_service=lambda: bot.signup_module_service, returned_by_close=RETURNED_BY_CLOSE,
@@ -780,8 +786,9 @@ def register_change_types(bot: LeagueBot) -> None:
             drivers=lambda: bot.driver_service, queue_of=lambda: bot.change_queue,
         )
     )
-    # A correction nobody chose within five minutes is lapsed by the change its timer asks of the
-    # queue, as the bot.
+    # The timers below read the bot's queue when they fire, as the getters above do. A correction
+    # nobody chose within five minutes is lapsed by the change its timer asks of the queue, as the
+    # bot.
     bot.scheduler_service.register_timer(
         CORRECTION_TIMER, lambda key: ask_lapse(bot.change_queue, str(key))
     )
@@ -812,13 +819,14 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(lock_clear_change())
+    # The lock-clearing timer asks the queue when it fires, by the helper's getter.
     bot.scheduler_service.register_timer(
         TIMER, lock_clear_timer(bot.db_path, lambda: bot.change_queue)
     )
     bot.change_queue.register(appeals_open_change())
     bot.change_queue.register(close_stale_change())
     # The review's change types stamp what they write with the queue's own clock, read when they
-    # run (the queue is rebuilt at a restart), and reach attendance through the hook alone.
+    # run, as the getters above are, and reach attendance through the hook alone.
     bot.change_queue.register(
         report_approval_change(
             attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
@@ -922,6 +930,7 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(season_review_take_down_change())
+    # The review's expiry timer asks the queue when it fires, by the helper's getter.
     bot.scheduler_service.register_timer(
         season_review_changes.TIMER,
         season_review_changes.review_expiry_timer(bot.db_path, lambda: bot.change_queue),
