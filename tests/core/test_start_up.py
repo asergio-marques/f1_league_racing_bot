@@ -17,6 +17,8 @@ import importlib
 import logging
 from typing import Any
 
+import pytest
+
 _MODULE = "leaguebot.core.services.start_up"
 
 
@@ -135,3 +137,27 @@ async def test_no_job_runs_until_start_up_has_ended():
     assert "scheduler started" not in record.calls
     assert record.calls[-2:] == ["queue started", "scheduler resumed"]
     assert record.calls.count("scheduler resumed") == 1
+
+
+@pytest.mark.xfail(strict=True, reason="#283: start-up does not yet resume the scheduler when the "
+                                       "change queue fails to start")
+async def test_a_queue_that_fails_to_start_still_resumes_the_scheduler(caplog):
+    """The change queue fails as it starts (the database is locked). Start-up logs the failure as
+    an error, with its traceback, and still resumes the scheduler, so scheduled jobs are not held
+    paused for the rest of the run; the failure goes no further, as a failed step's does not."""
+    module = _fresh_start_up()
+    record = _Recorder()
+
+    async def _fails() -> None:
+        record.calls.append("queue start failed")
+        raise RuntimeError("database is locked")
+
+    record.queue.start = _fails
+    steps = (record.step("hub"),)
+
+    with caplog.at_level(logging.DEBUG, logger=_MODULE):
+        await module.start_up(steps=steps, change_queue=record.queue, scheduler=record.scheduler)
+
+    assert record.calls[-2:] == ["queue start failed", "scheduler resumed"]
+    [error] = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert error.exc_info is not None and error.exc_info[0] is RuntimeError
