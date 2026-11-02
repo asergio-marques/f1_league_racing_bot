@@ -164,7 +164,8 @@ def profile_id(user_id: int) -> int:
 
 
 class SeasonLeague:
-    """The bot double with its queue, cog, server and channels, and what they saw."""
+    """The bot with its queue, cog, server and channels, and what they saw; the bot is there once
+    build has run."""
 
     def __init__(self, db_path: str, now: datetime, *, images: bool) -> None:
         self.db_path = db_path
