@@ -21,17 +21,6 @@ drops each *passing* test's directory as it finishes — the count alone acts on
 end, and one run's accumulated scratch reached 817 MB and filled the tmpfs before it could.
 The template scratch below is the one thing pytest does not own, so `_sweep_stale_templates`
 sweeps it to the same schedule.
-
-**`BOT_TOKEN` is given a placeholder before any test module is collected.** The entry point,
-`src/leaguebot/__main__.py`, reads it with `os.environ["BOT_TOKEN"]` at import time, after
-`load_dotenv()`, so importing the module to reach one of its recovery sweeps raises without it. A
-development host has a gitignored `.env` that supplies a real one and hides the problem; a CI runner
-has neither, and every test file importing the entry point at module level then fails at
-collection, which aborts the whole run. It is set
-here, once, rather than in the test files, because a per-file default only helps files collected
-after it — which is how the suite passed locally and failed on both runners. `setdefault`, so a
-real token in the environment is left alone; nothing in the suite connects to Discord with it.
-Pinned by `tests/repository/test_suite_needs_no_dotenv.py`.
 """
 from __future__ import annotations
 
@@ -49,9 +38,6 @@ import pytest
 import pytest_asyncio
 
 from tests.support.connections import close_lent_connections
-
-# Before any test module is imported — see the module docstring.
-os.environ.setdefault("BOT_TOKEN", "not-a-real-token")
 
 
 def _refuse_another_checkouts_bot() -> None:

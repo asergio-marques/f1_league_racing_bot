@@ -16,13 +16,9 @@ import sys
 import textwrap
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
-_REASON = "#283: importing the entry point loads .env and reads BOT_TOKEN"
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON)
 def test_the_entry_point_imports_with_no_dotenv_and_no_token():
     code = textwrap.dedent(
         """

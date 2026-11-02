@@ -16,13 +16,11 @@ import pytest
 
 from tests.support.change_queue import built_bot
 
-_SETTINGS_REASON = "#283: the settings are module globals read at import, with no read_settings"
 _BUILD_REASON = "#283: the services are built inside main, and there is no build(settings)"
 
 _SET_ONLY_WHERE_KNOWN = {"running_version", "running_version_date"}
 
 
-@pytest.mark.xfail(strict=True, reason=_SETTINGS_REASON)
 @pytest.mark.parametrize(
     ("environ", "db_path", "jobstore_path"),
     [

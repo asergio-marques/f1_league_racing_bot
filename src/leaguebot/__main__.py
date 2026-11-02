@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 import aiosqlite
@@ -26,8 +27,6 @@ if TYPE_CHECKING:
     from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.round_amend_change import AmendHooks
     from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
-
-load_dotenv()
 
 #: The oldest discord.py the bot runs on. `/team add` and `/team modify` take their input in a
 #: modal carrying a role picker, which needs ``discord.ui.Label`` — new in 2.6 (#381). A host
@@ -50,20 +49,47 @@ def require_discord_py(version_info=None) -> None:
 
 require_discord_py()
 
-TOKEN: str = os.environ["BOT_TOKEN"]
-DB_PATH: str = os.getenv("DB_PATH", "bot.db")
-#: The scheduler's job store, kept apart from the league database on purpose — see the
-#: module docstring in `core/services/scheduler_service.py`. Empty means "beside DB_PATH".
-SCHEDULER_DB_PATH: str = os.getenv("SCHEDULER_DB_PATH", "")
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-# A late autocomplete is a race with Discord's three-second budget, not a fault in this
-# code, and discord.py logs it as an ERROR with a full traceback. Downgrade just that one.
-install_late_autocomplete_filter()
 log = logging.getLogger(__name__)
+
+
+class MissingBotToken(RuntimeError):
+    """``BOT_TOKEN`` is not set, in the environment or in ``.env``."""
+
+
+@dataclass(frozen=True)
+class Settings:
+    """What the host's environment sets, read once by :func:`read_settings` and handed on.
+
+    ``jobstore_path`` is the scheduler's job store, kept apart from the league database on
+    purpose (see the module docstring in ``core/services/scheduler_service.py``).
+    """
+
+    token: str
+    db_path: str
+    jobstore_path: str
+
+
+def read_settings(environ: Mapping[str, str]) -> Settings:
+    """The three settings, read from *environ*: ``BOT_TOKEN``, ``DB_PATH`` (default ``bot.db``)
+    and ``SCHEDULER_DB_PATH``.
+
+    An unset or empty ``SCHEDULER_DB_PATH`` is resolved here, once, to the job store beside the
+    database, so nothing downstream decides it again. A missing ``BOT_TOKEN`` raises
+    :class:`MissingBotToken`. Called by :func:`main` after ``load_dotenv()`` and by nothing at import
+    (``tests/repository/test_suite_needs_no_dotenv.py``). INKSCAPE, a module's own host setting, is
+    not one of these: the image module reads it when it renders.
+    """
+    from leaguebot.core.services.scheduler_service import default_jobstore_path
+
+    token = environ.get("BOT_TOKEN")
+    if not token:
+        raise MissingBotToken("BOT_TOKEN is not set: put it in the environment or in .env")
+    db_path = environ.get("DB_PATH", "bot.db")
+    return Settings(
+        token=token,
+        db_path=db_path,
+        jobstore_path=environ.get("SCHEDULER_DB_PATH") or default_jobstore_path(db_path),
+    )
 
 
 def create_bot() -> LeagueBot:
@@ -77,8 +103,6 @@ def create_bot() -> LeagueBot:
     bot = LeagueBot(
         command_prefix="!", intents=intents, help_command=None, tree_cls=LeagueCommandTree
     )
-    bot.db_path = DB_PATH
-
     # Tell the host whenever the bot finds itself in more than one server (issue #244).
     async def _warn_if_serving_several(*_: object) -> None:
         warn_if_serving_several(bot)
@@ -962,6 +986,17 @@ def register_change_types(bot: LeagueBot) -> None:
 
 
 async def main() -> None:
+    load_dotenv()
+    settings = read_settings(os.environ)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    # A late autocomplete is a race with Discord's three-second budget, not a fault in this
+    # code, and discord.py logs it as an ERROR with a full traceback. Downgrade just that one.
+    install_late_autocomplete_filter()
+
     from leaguebot.core.db.database import run_migrations
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.season_service import SeasonService
@@ -975,12 +1010,12 @@ async def main() -> None:
     # precisely so that the swap can happen at this point on the next start — under a
     # service or from a terminal alike.
     from leaguebot.core.services.backup_service import apply_staged_restore
-    from leaguebot.core.services.scheduler_service import default_jobstore_path
 
-    if apply_staged_restore(DB_PATH, SCHEDULER_DB_PATH or default_jobstore_path(DB_PATH)):
+    if apply_staged_restore(settings.db_path, settings.jobstore_path):
         log.info("Started on a restored database.")
 
     bot = create_bot()
+    bot.db_path = settings.db_path
 
     # The version is read once, here, and never when a command runs (#258): it belongs to
     # the code this process loaded. See `core/utils/version.py`.
@@ -1005,23 +1040,23 @@ async def main() -> None:
     from leaguebot.core.services.driver_service import DriverService
     from leaguebot.core.services.team_service import TeamService
 
-    bot.config_service = ConfigService(DB_PATH)
-    bot.season_service = SeasonService(DB_PATH)
+    bot.config_service = ConfigService(settings.db_path)
+    bot.season_service = SeasonService(settings.db_path)
     bot.scheduler_service = SchedulerService(
-        DB_PATH, SCHEDULER_DB_PATH or None
+        settings.db_path, settings.jobstore_path
     )
-    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=DB_PATH)
+    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=settings.db_path)
     # The queue is handed the router, and is started by `on_ready`, after the recoveries.
     from leaguebot.core.services.change_queue import ChangeQueue
 
-    bot.change_queue = ChangeQueue(DB_PATH, bot, bot.output_router, bot.config_service)
-    bot.driver_service = DriverService(DB_PATH)
-    bot.team_service = TeamService(DB_PATH)
+    bot.change_queue = ChangeQueue(settings.db_path, bot, bot.output_router, bot.config_service)
+    bot.driver_service = DriverService(settings.db_path)
+    bot.team_service = TeamService(settings.db_path)
 
     from leaguebot.core.services.placement_service import PlacementService
     # The bot is handed over so the lineup refresh can reach the image module (038). The
     # textual lineup does not use it.
-    bot.placement_service = PlacementService(DB_PATH, bot)
+    bot.placement_service = PlacementService(settings.db_path, bot)
 
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -1029,10 +1064,10 @@ async def main() -> None:
     from leaguebot.attendance.services.attendance_service import AttendanceService
     from leaguebot.core.services.output_router import OutputRouter as _OutputRouter  # already imported above
 
-    bot.module_service = ModuleService(DB_PATH)
-    bot.signup_module_service = SignupModuleService(DB_PATH)
+    bot.module_service = ModuleService(settings.db_path)
+    bot.signup_module_service = SignupModuleService(settings.db_path)
     bot.wizard_service = WizardService(
-        DB_PATH,
+        settings.db_path,
         bot.scheduler_service,
         bot.output_router,
         change_queue=bot.change_queue,
@@ -1041,7 +1076,7 @@ async def main() -> None:
     # from the moment the gateway opens, and a signup press arriving while `on_ready` was
     # still recovering found the wizard with no bot and failed (#228).
     bot.wizard_service.set_bot(bot)
-    bot.attendance_service = AttendanceService(DB_PATH)
+    bot.attendance_service = AttendanceService(settings.db_path)
 
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
 
@@ -1058,7 +1093,7 @@ async def main() -> None:
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService
 
-    bot.image_config_service = ImageConfigService(DB_PATH)
+    bot.image_config_service = ImageConfigService(settings.db_path)
     bot.image_validity_service = ImageValidityService(
         bot.image_config_service,
         bot.module_service,
@@ -1080,7 +1115,7 @@ async def main() -> None:
         log.info("Logged in as %s (id=%s)", bot.user, bot.user.id)
 
         # Run DB migrations on startup
-        await run_migrations(DB_PATH)
+        await run_migrations(settings.db_path)
 
         # Start the persistent APScheduler
         bot.scheduler_service.start()
@@ -1181,7 +1216,7 @@ async def main() -> None:
         bot.scheduler_service.register_signup_close_callback(_signup_close_cb)
 
         async def _recover_signup_close_timers() -> None:
-            async with _get_conn(DB_PATH) as _db:
+            async with _get_conn(bot.db_path) as _db:
                 _cur = await _db.execute(
                     "SELECT close_at FROM signup_module_config WHERE close_at IS NOT NULL"
                 )
@@ -1372,7 +1407,7 @@ async def main() -> None:
 
     try:
         async with bot:
-            await bot.start(TOKEN)
+            await bot.start(settings.token)
     finally:
         # The connections kept idle to be lent again each hold a thread that is not a daemon;
         # left open they would hang a Ctrl-C. Closed after the bot has closed, so that nothing
