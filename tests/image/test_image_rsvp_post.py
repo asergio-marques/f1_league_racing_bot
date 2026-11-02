@@ -25,15 +25,15 @@ import discord
 import pytest
 
 from leaguebot.attendance.services import rsvp_service
-from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.image.services import image_rsvp_post
 from leaguebot.image.services.image_rsvp_post import rsvp_enabled, try_attach
-from tests.support.change_queue import attach_queue, http_error, run_queue, stopped_job
+from tests.support.change_queue import http_error, run_queue, stopped_job
 from tests.support.season_league import (
     CALL_MESSAGES,
     DIVISIONS,
     PRO,
     SeasonLeague,
+    attendance_from_the_database,
     ongoing_league,
     round_id,
 )
@@ -175,8 +175,7 @@ def test_the_button_view_reaches_no_image_module():
 async def _call_league(tmp_path: Any, *, images: bool = True) -> SeasonLeague:
     """Pro's round 4 three days off, its call due and no call posted, the queue attached."""
     league = await ongoing_league(tmp_path, attendance=True, images=images)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     when = league.clock.now + timedelta(days=3)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
                        when.replace(tzinfo=None).isoformat(), ROUND_4)
@@ -324,8 +323,7 @@ async def _deadline_league(tmp_path: Any, monkeypatch: Any) -> tuple[SeasonLeagu
     (7001) standing in Pro's check-in channel and nothing announced; the check-in graphic stood
     in for by a double that records each draw."""
     league = await ongoing_league(tmp_path, attendance=True, images=True)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     when = league.clock.now + timedelta(hours=1)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
                        when.replace(tzinfo=None).isoformat(), ROUND_3)

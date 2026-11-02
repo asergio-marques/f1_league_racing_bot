@@ -10,25 +10,28 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from leaguebot.attendance.services.attendance_service import AttendanceService
-
 
 # A deadline that has run is marked so on its call (`deadline_run_at`), apart from the message it
 # posts (#439, slice 6b): a discarded announcement leaves the placements made and the deadline
 # run, and it must not be run again, at a restart or otherwise. These use `ongoing_league` with
-# attendance on, its queue rebuilt on a real `AttendanceService`: Pro's round 3 is an hour off,
+# attendance on, its attendance service reading the database: Pro's round 3 is an hour off,
 # its two-hour deadline passed, its call standing in Pro's check-in channel (603) as message 7001
 # with its last notice 7002. The deadline is asked of the queue as its timer asks it, and the
 # queue run.
 
 
 async def _league_past_its_deadline(tmp_path, *, marked: bool, announced: bool):
-    from tests.support.change_queue import attach_queue
-    from tests.support.season_league import CALL_MESSAGES, DIVISIONS, PRO, ongoing_league, round_id
+    from tests.support.season_league import (
+        CALL_MESSAGES,
+        DIVISIONS,
+        PRO,
+        attendance_from_the_database,
+        ongoing_league,
+        round_id,
+    )
 
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     now = league.clock.now
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
                        (now + timedelta(hours=1)).replace(tzinfo=None).isoformat(),

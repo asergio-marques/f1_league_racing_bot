@@ -459,7 +459,7 @@ async def test_the_posted_notice_is_recorded_for_the_cleanup(tmp_path):
 # "All drivers have responded" for it, tracked by nothing. It is now dropped as no longer due
 # when it is asked, and the host's log says so.
 #
-# These use `ongoing_league` with attendance on, its queue rebuilt on a real `AttendanceService`:
+# These use `ongoing_league` with attendance on, its attendance service reading the database:
 # Pro's round 3 is three hours off, past its last-notice time and before its two-hour deadline,
 # and its call (seeded in Pro's check-in channel, 603) is taken off the record, as though it was
 # never posted. The last notice is asked of the queue as its timer asks it, and the queue run.
@@ -467,17 +467,15 @@ async def test_the_posted_notice_is_recorded_for_the_cleanup(tmp_path):
 
 
 async def _no_call_league(tmp_path):
-    from tests.support.change_queue import attach_queue
-    from tests.support.season_league import PRO, ongoing_league, round_id
+    from tests.support.season_league import (
+        PRO,
+        attendance_from_the_database,
+        ongoing_league,
+        round_id,
+    )
 
     league = await ongoing_league(tmp_path, attendance=True)
-    if is_built(league.bot):
-        # The builder's own service, which its change types hold, its configuration read from
-        # the database again.
-        vars(league.bot.attendance_service).pop("get_or_create_config", None)
-    else:
-        league.bot.attendance_service = AttendanceService(league.db_path)
-        attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     when = league.clock.now + timedelta(hours=3)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
                        when.replace(tzinfo=None).isoformat(), round_id(PRO, 3))

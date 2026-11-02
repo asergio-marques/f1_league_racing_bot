@@ -27,7 +27,6 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
-    attach_queue,
     is_built,
     league_bot,
     league_queue,
@@ -35,7 +34,14 @@ from tests.support.change_queue import (
     stopped_job,
 )
 from tests.support.review_league import channel
-from tests.support.season_league import CALL_MESSAGES, DIVISIONS, PRO, ongoing_league, round_id
+from tests.support.season_league import (
+    CALL_MESSAGES,
+    DIVISIONS,
+    PRO,
+    attendance_from_the_database,
+    ongoing_league,
+    round_id,
+)
 
 #: The moment every round is placed relative to.
 NOW = datetime(2026, 10, 5, 18, 0, tzinfo=timezone.utc)
@@ -468,9 +474,8 @@ CALL, LAST_NOTICE, ANNOUNCEMENT = CALL_MESSAGES
 
 async def _moved_league(tmp_path) -> object:
     """The league above, with Pro's check-in channel moved to `MOVED`, and the attendance
-    service the check-in's change types hold reading the database: the builder's, its
-    configuration no longer stubbed, or on the bot double a real `AttendanceService` with the
-    queue rebuilt on it."""
+    service the check-in's change types hold reading the database
+    (`attendance_from_the_database`)."""
     league = await ongoing_league(tmp_path, attendance=True)
     moved = league._recording(channel(MOVED, league.events))
     moved.guild = league.guild
@@ -479,13 +484,7 @@ async def _moved_league(tmp_path) -> object:
         "UPDATE attendance_division_config SET rsvp_channel_id = ? WHERE division_id = ?",
         str(MOVED), PRO,
     )
-    if is_built(league.bot):
-        # The builder's own service, which its change types hold, its configuration read from
-        # the database again.
-        vars(league.bot.attendance_service).pop("get_or_create_config", None)
-    else:
-        league.bot.attendance_service = AttendanceService(league.db_path)
-        attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     return league
 
 

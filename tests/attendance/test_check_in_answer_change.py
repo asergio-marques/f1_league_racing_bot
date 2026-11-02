@@ -2,8 +2,8 @@
 Tentative or Decline asks an `attendance.check_in.answer` change, whose jobs save the answer
 (`save_answer`) and redraw the call (`redraw`) when its turn comes.
 
-The league is `ongoing_league`'s with attendance on, its queue rebuilt on a real
-`AttendanceService`: Pro has Lewis and Max seated at Ferrari, its check-in channel is 603, and
+The league is `ongoing_league`'s with attendance on, its attendance service
+reading the database: Pro has Lewis and Max seated at Ferrari, its check-in channel is 603, and
 round 3's call stands there as message 7001, Lewis having accepted and Max not answered. Round 3
 is moved to three days off, well before its two-hour check-in deadline, unless a test says
 otherwise. A test presses a button of the call as a driver (`handle_rsvp_button`, the press
@@ -28,10 +28,8 @@ import discord
 import pytest
 
 from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button
-from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
     acknowledgement,
-    attach_queue,
     change_rows,
     discard_job,
     http_error,
@@ -51,6 +49,7 @@ from tests.support.season_league import (
     MAX,
     PRO,
     SeasonLeague,
+    attendance_from_the_database,
     ongoing_league,
     profile_id,
     round_id,
@@ -65,8 +64,7 @@ CALL = CALL_MESSAGES[0]
 async def _league(tmp_path: Any, *, race_in: timedelta = timedelta(days=3)) -> SeasonLeague:
     """The league of the module docstring, round 3 raced *race_in* from now."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     when = league.clock.now + race_in
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
                        when.replace(tzinfo=None).isoformat(), ROUND_3)

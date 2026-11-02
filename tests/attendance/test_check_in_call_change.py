@@ -1,8 +1,8 @@
 """A round's check-in call on the change queue (#439, slice 6b, C26): asked by its timer, a restart
 or `/attendance post-check-in`, posted and recorded by the call's own jobs.
 
-The league is `ongoing_league`'s with attendance on, its queue rebuilt on a real
-`AttendanceService`: Pro (role 801) has Lewis and Max seated at Ferrari, its check-in channel is
+The league is `ongoing_league`'s with attendance on, its attendance service
+reading the database: Pro (role 801) has Lewis and Max seated at Ferrari, its check-in channel is
 603, and round 3's call already stands there as messages 7001 to 7003, Lewis having accepted.
 Pro's round 4 is moved to three days off, past the moment its call falls due (five days before)
 and before its check-in deadline (two hours before), with no call posted for it yet. A test asks
@@ -25,9 +25,7 @@ from unittest.mock import AsyncMock
 import discord
 import pytest
 
-from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
-    attach_queue,
     change_rows,
     discard_job,
     http_error,
@@ -43,6 +41,7 @@ from tests.support.season_league import (
     MAX,
     PRO,
     SeasonLeague,
+    attendance_from_the_database,
     ongoing_league,
     profile_id,
     round_id,
@@ -67,8 +66,7 @@ COUNTS_NOTHING_GIVEN_UP = "the round counts nothing against anyone"
 async def _call_league(tmp_path: Any, *, images: bool = False) -> SeasonLeague:
     """The league of the module docstring: round 4 three days off, no call posted for it."""
     league = await ongoing_league(tmp_path, attendance=True, images=images)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     await _round_4_in(league, timedelta(days=3))
     return league
 

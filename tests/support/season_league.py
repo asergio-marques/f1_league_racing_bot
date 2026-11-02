@@ -875,6 +875,21 @@ async def ongoing_league(
     return league
 
 
+def attendance_from_the_database(league: SeasonLeague) -> None:
+    """The league's attendance service reading its configuration from the database, in place of
+    the league's stub, and held by the check-in's change types: on the built bot the builder's
+    own service with the stub dropped, which its change types already hold; on the bot double a
+    real `AttendanceService`, the queue's change types registered again over it (#283)."""
+    if is_built(league.bot):
+        vars(league.bot.attendance_service).pop("get_or_create_config", None)
+        return
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from tests.support.change_queue import attach_queue
+
+    league.bot.attendance_service = AttendanceService(league.db_path)
+    attach_queue(league.bot, league.db_path, now=league.clock)
+
+
 def removed_jobs(rid: int) -> list[str]:
     """The jobs `ongoing_league`'s scheduler double says it removed of round *rid*: its results
     submission and its two clean-ups, as a cancellation's removal of its timed work gives them."""

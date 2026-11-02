@@ -28,6 +28,7 @@ from tests.support.change_queue import (
     change_rows,
     discard_job,
     http_error,
+    is_built,
     member_interaction,
     retry_job,
     run_queue,
@@ -61,15 +62,20 @@ OLD_LATER_RESULTS = 8810
 
 async def _league(tmp_path: Any) -> ReviewLeague:
     """`review_league`'s league with round 3 final, results switched on, and the real season
-    and module services the command and its check read; the queue built again over them."""
+    and module services the command and its check read, held by the queue's change types."""
     from leaguebot.core.services.season_service import SeasonService
 
     league = await review_league(tmp_path, round_status="FINAL")
     await _write(league, "INSERT OR REPLACE INTO results_module_config (id, module_enabled) "
                          "VALUES (1, 1)")
-    league.bot.season_service = SeasonService(league.db_path)
     league.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
-    attach_queue(league.bot, league.db_path, now=NOW)
+    if is_built(league.bot):
+        # The builder's own season service, which its change types hold, its divisions read
+        # from the database again.
+        vars(league.bot.season_service).pop("get_divisions", None)
+    else:
+        league.bot.season_service = SeasonService(league.db_path)
+        attach_queue(league.bot, league.db_path, now=NOW)
     return league
 
 

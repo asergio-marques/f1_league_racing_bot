@@ -1,8 +1,8 @@
 """A round's last check-in notice on the change queue (#439, slice 6b, C29): asked by its timer,
 posted and recorded by a job of its own.
 
-The league is `ongoing_league`'s with attendance on, its queue rebuilt on a real
-`AttendanceService`: Pro (role 801) has Lewis and Max seated at Ferrari, its check-in channel is
+The league is `ongoing_league`'s with attendance on, its attendance service
+reading the database: Pro (role 801) has Lewis and Max seated at Ferrari, its check-in channel is
 603, and round 3's call stands there as message 7001, Lewis having accepted and Max not answered.
 Round 3 is moved to three hours off, past the moment its last notice falls due and an hour before
 its check-in deadline (two hours before the race), and no last notice or reserve announcement is
@@ -24,9 +24,7 @@ from typing import Any
 import discord
 import pytest
 
-from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
-    attach_queue,
     change_rows,
     http_error,
     run_queue,
@@ -38,6 +36,7 @@ from tests.support.season_league import (
     DIVISIONS,
     PRO,
     SeasonLeague,
+    attendance_from_the_database,
     ongoing_league,
     round_id,
 )
@@ -54,8 +53,7 @@ async def _league(tmp_path: Any) -> SeasonLeague:
     """The league of the module docstring: round 3 three hours off, its call standing and no
     last notice recorded."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     when = league.clock.now + timedelta(hours=3)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
                        when.replace(tzinfo=None).isoformat(), ROUND_3)

@@ -3,8 +3,8 @@ day after the round and by the restart, run by jobs of its own — `plan` reads 
 round's check-in left recorded, one `delete_message` takes each down from the channel it was
 posted in, and `mark_cleared` marks the round's check-in over.
 
-The league is `ongoing_league`'s with attendance on, its queue rebuilt on a real
-`AttendanceService`: Pro's check-in channel is 603, and round 3's call stands there as message
+The league is `ongoing_league`'s with attendance on, its attendance service
+reading the database: Pro's check-in channel is 603, and round 3's call stands there as message
 7001 with its last notice 7002 and its reserve announcement 7003, all three recorded on the call.
 Round 3 is moved to 25 hours ago, so its clean-up is due.
 
@@ -21,10 +21,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
     acknowledgement,
-    attach_queue,
     change_rows,
     discard_job,
     refuse_the_job,
@@ -38,6 +36,7 @@ from tests.support.season_league import (
     DIVISIONS,
     PRO,
     SeasonLeague,
+    attendance_from_the_database,
     ongoing_league,
     round_id,
 )
@@ -55,8 +54,7 @@ async def _league(tmp_path: Any) -> SeasonLeague:
     """The league of the module docstring: round 3 raced 25 hours ago, its call, last notice
     and announcement standing and recorded."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     when = league.clock.now - timedelta(hours=25)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
                        when.replace(tzinfo=None).isoformat(), ROUND_3)

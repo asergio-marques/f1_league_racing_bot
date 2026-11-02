@@ -2,8 +2,8 @@
 the restart, run by jobs of its own — the reserves placed (`distribute`), the call's buttons
 taken off (`lock_call`) and the placements announced (`announce`).
 
-The league is `ongoing_league`'s with attendance on, its queue rebuilt on a real
-`AttendanceService`: Pro has Lewis and Max seated at Ferrari (three seats), its check-in channel
+The league is `ongoing_league`'s with attendance on, its attendance service
+reading the database: Pro has Lewis and Max seated at Ferrari (three seats), its check-in channel
 is 603, and round 3's call stands there as message 7001 with its last notice 7002, Lewis having
 accepted and Max not answered. Round 3 is moved to an hour off, so its two-hour check-in deadline
 passed an hour ago; no announcement is recorded and the deadline is not marked as run. Where a
@@ -26,10 +26,8 @@ from unittest.mock import AsyncMock, patch
 import discord
 import pytest
 
-from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
     acknowledgement,
-    attach_queue,
     change_rows,
     discard_job,
     http_error,
@@ -46,6 +44,7 @@ from tests.support.season_league import (
     PRO,
     SEASON_ID,
     SeasonLeague,
+    attendance_from_the_database,
     ongoing_league,
     round_id,
 )
@@ -67,8 +66,7 @@ async def _league(tmp_path: Any) -> SeasonLeague:
     """The league of the module docstring: round 3 an hour off, its deadline passed and not
     run, its call standing and nothing announced."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     when = league.clock.now + timedelta(hours=1)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
                        when.replace(tzinfo=None).isoformat(), ROUND_3)
