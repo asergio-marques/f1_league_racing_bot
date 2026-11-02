@@ -8,8 +8,6 @@ from typing import Any
 from apscheduler.job import Job
 from apscheduler.triggers.base import BaseTrigger
 
-STATE_STOPPED: int
-STATE_RUNNING: int
 STATE_PAUSED: int
 
 class BaseScheduler(metaclass=ABCMeta):
