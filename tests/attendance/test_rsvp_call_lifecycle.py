@@ -41,10 +41,11 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
-    attach_queue,
     discard_job,
     http_error,
-    league_double,
+    is_built,
+    league_bot,
+    league_queue,
     run_queue,
     stopped_job,
 )
@@ -225,16 +226,18 @@ COUNTS_NOTHING = "will count nothing against anyone"
 DB_LOG_CHANNEL_ID = 300
 
 
-def _queue_bot(db_path: str, *channel_ids: int) -> MagicMock:
-    """The league's bot double with its change queue, attendance on and images off, the server
-    holding *channel_ids*, each recording its sends and deletes in `bot.events`; the earlier
-    call's messages (900001, 900002) stand in each. The log channel the database names
-    (`DB_LOG_CHANNEL_ID`) is the double's own log channel, so every line the queue writes there,
+async def _queue_bot(db_path: str, *channel_ids: int) -> MagicMock:
+    """The league's bot (`league_bot`) with its change queue, attendance on and images off, the
+    server holding *channel_ids*, each recording its sends and deletes in `bot.events`; the
+    earlier call's messages (900001, 900002) stand in each. The log channel the database names
+    (`DB_LOG_CHANNEL_ID`) is the bot's own log channel, so every line the queue writes there,
     a Discard's among them, reaches `bot.log_channel.sent`."""
     from tests.support.review_league import channel as recording_channel
 
-    bot = league_double(db_path)
-    bot.attendance_service = AttendanceService(db_path)
+    bot = await league_bot(db_path)
+    if not is_built(bot):
+        # The builder's own, on the built bot.
+        bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     bot.events = []
@@ -247,7 +250,7 @@ def _queue_bot(db_path: str, *channel_ids: int) -> MagicMock:
              bot.interaction_channel.id: bot.interaction_channel}
     bot.get_channel = MagicMock(
         side_effect=lambda cid: bot.channels.get(int(cid)) or known.get(int(cid)))
-    attach_queue(bot, db_path, now=datetime.now(timezone.utc))
+    league_queue(bot, db_path, now=datetime.now(timezone.utc))
     return bot
 
 
@@ -277,7 +280,7 @@ async def test_a_repost_keeps_every_answer_already_given(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
 
     await _ask(bot, replacing=True)
 
@@ -298,7 +301,7 @@ async def test_a_repost_discards_an_answer_from_a_driver_who_has_left(tmp_path):
         # The reserve gives up their seat, so they are no longer of the division.
         await db.execute("UPDATE team_seats SET driver_profile_id = NULL WHERE id = 21")
         await db.commit()
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
 
     await _ask(bot, replacing=True)
 
@@ -313,7 +316,7 @@ async def test_a_repost_with_an_empty_division_discards_every_answer(tmp_path):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE team_seats SET driver_profile_id = NULL")
         await db.commit()
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
 
     await _ask(bot, replacing=True)
 
@@ -325,7 +328,7 @@ async def test_a_repost_posts_the_call_again(tmp_path):
     the earlier one's place and does not stop."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
 
     await _ask(bot, replacing=True)
 
@@ -339,7 +342,7 @@ async def test_a_repost_of_a_round_with_no_standing_call_still_posts_one(tmp_pat
     """`/season amend` reaches here without knowing whether the call went out: asked in an
     earlier call's place where none stands, the call is posted all the same."""
     db_path = await _make_db(tmp_path)
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
 
     await _ask(bot, replacing=True)
 
@@ -390,7 +393,7 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
     await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
     if fault == "the channel is gone":
-        bot = _queue_bot(db_path)
+        bot = await _queue_bot(db_path)
     elif fault == "the channel set is gone, the earlier call's stands":
         async with get_connection(db_path) as db:
             await db.execute(
@@ -398,9 +401,9 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
                 (str(EARLIER_CHANNEL_ID), ROUND_ID),
             )
             await db.commit()
-        bot = _queue_bot(db_path, EARLIER_CHANNEL_ID)
+        bot = await _queue_bot(db_path, EARLIER_CHANNEL_ID)
     else:
-        bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+        bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
         bot.channels[RSVP_CHANNEL_ID].send_fails = discord.HTTPException(
             MagicMock(status=403), "Missing Permissions")
         if fault in PROBE_FAULTS:
@@ -440,7 +443,7 @@ async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path)
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
     recorded_at_delete: list[str | None] = []
     for message_id in (int(CALL_MSG_ID), int(LAST_NOTICE_MSG_ID)):
         message = bot.channels[RSVP_CHANNEL_ID].messages[message_id]
@@ -478,7 +481,7 @@ async def test_a_last_notice_recorded_while_a_repost_is_sent_comes_down_with_the
     before the new call takes its record."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
     chan = bot.channels[RSVP_CHANNEL_ID]
     chan.seed(900005, "the last notice")
     sending = chan.send.side_effect
@@ -521,7 +524,7 @@ async def test_a_call_whose_send_fails_on_the_connection_is_reported_as_not_post
     by hand, naming the fault's kind rather than nothing (attendance spec :120; owner, 2026-10-09:
     "Fold it in", 2026-10-11)."""
     db_path = await _make_db(tmp_path)
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
     bot.channels[RSVP_CHANNEL_ID].send_fails = fault
 
     await _ask(bot)
@@ -549,9 +552,9 @@ async def test_a_call_that_fails_beside_answers_kept_says_they_count(tmp_path, f
     db_path = await _make_db(tmp_path)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
     if fault == "the channel is gone":
-        bot = _queue_bot(db_path)
+        bot = await _queue_bot(db_path)
     else:
-        bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+        bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
         bot.channels[RSVP_CHANNEL_ID].send_fails = discord.HTTPException(
             MagicMock(status=403), "Missing Permissions")
 
@@ -580,9 +583,9 @@ async def test_a_call_that_fails_with_no_answers_kept_says_no_rows_were_opened(t
     anyone until the call is posted; a Discard names `/attendance post-check-in`."""
     db_path = await _make_db(tmp_path)
     if fault == "the channel is gone":
-        bot = _queue_bot(db_path)
+        bot = await _queue_bot(db_path)
     else:
-        bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+        bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
         bot.channels[RSVP_CHANNEL_ID].send_fails = discord.HTTPException(
             MagicMock(status=403), "Missing Permissions")
 
@@ -693,7 +696,7 @@ async def test_the_no_reserve_notice_is_posted_and_recorded(tmp_path):
     await _seed_embed_row(db_path)
     deadline = await _past_its_deadline(db_path)
     await _accept(db_path, FULL_TIME_PROFILE, deadline - timedelta(hours=1))
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
 
     await _ask_deadline(bot)
 
@@ -711,7 +714,7 @@ async def test_a_deadline_with_no_check_in_channel_configured_stops_the_queue_na
     db_path = await _make_db(tmp_path, with_division_config=False)
     await _seed_embed_row(db_path)
     await _past_its_deadline(db_path)
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
 
     await _ask_deadline(bot)
 
@@ -724,7 +727,7 @@ async def test_a_deadline_whose_check_in_channel_the_bot_cannot_see_stops_the_qu
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
     await _past_its_deadline(db_path)
-    bot = _queue_bot(db_path)
+    bot = await _queue_bot(db_path)
 
     await _ask_deadline(bot)
 
@@ -739,7 +742,7 @@ async def test_a_refused_no_reserve_notice_stops_the_queue_recording_nothing(tmp
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
     await _past_its_deadline(db_path)
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
     bot.channels[RSVP_CHANNEL_ID].send_fails = http_error(
         discord.Forbidden, status=403, text="Missing Access")
 
@@ -757,7 +760,7 @@ async def test_a_full_time_driver_s_acceptance_is_not_a_distribution(tmp_path):
     await _seed_embed_row(db_path)
     deadline = await _past_its_deadline(db_path)
     await _accept(db_path, FULL_TIME_PROFILE, deadline - timedelta(hours=1))
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
 
     await _ask_deadline(bot)
 
@@ -772,7 +775,7 @@ async def test_a_placed_reserve_is_announced_with_their_team(tmp_path):
     deadline = await _past_its_deadline(db_path)
     await _decline(db_path, FULL_TIME_PROFILE)
     await _accept(db_path, RESERVE_PROFILE, deadline - timedelta(hours=1))
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
 
     await _ask_deadline(bot)
 
@@ -793,7 +796,7 @@ async def test_a_standby_reserve_is_announced_as_standby(tmp_path):
         await db.commit()
     await _accept(db_path, FULL_TIME_PROFILE, deadline - timedelta(hours=2))
     await _accept(db_path, RESERVE_PROFILE, deadline - timedelta(hours=1))
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
 
     await _ask_deadline(bot)
 
@@ -811,7 +814,7 @@ async def test_a_reserve_who_accepted_after_the_deadline_is_announced_as_unassig
     await _decline(db_path, FULL_TIME_PROFILE)
     await _accept(db_path, RESERVE_PROFILE, deadline - timedelta(hours=1))
     await _accept(db_path, LATE_PROFILE, deadline + timedelta(minutes=30))
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
 
     await _ask_deadline(bot)
 
@@ -826,7 +829,7 @@ async def test_a_refused_announcement_stops_the_queue_recording_nothing(tmp_path
     deadline = await _past_its_deadline(db_path)
     await _decline(db_path, FULL_TIME_PROFILE)
     await _accept(db_path, RESERVE_PROFILE, deadline - timedelta(hours=1))
-    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
     bot.channels[RSVP_CHANNEL_ID].send_fails = http_error(
         discord.Forbidden, status=403, text="Missing Access")
 

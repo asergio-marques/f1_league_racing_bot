@@ -21,9 +21,10 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
-    attach_queue,
     change_rows,
-    league_double,
+    is_built,
+    league_bot,
+    league_queue,
     run_queue,
     stopped_job,
 )
@@ -101,17 +102,19 @@ def _make_channel() -> MagicMock:
     return channel
 
 
-def _make_bot(db_path: str, channel: MagicMock) -> MagicMock:
-    """The league's bot double with its change queue, attendance on and images off, the check-in
-    channel among its channels."""
-    bot = league_double(db_path)
-    bot.attendance_service = AttendanceService(db_path)
+async def _make_bot(db_path: str, channel: MagicMock) -> MagicMock:
+    """The league's bot (`league_bot`) with its change queue, attendance on and images off, the
+    check-in channel among its channels."""
+    bot = await league_bot(db_path)
+    if not is_built(bot):
+        # The builder's own, on the built bot.
+        bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     known = {CHANNEL_ID: channel, bot.log_channel.id: bot.log_channel,
              bot.interaction_channel.id: bot.interaction_channel}
     bot.get_channel = MagicMock(side_effect=lambda cid: known.get(int(cid)))
-    attach_queue(bot, db_path, now=datetime.now(timezone.utc))
+    league_queue(bot, db_path, now=datetime.now(timezone.utc))
     return bot
 
 
@@ -136,7 +139,7 @@ async def test_two_calls_posted_at_once_for_one_round_post_one(tmp_path):
     the queue runs: one change is asked, and one call posted and recorded."""
     db_path = await _make_db(tmp_path)
     channel = _make_channel()
-    bot = _make_bot(db_path, channel)
+    bot = await _make_bot(db_path, channel)
 
     await _ask(bot)
     await _ask(bot)
@@ -152,7 +155,7 @@ async def test_a_call_already_standing_is_not_posted_again(tmp_path):
     change finds the call standing when it runs, posts nothing and does not stop the queue."""
     db_path = await _make_db(tmp_path, call_standing=True)
     channel = _make_channel()
-    bot = _make_bot(db_path, channel)
+    bot = await _make_bot(db_path, channel)
 
     await _ask(bot)
     await run_queue(bot)

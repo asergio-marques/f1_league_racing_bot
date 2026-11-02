@@ -26,7 +26,14 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import AttendanceService
-from tests.support.change_queue import attach_queue, league_double, run_queue, stopped_job
+from tests.support.change_queue import (
+    attach_queue,
+    is_built,
+    league_bot,
+    league_queue,
+    run_queue,
+    stopped_job,
+)
 from tests.support.review_league import channel
 from tests.support.season_league import CALL_MESSAGES, DIVISIONS, PRO, ongoing_league, round_id
 
@@ -184,9 +191,11 @@ async def _post_call(db_path: str, *, round_id: int = POSTED_ROUND) -> SimpleNam
     from leaguebot.core.models.change import ChangeOrigin
     from leaguebot.core.services.module_service import ModuleService
 
-    bot = league_double(db_path)
-    bot.attendance_service = AttendanceService(db_path)
-    bot.module_service = ModuleService(db_path)
+    bot = await league_bot(db_path)
+    if not is_built(bot):
+        # The builder's own, on the built bot.
+        bot.attendance_service = AttendanceService(db_path)
+        bot.module_service = ModuleService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     events: list = []
     checkin = channel(RSVP_CHANNEL_ID, events)
@@ -196,7 +205,7 @@ async def _post_call(db_path: str, *, round_id: int = POSTED_ROUND) -> SimpleNam
     known = {RSVP_CHANNEL_ID: checkin, bot.log_channel.id: bot.log_channel,
              bot.interaction_channel.id: bot.interaction_channel}
     bot.get_channel = MagicMock(side_effect=lambda cid: known.get(int(cid)))
-    attach_queue(bot, db_path, now=NOW)
+    league_queue(bot, db_path, now=NOW)
 
     await ask_check_in_call(bot.change_queue, db_path, round_id, origin=ChangeOrigin.BOT)
     await run_queue(bot)
@@ -265,8 +274,10 @@ async def _clean_up(
         async with get_connection(db_path) as db:
             await db.execute("UPDATE attendance_config SET module_enabled = 0")
             await db.commit()
-    bot = league_double(db_path)
-    bot.attendance_service = AttendanceService(db_path)
+    bot = await league_bot(db_path)
+    if not is_built(bot):
+        # The builder's own, on the built bot.
+        bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
     events: list = []
     checkin = channel(RSVP_CHANNEL_ID, events)
@@ -276,7 +287,7 @@ async def _clean_up(
     known = {RSVP_CHANNEL_ID: checkin, bot.log_channel.id: bot.log_channel,
              bot.interaction_channel.id: bot.interaction_channel}
     bot.get_channel = MagicMock(side_effect=lambda cid: known.get(int(cid)))
-    attach_queue(bot, db_path, now=NOW)
+    league_queue(bot, db_path, now=NOW)
 
     await ask_check_in_clean_up(bot.change_queue, db_path, round_id, origin=ChangeOrigin.BOT)
     await run_queue(bot)
@@ -456,8 +467,10 @@ CALL, LAST_NOTICE, ANNOUNCEMENT = CALL_MESSAGES
 
 
 async def _moved_league(tmp_path) -> object:
-    """The league above, with Pro's check-in channel moved to `MOVED`, and the queue rebuilt
-    on a real `AttendanceService` so the check-in's change types read the database."""
+    """The league above, with Pro's check-in channel moved to `MOVED`, and the attendance
+    service the check-in's change types hold reading the database: the builder's, its
+    configuration no longer stubbed, or on the bot double a real `AttendanceService` with the
+    queue rebuilt on it."""
     league = await ongoing_league(tmp_path, attendance=True)
     moved = league._recording(channel(MOVED, league.events))
     moved.guild = league.guild
@@ -466,8 +479,13 @@ async def _moved_league(tmp_path) -> object:
         "UPDATE attendance_division_config SET rsvp_channel_id = ? WHERE division_id = ?",
         str(MOVED), PRO,
     )
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    if is_built(league.bot):
+        # The builder's own service, which its change types hold, its configuration read from
+        # the database again.
+        vars(league.bot.attendance_service).pop("get_or_create_config", None)
+    else:
+        league.bot.attendance_service = AttendanceService(league.db_path)
+        attach_queue(league.bot, league.db_path, now=league.clock)
     return league
 
 

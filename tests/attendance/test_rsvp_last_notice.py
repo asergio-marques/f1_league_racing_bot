@@ -46,9 +46,10 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
-    attach_queue,
     http_error,
-    league_double,
+    is_built,
+    league_bot,
+    league_queue,
     run_queue,
     stopped_job,
 )
@@ -186,12 +187,14 @@ async def _answer(db_path: str, profile_id: int, status: str) -> None:
         await db.commit()
 
 
-def _make_bot(db_path: str, *, visible: bool = True) -> MagicMock:
-    """The league's bot double with its change queue and attendance on, the division's
+async def _make_bot(db_path: str, *, visible: bool = True) -> MagicMock:
+    """The league's bot (`league_bot`) with its change queue and attendance on, the division's
     check-in channel (770277) on the server where *visible*, recording its sends in
     `bot.events`; a channel the bot cannot find is refused as Discord refuses it."""
-    bot = league_double(db_path)
-    bot.attendance_service = AttendanceService(db_path)
+    bot = await league_bot(db_path)
+    if not is_built(bot):
+        # The builder's own, on the built bot.
+        bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     bot.events = []
@@ -208,7 +211,7 @@ def _make_bot(db_path: str, *, visible: bool = True) -> MagicMock:
 
     bot.get_channel = MagicMock(side_effect=lambda cid: known.get(int(cid)))
     bot.fetch_channel = AsyncMock(side_effect=_fetch)
-    attach_queue(bot, db_path, now=datetime.now(timezone.utc))
+    league_queue(bot, db_path, now=datetime.now(timezone.utc))
     return bot
 
 
@@ -255,7 +258,7 @@ async def _recorded_notice(db_path: str) -> str | None:
 async def test_a_silent_full_time_driver_is_mentioned(tmp_path):
     db_path = await _make_db(tmp_path)
     await _answer(db_path, FULL_TIME_B, "ACCEPTED")
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
 
     await _ask(bot)
 
@@ -269,7 +272,7 @@ async def test_a_driver_who_has_answered_is_not_chased(tmp_path):
     ignore the reminder."""
     db_path = await _make_db(tmp_path)
     await _answer(db_path, FULL_TIME_B, "ACCEPTED")
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
 
     await _ask(bot)
 
@@ -283,7 +286,7 @@ async def test_any_answer_at_all_counts_as_having_responded(tmp_path, status):
     db_path = await _make_db(tmp_path)
     for profile_id in (FULL_TIME_A, FULL_TIME_B):
         await _answer(db_path, profile_id, status)
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
 
     await _ask(bot)
 
@@ -292,7 +295,7 @@ async def test_any_answer_at_all_counts_as_having_responded(tmp_path, status):
 
 async def test_every_silent_driver_is_named_not_only_the_first(tmp_path):
     db_path = await _make_db(tmp_path)
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
 
     await _ask(bot)
 
@@ -307,7 +310,7 @@ async def test_a_silent_reserve_is_not_named(tmp_path):
     db_path = await _make_db(tmp_path)
     for profile_id in (FULL_TIME_A, FULL_TIME_B):
         await _answer(db_path, profile_id, "ACCEPTED")
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
 
     await _ask(bot)
 
@@ -320,7 +323,7 @@ async def test_a_test_driver_s_display_name_is_carried_into_the_mention(tmp_path
     """Test drivers all share one Discord account, so the mention alone cannot tell them
     apart — the display name is what makes the reminder legible in test mode."""
     db_path = await _make_db(tmp_path, named=True)
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
 
     await _ask(bot)
 
@@ -331,7 +334,7 @@ async def test_a_driver_with_no_display_name_is_mentioned_plainly(tmp_path):
     """The other branch of the same mention. An empty pair of brackets would read as a
     missing name rather than as a real driver."""
     db_path = await _make_db(tmp_path, named=False)
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
 
     await _ask(bot)
 
@@ -352,7 +355,7 @@ async def test_a_division_that_has_all_answered_still_gets_a_notice(tmp_path):
     db_path = await _make_db(tmp_path)
     for profile_id in (FULL_TIME_A, FULL_TIME_B, RESERVE):
         await _answer(db_path, profile_id, "ACCEPTED")
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
 
     await _ask(bot)
 
@@ -365,7 +368,7 @@ async def test_both_shapes_of_notice_carry_the_race_time(tmp_path):
     round rather than written by Discord, so it is the bot's to get right. Each shape is
     posted in a league of its own, a round having one last notice."""
     db_path = await _make_db(tmp_path)
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
     await _ask(bot)
     reminder = _posted(bot)
 
@@ -374,7 +377,7 @@ async def test_both_shapes_of_notice_carry_the_race_time(tmp_path):
     db_path = await _make_db(other)
     for profile_id in (FULL_TIME_A, FULL_TIME_B):
         await _answer(db_path, profile_id, "ACCEPTED")
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
     await _ask(bot)
     visibility = _posted(bot)
 
@@ -390,7 +393,7 @@ async def test_both_shapes_of_notice_carry_the_race_time(tmp_path):
 async def test_a_round_that_no_longer_exists_posts_nothing(tmp_path):
     """Work no longer due is dropped: nothing is posted and the queue does not stop."""
     db_path = await _make_db(tmp_path)
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
 
     await _ask(bot, round_id=9999)
 
@@ -404,7 +407,7 @@ async def test_a_division_with_no_rsvp_channel_configured_stops_the_queue_naming
     """A bot change lacking its channel stops the queue, the notice naming the command that
     sets it, rather than the host's log alone saying so."""
     db_path = await _make_db(tmp_path, with_division_config=False)
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
 
     await _ask(bot)
 
@@ -415,7 +418,7 @@ async def test_a_division_with_no_rsvp_channel_configured_stops_the_queue_naming
 
 async def test_a_channel_the_bot_cannot_see_stops_the_queue_naming_the_command(tmp_path):
     db_path = await _make_db(tmp_path)
-    bot = _make_bot(db_path, visible=False)
+    bot = await _make_bot(db_path, visible=False)
 
     await _ask(bot)
 
@@ -429,7 +432,7 @@ async def test_a_refused_last_notice_stops_the_queue_recording_nothing(tmp_path)
     a message that was never sent would have it delete something else, or nothing. Discord
     refusing the notice stops the queue with nothing recorded."""
     db_path = await _make_db(tmp_path)
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
     bot.rsvp_channel.send_fails = http_error(discord.Forbidden, status=403, text="Missing Access")
 
     await _ask(bot)
@@ -440,7 +443,7 @@ async def test_a_refused_last_notice_stops_the_queue_recording_nothing(tmp_path)
 
 async def test_the_posted_notice_is_recorded_for_the_cleanup(tmp_path):
     db_path = await _make_db(tmp_path)
-    bot = _make_bot(db_path)
+    bot = await _make_bot(db_path)
 
     await _ask(bot)
 
@@ -468,8 +471,13 @@ async def _no_call_league(tmp_path):
     from tests.support.season_league import PRO, ongoing_league, round_id
 
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    if is_built(league.bot):
+        # The builder's own service, which its change types hold, its configuration read from
+        # the database again.
+        vars(league.bot.attendance_service).pop("get_or_create_config", None)
+    else:
+        league.bot.attendance_service = AttendanceService(league.db_path)
+        attach_queue(league.bot, league.db_path, now=league.clock)
     when = league.clock.now + timedelta(hours=3)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
                        when.replace(tzinfo=None).isoformat(), round_id(PRO, 3))
