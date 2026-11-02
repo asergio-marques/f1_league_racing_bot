@@ -10,6 +10,9 @@ always asked before that review's expiry timer can fire.
 
 **Each step is contained.** A step that raises is logged with its traceback, naming the step, and
 the next one runs, so one failing recovery neither stops the rest nor leaves the queue unstarted.
+The queue's own start is the last of the steps and is contained the same way: a queue that fails to
+start (a locked database) is logged with its traceback and goes no further, and the scheduler is
+resumed all the same, so scheduled jobs are not held paused for the rest of the run.
 
 **Once per process, by a guard of its own.** discord.py reports the bot ready again after a network
 drop; the second call finds the guard spent, logs that start-up was skipped and does nothing.
@@ -48,14 +51,14 @@ async def start_up(
     _started = True
 
     scheduler.start(paused=True)
-    for name, run in steps:
-        try:
-            await run()
-        except Exception:
-            log.exception("Start-up step %r failed", name)
-
-    # Carry on the changes a stop cut off. A change asked for while the steps ran has waited,
-    # queued, until here.
-    await change_queue.start()
-    scheduler.resume()
+    try:
+        # Carry on the changes a stop cut off, as the last of the steps: a change asked for while
+        # the steps ran has waited, queued, until here.
+        for name, run in (*steps, ("change queue start", change_queue.start)):
+            try:
+                await run()
+            except Exception:
+                log.exception("Start-up step %r failed", name)
+    finally:
+        scheduler.resume()
     return True

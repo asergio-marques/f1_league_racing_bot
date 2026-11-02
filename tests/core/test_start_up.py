@@ -17,8 +17,6 @@ import importlib
 import logging
 from typing import Any
 
-import pytest
-
 _MODULE = "leaguebot.core.services.start_up"
 
 
@@ -139,8 +137,6 @@ async def test_no_job_runs_until_start_up_has_ended():
     assert record.calls.count("scheduler resumed") == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#283: start-up does not yet resume the scheduler when the "
-                                       "change queue fails to start")
 async def test_a_queue_that_fails_to_start_still_resumes_the_scheduler(caplog):
     """The change queue fails as it starts (the database is locked). Start-up logs the failure as
     an error, with its traceback, and still resumes the scheduler, so scheduled jobs are not held
