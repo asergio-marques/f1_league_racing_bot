@@ -20,6 +20,8 @@ and is pinned in `tests/weather/test_forecast_changes.py`.
 """
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 import leaguebot.core.services.scheduler_service as scheduler_service
@@ -55,21 +57,33 @@ def _no_leaked_global():
 
 
 @pytest.mark.parametrize("kind,key", EVERY_KIND)
-async def test_a_job_that_fires_before_the_service_exists_skips(kind, key):
+async def test_a_job_that_fires_before_the_service_exists_skips(caplog, kind, key):
     """A restart produces exactly this: the job store is durable and rearms jobs before the
     service that serves them is registered. Raising here is logged by APScheduler and
-    otherwise swallowed, so the round would lose its notice with nothing to show for it."""
+    otherwise swallowed, so the round would lose its notice with nothing to show for it. The
+    skip is logged as a warning naming the kind, so that it is never silent."""
     scheduler_service._GLOBAL_SERVICE = None
 
-    await scheduler_service._one_off_timer_job(kind, key)  # must not raise
+    with caplog.at_level(logging.WARNING, logger=scheduler_service.__name__):
+        await scheduler_service._one_off_timer_job(kind, key)  # must not raise
+
+    assert any(
+        r.levelno == logging.WARNING and kind in r.getMessage() for r in caplog.records
+    ), "the skip was not logged"
 
 
 @pytest.mark.parametrize("kind,key", EVERY_KIND)
-async def test_a_job_with_no_callback_registered_skips(kind, key):
+async def test_a_job_with_no_callback_registered_skips(caplog, kind, key):
     """An unregistered handler is a module that is switched off, which is ordinary — and the
-    job store still holds jobs from when it was on."""
+    job store still holds jobs from when it was on. The skip is logged as a warning naming the
+    kind, so that it is never silent."""
     service = SchedulerService.__new__(SchedulerService)
     service._timer_callbacks = {}
     scheduler_service._GLOBAL_SERVICE = service
 
-    await scheduler_service._one_off_timer_job(kind, key)  # must not raise
+    with caplog.at_level(logging.WARNING, logger=scheduler_service.__name__):
+        await scheduler_service._one_off_timer_job(kind, key)  # must not raise
+
+    assert any(
+        r.levelno == logging.WARNING and kind in r.getMessage() for r in caplog.records
+    ), "the skip was not logged"
