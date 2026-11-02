@@ -16,6 +16,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.start_up import StartUpStep, start_up
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild, LeagueCommandTree, warn_if_serving_several
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
@@ -1074,7 +1075,7 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
 
     bot.scheduler_service.register_portrait_refresh_callback(_portrait_refresh_cb)
 
-    # The standing sweep that undoes an amendment nobody carried through (#345); `on_ready` arms it.
+    # The standing sweep that undoes an amendment nobody carried through (#345); start-up arms it.
     async def _amendment_sweep_cb() -> None:
         from leaguebot.results.services.result_submission_service import sweep_expired_amendments
         await sweep_expired_amendments(bot, queue=bot.change_queue)
@@ -1101,7 +1102,7 @@ async def build(settings: Settings) -> LeagueBot:
     Registers every change type, timer kind and scheduler callback, loads the cogs and the
     persistent views, and adds the owner's `!sync` command and the disconnect log line, before
     the bot connects and before the scheduler starts, so a press on a
-    persistent button arriving while `on_ready` is still recovering finds all of it in place
+    persistent button arriving while start-up is still recovering finds all of it in place
     (#228). Reads no environment: the settings are handed in (:func:`read_settings`).
     """
     from leaguebot.core.services.config_service import ConfigService
@@ -1127,7 +1128,7 @@ async def build(settings: Settings) -> LeagueBot:
         f", made {made.isoformat()}" if made is not None else "",
     )
 
-    # Registers the hub's About option, core's one, before `on_ready` recovers the hub and
+    # Registers the hub's About option, core's one, before start-up recovers the hub and
     # routes the panel's buttons (#258).
     import leaguebot.core.services.about_service  # noqa: F401
 
@@ -1141,7 +1142,7 @@ async def build(settings: Settings) -> LeagueBot:
         settings.db_path, settings.jobstore_path
     )
     bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=settings.db_path)
-    # The queue is handed the router, and is started by `on_ready`, after the recoveries.
+    # The queue is handed the router, and is started by start-up, after the recoveries.
     from leaguebot.core.services.change_queue import ChangeQueue
 
     bot.change_queue = ChangeQueue(settings.db_path, bot, bot.output_router, bot.config_service)
@@ -1295,7 +1296,110 @@ async def build(settings: Settings) -> LeagueBot:
             delete_after=15,
         )
 
+    bot.start_up_steps = _start_up_steps(bot)
+
     return bot
+
+
+def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
+    """The bot's start-up steps, named and in order: what `start_up` runs once, each contained.
+
+    The order is today's and is load-bearing where a comment says so. The scheduler is started
+    paused before the first step and resumed after the last, so no scheduled job runs while these
+    do; each recovery is looked up when its step runs, so a step stands for that function and no
+    other. The modules' recoveries stay steps as they stand; the pending setups stay one until
+    they go.
+    """
+
+    async def arm_the_amendment_sweep() -> None:
+        # The standing sweep that undoes an amendment nobody carried through (#345), its callback
+        # registered by `build`. Armed unconditionally rather than behind a setting: the
+        # amendment's first stage commits, so a league running the results module at all can leave
+        # a round half-amended, and the sweep is what makes that recoverable without anybody
+        # noticing it happened.
+        bot.scheduler_service.schedule_amendment_sweep()
+
+    async def recover_the_hub() -> None:
+        # Route the hub's buttons again, and post its panel afresh where it was deleted (#279).
+        from leaguebot.core.services.hub_service import recover_hub
+
+        await recover_hub(bot, queue=bot.change_queue)
+
+    async def recover_the_wizards() -> None:
+        # Re-arm inactivity APScheduler jobs for any non-UNENGAGED wizard sessions that were
+        # active before the last restart.
+        await bot.wizard_service.recover_wizards()
+
+    return (
+        ("amendment sweep", arm_the_amendment_sweep),
+        ("portrait refresh job", lambda: _recover_portrait_refresh_job(bot)),
+        # A signup close timer lost on restart (T021); its callback is registered by `build`.
+        ("signup close timer", lambda: _recover_signup_close_timers(bot)),
+        # Results-amend channels left open by a previous run. **Before the submission channels,
+        # not after** (#345). An amendment open at the restart has its corrections in the
+        # database, unapproved; recovering a submission channel whose results were saved but never
+        # posted posts its standings from that database. Reverting the amendments first means
+        # those standings are built from the round as it raced, wherever the revert succeeds.
+        ("orphaned amend channels", lambda: _recover_orphaned_amend_channels(bot)),
+        # Submission channels left open by a previous run. The paste they were waiting for died
+        # with the process, so they are reset so /test-mode advance can re-trigger submission.
+        ("orphaned submission channels", lambda: _recover_orphaned_submission_channels(bot)),
+        # Any season-review approve button left standing by a previous run.
+        ("expired review prompts", lambda: _recover_expired_review_prompts(bot)),
+        ("missed phases", lambda: _recover_missed_phases(bot)),
+        # The check-in calls that fell due while the bot was down, their deadline still ahead
+        # (#429), posted late. Before the deadlines below, as a call comes before its deadline.
+        ("missed check-in calls", lambda: _recover_missed_check_in_calls(bot)),
+        # Persistent RSVP embed views re-armed for all stored embed messages (T010), and missed
+        # RSVP deadline jobs run for rounds whose deadline already passed (T019).
+        ("RSVP views and deadlines", lambda: _recover_rsvp_views_and_deadlines(bot)),
+        # The forecasts and check-in messages due to come down while the bot was stopped (#425).
+        # After the deadlines above, so a check-in is distributed before it goes.
+        ("missed clean-ups", lambda: _recover_missed_cleanups(bot)),
+        ("hub", recover_the_hub),
+        ("wizards", recover_the_wizards),
+        # In-memory pending setups restored from the DB SETUP seasons.
+        ("pending setups", lambda: _recover_pending_setups(bot)),
+    )
+
+
+async def _recover_signup_close_timers(bot: LeagueBot) -> None:
+    """Close a signup window whose close time passed while the bot was down, or re-arm its timer."""
+    from datetime import datetime as _dt, timezone as _tz
+
+    from leaguebot.core.db.database import get_connection as _get_conn
+
+    async with _get_conn(bot.db_path) as _db:
+        _cur = await _db.execute(
+            "SELECT close_at FROM signup_module_config WHERE close_at IS NOT NULL"
+        )
+        _row = await _cur.fetchone()
+    if _row is None:
+        return
+    now_utc = _dt.now(_tz.utc)
+    _close_at_iso = _row["close_at"]
+    try:
+        _close_dt = _dt.fromisoformat(_close_at_iso)
+        if _close_dt.tzinfo is None:
+            _close_dt = _close_dt.replace(tzinfo=_tz.utc)
+    except ValueError:
+        log.warning("start-up: invalid signup close_at value: %r", _close_at_iso)
+        return
+    if _close_dt <= now_utc:
+        log.info("start-up: signup close_at is past — running forced close")
+        from leaguebot.signup.services.window_close import close_signups_unattended
+        await close_signups_unattended(
+            change_queue=bot.change_queue,
+            module_service=bot.module_service,
+            signup_module_service=bot.signup_module_service,
+            driver_service=bot.driver_service,
+            cause="restart",
+        )
+    else:
+        from leaguebot.core.services.scheduler_service import SIGNUP_CLOSE_JOB_ID
+        if not bot.scheduler_service.has_job(SIGNUP_CLOSE_JOB_ID):
+            log.info("start-up: re-arming the signup close timer at %s", _close_at_iso)
+            bot.scheduler_service.schedule_signup_close_timer(_close_at_iso)
 
 
 async def main() -> None:
@@ -1334,113 +1438,15 @@ async def main() -> None:
         assert bot.user is not None
         log.info("Logged in as %s (id=%s)", bot.user, bot.user.id)
 
-        # Start the persistent APScheduler
-        bot.scheduler_service.start()
-
-        # The standing sweep that undoes an amendment nobody carried through (#345), its callback
-        # registered by `build`. Armed unconditionally rather than behind a setting: the
-        # amendment's first stage commits, so a league running the results module at all can leave
-        # a round half-amended, and the sweep is what makes that recoverable without anybody
-        # noticing it happened.
-        bot.scheduler_service.schedule_amendment_sweep()
-
-        try:
-            await _recover_portrait_refresh_job(bot)
-        except Exception:
-            log.warning("Portrait refresh recovery failed", exc_info=True)
-
-        # Recover any signup close timer lost on restart (T021); its callback is registered by `build`.
-        from leaguebot.core.db.database import get_connection as _get_conn
-        from datetime import datetime as _dt, timezone as _tz
-
-        async def _recover_signup_close_timers() -> None:
-            async with _get_conn(bot.db_path) as _db:
-                _cur = await _db.execute(
-                    "SELECT close_at FROM signup_module_config WHERE close_at IS NOT NULL"
-                )
-                _row = await _cur.fetchone()
-            if _row is None:
-                return
-            now_utc = _dt.now(_tz.utc)
-            _close_at_iso = _row["close_at"]
-            try:
-                _close_dt = _dt.fromisoformat(_close_at_iso)
-                if _close_dt.tzinfo is None:
-                    _close_dt = _close_dt.replace(tzinfo=_tz.utc)
-            except ValueError:
-                log.warning("on_ready: invalid signup close_at value: %r", _close_at_iso)
-                return
-            if _close_dt <= now_utc:
-                log.info("on_ready: signup close_at is past — running forced close")
-                from leaguebot.signup.services.window_close import close_signups_unattended
-                await close_signups_unattended(
-                    change_queue=bot.change_queue,
-                    module_service=bot.module_service,
-                    signup_module_service=bot.signup_module_service,
-                    driver_service=bot.driver_service,
-                    cause="restart",
-                )
-            else:
-                from leaguebot.core.services.scheduler_service import SIGNUP_CLOSE_JOB_ID
-                if not bot.scheduler_service.has_job(SIGNUP_CLOSE_JOB_ID):
-                    log.info("on_ready: re-arming the signup close timer at %s", _close_at_iso)
-                    bot.scheduler_service.schedule_signup_close_timer(_close_at_iso)
-
-        await _recover_signup_close_timers()
-
-        # Close any results-amend channels left open by a previous run.
-        #
-        # **Before the submission channels, not after** (#345). An amendment open at the restart
-        # has its corrections in the database, unapproved; recovering a submission channel whose
-        # results were saved but never posted posts its standings from that database. Reverting
-        # the amendments first means those standings are built from the round as it raced,
-        # wherever the revert succeeds.
-        await _recover_orphaned_amend_channels(bot)
-
-        # Close any submission channels that were left open by a previous run.
-        # The paste they were waiting for died with the process, so we reset them here
-        # so /test-mode advance can re-trigger submission.
-        await _recover_orphaned_submission_channels(bot)
-
-        # Clear any season-review approve button left standing by a previous run.
-        await _recover_expired_review_prompts(bot)
-
-        # Recover any missed phases from before bot restart
-        await _recover_missed_phases(bot)
-
-        # Post late the check-in calls that fell due while the bot was down, their deadline
-        # still ahead (#429). Before the deadlines below, as a call comes before its deadline.
-        await _recover_missed_check_in_calls(bot)
-
-        # Re-arm persistent RSVP embed views for all stored embed messages (T010)
-        # and run missed RSVP deadline jobs for rounds whose deadline already passed (T019)
-        await _recover_rsvp_views_and_deadlines(bot)
-
-        # Take down the forecasts and check-in messages due to come down while the bot was
-        # stopped (#425). After the deadlines above, so a check-in is distributed before it goes.
-        await _recover_missed_cleanups(bot)
-
-        # Route the hub's buttons again, and post its panel afresh where it was deleted (#279).
-        try:
-            from leaguebot.core.services.hub_service import recover_hub
-
-            await recover_hub(bot, queue=bot.change_queue)
-        except Exception:
-            log.warning("Hub recovery failed", exc_info=True)
-
-        # Re-arm inactivity APScheduler jobs for any non-UNENGAGED wizard sessions
-        # that were active before the last restart.
-        try:
-            await bot.wizard_service.recover_wizards()
-        except NotImplementedError:
-            pass  # stub until T030 is implemented
-
-        # Restore in-memory pending setups from DB SETUP seasons
-        await _recover_pending_setups(bot)
-
-        # Carry on the changes a stop cut off. A change asked for while the recoveries ran has
-        # waited, queued, until here. A second `on_ready` finds the worker running and does nothing.
-        await bot.change_queue.start()
+        # Start-up runs once per process, the steps `build` made; a second ready, after a network
+        # drop, runs nothing again and syncs nothing (architecture.md, "Start-up runs once, in
+        # one function").
+        if not await start_up(
+            steps=bot.start_up_steps,
+            change_queue=bot.change_queue,
+            scheduler=bot.scheduler_service,
+        ):
+            return
 
         # Sync slash commands globally (may take up to 1 hour to propagate)
         try:
@@ -1572,7 +1578,7 @@ async def _recover_missed_check_in_calls(
     placements armed them with the call, the job store outlives a restart, and both are still
     ahead of a call posted in time to be answered.
 
-    Runs before `_recover_rsvp_views_and_deadlines` in `on_ready`, the call coming before its
+    Runs before `_recover_rsvp_views_and_deadlines` in start-up, the call coming before its
     deadline. *now* is the wall clock unless a test pins it.
     """
     from datetime import timedelta, timezone

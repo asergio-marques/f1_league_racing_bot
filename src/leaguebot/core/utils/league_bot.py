@@ -27,7 +27,7 @@ the check in turn.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.services.start_up import StartUpStep
     from leaguebot.core.services.season_service import SeasonService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.core.services.team_service import TeamService
@@ -94,6 +95,10 @@ class LeagueBot(commands.Bot):
     #: Starts the retry cog's loop. The builder sets it, so that `setup_hook` reaches the loop
     #: without importing the cog, which nothing below the cogs may do.
     start_retry_loop: Callable[[], None]
+    #: The start-up's steps, each a name for the log and what it runs, in the order they run. The
+    #: builder sets it; `start_up` runs them once (architecture.md, "Start-up runs once, in one
+    #: function").
+    start_up_steps: Sequence[StartUpStep]
 
     async def setup_hook(self) -> None:
         """Start the retry loop: discord.py runs this once per run, at login, before connecting.

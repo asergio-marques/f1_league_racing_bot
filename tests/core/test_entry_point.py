@@ -140,8 +140,6 @@ _RECOVERIES_IN_THE_ENTRY_POINT = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the builder makes no start-up steps; on_ready "
-                                       "runs them itself")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` gives the start-up's steps by name, in today's order
     (architecture.md, "Start-up runs once, in one function"), so the order is read from the list
@@ -227,8 +225,6 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
         assert ran == [expected[step]], step
 
 
-@pytest.mark.xfail(strict=True, reason="#283: main applies the migrations in on_ready, after the "
-                                       "bot has connected")
 async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
     """`main`, driven with the staged restore, the migrations, the builder and the bot's connection
     each stubbed to record its call, swaps in a staged restore, then applies the migrations, then
