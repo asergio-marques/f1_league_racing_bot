@@ -98,6 +98,7 @@ from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -828,7 +829,7 @@ def review_expiry_timer(
 
 
 async def recover_expired_review_prompts(
-    bot: Any, *, approve_view: ApproveViewFactory, queue: Any
+    bot: "LeagueBot", *, approve_view: ApproveViewFactory, queue: Any
 ) -> None:
     """Ask the change queue to take down every season review left standing by a previous run.
 
