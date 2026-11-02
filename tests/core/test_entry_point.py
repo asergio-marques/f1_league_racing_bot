@@ -100,3 +100,18 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     kinds = {AMEND_TIMER, LOCK_TIMER, DELETE_TIMER, INACTIVITY_TIMER, CORRECTION_TIMER,
              season_review_changes.TIMER}
     assert sorted(kinds - set(scheduler._timer_callbacks)) == []
+
+
+async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):
+    """The bot `build` makes starts the retry loop for undelivered log lines once, from
+    `setup_hook` at login, and not before: a log line that fails to post is retried until it is
+    delivered (architecture.md, "Start-up runs once")."""
+    bot = await built_bot(tmp_path, now=_NOW)
+    loop = bot.get_cog("RetryCog").retry_loop
+    starts = []
+    monkeypatch.setattr(loop, "start", lambda *args, **kwargs: starts.append(args))
+
+    assert starts == []
+    await bot.setup_hook()
+
+    assert starts == [()]
