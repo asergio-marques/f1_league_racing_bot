@@ -800,6 +800,7 @@ async def test_a_forecast_gone_by_hand_completes_its_delete_and_drops_its_row(tm
         ("phase 2", "ENDURANCE", (KIND, 2)),
         ("phase 3", "ENDURANCE", (KIND, 3)),
         ("phase 1 of a mystery round", "MYSTERY", (KIND, 0)),
+        ("phase 1 of a round no longer there", "NORMAL", None),
         ("clean-up", "NORMAL", (CLEAN_UP_KIND, None)),
     ],
 )
@@ -808,13 +809,16 @@ async def test_each_weather_timer_asks_the_queue(tmp_path, timer, round_format, 
     change on the queue it was handed, and runs nothing: phases 1 to 3 their own forecast,
     whether round 3 is a normal, a sprint or an endurance round, a mystery round's phase 1 the
     notice (phase 0), and the clean-up, a day after the race with the Phase 3 forecast (9303)
-    standing, its deletion."""
+    standing, its deletion. Phase 1 fired for round 3 once it is no longer in the database asks
+    nothing."""
     from leaguebot.weather.services.forecast_changes import timer_callbacks
 
     league = await _league(tmp_path)
     await league.write("UPDATE rounds SET format = ? WHERE id = ?", round_format, ROUND)
     if timer == "clean-up":
         await posted_forecast(league, ROUND, 3, 9303)
+    if timer == "phase 1 of a round no longer there":
+        await _remove_round(league)
     callbacks = timer_callbacks(league.bot.change_queue, league.db_path)
 
     fire = {
@@ -822,10 +826,14 @@ async def test_each_weather_timer_asks_the_queue(tmp_path, timer, round_format, 
         "phase 2": callbacks.phases[2],
         "phase 3": callbacks.phases[3],
         "phase 1 of a mystery round": callbacks.phases[1],
+        "phase 1 of a round no longer there": callbacks.phases[1],
         "clean-up": callbacks.clean_up,
     }[timer]
     await fire(ROUND)
 
+    if expected is None:
+        assert await change_rows(league.db_path) == []
+        return
     [row] = await change_rows(league.db_path)
     payload = json.loads(row["payload"])
     kind, phase = expected
