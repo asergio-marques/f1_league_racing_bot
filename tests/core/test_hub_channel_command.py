@@ -29,10 +29,11 @@ from leaguebot.core.services import hub_service
 from leaguebot.core.services.config_service import ConfigService
 from tests.support.change_queue import (
     Clock,
-    attach_queue,
     change_rows,
     http_error,
-    league_double,
+    is_built,
+    league_bot,
+    league_queue,
     run_queue,
     stopped_job,
 )
@@ -107,12 +108,11 @@ def _channel(channel_id, *, manage=True, send_raises=None):
     return channel
 
 
-def _setup(db_path, *channels):
-    """The command's cog on a bot carrying the league's change queue, which posts and deletes
-    the hub's panels when it is run; the guild and the bot find *channels* and the log channel."""
-    from leaguebot.core.services.output_router import OutputRouter
-
-    bot = league_double(db_path)
+async def _setup(db_path, *channels):
+    """The command's cog on the league's bot (`league_bot`), its configuration read from the
+    database, carrying the league's change queue, which posts and deletes the hub's panels when
+    it is run; the guild and the bot find *channels* and the log channel."""
+    bot = await league_bot(db_path, real_config=True)
     by_id = {c.id: c for c in channels}
     by_id[LOG_CHANNEL] = bot.log_channel
     guild = MagicMock()
@@ -121,12 +121,16 @@ def _setup(db_path, *channels):
     guild.default_role = MagicMock(spec=discord.Role)
     guild.me = MagicMock()
 
-    bot.config_service = ConfigService(db_path)
-    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
+    if not is_built(bot):
+        # The builder's own, on the built bot.
+        from leaguebot.core.services.output_router import OutputRouter
+
+        bot.config_service = ConfigService(db_path)
+        bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
     bot.get_guild = MagicMock(return_value=guild)
     bot.get_channel = MagicMock(side_effect=lambda cid: by_id.get(cid))
     bot.fetch_channel = AsyncMock(side_effect=lambda cid: by_id[cid])
-    attach_queue(bot, db_path, now=Clock(NOW))
+    league_queue(bot, db_path, now=Clock(NOW))
     cog = BotCog(bot)
 
     interaction = MagicMock()
@@ -164,7 +168,7 @@ async def _run(cog, interaction, channel):
 
 async def test_the_hub_is_set_permissioned_and_given_its_panel(db_path):
     channel = _channel(HUB)
-    cog, interaction = _setup(db_path, channel)
+    cog, interaction = await _setup(db_path, channel)
 
     await _run(cog, interaction, channel)
 
@@ -180,7 +184,7 @@ async def test_the_reply_says_the_hub_was_set_and_its_panel_follows_on_the_queue
     before the queue runs, the reply names the new hub channel and says its panel follows on
     the queue, and no panel has been posted; once the queue runs, the panel is posted."""
     channel = _channel(HUB)
-    cog, interaction = _setup(db_path, channel)
+    cog, interaction = await _setup(db_path, channel)
 
     await undecorate(BotCog.handle_hub_channel)(cog, interaction, channel)
 
@@ -198,7 +202,7 @@ async def test_the_reply_says_the_hub_was_set_and_its_panel_follows_on_the_queue
 async def test_the_change_is_audited_and_logged(db_path):
     await _configure(db_path, hub_channel_id=OLD_HUB)
     old, new = _channel(OLD_HUB), _channel(HUB)
-    cog, interaction = _setup(db_path, old, new)
+    cog, interaction = await _setup(db_path, old, new)
 
     await _run(cog, interaction, new)
 
@@ -212,7 +216,7 @@ async def test_the_change_is_audited_and_logged(db_path):
 async def test_a_channel_doing_another_job_is_refused(db_path):
     """The log channel is the bot's; a panel there would sink under its lines."""
     log_channel = _channel(LOG_CHANNEL)
-    cog, interaction = _setup(db_path, log_channel)
+    cog, interaction = await _setup(db_path, log_channel)
 
     await _run(cog, interaction, log_channel)
 
@@ -229,7 +233,7 @@ async def test_setting_the_hub_it_already_is_changes_nothing(db_path):
     deleted, and no refresh asked of the queue."""
     await _configure(db_path, hub_channel_id=HUB, hub_message_id=OLD_PANEL)
     channel = _channel(HUB)
-    cog, interaction = _setup(db_path, channel)
+    cog, interaction = await _setup(db_path, channel)
 
     await _run(cog, interaction, channel)
 
@@ -243,7 +247,7 @@ async def test_setting_the_hub_it_already_is_changes_nothing(db_path):
 
 async def test_a_channel_the_bot_cannot_manage_is_refused_before_anything_is_written(db_path):
     channel = _channel(HUB, manage=False)
-    cog, interaction = _setup(db_path, channel)
+    cog, interaction = await _setup(db_path, channel)
 
     await _run(cog, interaction, channel)
 
@@ -258,7 +262,7 @@ async def test_a_panel_that_cannot_be_posted_stops_the_queue_and_the_hub_is_kept
     refresh, for Retry once the bot may post there, rather than the fault being reported."""
     channel = _channel(HUB, send_raises=http_error(discord.Forbidden, status=403,
                                                    text="Missing Access"))
-    cog, interaction = _setup(db_path, channel)
+    cog, interaction = await _setup(db_path, channel)
 
     await _run(cog, interaction, channel)
 
@@ -272,7 +276,7 @@ async def test_a_panel_that_cannot_be_posted_stops_the_queue_and_the_hub_is_kept
 async def test_moving_the_hub_deletes_the_old_panel_and_clears_the_old_channel(db_path):
     await _configure(db_path, hub_channel_id=OLD_HUB, hub_message_id=OLD_PANEL)
     old, new = _channel(OLD_HUB), _channel(HUB)
-    cog, interaction = _setup(db_path, old, new)
+    cog, interaction = await _setup(db_path, old, new)
 
     await _run(cog, interaction, new)
 
@@ -289,7 +293,7 @@ async def test_an_old_panel_already_deleted_does_not_stop_the_move(db_path):
     old._partial.delete = AsyncMock(
         side_effect=discord.NotFound(MagicMock(status=404, reason="Not Found"), "gone")
     )
-    cog, interaction = _setup(db_path, old, new)
+    cog, interaction = await _setup(db_path, old, new)
 
     await _run(cog, interaction, new)
 
@@ -301,7 +305,7 @@ async def test_an_old_panel_already_deleted_does_not_stop_the_move(db_path):
 async def test_an_old_hub_channel_deleted_from_the_server_is_stepped_over(db_path):
     await _configure(db_path, hub_channel_id=OLD_HUB, hub_message_id=OLD_PANEL)
     new = _channel(HUB)
-    cog, interaction = _setup(db_path, new)
+    cog, interaction = await _setup(db_path, new)
 
     await _run(cog, interaction, new)
 
@@ -317,7 +321,7 @@ async def test_moving_the_hub_posts_the_new_panel_before_deleting_the_old(db_pat
     order: list[str] = []
     new.send.side_effect = lambda *a, **k: order.append("post new") or MagicMock(id=NEW_PANEL)
     old._partial.delete.side_effect = lambda *a, **k: order.append("delete old")
-    cog, interaction = _setup(db_path, old, new)
+    cog, interaction = await _setup(db_path, old, new)
 
     await _run(cog, interaction, new)
 
@@ -333,7 +337,7 @@ async def test_the_old_panel_comes_down_when_an_earlier_refresh_already_posted_t
 
     await _configure(db_path, hub_channel_id=OLD_HUB, hub_message_id=OLD_PANEL)
     old, new = _channel(OLD_HUB), _channel(HUB)
-    cog, interaction = _setup(db_path, old, new)
+    cog, interaction = await _setup(db_path, old, new)
     await cog.bot.change_queue.ask(
         hub_service.HUB_REFRESH, {"command": "/module enable weather"},
         what="refreshing the hub panel", origin=ChangeOrigin.BOT,
@@ -354,7 +358,7 @@ async def test_a_refused_deletion_of_the_old_panel_stops_the_queue(db_path):
     old._partial.delete = AsyncMock(
         side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
     )
-    cog, interaction = _setup(db_path, old, new)
+    cog, interaction = await _setup(db_path, old, new)
 
     await _run(cog, interaction, new)
 

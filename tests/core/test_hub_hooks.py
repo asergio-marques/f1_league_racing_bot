@@ -65,10 +65,10 @@ def _module_cog(bot, *, refused: bool = False) -> ModuleCog:
 
 @pytest.fixture
 async def queued_bot(tmp_path):
-    """The league's bot with a real change queue, its hub set to channel 7930."""
+    """The league's bot (`league_bot`) with a real change queue, its hub set to channel 7930."""
     from datetime import datetime, timezone
 
-    from tests.support.change_queue import attach_queue, league_double, seed_server
+    from tests.support.change_queue import league_bot, league_queue, seed_server
 
     db_path = str(tmp_path / "hub_toggle.db")
     await run_migrations(db_path)
@@ -76,8 +76,8 @@ async def queued_bot(tmp_path):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE server_configs SET hub_channel_id = ?", (HUB,))
         await db.commit()
-    bot = league_double(db_path)
-    attach_queue(bot, db_path, now=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc))
+    bot = await league_bot(db_path)
+    league_queue(bot, db_path, now=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc))
     return bot
 
 
@@ -144,13 +144,15 @@ async def test_a_refused_toggle_leaves_the_panel_alone(queued_bot):
 
 
 async def _queued_results_off(tmp_path) -> tuple[ModuleCog, MagicMock]:
-    """A module cog whose bot carries a real change queue, with results on and no season."""
+    """A module cog on the league's bot (`league_bot`), carrying a real change queue, with
+    results on and no season."""
     from datetime import datetime, timezone
 
     from leaguebot.attendance.services.attendance_service import AttendanceService
     from tests.support.change_queue import (
-        attach_queue,
-        league_double,
+        is_built,
+        league_bot,
+        league_queue,
         member,
         member_interaction,
         seed_server,
@@ -165,9 +167,11 @@ async def _queued_results_off(tmp_path) -> tuple[ModuleCog, MagicMock]:
         )
         await db.execute("UPDATE server_configs SET hub_channel_id = ?", (HUB,))
         await db.commit()
-    bot = league_double(db_path)
-    bot.attendance_service = AttendanceService(db_path)
-    attach_queue(bot, db_path, now=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc))
+    bot = await league_bot(db_path)
+    if not is_built(bot):
+        # The builder's own, on the built bot.
+        bot.attendance_service = AttendanceService(db_path)
+    league_queue(bot, db_path, now=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc))
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = bot
     interaction = member_interaction(bot, user=member(77))
