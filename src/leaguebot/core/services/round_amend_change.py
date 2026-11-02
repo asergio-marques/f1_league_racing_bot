@@ -31,7 +31,7 @@ import dataclasses
 import json
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
@@ -60,9 +60,10 @@ from leaguebot.core.services.amendment_rules_service import (
     status_refusal,
 )
 from leaguebot.core.models.round_moments import (
-    POST_RACE_CLEANUP_DELAY,
     AttendanceWindows,
     WeatherWindows,
+    as_utc,
+    round_event_moments,
 )
 from leaguebot.core.services import cancellation_notice_service as notices
 from leaguebot.core.services.cancellation_changes import ROUND_REARM, cancellation_holding_amendment
@@ -545,16 +546,14 @@ def _round_change(
             ),
         )
 
-    def moment_of(rnd: Round) -> datetime:
-        """The round's moment, a naive one read as UTC, as it is stored."""
-        moment = rnd.scheduled_at
-        return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
-
     def first_horizon_ahead(rnd: Round, weather: dict[str, Any]) -> bool:
         """Whether the round as it stands now still has its first forecast horizon to come. Read
         when the arming runs, not when the amendment was judged: a discarded save arms the round
         at its old moment, and a stop can hold the arming for hours."""
-        return now() < moment_of(rnd) - timedelta(days=weather["phase_1_days"])
+        moments = round_event_moments(
+            rnd.scheduled_at, weather=WeatherWindows(**weather), attendance=None
+        )
+        return now() < moments["weather_p1"]
 
     def call_fell_due(rnd: Round, attendance: dict[str, Any] | None) -> bool:
         """Whether the round's check-in call has fallen due, at the queue's clock and the windows
@@ -563,24 +562,31 @@ def _round_change(
         holds to (`_recover_missed_check_in_calls`)."""
         if attendance is None:
             return False
-        return moment_of(rnd) - timedelta(days=attendance["notice_days"]) <= now()
+        moments = round_event_moments(
+            rnd.scheduled_at, weather=None, attendance=AttendanceWindows(**attendance)
+        )
+        return moments["rsvp_notice"] <= now()
 
     def deadline_passed(rnd: Round, attendance: dict[str, Any]) -> bool:
         """Whether the round's check-in deadline has passed, at the queue's clock."""
-        return moment_of(rnd) - timedelta(hours=attendance["deadline_hours"]) <= now()
+        moments = round_event_moments(
+            rnd.scheduled_at, weather=None, attendance=AttendanceWindows(**attendance)
+        )
+        return moments["rsvp_deadline"] <= now()
 
     def phases_due(rnd: Round, weather: dict[str, Any]) -> list[int]:
         """The forecast phases to draw at once, as the round stands at the queue's clock and the
         windows `judge` read: each not yet drawn whose horizon has passed, for a round whose moment
         is still ahead and which is no mystery round, as the start-up recovery judges a missed
         phase (`_recover_missed_phases`)."""
-        moment, at = moment_of(rnd), now()
+        moment, at = as_utc(rnd.scheduled_at), now()
         if rnd.format == RoundFormat.MYSTERY or moment <= at:
             return []
+        moments = round_event_moments(moment, weather=WeatherWindows(**weather), attendance=None)
         horizons = {
-            1: (rnd.phase1_done, moment - timedelta(days=weather["phase_1_days"])),
-            2: (rnd.phase2_done, moment - timedelta(days=weather["phase_2_days"])),
-            3: (rnd.phase3_done, moment - timedelta(hours=weather["phase_3_hours"])),
+            1: (rnd.phase1_done, moments["weather_p1"]),
+            2: (rnd.phase2_done, moments["weather_p2"]),
+            3: (rnd.phase3_done, moments["weather_p3"]),
         }
         return [n for n, (done, horizon) in horizons.items() if not done and horizon <= at]
 
@@ -647,7 +653,9 @@ def _round_change(
                 )
             return StepResult(
                 result={"armed": True, "round_number": rnd.round_number},
-                then=clean_ups_due(rnd, standing=dict(found), call_left=bool(found["called"])),
+                then=clean_ups_due(
+                    rnd, weather=weather, standing=dict(found), call_left=bool(found["called"])
+                ),
             )
         draw = phases_due(rnd, weather) if weather_on else []
         if weather_on and (
@@ -682,8 +690,8 @@ def _round_change(
                 deadline_hours=attendance["deadline_hours"],
                 now=now(),
             )
-        if (rnd.status == RoundStatus.NOT_RUN.value and moment_of(rnd) <= now()
-                and not found["test_mode"]):
+        result_at = round_event_moments(rnd.scheduled_at, weather=None, attendance=None)["results"]
+        if rnd.status == RoundStatus.NOT_RUN.value and result_at <= now() and not found["test_mode"]:
             # After the arming above, whose job for this moment it replaces.
             scheduler.run_result_submission_now(
                 rnd, season_number=season_number, division_tier=tier
@@ -692,12 +700,15 @@ def _round_change(
         return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
 
     def clean_ups_due(
-        rnd: Round, *, standing: Mapping[str, Any], call_left: bool
+        rnd: Round, *, weather: dict[str, Any], standing: Mapping[str, Any], call_left: bool
     ) -> tuple[PlannedStep, ...]:
         """The clean-ups a day after the round, planned where that day has come: the forecast
         (whichever of Phases 1 to 3 still stands) and the standing check-in call."""
         planned: list[PlannedStep] = []
-        if moment_of(rnd) + POST_RACE_CLEANUP_DELAY <= now():
+        clean_up_at = round_event_moments(
+            rnd.scheduled_at, weather=WeatherWindows(**weather), attendance=None
+        )["cleanup"]
+        if clean_up_at <= now():
             if standing["forecast_posted"]:
                 phases = sorted(
                     {int(n) for n in str(standing["forecast_phases"] or "").split(",") if n}
@@ -754,7 +765,9 @@ def _round_change(
         if posted:
             planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": after["track"]}))
         planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
-        planned += clean_ups_due(rnd, standing=standing, call_left=call_left)
+        planned += clean_ups_due(
+            rnd, weather=judgement["windows"]["weather"], standing=standing, call_left=call_left
+        )
         return tuple(planned)
 
     async def never_runs(ctx: StepContext) -> str:
