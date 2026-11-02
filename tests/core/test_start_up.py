@@ -87,7 +87,9 @@ async def test_start_up_runs_once_on_a_second_ready(caplog):
 
     assert {"hub", "queue started", "scheduler resumed"} <= set(first)
     assert record.calls == first
-    assert [r for r in caplog.records if r.name == _MODULE], "the skipped start-up logs nothing"
+    assert [r for r in caplog.records
+            if r.name == _MODULE and "skip" in r.getMessage().lower()], \
+        "the second call logs no line saying start-up was skipped"
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_YET)
