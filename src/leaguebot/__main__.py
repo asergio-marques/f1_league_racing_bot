@@ -1008,7 +1008,8 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
 
     Each asks the change queue. Weather's callbacks hold the queue they were handed here
     (`timer_callbacks`); the others read it from the bot when they fire. The bot keeps the one
-    queue `build` made, so the two come to the same. Called by :func:`build`, so that every kind is
+    queue `build` made, so in the running bot the two come to the same; a test that replaces the
+    queue must register these callbacks again. Called by :func:`build`, so that every kind is
     registered before the bot starts and before the scheduler does.
     """
     # Wire weather's callbacks into the scheduler: each asks the change queue
