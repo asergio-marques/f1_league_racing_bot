@@ -132,7 +132,9 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
     assert "Qualifying" in opening and "Race" in opening
     assert f"📋 Submit **{await _first_session_label(league)}** results" in prompt
     assert [row["kind"] for row in await _open_changes(league)] == [KIND]
-    assert "run_result_submission_job" not in inspect.getsource(bot_module.main)
+    assert "run_result_submission_job" not in inspect.getsource(
+        bot_module.register_scheduler_callbacks
+    )
 
 
 async def test_the_round_moves_off_not_run_in_the_open_s_save(tmp_path):
