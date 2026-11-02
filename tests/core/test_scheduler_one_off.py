@@ -423,7 +423,8 @@ def _stored(service: Any, arm: Any, job_id: str) -> Any:
 async def test_every_kind_runs_through_one_runner(services, kind, arm, job_id, key):
     """Every kind is signed up with a handler of its own, and the job is armed by its method:
     the job stands under the id it has always had, its callable is the one runner a one-off
-    timer runs through, and its arguments are its kind and its key. Fired with them, the runner
+    timer runs through, and it is stored as a one-off timer is, with its kind and its key as
+    keywords. Fired with them, the runner
     calls that kind's handler alone, once, with the key (a standing job's with nothing)."""
     from leaguebot.core.services import scheduler_service
 
@@ -441,11 +442,11 @@ async def test_every_kind_runs_through_one_runner(services, kind, arm, job_id, k
     job = _stored(service, arm, job_id)
 
     assert job.func is scheduler_service._one_off_timer_job
-    assert job.kwargs == {}
+    assert job.args == ()
     if key is None:
-        assert job.args in ((kind,), (kind, None))
+        assert job.kwargs in ({"kind": kind}, {"kind": kind, "key": None})
     else:
-        assert job.args == (kind, key)
+        assert job.kwargs == {"kind": kind, "key": key}
 
     await job.func(*job.args, **job.kwargs)
 
