@@ -741,7 +741,8 @@ asked, and the change type gives the lane from the payload (`ChangeType.lane`).
 
 **Start-up runs once, in one function.** discord.py can report the bot as "ready" more than once in
 a single run, after a network drop, so start-up work does not belong in the handler for that event.
-Start-up:
+Steps 1 to 4 run in the entry point, before the bot connects; steps 5 to 7 are one function,
+`start_up`, which the handler awaits and which runs once per process. Start-up:
 
 1. reads the settings (the token, the database's path and the job store's, an unset job store
    resolved beside the database) once, in the entry point, from the environment and the `.env` file,
@@ -760,10 +761,11 @@ Start-up:
    posts again any stop notice that never landed;
 7. only then lets scheduled jobs run.
 
-The retry loop for undelivered log lines is no step of this: it starts from `LeagueBot.setup_hook`,
-once per run at login (under "Errors and failures", the item on Discord events). Its `before_loop`
-waits for the bot to be ready, so it may run beside the sweep, which is safe because it only retries
-log lines already owed and never makes a change.
+The retry loop for undelivered log lines is not one of these steps: it starts from
+`LeagueBot.setup_hook`, once per run at login (under "Errors and failures", the item on Discord
+events). Its `before_loop` waits for the bot to be ready, so it may run beside the sweep, which is
+safe because it delivers only log lines already owed, with its own lines about them, and asks for
+no change.
 
 Tests can then run the whole start-up in order, instead of checking its order by searching the
 source code.
