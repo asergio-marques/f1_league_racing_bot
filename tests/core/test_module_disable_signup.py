@@ -60,9 +60,10 @@ from leaguebot.core.cogs.module_cog import ModuleCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     acknowledgement,
-    attach_queue,
     change_rows,
     member_interaction,
+    league_bot,
+    league_queue,
     queued_log_lines,
     run_queue,
     step_rows,
@@ -93,7 +94,7 @@ OTHER = 107
 
 
 # ---------------------------------------------------------------------------
-# A bot double, for the command's own work on the channel's overwrites
+# The league's bot with its services' reads doubled, for the command's own work
 # ---------------------------------------------------------------------------
 
 
@@ -152,7 +153,7 @@ def _guild(*, channel=None, roles=None, missing_channel: bool = False):
 _UNSET = object()
 
 
-def _make_cog(
+async def _make_cog(
     db_path: str,
     *,
     enabled: bool = True,
@@ -161,22 +162,18 @@ def _make_cog(
     guild=_UNSET,
     server_config=_UNSET,
 ) -> ModuleCog:
-    """The command on a bot double whose services are mocks, with a real change queue attached
-    that nothing runs: what these tests read is the command's own work."""
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service = MagicMock()
+    """The command on the league's bot (`league_bot`), the reads the command makes of its
+    services doubled over them, with its real change queue attached that nothing runs: what
+    these tests read is the command's own work."""
+    bot = await league_bot(db_path)
     bot.module_service.is_signup_enabled = AsyncMock(return_value=enabled)
     bot.module_service.set_signup_enabled = AsyncMock(return_value=None)
-    bot.signup_module_service = MagicMock()
     bot.signup_module_service.get_config = AsyncMock(
         return_value=_config() if config is _UNSET else config
     )
     bot.signup_module_service.get_all_active_wizards = AsyncMock(
         return_value=wizards if wizards is not None else []
     )
-    bot.scheduler_service = MagicMock()
-    bot.config_service = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(
         return_value=_server_config() if server_config is _UNSET else server_config
@@ -184,9 +181,8 @@ def _make_cog(
     bot.get_guild = MagicMock(
         return_value=_guild(channel=_channel()) if guild is _UNSET else guild
     )
-    bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
-    attach_queue(bot, db_path, now=datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc))
+    league_queue(bot, db_path, now=datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc))
 
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = bot
@@ -328,7 +324,7 @@ async def test_disabling_twice_does_no_work(tmp_path):
     not happen: the manager is told the module is already disabled, and nothing is done or
     audited."""
     db_path = await _make_db(tmp_path, name="disable_twice")
-    cog = _make_cog(db_path, enabled=False)
+    cog = await _make_cog(db_path, enabled=False)
     interaction = _interaction()
 
     await _disable(cog, interaction)
