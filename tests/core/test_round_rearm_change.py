@@ -303,11 +303,12 @@ async def test_a_discarded_catch_up_of_a_re_arming_is_named_in_the_log(tmp_path,
 # ── A round already raced ───────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the re-arming hands the clean-ups arming no now yet")
 async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     """Weather and attendance on. Pro's round 3 was raced two hours ago and awaits its report
     verdicts, its timed work removed. Its re-arming, asked for its clean-ups alone, arms the
-    forecast's and the check-in's clean-ups due a day after its start, and nothing else: no
-    forecast, no check-in and no results submission is armed or run."""
+    forecast's and the check-in's clean-ups due a day after its start, against the queue's clock,
+    and nothing else: no forecast, no check-in and no results submission is armed or run."""
     league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
     await league.write("UPDATE rounds SET status = 'AWAITING_REPORT_VERDICTS' WHERE id = ?", R3)
     await _place(league, hours=-2)
@@ -318,6 +319,8 @@ async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     assert await stopped_job(league.db_path) is None
     assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
     assert league.armed == [("cleanups", [R3])]
+    arming = league.bot.scheduler_service.schedule_round_cleanups
+    assert arming.call_args.kwargs["now"] == league.clock.now
     league.bot.scheduler_service.run_result_submission_now.assert_not_called()
 
 

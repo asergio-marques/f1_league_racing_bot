@@ -754,7 +754,10 @@ async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path,
         pytest.param({"weather": False, "results": True, "test_mode": True}, [],
                      id="weather off and results on under test mode"),
         pytest.param({"weather": False, "results": True, "attendance": True},
-                     ["results", "attendance"], id="weather off, results and attendance on"),
+                     ["results", "attendance"], id="weather off, results and attendance on",
+                     marks=pytest.mark.xfail(
+                         strict=True, reason="#283: the approval hands the check-in no now yet"
+                     )),
         pytest.param({"weather": False, "results": False}, ["results"],
                      id="weather and results off"),
         pytest.param({"weather": False, "results": False, "test_mode": True}, ["results"],
@@ -763,13 +766,16 @@ async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path,
 )
 async def test_the_timed_work_is_armed_by_the_module_rules(tmp_path, monkeypatch, modules, armed):
     """Each round's result submission is armed whatever the modules, save under test mode with
-    results on, where `/test-mode advance` opens it by hand (owner, "Fold them in")."""
+    results on, where `/test-mode advance` opens it by hand (owner, "Fold them in"). A check-in
+    is armed against the queue's clock, never the wall clock."""
     league = await _league_for(tmp_path, monkeypatch, **modules)
     await _pressed(league)
 
     await run_queue(league.bot)
 
     assert _armed(league) == {which: sorted(_all_rounds()) for which in armed}
+    check_in = league.bot.scheduler_service.schedule_attendance_round
+    assert {call.kwargs["now"] for call in check_in.call_args_list} <= {league.clock.now}
     assert (await _approval(league))["state"] == "DONE"
 
 

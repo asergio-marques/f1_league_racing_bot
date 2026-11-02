@@ -891,7 +891,8 @@ async def _arm(
     attendance: bool = True,
     last_notice_hours: int = 24,
 ) -> None:
-    """Arm *round_ids* as approval arms them, with the production `schedule_*` writers."""
+    """Arm *round_ids* as approval arms them, with the production `schedule_*` writers, the check-in
+    against the wall clock, by which the rounds are placed."""
     season_service = SeasonService(db_path)
     for round_id in round_ids:
         rnd = await season_service.get_round(round_id)
@@ -906,6 +907,7 @@ async def _arm(
                 notice_days=5,
                 last_notice_hours=last_notice_hours,
                 deadline_hours=2,
+                now=datetime.now(timezone.utc),
             )
 
 
@@ -935,6 +937,7 @@ def _round_row(summary: str, round_number: int) -> str:
     return rows[0]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: schedule_attendance_round takes no now yet")
 async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_scheduler) -> None:
     """Every step of a season armed as approval arms it has its job queued, and reads ⏳."""
     db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_scheduler)
@@ -966,6 +969,7 @@ async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_sche
         "check-in-cleanup", "mystery-notice",
     ],
 )
+@pytest.mark.xfail(strict=True, reason="#283: schedule_attendance_round takes no now yet")
 async def test_a_job_taken_from_the_store_reads_as_missing(
     tmp_path, paused_scheduler, round_id, event_type, cell
 ) -> None:
@@ -1089,6 +1093,7 @@ async def _last_notice_switched_off(db_path: str) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason="#283: schedule_attendance_round takes no now yet")
 async def test_a_switched_off_last_notice_is_never_offered(tmp_path, paused_scheduler) -> None:
     db_path = str(tmp_path / "last_notice_off.db")
     await _last_notice_switched_off(db_path)

@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
 from leaguebot.core.services.approval_window_service import (
     AttendanceWindows,
@@ -247,34 +249,30 @@ def test_the_report_is_ordered_deterministically():
     assert premier_1 == sorted(premier_1)
 
 
-def test_the_window_offsets_match_the_scheduler():
-    """The drift guard.
+@pytest.mark.xfail(strict=True, reason="#283: the approval does not read round_event_moments yet")
+def test_each_window_falls_at_its_event_s_moment():
+    """The approval and the scheduler read one function for when a round's events fall
+    (`round_event_moments`), so the gate cannot disagree with the jobs it judges. A round a day
+    behind `NOW`, its check-in called seven days out with a last notice at 36 hours and a
+    deadline at 3, and its phases at 6 days, 3 days and 4 hours: each window the approval
+    reports falls at the moment the function gives its event."""
+    from leaguebot.core.models.round_moments import round_event_moments
 
-    These offsets are computed here *and* in `scheduler_service`. Nothing but this test
-    stops the two drifting apart — and a gate that disagreed with the scheduler would either
-    refuse a season whose jobs were fine or pass one whose jobs were silently dropped. The
-    literals below are `schedule_attendance_round`'s and `schedule_round`'s own arithmetic,
-    written out so that changing one place without the other fails by name.
-    """
     rnd = _round(days_out=-1)
-    scheduled_at = rnd.scheduled_at
+    attendance = AttendanceWindows(notice_days=7, last_notice_hours=36, deadline_hours=3)
+    weather = WeatherWindows(phase_1_days=6, phase_2_days=3, phase_3_hours=4)
 
-    found = overdue_windows(
-        [("Premier", rnd)],
-        now=NOW,
-        attendance=AttendanceWindows(
-            notice_days=7, last_notice_hours=36, deadline_hours=3
-        ),
-        weather=WeatherWindows(phase_1_days=6, phase_2_days=3, phase_3_hours=4),
-    )
-    by_label = {w.label: w.fire_at for w in found}
+    found = overdue_windows([("Premier", rnd)], now=NOW, attendance=attendance, weather=weather)
+    moments = round_event_moments(rnd.scheduled_at, weather=weather, attendance=attendance)
 
-    assert by_label["Check-in call"] == scheduled_at - timedelta(days=7)
-    assert by_label["Check-in last notice"] == scheduled_at - timedelta(hours=36)
-    assert by_label["Check-in deadline"] == scheduled_at - timedelta(hours=3)
-    assert by_label["Weather Phase 1"] == scheduled_at - timedelta(days=6)
-    assert by_label["Weather Phase 2"] == scheduled_at - timedelta(days=3)
-    assert by_label["Weather Phase 3"] == scheduled_at - timedelta(hours=4)
+    assert {w.label: w.fire_at for w in found} == {
+        "Check-in call": moments["rsvp_notice"],
+        "Check-in last notice": moments["rsvp_last_notice"],
+        "Check-in deadline": moments["rsvp_deadline"],
+        "Weather Phase 1": moments["weather_p1"],
+        "Weather Phase 2": moments["weather_p2"],
+        "Weather Phase 3": moments["weather_p3"],
+    }
 
 
 def test_a_naive_scheduled_at_is_read_as_utc():

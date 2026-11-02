@@ -452,6 +452,7 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the amendment hands the check-in arming no now yet")
 async def test_amending_a_round_rearms_its_check_in(tmp_path):
     """The reported defect: amending a round destroyed its check-in for good.
 
@@ -463,7 +464,8 @@ async def test_amending_a_round_rearms_its_check_in(tmp_path):
     the entire division, with nothing anywhere reporting it.
 
     Attendance on, at the league's timings (call 5 days out, last notice 24 hours, deadline 2
-    hours); Am's round 3 (season 3, tier 2) is moved from 90 to 100 days out.
+    hours); Am's round 3 (season 3, tier 2) is moved from 90 to 100 days out. The check-in is
+    armed against the queue's clock, never the wall clock.
     """
     league = await ongoing_league(tmp_path, attendance=True)
     await _place(league, at=timedelta(days=90))
@@ -481,6 +483,8 @@ async def test_amending_a_round_rearms_its_check_in(tmp_path):
     assert kwargs["division_tier"] == 2
     # And against the round as amended, not as it stood.
     assert _utc(arming.call_args.args[0].scheduled_at) == _utc(_at(league, timedelta(days=100)))
+    # Judged against the queue's clock.
+    assert kwargs["now"] == league.clock.now
 
 
 async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tmp_path):

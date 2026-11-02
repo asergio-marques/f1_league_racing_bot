@@ -202,23 +202,28 @@ def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_th
     assert service._scheduler.get_jobs.call_count == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#283: schedule_round_cleanups takes no now yet")
 def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
-    """Round 2 of division tier 1 in season 3, round id 5, starts on 1 June 2099 at 14:00. Arming
-    its clean-ups alone adds two jobs and no other: the forecast's clean-up and the check-in's,
-    each named for the round and each firing a day after the start."""
-    from datetime import datetime, timezone
+    """Round 2 of division tier 1 in season 3, round id 5, starts on 1 June 2020 at 14:00, long
+    past by the wall clock, and its clean-ups are armed alone with `now` a month before it. Two
+    jobs are added and no other: the forecast's clean-up and the check-in's, each named for the
+    round and each firing a day after the start. The check-in's is judged against the `now`
+    handed, never the wall clock, which would have skipped it."""
+    from datetime import datetime, timedelta, timezone
 
     from leaguebot.core.models.round import Round, RoundFormat
     from leaguebot.core.services.scheduler_service import POST_RACE_CLEANUP_DELAY
 
-    start = datetime(2099, 6, 1, 14, 0, tzinfo=timezone.utc)
+    start = datetime(2020, 6, 1, 14, 0, tzinfo=timezone.utc)
     rnd = Round(
         id=5, division_id=1, round_number=2, format=RoundFormat.NORMAL,
         track_name="Bahrain International Circuit", scheduled_at=start,
     )
     service = _service([])
 
-    service.schedule_round_cleanups(rnd, season_number=3, division_tier=1)
+    service.schedule_round_cleanups(
+        rnd, season_number=3, division_tier=1, now=start - timedelta(days=30)
+    )
 
     armed = {
         call.kwargs["id"]: call for call in service._scheduler.add_job.call_args_list

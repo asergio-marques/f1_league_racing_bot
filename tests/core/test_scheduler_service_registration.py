@@ -242,15 +242,18 @@ def test_a_phase_left_out_is_not_armed_and_the_rest_of_the_round_is():
 # The check-in cleanup (#425)
 # ---------------------------------------------------------------------------
 #
-# `schedule_attendance_round` skips any job whose moment has passed against the wall clock, so
-# these place the round relative to it rather than on a pinned date.
+# `schedule_attendance_round` skips any job whose moment is not after the `now` it is handed, and
+# reads no clock of its own: each test hands a `now` the wall clock is nowhere near, so that a read
+# of the wall clock would arm, or skip, what the test says it does not.
+
+_NOW_REASON = "#283: schedule_attendance_round takes no now yet"
 
 
 def _round_starting(start: datetime) -> SimpleNamespace:
     return SimpleNamespace(id=21, division_id=11, round_number=3, scheduled_at=start)
 
 
-def _attendance_jobs(service, rnd) -> dict:
+def _attendance_jobs(service, rnd, *, now: datetime) -> dict:
     service.schedule_attendance_round(
         rnd,
         season_number=7,
@@ -258,41 +261,52 @@ def _attendance_jobs(service, rnd) -> dict:
         notice_days=5,
         last_notice_hours=24,
         deadline_hours=2,
+        now=now,
     )
     return {c.kwargs["id"]: c for c in _added(service)}
 
 
-def _a_month_out() -> datetime:
-    return datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=30)
-
-
+@pytest.mark.xfail(strict=True, reason=_NOW_REASON)
 def test_the_check_in_cleanup_is_armed_a_day_after_the_round():
+    """A round on 1 March 2020 at 18:00, long past by the wall clock, armed with `now` a month
+    before it: its check-in clean-up is armed a day after its start, as are its call, last
+    notice and deadline."""
     service = _service()
-    start = _a_month_out()
+    start = datetime(2020, 3, 1, 18, tzinfo=timezone.utc)
 
-    cleanup = _attendance_jobs(service, _round_starting(start))["rsvp_cleanup_s7_d1_r3_id21"]
+    jobs = _attendance_jobs(service, _round_starting(start), now=start - timedelta(days=30))
 
+    cleanup = jobs["rsvp_cleanup_s7_d1_r3_id21"]
     assert cleanup.kwargs["trigger"].run_date == start + timedelta(hours=24)
     assert cleanup.kwargs["replace_existing"] is True
+    assert sorted(jobs) == [
+        "rsvp_cleanup_s7_d1_r3_id21", "rsvp_deadline_s7_d1_r3_id21",
+        "rsvp_last_notice_s7_d1_r3_id21", "rsvp_notice_s7_d1_r3_id21",
+    ]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOW_REASON)
 def test_a_check_in_cleanup_already_due_is_not_armed():
-    """The same rule as the attendance module's other three jobs: a moment gone by is skipped."""
+    """The same rule as the attendance module's other three jobs: a moment gone by is skipped. A
+    round on 1 March 2099 at 18:00, still to come by the wall clock, armed with `now` two days
+    after it: none of its four check-in jobs is armed."""
     service = _service()
-    started = datetime.now(timezone.utc) - timedelta(days=2)
+    start = datetime(2099, 3, 1, 18, tzinfo=timezone.utc)
 
-    jobs = _attendance_jobs(service, _round_starting(started))
+    jobs = _attendance_jobs(service, _round_starting(start), now=start + timedelta(days=2))
 
-    assert not [job_id for job_id in jobs if job_id.startswith("rsvp_cleanup")]
+    assert not [job_id for job_id in jobs if job_id.startswith("rsvp_")]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOW_REASON)
 def test_a_round_s_forecast_and_check_in_come_down_together():
     """One figure for both modules, so a round's channels clear at the same moment."""
     service = _service()
-    rnd = _round_starting(_a_month_out())
+    start = datetime(2026, 3, 1, 18, tzinfo=timezone.utc)
+    rnd = _round_starting(start)
 
     service.schedule_round(rnd, season_number=7, division_tier=1)
-    jobs = _attendance_jobs(service, rnd)
+    jobs = _attendance_jobs(service, rnd, now=start - timedelta(days=30))
 
     forecast = jobs["cleanup_s7_d1_r3_id21"].kwargs["trigger"].run_date
     check_in = jobs["rsvp_cleanup_s7_d1_r3_id21"].kwargs["trigger"].run_date
