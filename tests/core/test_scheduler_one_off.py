@@ -214,6 +214,39 @@ async def test_a_timer_missed_while_down_waits_until_the_scheduler_is_resumed(se
     assert handed == [4343]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: paused() resumes a scheduler start-up holds paused")
+async def test_a_backup_taken_during_start_up_leaves_the_scheduler_paused(services):
+    """A correction's timer fell due while the bot was down, and start-up holds the scheduler
+    paused while its steps run. A backup taken meanwhile pauses the scheduler around its copy
+    (`paused()`); once the copy is done the scheduler is still paused and the timer has not fired,
+    since only start-up's last act resumes it. Then it fires."""
+    before = services()
+    before._scheduler.start(paused=True)
+    before.arm_once("correction_lapse", 4343, _now() - timedelta(hours=2))
+    _dispose(before)
+
+    after = services()
+    handed: list[Any] = []
+    fired = asyncio.Event()
+
+    async def _lapse(key: Any) -> None:
+        handed.append(key)
+        fired.set()
+
+    after.register_timer("correction_lapse", _lapse)
+    after.start(paused=True)
+
+    with after.paused():
+        pass
+    await _settle()
+
+    assert handed == []
+
+    after.resume()
+    await asyncio.wait_for(fired.wait(), 10)
+    assert handed == [4343]
+
+
 async def test_a_lane_armed_timer_asks_on_its_conversation_s_lane(services, tmp_path):
     """A round's review channel, 707, holds a lock warning whose clear is armed. The league lane
     is stopped at a change of its own. When the timer fires, the callback the builder registered
