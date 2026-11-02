@@ -7,11 +7,12 @@ read was an error, and each error was silenced with `# type: ignore[attr-defined
 expression is `Any`, and `Any` spreads: nothing a service returned was ever checked, which is
 how #226 read an attribute a `DriverProfile` does not have and reached `main` (issue #228).
 
-**`LeagueBot` declares them, and does nothing else.** It is a subclass rather than a
+**`LeagueBot` declares them, and does one thing besides.** It is a subclass rather than a
 `Protocol` so that `create_bot()` builds the real thing and the checker holds every assignment
-in `__main__.py` to its declaration. It has no behaviour of its own, and should not grow any: it is
-a type, and the services it names are still built and attached by `__main__.py`, in the order that
-file explains. An attribute is declared here before `__main__.py` attaches it —
+in `__main__.py` to its declaration. Its one behaviour is `setup_hook`, which starts the retry
+loop once per run, at login; it should not grow another. It is a type, and the services it names
+are still built and attached by `__main__.py`, in the order that file explains. An attribute is
+declared here before `__main__.py` attaches it —
 `tests/core/test_league_bot.py` holds the two lists equal, in both directions.
 
 **`bot_of` is where a `discord.Client` becomes the league's bot.** An interaction knows only
@@ -90,6 +91,18 @@ class LeagueBot(commands.Bot):
     #: the clear of what the bot holds in memory reaches results without looking its cog up by
     #: name or importing it (#439).
     clear_held_reviews: Callable[[], None]
+    #: Starts the retry cog's loop. The builder sets it, so that `setup_hook` reaches the loop
+    #: without importing the cog, which nothing below the cogs may do.
+    start_retry_loop: Callable[[], None]
+
+    async def setup_hook(self) -> None:
+        """Start the retry loop: discord.py runs this once per run, at login, before connecting.
+
+        A built bot that never logs in starts no loop and so leaves no failed task; and unlike
+        ``on_ready``, which fires again after a drop, this runs once (architecture.md,
+        "Start-up runs once").
+        """
+        self.start_retry_loop()
 
 
 def bot_of(interaction: discord.Interaction) -> LeagueBot:

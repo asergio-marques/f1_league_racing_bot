@@ -27,23 +27,20 @@ class RetryCog(commands.Cog):
     def __init__(self, bot: "LeagueBot") -> None:
         self._bot = bot
 
-    async def cog_load(self) -> None:
-        """Start the retry loop when the bot is ready, not when the cog is built.
-
-        A loop started as the cog is added begins awaiting ``wait_until_ready`` at once, which
-        raises on a bot that never logs in (a built bot a test holds) and leaves a failed task.
-        The loop therefore starts from the bot's ``on_ready``; a reconnect fires that again, and
-        a loop already running is left.
-        """
-        self._bot.add_listener(self._start_loop, "on_ready")
-
     async def cog_unload(self) -> None:
-        self._bot.remove_listener(self._start_loop, "on_ready")
         self.retry_loop.cancel()
 
-    async def _start_loop(self) -> None:
-        if not self.retry_loop.is_running():
-            self.retry_loop.start()
+    def start_loop(self) -> None:
+        """Start the retry loop; ``LeagueBot.setup_hook`` calls this once, at login.
+
+        Not from ``__init__`` or ``cog_load``: both run as ``build`` adds the cog, before the
+        bot has logged in, and the loop's first act is ``wait_until_ready``, which raises on a
+        bot that never logs in (a built bot a test holds) and leaves a failed task. Not from an
+        ``on_ready`` listener either: discord.py reports "ready" again after a network drop, and
+        start-up work does not belong in that handler (architecture.md, "Start-up runs once").
+        ``setup_hook`` runs once per run, after login and before the connection is made.
+        """
+        self.retry_loop.start()
 
     @tasks.loop(minutes=5)
     async def retry_loop(self) -> None:

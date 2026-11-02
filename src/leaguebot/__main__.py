@@ -1228,7 +1228,9 @@ async def build(settings: Settings) -> LeagueBot:
     await bot.add_cog(ModuleCog(bot))
     await bot.add_cog(SignupCog(bot))
     await bot.add_cog(AdminReviewCog(bot))
-    await bot.add_cog(RetryCog(bot))
+    retry_cog = RetryCog(bot)
+    await bot.add_cog(retry_cog)
+    bot.start_retry_loop = retry_cog.start_loop
     await bot.add_cog(ResultsCog(bot))
     await bot.add_cog(WeatherCog(bot))
     await bot.add_cog(AttendanceCog(bot))
