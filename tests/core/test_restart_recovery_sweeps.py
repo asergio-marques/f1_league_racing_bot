@@ -1,20 +1,22 @@
 """Two of the sweeps a restart runs over work the previous process left behind.
 
 Issue #208. `_recover_expired_review_prompts` and `_recover_orphaned_amend_channels` were
-uncovered. Each cleans up after something that lived only in memory and died with the process —
-a view's timeout, a `wait_for` loop — and between them they decide what a league finds when the
-bot comes back. The third, `_recover_missed_phases`, is pinned in `test_bot_phase_recovery.py`.
+uncovered. Each cleans up after something the previous process left standing — a review prompt
+still up when the bot went down, a `wait_for` loop that died with it — and between them they
+decide what a league finds when the bot comes back. The third, `_recover_missed_phases`, is pinned
+in `test_bot_phase_recovery.py`.
 
 **Every standing review prompt is expired by definition.** The approve button's five minutes are
-a `discord.ui.View` timeout held in memory; the bot was down, so they cannot have been served,
-and no view exists to serve them now. Each row's take-down is therefore asked of the change queue
-(`season.review.take_down`, ending `restart`), as the bot, before the queue starts — there is no
-"still valid" case to preserve, and a reader who added one would leave a button nothing is
-listening to standing for ever. The sweep deletes, posts and writes nothing itself, and leaves
-alone a review whose take-down is already in hand: the queue's jobs delete the question and the
-report above it and drop the row, so a deletion Discord refuses stops the queue with the row
-standing rather than losing the only record of a message still up. Those cases are pinned in
-`test_review_prompt_sweep.py`.
+a persistent one-off `review_expiry` timer with no lateness limit, and the scheduler is held paused
+until start-up has ended, so the restart's take-down is always asked first and a timer that fires
+late finds the row gone or already being taken down. Each row's take-down is therefore asked of
+the change queue (`season.review.take_down`, ending `restart`), as the bot, before the queue
+starts — there is no "still valid" case to preserve, and a reader who added one would leave a
+button nothing is listening to standing for ever. The sweep deletes, posts and writes nothing
+itself, and leaves alone a review whose take-down is already in hand: the queue's jobs delete the
+question and the report above it and drop the row, so a deletion Discord refuses stops the queue
+with the row standing rather than losing the only record of a message still up. Those cases are
+pinned in `test_review_prompt_sweep.py`.
 
 **An abandoned amendment's lapse is asked of the change queue** (#439, slice 6b, C64). The sweep
 puts nothing back, deletes nothing and writes nothing itself: it asks `results.amend.lapse` as the
