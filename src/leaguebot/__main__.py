@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 import aiosqlite
@@ -64,7 +64,7 @@ class Settings:
     purpose (see the module docstring in ``core/services/scheduler_service.py``).
     """
 
-    token: str
+    token: str = field(repr=False)
     db_path: str
     jobstore_path: str
 
