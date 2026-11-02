@@ -3,8 +3,9 @@ supersedes, three jobs of one change (#439, slice 6).
 
 Weather's timers, its start-up recovery and test mode's advance each ask the queue for a
 forecast (`ask_forecast`); the mystery rule is decided here and nowhere else (architecture.md,
-"Timed work and restarts"): a mystery round's phase 1 is its notice (phase 0), and its phases 2
-and 3 nothing. The change's jobs are:
+"Timed work and restarts"): the scheduler hands each phase's timer straight to this module's
+handler without reading the round's format, and a mystery round's phase 1 is its notice (phase 0),
+and its phases 2 and 3 nothing. The change's jobs are:
 
 - `draw_forecast` (a save): the phase is drawn and recorded, its flag set and its calculation line
   written to the log channel, all in the one save (weather spec :165). A phase whose earlier
@@ -638,11 +639,10 @@ async def ask_forecast_flush(queue: ChangeQueue) -> None:
 
 @dataclass(frozen=True)
 class TimerCallbacks:
-    """The callbacks the scheduler fires for weather: each phase's, the mystery round notice's
-    and the clean-up's. Each takes a round id and asks the change queue."""
+    """The handlers the scheduler fires for weather: each phase's and the clean-up's. Each takes a
+    round id and asks the change queue."""
 
     phases: Mapping[int, Callable[[int], Awaitable[None]]]
-    mystery_notice: Callable[[int], Awaitable[None]]
     clean_up: Callable[[int], Awaitable[None]]
 
 
@@ -660,15 +660,11 @@ def timer_callbacks(queue: ChangeQueue, db_path: str) -> TimerCallbacks:
 
         return fire
 
-    async def notice(round_id: int) -> None:
-        await ask_forecast(queue, db_path, round_id, 0)
-
     async def clean_up(round_id: int) -> None:
         await ask_forecast_clean_up(queue, db_path, round_id)
 
     return TimerCallbacks(
         phases={1: _phase(1), 2: _phase(2), 3: _phase(3)},
-        mystery_notice=notice,
         clean_up=clean_up,
     )
 

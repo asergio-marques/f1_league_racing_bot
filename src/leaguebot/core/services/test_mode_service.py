@@ -551,7 +551,7 @@ async def get_next_pending_phase(
             phase = job["phase_number"]
             # A mystery round's notice is armed as `weather_p1`, with `weather_p2` and
             # `weather_p3` beside it, and the job store knows nothing of formats: a live season's
-            # `_weather_phase_job` reads the format as the job fires, and this is where advance
+            # weather's `ask_forecast` reads the format as the job fires, and this is where advance
             # reads it, once. `weather_p1` is the notice (0) — and stale once the notice is up,
             # since advancing it would post the notice a second time. The other two do nothing
             # when they fire, so there is nothing to advance for them (#426).
@@ -900,8 +900,8 @@ async def build_review_summary(
 
             # ── Weather / mystery notice phases ───────────────────────────
             if weather_module_enabled and is_mystery:
-                # A mystery round's notice is armed as `weather_p1`: `_weather_phase_job` reads
-                # the round's format as it fires.
+                # A mystery round's notice is armed as `weather_p1`: weather's
+                # `ask_forecast` reads the round's format as it fires.
                 notice = _weather(bool(row["phase1_done"]), "weather_p1")
                 parts.append(f"Notice: {notice}")
             elif weather_module_enabled:
