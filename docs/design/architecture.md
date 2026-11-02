@@ -720,8 +720,9 @@ built from the amendment's steps. The arming step those two share calls `run_res
 for a passed round. Every path arms through these functions. A restart arms nothing, the job store
 keeping the jobs and the start-up sweep catching up those missed (above), and neither does test
 mode, whose advance brings forward work already armed or found due in the database. A round's
-next-day clean-ups, which its weather and its attendance arming both owe, are armed by one function
-too (`schedule_round_cleanups`), which the re-arming calls alone for a round raced, or ended
+next-day clean-ups, which its weather and its attendance arming both owe, are armed from the same
+moments: the forecast's by `schedule_round` and the check-in's by `schedule_attendance_round`,
+and both by `schedule_round_cleanups`, which the re-arming calls alone for a round raced, or ended
 cancelled because every session was entered as not held.
 
 **A delay is a one-off timer that asks a change.** The queue holds no delay of its own. Where
