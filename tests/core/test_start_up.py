@@ -72,8 +72,9 @@ class _Recorder:
 @pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_start_up_runs_once_on_a_second_ready(caplog):
     """The bot is reported ready twice in one run, as after a network drop. The first call runs
-    the one step, starts the queue and resumes the scheduler; the second runs, starts and resumes
-    nothing again, and logs that start-up was skipped."""
+    the one step, starts the queue and resumes the scheduler (their order is
+    `test_no_job_runs_until_start_up_has_ended`'s); the second runs, starts and resumes nothing
+    again, and logs that start-up was skipped."""
     module = _fresh_start_up()
     record = _Recorder()
     steps = (record.step("hub"),)
@@ -84,7 +85,7 @@ async def test_start_up_runs_once_on_a_second_ready(caplog):
     with caplog.at_level(logging.DEBUG, logger=_MODULE):
         await module.start_up(steps=steps, change_queue=record.queue, scheduler=record.scheduler)
 
-    assert first == ["scheduler started paused", "hub", "queue started", "scheduler resumed"]
+    assert {"hub", "queue started", "scheduler resumed"} <= set(first)
     assert record.calls == first
     assert [r for r in caplog.records if r.name == _MODULE], "the skipped start-up logs nothing"
 
