@@ -16,7 +16,13 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.season_service import SeasonService
-from tests.support.change_queue import attach_queue, change_rows, run_queue
+from tests.support.change_queue import (
+    change_rows,
+    is_built,
+    league_bot,
+    league_queue,
+    run_queue,
+)
 
 SERVER_ID = 4400
 USER_ID = 88
@@ -67,17 +73,18 @@ def _interaction():
     return interaction
 
 
-def _cog(db_path, *, attendance: bool = True):
+async def _cog(db_path, *, attendance: bool = True):
     cog = SeasonCog.__new__(SeasonCog)
-    # ``MagicMock`` with each awaited member named (issue #240). A whole-bot ``AsyncMock``
-    # answers an unpinned reader with a truthy mock, which for a file about *rules* would
-    # mean a rule passing on the stub rather than the round in front of it.
-    cog.bot = MagicMock()
-    cog.bot.db_path = db_path
+    # The league's bot (`league_bot`), with each awaited member it reads named (issue #240). A
+    # whole-bot ``AsyncMock`` answers an unpinned reader with a truthy mock, which for a file
+    # about *rules* would mean a rule passing on the stub rather than the round in front of it.
+    cog.bot = await league_bot(db_path)
     cog.bot.output_router.post_log = AsyncMock()
-    # A real season service, so the round comes back carrying the status and phase flags the
-    # rules read. Stubbing it would leave this testing the stub.
-    cog.bot.season_service = SeasonService(db_path)
+    if not is_built(cog.bot):
+        # A real season service, so the round comes back carrying the status and phase flags
+        # the rules read. Stubbing it would leave this testing the stub. The builder's own, on
+        # the built bot.
+        cog.bot.season_service = SeasonService(db_path)
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
     for module in ("weather", "signup", "results", "images"):
         setattr(cog.bot.module_service, f"is_{module}_enabled", AsyncMock(return_value=False))
@@ -117,7 +124,7 @@ def _cog(db_path, *, attendance: bool = True):
     cog.bot.output_router.strip_view = AsyncMock()
     # A real change queue with the bot's own change types, so that Confirm asks it for the
     # amendment and its check judges it as it would in the league.
-    attach_queue(cog.bot, db_path, now=datetime.now(timezone.utc))
+    league_queue(cog.bot, db_path, now=datetime.now(timezone.utc))
     # No pending setup, so the command takes its active-season path.
     cog._get_pending = MagicMock(return_value=None)
     return cog
@@ -164,7 +171,7 @@ async def test_bringing_a_round_inside_its_check_in_deadline_is_refused(tmp_path
     interaction = _interaction()
     soon = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(tzinfo=None)
 
-    await _amend(_cog(path), interaction, scheduled_at=soon.isoformat())
+    await _amend(await _cog(path), interaction, scheduled_at=soon.isoformat())
 
     assert "check-in deadline" in _reply(interaction)
     assert not _offered_a_confirmation(interaction)
@@ -180,7 +187,7 @@ async def test_moving_a_round_backwards_is_refused_with_attendance_off(tmp_path)
     interaction = _interaction()
     past = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(tzinfo=None)
 
-    await _amend(_cog(path, attendance=False), interaction, scheduled_at=past.isoformat())
+    await _amend(await _cog(path, attendance=False), interaction, scheduled_at=past.isoformat())
 
     assert "cannot be moved into the past" in _reply(interaction)
     assert not _offered_a_confirmation(interaction), "a refused amendment must not be offered"
@@ -191,7 +198,7 @@ async def test_a_refusal_says_nothing_was_changed(tmp_path):
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) - timedelta(hours=1))
     interaction = _interaction()
 
-    await _amend(_cog(path), interaction, track=NEW_TRACK)
+    await _amend(await _cog(path), interaction, track=NEW_TRACK)
 
     assert "Nothing has been changed" in _reply(interaction)
     # And the round really is untouched.
@@ -206,7 +213,7 @@ async def test_the_deadline_is_not_judged_while_attendance_is_disabled(tmp_path)
     interaction = _interaction()
     soon = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(tzinfo=None)
 
-    await _amend(_cog(path, attendance=False), interaction, scheduled_at=soon.isoformat())
+    await _amend(await _cog(path, attendance=False), interaction, scheduled_at=soon.isoformat())
 
     assert _offered_a_confirmation(interaction)
 
@@ -220,7 +227,7 @@ async def test_an_allowed_amendment_is_offered_for_confirmation(tmp_path):
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
     interaction = _interaction()
 
-    await _amend(_cog(path), interaction, track=NEW_TRACK)
+    await _amend(await _cog(path), interaction, track=NEW_TRACK)
 
     assert _offered_a_confirmation(interaction)
     assert "Amend Round 1" in _reply(interaction)
@@ -231,7 +238,7 @@ async def test_the_summary_names_the_forecasts_it_will_withdraw(tmp_path):
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
     interaction = _interaction()
 
-    await _amend(_cog(path), interaction, track=NEW_TRACK)
+    await _amend(await _cog(path), interaction, track=NEW_TRACK)
 
     reply = _reply(interaction)
     assert "Phase 1" in reply and "Phase 2" in reply and "Phase 3" in reply
@@ -253,7 +260,7 @@ async def test_the_summary_does_not_claim_to_withdraw_a_forecast_that_stands(tmp
     # it, which is the opposite case and is covered above.
     nearer = (now + timedelta(hours=1)).replace(tzinfo=None)
 
-    await _amend(_cog(path, attendance=False), interaction, scheduled_at=nearer.isoformat())
+    await _amend(await _cog(path, attendance=False), interaction, scheduled_at=nearer.isoformat())
 
     reply = _reply(interaction)
     assert "will stand" in reply
@@ -285,7 +292,7 @@ async def test_a_window_passing_while_the_confirmation_stands_refuses_it(tmp_pat
     Confirming would apply an amendment the command itself would no longer offer.
     """
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(hours=1))
-    cog = _cog(path)
+    cog = await _cog(path)
     interaction = _interaction()
 
     await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
@@ -302,7 +309,7 @@ async def test_results_entered_while_the_confirmation_stands_refuses_it(tmp_path
             "UPDATE rounds SET status = 'AWAITING_REPORT_VERDICTS' WHERE id = 1"
         )
         await db.commit()
-    cog = _cog(path)
+    cog = await _cog(path)
     interaction = _interaction()
 
     await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
@@ -317,7 +324,7 @@ async def test_a_confirmation_the_rules_still_allow_goes_through(tmp_path):
     import json
 
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
-    cog = _cog(path)
+    cog = await _cog(path)
     interaction = _interaction()
 
     await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
@@ -377,7 +384,7 @@ async def test_a_failed_round_amend_confirmation_goes_to_report_failure(tmp_path
     import sqlite3
 
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
-    cog = _cog(path)
+    cog = await _cog(path)
     cog.bot.change_queue.ask = AsyncMock(
         side_effect=sqlite3.OperationalError("database is locked")
     )
@@ -460,7 +467,7 @@ async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case,
         timedelta(hours=-1) if started else timedelta(hours=1) if soon else timedelta(days=30)
     )
     path = await _db(tmp_path, scheduled_at=when)
-    cog = _cog(path)
+    cog = await _cog(path)
     interaction = _interaction()
     _recording(cog, interaction)
 
@@ -507,7 +514,7 @@ async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path, 
     one line in the standard form, naming the member who ran it, and nothing amended. Beneath
     it the line says what became of the round, and what to do next."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
-    cog = _cog(path)
+    cog = await _cog(path)
     interaction = _answered(_interaction())
     _recording(cog, interaction)
     view = _view(cog, [("track_name", NEW_TRACK)])
@@ -538,7 +545,7 @@ async def test_a_round_amend_logs_the_values_it_set(tmp_path):
     parameter (`track`) rather than by its column. The amendment's own "/round amend (field)"
     line is gone."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
-    cog = _cog(path, attendance=False)
+    cog = await _cog(path, attendance=False)
     interaction = _interaction()
     _recording(cog, interaction)
 
@@ -564,7 +571,7 @@ async def test_a_confirmed_round_amend_whose_reply_fails_still_records_what_chan
     queue runs it, the round is amended, and the log holds the amendment's one success line, with
     the track from what to what, and no failure line."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
-    cog = _cog(path, attendance=False)
+    cog = await _cog(path, attendance=False)
     interaction = _interaction()
     interaction.followup.send = AsyncMock(side_effect=RuntimeError("gateway closed"))
     _recording(cog, interaction)
@@ -585,7 +592,7 @@ async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
     `/round amend`, and states beneath it each field changed, from its old value to its new
     one."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
-    cog = _cog(path)
+    cog = await _cog(path)
     cog._get_pending = MagicMock(return_value=_pending())
     cog._snapshot_pending = AsyncMock()
     interaction = _interaction()
@@ -624,7 +631,7 @@ async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(
     import sqlite3
 
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
-    cog = _cog(path, attendance=False)
+    cog = await _cog(path, attendance=False)
     later = (datetime.now(timezone.utc) + timedelta(days=31)).replace(tzinfo=None)
     fault = sqlite3.OperationalError("database is locked")
     interaction = _interaction()
@@ -692,8 +699,7 @@ async def test_an_active_round_amended_to_what_stands_changes_nothing(tmp_path, 
     the NORMAL format, thirty days from now; the manager amends it to values it already holds."""
     at = (datetime.now(timezone.utc) + timedelta(days=30)).replace(second=0, microsecond=0)
     path = await _db(tmp_path, scheduled_at=at)
-    cog = _cog(path)
-    cog.bot.amendment_service.amend_round = AsyncMock()
+    cog = await _cog(path)
     interaction = _interaction()
     _recording(cog, interaction)
     standing = {
@@ -705,7 +711,8 @@ async def test_an_active_round_amended_to_what_stands_changes_nothing(tmp_path, 
     await _amend(cog, interaction, **{field: standing[field] for field in fields})
 
     assert not _offered_a_confirmation(interaction)
-    cog.bot.amendment_service.amend_round.assert_not_awaited()
+    # Nothing is asked of the change queue, which makes every amendment.
+    assert await _amendments(path) == []
     assert _says_nothing_changed(_reply(interaction))
     assert await _audit_rows(path) == []
     [line] = _lines(cog)
@@ -728,7 +735,7 @@ async def test_a_pending_round_amended_to_what_stands_changes_nothing(tmp_path, 
     the NORMAL format, on 1 December 2026 at 18:00 UTC; the manager amends it to values it
     already holds. Nothing is saved to the season being set up."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
-    cog = _cog(path)
+    cog = await _cog(path)
     pending = _pending()
     cog._get_pending = MagicMock(return_value=pending)
     cog._snapshot_pending = AsyncMock()
@@ -778,7 +785,7 @@ async def test_a_round_that_cannot_be_amended_is_refused_even_given_what_stands(
     async with get_connection(path) as db:
         await db.execute("UPDATE rounds SET status = ? WHERE id = 1", (status,))
         await db.commit()
-    cog = _cog(path)
+    cog = await _cog(path)
     interaction = _interaction()
     _recording(cog, interaction)
 
@@ -861,7 +868,7 @@ async def test_a_round_being_cancelled_is_not_amended_naming_the_job(tmp_path, k
     clear it, nothing is amended, and one refusal line is written in the log channel."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
     job = await _seed_cancellation(path, kind, payload)
-    cog = _cog(path)
+    cog = await _cog(path)
     interaction = _interaction()
     _recording(cog, interaction)
 
@@ -898,7 +905,7 @@ async def test_a_round_is_not_amended_while_another_round_of_its_division_is_bei
         "round_id": 2, "round_number": 2, "track_name": "Bahrain International Circuit",
         "division_id": 1, "division_name": DIVISION, "season_number": 1,
     })
-    cog = _cog(path)
+    cog = await _cog(path)
     interaction = _interaction()
     _recording(cog, interaction)
 
@@ -945,7 +952,7 @@ async def test_a_cancellation_elsewhere_or_done_lets_the_amendment_through(
         "division_id": division_id, "division_name": DIVISION if division_id == 1 else "Div B",
         "season_number": 1,
     }, state=state)
-    cog = _cog(path)
+    cog = await _cog(path)
     interaction = _interaction()
     _recording(cog, interaction)
 
@@ -1004,7 +1011,7 @@ async def test_a_round_of_a_season_whose_end_is_in_hand_is_not_amended_naming_th
     one refusal line naming the job is written in the log channel."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
     job = await _seed_cancellation(path, kind, payload)
-    cog = _cog(path)
+    cog = await _cog(path)
     interaction = _interaction()
     _recording(cog, interaction)
 
