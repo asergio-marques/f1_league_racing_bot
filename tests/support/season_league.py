@@ -1288,17 +1288,10 @@ async def wizard_state(league: SeasonLeague, user_id: int) -> str | None:
 def wizard_service(bot: Any, db_path: str, scheduler: Any, router: Any, *,
                    change_queue: Any) -> Any:
     """The signup wizard service as the builder makes it, holding *bot* from the moment it is
-    built: handed it as `bot=` where the constructor takes it (#283), else bound through
-    `set_bot` straight after."""
-    import inspect
-
+    built (#283)."""
     from leaguebot.signup.services.wizard_service import WizardService
 
-    if "bot" in inspect.signature(WizardService).parameters:
-        return WizardService(db_path, scheduler, router, change_queue=change_queue, bot=bot)
-    wizards = WizardService(db_path, scheduler, router, change_queue=change_queue)
-    wizards.set_bot(bot)
-    return wizards
+    return WizardService(db_path, scheduler, router, change_queue=change_queue, bot=bot)
 
 
 async def wizards_recovered(league: SeasonLeague) -> dict[str, list[str]]:

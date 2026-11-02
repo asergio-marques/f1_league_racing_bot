@@ -157,11 +157,10 @@ class HoldOutcome:
 class WizardService:
     """Manages the full lifecycle of a driver's signup wizard session.
 
-    Dependency wiring:
-    - ``set_bot(bot)`` gives this service access to Discord guild objects, driver_service
-      and signup_module_service. ``__main__.py`` calls it as soon as the service is built, before
-      the gateway opens: a press on a signup button can arrive while ``on_ready`` is still
-      recovering, and must find the bot already bound (#228).
+    Dependency wiring: the service is given the bot in its constructor, for the Discord guild
+    objects and the driver and signup module services it reaches through it. It is complete once
+    built, so a press on a signup button arriving while ``on_ready`` is still recovering finds
+    the bot already there (#228).
     """
 
     def __init__(
@@ -171,6 +170,7 @@ class WizardService:
         output_router: "OutputRouter",
         *,
         change_queue: "ChangeQueue",
+        bot: "LeagueBot",
     ) -> None:
         self._db_path = db_path
         self._scheduler = scheduler_service
@@ -182,21 +182,14 @@ class WizardService:
         # (docs/design/architecture.md, "Services stay attached to the bot, and are built in one place").
         self._change_queue = change_queue
 
-        # Late-bound after bot is ready; set via set_bot().
-        self._bot: "LeagueBot | None" = None
-
-    def set_bot(self, bot: "LeagueBot") -> None:
-        """Bind the bot instance for Discord API and service access."""
         self._bot = bot
 
-
     # ------------------------------------------------------------------
-    # Convenience accessors (safe after set_bot is called)
+    # Convenience accessors
     # ------------------------------------------------------------------
 
     @property
     def _signup_svc(self):
-        assert self._bot is not None, "WizardService.set_bot() not called"
         return self._bot.signup_module_service
 
     # ------------------------------------------------------------------
@@ -496,7 +489,6 @@ class WizardService:
         from leaguebot.signup.services.wizard_changes import RESTART, ask_channel_gone
 
         asked: set[str] = set()
-        assert self._bot is not None, "WizardService.set_bot() not called"
         placeholders = ", ".join("?" for _ in IN_PROGRESS_STATES)
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(

@@ -1071,11 +1071,8 @@ async def main() -> None:
         bot.scheduler_service,
         bot.output_router,
         change_queue=bot.change_queue,
+        bot=bot,
     )
-    # Bound as soon as it exists rather than in `on_ready`. The persistent views are routed
-    # from the moment the gateway opens, and a signup press arriving while `on_ready` was
-    # still recovering found the wizard with no bot and failed (#228).
-    bot.wizard_service.set_bot(bot)
     bot.attendance_service = AttendanceService(settings.db_path)
 
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
