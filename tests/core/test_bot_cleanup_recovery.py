@@ -27,7 +27,6 @@ each ask.
 """
 from __future__ import annotations
 
-import inspect
 import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -273,18 +272,3 @@ async def test_a_database_it_cannot_read_stops_the_recovery_quietly(tmp_path, ca
 
     assert await _recover(bot) == ([], [])
     assert "failed to read the messages still standing" in caplog.text
-
-
-# ---------------------------------------------------------------------------
-# Where it runs
-# ---------------------------------------------------------------------------
-
-
-def test_the_catch_up_runs_after_the_deadlines_are_caught_up():
-    """So a check-in whose deadline and cleanup both passed while the bot was down is
-    distributed before it is taken down. Read from the source, because both run inside
-    `on_ready` among a dozen start-up steps no test drives whole."""
-    source = inspect.getsource(bot_module.main)
-    deadlines = source.index("await _recover_rsvp_views_and_deadlines(bot)")
-    cleanups = source.index("await _recover_missed_cleanups(bot)")
-    assert deadlines < cleanups

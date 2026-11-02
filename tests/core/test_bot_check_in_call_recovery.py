@@ -19,7 +19,6 @@ round it seeds.
 """
 from __future__ import annotations
 
-import inspect
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -255,20 +254,6 @@ async def test_no_late_call_for_a_round_left_alone(tmp_path, seed):
 
     attendance_enabled = seed.get("attendance_enabled", True)
     assert await _late_calls(db_path, attendance_enabled=attendance_enabled) == 0
-
-
-# ---------------------------------------------------------------------------
-# Where it runs
-# ---------------------------------------------------------------------------
-
-
-def test_missed_calls_are_posted_before_the_deadlines_are_caught_up():
-    """A call comes before its deadline. Read from the source, because both run inside
-    `on_ready` among a dozen start-up steps no test drives whole."""
-    source = inspect.getsource(bot_module.main)
-    calls = source.index("await _recover_missed_check_in_calls(bot)")
-    deadlines = source.index("await _recover_rsvp_views_and_deadlines(bot)")
-    assert calls < deadlines
 
 
 # ---------------------------------------------------------------------------

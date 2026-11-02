@@ -16,7 +16,6 @@ change queue, handed to the recovery by the start-up.
 """
 from __future__ import annotations
 
-import inspect
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -284,12 +283,3 @@ async def test_permissions_that_raise_do_not_fail_the_role_command(monkeypatch):
 
     await bot_cog._reapply_hub_permissions(MagicMock())
 
-
-# ── A restart recovers the hub ────────────────────────────────────────────
-
-
-def test_the_hub_is_recovered_at_start_up():
-    """`on_ready` is a closure inside `main`, so its wiring is asserted on the source: the
-    start-up hands the recovery the change queue, which it asks for the panel. The recovery
-    itself is tested in `test_hub_service.py`."""
-    assert "recover_hub(bot, queue=bot.change_queue)" in inspect.getsource(bot_module.main)

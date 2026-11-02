@@ -115,3 +115,111 @@ async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):
     await bot.setup_hook()
 
     assert starts == [()]
+
+
+#: The start-up's steps by name, in the order `on_ready` runs them before the builder makes them.
+_START_UP_STEPS = [
+    "amendment sweep", "portrait refresh job", "signup close timer", "orphaned amend channels",
+    "orphaned submission channels", "expired review prompts", "missed phases",
+    "missed check-in calls", "RSVP views and deadlines", "missed clean-ups", "hub", "wizards",
+    "pending setups",
+]
+
+
+@pytest.mark.xfail(strict=True, reason="#283: the builder makes no start-up steps; on_ready "
+                                       "runs them itself")
+async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
+    """`build` on paths under `tmp_path` gives the start-up's steps by name, in today's order
+    (architecture.md, "Start-up runs once, in one function"), so the order is read from the list
+    start-up runs rather than from the source. Its rules:
+
+    - **orphaned amend channels before orphaned submission channels** (#345): an amendment open at
+      the restart has its unapproved corrections in the database, and a submission channel whose
+      results were saved but never posted posts its standings from it, so swept the other way round
+      those standings would publish the corrections the revert then takes back;
+    - **missed check-in calls before the RSVP deadlines**: a call comes before its deadline;
+    - **the RSVP deadlines before the missed clean-ups**: a check-in whose deadline and clean-up
+      both passed while the bot was down is distributed before it is taken down;
+    - **the hub among them**, its step handing the hub's recovery the change queue, which it asks
+      for the panel (the recovery itself is tested in `test_hub_service.py`).
+    """
+    import leaguebot.__main__ as bot_module
+    from unittest.mock import AsyncMock
+
+    from leaguebot.core.services import hub_service
+
+    recover_hub = AsyncMock()
+    monkeypatch.setattr(hub_service, "recover_hub", recover_hub)
+    monkeypatch.setattr(bot_module, "recover_hub", recover_hub, raising=False)
+    bot = await built_bot(tmp_path, now=_NOW)
+    names = [name for name, _ in bot.start_up_steps]
+
+    assert names == _START_UP_STEPS
+    assert names.index("orphaned amend channels") < names.index("orphaned submission channels")
+    assert names.index("missed check-in calls") < names.index("RSVP views and deadlines")
+    assert names.index("RSVP views and deadlines") < names.index("missed clean-ups")
+    await dict(bot.start_up_steps)["hub"]()
+    recover_hub.assert_awaited_once_with(bot, queue=bot.change_queue)
+
+
+@pytest.mark.xfail(strict=True, reason="#283: main applies the migrations in on_ready, after the "
+                                       "bot has connected")
+async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
+    """`main`, driven with the staged restore, the migrations, the builder and the bot's connection
+    each stubbed to record its call, swaps in a staged restore, then applies the migrations, then
+    builds the bot, and only then connects it to Discord (architecture.md, "Start-up runs once, in
+    one function", steps 2 to 4)."""
+    import logging
+
+    import leaguebot.__main__ as bot_module
+    from leaguebot.core.db import database
+    from leaguebot.core.services import backup_service
+
+    calls: list[str] = []
+    settings = bot_module.Settings(token="not-a-real-token", db_path=str(tmp_path / "bot.db"),
+                                   jobstore_path=str(tmp_path / "jobs.db"))
+
+    def restore(db_path: str, jobstore_path: str) -> bool:
+        calls.append("restore")
+        return False
+
+    async def migrate(db_path: str) -> None:
+        calls.append("migrations")
+
+    async def close_connections() -> None:
+        pass
+
+    class _Bot:
+        def event(self, handler):
+            return handler
+
+        def add_listener(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc) -> None:
+            return None
+
+        async def start(self, token: str) -> None:
+            calls.append("connect")
+
+    async def build(settings_) -> _Bot:
+        calls.append("build")
+        return _Bot()
+
+    monkeypatch.setattr(bot_module, "load_dotenv", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bot_module, "read_settings", lambda environ: settings)
+    monkeypatch.setattr(bot_module, "install_late_autocomplete_filter", lambda: None)
+    monkeypatch.setattr(logging, "basicConfig", lambda **kwargs: None)
+    monkeypatch.setattr(bot_module, "build", build)
+    for module in (backup_service, bot_module):
+        monkeypatch.setattr(module, "apply_staged_restore", restore, raising=False)
+    for module in (database, bot_module):
+        monkeypatch.setattr(module, "run_migrations", migrate, raising=False)
+        monkeypatch.setattr(module, "close_connections", close_connections, raising=False)
+
+    await bot_module.main()
+
+    assert calls == ["restore", "migrations", "build", "connect"]

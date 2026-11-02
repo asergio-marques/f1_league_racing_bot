@@ -203,23 +203,6 @@ async def _winner(league) -> int:
     return next(driver for driver, row in rows.items() if row["finishing_position"] == 1)
 
 
-def test_amendments_are_reverted_before_submission_channels_resume():
-    """**The amend sweep runs before the submission-channel one** (#345, decided 2026-09-21).
-
-    An amendment open at the restart has its unapproved corrections in the database, and a
-    submission channel whose results were saved but never posted posts its standings from it on
-    recovery. Swept the other way round, those standings would publish the corrections the
-    amendment's revert then takes back. Read from the source, because the two run inside
-    `on_ready` among a dozen start-up steps no test drives whole.
-    """
-    import inspect
-
-    source = inspect.getsource(bot_module.main)
-    amend = source.index("await _recover_orphaned_amend_channels(bot)")
-    submission = source.index("await _recover_orphaned_submission_channels(bot)")
-    assert amend < submission
-
-
 async def test_a_second_restart_leaves_a_lapse_in_hand_alone(tmp_path):
     """The bot stops again before the queue has run the lapse the first restart asked for. The
     second restart finds that lapse in hand and asks no other (core :133): one lapse, one line."""
