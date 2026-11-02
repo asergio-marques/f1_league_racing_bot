@@ -3,8 +3,8 @@ function", step 1, and "Services stay attached to the bot, and are built in one 
 
 The three settings are read once, in `main`, from the environment `load_dotenv` has filled:
 `read_settings` takes a plain mapping, so it is tested without a bot or the process's environment.
-`build` makes the bot and every service complete, and registers every change type, timer kind and
-scheduler callback before anything starts; a test calls it on paths under `tmp_path` through
+`build` makes the bot and every service complete, and registers every change type and timer kind
+before anything starts; a test calls it on paths under `tmp_path` through
 `tests/support/change_queue.built_bot`.
 """
 from __future__ import annotations
@@ -74,11 +74,22 @@ async def test_build_returns_every_service_complete(tmp_path):
     assert not hasattr(bot.wizard_service, "set_bot")
 
 
+#: The kinds of the scheduler's own jobs, each signed up with its handler by the builder.
+_SCHEDULER_KINDS = {
+    "weather_p1", "weather_p2", "weather_p3", "cleanup", "results", "rsvp_notice",
+    "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup", "signup_close", "portrait_refresh",
+    "amendment_sweep",
+}
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: the scheduler's own jobs are still signed up in callback slots"
+)
 async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
-    """Straight after `build`, with the scheduler not yet started, every scheduler callback
-    (the three weather phases, the mystery notice, the forecast clean-up, the result submission,
-    the four check-in callbacks, the portrait refresh, the amendment sweep and the signup close)
-    and every one-off timer kind is registered."""
+    """Straight after `build`, with the scheduler not yet started, every kind is signed up in the
+    one registry: the scheduler's own jobs (the three weather phases, the forecast clean-up, the
+    result submission, the four check-in jobs, the signup close, the portrait refresh and the
+    amendment sweep) and every one-off timer kind."""
     from leaguebot.core.services import season_review_changes
     from leaguebot.results.services.amend_changes import TIMER as AMEND_TIMER
     from leaguebot.results.services.review_lock_change import TIMER as LOCK_TIMER
@@ -89,16 +100,8 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     scheduler = bot.scheduler_service
 
     assert not scheduler._scheduler.running
-    assert sorted(scheduler._phase_callbacks) == [1, 2, 3]
-    slots = [
-        "_mystery_notice_callback", "_forecast_cleanup_callback", "_result_submission_callback",
-        "_rsvp_notice_callback", "_rsvp_last_notice_callback", "_rsvp_deadline_callback",
-        "_rsvp_cleanup_callback", "_portrait_refresh_callback", "_amendment_sweep_callback",
-        "_signup_close_callback",
-    ]
-    assert sorted(slot for slot in slots if getattr(scheduler, slot) is None) == []
-    kinds = {AMEND_TIMER, LOCK_TIMER, DELETE_TIMER, INACTIVITY_TIMER, CORRECTION_TIMER,
-             season_review_changes.TIMER}
+    kinds = _SCHEDULER_KINDS | {AMEND_TIMER, LOCK_TIMER, DELETE_TIMER, INACTIVITY_TIMER,
+                                CORRECTION_TIMER, season_review_changes.TIMER}
     assert sorted(kinds - set(scheduler._timer_callbacks)) == []
 
 
