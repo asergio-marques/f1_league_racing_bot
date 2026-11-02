@@ -214,7 +214,6 @@ async def test_a_timer_missed_while_down_waits_until_the_scheduler_is_resumed(se
     assert handed == [4343]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: paused() resumes a scheduler start-up holds paused")
 async def test_a_backup_taken_during_start_up_leaves_the_scheduler_paused(services):
     """A correction's timer fell due while the bot was down, and start-up holds the scheduler
     paused while its steps run. A backup taken meanwhile pauses the scheduler around its copy

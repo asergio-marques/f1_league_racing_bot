@@ -33,6 +33,7 @@ from collections.abc import Collection, Iterable, Iterator
 from typing import TYPE_CHECKING, Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.base import STATE_PAUSED
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.triggers.cron import CronTrigger
@@ -586,19 +587,22 @@ class SchedulerService:
         """Hold the scheduler still for the block, resuming it however the block ends.
 
         A scheduler that is not running is left as it is, neither paused nor resumed: resuming
-        one nobody paused would start one the bot deliberately left down. It is for the copy of
+        one nobody paused would start one the bot deliberately left down. So is one that is
+        paused already: the scheduler start-up holds paused while its steps run is left paused,
+        since only start-up's last act may let the jobs run. It is for the copy of
         the job store (a backup, a factory reset's, the approval's), where the pause keeps
         every job from firing while the copy is taken. It is not what keeps the copy whole:
         a copy is synchronous on the event-loop thread, which also keeps ``add_job`` out, and
         the copy goes through SQLite's backup API besides.
         """
-        was_running = self._scheduler.running
-        if was_running:
+        # APScheduler 3 reports a paused scheduler as running, so the state is read besides.
+        holds = self._scheduler.running and self._scheduler.state != STATE_PAUSED
+        if holds:
             self._scheduler.pause()
         try:
             yield
         finally:
-            if was_running:
+            if holds:
                 self._scheduler.resume()
 
     def start(self, *, paused: bool = False) -> None:
