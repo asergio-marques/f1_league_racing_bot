@@ -40,7 +40,7 @@ from leaguebot.core.cogs.team_cog import TeamCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage, status_of_stage
 from leaguebot.weather.cogs.weather_cog import WeatherCog
-from tests.support.change_queue import attach_queue, change_rows, league_double, run_queue
+from tests.support.change_queue import change_rows, league_bot, league_queue, run_queue
 from tests.support.settings_league import NOW
 from tests.support.undecorate import undecorate
 
@@ -87,8 +87,10 @@ def _season(stage: SeasonStage):
     )
 
 
-def _bot(db_path: str, stage: SeasonStage | None):
-    """A bot whose live-season lookup answers with a season in *stage*, or none at all.
+async def _bot(db_path: str, stage: SeasonStage | None):
+    """The league's bot (`league_bot`), its season service a double whose live-season lookup
+    answers with a season in *stage*, or none at all, and the reads the commands make of its
+    other services doubled over them.
 
     A COMPLETED or CANCELLED stage is *not* a live season: `get_setup_or_active_season`
     returns None for one, which is exactly how the archive becomes unreachable. Passing the
@@ -97,12 +99,9 @@ def _bot(db_path: str, stage: SeasonStage | None):
     live = None if stage in (None, SeasonStage.COMPLETED, SeasonStage.CANCELLED) else _season(stage)
     archived = _season(stage) if stage in (SeasonStage.COMPLETED, SeasonStage.CANCELLED) else live
 
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service = MagicMock()
+    bot = await league_bot(db_path, season_service=MagicMock())
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-    bot.season_service = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=live)
     # The old lookup, still answered so that a command which has *not* been moved off it
     # would go on working and the test would catch that rather than erroring.
@@ -111,7 +110,6 @@ def _bot(db_path: str, stage: SeasonStage | None):
         return_value=[SimpleNamespace(id=DIVISION_ID, name="Pro", tier=1, calendar_channel_id=700)]
     )
     bot.season_service.get_division_rounds = AsyncMock(return_value=[])
-    bot.team_service = MagicMock()
     bot.team_service.get_teams_with_roles = AsyncMock(
         return_value=[
             {"name": "Red", "full_name": "Red Racing", "role_id": 900, "is_reserve": False}
@@ -125,13 +123,10 @@ def _bot(db_path: str, stage: SeasonStage | None):
             team={"name": "Red", "full_name": "Red Racing", "role_id": 900, "is_reserve": False}
         )
     )
-    bot.placement_service = MagicMock()
     bot.placement_service.set_team_role_config = AsyncMock()
     bot.placement_service.delete_team_role_config = AsyncMock()
     bot.placement_service.swap_team_role = AsyncMock(return_value=0)
     bot.placement_service.team_holding_role = AsyncMock(return_value=None)
-    bot.output_router = MagicMock()
-    bot.output_router.post_log = AsyncMock()
     return bot
 
 
@@ -169,18 +164,10 @@ def _cog(cls, bot):
 
 
 def _attach_the_queue(bot, interaction) -> None:
-    """Give *bot* what the real change queue needs — the league's log and interaction channels,
-    its server configuration and a real router — and attach the queue on the test's database,
-    "now" pinned, its services the bot's own; *interaction* is answered as *bot*'s."""
-    from leaguebot.core.services.output_router import OutputRouter
-
-    double = league_double(bot.db_path)
-    for name in ("log_channel", "interaction_channel", "get_channel", "fetch_channel",
-                 "get_guild", "config_service", "attendance_after_review"):
-        setattr(bot, name, getattr(double, name))
-    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=bot.db_path)
+    """Attach the league's change queue (`league_queue`) on the test's database, "now" pinned,
+    its services the bot's own; *interaction* is answered as *bot*'s."""
     interaction.client = bot
-    attach_queue(bot, bot.db_path, now=NOW)
+    league_queue(bot, bot.db_path, now=NOW)
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +293,7 @@ async def test_every_closed_command_is_refused_in_pending_completion(tmp_path, n
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
     interaction = _interaction()
 
-    await REFUSED[name](_bot(db_path, SeasonStage.PENDING_COMPLETION), interaction)
+    await REFUSED[name](await _bot(db_path, SeasonStage.PENDING_COMPLETION), interaction)
 
     said = _said(interaction)
     assert said, f"{name} said nothing at all in Pending completion"
@@ -319,7 +306,7 @@ async def test_the_reserves_setting_is_not_written_in_pending_completion(tmp_pat
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
     interaction = _interaction()
 
-    await _reserves_toggle(_bot(db_path, SeasonStage.PENDING_COMPLETION), interaction)
+    await _reserves_toggle(await _bot(db_path, SeasonStage.PENDING_COMPLETION), interaction)
 
     async with get_connection(db_path) as db:
         row = await (
@@ -344,7 +331,7 @@ async def test_every_closed_command_is_refused_on_an_archived_season(tmp_path, n
     db_path = await _db(tmp_path, stage)
     interaction = _interaction()
 
-    await REFUSED[name](_bot(db_path, stage), interaction)
+    await REFUSED[name](await _bot(db_path, stage), interaction)
 
     if name == "/team modify":
         # It answers with a form, not a message (#381). With the season archived no season is
@@ -362,7 +349,7 @@ async def test_no_closed_command_reads_the_most_recent_season(tmp_path, name):
     accident on some other refusal, and this catches that.
     """
     db_path = await _db(tmp_path, SeasonStage.COMPLETED)
-    bot = _bot(db_path, SeasonStage.COMPLETED)
+    bot = await _bot(db_path, SeasonStage.COMPLETED)
 
     await REFUSED[name](bot, _interaction())
 
@@ -385,7 +372,7 @@ _ASKED_OF_THE_QUEUE = {
 async def test_every_closed_command_still_runs_while_the_season_is_ongoing(tmp_path, name):
     db_path = await _db(tmp_path, SeasonStage.ONGOING)
     interaction = _interaction()
-    bot = _bot(db_path, SeasonStage.ONGOING)
+    bot = await _bot(db_path, SeasonStage.ONGOING)
 
     await REFUSED[name](bot, interaction)
 
@@ -404,7 +391,7 @@ async def test_the_bulk_amend_modal_is_shown_while_the_season_is_ongoing(tmp_pat
     db_path = await _db(tmp_path, SeasonStage.ONGOING)
     interaction = _interaction()
 
-    await _amend_bulk_session(_bot(db_path, SeasonStage.ONGOING), interaction)
+    await _amend_bulk_session(await _bot(db_path, SeasonStage.ONGOING), interaction)
 
     interaction.response.send_modal.assert_awaited_once()
 
@@ -414,7 +401,7 @@ async def test_the_bulk_amend_modal_is_not_shown_in_pending_completion(tmp_path)
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
     interaction = _interaction()
 
-    await _amend_bulk_session(_bot(db_path, SeasonStage.PENDING_COMPLETION), interaction)
+    await _amend_bulk_session(await _bot(db_path, SeasonStage.PENDING_COMPLETION), interaction)
 
     interaction.response.send_modal.assert_not_awaited()
 
@@ -445,7 +432,7 @@ async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_pa
     """
     cog_class, command, service, setter = MODULE_CHANNEL_COMMANDS[which]
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
-    bot = _bot(db_path, SeasonStage.PENDING_COMPLETION)
+    bot = await _bot(db_path, SeasonStage.PENDING_COMPLETION)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.attendance_service = MagicMock()
     bot.attendance_service.get_division_config = AsyncMock(return_value=None)
@@ -475,7 +462,7 @@ async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_pa
 async def test_results_rounds_amend_is_not_turned_away_by_the_stage(tmp_path):
     """The season's last chance to correct its record before the final classification."""
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
-    bot = _bot(db_path, SeasonStage.PENDING_COMPLETION)
+    bot = await _bot(db_path, SeasonStage.PENDING_COMPLETION)
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     cog = _cog(ResultsCog, bot)
     interaction = _interaction()
@@ -491,7 +478,7 @@ async def test_results_rounds_amend_is_not_turned_away_by_the_stage(tmp_path):
 async def test_results_rounds_amend_is_refused_on_an_archived_season(tmp_path):
     """It deletes a round's driver rows and re-inserts them; nothing puts the old ones back."""
     db_path = await _db(tmp_path, SeasonStage.COMPLETED)
-    bot = _bot(db_path, SeasonStage.COMPLETED)
+    bot = await _bot(db_path, SeasonStage.COMPLETED)
     cog = _cog(ResultsCog, bot)
     interaction = _interaction()
 
