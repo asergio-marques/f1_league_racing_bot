@@ -30,7 +30,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from collections.abc import Collection, Iterable, Iterator
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.schedulers.base import STATE_PAUSED
@@ -88,7 +88,7 @@ _JOB_SUFFIX_RE = re.compile(r"_s\d+_d\d+_r\d+(?:_id\d+)?$")
 # phases and the post-race cleanup that deletes what they posted.
 #
 # Ownership can only be read from the job ID. All nine of a round's jobs — these four,
-# the result submission and the four attendance jobs — carry the same ``round_id`` kwarg, so
+# the result submission and the four attendance jobs — carry the same ``key`` kwarg (the round id), so
 # the kwarg says which round a job belongs to and nothing about which module it is for.
 # The prefix is the only marker there is, and ``_JOB_SUFFIX_RE`` above is what exposes it.
 _WEATHER_JOB_PREFIXES = frozenset({"weather_p1", "weather_p2", "weather_p3", "cleanup"})
@@ -122,7 +122,7 @@ def _job_event_type(job_id: str) -> str | None:
     one from a version of the bot that named its jobs otherwise.
 
     Every caller asking what a job is for asks here, and pairs the answer with the job's
-    ``round_id`` kwarg — never rebuilding an ID to look one up. The review summary once built
+    round id the job is keyed by (`_round_of`) — never rebuilding an ID to look one up. The review summary once built
     IDs of its own, in a shape no job has ever had, and so found none of them (#426).
     """
     m = _JOB_SUFFIX_RE.search(job_id)
@@ -137,41 +137,57 @@ _GLOBAL_SERVICE: "SchedulerService | None" = None
 #: One league, so one signup window at a time and one timer to close it.
 SIGNUP_CLOSE_JOB_ID = "signup_close"
 
+#: The kinds of the standing and one-shot jobs no round owns, named for what they do. Each is
+#: signed up with `SchedulerService.register_timer`, and stored on its job as ``kind``.
+SIGNUP_CLOSE_KIND = "signup_close"
+PORTRAIT_REFRESH_KIND = "portrait_refresh"
+AMENDMENT_SWEEP_KIND = "amendment_sweep"
 
-async def _signup_close_timer_job() -> None:
-    """Module-level APScheduler callable for signup auto-close — picklable for
-    SQLAlchemyJobStore. Delegates to the registered signup-close callback."""
-    if _GLOBAL_SERVICE is None:
-        log.warning("_signup_close_timer_job fired but _GLOBAL_SERVICE is None — skipping")
-        return
-    cb = _GLOBAL_SERVICE._signup_close_callback
-    if cb is None:
-        log.warning("_signup_close_timer_job: no callback registered — skipping")
-        return
-    await cb()
+#: The kinds of a round's nine jobs: each is its job id's prefix (`_job_event_type`), and its key
+#: the round id. A job is a round's where its kind is one of these; another job's key, an
+#: amendment's lapse timer's for one, is no round's, however it is numbered.
+ROUND_JOB_KINDS = frozenset({
+    "weather_p1", "weather_p2", "weather_p3", "cleanup", "results",
+    "rsvp_notice", "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup",
+})
 
 
-async def _one_off_timer_job(kind: str, key: int | str) -> None:
-    """Module-level APScheduler callable for a one-off timer — picklable for the job store.
+def _round_of(job: Any) -> int | None:
+    """The round a stored job belongs to — its key, where its kind is one of a round's
+    (`ROUND_JOB_KINDS`) — or None for any other job."""
+    kwargs = job.kwargs
+    if kwargs.get("kind") not in ROUND_JOB_KINDS:
+        return None
+    key = kwargs.get("key")
+    return key if isinstance(key, int) else None
 
-    Hands *key* to the callback the builder registered for *kind* (`register_timer`), which reads
-    its row again and asks its change. A kind with no callback is passed over with a warning, and
-    a callback that raises is logged: a timer's fault belongs to its host's log, and the queue it
-    would have asked is never the worse for it.
+
+async def _one_off_timer_job(kind: str, key: int | str | None = None) -> None:
+    """The one module-level APScheduler callable every job the scheduler arms runs through —
+    picklable for the job store, and named for the one-off timer it first ran.
+
+    Looks up the handler the builder registered for *kind* (`SchedulerService.register_timer`)
+    and awaits it, handed *key* (the round id of a round's job, the key of a one-off timer), which
+    reads its row again and asks its change. A standing job (the signup close, the portrait
+    refresh, the amendment sweep) is armed with no key, and its handler is handed nothing. A
+    kind with no handler is passed over with a warning, and a handler that raises is logged with
+    its traceback, naming the kind and the key: a job's fault belongs to its host's log, and
+    nothing reaches APScheduler, so a standing job outlives one bad run. Core holds no module's
+    rule about what a job does, only which handler is asked.
     """
     if _GLOBAL_SERVICE is None:
         log.warning("_one_off_timer_job %s fired but _GLOBAL_SERVICE is None — skipping", kind)
         return
-    callback = _GLOBAL_SERVICE._timer_callbacks.get(kind)
-    if callback is None:
-        log.warning("_one_off_timer_job: no callback registered for %s — skipping", kind)
+    handler = _GLOBAL_SERVICE._timer_callbacks.get(kind)
+    if handler is None:
+        log.warning("_one_off_timer_job: no handler registered for %s — skipping", kind)
         return
     try:
-        outcome = callback(key)
+        outcome = handler() if key is None else handler(key)
         if inspect.isawaitable(outcome):
             await outcome
-    except Exception:  # noqa: BLE001 — one timer's fault must not reach the scheduler
-        log.exception("_one_off_timer_job: the %s timer for %s failed", kind, key)
+    except Exception:  # noqa: BLE001 — one job's fault must not reach the scheduler
+        log.exception("_one_off_timer_job: the %s job for %s failed", kind, key)
 
 
 #: One league, so one daily refresh: the job is named by what it does, not by a server.
@@ -186,196 +202,6 @@ AMENDMENT_SWEEP_JOB_ID = "amend_sweep"
 #: exactly, which is close enough for a round nobody is working on and cheap — the sweep reads
 #: one indexed table and almost always finds nothing.
 AMENDMENT_SWEEP_MINUTES = 5
-
-
-async def _portrait_refresh_job() -> None:
-    """Module-level APScheduler callable for the daily portrait refresh — picklable for
-    SQLAlchemyJobStore. Delegates to the registered portrait-refresh callback."""
-    if _GLOBAL_SERVICE is None:
-        log.warning("_portrait_refresh_job fired but _GLOBAL_SERVICE is None — skipping")
-        return
-    cb = _GLOBAL_SERVICE._portrait_refresh_callback
-    if cb is None:
-        log.warning("_portrait_refresh_job: no callback registered — skipping")
-        return
-    await cb()
-
-
-async def _amendment_sweep_job() -> None:
-    """Module-level APScheduler callable for the amendment sweep — picklable for the job store.
-
-    Undoes any amendment whose report and appeal stages went unapproved past their deadline: the
-    first stage commits, so one left hanging would otherwise leave a round scored from the
-    corrected classification and published from the old one indefinitely (#345).
-    """
-    if _GLOBAL_SERVICE is None:
-        log.warning("_amendment_sweep_job fired but _GLOBAL_SERVICE is None — skipping")
-        return
-    cb = _GLOBAL_SERVICE._amendment_sweep_callback
-    if cb is None:
-        log.warning("_amendment_sweep_job: no callback registered — skipping")
-        return
-    try:
-        await cb()
-    except Exception:  # noqa: BLE001 — a standing job must outlive one bad run
-        log.exception("_amendment_sweep_job: sweep failed")
-
-
-async def _weather_phase_job(phase_num: int, round_id: int) -> None:
-    """Top-level APScheduler callable for all weather-phase jobs.
-
-    Replaces both ``_phase_job`` (for normal/sprint/endurance rounds) and the
-    old ``_mystery_notice_job`` (for mystery rounds) in a single dispatcher:
-
-    * MYSTERY + phase 1  → fires the mystery-notice callback.
-    * MYSTERY + phase 2/3 → no-op (mystery rounds have no P2/P3 forecasts).
-    * All other formats  → delegates to the registered phase callback.
-
-    APScheduler with SQLAlchemyJobStore requires picklable callables; this
-    module-level function avoids closure pickling issues.
-    """
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_weather_phase_job fired but _GLOBAL_SERVICE is None "
-            "(phase=%s, round=%s) — skipping",
-            phase_num, round_id,
-        )
-        return
-
-    # Determine round format from DB so scheduling doesn't need to branch.
-    async with get_connection(_GLOBAL_SERVICE._db_path) as _db:
-        _cur = await _db.execute("SELECT format FROM rounds WHERE id = ?", (round_id,))
-        _row = await _cur.fetchone()
-    if _row is None:
-        log.warning("_weather_phase_job: round %s not found in DB — skipping", round_id)
-        return
-
-    is_mystery = _row["format"] == "MYSTERY"
-
-    if is_mystery:
-        if phase_num == 1:
-            cb = _GLOBAL_SERVICE._mystery_notice_callback
-            if cb is None:
-                log.warning("No mystery notice callback; skipping round %s.", round_id)
-                return
-            await cb(round_id)
-        # phases 2 and 3 are intentional no-ops for mystery rounds
-        return
-
-    cb = _GLOBAL_SERVICE._phase_callbacks.get(phase_num)
-    if cb is None:
-        log.warning("No callback registered for phase %s; skipping round %s.", phase_num, round_id)
-        return
-    await cb(round_id)
-
-
-async def _forecast_cleanup_job(round_id: int) -> None:
-    """Top-level APScheduler callable for post-race Phase 3 message cleanup.
-
-    Fires 24 hours after round start.  Follows the same module-level pattern as
-    ``_mystery_notice_job`` to avoid closure pickling issues with
-    SQLAlchemyJobStore.
-    """
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_forecast_cleanup_job fired but _GLOBAL_SERVICE is None "
-            "(round=%s) — skipping",
-            round_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._forecast_cleanup_callback
-    if cb is None:
-        log.warning(
-            "No forecast cleanup callback registered; skipping round %s.", round_id
-        )
-        return
-    await cb(round_id)
-
-
-async def _result_submission_job_wrapper(round_id: int) -> None:
-    """Top-level APScheduler callable for result submission job."""
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_result_submission_job_wrapper fired but _GLOBAL_SERVICE is None "
-            "(round=%s) — skipping",
-            round_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._result_submission_callback
-    if cb is None:
-        log.warning(
-            "No result submission callback registered; skipping round %s.", round_id
-        )
-        return
-    await cb(round_id)
-
-
-async def _rsvp_notice_job(round_id: int) -> None:
-    """Top-level APScheduler callable for RSVP notice jobs.
-
-    Follows the same module-level pattern as ``_mystery_notice_job`` to avoid
-    closure pickling issues with SQLAlchemyJobStore.
-    """
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_rsvp_notice_job fired but _GLOBAL_SERVICE is None "
-            "(round=%s) — skipping",
-            round_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._rsvp_notice_callback
-    if cb is None:
-        log.warning("No RSVP notice callback registered; skipping round %s.", round_id)
-        return
-    await cb(round_id)
-
-
-async def _rsvp_last_notice_job(round_id: int) -> None:
-    """Top-level APScheduler callable for RSVP last-notice jobs."""
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_rsvp_last_notice_job fired but _GLOBAL_SERVICE is None "
-            "(round=%s) — skipping",
-            round_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._rsvp_last_notice_callback
-    if cb is None:
-        log.warning("No RSVP last-notice callback registered; skipping round %s.", round_id)
-        return
-    await cb(round_id)
-
-
-async def _rsvp_deadline_job(round_id: int) -> None:
-    """Top-level APScheduler callable for RSVP deadline jobs."""
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_rsvp_deadline_job fired but _GLOBAL_SERVICE is None "
-            "(round=%s) — skipping",
-            round_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._rsvp_deadline_callback
-    if cb is None:
-        log.warning("No RSVP deadline callback registered; skipping round %s.", round_id)
-        return
-    await cb(round_id)
-
-
-async def _rsvp_cleanup_job(round_id: int) -> None:
-    """Top-level APScheduler callable for the check-in cleanup, 24 h after a round's start."""
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_rsvp_cleanup_job fired but _GLOBAL_SERVICE is None "
-            "(round=%s) — skipping",
-            round_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._rsvp_cleanup_callback
-    if cb is None:
-        log.warning("No RSVP cleanup callback registered; skipping round %s.", round_id)
-        return
-    await cb(round_id)
 
 
 def default_jobstore_path(db_path: str) -> str:
@@ -442,102 +268,16 @@ class SchedulerService:
             job_defaults={"misfire_grace_time": _GRACE_SECONDS},
             timezone="UTC",
         )
-        # Phase callbacks registered by the builder, before the scheduler starts (to avoid circular
-        # imports)
-        self._phase_callbacks: dict[int, Callable] = {}
-        # Signup auto-close callback registered by the builder, before the scheduler starts
-        self._signup_close_callback: "Callable | None" = None
-        self._portrait_refresh_callback: "Callable | None" = None
-        # Amendment sweep callback registered by the builder, before the scheduler starts (#345)
-        self._amendment_sweep_callback: "Callable | None" = None
-        # Mystery notice callback registered by the builder, before the scheduler starts
-        self._mystery_notice_callback: "Callable | None" = None
-        # Post-race forecast cleanup callback registered by the builder, before the scheduler
-        # starts
-        self._forecast_cleanup_callback: "Callable | None" = None
-        # Result submission callback registered by the builder, before the scheduler starts
-        self._result_submission_callback: "Callable | None" = None
-        # RSVP callbacks registered by the builder, before the scheduler starts
-        self._rsvp_notice_callback: "Callable | None" = None
-        self._rsvp_last_notice_callback: "Callable | None" = None
-        self._rsvp_deadline_callback: "Callable | None" = None
-        self._rsvp_cleanup_callback: "Callable | None" = None
-        # One-off timer callbacks, by kind, registered by the builder before the scheduler starts
+        # Every job's handler, by kind, registered by the builder before the scheduler starts
         self._timer_callbacks: dict[str, Callable] = {}
 
-    def register_callbacks(
-        self,
-        phase1_cb: Callable,
-        phase2_cb: Callable,
-        phase3_cb: Callable,
-    ) -> None:
-        """Register async callables for each phase. Called by `build` in __main__.py, before the
-        scheduler is started."""
-        self._phase_callbacks[1] = phase1_cb
-        self._phase_callbacks[2] = phase2_cb
-        self._phase_callbacks[3] = phase3_cb
-
-    def register_mystery_notice_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked when a Mystery round notice fires.
-
-        The callable must accept ``(round_id: int)``.
-        Called by `build` in __main__.py, before the scheduler is started.
-        """
-        self._mystery_notice_callback = callback
-
-    def register_forecast_cleanup_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked 24 h after a round start.
-
-        The callable must accept ``(round_id: int)``.
-        Called by `build` in __main__.py, before the scheduler is started.
-        """
-        self._forecast_cleanup_callback = callback
-
-    def register_result_submission_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked at round start time for result submission.
-
-        The callable must accept ``(round_id: int)``.
-        Called by `build` in __main__.py, before the scheduler is started.
-        """
-        self._result_submission_callback = callback
-
-    def register_rsvp_notice_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked when an RSVP notice job fires.
-
-        The callable must accept ``(round_id: int)``.
-        Called by `build` in __main__.py, before the scheduler is started.
-        """
-        self._rsvp_notice_callback = callback
-
-    def register_rsvp_last_notice_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked when an RSVP last-notice job fires.
-
-        The callable must accept ``(round_id: int)``.
-        Called by `build` in __main__.py, before the scheduler is started.
-        """
-        self._rsvp_last_notice_callback = callback
-
-    def register_rsvp_deadline_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked when an RSVP deadline job fires.
-
-        The callable must accept ``(round_id: int)``.
-        Called by `build` in __main__.py, before the scheduler is started.
-        """
-        self._rsvp_deadline_callback = callback
-
-    def register_rsvp_cleanup_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked when a round's check-in cleanup job fires.
-
-        The callable must accept ``(round_id: int)``.
-        Called by `build` in __main__.py, before the scheduler is started.
-        """
-        self._rsvp_cleanup_callback = callback
-
     def register_timer(self, kind: str, callback: Callable) -> None:
-        """Register the callable invoked, handed its key, when a one-off timer of *kind* fires.
+        """Register the callable invoked when a job of *kind* fires: the one way a kind is signed up.
 
-        The builder registers each kind before the scheduler starts, so that a timer missed while
-        the bot was down finds its callback when it fires on start.
+        It is handed the job's key (a round's id, a one-off timer's key), or nothing where the job
+        is a standing one with no key. The builder registers each kind before the scheduler
+        starts, so that a job missed while the bot was down finds its handler when it fires on
+        start.
         """
         self._timer_callbacks[kind] = callback
 
@@ -651,20 +391,17 @@ class SchedulerService:
 
         Schedules three weather-phase jobs (``weather_p1`` / ``weather_p2`` /
         ``weather_p3``), a cleanup job, and a result-submission job for every
-        round regardless of format.  MYSTERY-vs-normal dispatch is handled at
-        execution time by ``_weather_phase_job``, which checks the round format
-        from the database before deciding which callback to invoke:
-
-        * MYSTERY + weather_p1  → mystery-notice callback
-        * MYSTERY + weather_p2/3 → no-op
-        * Non-mystery           → normal phase callbacks
+        round regardless of format.  Every job runs through `_one_off_timer_job`, handed its kind
+        (its job id's prefix) and the round id as its key.  Whether a MYSTERY round's phase asks
+        for a notice or for nothing is weather's rule, decided by the handler the builder signs
+        up for ``weather_p1`` to ``weather_p3``, never here.
 
         Job IDs follow the convention
         ``<event_type>_s{season_number}_d{division_tier}_r{round_number}_id{round_id}``
         written by `_round_job_suffix` and read back by `_job_event_type`. The season,
         tier and number make them readable in APScheduler admin views; the round id is
-        what makes them unique. The database ``round_id`` is always stored as a kwarg
-        for programmatic lookups.
+        what makes them unique. The round id is always stored as the job's ``key``
+        for programmatic lookups (`_round_of`).
 
         Jobs use ``replace_existing=True`` so re-scheduling an amended round
         is safe.
@@ -697,12 +434,12 @@ class SchedulerService:
                 continue
             job_id = f"weather_p{phase_num}{_suffix}"
             self._scheduler.add_job(
-                _weather_phase_job,
+                _one_off_timer_job,
                 trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
                 id=job_id,
                 replace_existing=True,
                 name=f"Weather P{phase_num} s{season_number} d{division_tier} r{rnd.round_number}",
-                kwargs={"phase_num": phase_num, "round_id": rnd.id},
+                kwargs={"kind": f"weather_p{phase_num}", "key": rnd.id},
             )
             log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
 
@@ -714,12 +451,12 @@ class SchedulerService:
         # Result submission at round start time
         results_job_id = f"results{_suffix}"
         self._scheduler.add_job(
-            _result_submission_job_wrapper,
+            _one_off_timer_job,
             trigger=DateTrigger(run_date=scheduled_at, timezone="UTC"),
             id=results_job_id,
             replace_existing=True,
             name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
-            kwargs={"round_id": rnd.id},
+            kwargs={"kind": "results", "key": rnd.id},
         )
         log.info("Scheduled %s at %s", results_job_id, scheduled_at.isoformat())
 
@@ -762,12 +499,12 @@ class SchedulerService:
         notice_job_id = f"rsvp_notice{_suffix}"
         if notice_fire_at > now:
             self._scheduler.add_job(
-                _rsvp_notice_job,
+                _one_off_timer_job,
                 trigger=DateTrigger(run_date=notice_fire_at, timezone="UTC"),
                 id=notice_job_id,
                 replace_existing=True,
                 name=f"RSVP notice s{season_number} d{division_tier} r{rnd.round_number}",
-                kwargs={"round_id": rnd.id},
+                kwargs={"kind": "rsvp_notice", "key": rnd.id},
             )
             log.info("Scheduled %s at %s", notice_job_id, notice_fire_at.isoformat())
         else:
@@ -779,12 +516,12 @@ class SchedulerService:
             last_notice_job_id = f"rsvp_last_notice{_suffix}"
             if last_notice_fire_at > now:
                 self._scheduler.add_job(
-                    _rsvp_last_notice_job,
+                    _one_off_timer_job,
                     trigger=DateTrigger(run_date=last_notice_fire_at, timezone="UTC"),
                     id=last_notice_job_id,
                     replace_existing=True,
                     name=f"RSVP last-notice s{season_number} d{division_tier} r{rnd.round_number}",
-                    kwargs={"round_id": rnd.id},
+                    kwargs={"kind": "rsvp_last_notice", "key": rnd.id},
                 )
                 log.info("Scheduled %s at %s", last_notice_job_id, last_notice_fire_at.isoformat())
             else:
@@ -799,12 +536,12 @@ class SchedulerService:
         deadline_job_id = f"rsvp_deadline{_suffix}"
         if deadline_fire_at > now:
             self._scheduler.add_job(
-                _rsvp_deadline_job,
+                _one_off_timer_job,
                 trigger=DateTrigger(run_date=deadline_fire_at, timezone="UTC"),
                 id=deadline_job_id,
                 replace_existing=True,
                 name=f"RSVP deadline s{season_number} d{division_tier} r{rnd.round_number}",
-                kwargs={"round_id": rnd.id},
+                kwargs={"kind": "rsvp_deadline", "key": rnd.id},
             )
             log.info("Scheduled %s at %s", deadline_job_id, deadline_fire_at.isoformat())
         else:
@@ -843,12 +580,12 @@ class SchedulerService:
         if forecast:
             cleanup_job_id = f"cleanup{suffix}"
             self._scheduler.add_job(
-                _forecast_cleanup_job,
+                _one_off_timer_job,
                 trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
                 id=cleanup_job_id,
                 replace_existing=True,
                 name=f"Forecast cleanup s{season_number} d{division_tier} r{rnd.round_number}",
-                kwargs={"round_id": rnd.id},
+                kwargs={"kind": "cleanup", "key": rnd.id},
             )
             log.info("Scheduled %s at %s", cleanup_job_id, cleanup_fire_at.isoformat())
 
@@ -856,12 +593,12 @@ class SchedulerService:
             rsvp_job_id = f"rsvp_cleanup{suffix}"
             if cleanup_fire_at > datetime.now(timezone.utc):
                 self._scheduler.add_job(
-                    _rsvp_cleanup_job,
+                    _one_off_timer_job,
                     trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
                     id=rsvp_job_id,
                     replace_existing=True,
                     name=f"RSVP cleanup s{season_number} d{division_tier} r{rnd.round_number}",
-                    kwargs={"round_id": rnd.id},
+                    kwargs={"kind": "rsvp_cleanup", "key": rnd.id},
                 )
                 log.info("Scheduled %s at %s", rsvp_job_id, cleanup_fire_at.isoformat())
             else:
@@ -872,10 +609,9 @@ class SchedulerService:
 
         The ids let a cancellation refused afterwards know what it took and arm it again (#439).
 
-        Iterates the live jobstore and removes every job whose ``round_id``
-        kwarg matches.  This is format-agnostic and works with both the
-        current ``<event>_s{S}_d{D}_r{R}_id{round_id}`` ID scheme and any other jobs
-        that carry ``round_id`` in their kwargs.
+        Iterates the live jobstore and removes every job of one of a round's kinds
+        (`ROUND_JOB_KINDS`) whose ``key`` is *round_id*.  This is format-agnostic, and leaves
+        alone a one-off timer of another kind that happens to be keyed with the same number.
 
         Args:
             only: When given, restricts the removal to jobs whose event type — as
@@ -888,7 +624,7 @@ class SchedulerService:
         """
         removed: list[str] = []
         for job in self._scheduler.get_jobs():
-            if job.kwargs.get("round_id") != round_id:
+            if _round_of(job) != round_id:
                 continue
             if only is not None:
                 event_type = _job_event_type(job.id)
@@ -915,7 +651,7 @@ class SchedulerService:
         removed: dict[int, list[str]] = {}
         jobs = list(self._scheduler.get_jobs())
         for job in jobs:
-            round_id = job.kwargs.get("round_id")
+            round_id = _round_of(job)
             if round_id in wanted or (season_end and job.id.startswith("season_end")):
                 if self._remove_job(job.id):
                     log.info("Removed job %s", job.id)
@@ -1011,12 +747,12 @@ class SchedulerService:
             season_number, division_tier = division_meta[rnd.division_id]
             job_id = f"results{_round_job_suffix(rnd, season_number, division_tier)}"
             self._scheduler.add_job(
-                _result_submission_job_wrapper,
+                _one_off_timer_job,
                 trigger=DateTrigger(run_date=scheduled_at, timezone="UTC"),
                 id=job_id,
                 replace_existing=True,
                 name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
-                kwargs={"round_id": rnd.id},
+                kwargs={"kind": "results", "key": rnd.id},
             )
             log.info("Scheduled %s at %s", job_id, scheduled_at.isoformat())
 
@@ -1033,12 +769,12 @@ class SchedulerService:
         """
         job_id = f"results{_round_job_suffix(rnd, season_number, division_tier)}"
         self._scheduler.add_job(
-            _result_submission_job_wrapper,
+            _one_off_timer_job,
             id=job_id,
             replace_existing=True,
             misfire_grace_time=None,
             name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
-            kwargs={"round_id": rnd.id},
+            kwargs={"kind": "results", "key": rnd.id},
         )
         log.info("Running %s at once: the round's moment has passed", job_id)
 
@@ -1122,7 +858,7 @@ class SchedulerService:
         for job in self._scheduler.get_jobs():
             if job.next_run_time is None:
                 continue
-            round_id = job.kwargs.get("round_id")
+            round_id = _round_of(job)
             if round_id is None or round_id not in round_ids:
                 continue
             # The event type, read off the ID by the scheme's one reader
@@ -1152,8 +888,8 @@ class SchedulerService:
         not "what will advance fire".
 
         A job is found by its round and its event type, the way ``cancel_round`` finds one
-        (issue #139): the ``round_id`` kwarg, which is the round's own key whatever numbers
-        its ID carries, and the type `_job_event_type` reads off the ID. A caller asks
+        (issue #139): the round id the job is keyed by, which is the round's own key whatever numbers
+        its ID carries (`_round_of`), and the type `_job_event_type` reads off the ID. A caller asks
         ``(round_id, "weather_p1") in queued`` and never rebuilds an ID to look one up — the
         review once did, in a shape no job has ever had, and so found none (#426). A mystery
         round's notice is armed as ``weather_p1`` and is found under that type.
@@ -1165,8 +901,8 @@ class SchedulerService:
         for job in self._scheduler.get_jobs():
             if job.next_run_time is None:
                 continue
-            round_id = job.kwargs.get("round_id")
-            if round_id not in round_ids:
+            round_id = _round_of(job)
+            if round_id is None or round_id not in round_ids:
                 continue
             event_type = _job_event_type(job.id)
             if event_type is not None:
@@ -1197,10 +933,6 @@ class SchedulerService:
     # Signup auto-close scheduling
     # ------------------------------------------------------------------
 
-    def register_portrait_refresh_callback(self, callback: Callable) -> None:
-        """Register the coroutine the daily driver-portrait refresh delegates to."""
-        self._portrait_refresh_callback = callback
-
     def schedule_portrait_refresh(self, time_of_day: str) -> None:
         """Schedule the league's daily driver-portrait refresh at *time_of_day* UTC.
 
@@ -1221,21 +953,14 @@ class SchedulerService:
         hour, _, minute = time_of_day.partition(":")
         job_id = PORTRAIT_REFRESH_JOB_ID
         self._scheduler.add_job(
-            _portrait_refresh_job,
+            _one_off_timer_job,
             trigger=CronTrigger(hour=int(hour), minute=int(minute), timezone="UTC"),
             id=job_id,
             replace_existing=True,
             name="Daily driver portrait refresh",
+            kwargs={"kind": PORTRAIT_REFRESH_KIND},
         )
         log.info("Scheduled %s at %s UTC daily", job_id, time_of_day)
-
-    def register_amendment_sweep_callback(self, callback: Callable) -> None:
-        """Register the async callable the standing amendment sweep invokes (#345).
-
-        Injected from `__main__.py` after startup, as the other callbacks here are, so the scheduler
-        keeps no reference to the bot and this module stays importable on its own.
-        """
-        self._amendment_sweep_callback = callback
 
     def schedule_amendment_sweep(self) -> None:
         """Arm the standing sweep that undoes an amendment nobody carried through (#345).
@@ -1248,11 +973,12 @@ class SchedulerService:
         ``replace_existing=True`` so a restart re-arms rather than duplicates it.
         """
         self._scheduler.add_job(
-            _amendment_sweep_job,
+            _one_off_timer_job,
             trigger=IntervalTrigger(minutes=AMENDMENT_SWEEP_MINUTES),
             id=AMENDMENT_SWEEP_JOB_ID,
             replace_existing=True,
             name="Revert abandoned round amendments",
+            kwargs={"kind": AMENDMENT_SWEEP_KIND},
         )
         log.info(
             "Scheduled %s every %d minutes", AMENDMENT_SWEEP_JOB_ID, AMENDMENT_SWEEP_MINUTES
@@ -1264,14 +990,6 @@ class SchedulerService:
         if self._remove_job(job_id):
             log.info("Removed %s", job_id)
 
-    def register_signup_close_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked when the signup close timer fires.
-
-        The callable takes no arguments.
-        Called by `build` in __main__.py, before the scheduler is started.
-        """
-        self._signup_close_callback = callback
-
     def schedule_signup_close_timer(self, close_at_iso: str) -> None:
         """Schedule the one-shot signup auto-close job at the given ISO 8601 UTC timestamp.
 
@@ -1279,11 +997,12 @@ class SchedulerService:
         """
         fire_at = datetime.fromisoformat(close_at_iso).replace(tzinfo=timezone.utc)
         self._scheduler.add_job(
-            _signup_close_timer_job,
+            _one_off_timer_job,
             trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
             id=SIGNUP_CLOSE_JOB_ID,
             replace_existing=True,
             name="Signup auto-close",
+            kwargs={"kind": SIGNUP_CLOSE_KIND},
         )
         log.info("Scheduled %s at %s", SIGNUP_CLOSE_JOB_ID, fire_at.isoformat())
 

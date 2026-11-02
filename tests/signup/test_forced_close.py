@@ -699,9 +699,6 @@ def _restart_sweep():
     [
         pytest.param(
             _close_timer_callback, "timer", id="close timer",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#283: the signup close is still signed up in a callback slot"
-            ),
         ),
         pytest.param(_restart_sweep, "restart", id="restart sweep"),
     ],

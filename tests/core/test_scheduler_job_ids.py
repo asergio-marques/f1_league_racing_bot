@@ -126,10 +126,6 @@ def test_the_reader_undoes_the_writer(event_type):
     assert ss._job_event_type(job_id) == event_type
 
 
-#: Not yet true until the build: the readers find a round's job by its stored kind and key.
-FOUND_BY_KEY = "#283: the readers still find a round's job by a round_id keyword"
-
-
 def _job(job_id: str, round_id: int | None, *, minutes: int = 5, paused: bool = False):
     """A job as the store holds it: its kind (its id less any round suffix) and, for a round's
     job, the round id as its key, as the one runner is handed them."""
@@ -150,7 +146,6 @@ def _service(jobs: list) -> SchedulerService:
     return service
 
 
-@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_each_event_type_maps_to_its_phase_number():
     """The advance command fires events by phase number, so a prefix mapped wrongly would
     fire the wrong thing — a check-in deadline in place of a forecast."""
@@ -171,7 +166,6 @@ def test_each_event_type_maps_to_its_phase_number():
     assert [p["phase_number"] for p in pending] == [1, 2, 3, 5, 6, 7, 8, 9]
 
 
-@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_jobs_are_returned_in_the_order_they_will_fire():
     """Advance replays a season in order; out of sequence it would post a deadline before
     the call it closes."""
@@ -195,7 +189,6 @@ def test_a_paused_job_is_not_pending():
     assert _service(jobs).get_pending_advance_jobs({42}) == []
 
 
-@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_another_round_s_jobs_are_not_returned():
     suffix_mine = _round_job_suffix(_round(42, 5), 3, 2)
     suffix_theirs = _round_job_suffix(_round(43, 6), 3, 2)
@@ -209,7 +202,6 @@ def test_another_round_s_jobs_are_not_returned():
     assert [p["round_id"] for p in pending] == [42]
 
 
-@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_season_end_jobs_are_excluded():
     """Not an event of any round, so advance must not replay it."""
     suffix = _round_job_suffix(_round(42, 5), 3, 2)
@@ -223,7 +215,6 @@ def test_season_end_jobs_are_excluded():
     assert [p["phase_number"] for p in pending] == [1]
 
 
-@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_both_cleanups_are_replayed_as_events_of_their_own():
     """A round's forecast and check-in come down a day after it, and advance fires both in
     their turn (decided 2026-09-24, #425), the forecast's first where they fall together."""
@@ -237,7 +228,6 @@ def test_both_cleanups_are_replayed_as_events_of_their_own():
     assert [p["phase_number"] for p in pending] == [8, 9]
 
 
-@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_a_results_job_is_never_returned():
     """Result submission is found from database state instead, so that a past-dated job
     which already auto-fired can neither block the wizard nor open it twice. The docstring
@@ -266,7 +256,6 @@ def test_a_job_whose_id_does_not_parse_is_ignored():
     assert _service(jobs).get_pending_advance_jobs({42}) == []
 
 
-@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_every_queued_job_is_listed_by_its_round_and_event_type():
     """`get_queued_events_for_rounds` is the review summary's view and deliberately keeps the
     ones advance excludes — it answers "is a job queued", not "what will advance fire" (#426)."""
@@ -286,7 +275,6 @@ def test_a_paused_job_is_not_queued():
     assert _service(jobs).get_queued_events_for_rounds({42}) == set()
 
 
-@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_a_queued_job_is_found_by_its_round_not_the_numbers_in_its_id():
     """The season, tier and number in an ID are decoration, and two rounds may share them after a
     renumbering. The round a job belongs to is its `round_id` kwarg, which an ID written before

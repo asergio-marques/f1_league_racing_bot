@@ -87,10 +87,6 @@ def _make_mock_job(job_id: str, round_id: int) -> MagicMock:
     return job
 
 
-#: Not yet true until the build: a round's jobs are found by their stored kind and key.
-FOUND_BY_KEY = "#283: cancelling a round still finds its jobs by a round_id keyword"
-
-
 def _mystery_round(round_id: int = 42) -> Round:
     return Round(
         id=round_id,
@@ -141,9 +137,6 @@ class TestScheduleRoundMystery:
         assert any("weather_p2" in jid for jid in job_ids)
         assert any("weather_p3" in jid for jid in job_ids)
 
-    @pytest.mark.xfail(
-        strict=True, reason="#283: a round job is still stored with its round id as round_id"
-    )
     def test_round_id_in_kwargs_for_all_jobs(self):
         """Every job of a mystery round is stored with the round's id as its key."""
         svc = _make_scheduler_no_db()
@@ -184,14 +177,12 @@ class TestCancelRoundIncludesMystery:
         svc._scheduler.get_jobs.return_value = jobs
         return jobs
 
-    @pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
     def test_removes_all_round_jobs(self):
         svc = _make_scheduler_no_db()
         self._setup_round_jobs(svc, round_id=7)
         svc.cancel_round(7)
         assert svc._scheduler.remove_job.call_count == 5
 
-    @pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
     def test_does_not_remove_other_round_jobs(self):
         svc = _make_scheduler_no_db()
         jobs = [

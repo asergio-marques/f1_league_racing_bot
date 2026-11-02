@@ -37,9 +37,6 @@ def _dispose(service) -> None:
         pass
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the signup close job still reads its callback slot"
-)
 async def test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_warn(
     tmp_path, monkeypatch, caplog
 ):

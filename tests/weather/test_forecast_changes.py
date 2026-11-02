@@ -844,8 +844,6 @@ async def test_each_weather_timer_asks_the_queue(tmp_path, timer, round_format, 
 
 
 
-@pytest.mark.xfail(strict=True, reason="#283: weather's phases are not yet signed up as kinds of "
-                   "the one runner, and core's scheduler still reads a round's format")
 async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkeypatch):
     """Round 3 is a mystery round, and every kind is signed up as the builder signs it up. The
     scheduler's runner fired for `weather_p1`, `weather_p2` and `weather_p3` of round 3, as its

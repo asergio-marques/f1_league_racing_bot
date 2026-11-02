@@ -169,7 +169,7 @@ def test_the_portrait_refresh_is_a_recurring_daily_trigger(workspace):
     assert isinstance(job.trigger, CronTrigger)
     fields = {f.name: str(f) for f in job.trigger.fields}
     assert (fields["hour"], fields["minute"]) == ("3", "0")
-    assert job.kwargs == {}
+    assert job.kwargs == {"kind": "portrait_refresh"}
 
 
 def test_the_portrait_refresh_is_scheduled_in_utc(workspace):

@@ -320,9 +320,6 @@ async def test_a_lane_armed_timer_asks_on_its_conversation_s_lane(services, tmp_
 # Every job the scheduler arms runs through the one runner (#283, S7a)
 # ---------------------------------------------------------------------------
 
-#: Not yet true until the build: every arming method stores the one runner.
-ONE_RUNNER = "#283: the arming methods still store a job callable of their own"
-
 #: Pro's round 3 (id 21) of season 7, tier 1, a month away, so that no job of it is due.
 _ROUND_ID = 21
 _ROUND_SUFFIX = "_s7_d1_r3_id21"
@@ -418,7 +415,6 @@ def _stored(service: Any, arm: Any, job_id: str) -> Any:
     return job
 
 
-@pytest.mark.xfail(strict=True, reason=ONE_RUNNER)
 @pytest.mark.parametrize("kind, arm, job_id, key", EVERY_ARMED_KIND)
 async def test_every_kind_runs_through_one_runner(services, kind, arm, job_id, key):
     """Every kind is signed up with a handler of its own, and the job is armed by its method:
@@ -453,7 +449,6 @@ async def test_every_kind_runs_through_one_runner(services, kind, arm, job_id, k
     assert calls == {kind: [() if key is None else (key,)]}
 
 
-@pytest.mark.xfail(strict=True, reason=ONE_RUNNER)
 @pytest.mark.parametrize("kind, arm, job_id, key", EVERY_ARMED_KIND)
 async def test_a_failing_job_keeps_its_traceback(services, caplog, kind, arm, job_id, key):
     """The kind's handler raises when its job fires: the fault is logged at ERROR with its

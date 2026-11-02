@@ -3212,7 +3212,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
     ("core/services/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
     ("core/services/scheduler_service.py", "SchedulerService._remove_job"): (1, PASS["core"]),
-    ("core/services/scheduler_service.py", "_amendment_sweep_job"): (1, BACKGROUND_FAILURES),
     ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
     ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "take_fingerprint"): (1, PASS["core"]),

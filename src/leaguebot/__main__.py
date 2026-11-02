@@ -1004,25 +1004,24 @@ def register_change_types(bot: LeagueBot) -> None:
 
 
 def register_scheduler_callbacks(bot: LeagueBot) -> None:
-    """Give the scheduler the callback of every kind of job it fires: the weather phases, the
-    mystery notice, the forecast clean-up, the result submission, the four check-in callbacks, the
+    """Sign up the handler of every kind of job the scheduler fires, through `register_timer`:
+    the weather phases, the forecast clean-up, the result submission, the four check-in jobs, the
     portrait refresh, the amendment sweep and the signup close.
 
-    Each asks the change queue. Weather's callbacks hold the queue they were handed here
+    Each asks the change queue. Weather's handlers hold the queue they were handed here
     (`timer_callbacks`); the others read it from the bot when they fire. The bot keeps the one
     queue `build` made, so in the running bot the two come to the same; a test that replaces the
-    queue must register these callbacks again. Called by :func:`build`, so that every kind is
+    queue must register these handlers again. Called by :func:`build`, so that every kind is
     registered before the bot starts and before the scheduler does.
     """
-    # Wire weather's callbacks into the scheduler: each asks the change queue
+    # Wire weather's handlers into the scheduler: each asks the change queue
     from leaguebot.weather.services.forecast_changes import timer_callbacks
 
+    scheduler = bot.scheduler_service
     callbacks = timer_callbacks(bot.change_queue, bot.db_path)
-    bot.scheduler_service.register_callbacks(
-        callbacks.phases[1], callbacks.phases[2], callbacks.phases[3]
-    )
-    bot.scheduler_service.register_mystery_notice_callback(callbacks.mystery_notice)
-    bot.scheduler_service.register_forecast_cleanup_callback(callbacks.clean_up)
+    for phase, handler in callbacks.phases.items():
+        scheduler.register_timer(f"weather_p{phase}", handler)
+    scheduler.register_timer("cleanup", callbacks.clean_up)
 
     # Register result submission callback
     from leaguebot.results.services.submission_changes import ask_submission_open
@@ -1030,7 +1029,7 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
     async def _result_submission_cb(round_id: int) -> None:
         await ask_submission_open(bot.change_queue, bot.db_path, round_id)
 
-    bot.scheduler_service.register_result_submission_callback(_result_submission_cb)
+    scheduler.register_timer("results", _result_submission_cb)
 
     # Register RSVP attendance callbacks
     from leaguebot.attendance.services.check_in_changes import (
@@ -1061,10 +1060,10 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
             bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
         )
 
-    bot.scheduler_service.register_rsvp_notice_callback(_rsvp_notice_cb)
-    bot.scheduler_service.register_rsvp_last_notice_callback(_rsvp_last_notice_cb)
-    bot.scheduler_service.register_rsvp_deadline_callback(_rsvp_deadline_cb)
-    bot.scheduler_service.register_rsvp_cleanup_callback(_rsvp_cleanup_cb)
+    scheduler.register_timer("rsvp_notice", _rsvp_notice_cb)
+    scheduler.register_timer("rsvp_last_notice", _rsvp_last_notice_cb)
+    scheduler.register_timer("rsvp_deadline", _rsvp_deadline_cb)
+    scheduler.register_timer("rsvp_cleanup", _rsvp_cleanup_cb)
 
     # Register the daily driver-portrait refresh and re-arm it after a restart. Unlike
     # every other job here the trigger is recurring, so recovery re-adds it rather than
@@ -1074,14 +1073,14 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
         from leaguebot.image.services.driver_portrait_service import run_daily_refresh
         await run_daily_refresh(bot)
 
-    bot.scheduler_service.register_portrait_refresh_callback(_portrait_refresh_cb)
+    scheduler.register_timer("portrait_refresh", _portrait_refresh_cb)
 
     # The standing sweep that undoes an amendment nobody carried through (#345); start-up arms it.
     async def _amendment_sweep_cb() -> None:
         from leaguebot.results.services.result_submission_service import sweep_expired_amendments
         await sweep_expired_amendments(bot, queue=bot.change_queue)
 
-    bot.scheduler_service.register_amendment_sweep_callback(_amendment_sweep_cb)
+    scheduler.register_timer("amendment_sweep", _amendment_sweep_cb)
 
     async def _signup_close_cb() -> None:
         from leaguebot.signup.services.window_close import close_signups_unattended
@@ -1093,7 +1092,7 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
             cause="timer",
         )
 
-    bot.scheduler_service.register_signup_close_callback(_signup_close_cb)
+    scheduler.register_timer("signup_close", _signup_close_cb)
 
 
 async def build(settings: Settings) -> LeagueBot:

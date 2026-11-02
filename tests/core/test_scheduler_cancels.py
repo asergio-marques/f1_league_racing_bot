@@ -45,18 +45,10 @@ CANCELS = [
 
 CANCEL_CASES = [pytest.param(name, args, id=name) for name, args in CANCELS]
 
-#: Not yet true until the build: a round's jobs are found by their stored kind and key.
-FOUND_BY_KEY = "#283: cancelling a round still finds its jobs by a round_id keyword"
-
-#: The cases again, for a test that fails until the build where the method finds the job by
-#: its round: `cancel_round` and `cancel_rounds`.
+#: The cases again, for a test where the method finds the job by its round.
 CANCEL_CASES_FOUND_BY_ROUND = [
     pytest.param(
         name, args, id=name,
-        marks=(
-            pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
-            if name in ("cancel_round", "cancel_rounds") else ()
-        ),
     )
     for name, args in CANCELS
 ]
@@ -135,7 +127,6 @@ _ONE_OFF_TIMER_KEYED_5 = SimpleNamespace(
 )
 
 
-@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_cancel_rounds_removes_every_job_of_every_round_handed_and_no_other():
     """Rounds 5 and 6 each carry two jobs, round 7 one, a season-end job stands, and so does
     amendment 5's lapse timer, whose key is the same number as round 5's. Cancelling rounds 5
@@ -168,7 +159,6 @@ def test_a_store_that_cannot_be_listed_removes_nothing():
     service._scheduler.remove_job.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_cancel_round_gives_the_jobs_it_removed():
     """Round 5 carries its results submission and its clean-up, round 6 its results
     submission, and amendment 5's lapse timer, whose key is the same number as round 5's,
@@ -187,7 +177,6 @@ def test_cancel_round_gives_the_jobs_it_removed():
     assert _ONE_OFF_TIMER_KEYED_5.id not in removed_ids
 
 
-@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_the_season_end():
     """Rounds 5 and 6 each carry two jobs, round 7 one, and a stale season-end job stands. A
     season's cancellation of rounds 5 and 6, the season-end job with them, gives the jobs it
