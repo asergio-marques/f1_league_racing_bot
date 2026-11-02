@@ -10,7 +10,7 @@ scheduler callback before anything starts; a test calls it on paths under `tmp_p
 from __future__ import annotations
 
 import inspect
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -160,7 +160,8 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     Every step is then run on its own, each recovery stubbed to record what it was handed, and is
     seen to run its own recovery once, for the bot, and no other step's, so that a name cannot
     stand over another step's recovery. The amendment sweep arms the bot's scheduler's sweep; the
-    signup close timer, a close still ahead on record, re-arms it on the bot's scheduler; the
+    signup close timer, a close still ahead on record, re-arms it on the bot's scheduler (the step
+    reads the host's clock and takes no `now`, so the close is set a day after that clock); the
     expired review prompts, a review left standing, ask the bot's queue for its take-down ending
     `restart`; the hub hands its recovery the bot and its queue; the wizards are recovered by the
     bot's wizard service; and each other step hands its recovery in the entry point the bot.
@@ -195,7 +196,7 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
         monkeypatch.setattr(SchedulerService, method, scheduling(method))
     monkeypatch.setattr(SchedulerService, "has_job", lambda self, job_id: False)
     bot = await built_bot(tmp_path, now=_NOW)
-    close_at = "2099-03-01T12:00:00+00:00"
+    close_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
     async with get_connection(bot.db_path) as db:
         await db.execute("INSERT INTO signup_module_config (id, close_at) VALUES (1, ?)",
                          (close_at,))
