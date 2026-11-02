@@ -42,8 +42,9 @@ from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.config_service import ConfigService
 from tests.support.change_queue import (
-    attach_queue,
-    league_double,
+    is_built,
+    league_bot,
+    league_queue,
     member,
     member_interaction,
     queued_log_lines,
@@ -162,7 +163,7 @@ async def _division_configs(db_path: str) -> int:
 
 async def _turn_results_off_with_the_cascade(db_path: str):
     """Results & Standings on, attendance on: the admin confirms turning results off with the
-    cascade, on the bot as the builder makes it, and the change queue runs to the end. No hub is
+    cascade, on the league's bot (`league_bot`), and the change queue runs to the end. No hub is
     set, so the refresh the switch-off asks finds nothing to post."""
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.season_service import SeasonService
@@ -172,12 +173,14 @@ async def _turn_results_off_with_the_cascade(db_path: str):
             "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 1)"
         )
         await db.commit()
-    bot = league_double(db_path)
+    bot = await league_bot(db_path)
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    bot.module_service = ModuleService(db_path)
-    bot.season_service = SeasonService(db_path)
-    bot.attendance_service = AttendanceService(db_path)
-    attach_queue(bot, db_path, now=NOW)
+    if not is_built(bot):
+        # The builder's own, on the built bot.
+        bot.module_service = ModuleService(db_path)
+        bot.season_service = SeasonService(db_path)
+        bot.attendance_service = AttendanceService(db_path)
+    league_queue(bot, db_path, now=NOW)
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = bot
     view = _ConfirmDisableResultsView(cog, ACTOR_ID, cascade_attendance=True)
