@@ -708,11 +708,11 @@ sweep to apply, which puts a module's rule in core.
 **Jobs are made only through the scheduler service.** Nothing else arms, finds or removes a job. A
 round's job is named from the round and the event, so arming it again replaces the old one instead
 of adding a second (the `_round_job_suffix` docstring in the scheduler service). A round's timed
-work is armed by the scheduler service's own functions, which take from `round_event_moments`,
-the one function for it, when each event of the round falls: `schedule_round` its forecasts, and
-the results submission through `schedule_result_submission_jobs`, which it calls and which arms
-the submission alone, `schedule_all_rounds` a season's rounds through `schedule_round`, and
-`schedule_attendance_round` its check-in. Beside them, `run_result_submission_now` runs at once
+work is armed by the scheduler service's own functions. Each reads when the round's events fall
+from one function, `round_event_moments`. `schedule_round` arms its forecasts, and its results
+submission through `schedule_result_submission_jobs`, which also arms the submission alone.
+`schedule_all_rounds` arms a season's rounds through `schedule_round`. `schedule_attendance_round`
+arms its check-in. Beside them, `run_result_submission_now` runs at once
 the submission of a round whose moment has passed. Only three changes call them: a season's
 approval, the amendment of a round (`round_amend_change`), and the re-arming of a round whose timed
 work a refused cancellation took, a change of its own (`round_rearm_change`, `season.round.rearm`)
