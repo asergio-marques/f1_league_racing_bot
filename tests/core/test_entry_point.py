@@ -16,8 +16,6 @@ import pytest
 
 from tests.support.change_queue import built_bot
 
-_BUILD_REASON = "#283: the services are built inside main, and there is no build(settings)"
-
 _SET_ONLY_WHERE_KNOWN = {"running_version", "running_version_date"}
 
 
@@ -56,7 +54,6 @@ def test_read_settings(environ, db_path, jobstore_path):
 _NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
 
-@pytest.mark.xfail(strict=True, reason=_BUILD_REASON)
 async def test_build_returns_every_service_complete(tmp_path):
     """`build` on paths under `tmp_path` gives a `LeagueBot` with every service it declares set,
     on the settings' paths, and the wizard service holding the bot from its constructor, with no
@@ -77,7 +74,6 @@ async def test_build_returns_every_service_complete(tmp_path):
     assert not hasattr(bot.wizard_service, "set_bot")
 
 
-@pytest.mark.xfail(strict=True, reason=_BUILD_REASON)
 async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     """Straight after `build`, with the scheduler not yet started, every scheduler callback
     (the three weather phases, the mystery notice, the forecast clean-up, the result submission,

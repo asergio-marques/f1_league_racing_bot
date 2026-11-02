@@ -118,7 +118,7 @@ async def test_the_timer_asks_for_the_last_notice_and_the_queue_posts_it_in_the_
     assert posted in league.channel(CHECK_IN).messages
     assert [row["kind"] for row in await _notice_changes(league)] == [KIND]
     assert await stopped_job(league.db_path) is None
-    assert "ask_check_in_last_notice(" in inspect.getsource(bot_module.main)
+    assert "ask_check_in_last_notice(" in inspect.getsource(bot_module.register_scheduler_callbacks)
 
 
 async def test_a_last_notice_after_a_channel_move_goes_to_the_new_channel_and_is_recorded_there(

@@ -136,7 +136,7 @@ async def test_the_timer_asks_for_the_call_and_the_queue_posts_it(tmp_path):
     assert [row["kind"] for row in await _call_changes(league)] == [KIND]
     assert await stopped_job(league.db_path) is None
     assert posted in league.channel(CHECK_IN).messages
-    assert "ask_check_in_call(" in inspect.getsource(bot_module.main)
+    assert "ask_check_in_call(" in inspect.getsource(bot_module.register_scheduler_callbacks)
 
 
 async def test_the_call_s_record_saves_its_message_and_the_no_rsvp_rows_with_its_mark(tmp_path):

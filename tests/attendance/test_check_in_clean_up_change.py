@@ -110,7 +110,7 @@ async def test_the_timer_asks_for_the_clean_up_and_the_queue_deletes_each_messag
         "plan", "delete_message", "delete_message", "delete_message", "mark_cleared",
     ]
     assert await stopped_job(league.db_path) is None
-    assert "ask_check_in_clean_up(" in inspect.getsource(bot_module.main)
+    assert "ask_check_in_clean_up(" in inspect.getsource(bot_module.register_scheduler_callbacks)
 
 
 async def test_the_day_after_takes_down_the_call_of_a_round_whose_every_session_was_not_held(

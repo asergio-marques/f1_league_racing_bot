@@ -145,19 +145,19 @@ def test_both_forms_of_the_version_are_shown_as_read(version_):
 
 
 def test_the_bot_registers_about_before_the_hub_is_recovered():
-    """`main()` imports the option's module in its own body, so About is registered before
+    """`build()` imports the option's module in its own body, so About is registered before
     `on_ready` — defined within `main()` and run later — recovers the hub."""
     import ast
     from pathlib import Path
 
     source = (Path(__file__).resolve().parents[2] / "src" / "leaguebot" / "__main__.py").read_text(encoding="utf-8")
-    main = next(
+    build = next(
         node for node in ast.parse(source).body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "main"
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "build"
     )
     imported = [
         alias.name
-        for statement in main.body
+        for statement in build.body
         if isinstance(statement, ast.Import)
         for alias in statement.names
     ]

@@ -196,7 +196,7 @@ async def test_the_timer_asks_for_the_deadline_and_the_queue_distributes_locks_a
         "distribute", "lock_call", "announce",
     ]
     assert await stopped_job(league.db_path) is None
-    assert "ask_check_in_deadline(" in inspect.getsource(bot_module.main)
+    assert "ask_check_in_deadline(" in inspect.getsource(bot_module.register_scheduler_callbacks)
 
 
 async def test_the_distribution_reads_the_answers_as_they_stood_at_the_deadline(tmp_path):

@@ -985,34 +985,109 @@ def register_change_types(bot: LeagueBot) -> None:
     )
 
 
-async def main() -> None:
-    load_dotenv()
-    settings = read_settings(os.environ)
+def register_scheduler_callbacks(bot: LeagueBot) -> None:
+    """Give the scheduler the callback of every kind of job it fires: the weather phases, the
+    mystery notice, the forecast clean-up, the result submission, the four check-in callbacks, the
+    portrait refresh, the amendment sweep and the signup close.
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    Each asks the change queue, reading it from the bot when it fires. Called by :func:`build`, so
+    that every kind is registered before the bot starts and before the scheduler does.
+    """
+    # Wire weather's callbacks into the scheduler: each asks the change queue
+    from leaguebot.weather.services.forecast_changes import timer_callbacks
+
+    callbacks = timer_callbacks(bot.change_queue, bot.db_path)
+    bot.scheduler_service.register_callbacks(
+        callbacks.phases[1], callbacks.phases[2], callbacks.phases[3]
     )
-    # A late autocomplete is a race with Discord's three-second budget, not a fault in this
-    # code, and discord.py logs it as an ERROR with a full traceback. Downgrade just that one.
-    install_late_autocomplete_filter()
+    bot.scheduler_service.register_mystery_notice_callback(callbacks.mystery_notice)
+    bot.scheduler_service.register_forecast_cleanup_callback(callbacks.clean_up)
 
-    from leaguebot.core.db.database import run_migrations
+    # Register result submission callback
+    from leaguebot.results.services.submission_changes import ask_submission_open
+
+    async def _result_submission_cb(round_id: int) -> None:
+        await ask_submission_open(bot.change_queue, bot.db_path, round_id)
+
+    bot.scheduler_service.register_result_submission_callback(_result_submission_cb)
+
+    # Register RSVP attendance callbacks
+    from leaguebot.attendance.services.check_in_changes import (
+        ask_check_in_call,
+        ask_check_in_clean_up,
+        ask_check_in_deadline,
+        ask_check_in_last_notice,
+    )
+    from leaguebot.core.models.change import ChangeOrigin
+
+    async def _rsvp_notice_cb(round_id: int) -> None:
+        await ask_check_in_call(
+            bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+        )
+
+    async def _rsvp_last_notice_cb(round_id: int) -> None:
+        await ask_check_in_last_notice(
+            bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+        )
+
+    async def _rsvp_deadline_cb(round_id: int) -> None:
+        await ask_check_in_deadline(
+            bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+        )
+
+    async def _rsvp_cleanup_cb(round_id: int) -> None:
+        await ask_check_in_clean_up(
+            bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+        )
+
+    bot.scheduler_service.register_rsvp_notice_callback(_rsvp_notice_cb)
+    bot.scheduler_service.register_rsvp_last_notice_callback(_rsvp_last_notice_cb)
+    bot.scheduler_service.register_rsvp_deadline_callback(_rsvp_deadline_cb)
+    bot.scheduler_service.register_rsvp_cleanup_callback(_rsvp_cleanup_cb)
+
+    # Register the daily driver-portrait refresh and re-arm it after a restart. Unlike
+    # every other job here the trigger is recurring, so recovery re-adds it rather than
+    # working out whether it was missed: a cron job that did not fire while the bot was
+    # down simply fires at its next due time.
+    async def _portrait_refresh_cb() -> None:
+        from leaguebot.image.services.driver_portrait_service import run_daily_refresh
+        await run_daily_refresh(bot)
+
+    bot.scheduler_service.register_portrait_refresh_callback(_portrait_refresh_cb)
+
+    # The standing sweep that undoes an amendment nobody carried through (#345); `on_ready` arms it.
+    async def _amendment_sweep_cb() -> None:
+        from leaguebot.results.services.result_submission_service import sweep_expired_amendments
+        await sweep_expired_amendments(bot, queue=bot.change_queue)
+
+    bot.scheduler_service.register_amendment_sweep_callback(_amendment_sweep_cb)
+
+    async def _signup_close_cb() -> None:
+        from leaguebot.signup.services.window_close import close_signups_unattended
+        await close_signups_unattended(
+            change_queue=bot.change_queue,
+            module_service=bot.module_service,
+            signup_module_service=bot.signup_module_service,
+            driver_service=bot.driver_service,
+            cause="timer",
+        )
+
+    bot.scheduler_service.register_signup_close_callback(_signup_close_cb)
+
+
+async def build(settings: Settings) -> LeagueBot:
+    """Make the bot and every service, each handed what it needs and complete once built, and
+    return it, nothing started.
+
+    Registers every change type, timer kind and scheduler callback, loads the cogs and the
+    persistent views, before the bot connects and before the scheduler starts, so a press on a
+    persistent button arriving while `on_ready` is still recovering finds all of it in place
+    (#228). Reads no environment: the settings are handed in (:func:`read_settings`).
+    """
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.season_service import SeasonService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.output_router import OutputRouter
-
-    # A staged restore is swapped in **here**, before a single service is constructed and
-    # before the scheduler opens its job store. Every service captures its path and holds
-    # connections open, so this is the one moment in the process at which replacing the
-    # files underneath them is safe. `/test-mode backup restore` stages and does no more,
-    # precisely so that the swap can happen at this point on the next start — under a
-    # service or from a terminal alike.
-    from leaguebot.core.services.backup_service import apply_staged_restore
-
-    if apply_staged_restore(settings.db_path, settings.jobstore_path):
-        log.info("Started on a restored database.")
 
     bot = create_bot()
     bot.db_path = settings.db_path
@@ -1104,6 +1179,107 @@ async def main() -> None:
     )
 
     register_change_types(bot)
+    register_scheduler_callbacks(bot)
+
+    # --- Load Cogs ---
+    from leaguebot.core.cogs.bot_cog import BotCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.amendment_cog import AmendmentCog
+    from leaguebot.core.cogs.test_mode_cog import TestModeCog
+    from leaguebot.core.cogs.track_cog import TrackCog
+    from leaguebot.core.cogs.driver_cog import DriverCog
+    from leaguebot.core.cogs.team_cog import TeamCog
+    from leaguebot.core.cogs.module_cog import ModuleCog
+    from leaguebot.signup.cogs.signup_cog import SignupCog
+    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+    from leaguebot.core.cogs.retry_cog import RetryCog
+    from leaguebot.results.cogs.results_cog import ResultsCog
+    from leaguebot.weather.cogs.weather_cog import WeatherCog
+    from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
+    from leaguebot.image.cogs.image_cog import ImageCog
+    from leaguebot.core.cogs.clean_cog import CleanCog
+
+    await bot.add_cog(BotCog(bot))
+    await bot.add_cog(SeasonCog(bot))
+    await bot.add_cog(AmendmentCog(bot))
+    await bot.add_cog(TestModeCog(bot))
+    await bot.add_cog(TrackCog(bot))
+    await bot.add_cog(DriverCog(bot))
+    await bot.add_cog(TeamCog(bot))
+    await bot.add_cog(ModuleCog(bot))
+    await bot.add_cog(SignupCog(bot))
+    await bot.add_cog(AdminReviewCog(bot))
+    await bot.add_cog(RetryCog(bot))
+    await bot.add_cog(ResultsCog(bot))
+    await bot.add_cog(WeatherCog(bot))
+    await bot.add_cog(AttendanceCog(bot))
+    await bot.add_cog(ImageCog(bot))
+    await bot.add_cog(CleanCog(bot))
+
+    # Register ALL persistent views so button interactions survive bot restarts.
+    # Views with optional __init__ params resolve driver context from channel at
+    # interaction time, so a single registration handles all active wizard sessions.
+    from leaguebot.signup.services.signup_views import (
+        SignupButtonView,
+        WithdrawButtonView,
+        NoNotesButtonView,
+        PlatformButtonView,
+        DriverTypeButtonView,
+        PreferredTeamsButtonView,
+        NoPreferenceTeammateView,
+    )
+    from leaguebot.signup.services.signup_views import AdminReviewView, CorrectionParameterView
+    from leaguebot.results.services.penalty_wizard import PenaltyReviewView, ApprovalView, AppealsReviewView
+    from leaguebot.attendance.services.rsvp_service import RsvpView
+
+    for _view in (
+        SignupButtonView(bot.change_queue),
+        WithdrawButtonView(None, bot.change_queue),
+        NoNotesButtonView(None, bot.change_queue),
+        PlatformButtonView(None, bot.change_queue),
+        DriverTypeButtonView(None, bot.change_queue),
+        PreferredTeamsButtonView(None, bot.change_queue),   # registers pteam_0..pteam_19 stubs + nopref + cancel
+        NoPreferenceTeammateView(None, bot.change_queue),
+        AdminReviewView(change_queue=bot.change_queue),
+        CorrectionParameterView(change_queue=bot.change_queue),
+        PenaltyReviewView(),
+        ApprovalView(),
+        AppealsReviewView(),
+        RsvpView(),  # stub registration; message_id-specific re-arm done in _recover_rsvp_views_and_deadlines
+    ):
+        bot.add_view(_view)
+
+    log.info("All cogs loaded.")
+
+    return bot
+
+
+async def main() -> None:
+    load_dotenv()
+    settings = read_settings(os.environ)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    # A late autocomplete is a race with Discord's three-second budget, not a fault in this
+    # code, and discord.py logs it as an ERROR with a full traceback. Downgrade just that one.
+    install_late_autocomplete_filter()
+
+    from leaguebot.core.db.database import run_migrations
+
+    # A staged restore is swapped in **here**, before a single service is constructed and
+    # before the scheduler opens its job store. Every service captures its path and holds
+    # connections open, so this is the one moment in the process at which replacing the
+    # files underneath them is safe. `/test-mode backup restore` stages and does no more,
+    # precisely so that the swap can happen at this point on the next start — under a
+    # service or from a terminal alike.
+    from leaguebot.core.services.backup_service import apply_staged_restore
+
+    if apply_staged_restore(settings.db_path, settings.jobstore_path):
+        log.info("Started on a restored database.")
+
+    bot = await build(settings)
 
     @bot.event
     async def on_ready() -> None:
@@ -1117,77 +1293,11 @@ async def main() -> None:
         # Start the persistent APScheduler
         bot.scheduler_service.start()
 
-        # Wire weather's callbacks into the scheduler: each asks the change queue
-        from leaguebot.weather.services.forecast_changes import timer_callbacks
-
-        callbacks = timer_callbacks(bot.change_queue, bot.db_path)
-        bot.scheduler_service.register_callbacks(
-            callbacks.phases[1], callbacks.phases[2], callbacks.phases[3]
-        )
-        bot.scheduler_service.register_mystery_notice_callback(callbacks.mystery_notice)
-        bot.scheduler_service.register_forecast_cleanup_callback(callbacks.clean_up)
-
-        # Register result submission callback
-        from leaguebot.results.services.submission_changes import ask_submission_open
-
-        async def _result_submission_cb(round_id: int) -> None:
-            await ask_submission_open(bot.change_queue, bot.db_path, round_id)
-
-        bot.scheduler_service.register_result_submission_callback(_result_submission_cb)
-
-        # Register RSVP attendance callbacks
-        from leaguebot.attendance.services.check_in_changes import (
-            ask_check_in_call,
-            ask_check_in_clean_up,
-            ask_check_in_deadline,
-            ask_check_in_last_notice,
-        )
-        from leaguebot.core.models.change import ChangeOrigin
-
-        async def _rsvp_notice_cb(round_id: int) -> None:
-            await ask_check_in_call(
-                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
-            )
-
-        async def _rsvp_last_notice_cb(round_id: int) -> None:
-            await ask_check_in_last_notice(
-                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
-            )
-
-        async def _rsvp_deadline_cb(round_id: int) -> None:
-            await ask_check_in_deadline(
-                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
-            )
-
-        async def _rsvp_cleanup_cb(round_id: int) -> None:
-            await ask_check_in_clean_up(
-                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
-            )
-
-        bot.scheduler_service.register_rsvp_notice_callback(_rsvp_notice_cb)
-        bot.scheduler_service.register_rsvp_last_notice_callback(_rsvp_last_notice_cb)
-        bot.scheduler_service.register_rsvp_deadline_callback(_rsvp_deadline_cb)
-        bot.scheduler_service.register_rsvp_cleanup_callback(_rsvp_cleanup_cb)
-
-        # Register the daily driver-portrait refresh and re-arm it after a restart. Unlike
-        # every other job here the trigger is recurring, so recovery re-adds it rather than
-        # working out whether it was missed: a cron job that did not fire while the bot was
-        # down simply fires at its next due time.
-        async def _portrait_refresh_cb() -> None:
-            from leaguebot.image.services.driver_portrait_service import run_daily_refresh
-            await run_daily_refresh(bot)
-
-        bot.scheduler_service.register_portrait_refresh_callback(_portrait_refresh_cb)
-
-        # The standing sweep that undoes an amendment nobody carried through (#345). Armed
-        # unconditionally rather than behind a setting: the amendment's first stage commits, so
-        # a league running the results module at all can leave a round half-amended, and the
-        # sweep is what makes that recoverable without anybody noticing it happened.
-        async def _amendment_sweep_cb() -> None:
-            from leaguebot.results.services.result_submission_service import sweep_expired_amendments
-            await sweep_expired_amendments(bot, queue=bot.change_queue)
-
-        bot.scheduler_service.register_amendment_sweep_callback(_amendment_sweep_cb)
+        # The standing sweep that undoes an amendment nobody carried through (#345), its callback
+        # registered by `build`. Armed unconditionally rather than behind a setting: the
+        # amendment's first stage commits, so a league running the results module at all can leave
+        # a round half-amended, and the sweep is what makes that recoverable without anybody
+        # noticing it happened.
         bot.scheduler_service.schedule_amendment_sweep()
 
         try:
@@ -1195,22 +1305,9 @@ async def main() -> None:
         except Exception:
             log.warning("Portrait refresh recovery failed", exc_info=True)
 
-        # Register signup auto-close callback and recover any timers lost on restart (T021)
-        from leaguebot.signup.services.signup_module_service import SignupModuleService as _SignupModuleSvc
+        # Recover any signup close timer lost on restart (T021); its callback is registered by `build`.
         from leaguebot.core.db.database import get_connection as _get_conn
         from datetime import datetime as _dt, timezone as _tz
-
-        async def _signup_close_cb() -> None:
-            from leaguebot.signup.services.window_close import close_signups_unattended
-            await close_signups_unattended(
-                change_queue=bot.change_queue,
-                module_service=bot.module_service,
-                signup_module_service=bot.signup_module_service,
-                driver_service=bot.driver_service,
-                cause="timer",
-            )
-
-        bot.scheduler_service.register_signup_close_callback(_signup_close_cb)
 
         async def _recover_signup_close_timers() -> None:
             async with _get_conn(bot.db_path) as _db:
@@ -1312,75 +1409,7 @@ async def main() -> None:
     async def on_disconnect() -> None:
         log.warning("Bot disconnected from Discord")
 
-    # --- Load Cogs ---
-    from leaguebot.core.cogs.bot_cog import BotCog
-    from leaguebot.core.cogs.season_cog import SeasonCog
-    from leaguebot.core.cogs.amendment_cog import AmendmentCog
-    from leaguebot.core.cogs.test_mode_cog import TestModeCog
-    from leaguebot.core.cogs.track_cog import TrackCog
-    from leaguebot.core.cogs.driver_cog import DriverCog
-    from leaguebot.core.cogs.team_cog import TeamCog
-    from leaguebot.core.cogs.module_cog import ModuleCog
-    from leaguebot.signup.cogs.signup_cog import SignupCog
-    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
-    from leaguebot.core.cogs.retry_cog import RetryCog
-    from leaguebot.results.cogs.results_cog import ResultsCog
-    from leaguebot.weather.cogs.weather_cog import WeatherCog
-    from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
-    from leaguebot.image.cogs.image_cog import ImageCog
-    from leaguebot.core.cogs.clean_cog import CleanCog
-
-    await bot.add_cog(BotCog(bot))
-    await bot.add_cog(SeasonCog(bot))
-    await bot.add_cog(AmendmentCog(bot))
-    await bot.add_cog(TestModeCog(bot))
-    await bot.add_cog(TrackCog(bot))
-    await bot.add_cog(DriverCog(bot))
-    await bot.add_cog(TeamCog(bot))
-    await bot.add_cog(ModuleCog(bot))
-    await bot.add_cog(SignupCog(bot))
-    await bot.add_cog(AdminReviewCog(bot))
-    await bot.add_cog(RetryCog(bot))
-    await bot.add_cog(ResultsCog(bot))
-    await bot.add_cog(WeatherCog(bot))
-    await bot.add_cog(AttendanceCog(bot))
-    await bot.add_cog(ImageCog(bot))
-    await bot.add_cog(CleanCog(bot))
-
-    # Register ALL persistent views so button interactions survive bot restarts.
-    # Views with optional __init__ params resolve driver context from channel at
-    # interaction time, so a single registration handles all active wizard sessions.
-    from leaguebot.signup.services.signup_views import (
-        SignupButtonView,
-        WithdrawButtonView,
-        NoNotesButtonView,
-        PlatformButtonView,
-        DriverTypeButtonView,
-        PreferredTeamsButtonView,
-        NoPreferenceTeammateView,
-    )
-    from leaguebot.signup.services.signup_views import AdminReviewView, CorrectionParameterView
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewView, ApprovalView, AppealsReviewView
-    from leaguebot.attendance.services.rsvp_service import RsvpView
-
-    for _view in (
-        SignupButtonView(bot.change_queue),
-        WithdrawButtonView(None, bot.change_queue),
-        NoNotesButtonView(None, bot.change_queue),
-        PlatformButtonView(None, bot.change_queue),
-        DriverTypeButtonView(None, bot.change_queue),
-        PreferredTeamsButtonView(None, bot.change_queue),   # registers pteam_0..pteam_19 stubs + nopref + cancel
-        NoPreferenceTeammateView(None, bot.change_queue),
-        AdminReviewView(change_queue=bot.change_queue),
-        CorrectionParameterView(change_queue=bot.change_queue),
-        PenaltyReviewView(),
-        ApprovalView(),
-        AppealsReviewView(),
-        RsvpView(),  # stub registration; message_id-specific re-arm done in _recover_rsvp_views_and_deadlines
-    ):
-        bot.add_view(_view)
-
-    log.info("All cogs loaded. Starting bot...")
+    log.info("Starting bot...")
 
     @bot.command(name="sync", hidden=True)
     @commands.is_owner()
