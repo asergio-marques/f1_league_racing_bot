@@ -484,9 +484,9 @@ KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/scheduler_service.py", "SchedulerService.schedule_attendance_round"): (3, PASS["attendance"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_portrait_refresh"): (1, PASS["image"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_result_submission_jobs"): (1, "#450"),
-    # Weather's phases and the results job: the build arms the results job through
-    # `schedule_result_submission_jobs`, whose line it stays under (#450), and this line falls to 1.
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (2, PASS["weather"]),
+    # Weather's phases alone: the results job is armed through `schedule_result_submission_jobs`,
+    # whose line it stays under (#450).
+    ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (1, PASS["weather"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_round_cleanups"): (2, CLEANUPS),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_signup_close_timer"): (1, PASS["signup"]),
 }

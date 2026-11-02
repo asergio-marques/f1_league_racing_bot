@@ -390,8 +390,8 @@ class SchedulerService:
         """Register DateTrigger jobs for *rnd*.
 
         Schedules three weather-phase jobs (``weather_p1`` / ``weather_p2`` /
-        ``weather_p3``), a cleanup job, and a result-submission job for every
-        round regardless of format.  Every job runs through `_one_off_timer_job`, handed its kind
+        ``weather_p3``), a cleanup job, and — through `schedule_result_submission_jobs` — a
+        result-submission job for every round regardless of format.  Every job runs through `_one_off_timer_job`, handed its kind
         (its job id's prefix) and the round id as its key.  Whether a MYSTERY round's phase asks
         for a notice or for nothing is weather's rule, decided by the handler the builder signs
         up for ``weather_p1`` to ``weather_p3``, never here.
@@ -448,17 +448,11 @@ class SchedulerService:
             rnd, season_number=season_number, division_tier=division_tier, check_in=False
         )
 
-        # Result submission at round start time
-        results_job_id = f"results{_suffix}"
-        self._scheduler.add_job(
-            _one_off_timer_job,
-            trigger=DateTrigger(run_date=scheduled_at, timezone="UTC"),
-            id=results_job_id,
-            replace_existing=True,
-            name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
-            kwargs={"kind": "results", "key": rnd.id},
+        # Result submission at round start time, armed where every results job is, so that the
+        # one arming here is weather's alone.
+        self.schedule_result_submission_jobs(
+            [rnd], division_meta={rnd.division_id: (season_number, division_tier)}
         )
-        log.info("Scheduled %s at %s", results_job_id, scheduled_at.isoformat())
 
     def schedule_attendance_round(
         self,
@@ -728,9 +722,10 @@ class SchedulerService:
         *,
         division_meta: dict[int, tuple[int, int]],
     ) -> None:
-        """Schedule only the result-submission job for each round.
+        """Schedule the result-submission job for each round: the one place it is armed, which
+        ``schedule_round`` also calls.
 
-        Used where ``schedule_round`` (which creates all weather + results jobs together) is
+        Called alone where ``schedule_round`` (which creates the weather jobs too) is
         not called for a round: the weather module is off (at approval or at an
         amendment), or a mystery round was amended inside its first horizon. The round still
         needs this job to leave Not run.
