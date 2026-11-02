@@ -718,20 +718,20 @@ class SchedulerService:
                 job IDs.  Every round's ``division_id`` must have an entry.
         """
         for rnd in rounds:
-            scheduled_at = rnd.scheduled_at
-            if scheduled_at.tzinfo is None:
-                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+            fire_at = round_event_moments(rnd.scheduled_at, weather=None, attendance=None)[
+                "results"
+            ]
             season_number, division_tier = division_meta[rnd.division_id]
             job_id = f"results{_round_job_suffix(rnd, season_number, division_tier)}"
             self._scheduler.add_job(
                 _one_off_timer_job,
-                trigger=DateTrigger(run_date=scheduled_at, timezone="UTC"),
+                trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
                 id=job_id,
                 replace_existing=True,
                 name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
                 kwargs={"kind": "results", "key": rnd.id},
             )
-            log.info("Scheduled %s at %s", job_id, scheduled_at.isoformat())
+            log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
 
     def run_result_submission_now(
         self, rnd: Round, *, season_number: int, division_tier: int
