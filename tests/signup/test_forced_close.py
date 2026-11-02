@@ -638,7 +638,7 @@ async def test_a_close_nobody_ran_that_closes_nothing_writes_no_line(
 
 
 def _functions_in_main():
-    """Every function `__main__` defines, the closures inside `on_ready` included."""
+    """Every function the entry point defines, its closures included."""
     import ast
     import inspect
 
@@ -702,8 +702,8 @@ def test_the_close_timer_and_the_restart_sweep_call_the_close_nobody_ran(find, c
     """Signups close at their set time, or the bot restarts after it: the job that runs then
     closes them through `close_signups_unattended` with its own cause, so its one line naming
     no member is written, and never through `execute_forced_close`, which writes none. Both
-    are closures inside `on_ready`, which no test drives whole, so the wiring is read from the
-    source, as `test_hub_hooks.py` reads the hub's."""
+    are defined in the entry point, among steps no test drives whole, so the wiring is read
+    from the source."""
     function = find()
 
     closes = _calls_to(function, "close_signups_unattended")

@@ -4,8 +4,8 @@ A close of the signup window is a change on the queue, which a restart resumes l
 (`signup.close`), and which saves the window's close and the season's move in one job. So no
 close is ever left half done off the queue: the start-up has no step finishing an off-queue
 close's closing notices, and none moving on a season a close left in its window's stage. Read
-from the source, because the start-up's steps run inside `on_ready` among a dozen others no
-test drives whole.
+from the source, because the start-up's steps are defined in the entry point, among a dozen
+others no test drives whole.
 """
 
 from __future__ import annotations

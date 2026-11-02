@@ -146,7 +146,7 @@ def test_both_forms_of_the_version_are_shown_as_read(version_):
 
 def test_the_bot_registers_about_before_the_hub_is_recovered():
     """`build()` imports the option's module in its own body, so About is registered before
-    `on_ready` — defined within `main()` and run later — recovers the hub."""
+    start-up, run later, recovers the hub."""
     import ast
     from pathlib import Path
 
