@@ -26,10 +26,24 @@ class RetryCog(commands.Cog):
 
     def __init__(self, bot: "LeagueBot") -> None:
         self._bot = bot
-        self.retry_loop.start()
+
+    async def cog_load(self) -> None:
+        """Start the retry loop when the bot is ready, not when the cog is built.
+
+        A loop started as the cog is added begins awaiting ``wait_until_ready`` at once, which
+        raises on a bot that never logs in (a built bot a test holds) and leaves a failed task.
+        The loop therefore starts from the bot's ``on_ready``; a reconnect fires that again, and
+        a loop already running is left.
+        """
+        self._bot.add_listener(self._start_loop, "on_ready")
 
     async def cog_unload(self) -> None:
+        self._bot.remove_listener(self._start_loop, "on_ready")
         self.retry_loop.cancel()
+
+    async def _start_loop(self) -> None:
+        if not self.retry_loop.is_running():
+            self.retry_loop.start()
 
     @tasks.loop(minutes=5)
     async def retry_loop(self) -> None:
