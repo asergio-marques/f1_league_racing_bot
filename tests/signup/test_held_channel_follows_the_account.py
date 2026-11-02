@@ -28,6 +28,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.config_service import ConfigService
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from leaguebot.signup.services.wizard_service import WizardService
+from tests.support.season_league import wizard_service
 
 SERVER_ID = 2439
 OLD, NEW = "6401", "6402"
@@ -84,12 +85,11 @@ async def _service(tmp_path, scheduler, *, held: dict[str, int],
     scheduler.start()
     queue = MagicMock()
     queue.ask = AsyncMock(return_value=1)
-    service = WizardService(db_path, scheduler, MagicMock(), change_queue=queue)
-    service.set_bot(SimpleNamespace(
+    service = wizard_service(SimpleNamespace(
         signup_module_service=SignupModuleService(db_path),
         config_service=ConfigService(db_path),
         get_guild=lambda _sid: None,
-    ))
+    ), db_path, scheduler, MagicMock(), change_queue=queue)
     if armed:
         for account in held:
             scheduler.arm_once(DELETE_TIMER, account, DUE)

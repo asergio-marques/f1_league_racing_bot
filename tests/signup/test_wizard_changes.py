@@ -804,13 +804,12 @@ def _expired(league: SeasonLeague, user_id: int = SIGNING_UP) -> list[str]:
 def _wizards(league: SeasonLeague) -> Any:
     """The wizard service as the builder makes it, handed the change queue when built, over the
     league's real signup module service."""
-    from leaguebot.signup.services.wizard_service import WizardService
+    from tests.support.season_league import wizard_service
 
-    wizards = WizardService(
-        league.db_path, league.bot.scheduler_service, league.bot.output_router,
+    wizards = wizard_service(
+        league.bot, league.db_path, league.bot.scheduler_service, league.bot.output_router,
         change_queue=league.bot.change_queue,
     )
-    wizards.set_bot(league.bot)
     return wizards
 
 

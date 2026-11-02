@@ -127,13 +127,12 @@ async def _fire_the_timer(league: SeasonLeague) -> None:
 async def _restart(league: SeasonLeague) -> None:
     """The bot starts again: the wizard service, built with the change queue, recovers the
     correction requests before the queue starts."""
-    from leaguebot.signup.services.wizard_service import WizardService
+    from tests.support.season_league import wizard_service
 
-    wizards = WizardService(
-        league.db_path, league.bot.scheduler_service, league.bot.output_router,
+    wizards = wizard_service(
+        league.bot, league.db_path, league.bot.scheduler_service, league.bot.output_router,
         change_queue=league.bot.change_queue,
     )
-    wizards.set_bot(league.bot)
     await wizards.recover_correction_timeouts()
 
 

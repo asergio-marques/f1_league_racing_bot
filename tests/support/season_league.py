@@ -1254,38 +1254,39 @@ async def wizard_state(league: SeasonLeague, user_id: int) -> str | None:
     return rows[0]["wizard_state"] if rows else None
 
 
+def wizard_service(bot: Any, db_path: str, scheduler: Any, router: Any, *,
+                   change_queue: Any) -> Any:
+    """The signup wizard service as the builder makes it, holding *bot* from the moment it is
+    built: handed it as `bot=` where the constructor takes it (#283), else bound through
+    `set_bot` straight after."""
+    import inspect
+
+    from leaguebot.signup.services.wizard_service import WizardService
+
+    if "bot" in inspect.signature(WizardService).parameters:
+        return WizardService(db_path, scheduler, router, change_queue=change_queue, bot=bot)
+    wizards = WizardService(db_path, scheduler, router, change_queue=change_queue)
+    wizards.set_bot(bot)
+    return wizards
+
+
 async def wizards_recovered(league: SeasonLeague) -> dict[str, list[str]]:
     """The signup wizards recovered as the bot does when it starts (`recover_wizards`), the
     wizard service built as the builder builds it, over the league's real signup module and
     driver services; gives the accounts whose 24-hour timer was armed again (``armed``) and those
     whose expiry was asked at once (``expired``), neither run.
 
-    The wizard service is handed the change queue where it takes one (#439, slice 6b, C77): an
-    expiry is then the `signup.end` it asks of the queue, and an arming the scheduler service's
-    `signup_inactivity` timer. Where it does not yet take one, its own arming and expiry are
-    recorded in their stead. `recover_wizards` reads the host's clock, as a wizard's last
-    activity written by `signing_up` does."""
+    The wizard service is handed the change queue (#439, slice 6b, C77): an expiry is then the
+    `signup.end` it asks of the queue, and an arming the scheduler service's `signup_inactivity`
+    timer. `recover_wizards` reads the host's clock, as a wizard's last activity written by
+    `signing_up` does."""
     import asyncio
-    import inspect
-
-    from leaguebot.signup.services.wizard_service import WizardService
 
     bot = league.bot
     armed: list[str] = []
     expired: list[str] = []
-    takes_the_queue = "change_queue" in inspect.signature(WizardService).parameters
-    if takes_the_queue:
-        wizards = WizardService(league.db_path, bot.scheduler_service, bot.output_router,
-                                change_queue=bot.change_queue)
-    else:
-        wizards = WizardService(league.db_path, bot.scheduler_service, bot.output_router)
-        wizards._arm_inactivity_job = AsyncMock(  # type: ignore[method-assign]
-            side_effect=lambda user_id, _at: armed.append(str(user_id))
-        )
-        wizards.handle_inactivity_timeout = AsyncMock(  # type: ignore[method-assign]
-            side_effect=lambda user_id: expired.append(str(user_id))
-        )
-    wizards.set_bot(bot)
+    wizards = wizard_service(bot, league.db_path, bot.scheduler_service, bot.output_router,
+                             change_queue=bot.change_queue)
     asked_before = {row["id"] for row in await change_rows(league.db_path)}
     arms_before = len(bot.scheduler_service.arm_once.call_args_list)
     before = asyncio.all_tasks()
