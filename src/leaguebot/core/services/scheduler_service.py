@@ -45,6 +45,9 @@ from leaguebot.core.models.round import Round, RoundFormat
 from leaguebot.core.models.round_moments import (
     POST_RACE_CLEANUP_DELAY,
     ROUND_JOB_KINDS,
+    AttendanceWindows,
+    WeatherWindows,
+    round_event_moments,
 )
 from leaguebot.core.models.round_moments import WEATHER_JOB_KINDS as _WEATHER_JOB_PREFIXES
 
@@ -88,6 +91,12 @@ _JOB_SUFFIX_RE = re.compile(r"_s\d+_d\d+_r\d+(?:_id\d+)?$")
 # a job belongs to and nothing about which module it is for. The kind says it, and so does the
 # prefix; `cancel_round(only=...)` reads the prefix, which ``_JOB_SUFFIX_RE`` above exposes,
 # because that is what its callers already hold.
+
+
+#: The clean-ups' moments do not depend on any lead time, so the windows `round_event_moments`
+#: asks for to place them are the zero ones.
+_CLEAN_UP_ONLY_WEATHER = WeatherWindows(0, 0, 0)
+_CLEAN_UP_ONLY_ATTENDANCE = AttendanceWindows(0, 0, 0)
 
 
 def _round_job_suffix(rnd: "Round", season_number: int, division_tier: int) -> str:
@@ -407,21 +416,18 @@ class SchedulerService:
                             passed by less than the misfire grace would run at once and draw
                             the phase a second time.
         """
-        scheduled_at = rnd.scheduled_at
-        if scheduled_at.tzinfo is None:
-            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-
         _suffix = _round_job_suffix(rnd, season_number, division_tier)
 
-        horizons = {
-            1: scheduled_at - timedelta(days=phase_1_days),
-            2: scheduled_at - timedelta(days=phase_2_days),
-            3: scheduled_at - timedelta(hours=phase_3_hours),
-        }
+        moments = round_event_moments(
+            rnd.scheduled_at,
+            weather=WeatherWindows(phase_1_days, phase_2_days, phase_3_hours),
+            attendance=None,
+        )
 
-        for phase_num, fire_at in horizons.items():
+        for phase_num in (1, 2, 3):
             if phase_num in skip_phases:
                 continue
+            fire_at = moments[f"weather_p{phase_num}"]
             job_id = f"weather_p{phase_num}{_suffix}"
             self._scheduler.add_job(
                 _one_off_timer_job,
@@ -434,9 +440,7 @@ class SchedulerService:
             log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
 
         # Post-race Phase 3 cleanup, a day after round start
-        self.schedule_round_cleanups(
-            rnd, season_number=season_number, division_tier=division_tier, check_in=False
-        )
+        self._arm_forecast_cleanup(rnd, season_number=season_number, division_tier=division_tier)
 
         # Result submission at round start time, armed where every results job is, so that the
         # one arming here is weather's alone.
@@ -453,6 +457,7 @@ class SchedulerService:
         notice_days: int,
         last_notice_hours: int,
         deadline_hours: int,
+        now: datetime,
     ) -> None:
         """Register RSVP DateTrigger jobs for *rnd* (attendance module).
 
@@ -467,73 +472,46 @@ class SchedulerService:
             notice_days:         Days before round to post RSVP embed.
             last_notice_hours:   Hours before round for last-notice ping (0 = disabled).
             deadline_hours:      Hours before round for distribution deadline.
+            now:                 The moment the jobs are judged against: one whose moment is not
+                                 ahead of it is skipped (the queue's clock, never the wall's).
 
         A fourth job, ``rsvp_cleanup``, takes the round's call, last notice and distribution
         message down `POST_RACE_CLEANUP_DELAY` after the round's start (#425).
         """
-        scheduled_at = rnd.scheduled_at
-        if scheduled_at.tzinfo is None:
-            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-
-        now = datetime.now(timezone.utc)
+        moments = round_event_moments(
+            rnd.scheduled_at,
+            weather=None,
+            attendance=AttendanceWindows(notice_days, last_notice_hours, deadline_hours),
+        )
         _suffix = _round_job_suffix(rnd, season_number, division_tier)
 
-        # Notice job
-        notice_fire_at = scheduled_at - timedelta(days=notice_days)
-        notice_job_id = f"rsvp_notice{_suffix}"
-        if notice_fire_at > now:
-            self._scheduler.add_job(
-                _one_off_timer_job,
-                trigger=DateTrigger(run_date=notice_fire_at, timezone="UTC"),
-                id=notice_job_id,
-                replace_existing=True,
-                name=f"RSVP notice s{season_number} d{division_tier} r{rnd.round_number}",
-                kwargs={"kind": "rsvp_notice", "key": rnd.id},
-            )
-            log.info("Scheduled %s at %s", notice_job_id, notice_fire_at.isoformat())
-        else:
-            log.info("Skipping %s — fire time %s is in the past", notice_job_id, notice_fire_at.isoformat())
-
-        # Last-notice job (only when last_notice_hours > 0)
-        if last_notice_hours > 0:
-            last_notice_fire_at = scheduled_at - timedelta(hours=last_notice_hours)
-            last_notice_job_id = f"rsvp_last_notice{_suffix}"
-            if last_notice_fire_at > now:
+        # The call, the last notice (absent where its hours are 0) and the deadline, each only
+        # while its moment is still ahead of *now*.
+        for kind, label in (
+            ("rsvp_notice", "RSVP notice"),
+            ("rsvp_last_notice", "RSVP last-notice"),
+            ("rsvp_deadline", "RSVP deadline"),
+        ):
+            fire_at = moments.get(kind)
+            if fire_at is None:
+                continue
+            job_id = f"{kind}{_suffix}"
+            if fire_at > now:
                 self._scheduler.add_job(
                     _one_off_timer_job,
-                    trigger=DateTrigger(run_date=last_notice_fire_at, timezone="UTC"),
-                    id=last_notice_job_id,
+                    trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
+                    id=job_id,
                     replace_existing=True,
-                    name=f"RSVP last-notice s{season_number} d{division_tier} r{rnd.round_number}",
-                    kwargs={"kind": "rsvp_last_notice", "key": rnd.id},
+                    name=f"{label} s{season_number} d{division_tier} r{rnd.round_number}",
+                    kwargs={"kind": kind, "key": rnd.id},
                 )
-                log.info("Scheduled %s at %s", last_notice_job_id, last_notice_fire_at.isoformat())
+                log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
             else:
-                log.info(
-                    "Skipping %s — fire time %s is in the past",
-                    last_notice_job_id, last_notice_fire_at.isoformat(),
-                )
-
-        # Deadline job
-        deadline_hours_actual = deadline_hours if deadline_hours > 0 else 0
-        deadline_fire_at = scheduled_at - timedelta(hours=deadline_hours_actual)
-        deadline_job_id = f"rsvp_deadline{_suffix}"
-        if deadline_fire_at > now:
-            self._scheduler.add_job(
-                _one_off_timer_job,
-                trigger=DateTrigger(run_date=deadline_fire_at, timezone="UTC"),
-                id=deadline_job_id,
-                replace_existing=True,
-                name=f"RSVP deadline s{season_number} d{division_tier} r{rnd.round_number}",
-                kwargs={"kind": "rsvp_deadline", "key": rnd.id},
-            )
-            log.info("Scheduled %s at %s", deadline_job_id, deadline_fire_at.isoformat())
-        else:
-            log.info("Skipping %s — fire time %s is in the past", deadline_job_id, deadline_fire_at.isoformat())
+                log.info("Skipping %s — fire time %s is in the past", job_id, fire_at.isoformat())
 
         # Cleanup job, a day after the round
         self.schedule_round_cleanups(
-            rnd, season_number=season_number, division_tier=division_tier, forecast=False
+            rnd, season_number=season_number, division_tier=division_tier, forecast=False, now=now
         )
 
     def schedule_round_cleanups(
@@ -542,6 +520,7 @@ class SchedulerService:
         *,
         season_number: int,
         division_tier: int,
+        now: datetime,
         forecast: bool = True,
         check_in: bool = True,
     ) -> None:
@@ -552,30 +531,19 @@ class SchedulerService:
         (``schedule_round`` arms the first alone, ``schedule_attendance_round`` the second, and
         a refused cancellation arms both for a round raced, or ended cancelled as not held,
         #439). The forecast's is armed whatever the hour, as ever; the check-in's only while its
-        moment is still ahead, the restart's catch-up taking one already past
+        moment is still ahead of *now*, the restart's catch-up taking one already past
         (`_recover_missed_cleanups`). Both replace a job of the same id.
         """
-        scheduled_at = rnd.scheduled_at
-        if scheduled_at.tzinfo is None:
-            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-        suffix = _round_job_suffix(rnd, season_number, division_tier)
-        cleanup_fire_at = scheduled_at + POST_RACE_CLEANUP_DELAY
-
         if forecast:
-            cleanup_job_id = f"cleanup{suffix}"
-            self._scheduler.add_job(
-                _one_off_timer_job,
-                trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
-                id=cleanup_job_id,
-                replace_existing=True,
-                name=f"Forecast cleanup s{season_number} d{division_tier} r{rnd.round_number}",
-                kwargs={"kind": "cleanup", "key": rnd.id},
-            )
-            log.info("Scheduled %s at %s", cleanup_job_id, cleanup_fire_at.isoformat())
+            self._arm_forecast_cleanup(rnd, season_number=season_number, division_tier=division_tier)
 
         if check_in:
+            suffix = _round_job_suffix(rnd, season_number, division_tier)
+            cleanup_fire_at = round_event_moments(
+                rnd.scheduled_at, weather=None, attendance=_CLEAN_UP_ONLY_ATTENDANCE
+            )["rsvp_cleanup"]
             rsvp_job_id = f"rsvp_cleanup{suffix}"
-            if cleanup_fire_at > datetime.now(timezone.utc):
+            if cleanup_fire_at > now:
                 self._scheduler.add_job(
                     _one_off_timer_job,
                     trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
@@ -587,6 +555,29 @@ class SchedulerService:
                 log.info("Scheduled %s at %s", rsvp_job_id, cleanup_fire_at.isoformat())
             else:
                 log.info("Skipping %s — fire time %s is in the past", rsvp_job_id, cleanup_fire_at.isoformat())
+
+    def _arm_forecast_cleanup(
+        self, rnd: Round, *, season_number: int, division_tier: int
+    ) -> None:
+        """Arm the ``cleanup`` job that deletes a round's forecasts, whatever the hour.
+
+        Armed by `schedule_round` and, on its own, by `schedule_round_cleanups`. No clock is
+        read: the job is armed past-dated too, as ever.
+        """
+        suffix = _round_job_suffix(rnd, season_number, division_tier)
+        cleanup_fire_at = round_event_moments(
+            rnd.scheduled_at, weather=_CLEAN_UP_ONLY_WEATHER, attendance=None
+        )["cleanup"]
+        cleanup_job_id = f"cleanup{suffix}"
+        self._scheduler.add_job(
+            _one_off_timer_job,
+            trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
+            id=cleanup_job_id,
+            replace_existing=True,
+            name=f"Forecast cleanup s{season_number} d{division_tier} r{rnd.round_number}",
+            kwargs={"kind": "cleanup", "key": rnd.id},
+        )
+        log.info("Scheduled %s at %s", cleanup_job_id, cleanup_fire_at.isoformat())
 
     def cancel_round(self, round_id: int, *, only: frozenset[str] | None = None) -> list[str]:
         """Remove scheduler jobs belonging to *round_id*, and give the ids of those that went.

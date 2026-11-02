@@ -303,7 +303,6 @@ async def test_a_discarded_catch_up_of_a_re_arming_is_named_in_the_log(tmp_path,
 # ── A round already raced ───────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the re-arming hands the clean-ups arming no now yet")
 async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     """Weather and attendance on. Pro's round 3 was raced two hours ago and awaits its report
     verdicts, its timed work removed. Its re-arming, asked for its clean-ups alone, arms the

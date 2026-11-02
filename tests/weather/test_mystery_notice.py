@@ -205,9 +205,6 @@ class TestCancelRoundIncludesMystery:
 #: The moment the check-in is armed against, a month before `_future_round`'s.
 NOW = datetime(2099, 5, 1, 14, 0, 0, tzinfo=timezone.utc)
 
-_NOW_REASON = "#283: schedule_attendance_round takes no now yet"
-
-
 # ---------------------------------------------------------------------------
 # 5. schedule_attendance_round: MYSTERY round must produce RSVP jobs identical
 #    to any other round format (032-attendance-rsvp-checkin)
@@ -225,7 +222,6 @@ class TestScheduleAttendanceRoundMystery:
         ],
         ids=["notice", "deadline", "last_notice_when_enabled"],
     )
-    @pytest.mark.xfail(strict=True, reason=_NOW_REASON)
     def test_mystery_creates_each_rsvp_job(self, expected_id):
         svc = _make_scheduler_no_db()
         svc.schedule_attendance_round(
@@ -240,7 +236,6 @@ class TestScheduleAttendanceRoundMystery:
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
         assert expected_id in job_ids
 
-    @pytest.mark.xfail(strict=True, reason=_NOW_REASON)
     def test_mystery_creates_same_rsvp_job_count_as_normal(self):
         """MYSTERY and NORMAL round must produce identical RSVP job counts."""
         svc = _make_scheduler_no_db()
@@ -269,7 +264,6 @@ class TestScheduleAttendanceRoundMystery:
 
         assert mystery_count == normal_count
 
-    @pytest.mark.xfail(strict=True, reason=_NOW_REASON)
     def test_mystery_no_last_notice_when_disabled(self):
         """When last_notice_hours=0, MYSTERY round gets notice, deadline and cleanup (3 jobs)."""
         svc = _make_scheduler_no_db()

@@ -247,9 +247,6 @@ def test_a_phase_left_out_is_not_armed_and_the_rest_of_the_round_is():
 # reads no clock of its own: each test hands a `now` the wall clock is nowhere near, so that a read
 # of the wall clock would arm, or skip, what the test says it does not.
 
-_NOW_REASON = "#283: schedule_attendance_round takes no now yet"
-
-
 def _round_starting(start: datetime) -> SimpleNamespace:
     return SimpleNamespace(id=21, division_id=11, round_number=3, scheduled_at=start)
 
@@ -267,7 +264,6 @@ def _attendance_jobs(service, rnd, *, now: datetime) -> dict:
     return {c.kwargs["id"]: c for c in _added(service)}
 
 
-@pytest.mark.xfail(strict=True, reason=_NOW_REASON)
 def test_the_check_in_cleanup_is_armed_a_day_after_the_round():
     """A round on 1 March 2020 at 18:00, long past by the wall clock, armed with `now` a month
     before it: its check-in clean-up is armed a day after its start, as are its call, last
@@ -286,7 +282,6 @@ def test_the_check_in_cleanup_is_armed_a_day_after_the_round():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOW_REASON)
 def test_a_check_in_cleanup_already_due_is_not_armed():
     """The same rule as the attendance module's other three jobs: a moment gone by is skipped. A
     round on 1 March 2099 at 18:00, still to come by the wall clock, armed with `now` two days
@@ -299,7 +294,6 @@ def test_a_check_in_cleanup_already_due_is_not_armed():
     assert not [job_id for job_id in jobs if job_id.startswith("rsvp_")]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOW_REASON)
 def test_a_round_s_forecast_and_check_in_come_down_together():
     """One figure for both modules, so a round's channels clear at the same moment."""
     service = _service()

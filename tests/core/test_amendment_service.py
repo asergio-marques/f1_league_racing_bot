@@ -452,7 +452,6 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the amendment hands the check-in arming no now yet")
 async def test_amending_a_round_rearms_its_check_in(tmp_path):
     """The reported defect: amending a round destroyed its check-in for good.
 

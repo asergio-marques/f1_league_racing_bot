@@ -522,6 +522,7 @@ def season_approval_change(
                     notice_days=attendance.notice_days,
                     last_notice_hours=attendance.last_notice_hours,
                     deadline_hours=attendance.deadline_hours,
+                    now=now(),
                 )
         return StepResult(result={"rounds": len(rounds)})
 

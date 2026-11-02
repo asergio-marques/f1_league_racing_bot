@@ -754,10 +754,7 @@ async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path,
         pytest.param({"weather": False, "results": True, "test_mode": True}, [],
                      id="weather off and results on under test mode"),
         pytest.param({"weather": False, "results": True, "attendance": True},
-                     ["results", "attendance"], id="weather off, results and attendance on",
-                     marks=pytest.mark.xfail(
-                         strict=True, reason="#283: the approval hands the check-in no now yet"
-                     )),
+                     ["results", "attendance"], id="weather off, results and attendance on"),
         pytest.param({"weather": False, "results": False}, ["results"],
                      id="weather and results off"),
         pytest.param({"weather": False, "results": False, "test_mode": True}, ["results"],

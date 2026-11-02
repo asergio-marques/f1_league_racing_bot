@@ -202,7 +202,6 @@ def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_th
     assert service._scheduler.get_jobs.call_count == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#283: schedule_round_cleanups takes no now yet")
 def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
     """Round 2 of division tier 1 in season 3, round id 5, starts on 1 June 2020 at 14:00, long
     past by the wall clock, and its clean-ups are armed alone with `now` a month before it. Two

@@ -481,13 +481,14 @@ def _jobs_with_a_lateness_limit() -> Counter[tuple[str, str]]:
 KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     # Each owned by the pass whose handler must first judge a missed event of its kind.
     ("core/services/scheduler_service.py", "SchedulerService.schedule_amendment_sweep"): (1, PASS["results"]),
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_attendance_round"): (3, PASS["attendance"]),
+    ("core/services/scheduler_service.py", "SchedulerService.schedule_attendance_round"): (1, PASS["attendance"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_portrait_refresh"): (1, PASS["image"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_result_submission_jobs"): (1, "#450"),
     # Weather's phases alone: the results job is armed through `schedule_result_submission_jobs`,
     # whose line it stays under (#450).
     ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (1, PASS["weather"]),
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_round_cleanups"): (2, CLEANUPS),
+    ("core/services/scheduler_service.py", "SchedulerService.schedule_round_cleanups"): (1, PASS["attendance"]),
+    ("core/services/scheduler_service.py", "SchedulerService._arm_forecast_cleanup"): (1, PASS["weather"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_signup_close_timer"): (1, PASS["signup"]),
 }
 
@@ -2959,10 +2960,6 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/retry_service.py", "attempt_delivery"): (1, PASS["core"]),
     ("core/services/retry_service.py", "enqueue"): (1, PASS["core"]),
     ("core/services/retry_service.py", "mark_failed"): (1, PASS["core"]),
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_attendance_round"):
-        (1, PASS["core"]),
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_round_cleanups"):
-        (1, PASS["core"]),
     ("core/services/season_review_changes.py", "season_review_post_change.arm_expiry"):
         (1, PASS["core"]),
     ("core/services/season_review_changes.py", "season_review_post_change.post_question"):

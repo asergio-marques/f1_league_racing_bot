@@ -643,7 +643,7 @@ def _round_change(
             if weather_on or check_in_on:
                 scheduler.schedule_round_cleanups(
                     rnd, season_number=season_number, division_tier=tier,
-                    forecast=weather_on, check_in=check_in_on,
+                    forecast=weather_on, check_in=check_in_on, now=now(),
                 )
             return StepResult(
                 result={"armed": True, "round_number": rnd.round_number},
@@ -680,6 +680,7 @@ def _round_change(
                 notice_days=attendance["notice_days"],
                 last_notice_hours=attendance["last_notice_hours"],
                 deadline_hours=attendance["deadline_hours"],
+                now=now(),
             )
         if (rnd.status == RoundStatus.NOT_RUN.value and moment_of(rnd) <= now()
                 and not found["test_mode"]):

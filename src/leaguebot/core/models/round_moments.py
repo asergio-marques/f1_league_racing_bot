@@ -88,7 +88,7 @@ def round_event_moments(
         moments["rsvp_notice"] = at - timedelta(days=attendance.notice_days)
         if attendance.last_notice_hours > 0:
             moments["rsvp_last_notice"] = at - timedelta(hours=attendance.last_notice_hours)
-        moments["rsvp_deadline"] = at - timedelta(hours=attendance.deadline_hours)
+        moments["rsvp_deadline"] = at - timedelta(hours=max(attendance.deadline_hours, 0))
         moments["rsvp_cleanup"] = at + POST_RACE_CLEANUP_DELAY
     moments["results"] = at
     return moments

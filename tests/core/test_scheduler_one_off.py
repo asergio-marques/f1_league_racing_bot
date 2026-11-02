@@ -367,9 +367,6 @@ def _arm_amendment_sweep(service: Any, _rnd: Any) -> None:
     service.schedule_amendment_sweep()
 
 
-#: Why the cases whose arming hands a `now` fail until the method takes one.
-_NOW_REASON = "#283: the arming takes no now yet"
-
 #: Every kind the builder signs up for the scheduler's own jobs, with the method that arms it,
 #: the id it is stored under, and the key its handler is handed (None: a standing job, whose
 #: handler is handed nothing). A round's kind is its job id's prefix and its key the round id.
@@ -389,23 +386,17 @@ EVERY_ARMED_KIND = [
     pytest.param("results", _arm_results_now, f"results{_ROUND_SUFFIX}", _ROUND_ID,
                  id="results-run_result_submission_now"),
     pytest.param("rsvp_notice", _arm_check_in, f"rsvp_notice{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="rsvp_notice-schedule_attendance_round",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOW_REASON)),
+                 id="rsvp_notice-schedule_attendance_round"),
     pytest.param("rsvp_last_notice", _arm_check_in, f"rsvp_last_notice{_ROUND_SUFFIX}",
-                 _ROUND_ID, id="rsvp_last_notice-schedule_attendance_round",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOW_REASON)),
+                 _ROUND_ID, id="rsvp_last_notice-schedule_attendance_round"),
     pytest.param("rsvp_deadline", _arm_check_in, f"rsvp_deadline{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="rsvp_deadline-schedule_attendance_round",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOW_REASON)),
+                 id="rsvp_deadline-schedule_attendance_round"),
     pytest.param("rsvp_cleanup", _arm_check_in, f"rsvp_cleanup{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="rsvp_cleanup-schedule_attendance_round",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOW_REASON)),
+                 id="rsvp_cleanup-schedule_attendance_round"),
     pytest.param("cleanup", _arm_cleanups, f"cleanup{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="cleanup-schedule_round_cleanups",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOW_REASON)),
+                 id="cleanup-schedule_round_cleanups"),
     pytest.param("rsvp_cleanup", _arm_cleanups, f"rsvp_cleanup{_ROUND_SUFFIX}", _ROUND_ID,
-                 id="rsvp_cleanup-schedule_round_cleanups",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOW_REASON)),
+                 id="rsvp_cleanup-schedule_round_cleanups"),
     pytest.param("signup_close", _arm_signup_close, "signup_close", None, id="signup_close"),
     pytest.param("portrait_refresh", _arm_portrait_refresh, "pfp_daily", None,
                  id="portrait_refresh"),

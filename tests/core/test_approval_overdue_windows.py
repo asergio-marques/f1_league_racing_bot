@@ -245,7 +245,6 @@ def test_the_report_is_ordered_deterministically():
     assert premier_1 == sorted(premier_1)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the approval does not read round_event_moments yet")
 def test_each_window_falls_at_its_event_s_moment():
     """The approval and the scheduler read one function for when a round's events fall
     (`round_event_moments`), so the gate cannot disagree with the jobs it judges. A round a day
