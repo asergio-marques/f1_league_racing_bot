@@ -761,7 +761,7 @@ Start-up:
 7. only then lets scheduled jobs run.
 
 The retry loop for undelivered log lines is no step of this: it starts from `LeagueBot.setup_hook`,
-once per run at login (the paragraph under "Errors and failures" that names `setup_hook`). Its
+once per run at login (under "Errors and failures", the item on Discord events). Its
 `before_loop` waits for the bot to be ready, so it may run beside the sweep, which is safe because it
 only retries log lines already owed and never makes a change.
 
