@@ -493,10 +493,12 @@ _BUILT = "_change_queue_test_built"
 
 #: The classes `league_bot` hands the builder a double of, so that the change types it
 #: registers hold the double, as they hold `league_double`'s: by name, as `build` imports them.
+#: The season service is doubled only where a league gives one.
 _DOUBLED_AT_BUILD = {
     "scheduler": ("leaguebot.core.services.scheduler_service", "SchedulerService"),
     "attendance_hook": ("leaguebot.attendance.services.attendance_after_review",
                         "AttendanceAfterReview"),
+    "season_service": ("leaguebot.core.services.season_service", "SeasonService"),
 }
 
 
@@ -510,18 +512,19 @@ def _entry_build() -> Any:
 
 
 async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: Any = None,
-                     real_config: bool = False) -> Any:
+                     season_service: Any = None, real_config: bool = False) -> Any:
     """The bot of a hand-made test league on *db_path*, the Discord side `league_double` gives
-    stubbed over it, its scheduler *scheduler* (a bare double if None) and its attendance hook
-    *attendance_hook* (`attendance_hook_double`'s if None); its queue is attached by `league_queue`, once the league has set
-    its own services (#283). With *real_config*, the league's config service reads the database,
-    as a league building its own `ConfigService` has it.
+    stubbed over it, its scheduler *scheduler* (a bare double if None), its attendance hook
+    *attendance_hook* (`attendance_hook_double`'s if None) and, where given, its season service
+    *season_service*; its queue is attached by `league_queue`, once the league has set its own
+    services (#283). With *real_config*, the league's config service reads the database, as a
+    league building its own `ConfigService` has it.
 
     Where the entry point has its builder, the bot is the one `build` makes, on settings for
-    *db_path* (the job store `jobs.db` beside it), handed the two doubles in place of the
-    scheduler and attendance's hook as it builds them, so the change types it registers hold
-    the doubles; every other service is the builder's. Until then it is `league_double`'s, with
-    *scheduler* set. A league tells the two apart by `is_built`."""
+    *db_path* (the job store `jobs.db` beside it), handed the doubles in place of the scheduler,
+    attendance's hook and the season service as it builds them, so the change types it registers
+    hold the doubles; every other service is the builder's. Until then it is `league_double`'s,
+    with *scheduler* and *season_service* set. A league tells the two apart by `is_built`."""
     import importlib
     import os
     from contextlib import ExitStack
@@ -535,15 +538,20 @@ async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: An
         bot = league_double(db_path)
         bot.scheduler_service = scheduler
         bot.attendance_after_review = attendance_hook
+        if season_service is not None:
+            bot.season_service = season_service
         return bot
     settings_type, build = entry
     settings = settings_type(token="not-a-real-token", db_path=db_path,
                              jobstore_path=os.path.join(os.path.dirname(db_path), "jobs.db"))
     import leaguebot.__main__ as entry_point
 
-    doubles = {"scheduler": scheduler, "attendance_hook": attendance_hook}
+    doubles = {"scheduler": scheduler, "attendance_hook": attendance_hook,
+               "season_service": season_service}
     with ExitStack() as stack:
         for key, (module_name, name) in _DOUBLED_AT_BUILD.items():
+            if doubles[key] is None:
+                continue
             made = MagicMock(return_value=doubles[key])
             stack.enter_context(patch.object(importlib.import_module(module_name), name, made))
             if hasattr(entry_point, name):
