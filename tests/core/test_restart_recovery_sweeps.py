@@ -1,22 +1,10 @@
-"""Two of the sweeps a restart runs over work the previous process left behind.
+"""The sweep a restart runs over the amendments the previous process left behind.
 
-Issue #208. `_recover_expired_review_prompts` and `_recover_orphaned_amend_channels` were
-uncovered. Each cleans up after something the previous process left standing — a review prompt
-still up when the bot went down, a `wait_for` loop that died with it — and between them they
-decide what a league finds when the bot comes back. The third, `_recover_missed_phases`, is pinned
-in `test_bot_phase_recovery.py`.
-
-**Every standing review prompt is expired by definition.** The approve button's five minutes are
-a persistent one-off `review_expiry` timer with no lateness limit, and the scheduler is held paused
-until start-up has ended, so the restart's take-down is always asked first and a timer that fires
-late finds the row gone or already being taken down. Each row's take-down is therefore asked of
-the change queue (`season.review.take_down`, ending `restart`), as the bot, before the queue
-starts — there is no "still valid" case to preserve, and a reader who added one would leave a
-button nothing is listening to standing for ever. The sweep deletes, posts and writes nothing
-itself, and leaves alone a review whose take-down is already in hand: the queue's jobs delete the
-question and the report above it and drop the row, so a deletion Discord refuses stops the queue
-with the row standing rather than losing the only record of a message still up. Those cases are
-pinned in `test_review_prompt_sweep.py`.
+Issue #208. `_recover_orphaned_amend_channels` was uncovered. It cleans up after a `wait_for` loop
+that died with the previous process, and decides what a league finds of an amendment when the bot
+comes back. The other sweeps are pinned beside their own: the season review's take-down
+(`season_review_changes.recover_expired_review_prompts`) in `test_review_prompt_sweep.py`, and
+`_recover_missed_phases` in `test_bot_phase_recovery.py`.
 
 **An abandoned amendment's lapse is asked of the change queue** (#439, slice 6b, C64). The sweep
 puts nothing back, deletes nothing and writes nothing itself: it asks `results.amend.lapse` as the
@@ -25,87 +13,20 @@ lapse is already in hand (core spec :133). The queue's jobs put the round back, 
 and close its row with the deletion's mark, so a crash between them is resumed rather than run
 again.
 
-**Every sweep announces itself.** A league manager whose amendment vanished needs to know to
-re-run the command, and a reviewer whose approve button disappeared needs to know to review
-again. Neither is discoverable from the absence of a message.
+**The sweep announces itself.** A league manager whose amendment vanished needs to know to re-run
+the command, which is not discoverable from the absence of a message.
 """
 from __future__ import annotations
 
-import os
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
-import pytest
 
 import leaguebot.__main__ as bot_module
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.db.database import get_connection
 
-SERVER_ID = 11808
-SEASON_ID = 1
-DIVISION_ID = 11
 ROUND_ID = 21
 STARTER_ID = 4242
-
-
-# ---------------------------------------------------------------------------
-# Fixtures / helpers
-# ---------------------------------------------------------------------------
-
-
-async def _base_db(tmp_path, name: str) -> str:
-    db_path = os.path.join(str(tmp_path), f"{name}.db")
-    await run_migrations(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-            (SERVER_ID,),
-        )
-        await db.execute(
-            "INSERT INTO seasons (id, season_number, start_date, status) "
-            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID,),
-        )
-        await db.execute(
-            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
-            "VALUES (?, ?, 'Pro', 1, 555)",
-            (DIVISION_ID, SEASON_ID),
-        )
-        await db.commit()
-    return db_path
-
-
-def _stub_bot(db_path: str):
-    stub = MagicMock()
-    stub.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    stub.db_path = db_path
-    stub.module_service = MagicMock()
-    stub.output_router = MagicMock()
-    stub.output_router.post_log = AsyncMock(return_value=None)
-    stub.get_guild = MagicMock(return_value=None)
-    stub.get_channel = MagicMock(return_value=None)
-    stub.fetch_channel = AsyncMock(return_value=None)
-    return stub
-
-
-# ---------------------------------------------------------------------------
-# Standing season-review prompts
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
-async def test_an_unreadable_prompt_table_does_not_stop_the_start_up(tmp_path):
-    """This runs inside start-up; a failure to read one table must not stop the bot
-    starting at all."""
-    db_path = await _base_db(tmp_path, "review_unreadable")
-    stub = _stub_bot(db_path)
-    stub.db_path = os.path.join(str(tmp_path), "does-not-exist-at-all.db")
-
-    from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
-
-    await recover_expired_review_prompts(  # must not raise
-        stub, approve_view=bot_module._approve_view_for(stub))
 
 
 # ---------------------------------------------------------------------------
