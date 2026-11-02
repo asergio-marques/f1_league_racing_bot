@@ -126,6 +126,16 @@ _START_UP_STEPS = [
 ]
 
 
+#: The steps the order rules name, each with the entry point's recovery it runs, in that order.
+_ORDERED_RECOVERIES = {
+    "orphaned amend channels": "_recover_orphaned_amend_channels",
+    "orphaned submission channels": "_recover_orphaned_submission_channels",
+    "missed check-in calls": "_recover_missed_check_in_calls",
+    "RSVP views and deadlines": "_recover_rsvp_views_and_deadlines",
+    "missed clean-ups": "_recover_missed_cleanups",
+}
+
+
 @pytest.mark.xfail(strict=True, reason="#283: the builder makes no start-up steps; on_ready "
                                        "runs them itself")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
@@ -142,6 +152,9 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
       both passed while the bot was down is distributed before it is taken down;
     - **the hub among them**, its step handing the hub's recovery the change queue, which it asks
       for the panel (the recovery itself is tested in `test_hub_service.py`).
+
+    Each step these rules order is run, its recovery stubbed, and is seen to run its own recovery
+    for the bot, so that a name cannot stand over another step's recovery.
     """
     import leaguebot.__main__ as bot_module
     from unittest.mock import AsyncMock
@@ -151,6 +164,9 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     recover_hub = AsyncMock()
     monkeypatch.setattr(hub_service, "recover_hub", recover_hub)
     monkeypatch.setattr(bot_module, "recover_hub", recover_hub, raising=False)
+    recoveries = {name: AsyncMock() for name in _ORDERED_RECOVERIES.values()}
+    for function, recovery in recoveries.items():
+        monkeypatch.setattr(bot_module, function, recovery)
     bot = await built_bot(tmp_path, now=_NOW)
     names = [name for name, _ in bot.start_up_steps]
 
@@ -158,7 +174,14 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     assert names.index("orphaned amend channels") < names.index("orphaned submission channels")
     assert names.index("missed check-in calls") < names.index("RSVP views and deadlines")
     assert names.index("RSVP views and deadlines") < names.index("missed clean-ups")
-    await dict(bot.start_up_steps)["hub"]()
+    steps = dict(bot.start_up_steps)
+    for step, function in _ORDERED_RECOVERIES.items():
+        for recovery in recoveries.values():
+            recovery.reset_mock()
+        await steps[step]()
+        assert [f for f, r in recoveries.items() if r.await_count] == [function], step
+        recoveries[function].assert_awaited_once_with(bot)
+    await steps["hub"]()
     recover_hub.assert_awaited_once_with(bot, queue=bot.change_queue)
 
 
