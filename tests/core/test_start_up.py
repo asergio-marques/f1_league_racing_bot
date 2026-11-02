@@ -17,11 +17,6 @@ import importlib
 import logging
 from typing import Any
 
-import pytest
-
-#: Why each test fails until the build lands.
-_NOT_YET = "#283: start_up does not exist yet; on_ready runs the start-up steps itself"
-
 _MODULE = "leaguebot.core.services.start_up"
 
 
@@ -69,7 +64,6 @@ class _Recorder:
             self._calls.append("scheduler resumed")
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_start_up_runs_once_on_a_second_ready(caplog):
     """The bot is reported ready twice in one run, as after a network drop. The first call runs
     the one step, starts the queue and resumes the scheduler (their order is
@@ -92,7 +86,6 @@ async def test_start_up_runs_once_on_a_second_ready(caplog):
         "the second call logs no line saying start-up was skipped"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_start_up_runs_its_steps_in_order():
     """Three steps are given as missed phases, then orphaned amend channels, then the hub: they run
     in that order, which is not their names' order, and only after the last does the queue
@@ -109,7 +102,6 @@ async def test_start_up_runs_its_steps_in_order():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_failing_step_does_not_stop_the_rest(caplog):
     """Of three steps, the second (the portrait refresh job) raises. It is logged as an error
     naming the step, with its traceback; the third step still runs, the queue still starts and the
@@ -129,7 +121,6 @@ async def test_a_failing_step_does_not_stop_the_rest(caplog):
     assert error.exc_info is not None and error.exc_info[0] is RuntimeError
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_no_job_runs_until_start_up_has_ended():
     """Two steps run at start-up. The scheduler is started paused before the first of them, so its
     job store is readable and no job runs, and it is resumed only once the queue has started, as

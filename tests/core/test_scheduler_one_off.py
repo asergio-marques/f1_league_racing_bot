@@ -183,8 +183,6 @@ async def test_a_one_off_timer_missed_while_the_bot_was_down_fires_at_start(serv
     assert handed == [4343]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the scheduler service cannot be started paused "
-                                        "and resumed")
 async def test_a_timer_missed_while_down_waits_until_the_scheduler_is_resumed(services):
     """A correction's five minutes ran out two hours ago, while the bot was down. Started again
     paused, as start-up starts it, the scheduler can read the timer from its job store but does

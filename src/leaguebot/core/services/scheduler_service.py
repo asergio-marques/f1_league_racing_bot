@@ -601,16 +601,28 @@ class SchedulerService:
             if was_running:
                 self._scheduler.resume()
 
-    def start(self) -> None:
+    def start(self, *, paused: bool = False) -> None:
+        """Start the scheduler, and with *paused* start it holding every job still.
+
+        A paused scheduler reads the job store (``has_job``, ``get_jobs`` and ``remove_job`` see
+        what is stored) and fires nothing until :meth:`resume`, which is how start-up keeps a
+        job from running before the start-up sweep and the change queue are done."""
         global _GLOBAL_SERVICE
         _GLOBAL_SERVICE = self
         if not self._scheduler.running:
-            self._scheduler.start()
+            self._scheduler.start(paused=paused)
             log.info(
-                "APScheduler started with SQLAlchemyJobStore at %s (league data: %s)",
+                "APScheduler started%s with SQLAlchemyJobStore at %s (league data: %s)",
+                " paused" if paused else "",
                 self._jobstore_path,
                 self._db_path,
             )
+
+    def resume(self) -> None:
+        """Let a scheduler started paused run its jobs, those that fell due while it was held
+        included."""
+        self._scheduler.resume()
+        log.info("APScheduler resumed")
 
     def shutdown(self, wait: bool = True) -> None:
         if self._scheduler.running:
