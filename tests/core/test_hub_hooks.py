@@ -22,7 +22,6 @@ import discord
 import pytest
 from discord import app_commands
 
-import leaguebot.__main__ as bot_module
 import leaguebot.core.cogs.bot_cog as bot_cog
 from leaguebot.core.cogs.bot_cog import BotCog
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView

@@ -26,7 +26,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import leaguebot.__main__ as bot_module
 from leaguebot.__main__ import _recover_missed_check_in_calls
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
