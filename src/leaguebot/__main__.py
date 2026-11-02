@@ -1347,7 +1347,8 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
         ("orphaned submission channels", lambda: _recover_orphaned_submission_channels(bot)),
         # Any season-review approve button left standing by a previous run.
         ("expired review prompts",
-         lambda: recover_expired_review_prompts(bot, approve_view=_approve_view_for(bot))),
+         lambda: recover_expired_review_prompts(
+             bot, approve_view=_approve_view_for(bot), queue=bot.change_queue)),
         ("missed phases", lambda: _recover_missed_phases(bot)),
         # The check-in calls that fell due while the bot was down, their deadline still ahead
         # (#429), posted late. Before the deadlines below, as a call comes before its deadline.

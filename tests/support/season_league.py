@@ -413,7 +413,8 @@ class SeasonLeague:
         from leaguebot.core.cogs.season_cog import _RECOVERED, SeasonCog
         from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
 
-        await recover_expired_review_prompts(self.bot, approve_view=_approve_view_for(self.bot))
+        await recover_expired_review_prompts(
+            self.bot, approve_view=_approve_view_for(self.bot), queue=self.bot.change_queue)
         self.cog = SeasonCog(self.bot)
         if (await self.season())["status"] == "SETUP":
             self._hold_setup(self.cog, key=_RECOVERED)

@@ -827,7 +827,9 @@ def review_expiry_timer(
     return fired
 
 
-async def recover_expired_review_prompts(bot: Any, *, approve_view: ApproveViewFactory) -> None:
+async def recover_expired_review_prompts(
+    bot: Any, *, approve_view: ApproveViewFactory, queue: Any
+) -> None:
     """Ask the change queue to take down every season review left standing by a previous run.
 
     The button expires five minutes after the review posts its question, by a persistent one-off
@@ -850,6 +852,8 @@ async def recover_expired_review_prompts(bot: Any, *, approve_view: ApproveViewF
     the queue is what says. Each question's button is routed again by the id of its message, so a
     press made before the take-down has run reaches a view that refuses it and records the refusal
     (a press reads the row, which says its five minutes ran).
+
+    The *queue* is the change queue the take-downs are asked of, handed in by the builder.
     """
     try:
         async with get_connection(bot.db_path) as db:
@@ -878,7 +882,7 @@ async def recover_expired_review_prompts(bot: Any, *, approve_view: ApproveViewF
             log.info("the take-down of the review at %s is in hand, so it is left to it", question_id)
             continue
         try:
-            await take_review_down(bot.change_queue, bot.db_path, question_id, RESTART)
+            await take_review_down(queue, bot.db_path, question_id, RESTART)
         except Exception:
             log.exception("could not ask for the take-down of the review at %s", question_id)
 

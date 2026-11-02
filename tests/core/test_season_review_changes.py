@@ -782,7 +782,8 @@ async def test_a_restart_asks_the_take_down_of_each_review_standing_before_the_q
         await db.commit()
 
     await recover_expired_review_prompts(standing.bot,
-                                          approve_view=_approve_view_for(standing.bot))
+                                          approve_view=_approve_view_for(standing.bot),
+                                          queue=standing.bot.change_queue)
 
     assert channel.deleted == [] and channel.sent == []
     assert len(await _changes(standing, TAKE_DOWN)) == 2
@@ -810,12 +811,14 @@ async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_secon
                                            text="Missing Permissions")
 
     await recover_expired_review_prompts(standing.bot,
-                                          approve_view=_approve_view_for(standing.bot))
+                                          approve_view=_approve_view_for(standing.bot),
+                                          queue=standing.bot.change_queue)
     await run_queue(standing.bot)
     assert (await stopped_job(standing.db_path))["name"] == "delete_message"
 
     await recover_expired_review_prompts(standing.bot,
-                                          approve_view=_approve_view_for(standing.bot))
+                                          approve_view=_approve_view_for(standing.bot),
+                                          queue=standing.bot.change_queue)
 
     assert len(await _changes(standing, TAKE_DOWN)) == 1
     assert len(await _prompts(standing.db_path)) == 1
@@ -1146,7 +1149,8 @@ async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(
 
     standing.bot.add_view = MagicMock()
     await recover_expired_review_prompts(standing.bot,
-                                          approve_view=_approve_view_for(standing.bot))
+                                          approve_view=_approve_view_for(standing.bot),
+                                          queue=standing.bot.change_queue)
 
     routed = [(call.args[0], call.kwargs.get("message_id"))
               for call in standing.bot.add_view.call_args_list

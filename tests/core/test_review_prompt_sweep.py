@@ -154,7 +154,8 @@ async def _sweep(bot: Any) -> None:
     from leaguebot.__main__ import _approve_view_for
     from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
 
-    await recover_expired_review_prompts(bot, approve_view=_approve_view_for(bot))
+    await recover_expired_review_prompts(
+        bot, approve_view=_approve_view_for(bot), queue=bot.change_queue)
 
 
 async def _restart(env: Any) -> None:
