@@ -57,7 +57,11 @@ from tests.support.mentions import NOBODY, notified
 
 @pytest.fixture(autouse=True)
 def empty_registry(monkeypatch):
-    """Each test starts from the registry as it ships: empty."""
+    """Each test starts from the registry as it ships: empty. About registers itself when its
+    module is first imported, which the league's `build` does, so it is imported before the
+    registry is emptied."""
+    import leaguebot.core.services.about_service  # noqa: F401
+
     monkeypatch.setattr(hub_service, "_OPTIONS", {})
 
 
