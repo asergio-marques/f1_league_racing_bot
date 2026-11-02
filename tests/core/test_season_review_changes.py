@@ -763,8 +763,6 @@ async def test_the_builder_hands_the_review_the_image_module_s_discard_of_a_rend
 CONFIG = "/season config-review"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
 async def test_a_restart_asks_the_take_down_of_each_review_standing_before_the_queue_starts(
         standing):
     """Two reviews stand in channel 700 when the bot starts: Alex's placements review (report R1
@@ -801,8 +799,6 @@ async def test_a_restart_asks_the_take_down_of_each_review_standing_before_the_q
     assert await _prompts(standing.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
 async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_second_start(standing):
     """Discord refuses to delete Alex's report message R1. The bot starts and asks the review's
     take-down, which stops at R1's delete. The bot starts again with it still stopped: the
@@ -1138,8 +1134,6 @@ async def test_a_press_refused_while_an_approval_is_in_hand_leaves_no_review_pas
     assert (payload["ending"], payload["question_id"]) == ("expired", channel.q.id)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
 async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(standing):
     """The bot restarts with Alex's review standing in channel 700, posted on 7 September. The
     restart's step routes the button on Q again, before the queue starts, rather than leaving it

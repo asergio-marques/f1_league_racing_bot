@@ -701,8 +701,6 @@ async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
 async def test_a_stop_part_way_is_finished_on_restart_telling_nobody_twice(tmp_path):
     league = await ongoing_league(tmp_path, weather=True, attendance=True)
     await _asked(league)

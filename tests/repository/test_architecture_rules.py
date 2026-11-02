@@ -169,7 +169,6 @@ def _database_code_outside_services() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_recover_expired_review_prompts"): (2, PASS["core"]),
     ("__main__.py", "_recover_missed_check_in_calls"): (2, PASS["attendance"]),
     ("__main__.py", "_recover_missed_cleanups"): (3, CLEANUPS),
     ("__main__.py", "_recover_missed_phases"): (2, PASS["weather"]),
@@ -2361,7 +2360,6 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 #: pass for its own files, and the pass of the module whose recovery the entry point's function
 #: carries. A table whose name is spliced into the statement at run time is not read here.
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
     ("__main__.py", "_recover_missed_check_in_calls"): (6, PASS["attendance"]),
     ("__main__.py", "_recover_missed_cleanups"): (6, CLEANUPS),
     ("__main__.py", "_recover_missed_phases"): (3, PASS["weather"]),
@@ -3151,7 +3149,6 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 #: architecture does not yet state (a hook's catch in the change queue, a cosmetic step in the
 #: router): the design pass judges each, to a failure path or to a stated exception.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
     ("__main__.py", "_recover_missed_check_in_calls"): (1, PASS["attendance"]),
     ("__main__.py", "_recover_missed_cleanups"): (1, CLEANUPS),
     ("__main__.py", "_recover_portrait_refresh_job"): (1, PASS["image"]),
@@ -3216,6 +3213,7 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
     ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "take_fingerprint"): (1, PASS["core"]),
+    ("core/services/season_review_changes.py", "recover_expired_review_prompts"): (1, PASS["core"]),
     ("core/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"): (1, PASS["core"]),
     ("core/utils/log_lines.py", "name_of_member"): (1, PASS["core"]),
     ("core/utils/log_lines.py", "record_refusal"): (1, PASS["core"]),

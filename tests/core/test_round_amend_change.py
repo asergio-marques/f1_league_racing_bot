@@ -385,8 +385,6 @@ async def _clear_blocker(league: Any) -> None:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
 async def test_a_stop_after_the_amendment_is_saved_arms_the_round_again_on_restart(tmp_path):
     """Pro's round 3 moved past round 4. The queue is stopped once the save is made; after a
     restart the round is armed against its new moment, the rounds stand renumbered and one
@@ -443,8 +441,6 @@ async def test_the_rounds_are_renumbered_in_the_amendment_s_own_save(tmp_path):
     assert _success_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
 async def test_the_success_line_is_saved_with_the_amendment(tmp_path):
     """The arming fails after the save, stopping the queue, and the bot restarts: the success
     line, saved with the amendment, stands once in the log channel, and once only after the

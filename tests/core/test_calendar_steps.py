@@ -173,8 +173,6 @@ async def test_an_old_calendar_discord_will_not_delete_stops_the_queue_and_once_
     assert len(league.texts(PRO_CALENDAR)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
 async def test_a_stop_between_the_calendar_post_and_its_delete_deletes_the_old_one_on_restart(
     tmp_path,
 ):

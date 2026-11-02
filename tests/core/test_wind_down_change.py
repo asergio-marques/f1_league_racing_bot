@@ -327,8 +327,6 @@ def _killed_before_the_window_is_recorded_closed(league: Any) -> None:
     setattr(service, name, _set_window_closed)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
 async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_still_tells_and_closes_them_at_start(
     tmp_path,
 ):
@@ -465,8 +463,6 @@ def _killed_after_the_window_is_recorded_closed(league: Any) -> None:
     setattr(service, name, _set_window_closed)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
 async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_closed_still_tells_and_closes_its_drivers_at_start(
     tmp_path,
 ):

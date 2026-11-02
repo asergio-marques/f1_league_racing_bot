@@ -486,8 +486,6 @@ async def test_the_driver_pass_test_mode_and_the_season_s_deletion_are_saved_tog
     assert not await _season_stands(league)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
 async def test_a_stop_part_way_is_finished_on_restart(tmp_path):
     """The abort is run as far as `post_closed`, which records the window closed, and the bot
     stops there with the season still standing. When it starts again, the abort is finished:

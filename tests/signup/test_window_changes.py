@@ -822,8 +822,6 @@ async def test_the_bot_s_close_leaves_a_season_whose_end_is_in_hand_to_it(tmp_pa
         assert not [line for line in lines if "Signups closed automatically" in line], cause
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
 @pytest.mark.parametrize(("kind", "due", "moved"), (
     ("season.complete", True, None), (WIND_DOWN_KIND, True, None),
     (WIND_DOWN_KIND, False, "PLACEMENTS"),

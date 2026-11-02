@@ -16,6 +16,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
 from leaguebot.core.services.start_up import StartUpStep, start_up
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild, LeagueCommandTree, warn_if_serving_several
@@ -1345,7 +1346,8 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
         # with the process, so they are reset so /test-mode advance can re-trigger submission.
         ("orphaned submission channels", lambda: _recover_orphaned_submission_channels(bot)),
         # Any season-review approve button left standing by a previous run.
-        ("expired review prompts", lambda: _recover_expired_review_prompts(bot)),
+        ("expired review prompts",
+         lambda: recover_expired_review_prompts(bot, approve_view=_approve_view_for(bot))),
         ("missed phases", lambda: _recover_missed_phases(bot)),
         # The check-in calls that fell due while the bot was down, their deadline still ahead
         # (#429), posted late. Before the deadlines below, as a call comes before its deadline.
@@ -1955,79 +1957,6 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
             )
         except Exception:
             log.exception("Recovery: could not ask for round %s's submission restart", round_id)
-
-
-async def _recover_expired_review_prompts(bot: LeagueBot) -> None:
-    """Ask the change queue to take down every season review left standing by a previous run.
-
-    The button expires five minutes after the review posts its question, by a timer held in
-    memory and lost with the process. A bot restarted inside that window would otherwise leave a
-    public message offering a button nothing is counting, for ever.
-
-    Every row that survives to start-up is expired by definition: the bot was down, so the five
-    minutes cannot have been served. Each is asked for as a ``season.review.take_down`` ending
-    ``restart``, as the bot, **before the queue starts** (core specification, "What survives a
-    restart"): its jobs delete the question and the report above it, post the notice pinging the
-    reviewer, record the lapse in the log channel and drop the row. Nothing is deleted, posted or
-    written here, so a deletion Discord refuses stops the queue with the row standing, rather than
-    being lost.
-
-    A row whose take-down is already queued, running or stopped is left to it and asked for no
-    second time: what a review's press has marked is held in memory and empty after a restart, so
-    the queue is what says. Each question's button is routed again by the id of its message, so a
-    press made before the take-down has run reaches a view that refuses it and records the refusal
-    (a press reads the row, which says its five minutes ran).
-    """
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.core.services.change_queue import unfinished
-    from leaguebot.core.services.season_review_changes import RESTART, TAKE_DOWN, take_review_down
-
-    try:
-        async with get_connection(bot.db_path) as db:
-            cursor = await db.execute(
-                "SELECT message_id, reviewer_id, review, verb FROM season_review_prompts"
-            )
-            prompts = await cursor.fetchall()
-        in_hand = {
-            int(payload["question_id"])
-            for payload in await unfinished(bot.db_path, [TAKE_DOWN])
-        }
-    except Exception:
-        log.exception("could not read the standing season review prompts")
-        return
-
-    view_for = _approve_view_for(bot)
-    for row in prompts:
-        question_id = int(row["message_id"])
-        try:
-            bot.add_view(
-                view_for({"view": _review_view_of(row), "reviewer_id": row["reviewer_id"]}),
-                message_id=question_id,
-            )
-        except Exception:
-            log.exception("could not route the button of the review at %s again", question_id)
-        if question_id in in_hand:
-            log.info("the take-down of the review at %s is in hand, so it is left to it", question_id)
-            continue
-        try:
-            await take_review_down(bot.change_queue, bot.db_path, question_id, RESTART)
-        except Exception:
-            log.exception("could not ask for the take-down of the review at %s", question_id)
-
-
-def _review_view_of(row: aiosqlite.Row) -> str:
-    """The family of the button a standing review's row belongs to, as the builder's factory of
-    review views names it. The configuration review is told by its command. The other command,
-    `/season placements-review`, posts two kinds of question whose buttons carry different custom
-    ids: the placements approval (``approve``, row verb ``approved``) and the mid-season
-    confirmation (``mid_season``, row verb ``confirmed``), which `record_question` writes from the
-    view it was posted with. Routed under the wrong id, a press finds no item and is dropped
-    without a refusal, so the row's verb is what is read."""
-    from leaguebot.core.services.season_review_changes import VERBS
-
-    if str(row["review"]) == "/season config-review":
-        return "configuration"
-    return "approve" if str(row["verb"]) == VERBS["approve"] else "mid_season"
 
 
 async def _recover_portrait_refresh_job(bot: LeagueBot) -> None:

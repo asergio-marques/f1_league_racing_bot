@@ -232,8 +232,6 @@ async def _asked(league: Any, name: str = "Pro", **kwargs: Any) -> Any:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
 async def test_a_stop_after_the_division_is_cancelled_tells_it_and_reposts_its_calendar_on_restart(
     tmp_path,
 ):
@@ -256,8 +254,6 @@ async def test_a_stop_after_the_division_is_cancelled_tells_it_and_reposts_its_c
     assert len(lines) == 1 and CHECKIN_R3 in lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
-                                       "not yet season_review_changes'")
 async def test_a_stop_after_the_timed_work_is_removed_cancels_the_division_on_restart(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)
