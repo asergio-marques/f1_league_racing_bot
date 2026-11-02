@@ -788,23 +788,31 @@ async def test_a_forecast_gone_by_hand_completes_its_delete_and_drops_its_row(tm
 
 
 @pytest.mark.parametrize(
-    "timer, mystery, expected",
+    "timer, round_format, expected",
     [
-        ("phase 1", False, (KIND, 1)),
-        ("phase 2", False, (KIND, 2)),
-        ("phase 3", False, (KIND, 3)),
-        ("phase 1 of a mystery round", True, (KIND, 0)),
-        ("clean-up", False, (CLEAN_UP_KIND, None)),
+        ("phase 1", "NORMAL", (KIND, 1)),
+        ("phase 2", "NORMAL", (KIND, 2)),
+        ("phase 3", "NORMAL", (KIND, 3)),
+        ("phase 1", "SPRINT", (KIND, 1)),
+        ("phase 2", "SPRINT", (KIND, 2)),
+        ("phase 3", "SPRINT", (KIND, 3)),
+        ("phase 1", "ENDURANCE", (KIND, 1)),
+        ("phase 2", "ENDURANCE", (KIND, 2)),
+        ("phase 3", "ENDURANCE", (KIND, 3)),
+        ("phase 1 of a mystery round", "MYSTERY", (KIND, 0)),
+        ("clean-up", "NORMAL", (CLEAN_UP_KIND, None)),
     ],
 )
-async def test_each_weather_timer_asks_the_queue(tmp_path, timer, mystery, expected):
+async def test_each_weather_timer_asks_the_queue(tmp_path, timer, round_format, expected):
     """Each callback `timer_callbacks` gives the scheduler, fired for Pro's round 3, puts one
-    change on the queue it was handed, and runs nothing: phases 1 to 3 their forecast, a
-    mystery round's phase 1 the notice (phase 0), and the clean-up,
-    a day after the race with the Phase 3 forecast (9303) standing, its deletion."""
+    change on the queue it was handed, and runs nothing: phases 1 to 3 their own forecast,
+    whether round 3 is a normal, a sprint or an endurance round, a mystery round's phase 1 the
+    notice (phase 0), and the clean-up, a day after the race with the Phase 3 forecast (9303)
+    standing, its deletion."""
     from leaguebot.weather.services.forecast_changes import timer_callbacks
 
-    league = await _league(tmp_path, mystery=mystery)
+    league = await _league(tmp_path)
+    await league.write("UPDATE rounds SET format = ? WHERE id = ?", round_format, ROUND)
     if timer == "clean-up":
         await posted_forecast(league, ROUND, 3, 9303)
     callbacks = timer_callbacks(league.bot.change_queue, league.db_path)
