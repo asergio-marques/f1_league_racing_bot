@@ -164,18 +164,20 @@ VERBS = {"approve": "approved"}
 #: and not on the row: only the button and the timer of the running bot read it, no change type
 #: does, and a restart takes every standing review down (`RESTART`), whose lapse reads no mark, so
 #: nothing is lost by it. The restart's take-down wins over a late expiry timer because the
-#: scheduler is paused until start-up has ended, so `RESTART` is always the one asked. Written outside any queued change, as a row's column would have been,
-#: which would have been a save the architecture's rule forbids. Cleared with the league's other
-#: in-memory state (`forget_presses`), and by the take-down's `forget` job with the row.
+#: scheduler is paused until start-up has ended, so `RESTART` is always the one asked. Written
+#: outside any queued change, as a row's column would have been, which would have been a save the
+#: architecture's rule forbids. Cleared with the league's other in-memory state
+#: (`forget_presses`), and by the take-down's `forget` job with the row.
 _PRESSES: dict[int, str] = {}
 
 __all__ = [
     "ARM_EXPIRY", "ApproveViewFactory", "CONFIRMED", "DELETE_DRAWING_NOTICE", "DELETE_MESSAGE",
     "DRAW_AND_POST", "DRAWING_NOTICE", "EXPIRED", "FORGET", "POST", "POST_DRAWING_NOTICE",
     "POST_EXPIRY", "POST_QUESTION", "POST_REPORT", "REFUSED", "RESTART", "REVIEW_WINDOW",
-    "FAILED", "ReviewDrawing", "claim_take_down", "forget_presses", "mark_press", "recover_expired_review_prompts",
-    "release_take_down", "take_review_down_before", "StandingReview", "TAKE_DOWN", "TAKING_DOWN", "TIMER_FIRED", "TIMER", "UNDER_WAY", "VERBS", "await_from_worker", "season_review_post_change",
-    "season_review_take_down_change",
+    "FAILED", "ReviewDrawing", "claim_take_down", "forget_presses", "mark_press",
+    "recover_expired_review_prompts", "release_take_down", "take_review_down_before",
+    "StandingReview", "TAKE_DOWN", "TAKING_DOWN", "TIMER_FIRED", "TIMER", "UNDER_WAY", "VERBS",
+    "await_from_worker", "season_review_post_change", "season_review_take_down_change",
 ]
 
 
