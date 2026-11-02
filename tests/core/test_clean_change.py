@@ -10,7 +10,7 @@ delete stops the queue, and a Discard names the message and leaves it uncounted 
 a message already gone by its delete completes it, uncounted. The command runs on the league lane
 even in a channel the bot keeps for a conversation (decision 30).
 
-The league: `league_double`'s, the league admin Admin (4242) running the command in channel 700,
+The league: `league_bot`'s, the league admin Admin (4242) running the command in channel 700,
 which holds, newest first, messages of the bot and of a driver.
 """
 from __future__ import annotations
@@ -25,20 +25,21 @@ import pytest
 
 from leaguebot.core.db.database import run_migrations
 from tests.support.change_queue import (
+    Clock,
     INTERACTION_CHANNEL_ID,
     LOG_CHANNEL_ID,
-    Clock,
-    attach_queue,
     change_rows,
     discard_job,
-    http_error,
     history_channel,
-    league_double,
+    http_error,
+    league_bot,
+    league_queue,
     member_interaction,
     post_in,
     retry_job,
     run_queue,
     seed_server,
+    set_user,
     step_rows,
     stopped_job,
 )
@@ -58,8 +59,8 @@ async def env(tmp_path):
     db_path = str(tmp_path / "queue.db")
     await run_migrations(db_path)
     await seed_server(db_path)
-    bot = league_double(db_path)
-    bot.user = BOT_USER
+    bot = await league_bot(db_path)
+    set_user(bot, BOT_USER)
     channel = history_channel(CLEANED)
     known = {LOG_CHANNEL_ID: bot.log_channel, INTERACTION_CHANNEL_ID: bot.interaction_channel,
              CLEANED: channel}
@@ -70,7 +71,7 @@ async def env(tmp_path):
     channel.guild = guild
     bot.get_channel = MagicMock(side_effect=known.get)
     bot.get_guild = MagicMock(return_value=guild)
-    attach_queue(bot, db_path, now=Clock(NOW))
+    league_queue(bot, db_path, now=Clock(NOW))
     return SimpleNamespace(db_path=db_path, bot=bot, channel=channel)
 
 
