@@ -53,10 +53,16 @@ def _make_scheduler(db_path: str):
     return svc
 
 
-def _make_mock_job(job_id: str, round_id: int) -> MagicMock:
+#: Not yet true until the build: a round's jobs are found by their stored kind and key.
+FOUND_BY_KEY = "#283: cancelling a round still finds its jobs by a round_id keyword"
+
+
+def _make_mock_job(job_id: str, round_id: int, *, kind: str | None = None) -> MagicMock:
+    """A round's job as the store holds it: its kind (by default its id less the round
+    suffix) and the round id as its key."""
     job = MagicMock()
     job.id = job_id
-    job.kwargs = {"round_id": round_id}
+    job.kwargs = {"kind": kind or job_id.split("_s", 1)[0], "key": round_id}
     job.next_run_time = datetime(2099, 1, 1, tzinfo=timezone.utc)
     return job
 
@@ -135,6 +141,7 @@ def _all_seeded_jobs(ids: dict[str, int]) -> list[MagicMock]:
 # What the disable must still do
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 @pytest.mark.parametrize("live_status", ["ACTIVE", "SETUP"])
 async def test_disable_removes_exactly_the_weather_jobs_in_scope(tmp_path, live_status):
     """Stated as a whole: four kinds × the two rounds in scope, and nothing else.
@@ -167,7 +174,7 @@ async def test_disable_leaves_a_job_whose_id_carries_no_round_suffix(tmp_path):
     its owner read, so the filter leaves it rather than guessing."""
     def _jobs(ids):
         return _all_seeded_jobs(ids) + [
-            _make_mock_job("legacy_phase_job", ids["live_r1"])
+            _make_mock_job("legacy_phase_job", ids["live_r1"], kind="weather_p1")
         ]
 
     removed = await _disable_weather(tmp_path, _jobs)
@@ -179,6 +186,7 @@ async def test_disable_leaves_a_job_whose_id_carries_no_round_suffix(tmp_path):
 # The unfiltered default, which the round- and season-level cancels rely on
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 async def test_cancel_round_without_a_filter_still_removes_every_job(tmp_path):
     """`/season cancel`, `/round cancel`, reset and amend all cancel a *round* and want
     all nine of its jobs gone.  The new keyword must not have changed that."""
@@ -193,6 +201,7 @@ async def test_cancel_round_without_a_filter_still_removes_every_job(tmp_path):
     assert set(removed) == {f"{prefix}_s1_d1_r1" for prefix in ALL_PREFIXES}
 
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 async def test_cancel_round_with_a_filter_spares_other_rounds(tmp_path):
     """The filter narrows by job kind, never by round: a job of the same kind on another
     round is still left alone."""

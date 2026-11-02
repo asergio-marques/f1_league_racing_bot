@@ -420,7 +420,7 @@ async def test_an_opened_submission_is_recorded_as_asked_of_the_queue(tmp_path):
     assert "started" not in line and "runs on its own" not in line
 
 
-async def _noop(round_id: int) -> None:
+async def _noop(kind: str, key: int) -> None:
     return None
 
 
@@ -451,7 +451,8 @@ async def test_the_round_s_real_results_job_is_cancelled_before_the_wizard_opens
         service.schedule_result_submission_jobs(rounds, division_meta={DIVISION_ID: (1, 1)})
         weather_job = f"weather_p3_s1_d1_r3_id{ROUND_ID}"
         service._scheduler.add_job(
-            _noop, "date", run_date=later, id=weather_job, kwargs={"round_id": ROUND_ID}
+            _noop, "date", run_date=later, id=weather_job,
+            kwargs={"kind": "weather_p3", "key": ROUND_ID},
         )
         cog.bot.scheduler_service = service
 

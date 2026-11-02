@@ -1,4 +1,4 @@
-"""The scheduler's job identifiers, and the module-level callables APScheduler fires.
+"""The scheduler's job identifiers, and the readers that find a round's jobs by them.
 
 Issue #208. `scheduler_service.py` was at 50.7%. Every timed thing the bot does — forecasts,
 check-in calls, deadlines, result submission — is a row in a job store keyed by one of these
@@ -17,12 +17,10 @@ that, and it is the reason this file exists. The season, tier and number stay in
 only to make it readable in an admin view — they are decoration, and a number left stale by a
 renumbering is cosmetic.
 
-**The module-level job callables are the other half.** They have to be module-level and
-picklable because `SQLAlchemyJobStore` stores them, which means they cannot close over the
-service and must reach it through a global. Every one of them therefore guards against that
-global being unset and against its callback being unregistered — a job firing during startup,
-or for a module since switched off, must log and return rather than raise inside APScheduler's
-executor where nothing would catch it.
+The one runner every job is stored with, and what it does when the service or a kind's handler
+is missing, is pinned in `test_scheduler_job_callables.py`. A round job is stored with its kind
+and the round id as its key, as a one-off timer is, and the readers find a round's jobs by that
+key.
 
 `get_pending_advance_jobs` parses the identifier back apart, which is the other reason the
 scheme matters: a change to the suffix format breaks the reader as well as the writer, and
@@ -30,6 +28,7 @@ these tests hold both ends against each other.
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -37,12 +36,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import leaguebot.core.services.scheduler_service as ss
-from leaguebot.core.services.scheduler_service import (
-    SchedulerService,
-    _portrait_refresh_job,
-    _round_job_suffix,
-    _signup_close_timer_job,
-)
+from leaguebot.core.services.scheduler_service import SchedulerService, _round_job_suffix
 
 SERVER_ID = 10408
 
@@ -132,10 +126,17 @@ def test_the_reader_undoes_the_writer(event_type):
     assert ss._job_event_type(job_id) == event_type
 
 
+#: Not yet true until the build: the readers find a round's job by its stored kind and key.
+FOUND_BY_KEY = "#283: the readers still find a round's job by a round_id keyword"
+
+
 def _job(job_id: str, round_id: int | None, *, minutes: int = 5, paused: bool = False):
+    """A job as the store holds it: its kind (its id less any round suffix) and, for a round's
+    job, the round id as its key, as the one runner is handed them."""
+    kind = re.sub(r"_s\d+_d\d+_r\d+(_id\d+)?$", "", job_id)
     job = MagicMock()
     job.id = job_id
-    job.kwargs = {"round_id": round_id} if round_id is not None else {}
+    job.kwargs = {"kind": kind, "key": round_id} if round_id is not None else {"kind": kind}
     job.next_run_time = (
         None if paused else datetime.now(timezone.utc) + timedelta(minutes=minutes)
     )
@@ -149,6 +150,7 @@ def _service(jobs: list) -> SchedulerService:
     return service
 
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_each_event_type_maps_to_its_phase_number():
     """The advance command fires events by phase number, so a prefix mapped wrongly would
     fire the wrong thing — a check-in deadline in place of a forecast."""
@@ -169,6 +171,7 @@ def test_each_event_type_maps_to_its_phase_number():
     assert [p["phase_number"] for p in pending] == [1, 2, 3, 5, 6, 7, 8, 9]
 
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_jobs_are_returned_in_the_order_they_will_fire():
     """Advance replays a season in order; out of sequence it would post a deadline before
     the call it closes."""
@@ -192,6 +195,7 @@ def test_a_paused_job_is_not_pending():
     assert _service(jobs).get_pending_advance_jobs({42}) == []
 
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_another_round_s_jobs_are_not_returned():
     suffix_mine = _round_job_suffix(_round(42, 5), 3, 2)
     suffix_theirs = _round_job_suffix(_round(43, 6), 3, 2)
@@ -205,6 +209,7 @@ def test_another_round_s_jobs_are_not_returned():
     assert [p["round_id"] for p in pending] == [42]
 
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_season_end_jobs_are_excluded():
     """Not an event of any round, so advance must not replay it."""
     suffix = _round_job_suffix(_round(42, 5), 3, 2)
@@ -218,6 +223,7 @@ def test_season_end_jobs_are_excluded():
     assert [p["phase_number"] for p in pending] == [1]
 
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_both_cleanups_are_replayed_as_events_of_their_own():
     """A round's forecast and check-in come down a day after it, and advance fires both in
     their turn (decided 2026-09-24, #425), the forecast's first where they fall together."""
@@ -231,6 +237,7 @@ def test_both_cleanups_are_replayed_as_events_of_their_own():
     assert [p["phase_number"] for p in pending] == [8, 9]
 
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_a_results_job_is_never_returned():
     """Result submission is found from database state instead, so that a past-dated job
     which already auto-fired can neither block the wizard nor open it twice. The docstring
@@ -259,6 +266,7 @@ def test_a_job_whose_id_does_not_parse_is_ignored():
     assert _service(jobs).get_pending_advance_jobs({42}) == []
 
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_every_queued_job_is_listed_by_its_round_and_event_type():
     """`get_queued_events_for_rounds` is the review summary's view and deliberately keeps the
     ones advance excludes — it answers "is a job queued", not "what will advance fire" (#426)."""
@@ -278,6 +286,7 @@ def test_a_paused_job_is_not_queued():
     assert _service(jobs).get_queued_events_for_rounds({42}) == set()
 
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_a_queued_job_is_found_by_its_round_not_the_numbers_in_its_id():
     """The season, tier and number in an ID are decoration, and two rounds may share them after a
     renumbering. The round a job belongs to is its `round_id` kwarg, which an ID written before
@@ -299,56 +308,3 @@ def test_a_job_whose_id_does_not_parse_is_not_listed():
     jobs = [_job("something_odd", 42), _job("portrait_refresh", None)]
 
     assert _service(jobs).get_queued_events_for_rounds({42}) == set()
-
-
-# ---------------------------------------------------------------------------
-# The module-level callables
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def no_global(monkeypatch):
-    """The state during startup, before `start()` sets the global."""
-    monkeypatch.setattr(ss, "_GLOBAL_SERVICE", None)
-
-
-@pytest.fixture
-def service_with(monkeypatch):
-    """Hand back a setter installing a global service with no callback registered."""
-
-    def _install():
-        service = SchedulerService.__new__(SchedulerService)
-        service._signup_close_callback = None
-        service._portrait_refresh_callback = None
-        monkeypatch.setattr(ss, "_GLOBAL_SERVICE", service)
-        return service
-
-    return _install
-
-
-@pytest.mark.parametrize(
-    "job,args", [(_signup_close_timer_job, ()), (_portrait_refresh_job, ())],
-    ids=["signup-close", "portrait-refresh"],
-)
-async def test_a_job_firing_before_the_service_exists_is_survived(no_global, job, args, caplog):
-    """A persisted job can fire during startup, before `start()` sets the global. Raising
-    inside APScheduler's executor would surface nowhere."""
-    with caplog.at_level("WARNING"):
-        await job(*args)
-
-    assert "_GLOBAL_SERVICE is None" in caplog.text
-
-
-@pytest.mark.parametrize(
-    "job,args", [(_signup_close_timer_job, ()), (_portrait_refresh_job, ())],
-    ids=["signup-close", "portrait-refresh"],
-)
-async def test_a_job_with_no_callback_registered_is_survived(service_with, job, args, caplog):
-    """A job persisted for a module since switched off. It must log and return rather
-    than raise — the module-output rule in the direction nobody thinks about."""
-    service_with()
-
-    with caplog.at_level("WARNING"):
-        await job(*args)
-
-    assert "no callback registered" in caplog.text

@@ -29,8 +29,8 @@ from leaguebot.core.services.scheduler_service import SchedulerService
 
 LOGGER = "leaguebot.core.services.scheduler_service"
 
-#: Each cancel method, and the arguments it is called with. A job the store lists carries the
-#: round id and the season-end prefix, so every method that walks the store finds it.
+#: Each cancel method, and the arguments it is called with. A job the store lists carries
+#: round 5 as its key and the season-end prefix, so every method that walks the store finds it.
 CANCELS = [
     ("cancel_job", ("wizard_inactivity_101",)),
     ("cancel_all", ()),
@@ -45,6 +45,22 @@ CANCELS = [
 
 CANCEL_CASES = [pytest.param(name, args, id=name) for name, args in CANCELS]
 
+#: Not yet true until the build: a round's jobs are found by their stored kind and key.
+FOUND_BY_KEY = "#283: cancelling a round still finds its jobs by a round_id keyword"
+
+#: The cases again, for a test that fails until the build where the method finds the job by
+#: its round: `cancel_round` and `cancel_rounds`.
+CANCEL_CASES_FOUND_BY_ROUND = [
+    pytest.param(
+        name, args, id=name,
+        marks=(
+            pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
+            if name in ("cancel_round", "cancel_rounds") else ()
+        ),
+    )
+    for name, args in CANCELS
+]
+
 
 def _service(jobs) -> SchedulerService:
     """A scheduler service whose APScheduler is stubbed, listing *jobs*."""
@@ -55,7 +71,7 @@ def _service(jobs) -> SchedulerService:
 
 
 def _job(job_id: str):
-    return SimpleNamespace(id=job_id, kwargs={"round_id": 5})
+    return SimpleNamespace(id=job_id, kwargs={"kind": "results", "key": 5})
 
 
 @pytest.mark.parametrize("cancel, args", CANCEL_CASES)
@@ -80,7 +96,7 @@ def test_a_cancel_passes_over_a_job_already_gone(caplog, cancel, args):
         assert result == 1
 
 
-@pytest.mark.parametrize("cancel, args", CANCEL_CASES)
+@pytest.mark.parametrize("cancel, args", CANCEL_CASES_FOUND_BY_ROUND)
 def test_a_cancel_logs_the_traceback_of_any_other_failure(caplog, cancel, args):
     """A job store that cannot be written is a real fault: a warning carrying the error and
     its traceback, and still no raise. `cancel_all` goes on to the next job and counts it."""
@@ -106,9 +122,12 @@ def test_a_cancel_logs_the_traceback_of_any_other_failure(caplog, cancel, args):
 
 
 def _round_job(job_id: str, round_id: int):
-    return SimpleNamespace(id=job_id, kwargs={"round_id": round_id})
+    """A round's job as the store holds it: its kind (its id less the round) and the round id
+    as its key."""
+    return SimpleNamespace(id=job_id, kwargs={"kind": job_id.rsplit("_r", 1)[0], "key": round_id})
 
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_cancel_rounds_removes_every_job_of_every_round_handed_and_no_other():
     """Rounds 5 and 6 each carry two jobs, round 7 one, and a season-end job stands. Cancelling
     rounds 5 and 6 removes their four jobs, listing the store once, and leaves round 7's job and
@@ -139,6 +158,7 @@ def test_a_store_that_cannot_be_listed_removes_nothing():
     service._scheduler.remove_job.assert_not_called()
 
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_cancel_round_gives_the_jobs_it_removed():
     """Round 5 carries its results submission and its clean-up, and round 6 its results
     submission. Cancelling round 5 gives the two jobs it removed, so that a refused cancellation
@@ -151,6 +171,7 @@ def test_cancel_round_gives_the_jobs_it_removed():
     assert sorted(removed) == ["cleanup_r5", "results_r5"]
 
 
+@pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_the_season_end():
     """Rounds 5 and 6 each carry two jobs, round 7 one, and a stale season-end job stands. A
     season's cancellation of rounds 5 and 6, the season-end job with them, gives the jobs it
@@ -179,7 +200,7 @@ def test_cancel_rounds_gives_the_jobs_it_removed_of_each_round_and_leaves_out_th
 def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
     """Round 2 of division tier 1 in season 3, round id 5, starts on 1 June 2099 at 14:00. Arming
     its clean-ups alone adds two jobs and no other: the forecast's clean-up and the check-in's,
-    each named for the round, each firing a day after the start, and each carrying the round."""
+    each named for the round and each firing a day after the start."""
     from datetime import datetime, timezone
 
     from leaguebot.core.models.round import Round, RoundFormat
@@ -200,7 +221,6 @@ def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
     assert sorted(armed) == ["cleanup_s3_d1_r2_id5", "rsvp_cleanup_s3_d1_r2_id5"]
     for call in armed.values():
         assert call.kwargs["trigger"].run_date == start + POST_RACE_CLEANUP_DELAY
-        assert call.kwargs["kwargs"] == {"round_id": 5}
         assert call.kwargs["replace_existing"] is True
 
 

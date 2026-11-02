@@ -68,8 +68,6 @@ def _make_scheduler_no_db():
     """Instantiate SchedulerService bypassing __init__ (no real APScheduler needed)."""
     from leaguebot.core.services.scheduler_service import SchedulerService
     svc = SchedulerService.__new__(SchedulerService)
-    svc._phase_callbacks = {}
-    svc._mystery_notice_callback = None
     svc._db_path = ":memory:"
     mock_sched = MagicMock()
     mock_sched.add_job = MagicMock()
@@ -80,12 +78,17 @@ def _make_scheduler_no_db():
 
 
 def _make_mock_job(job_id: str, round_id: int) -> MagicMock:
-    """Create a mock APScheduler job with the given id and round_id kwarg."""
+    """A mock APScheduler job with the given id, stored with its kind (its id less the round
+    suffix) and the round id as its key."""
     job = MagicMock()
     job.id = job_id
-    job.kwargs = {"round_id": round_id}
+    job.kwargs = {"kind": job_id.split("_s", 1)[0], "key": round_id}
     job.next_run_time = datetime(2099, 1, 1, tzinfo=timezone.utc)
     return job
+
+
+#: Not yet true until the build: a round's jobs are found by their stored kind and key.
+FOUND_BY_KEY = "#283: cancelling a round still finds its jobs by a round_id keyword"
 
 
 def _mystery_round(round_id: int = 42) -> Round:
@@ -177,12 +180,14 @@ class TestCancelRoundIncludesMystery:
         svc._scheduler.get_jobs.return_value = jobs
         return jobs
 
+    @pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
     def test_removes_all_round_jobs(self):
         svc = _make_scheduler_no_db()
         self._setup_round_jobs(svc, round_id=7)
         svc.cancel_round(7)
         assert svc._scheduler.remove_job.call_count == 5
 
+    @pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
     def test_does_not_remove_other_round_jobs(self):
         svc = _make_scheduler_no_db()
         jobs = [
