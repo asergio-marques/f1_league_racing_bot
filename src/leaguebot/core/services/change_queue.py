@@ -25,7 +25,7 @@ try can remove the copy already sent before it posts again (`StepContext.kept`):
 accepted only where the bot stops, not where a save fails.
 
 **One change runs at a time on a lane, in the order asked.** One dispatcher task,
-`ChangeQueue._task`, is kept on the instance and started by `start()` (idempotent), from `on_ready`
+`ChangeQueue._task`, is kept on the instance and started by `start()` (idempotent), from `start_up`
 and never from an interaction, so that it inherits no interaction's context. It wakes on the signal
 or when the next try falls due and starts one task per lane that has something to do, kept in
 `_workers`: the league lane's always, and at most `CONVERSATION_LANES_AT_ONCE` conversations'

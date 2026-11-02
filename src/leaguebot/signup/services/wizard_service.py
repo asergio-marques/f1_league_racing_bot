@@ -159,7 +159,7 @@ class WizardService:
 
     Dependency wiring: the service is given the bot in its constructor, for the Discord guild
     objects and the driver and signup module services it reaches through it. It is complete once
-    built, so a press on a signup button arriving while ``on_ready`` is still recovering finds
+    built, so a press on a signup button arriving while ``start_up`` is still recovering finds
     the bot already there (#228).
     """
 
