@@ -290,12 +290,14 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
 
     return SeasonEndHooks(
         window_jobs=window_jobs,
+        # Read when the step runs: a test swaps the signup service on the bot after registering.
         window_steps=window_close_steps(
             signup_module_service=lambda: bot.signup_module_service,
             now=lambda: bot.change_queue.now(),
         ),
         close_signups=close_signups,
         window_open=window_open,
+        # Read when it runs: a test replaces the scheduler's method after registering.
         cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
         post_signup_notice=post_signup_notice,
         lock_signup_channel=lock_signup_channel,
@@ -682,11 +684,14 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         closing_change(now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once)
     )
+    # The signup, driver and team services, and the queue, are read when a change runs and not
+    # handed over here: a test swaps each on the bot after registering, and `restart_queue`
+    # builds a new queue and registers again.
     bot.change_queue.register(
         window_open_change(
             modules=bot.module_service, signup=bot.signup_module_service,
             config=bot.config_service,
-            schedule_close=lambda iso: bot.scheduler_service.schedule_signup_close_timer(iso),
+            schedule_close=bot.scheduler_service.schedule_signup_close_timer,
             queue=lambda: bot.change_queue,
         )
     )
@@ -701,6 +706,8 @@ def register_change_types(bot: LeagueBot) -> None:
         signup_off_change(
             modules=bot.module_service, signup_module_service=lambda: bot.signup_module_service,
             returned_by_close=RETURNED_BY_CLOSE, cancel_timers=_cancel_wizard_timers(bot),
+            # Read when it runs: a test replaces the scheduler's or the configuration's method
+            # after registering.
             cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
             server_config=lambda: bot.config_service.get_server_config(),
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
