@@ -168,8 +168,12 @@ async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
     """`main`, driven with the staged restore, the migrations, the builder and the bot's connection
     each stubbed to record its call, swaps in a staged restore, then applies the migrations, then
     builds the bot, and only then connects it to Discord (architecture.md, "Start-up runs once, in
-    one function", steps 2 to 4)."""
+    one function", steps 2 to 4). The bot then reports itself ready: the handler `main` registered
+    runs the start-up, handed the builder's steps, the bot's change queue and its scheduler service,
+    and only after it syncs the slash commands."""
     import logging
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
 
     import leaguebot.__main__ as bot_module
     from leaguebot.core.db import database
@@ -189,8 +193,21 @@ async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
     async def close_connections() -> None:
         pass
 
+    class _Tree:
+        async def sync(self) -> list:
+            calls.append("commands synced")
+            return []
+
     class _Bot:
+        user = SimpleNamespace(id=1)
+        start_up_steps = (("hub", AsyncMock()),)
+        change_queue = object()
+        scheduler_service = object()
+        tree = _Tree()
+        handlers: dict = {}
+
         def event(self, handler):
+            self.handlers[handler.__name__] = handler
             return handler
 
         def add_listener(self, *args, **kwargs) -> None:
@@ -205,9 +222,11 @@ async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
         async def start(self, token: str) -> None:
             calls.append("connect")
 
+    bot = _Bot()
+
     async def build(settings_) -> _Bot:
         calls.append("build")
-        return _Bot()
+        return bot
 
     monkeypatch.setattr(bot_module, "load_dotenv", lambda *args, **kwargs: None)
     monkeypatch.setattr(bot_module, "read_settings", lambda environ: settings)
@@ -223,3 +242,14 @@ async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
     await bot_module.main()
 
     assert calls == ["restore", "migrations", "build", "connect"]
+
+    from leaguebot.core.services import start_up as start_up_module
+
+    start_up = AsyncMock(side_effect=lambda **kwargs: calls.append("start-up") or True)
+    monkeypatch.setattr(start_up_module, "start_up", start_up)
+    monkeypatch.setattr(bot_module, "start_up", start_up, raising=False)
+    await bot.handlers["on_ready"]()
+
+    start_up.assert_awaited_once_with(steps=bot.start_up_steps, change_queue=bot.change_queue,
+                                      scheduler=bot.scheduler_service)
+    assert calls[4:] == ["start-up", "commands synced"]
