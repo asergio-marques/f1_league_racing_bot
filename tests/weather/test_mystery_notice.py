@@ -141,17 +141,21 @@ class TestScheduleRoundMystery:
         assert any("weather_p2" in jid for jid in job_ids)
         assert any("weather_p3" in jid for jid in job_ids)
 
+    @pytest.mark.xfail(
+        strict=True, reason="#283: a round job is still stored with its round id as round_id"
+    )
     def test_round_id_in_kwargs_for_all_jobs(self):
+        """Every job of a mystery round is stored with the round's id as its key."""
         svc = _make_scheduler_no_db()
         svc.schedule_round(_mystery_round(round_id=42), season_number=1, division_tier=1)
         for call in svc._scheduler.add_job.call_args_list:
-            assert call.kwargs["kwargs"]["round_id"] == 42
+            assert call.kwargs["kwargs"]["key"] == 42
 
     def test_job_ids_follow_new_format(self):
         svc = _make_scheduler_no_db()
         svc.schedule_round(_mystery_round(round_id=42), season_number=3, division_tier=2)
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        # weather_p1 replaces the old mystery_r job; it checks format at runtime.
+        # weather_p1 replaces the old mystery_r job; weather reads the format when it fires.
         # Format: <event>_s{season}_d{tier}_r{round_number}_id{round_id}. The round id is the
         # part that has to be there — season, tier and number are all rewritten by a
         # renumbering, and without the id an amended round could schedule on top of a sibling's

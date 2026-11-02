@@ -450,9 +450,14 @@ def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     """
     import inspect
 
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.core.services.scheduler_service import SchedulerService
 
-    job = inspect.getsource(scheduler_service._amendment_sweep_job)
+    service = SchedulerService.__new__(SchedulerService)
+    service._scheduler = MagicMock()
+    service.schedule_amendment_sweep()
+
+    [armed] = service._scheduler.add_job.call_args_list
+    job = inspect.getsource(armed.args[0])
     assert "add_job" not in job
     assert "except Exception" in job
 
@@ -462,7 +467,7 @@ async def test_a_naive_now_does_not_abort_the_whole_sweep(tmp_path):
 
     That comparison sat outside the guard around `fromisoformat`, so the exception escaped the
     loop entirely: one bad caller left *every* lapsed amendment unreverted rather than one, and
-    `_amendment_sweep_job`'s blanket `except` logged it where nobody would connect the two.
+    the sweep job's blanket `except` logged it where nobody would connect the two.
     """
     db_path = await _db(tmp_path, "sweep_naive")
     await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])

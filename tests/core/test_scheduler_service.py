@@ -37,6 +37,9 @@ def _dispose(service) -> None:
         pass
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the signup close job still reads its callback slot"
+)
 async def test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_warn(
     tmp_path, monkeypatch, caplog
 ):
@@ -66,7 +69,7 @@ async def test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_w
         await bot.output_router.post_log("Admin (<@4242>) | signups closed | Success")
         ran.set()
 
-    service.register_signup_close_callback(_close_signups)
+    service.register_timer("signup_close", _close_signups)
     service.start()
     try:
         async def _command() -> None:

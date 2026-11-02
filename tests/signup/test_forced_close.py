@@ -672,13 +672,16 @@ def _cause_of(call):
 
 
 def _close_timer_callback():
-    """The function registered as the signup close timer's callback."""
+    """The function signed up as the signup close's handler, the kind its job runs as."""
+    import ast
+
     functions = _functions_in_main()
     register = next(
         call for function in functions
-        for call in _calls_to(function, "register_signup_close_callback")
+        for call in _calls_to(function, "register_timer")
+        if isinstance(call.args[0], ast.Constant) and call.args[0].value == "signup_close"
     )
-    name = register.args[0].id
+    name = register.args[1].id
     return next(function for function in functions if function.name == name)
 
 
@@ -694,7 +697,12 @@ def _restart_sweep():
 @pytest.mark.parametrize(
     "find, cause",
     [
-        pytest.param(_close_timer_callback, "timer", id="close timer"),
+        pytest.param(
+            _close_timer_callback, "timer", id="close timer",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#283: the signup close is still signed up in a callback slot"
+            ),
+        ),
         pytest.param(_restart_sweep, "restart", id="restart sweep"),
     ],
 )
