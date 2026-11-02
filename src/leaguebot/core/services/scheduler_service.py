@@ -590,12 +590,13 @@ class SchedulerService:
 
         Args:
             only: When given, restricts the removal to jobs whose event type — as
-                `_job_event_type` reads it off the job ID — is in the set.  Callers cancelling a *round* want the default,
-                which takes all nine of its jobs; a caller switching **one
-                module** off wants that module's prefixes and nothing else, or
-                it takes the other modules' work down with it (issue #117).
-                A job whose ID does not carry the round suffix is left alone
-                while *only* is in force, since its owner cannot be read.
+                `_job_event_type` reads it off the job ID — is in the set.  Callers
+                cancelling a *round* want the default, which takes all nine of its jobs; a
+                caller switching **one module** off wants that module's prefixes and nothing
+                else, or it takes the other modules' work down with it (issue #117).  The
+                filter reads the ID's prefix, which is the kind the job is stored with, so
+                it never has to guess a job's owner; a job whose ID carries no round suffix
+                has no event type to match and is left alone while *only* is in force.
         """
         removed: list[str] = []
         for job in self._scheduler.get_jobs():
