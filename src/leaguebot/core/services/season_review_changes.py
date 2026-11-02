@@ -162,7 +162,8 @@ VERBS = {"approve": "approved"}
 #: What became of each standing review's button, by the id of its question. It is held in memory
 #: and not on the row: only the button and the timer of the running bot read it, no change type
 #: does, and a restart takes every standing review down (`RESTART`), whose lapse reads no mark, so
-#: nothing is lost by it. Written outside any queued change, as a row's column would have been,
+#: nothing is lost by it. The restart's take-down wins over a late expiry timer because the
+#: scheduler is paused until start-up has ended, so `RESTART` is always the one asked. Written outside any queued change, as a row's column would have been,
 #: which would have been a save the architecture's rule forbids. Cleared with the league's other
 #: in-memory state (`forget_presses`), and by the take-down's `forget` job with the row.
 _PRESSES: dict[int, str] = {}
@@ -829,9 +830,12 @@ def review_expiry_timer(
 async def recover_expired_review_prompts(bot: Any, *, approve_view: ApproveViewFactory) -> None:
     """Ask the change queue to take down every season review left standing by a previous run.
 
-    The button expires five minutes after the review posts its question, by a timer held in
-    memory and lost with the process. A bot restarted inside that window would otherwise leave a
-    public message offering a button nothing is counting, for ever.
+    The button expires five minutes after the review posts its question, by a persistent one-off
+    timer with no lateness limit, which a restart does not lose. The scheduler is held paused
+    until start-up has ended, so this take-down is always asked first, and a timer firing late
+    finds the row gone or already being taken down (`review_expiry_timer`). A bot restarted inside
+    that window would otherwise leave a public message offering a button nothing is counting, for
+    ever.
 
     Every row that survives to start-up is expired by definition: the bot was down, so the five
     minutes cannot have been served. Each is asked for as a ``season.review.take_down`` ending
