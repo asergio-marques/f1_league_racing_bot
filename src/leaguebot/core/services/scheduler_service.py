@@ -28,7 +28,7 @@ import os
 import re
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from collections.abc import Collection, Iterable, Iterator
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -43,7 +43,6 @@ from apscheduler.triggers.interval import IntervalTrigger
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import Round, RoundFormat
 from leaguebot.core.models.round_moments import (
-    POST_RACE_CLEANUP_DELAY,
     ROUND_JOB_KINDS,
     AttendanceWindows,
     WeatherWindows,
