@@ -37,6 +37,7 @@ from tests.support.change_queue import (
     restart_queue,
     retry_job,
     run_queue,
+    set_user,
     step_rows,
     stopped_job,
     tier_member,
@@ -1559,7 +1560,7 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
             (DIVISION_ID, "707"),
         )
         await db.commit()
-    league.bot.user = MagicMock(id=9000)
+    set_user(league.bot, MagicMock(id=9000))
     league.bot.user.__str__.return_value = "LeagueBot"
     placement = PlacementService(league.db_path, league.bot)
     placement._grant_roles = AsyncMock()

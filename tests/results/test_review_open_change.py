@@ -187,6 +187,7 @@ async def _make_db(
 async def _league(tmp_path, **kwargs: Any) -> ReviewLeague:
     """The league of `_make_db`, its bot with a real queue and the real change types."""
     league = ReviewLeague(await _make_db(tmp_path, **kwargs), attendance=False)
+    await league.build()
     league.bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     league.bot.add_view = MagicMock()
     return league

@@ -448,7 +448,7 @@ def league_double(db_path: str) -> Any:
 def _stub_discord(bot: Any, *, real_config: bool = False) -> None:
     """The Discord side `league_double` gives, over *bot*: the log and interaction channels,
     recording what each is sent and found by id, no guild, a double of every partial messageable,
-    and, unless *real_config*, the
+    the persistent views it is given recorded and not served, and, unless *real_config*, the
     league's server and channels as the config service reads them."""
     bot.log_channel = text_channel(LOG_CHANNEL_ID)
     bot.interaction_channel = text_channel(INTERACTION_CHANNEL_ID)
@@ -458,6 +458,7 @@ def _stub_discord(bot: Any, *, real_config: bool = False) -> None:
     bot.get_guild = MagicMock(return_value=None)
     # A message reached by id alone, as the views' recoveries reach theirs.
     bot.get_partial_messageable = MagicMock()
+    bot.add_view = MagicMock()
     if real_config:
         return
     bot.config_service.get_server_config = AsyncMock(
@@ -508,10 +509,11 @@ def _entry_build() -> Any:
     return Settings, build
 
 
-async def league_bot(db_path: str, *, scheduler: Any = None, real_config: bool = False) -> Any:
+async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: Any = None,
+                     real_config: bool = False) -> Any:
     """The bot of a hand-made test league on *db_path*, the Discord side `league_double` gives
     stubbed over it, its scheduler *scheduler* (a bare double if None) and its attendance hook
-    `attendance_hook_double`'s; its queue is attached by `league_queue`, once the league has set
+    *attendance_hook* (`attendance_hook_double`'s if None); its queue is attached by `league_queue`, once the league has set
     its own services (#283). With *real_config*, the league's config service reads the database,
     as a league building its own `ConfigService` has it.
 
@@ -526,17 +528,20 @@ async def league_bot(db_path: str, *, scheduler: Any = None, real_config: bool =
     from unittest.mock import patch
 
     scheduler = scheduler if scheduler is not None else MagicMock()
+    if attendance_hook is None:
+        attendance_hook = attendance_hook_double()
     entry = _entry_build()
     if entry is None:
         bot = league_double(db_path)
         bot.scheduler_service = scheduler
+        bot.attendance_after_review = attendance_hook
         return bot
     settings_type, build = entry
     settings = settings_type(token="not-a-real-token", db_path=db_path,
                              jobstore_path=os.path.join(os.path.dirname(db_path), "jobs.db"))
     import leaguebot.__main__ as entry_point
 
-    doubles = {"scheduler": scheduler, "attendance_hook": attendance_hook_double()}
+    doubles = {"scheduler": scheduler, "attendance_hook": attendance_hook}
     with ExitStack() as stack:
         for key, (module_name, name) in _DOUBLED_AT_BUILD.items():
             made = MagicMock(return_value=doubles[key])
@@ -564,6 +569,15 @@ def set_guilds(bot: Any, guilds: list[Any]) -> None:
         bot._connection._guilds = {guild.id: guild for guild in guilds}
     else:
         bot.guilds = guilds
+
+
+def set_user(bot: Any, user: Any) -> None:
+    """The bot's own Discord user: on the built bot, as its connection holds it, since a
+    `discord.Client`'s `user` cannot be set."""
+    if is_built(bot):
+        bot._connection.user = user
+    else:
+        bot.user = user
 
 
 def league_queue(bot: Any, db_path: str, *, now: datetime | Clock) -> Any:

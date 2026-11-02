@@ -2,8 +2,9 @@
 queue (#439, slice 2).
 
 `review_league(tmp_path, ...)` builds division 11 (Pro) of season 1 on a database built by the
-migrations, its round 3 at Silverstone with Lewis (101) and Max (102) in its Feature Race, and a bot
-double with a real change queue and the real change types (`register_change_types`), "now" pinned.
+migrations, its round 3 at Silverstone with Lewis (101) and Max (102) in its Feature Race, and its
+bot (`league_bot`): the one the entry point's `build` makes, or, until it has one, a bot double with
+a real change queue and the real change types (`register_change_types`), "now" pinned either way.
 
 The Discord side is a fake channel per channel id (`channel`), recording every send, delete and
 channel deletion in one list of events, in order, each carrying the league's server as its `guild`;
@@ -29,14 +30,15 @@ from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.penalty_service import StagedPenalty
 from leaguebot.results.services.penalty_wizard import StagedPardon
 from tests.support.change_queue import (
-    attach_queue,
     change_rows,
     http_error,
-    league_double,
+    league_bot,
+    league_queue,
     member_interaction,
     register,
     run_queue,
     seed_server,
+    set_guilds,
     step_rows,
     stopped_job,
 )
@@ -348,13 +350,20 @@ def candidate(profile: int, driver: int, sanction: str = "AUTORESERVE",
 
 
 class ReviewLeague:
-    """The bot double with its queue and attendance hook, its channels, and what they saw."""
+    """The bot with its queue and attendance hook, its channels, and what they saw; the bot is
+    there once `build` has run."""
 
     def __init__(self, db_path: str, *, attendance: bool) -> None:
         self.db_path = db_path
         self.attendance_on = attendance
         self.events: list[tuple[str, int, int]] = []
-        self.bot = league_double(db_path)
+        self.attendance = AttendanceDouble(self)
+
+    async def build(self) -> None:
+        """The league's bot (`league_bot`), its attendance hook `attendance`, with its channels,
+        server and queue."""
+        db_path = self.db_path
+        self.bot = await league_bot(db_path, attendance_hook=self.attendance)
         self.channels = {
             cid: channel(cid, self.events)
             for cid in (RESULTS_CHANNEL, STANDINGS_CHANNEL, SUBMISSION_CHANNEL, VERDICTS_CHANNEL,
@@ -398,7 +407,7 @@ class ReviewLeague:
         self.bot.get_channel = MagicMock(side_effect=_get)
         self.bot.fetch_channel = AsyncMock(side_effect=_fetch)
         self.bot.get_guild = MagicMock(return_value=guild)
-        self.bot.guilds = [guild]
+        set_guilds(self.bot, [guild])
         # A round ending cancelled asks for its division's calendar again, only where one was
         # posted: this league posts none, so the division is not found and the job drops out.
         self.bot.season_service.get_divisions = AsyncMock(return_value=[])
@@ -410,9 +419,7 @@ class ReviewLeague:
         self.bot.module_service.is_attendance_enabled = AsyncMock(
             side_effect=lambda: self.attendance_on
         )
-        self.attendance = AttendanceDouble(self)
-        self.bot.attendance_after_review = self.attendance
-        attach_queue(self.bot, db_path, now=NOW)
+        league_queue(self.bot, db_path, now=NOW)
 
     def channel(self, cid: int) -> Any:
         return self.channels[cid]
@@ -541,7 +548,9 @@ async def review_league(
         verdicts_channel=verdicts_channel, other_division=other_division,
         appeals_prompt=appeals_prompt,
     )
-    return ReviewLeague(db_path, attendance=attendance)
+    league = ReviewLeague(db_path, attendance=attendance)
+    await league.build()
+    return league
 
 
 def penalty(driver: int, seconds: int = 5) -> StagedPenalty:

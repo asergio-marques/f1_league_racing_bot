@@ -40,6 +40,7 @@ from tests.support.change_queue import (
     member_interaction,
     retry_job,
     run_queue,
+    set_user,
     tier_member,
     updated_reply,
 )
@@ -748,7 +749,7 @@ async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_comm
         )
         await db.commit()
     league.channels[ATTENDANCE_CHANNEL] = channel(ATTENDANCE_CHANNEL, league.events)
-    league.bot.user = MagicMock(id=9000)
+    set_user(league.bot, MagicMock(id=9000))
     league.bot.user.__str__.return_value = "LeagueBot"
     placement = PlacementService(league.db_path, league.bot)
     placement._grant_roles = AsyncMock()
@@ -823,7 +824,7 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
     league.guild.fetch_member = AsyncMock(
         side_effect=lambda uid: lewis if uid == LEWIS else member_of(uid)
     )
-    league.bot.user = MagicMock(id=9000)
+    set_user(league.bot, MagicMock(id=9000))
     league.bot.user.__str__.return_value = "LeagueBot"
     placement = PlacementService(league.db_path, league.bot)
     league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
