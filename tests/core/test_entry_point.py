@@ -4,15 +4,17 @@ function", step 1, and "Services stay attached to the bot, and are built in one 
 The three settings are read once, in `main`, from the environment `load_dotenv` has filled:
 `read_settings` takes a plain mapping, so it is tested without a bot or the process's environment.
 `build` makes the bot and every service complete, and registers every change type, timer kind and
-scheduler callback before anything starts; a test can call it on paths under `tmp_path`.
+scheduler callback before anything starts; a test calls it on paths under `tmp_path` through
+`tests/support/change_queue.built_bot`.
 """
 from __future__ import annotations
 
 import inspect
+from datetime import datetime, timezone
 
 import pytest
 
-from tests.support.change_queue import maybe_await
+from tests.support.change_queue import built_bot
 
 _SETTINGS_REASON = "#283: the settings are module globals read at import, with no read_settings"
 _BUILD_REASON = "#283: the services are built inside main, and there is no build(settings)"
@@ -52,12 +54,8 @@ def test_read_settings(environ, db_path, jobstore_path):
     assert settings.jobstore_path == (jobstore_path or default_jobstore_path(db_path))
 
 
-async def _built(tmp_path):
-    from leaguebot.__main__ import Settings, build
-
-    settings = Settings(token="not-a-real-token", db_path=str(tmp_path / "bot.db"),
-                        jobstore_path=str(tmp_path / "jobs.db"))
-    return settings, await maybe_await(build(settings))
+#: When the built bot's change queue takes "now" to be.
+_NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
 
 @pytest.mark.xfail(strict=True, reason=_BUILD_REASON)
@@ -67,7 +65,7 @@ async def test_build_returns_every_service_complete(tmp_path):
     `set_bot` left to call."""
     from leaguebot.core.utils.league_bot import LeagueBot
 
-    settings, bot = await _built(tmp_path)
+    bot = await built_bot(tmp_path, now=_NOW)
 
     assert isinstance(bot, LeagueBot)
     declared = set(inspect.get_annotations(LeagueBot))
@@ -75,8 +73,8 @@ async def test_build_returns_every_service_complete(tmp_path):
     assert sorted(
         name for name in declared - _SET_ONLY_WHERE_KNOWN if getattr(bot, name) is None
     ) == []
-    assert bot.db_path == settings.db_path
-    assert bot.scheduler_service.jobstore_path == settings.jobstore_path
+    assert bot.db_path == str(tmp_path / "bot.db")
+    assert bot.scheduler_service.jobstore_path == str(tmp_path / "jobs.db")
     assert bot.wizard_service._bot is bot
     assert not hasattr(bot.wizard_service, "set_bot")
 
@@ -93,7 +91,7 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     from leaguebot.signup.services.closing_steps import DELETE_TIMER, INACTIVITY_TIMER
     from leaguebot.signup.services.review_changes import CORRECTION_TIMER
 
-    _, bot = await _built(tmp_path)
+    bot = await built_bot(tmp_path, now=_NOW)
     scheduler = bot.scheduler_service
 
     assert not scheduler._scheduler.running

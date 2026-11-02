@@ -1,7 +1,8 @@
 """A real change queue for a test, on the test's own database, with "now" pinned (#439).
 
 The queue is the one the bot builds (`leaguebot.core.services.change_queue.ChangeQueue`), handed the
-router the test gives it, or the bot's own.
+router the test gives it, or the bot's own. `built_bot` is the real bot instead, every service
+and change type as the entry point's `build` makes them (#283), its queue's clock pinned the same way.
 
 `run_queue` runs the worker until nothing can run *now*: a change waiting on a retry that is not
 yet due is left waiting, and the test moves the clock on (`Clock.advance`, or setting `now`) and
@@ -112,6 +113,28 @@ def attach_queue(bot: Any, db_path: str, *, now: datetime | Clock, router: Any =
     setattr(bot, _SETUP, setup)
     _register(bot, queue, setup)
     return queue
+
+
+async def built_bot(tmp_path: Any, *, now: datetime | Clock) -> Any:
+    """The real bot, as the entry point's `build` makes it (#283), on settings under *tmp_path*
+    (`bot.db` and `jobs.db`), its schema migrated first and its change queue's clock *now*.
+
+    Every service is the builder's and every change type, timer kind and scheduler callback its
+    registration, so a test gets the real set of services; nothing is started. `restart_queue`
+    gives it a fresh queue as it does any other bot. A test needing one service keeps its
+    hand-made double."""
+    from leaguebot.__main__ import Settings, build
+    from leaguebot.core.db.database import run_migrations
+
+    settings = Settings(token="not-a-real-token", db_path=str(tmp_path / "bot.db"),
+                        jobstore_path=str(tmp_path / "jobs.db"))
+    await run_migrations(settings.db_path)
+    bot = await maybe_await(build(settings))
+    clock = now if isinstance(now, Clock) else Clock(now)
+    # The builder's queue reads the host's clock; the test's is pinned.
+    bot.change_queue._clock = clock
+    setattr(bot, _SETUP, _Setup(settings.db_path, clock, bot.output_router, real_types=True))
+    return bot
 
 
 def register(bot: Any, *change_types: Any) -> None:
