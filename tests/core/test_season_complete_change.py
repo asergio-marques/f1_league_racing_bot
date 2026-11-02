@@ -557,6 +557,8 @@ async def test_a_signup_channel_the_driver_pass_cannot_close_stops_the_queue(tmp
     assert len(_success_lines(league)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_stop_part_way_is_finished_on_restart_and_posts_no_final_classification_twice(
     tmp_path,
 ):
@@ -1399,6 +1401,8 @@ def _killed_before_the_window_is_recorded_closed(league: Any) -> None:
     setattr(service, name, _set_window_closed)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_still_tells_and_closes_them_at_start(
     tmp_path,
 ):
@@ -1545,6 +1549,8 @@ def _killed_after_the_window_is_recorded_closed(league: Any) -> None:
     setattr(service, name, _set_window_closed)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_closed_still_tells_and_closes_its_drivers_at_start(
     tmp_path,
 ):

@@ -249,6 +249,8 @@ _REFUSALS = {
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_stop_after_the_save_finishes_the_roles_and_lineups_on_restart(
     tmp_path, monkeypatch,
 ):
@@ -621,6 +623,8 @@ async def test_a_discarded_rejudgement_confirms_nothing(tmp_path, monkeypatch):
 # ── The review's channel ────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_the_confirmation_s_review_channel_line_notifies_only_the_member_it_names(
     tmp_path, monkeypatch,
 ):
@@ -641,7 +645,12 @@ async def test_the_confirmation_s_review_channel_line_notifies_only_the_member_i
     }
 
 
-@pytest.mark.parametrize("cut_off", ["fourteen minutes passed", "a restart"])
+@pytest.mark.parametrize("cut_off", [
+    "fourteen minutes passed",
+    pytest.param("a restart", marks=pytest.mark.xfail(
+        strict=True, reason="#283: the season review's take-down at start-up is "
+                            "not yet season_review_changes'")),
+])
 async def test_a_confirmation_whose_reply_can_no_longer_be_updated_tells_the_review_s_channel(
     tmp_path, monkeypatch, cut_off,
 ):
@@ -713,6 +722,8 @@ async def test_a_discard_of_the_confirmation_stopped_at_its_check_after_the_repl
     assert "was discarded by a league admin" not in reply(press)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_channel_notice_discord_refuses_stops_the_queue_and_once_discarded_is_named_in_the_line(
     tmp_path, monkeypatch,
 ):

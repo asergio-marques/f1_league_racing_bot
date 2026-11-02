@@ -409,10 +409,11 @@ class SeasonLeague:
     async def restart(self) -> None:
         """The bot restarted: the review prompts swept as at start-up, a fresh cog holding the
         setup again where the season is still being set up, and the queue started afresh."""
-        from leaguebot.__main__ import _recover_expired_review_prompts
+        from leaguebot.__main__ import _approve_view_for
         from leaguebot.core.cogs.season_cog import _RECOVERED, SeasonCog
+        from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
 
-        await _recover_expired_review_prompts(self.bot)
+        await recover_expired_review_prompts(self.bot, approve_view=_approve_view_for(self.bot))
         self.cog = SeasonCog(self.bot)
         if (await self.season())["status"] == "SETUP":
             self._hold_setup(self.cog, key=_RECOVERED)

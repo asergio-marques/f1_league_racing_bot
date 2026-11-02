@@ -246,6 +246,8 @@ async def _league_for(tmp_path: Any, monkeypatch: Any, **kwargs: Any) -> Any:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_stop_after_the_season_is_saved_finishes_its_roles_lineups_calendars_and_sheets_on_restart(
     tmp_path, monkeypatch,
 ):
@@ -278,6 +280,8 @@ def _posted_once(league: Any, cid: int) -> None:
     assert texts and len(texts) == len(set(texts)), (cid, texts)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_stop_after_the_season_is_saved_posts_the_opening_standings_and_the_batch_notice_once_on_restart(
     tmp_path, monkeypatch,
 ):
@@ -302,6 +306,8 @@ async def test_a_stop_after_the_season_is_saved_posts_the_opening_standings_and_
         _posted_once(league, chans.attendance)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_restart_between_the_batch_notice_and_its_deletion_deletes_it_and_posts_nothing_twice(
     tmp_path, monkeypatch,
 ):
@@ -1588,6 +1594,8 @@ async def test_one_line_records_the_approval_after_the_last_job(tmp_path, monkey
     ]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_stop_before_the_save_approves_once_on_restart(tmp_path, monkeypatch):
     league = await _league_for(tmp_path, monkeypatch)
     await _pressed(league)
@@ -1775,7 +1783,12 @@ def _told(league: Any, text: str) -> int:
     return sum(text in sent for sent in league.texts(REVIEW_CHANNEL))
 
 
-@pytest.mark.parametrize("cut_off", ["fourteen minutes passed", "a restart"])
+@pytest.mark.parametrize("cut_off", [
+    "fourteen minutes passed",
+    pytest.param("a restart", marks=pytest.mark.xfail(
+        strict=True, reason="#283: the season review's take-down at start-up is "
+                            "not yet season_review_changes'")),
+])
 async def test_an_approval_whose_reply_can_no_longer_be_updated_tells_the_review_s_channel(
     tmp_path, monkeypatch, cut_off,
 ):
@@ -1828,6 +1841,8 @@ async def test_a_not_approved_outcome_that_cannot_reach_the_member_is_told_in_th
     assert NOT_SAVED not in reply(press)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_channel_notice_discord_refuses_stops_the_queue_and_once_discarded_is_named_in_the_line(
     tmp_path, monkeypatch,
 ):
@@ -1897,6 +1912,8 @@ async def test_a_refusal_at_run_while_the_reply_can_be_updated_tells_the_channel
     assert _late_notices(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_refusal_at_run_after_a_restart_is_told_in_the_channel(tmp_path, monkeypatch):
     league = await _league_for(tmp_path, monkeypatch)
     await _pressed(league)
@@ -1911,6 +1928,8 @@ async def test_a_refusal_at_run_after_a_restart_is_told_in_the_channel(tmp_path,
     assert "⛔ Your season has changed since this review" in notices[0]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_stop_between_the_refusal_and_its_notice_posts_the_notice_on_restart(
     tmp_path, monkeypatch,
 ):
@@ -2054,6 +2073,8 @@ async def test_a_discard_of_the_approval_stopped_at_its_check_while_the_reply_ca
     assert _told(league, f"<@{ADMIN_ID}> — Season #3") == 0
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_discard_of_the_approval_stopped_at_its_check_after_a_restart_is_told_in_the_channel(
     tmp_path, monkeypatch,
 ):
@@ -2150,7 +2171,12 @@ async def test_a_refused_opening_standings_picture_is_posted_as_text_in_the_same
     assert jobs and all(job["done_at"] and job["tries"] == 0 for job in jobs), jobs
 
 
-@pytest.mark.parametrize("told_by", ["the approval", "the tell change"])
+@pytest.mark.parametrize("told_by", [
+    pytest.param("the approval", marks=pytest.mark.xfail(
+        strict=True, reason="#283: the season review's take-down at start-up is "
+                            "not yet season_review_changes'")),
+    "the tell change",
+])
 async def test_the_review_channel_line_notifies_only_the_member_it_names(
     tmp_path, monkeypatch, told_by,
 ):

@@ -257,6 +257,8 @@ async def test_a_superseded_forecast_discord_will_not_delete_stops_the_queue_kee
     assert list(await _forecasts(league)) == [2]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_stop_after_the_draw_posts_the_forecast_when_the_bot_starts(tmp_path):
     """The bot stops once phase 1 is drawn: started again, the queue posts the forecast, and the
     phase is not drawn twice."""

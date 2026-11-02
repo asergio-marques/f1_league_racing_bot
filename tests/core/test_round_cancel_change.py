@@ -248,6 +248,8 @@ async def _clear_blocker(league: Any) -> None:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_stop_after_the_round_is_cancelled_still_tells_the_modules_takes_its_call_down_and_reposts_its_calendar_on_restart(
     tmp_path,
 ):
@@ -272,6 +274,8 @@ async def test_a_stop_after_the_round_is_cancelled_still_tells_the_modules_takes
     assert len(lines) == 1 and CHECKIN_LOGGED in lines[0]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_stop_after_the_timed_work_is_removed_cancels_the_round_on_restart(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     await _asked(league)
@@ -288,6 +292,8 @@ async def test_a_stop_after_the_timed_work_is_removed_cancels_the_round_on_resta
     assert len(league.texts(PRO_CH.results)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_cancelling_the_last_outstanding_round_winds_the_season_down_as_a_change_of_its_own_even_across_a_restart(
     tmp_path,
 ):

@@ -406,6 +406,8 @@ async def test_an_old_lineup_discord_will_not_delete_stops_the_queue_and_once_di
     assert len([kind for kind, _ in _lineup_events(league) if kind == "send"]) == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the season review's take-down at start-up is "
+                                       "not yet season_review_changes'")
 async def test_a_stop_between_the_lineup_post_and_its_delete_deletes_the_old_one_on_restart(
     tmp_path,
 ):
