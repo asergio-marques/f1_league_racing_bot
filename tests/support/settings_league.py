@@ -1,9 +1,10 @@
 """A league whose settings commands run on the change queue (#439, slice 7).
 
 `settings_league(tmp_path)` builds a database by the migrations, seeds the league's server, and
-gives `league_double`'s bot the services the settings of results, weather and images are handed
-by the builder: a real `ModuleService`, `SeasonService`, `ImageConfigService`,
-`ImageValidityService` and `ImageRenderService`, and a scheduler double whose
+gives it `league_bot`'s bot: the one the entry point's `build` makes, or, until it has one,
+`league_double`'s with the services the settings of results, weather and images are handed by the
+builder: a real `ModuleService`, `SeasonService`, `ImageConfigService`, `ImageValidityService` and
+`ImageRenderService`. Either way its scheduler is a double whose
 `schedule_portrait_refresh` and `cancel_portrait_refresh` record their calls. The modules named in
 *modules* are on (results, weather and images by default), the image module holding its default
 configuration where it is on, and the real queue is attached with "now" pinned, every change type
@@ -28,8 +29,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
-    attach_queue,
-    league_double,
+    is_built,
+    league_bot,
+    league_queue,
     member_interaction,
     queued_log_lines,
     seed_server,
@@ -70,19 +72,21 @@ async def settings_league(tmp_path: Any, *, modules: tuple[str, ...] = MODULES,
     db_path = os.path.join(str(tmp_path), "settings.db")
     await run_migrations(db_path)
     await seed_server(db_path)
-    bot = league_double(db_path)
-    bot.module_service = ModuleService(db_path)
-    bot.season_service = SeasonService(db_path)
-    bot.image_config_service = ImageConfigService(db_path)
-    bot.image_validity_service = ImageValidityService(bot.image_config_service, bot.module_service)
-    bot.image_render_service = ImageRenderService(
-        bot.image_config_service, bot.image_validity_service
-    )
-    bot.scheduler_service = scheduler_double()
+    bot = await league_bot(db_path, scheduler=scheduler_double())
+    if not is_built(bot):
+        # The builder's own, on the built bot.
+        bot.module_service = ModuleService(db_path)
+        bot.season_service = SeasonService(db_path)
+        bot.image_config_service = ImageConfigService(db_path)
+        bot.image_validity_service = ImageValidityService(bot.image_config_service,
+                                                          bot.module_service)
+        bot.image_render_service = ImageRenderService(
+            bot.image_config_service, bot.image_validity_service
+        )
     await switch(bot, modules, on=True)
     if "images" in modules:
         await bot.image_config_service.create_with_defaults()
-    attach_queue(bot, db_path, now=now)
+    league_queue(bot, db_path, now=now)
     return SettingsLeague(bot, db_path, bot.scheduler_service)
 
 
