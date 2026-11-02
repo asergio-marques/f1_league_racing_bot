@@ -793,15 +793,14 @@ async def test_a_forecast_gone_by_hand_completes_its_delete_and_drops_its_row(tm
         ("phase 1", False, (KIND, 1)),
         ("phase 2", False, (KIND, 2)),
         ("phase 3", False, (KIND, 3)),
-        ("mystery notice", True, (KIND, 0)),
         ("phase 1 of a mystery round", True, (KIND, 0)),
         ("clean-up", False, (CLEAN_UP_KIND, None)),
     ],
 )
 async def test_each_weather_timer_asks_the_queue(tmp_path, timer, mystery, expected):
     """Each callback `timer_callbacks` gives the scheduler, fired for Pro's round 3, puts one
-    change on the queue it was handed, and runs nothing: phases 1 to 3 their forecast, the
-    mystery notice's timer and a mystery round's phase 1 the notice (phase 0), and the clean-up,
+    change on the queue it was handed, and runs nothing: phases 1 to 3 their forecast, a
+    mystery round's phase 1 the notice (phase 0), and the clean-up,
     a day after the race with the Phase 3 forecast (9303) standing, its deletion."""
     from leaguebot.weather.services.forecast_changes import timer_callbacks
 
@@ -814,7 +813,6 @@ async def test_each_weather_timer_asks_the_queue(tmp_path, timer, mystery, expec
         "phase 1": callbacks.phases[1],
         "phase 2": callbacks.phases[2],
         "phase 3": callbacks.phases[3],
-        "mystery notice": callbacks.mystery_notice,
         "phase 1 of a mystery round": callbacks.phases[1],
         "clean-up": callbacks.clean_up,
     }[timer]
@@ -827,6 +825,43 @@ async def test_each_weather_timer_asks_the_queue(tmp_path, timer, mystery, expec
     if phase is not None:
         assert payload["phase"] == phase
     assert all(not job["done_at"] for job in await step_rows(league.db_path))
+
+
+
+@pytest.mark.xfail(strict=True, reason="#283: weather's phases are not yet signed up as kinds of "
+                   "the one runner, and core's scheduler still reads a round's format")
+async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkeypatch):
+    """Round 3 is a mystery round, and every kind is signed up as the builder signs it up. The
+    scheduler's runner fired for `weather_p1`, `weather_p2` and `weather_p3` of round 3, as its
+    jobs fire, the scheduler opening no connection of its own: one forecast change is asked, of
+    the round's notice (phase 0), and nothing for phases 2 and 3."""
+    from types import SimpleNamespace
+
+    from leaguebot.__main__ import register_scheduler_callbacks
+    from leaguebot.core.services import scheduler_service
+
+    league = await _league(tmp_path, mystery=True)
+    service = scheduler_service.SchedulerService(league.db_path, str(tmp_path / "jobs.db"))
+    try:
+        register_scheduler_callbacks(SimpleNamespace(
+            change_queue=league.bot.change_queue, db_path=league.db_path,
+            scheduler_service=service,
+        ))
+        monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", service)
+
+        def _refused(*_args: Any, **_kwargs: Any) -> Any:
+            raise AssertionError("the scheduler read the league database")
+
+        monkeypatch.setattr(scheduler_service, "get_connection", _refused)
+
+        for kind in ("weather_p1", "weather_p2", "weather_p3"):
+            await scheduler_service._one_off_timer_job(kind, ROUND)
+    finally:
+        service._scheduler._jobstores["default"].engine.dispose()
+
+    asked = [json.loads(row["payload"]) for row in await change_rows(league.db_path)
+             if row["kind"] == KIND]
+    assert [(each["round_id"], each["phase"]) for each in asked] == [(ROUND, 0)]
 
 
 # ---------------------------------------------------------------------------
