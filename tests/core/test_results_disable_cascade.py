@@ -33,8 +33,9 @@ from tests.support.change_queue import (
     INTERACTION_CHANNEL_ID,
     LOG_CHANNEL_ID,
     acknowledgement,
-    attach_queue,
-    league_double,
+    is_built,
+    league_bot,
+    league_queue,
     member,
     member_interaction,
     queued_log_lines,
@@ -104,20 +105,23 @@ async def _make_db(
     return db_path
 
 
-def _make_cog(db_path: str, *, attendance_enabled: bool, queued: bool = False) -> ModuleCog:
-    """A cog whose router and module flags are doubles; with *queued*, the bot as the builder
-    makes it instead: real services, router and change queue on *db_path*, "now" pinned."""
+async def _make_cog(db_path: str, *, attendance_enabled: bool,
+                    queued: bool = False) -> ModuleCog:
+    """A cog whose router and module flags are doubles; with *queued*, the league's bot
+    (`league_bot`) instead: real services, router and change queue on *db_path*, "now" pinned."""
     cog = ModuleCog.__new__(ModuleCog)
     if queued:
         from leaguebot.attendance.services.attendance_service import AttendanceService
         from leaguebot.core.services.module_service import ModuleService
 
-        bot = league_double(db_path)
+        bot = await league_bot(db_path)
         bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-        bot.module_service = ModuleService(db_path)
-        bot.season_service = SeasonService(db_path)
-        bot.attendance_service = AttendanceService(db_path)
-        attach_queue(bot, db_path, now=NOW)
+        if not is_built(bot):
+            # The builder's own, on the built bot.
+            bot.module_service = ModuleService(db_path)
+            bot.season_service = SeasonService(db_path)
+            bot.attendance_service = AttendanceService(db_path)
+        league_queue(bot, db_path, now=NOW)
         cog.bot = bot
         return cog
     bot = MagicMock()
@@ -189,7 +193,7 @@ async def _module_flags(db_path: str) -> tuple[int, int, int]:
 
 async def test_the_cascade_is_named_before_anything_is_written(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    cog = _make_cog(db_path, attendance_enabled=True)
+    cog = await _make_cog(db_path, attendance_enabled=True)
     interaction = _make_interaction()
 
     await cog._disable_results(interaction)
@@ -204,7 +208,7 @@ async def test_the_cascade_is_named_before_anything_is_written(tmp_path):
 
 async def test_the_warning_carries_a_confirmation(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    cog = _make_cog(db_path, attendance_enabled=True)
+    cog = await _make_cog(db_path, attendance_enabled=True)
     interaction = _make_interaction()
 
     await cog._disable_results(interaction)
@@ -222,7 +226,7 @@ async def test_cancelling_leaves_both_modules_enabled(tmp_path):
     """Cancel changes nothing, and is recorded with what stands and what to do next beneath it
     (#482)."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    cog = _make_cog(db_path, attendance_enabled=True)
+    cog = await _make_cog(db_path, attendance_enabled=True)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID)
     interaction = _make_interaction()
     interaction.client = cog.bot
@@ -244,7 +248,7 @@ async def test_cancelling_a_results_only_disable_is_recorded(tmp_path):
     """With attendance off, Cancel is recorded with results still enabled and nothing
     deleted beneath it, and what to do next (#482)."""
     db_path = await _make_db(tmp_path, attendance_enabled=False)
-    cog = _make_cog(db_path, attendance_enabled=False)
+    cog = await _make_cog(db_path, attendance_enabled=False)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID, cascade_attendance=False)
     interaction = _make_interaction()
     interaction.client = cog.bot
@@ -268,7 +272,7 @@ async def test_a_confirmation_left_unanswered_is_recorded_as_lapsed(tmp_path):
     lapsed, naming the admin who started it, with what stands and to run the command again
     beneath it (#482)."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    cog = _make_cog(db_path, attendance_enabled=True)
+    cog = await _make_cog(db_path, attendance_enabled=True)
     guild = MagicMock()
     guild.get_member = MagicMock(
         side_effect=lambda member_id: (
@@ -293,7 +297,7 @@ async def test_a_confirmation_left_unanswered_is_recorded_as_lapsed(tmp_path):
 
 async def test_confirming_disables_both_and_names_both(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    cog = _make_cog(db_path, attendance_enabled=True, queued=True)
+    cog = await _make_cog(db_path, attendance_enabled=True, queued=True)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID)
     interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
 
@@ -313,7 +317,7 @@ async def test_confirming_disables_both_and_names_both(tmp_path):
 async def test_only_the_actor_may_confirm(tmp_path):
     """Another member's press changes nothing, is refused, and the refusal is recorded (#482)."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    cog = _make_cog(db_path, attendance_enabled=True)
+    cog = await _make_cog(db_path, attendance_enabled=True)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID)
     interaction = _make_interaction()
     interaction.client = cog.bot
@@ -357,7 +361,7 @@ async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
             "'AWAITING_RESULTS')"
         )
         await db.commit()
-    cog = _make_cog(db_path, attendance_enabled=False, queued=True)
+    cog = await _make_cog(db_path, attendance_enabled=False, queued=True)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID, cascade_attendance=False)
     interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
 
@@ -391,7 +395,7 @@ async def test_no_warning_where_neither_attendance_nor_a_season_is_at_stake(tmp_
     it is under way, and that reply is updated once it is done.
     """
     db_path = await _make_db(tmp_path, attendance_enabled=False)
-    cog = _make_cog(db_path, attendance_enabled=False, queued=True)
+    cog = await _make_cog(db_path, attendance_enabled=False, queued=True)
     interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
 
     await cog._disable_results(interaction)
