@@ -51,7 +51,6 @@ from tests.support.change_queue import (
     acknowledgement,
     change_rows,
     discard_job,
-    is_built,
     league_bot,
     league_queue,
     member,
@@ -347,17 +346,9 @@ async def _queued_cog(db_path: str) -> ModuleCog:
     """A cog on the league's bot (`league_bot`): real services, router and change queue on
     *db_path*, "now" pinned, and the league's server with its results, standings and verdicts
     channels in `bot.channels`."""
-    from leaguebot.attendance.services.attendance_service import AttendanceService
-    from leaguebot.core.services.module_service import ModuleService
-    from leaguebot.core.services.season_service import SeasonService
 
     bot = await league_bot(db_path)
     bot.user.id = BOT_USER_ID
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        bot.module_service = ModuleService(db_path)
-        bot.season_service = SeasonService(db_path)
-        bot.attendance_service = AttendanceService(db_path)
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.channels = {
         cid: _FakeChannel(cid)

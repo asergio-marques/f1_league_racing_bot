@@ -3,8 +3,8 @@ queue (#439, slice 2).
 
 `review_league(tmp_path, ...)` builds division 11 (Pro) of season 1 on a database built by the
 migrations, its round 3 at Silverstone with Lewis (101) and Max (102) in its Feature Race, and its
-bot (`league_bot`): the one the entry point's `build` makes, or, until it has one, a bot double with
-a real change queue and the real change types (`register_change_types`), "now" pinned either way.
+bot (`league_bot`): the one the entry point's `build` makes, its change queue and change types the
+builder's, "now" pinned.
 
 The Discord side is a fake channel per channel id (`channel`), recording every send, delete and
 channel deletion in one list of events, in order, each carrying the league's server as its `guild`;

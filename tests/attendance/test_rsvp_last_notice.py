@@ -44,15 +44,7 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_service import AttendanceService
-from tests.support.change_queue import (
-    http_error,
-    is_built,
-    league_bot,
-    league_queue,
-    run_queue,
-    stopped_job,
-)
+from tests.support.change_queue import http_error, league_bot, league_queue, run_queue, stopped_job
 from tests.support.review_league import channel as recording_channel
 
 SERVER_ID = 8608
@@ -192,9 +184,6 @@ async def _make_bot(db_path: str, *, visible: bool = True) -> MagicMock:
     check-in channel (770277) on the server where *visible*, recording its sends in
     `bot.events`; a channel the bot cannot find is refused as Discord refuses it."""
     bot = await league_bot(db_path)
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     bot.events = []

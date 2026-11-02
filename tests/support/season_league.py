@@ -16,9 +16,7 @@ reads the host's clock (the review's five minutes, the dates gate), and the queu
 league's `clock`, which a test moves on (`league.clock.advance`).
 
 The bot is `league_bot`'s: the one the entry point's `build` makes, every service and change type
-the builder's, or, until it has one, `league_double`'s with a real `SeasonService`,
-`PlacementService`, `ModuleService` and `ConfigService` and a real queue with the real change types
-(`league_queue`). Either way it reads the enabled modules' windows through the builder's reader as
+the builder's (`league_queue`). It reads the enabled modules' windows through the builder's reader as
 `bot.approval_windows`, and a real `SeasonCog` holds the season's setup in memory. The
 scheduler is a double recording each `schedule_*` call in `league.armed`. The league's server
 holds every channel above, the review's channel (610) among them, the roles above and the three
@@ -93,7 +91,6 @@ from tests.support.change_queue import (
     Clock,
     change_rows,
     http_error,
-    is_built,
     league_bot,
     league_queue,
     member_interaction,
@@ -215,10 +212,7 @@ class SeasonLeague:
     async def build(self) -> None:
         """The league's bot (`league_bot`), its server, services, cog and queue."""
         from leaguebot.core.cogs.season_cog import SeasonCog
-        from leaguebot.core.services.config_service import ConfigService
         from leaguebot.core.services.module_service import ModuleService
-        from leaguebot.core.services.placement_service import PlacementService
-        from leaguebot.core.services.season_service import SeasonService
 
         db_path = self.db_path
         scheduler = MagicMock()
@@ -259,12 +253,6 @@ class SeasonLeague:
         bot.fetch_channel = AsyncMock(side_effect=_fetch)
         bot.get_guild = MagicMock(return_value=guild)
         set_guilds(bot, [guild])
-        if not is_built(bot):
-            # The builder's own, on the built bot.
-            bot.config_service = ConfigService(db_path)
-            bot.module_service = ModuleService(db_path)
-            bot.season_service = SeasonService(db_path)
-            bot.placement_service = PlacementService(db_path, bot)
         _attach_amendment_service(bot, db_path)
         bot.attendance_service.get_or_create_config = AsyncMock(side_effect=self._attendance)
         bot.image_config_service.get_config = AsyncMock(return_value=None)
@@ -878,17 +866,9 @@ async def ongoing_league(
 
 def attendance_from_the_database(league: SeasonLeague) -> None:
     """The league's attendance service reading its configuration from the database, in place of
-    the league's stub, and held by the check-in's change types: on the built bot the builder's
-    own service with the stub dropped, which its change types already hold; on the bot double a
-    real `AttendanceService`, the queue's change types registered again over it (#283)."""
-    if is_built(league.bot):
-        vars(league.bot.attendance_service).pop("get_or_create_config", None)
-        return
-    from leaguebot.attendance.services.attendance_service import AttendanceService
-    from tests.support.change_queue import attach_queue
-
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    the league's stub, and held by the check-in's change types: the builder's own service with
+    the stub dropped, which its change types already hold."""
+    vars(league.bot.attendance_service).pop("get_or_create_config", None)
 
 
 def removed_jobs(rid: int) -> list[str]:

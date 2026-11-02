@@ -55,7 +55,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     acknowledgement,
     http_error,
-    is_built,
     league_bot,
     league_queue,
     member,
@@ -187,9 +186,6 @@ async def _bot(db_path: str, *, attendance_rows=None, channel=_STANDING, saved=N
         await db.commit()
 
     bot = await league_bot(db_path)
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        bot.attendance_service = AttendanceService(db_path)
     bot.config_service.get_server_config.return_value.test_mode_active = True
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     # The lines the queue writes reach the log channel the database names (101), whose sends are

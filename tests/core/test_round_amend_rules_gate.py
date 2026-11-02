@@ -15,14 +15,7 @@ import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.season_service import SeasonService
-from tests.support.change_queue import (
-    change_rows,
-    is_built,
-    league_bot,
-    league_queue,
-    run_queue,
-)
+from tests.support.change_queue import change_rows, league_bot, league_queue, run_queue
 
 SERVER_ID = 4400
 USER_ID = 88
@@ -80,11 +73,6 @@ async def _cog(db_path, *, attendance: bool = True):
     # about *rules* would mean a rule passing on the stub rather than the round in front of it.
     cog.bot = await league_bot(db_path)
     cog.bot.output_router.post_log = AsyncMock()
-    if not is_built(cog.bot):
-        # A real season service, so the round comes back carrying the status and phase flags
-        # the rules read. Stubbing it would leave this testing the stub. The builder's own, on
-        # the built bot.
-        cog.bot.season_service = SeasonService(db_path)
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
     for module in ("weather", "signup", "results", "images"):
         setattr(cog.bot.module_service, f"is_{module}_enabled", AsyncMock(return_value=False))

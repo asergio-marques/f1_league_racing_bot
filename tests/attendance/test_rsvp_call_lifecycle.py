@@ -39,11 +39,9 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
     discard_job,
     http_error,
-    is_built,
     league_bot,
     league_queue,
     run_queue,
@@ -235,9 +233,6 @@ async def _queue_bot(db_path: str, *channel_ids: int) -> MagicMock:
     from tests.support.review_league import channel as recording_channel
 
     bot = await league_bot(db_path)
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     bot.events = []

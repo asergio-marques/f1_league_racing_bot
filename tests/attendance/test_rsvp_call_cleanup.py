@@ -26,13 +26,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import AttendanceService
-from tests.support.change_queue import (
-    is_built,
-    league_bot,
-    league_queue,
-    run_queue,
-    stopped_job,
-)
+from tests.support.change_queue import league_bot, league_queue, run_queue, stopped_job
 from tests.support.review_league import channel
 from tests.support.season_league import (
     CALL_MESSAGES,
@@ -195,13 +189,8 @@ async def _post_call(db_path: str, *, round_id: int = POSTED_ROUND) -> SimpleNam
     rounds; the call is posted there once, and nothing stops the queue."""
     from leaguebot.attendance.services.check_in_changes import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
-    from leaguebot.core.services.module_service import ModuleService
 
     bot = await league_bot(db_path)
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        bot.attendance_service = AttendanceService(db_path)
-        bot.module_service = ModuleService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     events: list = []
     checkin = channel(RSVP_CHANNEL_ID, events)
@@ -281,9 +270,6 @@ async def _clean_up(
             await db.execute("UPDATE attendance_config SET module_enabled = 0")
             await db.commit()
     bot = await league_bot(db_path)
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
     events: list = []
     checkin = channel(RSVP_CHANNEL_ID, events)

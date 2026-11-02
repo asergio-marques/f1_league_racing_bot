@@ -27,17 +27,13 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.config_service import ConfigService
-from leaguebot.core.services.module_service import ModuleService
 from leaguebot.signup.cogs.signup_cog import SignupCog
-from leaguebot.signup.services.signup_module_service import SignupModuleService
 from tests.support.change_queue import (
     Clock,
     acknowledgement,
     change_rows,
     discard_job,
     http_error,
-    is_built,
     league_bot,
     league_queue,
     member_interaction,
@@ -155,11 +151,6 @@ async def _league(tmp_path: Any, *, closed_notice: bool = False,
     signup.guild = guild
 
     bot = await league_bot(db_path, real_config=True)
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        bot.config_service = ConfigService(db_path)
-        bot.module_service = ModuleService(db_path)
-        bot.signup_module_service = SignupModuleService(db_path)
     await bot.module_service.set_signup_enabled(True)
     bot.get_guild = MagicMock(return_value=guild)
     known = {SIGNUP_CHANNEL: signup, bot.log_channel.id: bot.log_channel,

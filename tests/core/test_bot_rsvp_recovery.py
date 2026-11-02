@@ -40,7 +40,6 @@ from leaguebot.__main__ import _recover_rsvp_views_and_deadlines
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     change_rows,
-    is_built,
     league_bot,
     league_queue,
     run_queue,
@@ -324,13 +323,9 @@ async def _check_in_bot(db_path: str) -> tuple:
     """The league's bot (`league_bot`) on the real attendance service, Division 1's check-in
     channel (770001) among its channels, images off, and a real change queue on it; with the
     channel."""
-    from leaguebot.attendance.services.attendance_service import AttendanceService
 
     bot = await league_bot(db_path)
     bot.add_view = MagicMock()
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     check_in = text_channel(770001)

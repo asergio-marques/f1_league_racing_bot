@@ -19,15 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.attendance_service import AttendanceService
-from tests.support.change_queue import (
-    change_rows,
-    is_built,
-    league_bot,
-    league_queue,
-    run_queue,
-    stopped_job,
-)
+from tests.support.change_queue import change_rows, league_bot, league_queue, run_queue, stopped_job
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -106,9 +98,6 @@ async def _make_bot(db_path: str, channel: MagicMock) -> MagicMock:
     """The league's bot (`league_bot`) with its change queue, attendance on and images off, the
     check-in channel among its channels."""
     bot = await league_bot(db_path)
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     known = {CHANNEL_ID: channel, bot.log_channel.id: bot.log_channel,

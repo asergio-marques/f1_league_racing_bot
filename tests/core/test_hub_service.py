@@ -42,7 +42,6 @@ from tests.support.change_queue import (
     Clock,
     change_rows,
     http_error,
-    is_built,
     league_bot,
     league_queue,
     member_interaction,
@@ -318,12 +317,6 @@ async def league(tmp_path):
     await seed_server(path)
     await _configure(path, hub_channel_id=HUB)
     bot = await league_bot(path, real_config=True)
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        from leaguebot.core.services.output_router import OutputRouter
-
-        bot.config_service = ConfigService(path)
-        bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=path)
     hub = text_channel(HUB)
     guild = MagicMock(spec=discord.Guild)
     guild.id = LEAGUE_SERVER_ID

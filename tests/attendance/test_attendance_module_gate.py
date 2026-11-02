@@ -275,15 +275,12 @@ async def test_the_check_in_call_is_posted_while_attendance_is_enabled(tmp_path)
 async def _queue_bot(db_path: str, *, attendance_enabled: bool) -> Any:
     """The league's bot (`league_bot`) with its change queue, the module answering from the flag
     under test, the check-in channel (880011) recording its sends in `bot.events`."""
-    from tests.support.change_queue import is_built, league_bot, league_queue
+    from tests.support.change_queue import league_bot, league_queue
     from tests.support.review_league import channel as recording_channel
 
     bot = await league_bot(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
     bot.module_service.is_images_enabled = AsyncMock(return_value=False)
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        bot.attendance_service = AttendanceService(db_path)
     bot.events = []
     rsvp = recording_channel(RSVP_CHANNEL_ID, bot.events)
     rsvp.seed(900900, "the call")

@@ -488,11 +488,8 @@ def attendance_hook_double() -> Any:
     return hook
 
 
-#: Where the bridge marks a bot the entry point's `build` made (`league_bot`).
-_BUILT = "_change_queue_test_built"
-
 #: The classes `league_bot` hands the builder a double of, so that the change types it
-#: registers hold the double, as they hold `league_double`'s: by name, as `build` imports them.
+#: registers hold the double: by name, as `build` imports them.
 #: The season service is doubled only where a league gives one.
 _DOUBLED_AT_BUILD = {
     "scheduler": ("leaguebot.core.services.scheduler_service", "SchedulerService"),
@@ -502,20 +499,11 @@ _DOUBLED_AT_BUILD = {
 }
 
 
-def _entry_build() -> Any:
-    """The entry point's `(Settings, build)`, or None while the entry point has no builder."""
-    try:
-        from leaguebot.__main__ import Settings, build
-    except ImportError:
-        return None
-    return Settings, build
-
-
 async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: Any = None,
                      attendance_hook_of: Any = None, season_service: Any = None,
                      real_config: bool = False) -> Any:
-    """The bot of a hand-made test league on *db_path*, the Discord side `league_double` gives
-    stubbed over it, its scheduler *scheduler* (a bare double if None), its attendance hook
+    """The bot of a test league on *db_path*, the Discord side `league_double` gives stubbed over
+    it, its scheduler *scheduler* (a bare double if None), its attendance hook
     *attendance_hook* (`attendance_hook_double`'s if None) and, where given, its season service
     *season_service*; its queue is attached by `league_queue`, once the league has set its own
     services (#283). With *real_config*, the league's config service reads the database, as a
@@ -527,11 +515,10 @@ async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: An
     A factory calling the real class holds it from before the call, since the builder's is the
     double for the build's length.
 
-    Where the entry point has its builder, the bot is the one `build` makes, on settings for
-    *db_path* (the job store `jobs.db` beside it), handed the doubles in place of the scheduler,
-    attendance's hook and the season service as it builds them, so the change types it registers
-    hold the doubles; every other service is the builder's. Until then it is `league_double`'s,
-    with *scheduler* and *season_service* set. A league tells the two apart by `is_built`."""
+    The bot is the one the entry point's `build` makes, on settings for *db_path* (the job store
+    `jobs.db` beside it), handed the doubles in place of the scheduler, attendance's hook and the
+    season service as it builds them, so the change types it registers hold the doubles; every
+    other service is the builder's."""
     import importlib
     import os
     from contextlib import ExitStack
@@ -540,19 +527,10 @@ async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: An
     scheduler = scheduler if scheduler is not None else MagicMock()
     if attendance_hook is None and attendance_hook_of is None:
         attendance_hook = attendance_hook_double()
-    entry = _entry_build()
-    if entry is None:
-        bot = league_double(db_path)
-        bot.scheduler_service = scheduler
-        bot.attendance_after_review = (
-            attendance_hook if attendance_hook_of is None else attendance_hook_of(bot, db_path)
-        )
-        if season_service is not None:
-            bot.season_service = season_service
-        return bot
-    settings_type, build = entry
-    settings = settings_type(token="not-a-real-token", db_path=db_path,
-                             jobstore_path=os.path.join(os.path.dirname(db_path), "jobs.db"))
+    from leaguebot.__main__ import Settings, build
+
+    settings = Settings(token="not-a-real-token", db_path=db_path,
+                        jobstore_path=os.path.join(os.path.dirname(db_path), "jobs.db"))
     import leaguebot.__main__ as entry_point
 
     doubles = {"scheduler": scheduler, "attendance_hook": attendance_hook or attendance_hook_of,
@@ -572,40 +550,24 @@ async def league_bot(db_path: str, *, scheduler: Any = None, attendance_hook: An
     _stub_discord(bot, real_config=real_config)
     # A bot that has not logged in has no user of its own.
     bot._connection.user = MagicMock()
-    setattr(bot, _BUILT, settings)
     return bot
 
 
-def is_built(bot: Any) -> bool:
-    """Whether *bot* is the one the entry point's `build` made (`league_bot`). Read from the
-    bot's own attributes, since a `MagicMock` double answers any name."""
-    return vars(bot).get(_BUILT) is not None
-
-
 def set_guilds(bot: Any, guilds: list[Any]) -> None:
-    """The servers *bot* is in: on the built bot, as its connection holds them, since a
-    `discord.Client`'s `guilds` cannot be set."""
-    if is_built(bot):
-        bot._connection._guilds = {guild.id: guild for guild in guilds}
-    else:
-        bot.guilds = guilds
+    """The servers *bot* is in, as its connection holds them, since a `discord.Client`'s
+    `guilds` cannot be set."""
+    bot._connection._guilds = {guild.id: guild for guild in guilds}
 
 
 def set_user(bot: Any, user: Any) -> None:
-    """The bot's own Discord user: on the built bot, as its connection holds it, since a
-    `discord.Client`'s `user` cannot be set."""
-    if is_built(bot):
-        bot._connection.user = user
-    else:
-        bot.user = user
+    """The bot's own Discord user, as its connection holds it, since a `discord.Client`'s `user`
+    cannot be set."""
+    bot._connection.user = user
 
 
 def league_queue(bot: Any, db_path: str, *, now: datetime | Clock) -> Any:
-    """The league's change queue, its clock *now*: on the built bot, the builder's queue with the
-    change types it registered, the clock pinned; else a real queue with the real change types,
-    registered now (`attach_queue`)."""
-    if not is_built(bot):
-        return attach_queue(bot, db_path, now=now)
+    """The league's change queue, its clock *now*: the builder's queue with the change types it
+    registered, the clock pinned."""
     clock = now if isinstance(now, Clock) else Clock(now)
     # The builder's queue reads the host's clock; the test's is pinned.
     bot.change_queue._clock = clock

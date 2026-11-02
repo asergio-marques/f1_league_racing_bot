@@ -11,8 +11,8 @@ and 18 with one point for the fastest lap to the top ten. Each session's results
 standings are already posted, their messages standing in their channels. Amendment mode is on,
 with *staged* (position to points, Feature Race) staged over the season's table.
 
-The bot is `league_bot`'s: the one the entry point's `build` makes, or, until it has one,
-`league_double`'s with a real queue and the real change types; "now" pinned either way, the
+The bot is `league_bot`'s: the one the entry point's `build` makes, with its queue and change
+types; "now" pinned, the
 league's server holding a channel per configured id (`review_league.channel`) and the bot's own
 member, and attendance reached through `review_league.AttendanceDouble`. Image generation is off
 unless *images*.
@@ -35,10 +35,8 @@ import discord
 from discord import app_commands
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.season_service import SeasonService
 from tests.support.change_queue import (
     http_error,
-    is_built,
     league_bot,
     league_queue,
     member_interaction,
@@ -170,8 +168,6 @@ class PointsLeague:
         bot.fetch_channel = AsyncMock(side_effect=_fetch)
         bot.get_guild = MagicMock(return_value=guild)
         set_guilds(bot, [guild])
-        if not is_built(bot):
-            bot.season_service = SeasonService(db_path)  # the builder's own, on the built bot
         bot.module_service.is_results_enabled = AsyncMock(side_effect=lambda: self.results_on)
         bot.module_service.is_images_enabled = AsyncMock(side_effect=lambda: self.images_on)
         bot.module_service.is_attendance_enabled = AsyncMock(

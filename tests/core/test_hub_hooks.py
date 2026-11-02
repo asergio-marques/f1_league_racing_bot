@@ -148,9 +148,7 @@ async def _queued_results_off(tmp_path) -> tuple[ModuleCog, MagicMock]:
     results on and no season."""
     from datetime import datetime, timezone
 
-    from leaguebot.attendance.services.attendance_service import AttendanceService
     from tests.support.change_queue import (
-        is_built,
         league_bot,
         league_queue,
         member,
@@ -168,9 +166,6 @@ async def _queued_results_off(tmp_path) -> tuple[ModuleCog, MagicMock]:
         await db.execute("UPDATE server_configs SET hub_channel_id = ?", (HUB,))
         await db.commit()
     bot = await league_bot(db_path)
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        bot.attendance_service = AttendanceService(db_path)
     league_queue(bot, db_path, now=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc))
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = bot

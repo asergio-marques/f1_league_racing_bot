@@ -26,12 +26,10 @@ import pytest
 from leaguebot.core.cogs.bot_cog import BotCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services import hub_service
-from leaguebot.core.services.config_service import ConfigService
 from tests.support.change_queue import (
     Clock,
     change_rows,
     http_error,
-    is_built,
     league_bot,
     league_queue,
     run_queue,
@@ -121,12 +119,6 @@ async def _setup(db_path, *channels):
     guild.default_role = MagicMock(spec=discord.Role)
     guild.me = MagicMock()
 
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        from leaguebot.core.services.output_router import OutputRouter
-
-        bot.config_service = ConfigService(db_path)
-        bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
     bot.get_guild = MagicMock(return_value=guild)
     bot.get_channel = MagicMock(side_effect=lambda cid: by_id.get(cid))
     bot.fetch_channel = AsyncMock(side_effect=lambda cid: by_id[cid])

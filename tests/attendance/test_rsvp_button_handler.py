@@ -68,7 +68,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
     acknowledgement,
-    is_built,
     league_bot,
     league_queue,
     run_queue,
@@ -278,9 +277,6 @@ async def _make_interaction(db_path: str, profile_id: int) -> MagicMock:
     """
     now = datetime.now(timezone.utc)
     bot = await league_bot(db_path)
-    if not is_built(bot):
-        # The builder's own, on the built bot.
-        bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.get_channel = MagicMock(return_value=None)
     bot.output_router.post_log = AsyncMock(return_value=None)

@@ -33,7 +33,6 @@ from tests.support.change_queue import (
     INTERACTION_CHANNEL_ID,
     LOG_CHANNEL_ID,
     acknowledgement,
-    is_built,
     league_bot,
     league_queue,
     member,
@@ -111,16 +110,9 @@ async def _make_cog(db_path: str, *, attendance_enabled: bool,
     (`league_bot`) instead: real services, router and change queue on *db_path*, "now" pinned."""
     cog = ModuleCog.__new__(ModuleCog)
     if queued:
-        from leaguebot.attendance.services.attendance_service import AttendanceService
-        from leaguebot.core.services.module_service import ModuleService
 
         bot = await league_bot(db_path)
         bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-        if not is_built(bot):
-            # The builder's own, on the built bot.
-            bot.module_service = ModuleService(db_path)
-            bot.season_service = SeasonService(db_path)
-            bot.attendance_service = AttendanceService(db_path)
         league_queue(bot, db_path, now=NOW)
         cog.bot = bot
         return cog
