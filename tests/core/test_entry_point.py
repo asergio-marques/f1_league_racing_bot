@@ -108,10 +108,10 @@ async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):
     delivered (architecture.md, "Start-up runs once")."""
     bot = await built_bot(tmp_path, now=_NOW)
     loop = bot.get_cog("RetryCog").retry_loop
+    assert not loop.is_running()
     starts = []
     monkeypatch.setattr(loop, "start", lambda *args, **kwargs: starts.append(args))
 
-    assert starts == []
     await bot.setup_hook()
 
     assert starts == [()]
