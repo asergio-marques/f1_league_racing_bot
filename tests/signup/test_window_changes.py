@@ -34,11 +34,12 @@ from leaguebot.signup.services.signup_module_service import SignupModuleService
 from tests.support.change_queue import (
     Clock,
     acknowledgement,
-    attach_queue,
     change_rows,
     discard_job,
     http_error,
-    league_double,
+    is_built,
+    league_bot,
+    league_queue,
     member_interaction,
     run_queue,
     seed_server,
@@ -153,17 +154,18 @@ async def _league(tmp_path: Any, *, closed_notice: bool = False,
     guild.me = MagicMock()
     signup.guild = guild
 
-    bot = league_double(db_path)
-    bot.config_service = ConfigService(db_path)
-    bot.module_service = ModuleService(db_path)
+    bot = await league_bot(db_path, real_config=True)
+    if not is_built(bot):
+        # The builder's own, on the built bot.
+        bot.config_service = ConfigService(db_path)
+        bot.module_service = ModuleService(db_path)
+        bot.signup_module_service = SignupModuleService(db_path)
     await bot.module_service.set_signup_enabled(True)
-    bot.signup_module_service = SignupModuleService(db_path)
-    bot.scheduler_service = MagicMock()
     bot.get_guild = MagicMock(return_value=guild)
     known = {SIGNUP_CHANNEL: signup, bot.log_channel.id: bot.log_channel,
              bot.interaction_channel.id: bot.interaction_channel}
     bot.get_channel = MagicMock(side_effect=known.get)
-    attach_queue(bot, db_path, now=Clock(NOW))
+    league_queue(bot, db_path, now=Clock(NOW))
     return _League(db_path, bot, guild, events)
 
 

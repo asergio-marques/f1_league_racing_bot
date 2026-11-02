@@ -56,9 +56,10 @@ from tests.support.change_queue import (
     LOG_CHANNEL_ID,
     SERVER_ID,
     Clock,
-    attach_queue,
     change_rows,
-    league_double,
+    is_built,
+    league_bot,
+    league_queue,
     member_interaction,
     run_queue,
     stopped_job,
@@ -143,16 +144,17 @@ async def _seed(
     return db_path
 
 
-def _cog(db_path: str) -> SignupCog:
-    """The cog, its bot carrying the league's log channel, a real output router and a real
-    change queue (#439, slice 6b)."""
-    bot = league_double(db_path)
-    bot.module_service = MagicMock()
+async def _cog(db_path: str) -> SignupCog:
+    """The cog, its bot (`league_bot`) carrying the league's log channel, a real output router,
+    its configuration read from the database, and a real change queue (#439, slice 6b)."""
+    bot = await league_bot(db_path, real_config=True)
+    if not is_built(bot):
+        # The builder's own, on the built bot.
+        bot.module_service = MagicMock()
+        bot.signup_module_service = SignupModuleService(db_path)
+        bot.config_service = ConfigService(db_path)
     bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
-    bot.signup_module_service = SignupModuleService(db_path)
-    bot.config_service = ConfigService(db_path)
-    bot.scheduler_service = MagicMock()
-    attach_queue(bot, db_path, now=Clock(datetime.now(timezone.utc)))
+    league_queue(bot, db_path, now=Clock(datetime.now(timezone.utc)))
 
     cog = SignupCog.__new__(SignupCog)
     cog.bot = bot
@@ -287,7 +289,7 @@ async def test_every_missing_setting_is_named_at_once(tmp_path):
     db_path = await _seed(tmp_path, channel=None, base_role=None, driver_role=None)
     interaction = _interaction()
 
-    await _open(_cog(db_path), interaction)
+    await _open(await _cog(db_path), interaction)
 
     replied = _replied(interaction)
     assert "/signup channel" in replied
@@ -307,7 +309,7 @@ async def test_each_setting_alone_is_enough_to_refuse(tmp_path, missing, expecte
     db_path = await _seed(tmp_path, **{missing: None})
     interaction = _interaction()
 
-    await _open(_cog(db_path), interaction)
+    await _open(await _cog(db_path), interaction)
 
     assert expected in _replied(interaction)
 
@@ -325,7 +327,7 @@ async def test_a_role_gone_from_the_server_is_refused(tmp_path, gone, expected):
     db_path = await _seed(tmp_path)
     interaction = _interaction(gone_roles=(gone,))
 
-    await _open(_cog(db_path), interaction)
+    await _open(await _cog(db_path), interaction)
 
     assert expected in _replied(interaction)
     assert not await _is_open(db_path)
@@ -338,7 +340,7 @@ async def test_a_driver_role_the_bot_cannot_grant_is_refused(tmp_path):
     db_path = await _seed(tmp_path)
     interaction = _interaction(driver_role_above_the_bot=True)
 
-    await _open(_cog(db_path), interaction)
+    await _open(await _cog(db_path), interaction)
 
     assert "Move my role above it" in _replied(interaction)
     assert not await _is_open(db_path)
@@ -348,7 +350,7 @@ async def test_every_role_fault_is_named_at_once_beside_what_is_not_set(tmp_path
     db_path = await _seed(tmp_path, channel=None)
     interaction = _interaction(gone_roles=(BASE_ROLE_ID, DRIVER_ROLE_ID))
 
-    await _open(_cog(db_path), interaction)
+    await _open(await _cog(db_path), interaction)
 
     replied = _replied(interaction)
     assert "/signup channel" in replied
@@ -365,7 +367,7 @@ async def test_opening_signups_posts_the_button_and_records_the_window(tmp_path)
     db_path = await _seed(tmp_path)
     interaction = _interaction()
 
-    await _open(_cog(db_path), interaction)
+    await _open(await _cog(db_path), interaction)
 
     interaction._signup_channel.send.assert_awaited_once()
     assert await _is_open(db_path)
@@ -377,7 +379,7 @@ async def test_opening_signups_moves_a_waiting_season_to_signups(tmp_path):
 
     db_path = await _seed(tmp_path)
 
-    await _open(_cog(db_path), _interaction())
+    await _open(await _cog(db_path), _interaction())
 
     assert (await live_season_stage(db_path))[1].value == "SIGNUPS"
 
@@ -387,7 +389,7 @@ async def test_opening_mid_season_moves_the_season_to_ongoing_signups(tmp_path):
 
     db_path = await _seed(tmp_path, stage="ONGOING")
 
-    await _open(_cog(db_path), _interaction())
+    await _open(await _cog(db_path), _interaction())
 
     assert (await live_season_stage(db_path))[1].value == "ONGOING_SIGNUPS"
 
@@ -399,7 +401,7 @@ async def test_signups_cannot_be_opened_outside_waiting_or_ongoing(tmp_path, sta
     db_path = await _seed(tmp_path, stage=stage)
     interaction = _interaction()
 
-    await _open(_cog(db_path), interaction)
+    await _open(await _cog(db_path), interaction)
 
     assert "can only be opened" in _replied(interaction)
     interaction._signup_channel.send.assert_not_awaited()
@@ -413,7 +415,7 @@ async def test_signups_cannot_be_opened_with_no_season(tmp_path):
         await db.commit()
     interaction = _interaction()
 
-    await _open(_cog(db_path), interaction)
+    await _open(await _cog(db_path), interaction)
 
     assert "can only be opened" in _replied(interaction)
 
@@ -424,7 +426,7 @@ async def test_the_posted_message_describes_what_a_driver_is_agreeing_to(tmp_pat
     db_path = await _seed(tmp_path, slots=2)
     interaction = _interaction()
 
-    await _open(_cog(db_path), interaction)
+    await _open(await _cog(db_path), interaction)
 
     embed = interaction._signup_channel.send.await_args.kwargs["embed"]
     assert "Monday 19:00" in embed.description
@@ -437,7 +439,7 @@ async def test_selected_tracks_are_named_in_the_message(tmp_path):
     db_path = await _seed(tmp_path)
     interaction = _interaction()
 
-    await _open(_cog(db_path), interaction, track_ids="1")
+    await _open(await _cog(db_path), interaction, track_ids="1")
 
     embed = interaction._signup_channel.send.await_args.kwargs["embed"]
     assert "No tracks specified" not in embed.description
@@ -447,7 +449,7 @@ async def test_no_tracks_says_so_rather_than_leaving_the_section_blank(tmp_path)
     db_path = await _seed(tmp_path)
     interaction = _interaction()
 
-    await _open(_cog(db_path), interaction)
+    await _open(await _cog(db_path), interaction)
 
     embed = interaction._signup_channel.send.await_args.kwargs["embed"]
     assert "No tracks specified" in embed.description
@@ -459,7 +461,7 @@ async def test_only_the_base_role_may_be_pinged(tmp_path):
     db_path = await _seed(tmp_path)
     interaction = _interaction()
 
-    await _open(_cog(db_path), interaction)
+    await _open(await _cog(db_path), interaction)
 
     allowed = interaction._signup_channel.send.await_args.kwargs["allowed_mentions"]
     assert allowed.roles is not True
@@ -467,7 +469,7 @@ async def test_only_the_base_role_may_be_pinged(tmp_path):
 
 async def test_opening_without_a_close_time_arms_nothing(tmp_path):
     db_path = await _seed(tmp_path)
-    cog = _cog(db_path)
+    cog = await _cog(db_path)
 
     await _open(cog, _interaction())
 
@@ -477,7 +479,7 @@ async def test_opening_without_a_close_time_arms_nothing(tmp_path):
 async def test_opening_is_audited_with_the_tracks_chosen(tmp_path):
     db_path = await _seed(tmp_path)
 
-    await _open(_cog(db_path), _interaction(), track_ids="1")
+    await _open(await _cog(db_path), _interaction(), track_ids="1")
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -492,7 +494,7 @@ async def test_opening_with_a_close_time_states_it_in_the_line_and_the_audit_row
     """A manager opens signups with a close time a week out: the close timer is armed, and the
     Success line and the SIGNUP_OPEN audit row both carry the close time armed."""
     db_path = await _seed(tmp_path)
-    cog = _cog(db_path)
+    cog = await _cog(db_path)
 
     await _open(cog, _interaction(), close_time=_future(7))
 
@@ -526,7 +528,7 @@ async def test_a_closed_notice_already_deleted_does_not_stop_the_open(tmp_path):
         return_value=MagicMock(delete=AsyncMock(side_effect=discord.NotFound(MagicMock(), "gone")))
     )
 
-    await _open(_cog(db_path), interaction)
+    await _open(await _cog(db_path), interaction)
 
     assert await _is_open(db_path)
     assert await stopped_job(db_path) is None
@@ -541,7 +543,7 @@ async def test_a_failed_post_leaves_signups_closed(tmp_path):
     interaction = _interaction()
     interaction._signup_channel.send = AsyncMock(side_effect=RuntimeError("gateway closed"))
 
-    await _open(_cog(db_path), interaction)
+    await _open(await _cog(db_path), interaction)
 
     job = await stopped_job(db_path)
     assert job is not None and job["name"] == "post_info"
@@ -593,7 +595,7 @@ async def test_every_signup_open_refusal_reaches_the_log_channel(
       arrives as a follow-up rather than a first response.
     """
     db_path = await _seed(tmp_path, **seed)
-    cog = _cog(db_path)
+    cog = await _cog(db_path)
     interaction = _interaction(**built)
     interaction.client = cog.bot
     interaction.command.qualified_name = "signup open"
@@ -618,7 +620,7 @@ async def test_closing_signups_that_are_not_open_is_refused(tmp_path):
     db_path = await _seed(tmp_path, signups_open=False)
     interaction = _interaction()
 
-    await _close(_cog(db_path), interaction)
+    await _close(await _cog(db_path), interaction)
 
     assert "not currently open" in _replied(interaction)
 
@@ -682,7 +684,7 @@ async def test_every_in_progress_state_forces_a_confirmation(tmp_path, state):
     """Four states, each added for a reason. `AWAITING_CORRECTION_PARAMETER` was issue
     #129 — a driver parked there alone let the close go through with no confirmation."""
     db_path = await _seed(tmp_path, signups_open=True, in_progress=(state,))
-    cog = _cog(db_path)
+    cog = await _cog(db_path)
     interaction = _interaction()
 
     await _close(cog, interaction)
@@ -704,7 +706,7 @@ async def test_the_confirmation_counts_and_names_the_drivers(tmp_path):
     max_.display_name = "Max"
     interaction = _interaction(members={7000: lewis, 7001: max_})
 
-    await _close(_cog(db_path), interaction)
+    await _close(await _cog(db_path), interaction)
 
     returned, kept = _replied(interaction).split("keep their place")
     assert "return 1 driver(s) to Not Signed Up" in returned
@@ -728,7 +730,7 @@ async def test_the_confirmation_counts_only_the_drivers_the_close_will_return(tm
     )
     interaction = _interaction(members={})
 
-    await _close(_cog(db_path), interaction)
+    await _close(await _cog(db_path), interaction)
 
     replied = _replied(interaction)
     assert "return 1 driver(s) to Not Signed Up" in replied
@@ -743,7 +745,7 @@ async def test_a_close_with_only_drivers_in_review_says_nobody_loses_their_signu
     )
     interaction = _interaction(members={})
 
-    await _close(_cog(db_path), interaction)
+    await _close(await _cog(db_path), interaction)
 
     assert await _close_changes(db_path) == []
     replied = _replied(interaction)
@@ -777,7 +779,7 @@ async def test_each_driver_is_listed_with_their_signup_channel(tmp_path):
     await _give_signup_channel(db_path, "7001", 880002)
     interaction = _interaction(members={})
 
-    await _close(_cog(db_path), interaction)
+    await _close(await _cog(db_path), interaction)
 
     returned, kept = _replied(interaction).split("keep their place")
     assert "7000 — <#880001>" in returned
@@ -800,7 +802,7 @@ async def test_a_driver_with_no_signup_channel_is_listed_by_name_alone(tmp_path)
         await db.commit()
     interaction = _interaction(members={})
 
-    await _close(_cog(db_path), interaction)
+    await _close(await _cog(db_path), interaction)
 
     replied = _replied(interaction)
     assert "• 7000\n" in replied
@@ -825,7 +827,7 @@ async def test_a_driver_who_has_left_is_listed_by_id(tmp_path):
     )
     interaction = _interaction(members={})
 
-    await _close(_cog(db_path), interaction)
+    await _close(await _cog(db_path), interaction)
 
     assert "7000" in _replied(interaction)
 
@@ -840,7 +842,7 @@ async def test_a_long_list_of_drivers_is_truncated(tmp_path):
     )
     interaction = _interaction(members={})
 
-    await _close(_cog(db_path), interaction)
+    await _close(await _cog(db_path), interaction)
 
     replied = _replied(interaction)
     assert "13 driver(s)" in replied
@@ -856,7 +858,7 @@ async def test_each_list_is_truncated_on_its_own(tmp_path):
     )
     interaction = _interaction(members={})
 
-    await _close(_cog(db_path), interaction)
+    await _close(await _cog(db_path), interaction)
 
     returned, kept = _replied(interaction).split("keep their place")
     assert "return 12 driver(s)" in returned
@@ -872,7 +874,7 @@ async def test_the_confirmation_warns_what_closing_will_do(tmp_path):
     )
     interaction = _interaction(members={})
 
-    await _close(_cog(db_path), interaction)
+    await _close(await _cog(db_path), interaction)
 
     assert "Not Signed Up" in _replied(interaction)
 
@@ -890,7 +892,7 @@ async def _confirmation(tmp_path, *, in_progress=("PENDING_SIGNUP_COMPLETION",))
             "UPDATE signup_module_config SET signup_button_message_id = ?", (BUTTON_MESSAGE_ID,)
         )
         await db.commit()
-    cog = _cog(db_path)
+    cog = await _cog(db_path)
     cog.bot.driver_service.transition = AsyncMock()
     asked = _interaction(members={})
     asked.client = cog.bot

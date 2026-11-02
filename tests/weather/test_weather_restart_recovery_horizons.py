@@ -223,15 +223,15 @@ async def test_a_restart_recovers_no_phase_for_a_mystery_round(tmp_path):
     import json
 
     from leaguebot.__main__ import _recover_missed_phases
-    from tests.support.change_queue import attach_queue, change_rows, league_double
+    from tests.support.change_queue import change_rows, league_bot, league_queue
 
     db_path = await _make_db(tmp_path)
     await _seed_server(
         db_path, days_until_round=0.25, horizons=(7, 3, 12), round_format="MYSTERY"
     )
-    bot = league_double(db_path)
+    bot = await league_bot(db_path)
     bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-    attach_queue(bot, db_path, now=datetime.now(timezone.utc))
+    league_queue(bot, db_path, now=datetime.now(timezone.utc))
 
     await _recover_missed_phases(bot)
 
