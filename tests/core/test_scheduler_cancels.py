@@ -127,15 +127,25 @@ def _round_job(job_id: str, round_id: int):
     return SimpleNamespace(id=job_id, kwargs={"kind": job_id.rsplit("_r", 1)[0], "key": round_id})
 
 
+#: A one-off timer as `arm_once` stores it, keyed 5 like round 5's jobs but no round's: an
+#: amendment's lapse. Cancelling round 5 must leave it, so a round's jobs are found by a round
+#: kind as well as the key.
+_ONE_OFF_TIMER_KEYED_5 = SimpleNamespace(
+    id="once:amend_lapse:5", kwargs={"kind": "amend_lapse", "key": 5}
+)
+
+
 @pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_cancel_rounds_removes_every_job_of_every_round_handed_and_no_other():
-    """Rounds 5 and 6 each carry two jobs, round 7 one, and a season-end job stands. Cancelling
-    rounds 5 and 6 removes their four jobs, listing the store once, and leaves round 7's job and
-    the season-end job alone."""
+    """Rounds 5 and 6 each carry two jobs, round 7 one, a season-end job stands, and so does
+    amendment 5's lapse timer, whose key is the same number as round 5's. Cancelling rounds 5
+    and 6 removes their four jobs, listing the store once, and leaves round 7's job, the
+    season-end job and the amendment's timer alone."""
     jobs = [
         _round_job("results_r5", 5), _round_job("rsvp_cleanup_r5", 5),
         _round_job("results_r6", 6), _round_job("cleanup_r6", 6),
         _round_job("results_r7", 7), SimpleNamespace(id="season_end_3", kwargs={}),
+        _ONE_OFF_TIMER_KEYED_5,
     ]
     service = _service(jobs)
 
@@ -160,15 +170,21 @@ def test_a_store_that_cannot_be_listed_removes_nothing():
 
 @pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
 def test_cancel_round_gives_the_jobs_it_removed():
-    """Round 5 carries its results submission and its clean-up, and round 6 its results
-    submission. Cancelling round 5 gives the two jobs it removed, so that a refused cancellation
-    knows what to arm again, and nothing of round 6."""
-    jobs = [_round_job("results_r5", 5), _round_job("cleanup_r5", 5), _round_job("results_r6", 6)]
+    """Round 5 carries its results submission and its clean-up, round 6 its results
+    submission, and amendment 5's lapse timer, whose key is the same number as round 5's,
+    stands. Cancelling round 5 gives the two jobs it removed, so that a refused cancellation
+    knows what to arm again, and nothing of round 6 or of the amendment's timer, which stays."""
+    jobs = [
+        _round_job("results_r5", 5), _round_job("cleanup_r5", 5), _round_job("results_r6", 6),
+        _ONE_OFF_TIMER_KEYED_5,
+    ]
     service = _service(jobs)
 
     removed = service.cancel_round(5)
 
     assert sorted(removed) == ["cleanup_r5", "results_r5"]
+    removed_ids = [call.args[0] for call in service._scheduler.remove_job.call_args_list]
+    assert _ONE_OFF_TIMER_KEYED_5.id not in removed_ids
 
 
 @pytest.mark.xfail(strict=True, reason=FOUND_BY_KEY)
