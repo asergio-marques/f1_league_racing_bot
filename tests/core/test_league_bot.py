@@ -55,6 +55,14 @@ def test_bot_of_is_the_interactions_client():
     assert bot_of(interaction) is interaction.client
 
 
+def test_setup_hook_is_the_bot_types_one_behaviour():
+    """`LeagueBot` defines `setup_hook` and no other method of its own: it is a type, whose one
+    behaviour is starting the retry loop at login (`league_bot.py`'s docstring, "it should not
+    grow another", and architecture.md, "Errors and failures")."""
+    own = sorted(name for name, value in vars(LeagueBot).items() if inspect.isfunction(value))
+    assert own == ["setup_hook"]
+
+
 def test_the_approval_windows_reader_is_declared_and_set_by_the_builder():
     """The season cog reads the enabled modules' windows through `bot.approval_windows`, which
     `LeagueBot` declares and the builder sets, so that core imports neither attendance nor
