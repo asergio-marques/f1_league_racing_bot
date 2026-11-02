@@ -122,8 +122,9 @@ def _job_event_type(job_id: str) -> str | None:
     one from a version of the bot that named its jobs otherwise.
 
     Every caller asking what a job is for asks here, and pairs the answer with the job's
-    round id the job is keyed by (`_round_of`) — never rebuilding an ID to look one up. The review summary once built
-    IDs of its own, in a shape no job has ever had, and so found none of them (#426).
+    round id the job is keyed by (`_round_of`) — never rebuilding an ID to look one up. The
+    review summary once built IDs of its own, in a shape no job has ever had, and so found none
+    of them (#426).
     """
     m = _JOB_SUFFIX_RE.search(job_id)
     return None if m is None else job_id[: m.start()]
@@ -272,7 +273,7 @@ class SchedulerService:
         self._timer_callbacks: dict[str, Callable] = {}
 
     def register_timer(self, kind: str, callback: Callable) -> None:
-        """Register the callable invoked when a job of *kind* fires: the one way a kind is signed up.
+        """Register the callable invoked when a job of *kind* fires: the one way to sign up a kind.
 
         It is handed the job's key (a round's id, a one-off timer's key), or nothing where the job
         is a standing one with no key. The builder registers each kind before the scheduler
@@ -391,10 +392,11 @@ class SchedulerService:
 
         Schedules three weather-phase jobs (``weather_p1`` / ``weather_p2`` /
         ``weather_p3``), a cleanup job, and — through `schedule_result_submission_jobs` — a
-        result-submission job for every round regardless of format.  Every job runs through `_one_off_timer_job`, handed its kind
-        (its job id's prefix) and the round id as its key.  Whether a MYSTERY round's phase asks
-        for a notice or for nothing is weather's rule, decided by the handler the builder signs
-        up for ``weather_p1`` to ``weather_p3``, never here.
+        result-submission job for every round regardless of format.  Every job runs through
+        `_one_off_timer_job`, handed its kind (its job id's prefix) and the round id as its key.
+        Whether a MYSTERY round's phase asks for a notice or for nothing is weather's rule,
+        decided by the handler the builder signs up for ``weather_p1`` to ``weather_p3``, never
+        here.
 
         Job IDs follow the convention
         ``<event_type>_s{season_number}_d{division_tier}_r{round_number}_id{round_id}``
@@ -883,11 +885,11 @@ class SchedulerService:
         not "what will advance fire".
 
         A job is found by its round and its event type, the way ``cancel_round`` finds one
-        (issue #139): the round id the job is keyed by, which is the round's own key whatever numbers
-        its ID carries (`_round_of`), and the type `_job_event_type` reads off the ID. A caller asks
-        ``(round_id, "weather_p1") in queued`` and never rebuilds an ID to look one up — the
-        review once did, in a shape no job has ever had, and so found none (#426). A mystery
-        round's notice is armed as ``weather_p1`` and is found under that type.
+        (issue #139): the round id the job is keyed by, which is the round's own key whatever
+        numbers its ID carries (`_round_of`), and the type `_job_event_type` reads off the ID.
+        A caller asks ``(round_id, "weather_p1") in queued`` and never rebuilds an ID to look one
+        up — the review once did, in a shape no job has ever had, and so found none (#426). A
+        mystery round's notice is armed as ``weather_p1`` and is found under that type.
 
         A paused job (``next_run_time is None``) will not fire and is left out, as is one whose
         ID carries no round suffix.
