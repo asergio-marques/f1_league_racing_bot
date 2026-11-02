@@ -49,10 +49,11 @@ from leaguebot.core.cogs.module_cog import (
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     acknowledgement,
-    attach_queue,
     change_rows,
     discard_job,
-    league_double,
+    is_built,
+    league_bot,
+    league_queue,
     member,
     member_interaction,
     queued_log_lines,
@@ -342,19 +343,21 @@ def _make_cog(
     return cog
 
 
-def _queued_cog(db_path: str) -> ModuleCog:
-    """A cog on the bot as the builder makes it: real services, router and change queue on
+async def _queued_cog(db_path: str) -> ModuleCog:
+    """A cog on the league's bot (`league_bot`): real services, router and change queue on
     *db_path*, "now" pinned, and the league's server with its results, standings and verdicts
     channels in `bot.channels`."""
     from leaguebot.attendance.services.attendance_service import AttendanceService
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.season_service import SeasonService
 
-    bot = league_double(db_path)
+    bot = await league_bot(db_path)
     bot.user.id = BOT_USER_ID
-    bot.module_service = ModuleService(db_path)
-    bot.season_service = SeasonService(db_path)
-    bot.attendance_service = AttendanceService(db_path)
+    if not is_built(bot):
+        # The builder's own, on the built bot.
+        bot.module_service = ModuleService(db_path)
+        bot.season_service = SeasonService(db_path)
+        bot.attendance_service = AttendanceService(db_path)
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.channels = {
         cid: _FakeChannel(cid)
@@ -364,7 +367,7 @@ def _queued_cog(db_path: str) -> ModuleCog:
     server.id = SERVER_ID
     server.get_channel = MagicMock(side_effect=bot.channels.get)
     bot.get_guild = MagicMock(side_effect=lambda sid: server if sid == SERVER_ID else None)
-    attach_queue(bot, db_path, now=NOW)
+    league_queue(bot, db_path, now=NOW)
 
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = bot
@@ -471,7 +474,7 @@ async def test_a_league_with_nothing_at_stake_is_not_asked(tmp_path):
     anyway is how a confirmation stops being read. The change is asked for at once, and the
     manager told it is under way."""
     db_path = await _make_db(tmp_path)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
     interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
 
     await cog._disable_results(interaction)
@@ -523,7 +526,7 @@ async def test_the_flag_goes_down_in_the_save_that_erases_the_results(tmp_path):
     save, so a stop can never leave one without the others."""
     db_path = await _make_db(tmp_path)
     (round_id,) = await _season(db_path, rounds=1)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
     seen: list[tuple] = []
 
     async def _observe() -> None:
@@ -548,7 +551,7 @@ async def test_a_disable_between_seasons_still_takes_all_three_steps(tmp_path):
     """The erase and the closing of the rounds simply find nothing to do, which is why they
     are unconditional: the switch-off still lands, and the change finishes."""
     db_path = await _make_db(tmp_path)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
 
     await _turn_off(cog)
 
@@ -565,7 +568,7 @@ async def test_a_purged_season_is_audited_separately(tmp_path):
     log needs to see what was deleted as well as that the module went."""
     db_path = await _make_db(tmp_path)
     await _season(db_path, rounds=4)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
 
     await _turn_off(cog)
 
@@ -578,7 +581,7 @@ async def test_a_disable_that_destroyed_nothing_writes_no_purge_entry(tmp_path):
     """Nothing was destroyed, so an entry saying so would be a record of an event that did
     not happen."""
     db_path = await _make_db(tmp_path)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
 
     await _turn_off(cog)
 
@@ -591,7 +594,7 @@ async def test_the_reply_counts_what_was_destroyed(tmp_path):
     """A manager who has just confirmed needs to see the scale of what happened."""
     db_path = await _make_db(tmp_path)
     await _season(db_path, rounds=4)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
 
     interaction = await _turn_off(cog)
 
@@ -606,7 +609,7 @@ async def test_the_reply_says_what_survived_the_purge(tmp_path):
     saying they remain would send the manager looking for them."""
     db_path = await _make_db(tmp_path)
     await _season(db_path, rounds=4)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
 
     interaction = await _turn_off(cog)
 
@@ -620,7 +623,7 @@ async def test_the_reply_counts_the_verdicts_removed(tmp_path):
     and the closing line, written once the removals were tried, counts them as well."""
     db_path = await _make_db(tmp_path)
     await _season(db_path, rounds=4, verdicts=5)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
 
     interaction = await _turn_off(cog)
 
@@ -639,7 +642,7 @@ async def test_the_reply_links_every_message_left_standing(tmp_path):
     """
     db_path = await _make_db(tmp_path)
     await _season(db_path, rounds=4)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
     cog.bot.channels[RESULTS_CHANNEL_ID].refuse = {1000, 1001}
     links = [_link(RESULTS_CHANNEL_ID, 1000), _link(RESULTS_CHANNEL_ID, 1001)]
 
@@ -658,7 +661,7 @@ async def test_nothing_left_standing_says_nothing_of_it(tmp_path):
     """A warning over nothing would send a manager looking for messages that are gone."""
     db_path = await _make_db(tmp_path)
     await _season(db_path, rounds=4)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
 
     interaction = await _turn_off(cog)
 
@@ -677,7 +680,7 @@ async def test_a_long_list_is_split_across_replies(tmp_path):
     with the square of the links."""
     db_path = await _make_db(tmp_path)
     await _season(db_path, rounds=3, verdicts=12)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
     for channel in cog.bot.channels.values():
         channel.refuse_all = True
     links = _every_link(3, 12)
@@ -701,7 +704,7 @@ async def test_a_long_list_is_split_across_replies(tmp_path):
 async def test_a_disable_between_seasons_reports_no_destruction(tmp_path):
     """There was none, and a count of zeroes would read as something having gone wrong."""
     db_path = await _make_db(tmp_path)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
 
     interaction = await _turn_off(cog)
 
@@ -717,7 +720,7 @@ async def test_a_disable_between_seasons_reports_no_destruction(tmp_path):
 
 async def test_the_cascade_disables_attendance_and_says_so(tmp_path):
     db_path = await _make_db(tmp_path, attendance=True)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
 
     interaction = await _turn_off(cog, cascade=True)
 
@@ -730,7 +733,7 @@ async def test_the_cascade_says_what_attendance_keeps(tmp_path):
     """Its timings, penalties and thresholds survive — so a league re-enabling it later
     does not have to configure it again."""
     db_path = await _make_db(tmp_path, attendance=True)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
 
     interaction = await _turn_off(cog, cascade=True)
 
@@ -741,7 +744,7 @@ async def test_no_cascade_where_attendance_is_already_off(tmp_path):
     """Asked for, but there is nothing to cascade to — and claiming otherwise would tell a
     league a module went off that was never on."""
     db_path = await _make_db(tmp_path, attendance=False)
-    cog = _queued_cog(db_path)
+    cog = await _queued_cog(db_path)
 
     interaction = await _turn_off(cog, cascade=True)
 
