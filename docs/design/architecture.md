@@ -1156,8 +1156,8 @@ later on its own.
   that the bot is imported from one place: the installed package, never through `src`. The schema's
   checks, that every table has an owner, that every column a module keeps on a core table is in the
   schema, and that no column's default is SQLite's clock, live in `test_schema_rules.py` and read
-  the schema the migrations build, not a migration file's text; the rule they hold is under "The
-  database".
+  the schema the migrations build, not a migration file's text; the rules they hold are under "The
+  database" and, for the clock, "The time is always passed in".
 
 How the checks run, and how to work with the lists of today's breaches they hold, is CLAUDE.md's,
 under "Testing".
