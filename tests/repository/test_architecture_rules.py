@@ -836,7 +836,7 @@ POSTING_ALLOWED = frozenset({
 JOB_CHECK_ALLOWED = frozenset({"core/services/output_router.py"})
 #: A `.send` that is not a post, and why.
 NOT_A_POST = {
-    ("__main__.py", "main.guild_sync"): (
+    ("__main__.py", "build.guild_sync"): (
         "the owner's own `!sync` command, which deletes the owner's message and posts a note "
         "that deletes itself: a prefix command's reply"
     ),

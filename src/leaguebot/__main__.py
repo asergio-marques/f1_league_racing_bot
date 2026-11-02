@@ -1087,7 +1087,8 @@ async def build(settings: Settings) -> LeagueBot:
     return it, nothing started.
 
     Registers every change type, timer kind and scheduler callback, loads the cogs and the
-    persistent views, before the bot connects and before the scheduler starts, so a press on a
+    persistent views, and adds the owner's `!sync` command and the disconnect log line, before
+    the bot connects and before the scheduler starts, so a press on a
     persistent button arriving while `on_ready` is still recovering finds all of it in place
     (#228). Reads no environment: the settings are handed in (:func:`read_settings`).
     """
@@ -1258,6 +1259,28 @@ async def build(settings: Settings) -> LeagueBot:
 
     log.info("All cogs loaded.")
 
+    @bot.event
+    async def on_disconnect() -> None:
+        log.warning("Bot disconnected from Discord")
+
+    @bot.command(name="sync", hidden=True)
+    @commands.is_owner()
+    async def guild_sync(ctx: commands.Context) -> None:
+        """Owner-only: clear guild command overrides and do a global sync."""
+        # Remove any guild-specific copies (e.g. left over from a previous copy_global_to).
+        bot.tree.clear_commands(guild=ctx.guild)
+        await bot.tree.sync(guild=ctx.guild)
+        # Re-sync globally so Discord has the latest command schema.
+        synced = await bot.tree.sync()
+        try:
+            await ctx.message.delete()
+        except discord.HTTPException:
+            pass
+        await ctx.send(
+            f"✅ Cleared guild overrides and synced {len(synced)} global command(s).",
+            delete_after=15,
+        )
+
     return bot
 
 
@@ -1412,29 +1435,7 @@ async def main() -> None:
         except discord.HTTPException as exc:
             log.error("Failed to sync slash commands: %s", exc)
 
-    @bot.event
-    async def on_disconnect() -> None:
-        log.warning("Bot disconnected from Discord")
-
     log.info("Starting bot...")
-
-    @bot.command(name="sync", hidden=True)
-    @commands.is_owner()
-    async def guild_sync(ctx: commands.Context) -> None:
-        """Owner-only: clear guild command overrides and do a global sync."""
-        # Remove any guild-specific copies (e.g. left over from a previous copy_global_to).
-        bot.tree.clear_commands(guild=ctx.guild)
-        await bot.tree.sync(guild=ctx.guild)
-        # Re-sync globally so Discord has the latest command schema.
-        synced = await bot.tree.sync()
-        try:
-            await ctx.message.delete()
-        except discord.HTTPException:
-            pass
-        await ctx.send(
-            f"✅ Cleared guild overrides and synced {len(synced)} global command(s).",
-            delete_after=15,
-        )
 
     from leaguebot.core.db.database import close_connections
 
