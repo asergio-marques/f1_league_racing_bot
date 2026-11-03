@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -51,7 +51,7 @@ from leaguebot.core.models.change import (
     Verdict,
     forecasts_named,
 )
-from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.models.round import Round, RoundStatus
 from leaguebot.core.services import standing_posts
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
@@ -62,6 +62,7 @@ from leaguebot.core.services.change_queue import (
     StepContext,
     StepView,
 )
+from leaguebot.core.services.round_moments import clean_up_moment
 from leaguebot.core.services.test_mode_service import (
     AdvanceOutcome,
     AdvanceStep,
@@ -85,6 +86,10 @@ DRAW_FORECAST = "draw_forecast"
 POST_FORECAST = "post_forecast"
 DELETE_FORECAST = forecast_cleanup_service.DELETE_FORECAST
 PLAN_FORECAST_DELETES = "plan_forecast_deletes"
+#: The jobs an amendment plans through weather, under the names the amendment gives them.
+CLEAN_UP_FORECAST = "clean_up_forecast"
+NOTIFY_INVALIDATION = "notify_invalidation"
+RERUN_PHASE = "rerun_phase"
 
 _DONE_COLUMN = {0: "phase1_done", 1: "phase1_done", 2: "phase2_done", 3: "phase3_done"}
 
@@ -802,3 +807,41 @@ def forecast_failure(view: StepView) -> tuple[str, str] | None:
         return ("forecast channel", f"a part of the {view.payload['what']} could not be "
                 f"deleted, and a league admin discarded it; delete it by hand ({link})")
     return None
+
+
+async def amendment_posts(
+    _db: aiosqlite.Connection, _round_id: int, *, kept: Mapping[str, Any], draw: Sequence[int],
+    **_context: Any,
+) -> tuple[PlannedStep, ...]:
+    """The posts an amendment owes of weather's, in order, planned as the round is armed again:
+    the deletion of each withdrawn forecast that was posted, the notice that the forecasts no
+    longer stand, and the draw of each phase in *draw*. *kept* is what weather's part of the
+    save kept (`phase_withdrawal.round_amended_on`) with the track, and is empty where the save
+    was not made. Subscribed to core's `round_armed`."""
+    posted = kept.get("posted", [])
+    planned = [PlannedStep(DELETE_FORECAST, {"phase": n}) for n in posted]
+    if posted:
+        planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": kept["track"]}))
+    planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
+    return tuple(planned)
+
+
+async def amendment_clean_ups(
+    db: aiosqlite.Connection, round_id: int, *, rnd: Round, now: Callable[[], datetime],
+    **_context: Any,
+) -> tuple[PlannedStep, ...]:
+    """The clean-up of the round's forecast a day after the round, planned where that day has
+    come and a forecast stands (whichever of Phases 1 to 3), named by the phases standing. Read on
+    *db*. Subscribed to core's `round_clean_ups_due`."""
+    if clean_up_moment(rnd.scheduled_at) > now():
+        return ()
+    cursor = await db.execute(
+        "SELECT DISTINCT phase_number FROM forecast_messages "
+        "WHERE round_id = ? AND phase_number IN (1, 2, 3) ORDER BY phase_number",
+        (round_id,),
+    )
+    standing = [int(row["phase_number"]) for row in await cursor.fetchall()]
+    if not standing:
+        return ()
+    return (PlannedStep(CLEAN_UP_FORECAST, {"phases": [1, 2, 3], "clean_up": True,
+                                            "standing": standing}),)

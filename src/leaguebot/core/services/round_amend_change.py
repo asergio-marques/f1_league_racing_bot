@@ -160,8 +160,7 @@ class AmendHooks:
     """What the amendment needs of weather, attendance and the formatting of the round list.
 
     The builder fills it, so that this module imports no module (architecture.md, "How modules and
-    core fit together"). *withdraw_phases_on*, *reopen_check_in_on* write on the connection a save hands them and commit
-    nothing. *forecast_steps* are weather's jobs (its draw, its post, the deletion of a forecast
+    core fit together"). *forecast_steps* are weather's jobs (its draw, its post, the deletion of a forecast
     and the planning of deletions), which the amendment runs as jobs of its own: *plan_phase* plans
     the draw of a phase now, the draw planning its post and the post the deletion of the forecast
     it supersedes, and *forecast_failure* names what a discarded one of them leaves. *call_steps*
@@ -183,12 +182,10 @@ class AmendHooks:
     the division's rounds for the reply.
     """
 
-    withdraw_phases_on: Callable[[aiosqlite.Connection, int, Iterable[int]], Awaitable[None]]
     forecast_steps: Mapping[str, Step]
     plan_phase: Callable[[int, int], tuple[PlannedStep, ...]]
     forecast_failure: Callable[[StepView], tuple[str, str] | None]
     invalidation_text: Callable[[str], str]
-    reopen_check_in_on: Callable[[aiosqlite.Connection, int], Awaitable[None]]
     call_steps: Mapping[str, Step]
     give_up_text: Callable[[str, int], Awaitable[str | None]]
     give_up_on: Callable[[aiosqlite.Connection, int], Awaitable[bool]]
@@ -244,6 +241,9 @@ def round_amend_change(
     scheduler: "SchedulerService",
     hooks: AmendHooks,
     round_windows_read: AwaitedHook,
+    round_amended: AwaitedHook,
+    round_armed: AwaitedHook,
+    round_clean_ups_due: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that amends a round; see the module.
@@ -253,11 +253,14 @@ def round_amend_change(
     does is read as holding every division of that season (`review_changes.division_job_in_hand`).
     The builder hands in the *modules* (each post's `still_due`), the *seasons* service, the
     *scheduler*, the *hooks* of the other modules, *round_windows_read* (the hook their windows are
-    read through) and the queue's clock *now*.
+    read through), *round_amended* (the moment inside the save), *round_armed* and
+    *round_clean_ups_due* (the moments the round is armed again, at which the modules plan their
+    posts and their clean-ups) and the queue's clock *now*.
     """
     return _round_change(
         rearm=False, modules=modules, seasons=seasons, scheduler=scheduler, hooks=hooks,
-        round_windows_read=round_windows_read, now=now,
+        round_windows_read=round_windows_read, round_amended=round_amended,
+        round_armed=round_armed, round_clean_ups_due=round_clean_ups_due, now=now,
     )
 
 
@@ -268,6 +271,9 @@ def round_rearm_change(
     scheduler: "SchedulerService",
     hooks: AmendHooks,
     round_windows_read: AwaitedHook,
+    round_amended: AwaitedHook,
+    round_armed: AwaitedHook,
+    round_clean_ups_due: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that arms a round's timed work again after a refused cancellation; see the module.
@@ -280,7 +286,8 @@ def round_rearm_change(
     """
     return _round_change(
         rearm=True, modules=modules, seasons=seasons, scheduler=scheduler, hooks=hooks,
-        round_windows_read=round_windows_read, now=now,
+        round_windows_read=round_windows_read, round_amended=round_amended,
+        round_armed=round_armed, round_clean_ups_due=round_clean_ups_due, now=now,
     )
 
 
@@ -292,6 +299,9 @@ def _round_change(
     scheduler: "SchedulerService",
     hooks: AmendHooks,
     round_windows_read: AwaitedHook,
+    round_amended: AwaitedHook,
+    round_armed: AwaitedHook,
+    round_clean_ups_due: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The steps of `round_amend_change`, and with *rearm* the change that arms a round again.
@@ -468,9 +478,9 @@ def _round_change(
         It judges the amendment again before it writes (`judged_again`), and refuses, writing
         nothing, where the round's status or that judgement says it may no longer be made. What
         follows the save is planned from that judgement, made when the save runs, and kept with
-        it for the arming to read: the forecasts it withdraws (`withdrawn`), those of them that
-        were posted (`posted`, by the flags it reads), whether it reopens the check-in
-        (`reopened`) and whether a call stood (`called`). Planned from `judge`'s instead,
+        it for the arming to read: what each module's part of the save kept (`round_amended`: the
+        forecasts it withdraws and those of them that were posted, whether the check-in was
+        reopened and whether a call stood). Planned from `judge`'s instead,
         a save tried again after a window passed would withdraw a forecast that now stands, or
         leave a call to a schedule whose moment has gone (owner, 2026-10-09)."""
         if ctx.actor_id is None or ctx.actor_name is None:
@@ -529,29 +539,24 @@ def _round_change(
                     f"\n  {_PARAMETER_OF.get(field, field)}: "
                     f"{old if old is not None else 'none'} → {new}"
                 )
-        cursor = await db.execute(
-            "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ?", (round_id,)
-        )
-        called = await cursor.fetchone() is not None
-        flags = {1: row["phase1_done"], 2: row["phase2_done"], 3: row["phase3_done"]}
         withdrawn = sorted(n for n, outcome in verdict.phases.items() if not outcome.stands)
         # With attendance on, an allowed amendment always leaves the check-in open: one whose
         # deadline has passed is refused above.
         reopened = bool(verdict.check_in) and not verdict.check_in_stays_closed
-        await hooks.withdraw_phases_on(db, round_id, withdrawn)
-        if reopened:
-            await hooks.reopen_check_in_on(db, round_id)
+        kept: dict[str, Any] = {}
+        drawn = {n: bool(row[f"phase{n}_done"]) for n in (1, 2, 3)}
+        for part in await round_amended.call(
+            db, round_id, withdrawn=withdrawn, drawn=drawn, reopened=reopened
+        ):
+            kept.update(part or {})
         if any(field == "scheduled_at" for field, _ in ctx.payload["changes"]):
             await renumber_rounds_on(db, division_id)
         values = amended_values(ctx.payload["changes"])
         return StepResult(
             result={
+                **kept,
                 "saved": True,
                 "round_number": row["round_number"],
-                "called": called,
-                "reopened": reopened,
-                "withdrawn": withdrawn,
-                "posted": [n for n in withdrawn if flags[n]],
                 "track": values.get("track_name") or row["track_name"] or "Unknown",
             },
             lines=(
@@ -633,14 +638,7 @@ def _round_change(
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
         async with get_connection(ctx.db_path) as db:
             cursor = await db.execute(
-                "SELECT d.tier, s.season_number, r.checkin_cleared, EXISTS ("
-                "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id) AS called, EXISTS ("
-                "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id "
-                "AND m.deadline_run_at IS NULL AND m.distribution_msg_id IS NULL) AS undistributed, EXISTS ("
-                "SELECT 1 FROM forecast_messages f WHERE f.round_id = r.id "
-                "AND f.phase_number IN (1, 2, 3)) AS forecast_posted, ("
-                "SELECT group_concat(f.phase_number) FROM forecast_messages f "
-                "WHERE f.round_id = r.id AND f.phase_number IN (1, 2, 3)) AS forecast_phases, "
+                "SELECT d.tier, s.season_number, "
                 "EXISTS (SELECT 1 FROM server_configs c WHERE c.test_mode_active = 1) AS test_mode "
                 "FROM rounds r JOIN divisions d ON d.id = r.division_id "
                 "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
@@ -660,16 +658,15 @@ def _round_change(
                 judgement["windows"]["attendance"] is not None
                 and await modules.is_attendance_enabled()
             )
+            planned = await plan_clean_ups(ctx, rnd, kept={})
             if weather_on or check_in_on:
                 scheduler.schedule_round_cleanups(
                     rnd, season_number=season_number, division_tier=tier,
                     forecast=weather_on, check_in=check_in_on, now=now(),
                 )
-            return StepResult(
-                result={"armed": True, "round_number": rnd.round_number},
-                then=clean_ups_due(rnd, standing=dict(found), call_left=bool(found["called"])),
-            )
+            return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
         draw = phases_due(rnd, weather) if weather_on else []
+        planned = await plan_posts(ctx, rnd, judgement, draw=draw)
         if weather_on and (
             rnd.format != RoundFormat.MYSTERY or first_horizon_ahead(rnd, weather)
         ):
@@ -708,74 +705,41 @@ def _round_change(
             scheduler.run_result_submission_now(
                 rnd, season_number=season_number, division_tier=tier
             )
-        planned = posts(ctx, rnd, judgement, standing=dict(found), draw=draw)
         return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
 
-    def clean_ups_due(
-        rnd: Round, *, standing: Mapping[str, Any], call_left: bool
+    async def plan_clean_ups(
+        ctx: StepContext, rnd: Round, *, kept: Mapping[str, Any]
     ) -> tuple[PlannedStep, ...]:
-        """The clean-ups a day after the round, planned where that day has come: the forecast
-        (whichever of Phases 1 to 3 still stands) and the standing check-in call."""
-        planned: list[PlannedStep] = []
-        if clean_up_moment(rnd.scheduled_at) <= now():
-            if standing["forecast_posted"]:
-                phases = sorted(
-                    {int(n) for n in str(standing["forecast_phases"] or "").split(",") if n}
-                )
-                planned.append(PlannedStep(
-                    CLEAN_UP_FORECAST, {"phases": [1, 2, 3], "clean_up": True, "standing": phases}
-                ))
-            if call_left:
-                planned.append(PlannedStep(CLEAN_UP_CHECK_IN))
-        return tuple(planned)
+        """The clean-ups a day after the round, which the modules plan where that day has come:
+        the forecast (whichever of Phases 1 to 3 still stands), then the standing check-in call.
+        Read when the arming runs, as the arming reads the round."""
+        async with get_connection(ctx.db_path) as db:
+            handed = await round_clean_ups_due.call(db, rnd.id, rnd=rnd, kept=kept, now=now)
+        return tuple(step for steps in handed for step in steps or ())
 
-    def posts(
-        ctx: StepContext, rnd: Round, judgement: dict[str, Any], *,
-        standing: Mapping[str, Any], draw: list[int],
+    async def plan_posts(
+        ctx: StepContext, rnd: Round, judgement: dict[str, Any], *, draw: list[int]
     ) -> tuple[PlannedStep, ...]:
-        """The posts the amendment owes, in today's order: the check-in call taken down and
-        posted again, its deadline run, each withdrawn forecast that was posted deleted, the
-        notice that the forecasts no longer stand, each phase in *draw* drawn, and the clean-ups
-        due a day after the round. Planned once the round is armed, which is where the amendment
-        stood before them; what the save withdraws, from what it read (`apply`), and only where it
-        was saved. *standing* is what the arming read of the round's call and of its forecasts of
-        Phases 1 to 3, whether one stands and which (`forecast_phases`), by which the clean-up is
-        named.
+        """The posts the amendment owes, which the modules plan in today's order: the check-in
+        call taken down and posted again, its deadline run, each withdrawn forecast that was posted
+        deleted, the notice that the forecasts no longer stand, each phase in *draw* drawn, and the
+        clean-ups due a day after the round (`plan_clean_ups`). Planned once the round is armed,
+        which is where the amendment stood before them, but read before the timed work is
+        scheduled; what the save withdraws, from what each module's part of it kept (`apply`), and
+        only where it was saved.
 
-        A call that stood at the save is taken down and its post planned with it, the post
-        judging when it runs whether the call is due then (`call_still_due`): the take-down can
-        stop on Discord and be retried after the new call's moment, which the timer armed
-        meanwhile has found taken by the old call. Otherwise the call is planned only where none
-        stands and the check-in is not over and it has fallen due as the round is armed, saved or
-        not; one still to come is the timer's. Either way the post judges again, when it runs,
-        that no call stands and the check-in is not over, since a restart or the timer can post
-        one between the arming and the post.
-
-        What fell due while the amendment stood stopped is caught up as the start-up recovery
-        catches it up (`_recover_rsvp_views_and_deadlines`, `_recover_missed_cleanups`; owner,
-        2026-10-09): a standing call left in place whose deadline has passed with no
-        distribution recorded has its deadline run, and a day after the round its forecast
-        (whichever of Phases 1 to 3 still stands) is deleted and its standing call taken down."""
-        after = (view(ctx, APPLY).result or {}) if saved(ctx) else {}
-        attendance = judgement["windows"]["attendance"]
-        taking_down = bool(after.get("reopened") and after.get("called"))
-        call_left = bool(standing["called"]) and not taking_down
-        planned: list[PlannedStep] = []
-        if taking_down:
-            planned += [PlannedStep(TAKE_DOWN_CALL), PlannedStep(POST_CALL, {"repost": True})]
-        elif (not standing["called"] and not standing["checkin_cleared"]
-              and call_fell_due(rnd, attendance)):
-            planned.append(PlannedStep(POST_CALL, {"repost": False}))
-        if (attendance is not None and call_left and standing["undistributed"]
-                and deadline_passed(rnd, attendance)):
-            planned.append(PlannedStep(DISTRIBUTE))
-        posted = after.get("posted", [])
-        planned += [PlannedStep(DELETE_FORECAST, {"phase": n}) for n in posted]
-        if posted:
-            planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": after["track"]}))
-        planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
-        planned += clean_ups_due(rnd, standing=standing, call_left=call_left)
-        return tuple(planned)
+        What each module plans, and how it reads its own tables, is its own (`round_armed`)."""
+        windows = judgement["windows"]
+        attendance = windows["attendance"]
+        kept = (view(ctx, APPLY).result or {}) if saved(ctx) else {}
+        async with get_connection(ctx.db_path) as db:
+            handed = await round_armed.call(
+                db, rnd.id, rnd=rnd, kept=kept,
+                attendance=AttendanceWindows(**attendance) if attendance is not None else None,
+                weather=WeatherWindows(**windows["weather"]), draw=draw, now=now,
+            )
+        planned = [step for steps in handed for step in steps or ()]
+        return (*planned, *await plan_clean_ups(ctx, rnd, kept=kept))
 
     async def never_runs(ctx: StepContext) -> str:
         return (
@@ -837,15 +801,6 @@ def _round_change(
         if found is None:
             return False, False
         return bool(found["called"]), bool(found["checkin_cleared"])
-
-    async def call_message(db_path: str, round_id: int) -> str | None:
-        """The message the round's standing call is recorded as, or None where none stands."""
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", (round_id,)
-            )
-            found = await cursor.fetchone()
-        return None if found is None else str(found["message_id"])
 
     async def call_still_due(ctx: StepContext) -> bool:
         """The call is posted only while attendance is on and the call has fallen due as the

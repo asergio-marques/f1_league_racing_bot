@@ -11,7 +11,8 @@ architecture rules that read the tables and columns a module writes can read the
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
 import aiosqlite
 
@@ -48,3 +49,22 @@ async def withdraw_phases_on(
         await db.execute(
             "UPDATE sessions SET phase3_slots = NULL WHERE round_id = ?", (round_id,)
         )
+
+
+async def round_amended_on(
+    db: aiosqlite.Connection,
+    round_id: int,
+    *,
+    withdrawn: Sequence[int],
+    drawn: Mapping[int, bool],
+    **_context: Any,
+) -> dict[str, Any]:
+    """Weather's part of the amendment's save: withdraw the *withdrawn* phases of the round on
+    *db*, committing nothing. Subscribed to core's `round_amended`.
+
+    *drawn* is what the round's flags say of each phase before the withdrawal clears them. Hands
+    back what the amendment's arming reads of it, kept with the save: the phases withdrawn and
+    those of them that were posted.
+    """
+    await withdraw_phases_on(db, round_id, withdrawn)
+    return {"withdrawn": list(withdrawn), "posted": [n for n in withdrawn if drawn[n]]}

@@ -265,6 +265,26 @@ def _sign_up_to_round_windows(bot: LeagueBot) -> None:
     ))
 
 
+def _sign_up_to_amendments(bot: LeagueBot) -> None:
+    """Make the hooks an amended round declares, and sign each module's part up to them, in the
+    order core calls them: inside the save, weather's withdrawal of the forecasts the amendment
+    withdraws, then attendance's reopening of its check-in; as the round is armed again, the posts
+    each owes, attendance's then weather's, then the clean-ups due a day after the round,
+    weather's then attendance's."""
+    from leaguebot.attendance.services import check_in_changes
+    from leaguebot.weather.services import forecast_changes, phase_withdrawal
+
+    bot.round_amended = AwaitedHook()
+    bot.round_amended.subscribe(phase_withdrawal.round_amended_on)
+    bot.round_amended.subscribe(check_in_changes.round_amended_on)
+    bot.round_armed = AwaitedHook()
+    bot.round_armed.subscribe(check_in_changes.amendment_posts)
+    bot.round_armed.subscribe(forecast_changes.amendment_posts)
+    bot.round_clean_ups_due = AwaitedHook()
+    bot.round_clean_ups_due.subscribe(forecast_changes.amendment_clean_ups)
+    bot.round_clean_ups_due.subscribe(check_in_changes.amendment_clean_ups)
+
+
 def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     """Make the hooks a cancellation of rounds declares, and sign each module's part up to them,
     in the order core calls them: what stands in the way (results' refusal of a round whose
@@ -363,7 +383,6 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     """What `/round amend`'s change needs of weather and attendance, handed it here so that core
     imports neither. Each is looked up as it is called, so that nothing is bound before it is
     needed."""
-    from leaguebot.attendance.services import rsvp_service
     from leaguebot.attendance.services.check_in_changes import (
         check_in_clean_up_steps,
         check_in_deadline_steps,
@@ -376,7 +395,6 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     from leaguebot.core.models.change import PlannedStep
     from leaguebot.core.services.round_amend_change import AmendHooks
     from leaguebot.core.utils.formatting import format_round_list
-    from leaguebot.weather.services import phase_withdrawal
     from leaguebot.weather.services.forecast_changes import (
         DRAW_FORECAST,
         forecast_failure,
@@ -388,12 +406,10 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
         return (PlannedStep(DRAW_FORECAST, {"round_id": round_id, "phase": phase}),)
 
     return AmendHooks(
-        withdraw_phases_on=phase_withdrawal.withdraw_phases_on,
         forecast_steps=forecast_steps(now=lambda: bot.change_queue.now()),
         plan_phase=plan_phase,
         forecast_failure=forecast_failure,
         invalidation_text=invalidation_message,
-        reopen_check_in_on=rsvp_service.reopen_check_in_on,
         call_steps=check_in_steps(bot.attendance_service, now=lambda: bot.change_queue.now()),
         give_up_text=give_up_text_for,
         give_up_on=close_check_in_on,
@@ -907,6 +923,9 @@ def register_change_types(bot: LeagueBot) -> None:
             scheduler=bot.scheduler_service,
             hooks=_amend_hooks(bot),
             round_windows_read=bot.round_windows_read,
+            round_amended=bot.round_amended,
+            round_armed=bot.round_armed,
+            round_clean_ups_due=bot.round_clean_ups_due,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -917,6 +936,9 @@ def register_change_types(bot: LeagueBot) -> None:
             scheduler=bot.scheduler_service,
             hooks=_amend_hooks(bot),
             round_windows_read=bot.round_windows_read,
+            round_amended=bot.round_amended,
+            round_armed=bot.round_armed,
+            round_clean_ups_due=bot.round_clean_ups_due,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -1128,6 +1150,7 @@ async def build(settings: Settings) -> LeagueBot:
     # through; results' change types reach attendance through it alone (#439).
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
     _sign_up_to_round_windows(bot)
+    _sign_up_to_amendments(bot)
 
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService

@@ -63,7 +63,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -89,7 +89,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat
+from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, Round, RoundFormat
 from leaguebot.core.services import cancellation_notice_service, season_service, standing_posts
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
@@ -101,6 +101,7 @@ from leaguebot.core.services.change_queue import (
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.notice_handler import delete_notice
+from leaguebot.core.services.round_moments import clean_up_moment, round_event_moments
 from leaguebot.core.services.test_mode_service import (
     AdvanceOutcome,
     AdvanceStep,
@@ -126,6 +127,8 @@ ANNOUNCE = "announce"
 PLAN_CLEAN_UP = "plan"
 DELETE_MESSAGE = "delete_message"
 MARK_CLEARED = "mark_cleared"
+#: The job the amendment plans to take a standing check-in down a day after the round.
+CLEAN_UP_CHECK_IN = "clean_up_check_in"
 #: Taking a round's call down when a cancellation calls the round off (`take_down_steps`).
 TAKE_DOWN_CALL = "take_down_call"
 
@@ -196,7 +199,7 @@ async def _call_row(db: aiosqlite.Connection, round_id: int) -> aiosqlite.Row | 
         "SELECT r.id, r.division_id, r.round_number, r.format, r.track_name, r.scheduled_at, "
         "       r.status AS round_status, r.not_held, r.checkin_cleared, "
         "       d.status AS division_status, d.name AS division_name, d.tier AS division_tier, "
-        "       d.mention_role_id, s.season_number, "
+        "       d.mention_role_id, d.season_id, s.season_number, "
         "       t.gp_name AS track_gp_name, t.country AS track_country, "
         "       (SELECT module_enabled FROM attendance_config LIMIT 1) AS attendance_on, "
         "       (SELECT rsvp_deadline_hours FROM attendance_config LIMIT 1) AS deadline_hours "
@@ -581,6 +584,132 @@ def take_down_steps(
             TAKE_DOWN_CALL, StepKind.ACT, take_down, still_due=attendance_on, record=forget_call,
             describe=describe,
         ),
+    }
+
+
+async def round_amended_on(
+    db: aiosqlite.Connection, round_id: int, *, reopened: bool, **_context: Any
+) -> dict[str, Any]:
+    """Attendance's part of the amendment's save: reopen the round's check-in on *db* where the
+    amendment *reopened* it, committing nothing. Subscribed to core's `round_amended`.
+
+    Hands back what the amendment's arming reads of it, kept with the save: whether a call stood
+    when the save was made, read before the check-in was reopened, and whether it was reopened.
+    """
+    cursor = await db.execute(
+        "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ?", (round_id,)
+    )
+    called = await cursor.fetchone() is not None
+    if reopened:
+        await rsvp_service.reopen_check_in_on(db, round_id)
+    return {"called": called, "reopened": reopened}
+
+
+def _call_fell_due(
+    rnd: Round, attendance: AttendanceWindows | None, now: Callable[[], datetime]
+) -> bool:
+    """Whether the round's check-in call has fallen due at *now*: its moment has passed."""
+    if attendance is None:
+        return False
+    moments = round_event_moments(rnd.scheduled_at, weather=None, attendance=attendance)
+    return moments["rsvp_notice"] <= now()
+
+
+def _deadline_passed(
+    rnd: Round, attendance: AttendanceWindows, now: Callable[[], datetime]
+) -> bool:
+    """Whether the round's check-in deadline has passed at *now*."""
+    moments = round_event_moments(rnd.scheduled_at, weather=None, attendance=attendance)
+    return moments["rsvp_deadline"] <= now()
+
+
+async def amendment_posts(
+    db: aiosqlite.Connection,
+    round_id: int,
+    *,
+    rnd: Round,
+    kept: Mapping[str, Any],
+    attendance: AttendanceWindows | None,
+    now: Callable[[], datetime],
+    **_context: Any,
+) -> tuple[PlannedStep, ...]:
+    """The posts an amendment owes of attendance's, in order, planned as the round is armed
+    again, reading the round's call on *db*: the check-in call taken down and posted again, or
+    posted where none stands, and the deadline run where it passed. Subscribed to core's
+    `round_armed`.
+
+    A call that stood at the save (*kept*, `round_amended_on`) is taken down and its post planned
+    with it, the post judging when it runs whether the call is due then: the take-down can stop on
+    Discord and be retried after the new call's moment, which the timer armed meanwhile has found
+    taken by the old call. Otherwise the call is planned only where none stands and the check-in
+    is not over and it has fallen due as the round is armed, saved or not; one still to come is
+    the timer's. A standing call left in place whose deadline has passed with no distribution
+    recorded has its deadline run, as the start-up recovery runs it.
+    """
+    found = await _amendment_standing(db, round_id)
+    taking_down = bool(kept.get("reopened") and kept.get("called"))
+    call_left = bool(found["called"]) and not taking_down
+    planned: list[PlannedStep] = []
+    if taking_down:
+        planned += [
+            PlannedStep(TAKE_DOWN_CALL, {
+                "division_id": rnd.division_id,
+                "division_name": found["division_name"],
+                "season_id": found["season_id"],
+                "round_id": round_id,
+                "round_number": rnd.round_number,
+            }),
+            PlannedStep(POST_CALL, {"repost": True}),
+        ]
+    elif (not found["called"] and not found["checkin_cleared"]
+          and _call_fell_due(rnd, attendance, now)):
+        planned.append(PlannedStep(POST_CALL, {"repost": False}))
+    if (attendance is not None and call_left and found["undistributed"]
+            and _deadline_passed(rnd, attendance, now)):
+        planned.append(PlannedStep(DISTRIBUTE))
+    return tuple(planned)
+
+
+async def amendment_clean_ups(
+    db: aiosqlite.Connection,
+    round_id: int,
+    *,
+    rnd: Round,
+    kept: Mapping[str, Any],
+    now: Callable[[], datetime],
+    **_context: Any,
+) -> tuple[PlannedStep, ...]:
+    """The clean-up of the round's check-in a day after the round, planned where that day has
+    come and a call stands that the amendment did not take down. Read on *db*. Subscribed to
+    core's `round_clean_ups_due`."""
+    if clean_up_moment(rnd.scheduled_at) > now():
+        return ()
+    found = await _amendment_standing(db, round_id)
+    if found["called"] and not (kept.get("reopened") and kept.get("called")):
+        return (PlannedStep(CLEAN_UP_CHECK_IN),)
+    return ()
+
+
+async def _amendment_standing(db: aiosqlite.Connection, round_id: int) -> dict[str, Any]:
+    """What an amendment's arming reads of a round's check-in: whether a call stands, whether
+    one stands that no deadline has run (no distribution recorded), whether the check-in is over
+    (``checkin_cleared``), and the division's name and season."""
+    row = await _call_row(db, round_id)
+    if row is None:
+        raise LookupError(f"round {round_id} is no longer there")
+    cursor = await db.execute(
+        "SELECT EXISTS (SELECT 1 FROM rsvp_embed_messages WHERE round_id = ?) AS called, "
+        "EXISTS (SELECT 1 FROM rsvp_embed_messages WHERE round_id = ? "
+        "AND deadline_run_at IS NULL AND distribution_msg_id IS NULL) AS undistributed",
+        (round_id, round_id),
+    )
+    found = await cursor.fetchone()
+    return {
+        "checkin_cleared": row["checkin_cleared"],
+        "division_name": row["division_name"],
+        "season_id": row["season_id"],
+        "called": bool(found["called"]) if found else False,
+        "undistributed": bool(found["undistributed"]) if found else False,
     }
 
 

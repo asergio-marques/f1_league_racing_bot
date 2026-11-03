@@ -87,6 +87,16 @@ class LeagueBot(commands.Bot):
     #: or weather (architecture.md, "A hook core declares is a list of subscribers");
     #: `read_round_windows` gathers what they hand back.
     round_windows_read: AwaitedHook
+    #: The moments of a round amended, each module signing up its part: inside the save, each
+    #: module's part of the amendment on the save's connection (each hands back what the arming
+    #: reads of it, kept in the save's result), then, as the round is armed again, the posts each
+    #: module owes (`round_armed`) and the clean-ups due a day after the round
+    #: (`round_clean_ups_due`), each handing back the steps it plans. The builder makes them and
+    #: hands them to the amendment and the re-arming of a round (architecture.md, "A hook core
+    #: declares is a list of subscribers").
+    round_amended: AwaitedHook
+    round_armed: AwaitedHook
+    round_clean_ups_due: AwaitedHook
     #: The moment the bot's in-memory state is cleared (`/bot pack`, `/bot factory-reset`): each
     #: module that holds league state in memory signs its clear up. The builder makes it and
     #: signs them up, so that core's clear reaches no module and no cog (architecture.md, "A hook
