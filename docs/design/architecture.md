@@ -148,26 +148,28 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 
 **Core reaches a module only through hooks, and the image module through a protocol it declares
 (below).** Where something in core has to let the modules act (the bot starting, a timed event
-falling due, a round amended, a round's timing windows read, a round, a division or a season
-cancelled, a round's results made final, placements confirmed, a review gathering its lines, a
-season ending, a season, division, round or driver deleted, a driver merged into another or turned
-down, a base role changed, the bot packed, test mode turned on, the bot's in-memory state cleared,
-the hub's panel gathering its options), core declares a hook. The builder signs each module up to it
-before the bot connects. Core calls whoever signed up, and never imports a module, the bot's type
-aside (see "How the code is laid out"). A module turned on or off is not a hook but a change of the
-module's own, which core asks for by its kind (see "Each module turns itself on and off").
+falling due, a round amended or its timed work armed again, a round's timing windows read, a round,
+a division or a season cancelled, a round's results made final, placements confirmed, a review
+gathering its lines, a season ending, a season, division, round or driver deleted, a driver merged
+into another or turned down, a base role changed, the bot packed, test mode turned on, the bot's
+in-memory state cleared, the hub's panel gathering its options), core declares a hook. The builder
+signs each module up to it before the bot connects. Core calls whoever signed up, and never imports
+a module, the bot's type aside (see "How the code is laid out"). A module turned on or off is not a
+hook but a change of the module's own, which core asks for by its kind (see "Each module turns
+itself on and off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
-the rows concerned, and, where core holds one open, the connection its subscribers read on: the
-save's own where the moment falls inside one. Each module signs up a function of its own, and core
-calls each in the order they signed up. A subscriber may hand something back, which the hook gathers
-in that order; what core does with them, if anything, is the moment's: a line to write, a step to
-plan or to register, a refusal to give. The hook names no module and no module's operation, so a
-module's part of the moment is the module's own code, and a module added later signs up without core
-changing. A hook keyed by a kind takes one function for each key instead, as a kind of timed job
-takes its one handler (see "Timed work and restarts"). A link the dependency table allows between
-two modules is not one of core's hooks: there the module depended on may name what it asks of its
-dependant, as results does of attendance (below).
+what the moment concerns, where it concerns anything (the rows, the round), and, where core holds
+one open, the connection its subscribers read and write on (the save's own where the moment falls
+inside one, so that what they write is part of the save). Each module signs up a function of its
+own, and core calls each in the order they signed up. A subscriber may hand something back, which
+the hook gathers in that order; what core does with them, if anything, is the moment's: a value to
+read or to keep, a line to write, a step to plan or to register, a refusal to give. The hook names
+no module and no module's operation, so a module's part of the moment is the module's own code, and
+a module added later signs up without core changing. A hook keyed by a kind takes one function for
+each key instead, as a kind of timed job takes its one handler (see "Timed work and restarts"). A
+link the dependency table allows between two modules is not one of core's hooks: there the module
+depended on may name what it asks of its dependant, as results does of attendance (below).
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
