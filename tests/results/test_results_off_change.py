@@ -31,6 +31,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from tests.support.change_queue import (
     MEMBER_ID,
     SERVER_ID,
@@ -161,6 +162,13 @@ def _league(db_path: str, *, guild: bool = True) -> Any:
     # The wind-down clears the marks of the drivers it returned, and its last save takes any left.
     bot.signup_module_service.clear_closing_notices_on = AsyncMock(return_value=None)
     bot.signup_module_service.take_closing_notices_on = AsyncMock(return_value=[])
+    # The hooks of a season's end, as the builder makes them, no module signed up to any: the
+    # wind-down returns no driver here, and its last save finds no account untold.
+    for name in ("season_end_refused", "drivers_returned", "season_end_untold",
+                 "test_mode_flushed", "drivers_deleted"):
+        setattr(bot, name, AwaitedHook())
+    bot.driver_returned_jobs = Hook()
+    bot.season_end_steps = Hook()
     bot.channels = {
         cid: _FakeChannel(cid)
         for cid in (RESULTS_CHANNEL_ID, STANDINGS_CHANNEL_ID, VERDICTS_CHANNEL_ID,
