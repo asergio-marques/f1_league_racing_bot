@@ -81,27 +81,8 @@ async def _cog(db_path, *, attendance: bool = True):
             rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2
         )
     )
-
-    async def _windows():
-        """The builder's reader of the windows an amendment is judged against
-        (`LeagueBot.amendment_windows`): attendance's where it is on, weather's always."""
-        from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
-        from leaguebot.weather.services.weather_config_service import (
-            get_weather_pipeline_config,
-        )
-
-        wx = await get_weather_pipeline_config(db_path)
-        weather = WeatherWindows(
-            phase_1_days=wx.phase_1_days, phase_2_days=wx.phase_2_days,
-            phase_3_hours=wx.phase_3_hours,
-        )
-        return (
-            AttendanceWindows(notice_days=5, last_notice_hours=24, deadline_hours=2)
-            if attendance else None,
-            weather,
-        )
-
-    cog.bot.amendment_windows = _windows
+    # The windows an amendment is judged against are read through the builder's own hook, off
+    # these doubles: attendance's where it is on, weather's always.
     # The queue writes the lines a change saves through `queue_log_on`, which `_lines` reads
     # beside the refusals posted at once.
     cog.bot.output_router.queue_log_on = AsyncMock(return_value=None)
