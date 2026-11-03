@@ -1446,6 +1446,74 @@ async def test_an_amendment_s_deadline_whose_lock_is_refused_stops_the_queue(tmp
     assert _sent_in_check_in(league) == []
 
 
+#: The amendment's jobs of weather and attendance: how each is reached, the job, and the name the
+#: log channel's notice gives it when it stops the queue, the round named by the number it bears
+#: once renumbered where the amendment renumbers it.
+_NAMED_JOBS = [
+    pytest.param("moved past round 4", "take_down_call",
+                 "taking down the check-in call of round 4 in **Pro**", id="take_down_call"),
+    pytest.param("moved past round 4", "delete_forecast",
+                 "deleting a withdrawn forecast of round 4 in **Pro**",
+                 id="delete_forecast withdrawn"),
+    pytest.param("moved past round 4", "notify_invalidation",
+                 "telling **Pro** its forecasts no longer stand", id="notify_invalidation"),
+    pytest.param("round 4 brought before round 3", "post_call",
+                 "posting the check-in call of round 3 in **Pro** again", id="post_call"),
+    pytest.param("its deadline passed while the save stood stopped", "distribute",
+                 "placing the reserves of round 3 in **Pro**", id="distribute"),
+    pytest.param("its deadline passed while the save stood stopped", "announce",
+                 "posting the reserve announcement of round 3 in **Pro**", id="announce"),
+    pytest.param("the day after it passed while the save stood stopped", "clean_up_check_in",
+                 "finding what is left of the check-in of round 3 in **Pro**",
+                 id="clean_up_check_in"),
+]
+
+
+@pytest.mark.parametrize("scenario, job, name", _NAMED_JOBS)
+async def test_a_module_s_job_of_the_amendment_is_named_as_today_when_it_stops_the_queue(
+    tmp_path, reposts, scenario, job, name,
+):
+    """Attendance on, and weather too where a forecast is withdrawn; the save of one job of the
+    amendment fails, so the queue stops at it. Moved past round 4: round 3's call stands and its
+    phase 2 forecast (message 8002) was posted, and the round is moved 150 days out, so it is
+    round 4 by the time its call is taken down, the withdrawn forecast deleted and the division
+    told. Round 4 brought before round 3: round 4, with no call, is moved to three days out, so it
+    is round 3 when its call is posted. Its deadline passed while the save stood stopped: round 3,
+    two hours and five minutes out, is moved a day later, the save stops, and ten minutes on, past
+    the old deadline, a league admin discards it, so the deadline is run. The day after it passed
+    while the save stood stopped: weather on too, round 3, thirty minutes out, its phase 3 forecast
+    (message 8003) posted, is moved a day later, the save stops, and a day and forty minutes on a
+    league admin discards it, so what is left of its check-in is cleaned up. The log channel's
+    notice that the queue stopped names the job word for word as it always has."""
+    forecasts = scenario in ("moved past round 4",
+                             "the day after it passed while the save stood stopped")
+    league = await ongoing_league(tmp_path, weather=forecasts, attendance=True,
+                                  **({"horizons": HORIZONS} if forecasts else {}))
+    await refuse_the_job(league.db_path, "season.round.amend", job, True)
+    if scenario == "moved past round 4":
+        await posted_forecast(league, R3, 2, 8002)
+        await _amended(league, scheduled_at=_at(league, days=150))
+        await run_queue(league.bot)
+    elif scenario == "round 4 brought before round 3":
+        await _amended(league, number=4, scheduled_at=_at(league, days=3))
+        await run_queue(league.bot)
+    elif scenario == "the day after it passed while the save stood stopped":
+        await _place_r3(league, minutes=30)
+        await posted_forecast(league, R3, 3, 8003)
+        await _amended(league, scheduled_at=_at(league, days=1))
+        with _renumbering_fails():
+            await run_queue(league.bot)
+            assert await _stopped_at(league) == "apply"
+            league.clock.advance(days=1, minutes=40)
+            await discard_job(league.bot)
+    else:
+        await _deadline_not_yet_run(league)
+        await _place_and_discard_past_the_deadline(league)
+
+    assert await _stopped_at(league) == job
+    assert name in _stop_notices(league)[-1]
+
+
 async def test_an_amendment_s_clean_up_whose_delete_is_refused_stops_the_queue(tmp_path):
     """Attendance on. Pro's round 3 is thirty minutes out, its call standing (7001 to 7003). It
     is moved a day later; the save stops, and a day and forty minutes on, past the check-in's
