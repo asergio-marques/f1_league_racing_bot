@@ -11,7 +11,6 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.mark.xfail(strict=True, reason="#283: core has no hook type")
 @pytest.mark.parametrize("awaited", [False, True], ids=["plain", "awaited"])
 async def test_a_hook_calls_its_subscribers_in_order_on_the_handed_connection(awaited):
     """With no subscriber a hook hands back nothing. Three subscribers signed up in turn are each
