@@ -593,6 +593,88 @@ async def test_a_module_s_job_of_the_season_s_end_is_named_as_today_when_it_stop
     assert f": {_logged(name)} for " in stops[-1]
 
 
+#: Each end of a season whose saves a module's part joins: the change's kind, and its save that
+#: returns the drivers.
+_END_SAVES = [
+    pytest.param(SEASON_COMPLETE_KIND, id="completion"),
+    pytest.param(SEASON_CANCEL_KIND, id="cancellation"),
+]
+
+
+@pytest.mark.xfail(strict=True, reason="#283: a season's end hands its saves to no hook yet")
+@pytest.mark.parametrize("kind", _END_SAVES)
+async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(tmp_path, kind):
+    """Kimi (105) part-way through signing up. A further module signs up to the drivers a season's
+    end returns and to the accounts its last save finds untold, and the season is completed (every
+    round final), or cancelled (ongoing). The part for the drivers returned is called
+    once, in `end`, with that save's own connection and the drivers the pass returned, Kimi among
+    them: on that connection Kimi's signup has already ended and the season is not yet archived,
+    while another connection still reads Kimi as signing up. The part for the untold is called
+    once, in `close`, with that save's own connection, `end` done and `close` not. What the part for the drivers returned writes on its
+    connection is unseen elsewhere while `end` stands open, and what each writes is saved with its
+    save."""
+    from leaguebot.core.db.database import get_connection
+    from tests.support.season_league import cancel_season, ongoing_league
+
+    if kind == SEASON_COMPLETE_KIND:
+        league = await pending_completion_league(tmp_path)
+    else:
+        league = await ongoing_league(tmp_path)
+    await signing_up(league)
+    before = await driver_state(league, SIGNING_UP)
+    await league.write("CREATE TABLE written_by_a_module (part TEXT)")
+    seen: list[tuple[Any, ...]] = []
+
+    async def _jobs_done(other: Any) -> dict[str, bool]:
+        cursor = await other.execute(
+            "SELECT s.name, s.done_at FROM queued_change_steps s "
+            "JOIN queued_changes c ON c.id = s.change_id WHERE c.kind = ?", (kind,),
+        )
+        return {row["name"]: row["done_at"] is not None for row in await cursor.fetchall()}
+
+    async def _written(db: Any, part: str) -> tuple[bool, dict[str, bool]]:
+        await db.execute("INSERT INTO written_by_a_module (part) VALUES (?)", (part,))
+        async with get_connection(league.db_path) as other:
+            cursor = await other.execute("SELECT COUNT(*) FROM written_by_a_module")
+            [elsewhere] = await cursor.fetchone()
+            return elsewhere == 0, await _jobs_done(other)
+
+    async def _returned(db: Any, drivers: Any, *_rest: Any) -> None:
+        cursor = await db.execute(
+            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?",
+            (str(SIGNING_UP),),
+        )
+        found = await cursor.fetchone()
+        cursor = await db.execute("SELECT status FROM seasons WHERE id = ?", (SEASON_ID,))
+        [status] = await cursor.fetchone()
+        unseen, done = await _written(db, "returned")
+        seen.append(("returned", str(SIGNING_UP) in repr(drivers),
+                     found is None or found[0] != before, status == "ACTIVE",
+                     await driver_state(league, SIGNING_UP) == before, unseen,
+                     done.get("end"), done.get("close")))
+
+    async def _untold(db: Any, *_rest: Any) -> list[str]:
+        _unseen, done = await _written(db, "untold")
+        seen.append(("untold", done.get("end"), done.get("close")))
+        return []
+
+    league.bot.drivers_returned.subscribe(_returned)
+    league.bot.season_end_untold.subscribe(_untold)
+    if kind == SEASON_COMPLETE_KIND:
+        await _asked(league)
+    else:
+        await cancel_season(league)
+
+    await run_queue(league.bot)
+
+    assert seen == [
+        ("returned", True, True, True, True, True, False, False),
+        ("untold", True, False),
+    ]
+    rows = await league.rows("SELECT part FROM written_by_a_module ORDER BY rowid")
+    assert [row["part"] for row in rows] == ["returned", "untold"]
+
+
 async def test_a_stop_part_way_is_finished_on_restart_and_posts_no_final_classification_twice(
     tmp_path,
 ):
