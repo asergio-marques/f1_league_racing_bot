@@ -178,14 +178,16 @@ def module_off(module: str) -> str:
     return f"module.off:{module}"
 
 
-#: The kinds of weather's forecast changes, named here so that core (test mode) asks for them
-#: without importing the module, as `module_off` names a module's switch-off.
+#: The kinds of weather's forecast changes. Core names them to read what is still unfinished of
+#: each (test mode's choice of the next step), never to ask for them: `/test-mode advance` runs
+#: weather's own step, and `/test-mode toggle` asks only the flush. They stay here until test mode
+#: reads weather's changes through weather's own functions.
 FORECAST = "weather.forecast"
 FORECAST_CLEAN_UP = "weather.forecast.clean_up"
 FORECAST_FLUSH = "weather.forecast.flush"
 
-#: The kinds of attendance's four check-in changes, named here so that core (test mode) asks for
-#: them without importing the module, as the forecast's are.
+#: The kinds of attendance's four check-in changes, named here for the same reason as the
+#: forecast's: test mode reads what is unfinished of each, and asks for none.
 CHECK_IN_CALL = "attendance.check_in.call"
 CHECK_IN_LAST_NOTICE = "attendance.check_in.last_notice"
 CHECK_IN_DEADLINE = "attendance.check_in.deadline"
