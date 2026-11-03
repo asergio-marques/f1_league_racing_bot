@@ -78,7 +78,6 @@ class AdvanceStatus(Enum):
     ASKED = "asked"
     NOT_DUE = "not due"
     REFUSED = "refused"
-    FAILED = "failed"
 
 
 @dataclass(frozen=True)
@@ -86,17 +85,13 @@ class AdvanceOutcome:
     """What became of the step `/test-mode advance` ran, as its module words it.
 
     *reply* goes to the maintainer. *log* is the lines of the success line in the log channel
-    below its first, which the command writes; *step*, *track* and *error* name a failure for
-    `report_failure`. The command makes the replies and lines of its own from nothing here, so
-    a module's step owns every word of its kind's advance.
+    below its first, which the command writes. The command makes no reply or line of its own from
+    anything here, so a module's step owns every word of its kind's advance.
     """
 
     status: AdvanceStatus
-    reply: str = ""
+    reply: str
     log: str = ""
-    step: str = ""
-    track: str | None = None
-    error: Exception | None = None
 
     @classmethod
     def asked(cls, reply: str, log: str) -> AdvanceOutcome:
@@ -114,15 +109,19 @@ class AdvanceOutcome:
         """The step is refused: *reply* as a refusal, recorded in the log channel."""
         return cls(AdvanceStatus.REFUSED, reply)
 
-    @classmethod
-    def failed(
-        cls, step: str, error: Exception, *, track: str | None = None
-    ) -> AdvanceOutcome:
-        """The step raised *error* at *step* (and the round's *track*, where a weather phase)."""
-        return cls(AdvanceStatus.FAILED, step=step, track=track, error=error)
+
+class AdvanceStepFailed(Exception):
+    """A step failed, its fault the exception's `__cause__`. *step* names it as the failure report
+    words it ("Phase 2", "the RSVP deadline"), and *track* the weather phase's track."""
+
+    def __init__(self, step: str, *, track: str | None = None) -> None:
+        super().__init__(step)
+        self.step = step
+        self.track = track
 
 
-#: A kind's step, handed the entry it was picked for.
+#: A kind's step, handed the entry it was picked for. It raises `AdvanceStepFailed` for a fault,
+#: from the fault, to be named.
 AdvanceStep = Callable[[PhaseEntry], Awaitable[AdvanceOutcome]]
 
 #: Each round job kind's step, signed up by the builder before the bot connects, as the
@@ -135,26 +134,25 @@ def register_advance(kind: str, step: AdvanceStep) -> None:
     _ADVANCE_STEPS[kind] = step
 
 
-async def run_advance_step(scheduler_service: SchedulerService, entry: PhaseEntry) -> AdvanceOutcome:
+async def run_advance_step(
+    scheduler_service: SchedulerService, entry: PhaseEntry
+) -> AdvanceOutcome:
     """Run the step signed up for the *entry*'s kind and return what became of it.
 
     The round's job of that kind is taken down first, by round and kind, whether the entry came
     from the job store or was found from database state: left queued, it would fire the step
     again at its own moment. It goes before the step runs, so that a step that raises leaves no
-    job to ask it a second time. A kind with no step signed up, or a step that raises, is a
-    failure outcome, not an exception.
+    job to ask it a second time. A kind with no step signed up raises `AdvanceStepFailed`
+    naming the kind, as a step that fails does, and takes no job down.
     """
     kind = entry["kind"]
     step = _ADVANCE_STEPS.get(kind)
     if step is None:
-        return AdvanceOutcome.failed(
-            kind, LookupError(f"no /test-mode advance step is signed up for {kind}")
+        raise AdvanceStepFailed(kind) from LookupError(
+            f"no /test-mode advance step is signed up for {kind}"
         )
     scheduler_service.cancel_round(entry["round_id"], only=frozenset({kind}))
-    try:
-        return await step(entry)
-    except Exception as exc:  # noqa: BLE001 — reported by the command, to name the step
-        return AdvanceOutcome.failed(kind, exc)
+    return await step(entry)
 
 
 # ---------------------------------------------------------------------------

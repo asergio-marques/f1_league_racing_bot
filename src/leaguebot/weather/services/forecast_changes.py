@@ -62,6 +62,12 @@ from leaguebot.core.services.change_queue import (
     StepContext,
     StepView,
 )
+from leaguebot.core.services.test_mode_service import (
+    AdvanceOutcome,
+    AdvanceStep,
+    AdvanceStepFailed,
+    PhaseEntry,
+)
 from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services import (
     forecast_cleanup_service,
@@ -468,10 +474,20 @@ def forecast_change(*, now: Callable[[], datetime]) -> ChangeType:
     )
 
 
+@dataclass(frozen=True)
+class ForecastAsked:
+    """What `ask_forecast` asked: the *phase* asked (0 where a mystery round's phase 1 became its
+    notice) and the queue's *change* id, None where it dropped the ask as not due."""
+
+    phase: int
+    change: int | None
+
+
 async def ask_forecast(
     queue: ChangeQueue, db_path: str, round_id: int, phase: int
-) -> None:
-    """Ask the queue to draw, post and supersede *phase* of *round_id*, as its timer does.
+) -> ForecastAsked | None:
+    """Ask the queue to draw, post and supersede *phase* of *round_id*, as its timer does, and
+    return what was asked; None where nothing was.
 
     The mystery rule is weather's: a mystery round's phase 1 is asked as its notice (phase 0),
     and its phases 2 and 3 asked of nothing. A round that is not there asks nothing either. The
@@ -487,20 +503,21 @@ async def ask_forecast(
         row = await cursor.fetchone()
     if row is None:
         log.error("Forecast: round_id=%s not found — nothing asked of the queue.", round_id)
-        return
+        return None
     if row["format"] == "MYSTERY":
         if phase not in (0, 1):
             log.info(
                 "Phase %s of mystery round %s has no forecast — nothing asked of the queue.",
                 phase, round_id,
             )
-            return
+            return None
         phase = 0
     payload = {
         "round_id": round_id, "phase": phase, "division_name": row["name"],
         "round_number": row["round_number"],
     }
-    await queue.ask(FORECAST, payload, what=_doing(payload), origin=ChangeOrigin.BOT)
+    change = await queue.ask(FORECAST, payload, what=_doing(payload), origin=ChangeOrigin.BOT)
+    return ForecastAsked(phase, change)
 
 
 #: The phases whose forecasts a clean-up deletes: whichever of them still stands a day after the
@@ -602,11 +619,23 @@ async def _recorded(db: aiosqlite.Connection, round_id: int, phase: int) -> bool
     return await cursor.fetchone() is not None
 
 
-async def ask_forecast_clean_up(queue: ChangeQueue, db_path: str, round_id: int) -> None:
+@dataclass(frozen=True)
+class CleanUpAsked:
+    """What `ask_forecast_clean_up` asked: the phases *standing* that it names, and the queue's
+    *change* id, None where it dropped the ask as not due."""
+
+    standing: list[int]
+    change: int | None
+
+
+async def ask_forecast_clean_up(
+    queue: ChangeQueue, db_path: str, round_id: int
+) -> CleanUpAsked | None:
     """Ask the queue to delete the forecast of *round_id* that still stands (Phase 1 to 3), as its
-    timer does a day after the race. A round that is not there asks nothing; the change's check
-    drops a request that is no longer due. The phases standing as it is asked (`standing`) name
-    the change; the jobs delete what stands when they run."""
+    timer does a day after the race, and return what was asked; None where nothing was. A round
+    that is not there asks nothing; the change's check drops a request that is no longer due. The
+    phases standing as it is asked (`standing`) name the change; the jobs delete what stands when
+    they run."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT r.round_number, d.name FROM rounds r "
@@ -620,15 +649,16 @@ async def ask_forecast_clean_up(queue: ChangeQueue, db_path: str, round_id: int)
     if row is None:
         log.error("Forecast clean-up: round_id=%s not found — nothing asked of the queue.",
                   round_id)
-        return
+        return None
     payload = {
         "round_id": round_id, "phases": list(CLEAN_UP_PHASES), "clean_up": True,
         "standing": standing,
         "division_name": row["name"],
         "round_number": row["round_number"],
     }
-    await queue.ask(FORECAST_CLEAN_UP, payload, what=_clean_up_doing(payload),
-                    origin=ChangeOrigin.BOT)
+    change = await queue.ask(FORECAST_CLEAN_UP, payload, what=_clean_up_doing(payload),
+                             origin=ChangeOrigin.BOT)
+    return CleanUpAsked(standing, change)
 
 
 async def ask_forecast_flush(queue: ChangeQueue) -> None:
@@ -667,6 +697,82 @@ def timer_callbacks(queue: ChangeQueue, db_path: str) -> TimerCallbacks:
         phases={1: _phase(1), 2: _phase(2), 3: _phase(3)},
         clean_up=clean_up,
     )
+
+
+def advance_steps(queue: ChangeQueue, db_path: str) -> dict[str, AdvanceStep]:
+    """The step `/test-mode advance` runs for each of weather's kinds of round job: the three
+    phases and the clean-up, each asking *queue* as its timer does (`ask_forecast`,
+    `ask_forecast_clean_up`), early.
+
+    The mystery rule is `ask_forecast`'s: a round's `weather_p1` step is its notice where its
+    format is mystery and Phase 1 otherwise, so that a notice found from the job store and one
+    found from database state reach the same step. A fault is named as the entry names its step:
+    the notice (phase number 0), or the phase and its track. Each step's words, and the change it
+    asks, are what advance has always said and asked.
+    """
+
+    def phase_step(phase: int) -> AdvanceStep:
+        async def step(entry: PhaseEntry) -> AdvanceOutcome:
+            division, number = entry["division_name"], entry["round_number"]
+            notice = entry["phase_number"] == 0
+            try:
+                asked = await ask_forecast(queue, db_path, entry["round_id"], phase)
+            except Exception as exc:  # noqa: BLE001 — named by the command, which reports it
+                if notice:
+                    raise AdvanceStepFailed("the Mystery Round notice") from exc
+                raise AdvanceStepFailed(f"Phase {phase}", track=entry["track_name"]) from exc
+            if asked is not None and asked.phase == 0:
+                if asked.change is None:
+                    return AdvanceOutcome.not_due(
+                        f"🔮 The **Mystery Round notice** for **{division}** — "
+                        f"**Round {number}** was not due: its race has been run."
+                    )
+                return AdvanceOutcome.asked(
+                    f"🔮 The **Mystery Round notice** for **{division}** — **Round {number}** "
+                    f"is on the change queue: it goes to the division forecast channel as soon "
+                    f"as the queue reaches it.",
+                    f"  phase: Mystery Round notice\n  division: {division}\n"
+                    f"  round: Round {number}",
+                )
+            if asked is None or asked.change is None:
+                # The forecast's check dropped it (A25): its race has been run. Nothing is on the
+                # queue.
+                return AdvanceOutcome.not_due(
+                    f"⏩ **Phase {phase}** for **{division}** — **Round {number}** was not due: "
+                    f"its race has been run."
+                )
+            return AdvanceOutcome.asked(
+                f"⏩ **Phase {phase}** for **{division}** — **{entry['track_name']}** is on the "
+                f"change queue: its forecast goes to the forecast channel and its calculation "
+                f"to the log channel as soon as the queue reaches it.",
+                f"  phase: {phase}\n  division: {division}\n  track: {entry['track_name']}\n"
+                f"  round: {number}",
+            )
+
+        return step
+
+    async def clean_up(entry: PhaseEntry) -> AdvanceOutcome:
+        division, number = entry["division_name"], entry["round_number"]
+        try:
+            asked = await ask_forecast_clean_up(queue, db_path, entry["round_id"])
+        except Exception as exc:  # noqa: BLE001 — named by the command, which reports it
+            raise AdvanceStepFailed("the forecast cleanup") from exc
+        if asked is None or asked.change is None:
+            return AdvanceOutcome.not_due(
+                f"🧹 The **forecast cleanup** for **{division}** — **Round {number}** was not "
+                f"due: no forecast stands."
+            )
+        return AdvanceOutcome.asked(
+            f"🧹 The **forecast cleanup** for **{division}** — **Round {number}** is on the "
+            f"change queue: it deletes {forecasts_named(asked.standing)} as soon as the queue "
+            f"reaches it.",
+            f"  phase: cleanup\n  division: {division}\n  round: {number}",
+        )
+
+    return {
+        "weather_p1": phase_step(1), "weather_p2": phase_step(2), "weather_p3": phase_step(3),
+        "cleanup": clean_up,
+    }
 
 
 def forecast_failure(view: StepView) -> tuple[str, str] | None:

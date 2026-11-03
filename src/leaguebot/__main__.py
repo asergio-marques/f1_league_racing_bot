@@ -1006,7 +1006,8 @@ def register_change_types(bot: LeagueBot) -> None:
 def register_scheduler_callbacks(bot: LeagueBot) -> None:
     """Sign up the handler of every kind of job the scheduler fires, through `register_timer`:
     the weather phases, the forecast clean-up, the result submission, the four check-in jobs, the
-    portrait refresh, the amendment sweep and the signup close.
+    portrait refresh, the amendment sweep and the signup close; and, beside the handler of each
+    kind of a round's job, the step `/test-mode advance` runs for it (`register_advance`).
 
     Each asks the change queue. Weather's handlers hold the queue they were handed here
     (`timer_callbacks`); the others read it from the bot when they fire. The bot keeps the one
@@ -1015,13 +1016,16 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
     registered before the bot starts and before the scheduler does.
     """
     # Wire weather's handlers into the scheduler: each asks the change queue
-    from leaguebot.weather.services.forecast_changes import timer_callbacks
+    from leaguebot.core.services.test_mode_service import register_advance
+    from leaguebot.weather.services.forecast_changes import advance_steps, timer_callbacks
 
     scheduler = bot.scheduler_service
     callbacks = timer_callbacks(bot.change_queue, bot.db_path)
     for phase, handler in callbacks.phases.items():
         scheduler.register_timer(f"weather_p{phase}", handler)
     scheduler.register_timer("cleanup", callbacks.clean_up)
+    for kind, advance in advance_steps(bot.change_queue, bot.db_path).items():
+        register_advance(kind, advance)
 
     # Register result submission callback
     from leaguebot.results.services.submission_changes import ask_submission_open
