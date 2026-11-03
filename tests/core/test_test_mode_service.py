@@ -239,8 +239,10 @@ async def test_empty_queue_returns_none(tmp_path) -> None:
     assert result is None
 
 
+@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_mystery_round_notice_pending_returns_entry(tmp_path) -> None:
-    """Mystery round with notice unsent (phase1_done=0) returns a phase_number=0 entry."""
+    """Mystery round with notice unsent (phase1_done=0) returns a phase_number=0 entry, found
+    from database state and named by the `weather_p1` kind its job is armed under."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
     await _seed(db_path, [
@@ -249,6 +251,7 @@ async def test_mystery_round_notice_pending_returns_entry(tmp_path) -> None:
     result = await get_next_pending_phase(db_path)
     assert result is not None
     assert result["phase_number"] == 0
+    assert result["kind"] == "weather_p1"
 
 
 async def test_mystery_round_notice_done_excluded(tmp_path) -> None:
@@ -262,8 +265,9 @@ async def test_mystery_round_notice_done_excluded(tmp_path) -> None:
     assert result is None
 
 
+@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_phase_number_ordering_within_round(tmp_path) -> None:
-    """Phase 1 done, Phase 2 not done → returns phase_number 2."""
+    """Phase 1 done, Phase 2 not done → returns phase_number 2, of kind `weather_p2`."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
     await _seed(db_path, [
@@ -272,6 +276,7 @@ async def test_phase_number_ordering_within_round(tmp_path) -> None:
     result = await get_next_pending_phase(db_path)
     assert result is not None
     assert result["phase_number"] == 2
+    assert result["kind"] == "weather_p2"
 
 
 async def test_earliest_scheduled_round_comes_first(tmp_path) -> None:
@@ -482,8 +487,11 @@ async def test_misfired_fallback_weather_disabled_skips_phases(tmp_path) -> None
     assert result is None
 
 
+@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_misfired_fallback_canonical_order(tmp_path) -> None:
-    """Canonical order: P1 → RSVP-notice → P2 → RSVP-last → P3 → RSVP-deadline.
+    """Canonical order: P1 → RSVP-notice → P2 → RSVP-last → P3 → RSVP-deadline, each entry
+    named by its job's kind: `weather_p1`, `rsvp_notice`, `weather_p2`, `rsvp_last_notice`,
+    `weather_p3`, `rsvp_deadline`.
 
     Steps through one full round by calling get_next_pending_phase and manually
     advancing the relevant DB flag / RSVP row between each call.
@@ -497,14 +505,14 @@ async def test_misfired_fallback_canonical_order(tmp_path) -> None:
 
     # Step 1 — phase 1
     r = await get_next_pending_phase(db_path, stub)
-    assert r is not None and r["phase_number"] == 1
+    assert r is not None and (r["phase_number"], r["kind"]) == (1, "weather_p1")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = 1")
         await db.commit()
 
     # Step 2 — RSVP notice (phase 5)
     r = await get_next_pending_phase(db_path, stub)
-    assert r is not None and r["phase_number"] == 5
+    assert r is not None and (r["phase_number"], r["kind"]) == (5, "rsvp_notice")
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO rsvp_embed_messages "
@@ -515,14 +523,14 @@ async def test_misfired_fallback_canonical_order(tmp_path) -> None:
 
     # Step 3 — phase 2
     r = await get_next_pending_phase(db_path, stub)
-    assert r is not None and r["phase_number"] == 2
+    assert r is not None and (r["phase_number"], r["kind"]) == (2, "weather_p2")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE rounds SET phase2_done = 1 WHERE id = 1")
         await db.commit()
 
     # Step 4 — RSVP last-notice (phase 6)
     r = await get_next_pending_phase(db_path, stub)
-    assert r is not None and r["phase_number"] == 6
+    assert r is not None and (r["phase_number"], r["kind"]) == (6, "rsvp_last_notice")
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE rsvp_embed_messages SET last_notice_msg_id = 'msg2' "
@@ -532,20 +540,21 @@ async def test_misfired_fallback_canonical_order(tmp_path) -> None:
 
     # Step 5 — phase 3
     r = await get_next_pending_phase(db_path, stub)
-    assert r is not None and r["phase_number"] == 3
+    assert r is not None and (r["phase_number"], r["kind"]) == (3, "weather_p3")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = 1")
         await db.commit()
 
     # Step 6 — RSVP deadline (phase 7)
     r = await get_next_pending_phase(db_path, stub)
-    assert r is not None and r["phase_number"] == 7
+    assert r is not None and (r["phase_number"], r["kind"]) == (7, "rsvp_deadline")
 
 
+@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_earlier_misfired_round_beats_later_scheduler_job(tmp_path) -> None:
     """Earlier round with misfired phases must be advanced before a later
-    round whose scheduler job is still pending. The earlier round is still to be raced: a
-    raced round's weather steps are passed over (#439)."""
+    round whose scheduler job is still pending, its entry named by the `weather_p1` kind. The
+    earlier round is still to be raced: a raced round's weather steps are passed over (#439)."""
     earlier = (datetime.now(timezone.utc) + timedelta(days=2)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
@@ -569,6 +578,7 @@ async def test_earlier_misfired_round_beats_later_scheduler_job(tmp_path) -> Non
     assert result is not None
     assert result["track_name"] == "Bahrain"   # earlier round wins
     assert result["phase_number"] == 1
+    assert result["kind"] == "weather_p1"
 
 
 # ---------------------------------------------------------------------------
@@ -631,9 +641,11 @@ def _job(round_id: int, phase: int, *, days: float) -> dict:
     }
 
 
+@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_a_round_ends_with_its_forecast_then_its_check_in_coming_down(tmp_path) -> None:
     """With nothing else pending, what is left standing is what remains to take down — the
-    forecast first, as the two fall together and it is the lower step."""
+    forecast first, as the two fall together and it is the lower step. Each entry, found from
+    database state, is named by its kind: `cleanup`, then `rsvp_cleanup`."""
     db_path = str(tmp_path / "cleanups_last.db")
     await run_migrations(db_path)
     await _seed_all_done(db_path, [{"track_name": "Monaco"}])
@@ -641,13 +653,13 @@ async def test_a_round_ends_with_its_forecast_then_its_check_in_coming_down(tmp_
     stub = _StubScheduler()
 
     first = await get_next_pending_phase(db_path, stub)
-    assert first is not None and first["phase_number"] == 8
+    assert first is not None and (first["phase_number"], first["kind"]) == (8, "cleanup")
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM forecast_messages")
         await db.commit()
 
     second = await get_next_pending_phase(db_path, stub)
-    assert second is not None and second["phase_number"] == 9
+    assert second is not None and (second["phase_number"], second["kind"]) == (9, "rsvp_cleanup")
 
 
 async def test_a_cleared_round_is_not_offered_its_call_again(tmp_path) -> None:
@@ -766,14 +778,15 @@ async def test_the_database_fallback_offers_the_cleanups_last(tmp_path) -> None:
     assert (result["round_id"], result["phase_number"]) == (2, 1)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 @pytest.mark.parametrize("found", ["job in the store", "database fallback"])
 async def test_a_forecast_cleanup_is_offered_for_an_earlier_phase_still_standing(
     tmp_path, found
 ) -> None:
     """Round 1 is finished, its check-in cleared, and its Phase 3 never posted, so its Phase 2
     forecast stands. A day after the race the clean-up deletes whichever of Phases 1 to 3 is
-    still recorded (owner, 2026-10-12), so its cleanup (8) is offered: from its job in the store,
-    or from the database once the store is empty."""
+    still recorded (owner, 2026-10-12), so its cleanup (8) is offered, of kind `cleanup`: from its
+    job in the store, or from the database once the store is empty."""
     db_path = str(tmp_path / "phase_2_standing.db")
     await run_migrations(db_path)
     await _seed_all_done(db_path, [{"track_name": "Monaco"}])
@@ -786,7 +799,7 @@ async def test_a_forecast_cleanup_is_offered_for_an_earlier_phase_still_standing
     result = await get_next_pending_phase(db_path, stub)
 
     assert result is not None
-    assert (result["round_id"], result["phase_number"]) == (1, 8)
+    assert (result["round_id"], result["phase_number"], result["kind"]) == (1, 8, "cleanup")
 
 
 async def test_a_mystery_round_s_notice_is_offered_no_forecast_cleanup(tmp_path) -> None:
@@ -1253,10 +1266,11 @@ async def test_a_raced_round_s_weather_steps_are_passed_over(tmp_path, scheduler
     assert (result["round_id"], result["phase_number"]) == (2, 1)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> None:
     """Weather and results are on. Round 1 (Bahrain) was raced an hour ago with none of its
     phases done and no results submitted: advance passes over its weather steps alone, and
-    offers its result submission."""
+    offers its result submission, of kind `results`."""
     raced = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
     db_path = str(tmp_path / "raced_results.db")
     await run_migrations(db_path)
@@ -1271,7 +1285,7 @@ async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> N
     result = await get_next_pending_phase(db_path, _StubScheduler())
 
     assert result is not None
-    assert (result["round_id"], result["phase_number"]) == (1, 4)
+    assert (result["round_id"], result["phase_number"], result["kind"]) == (1, 4, "results")
 
 
 async def test_the_review_marks_a_raced_round_s_weather_steps_as_passed_over(tmp_path) -> None:
