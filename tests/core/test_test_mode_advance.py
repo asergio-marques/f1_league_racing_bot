@@ -774,32 +774,23 @@ CLEANUPS_ASKED = [
 ]
 
 
-@pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS_ASKED)
-async def test_each_cleanup_reaches_its_own_runner(tmp_path, phase, runner, label, prefix):
-    """The forecast cleanup (8) is asked of the change queue as a `weather.forecast.clean_up`
-    of the round, replying '🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on
-    the change queue: …'; the check-in cleanup (9) is asked of it as an
-    `attendance.check_in.clean_up` of the round, its reply saying it is on the change queue."""
+async def test_each_cleanup_reaches_its_own_runner(tmp_path):
+    """The forecast cleanup (8) of round 3 of Division 1 is next, no forecast row standing. It
+    is asked of the change queue as a `weather.forecast.clean_up` of the round, replying
+    '🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on the change queue: …',
+    the forecast it deletes named "the forecast". The check-in cleanup (9) is pinned by
+    `test_advancing_a_check_in_step_replies_on_the_change_queue`."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
-    await _advance(cog, interaction, _entry(phase))
+    await _advance(cog, interaction, _entry(8))
 
     [(kind, payload)] = _asked(cog)
-    if phase == 8:
-        assert (kind, payload["round_id"]) == (FORECAST_CLEAN_UP, ROUND_ID)
-        # No forecast row stands in the database, so the reply names "the forecast".
-        assert _replied(interaction) == (
-            "🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on the change "
-            "queue: it deletes the forecast as soon as the queue reaches it."
-        )
-    else:
-        assert (kind, payload["round_id"]) == (CHECK_IN_CLEAN_UP, ROUND_ID)
-        assert _replied(interaction) == (
-            "🧹 The **check-in cleanup** for **Division 1** — **Round 3** is on the change "
-            "queue: it takes down the check-in call, last notice and reserve announcement as "
-            "soon as the queue reaches it."
-        )
+    assert (kind, payload["round_id"]) == (FORECAST_CLEAN_UP, ROUND_ID)
+    assert _replied(interaction) == (
+        "🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on the change "
+        "queue: it deletes the forecast as soon as the queue reaches it."
+    )
 
 
 @pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS_ASKED)
