@@ -108,18 +108,20 @@ async def _pass(db_path):
     return result
 
 
-def _hooks(**overrides):
-    """A `SeasonEndHooks` double holding the three a driver's signup reaches, each recording
-    its calls: the closing notice, the channel's lock and the inactivity timeout."""
-    from types import SimpleNamespace
+#: Why the three tests of one driver's signup jobs fail until signup holds those jobs itself.
+_SIGNUP_OWNS_ITS_JOBS = "#283: signup's own season end jobs do not exist yet"
 
-    hooks = {
-        "post_signup_notice": AsyncMock(),
-        "lock_signup_channel": AsyncMock(),
-        "cancel_signup_timeout": MagicMock(),
-    }
-    hooks.update(overrides)
-    return SimpleNamespace(**hooks)
+
+def _signup_side(**wizard_overrides):
+    """The wizard service and the scheduler service a driver's signup jobs are handed, each
+    recording its calls: the closing notice posted (a channel held), the channel's lock, and the
+    inactivity timeout cancelled. *wizard_overrides* replace the wizard service's own."""
+    wizard_service = MagicMock()
+    wizard_service.trigger_channel_hold = AsyncMock(return_value=MagicMock(channel_id=5004))
+    wizard_service.lock_signup_channel = AsyncMock()
+    for name, value in wizard_overrides.items():
+        setattr(wizard_service, name, value)
+    return wizard_service, MagicMock()
 
 
 def _member_holding(role_id: int, user_id: int):
@@ -178,29 +180,35 @@ async def test_a_former_driver_keeps_their_placement_and_history(db_path):
         assert (await cursor.fetchone())[0] == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_SIGNUP_OWNS_ITS_JOBS)
 async def test_a_signup_in_review_has_its_channel_closed():
     """Driver 1004's signup is in review when the season ends. Their `signup_notice` job posts
     the closing notice in their signup channel, then their `close_signup` job locks the channel
     (its deletion armed 24 hours on) and cancels their inactivity timeout."""
-    from leaguebot.core.services.season_lifecycle_service import (
+    from leaguebot.signup.services.closing_steps import (
+        INACTIVITY_TIMER,
         close_driver_signup,
         post_driver_notice,
     )
+    from leaguebot.signup.services.wizard_service import inactivity_job_id
 
-    hooks = _hooks()
+    wizard_service, scheduler_service = _signup_side()
     guild = MagicMock()
     driver = {"user_id": "1004", "state": "PENDING_ADMIN_APPROVAL", "is_test_driver": 0}
     notice = "🔒 This season has ended. This channel will be automatically deleted in 24 hours."
 
-    await post_driver_notice(guild, driver, hooks=hooks, notice=notice)
-    await close_driver_signup(guild, driver, hooks=hooks)
+    await post_driver_notice(guild, driver, wizard_service=wizard_service, notice=notice)
+    await close_driver_signup(
+        guild, driver, wizard_service=wizard_service, scheduler_service=scheduler_service
+    )
 
-    (posted,) = hooks.post_signup_notice.await_args_list
+    (posted,) = wizard_service.trigger_channel_hold.await_args_list
     assert str(posted.args[0]) == "1004" and posted.args[2] == notice
-    (locked,) = hooks.lock_signup_channel.await_args_list
+    assert posted.kwargs == {"lock": False, "raise_on_failure": True}
+    (locked,) = wizard_service.lock_signup_channel.await_args_list
     assert str(locked.args[0]) == "1004"
-    (cancelled,) = hooks.cancel_signup_timeout.call_args_list
-    assert str(cancelled.args[0]) == "1004"
+    scheduler_service.cancel_job.assert_called_once_with(inactivity_job_id("1004"))
+    scheduler_service.disarm.assert_called_once_with(INACTIVITY_TIMER, "1004")
 
 
 async def test_the_driver_role_is_revoked_from_a_real_driver(db_path):
@@ -249,27 +257,27 @@ async def test_the_driver_role_survives_disabling_signup_and_is_still_revoked(db
     member.remove_roles.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=_SIGNUP_OWNS_ITS_JOBS)
 async def test_an_inactivity_timer_already_gone_does_not_stop_the_pass():
     """Driver 1004's inactivity timeout has already fired, so the scheduler no longer holds it:
     their `close_signup` job still locks the channel and is done, raising nothing."""
     from apscheduler.jobstores.base import JobLookupError
 
     from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.services.season_lifecycle_service import close_driver_signup
-    from leaguebot.signup.services.wizard_service import inactivity_job_id
+    from leaguebot.signup.services.closing_steps import close_driver_signup
 
     # The real scheduler service, over an APScheduler that no longer holds the job.
     scheduler = SchedulerService.__new__(SchedulerService)
     scheduler._scheduler = MagicMock()
     scheduler._scheduler.remove_job = MagicMock(side_effect=JobLookupError("no job"))
-    hooks = _hooks(
-        cancel_signup_timeout=lambda user_id: scheduler.cancel_job(inactivity_job_id(user_id))
-    )
+    wizard_service, _ = _signup_side()
     driver = {"user_id": "1004", "state": "PENDING_ADMIN_APPROVAL", "is_test_driver": 0}
 
-    await close_driver_signup(MagicMock(), driver, hooks=hooks)
+    await close_driver_signup(
+        MagicMock(), driver, wizard_service=wizard_service, scheduler_service=scheduler
+    )
 
-    hooks.lock_signup_channel.assert_awaited_once()
+    wizard_service.lock_signup_channel.assert_awaited_once()
 
 
 async def test_every_reset_goes_through_the_transition_table(db_path, monkeypatch):
@@ -512,33 +520,31 @@ async def test_the_pass_on_the_save_handed_names_each_driver_its_discord_side_re
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_SIGNUP_OWNS_ITS_JOBS)
 async def test_a_signup_channel_that_cannot_be_held_raises():
     """Driver 1004's signup is in review when the season ends. Discord refuses the closing
     notice in their signup channel: the `signup_notice` job raises, for the queue to stop on,
     before their channel is locked or their timeout cancelled. Today the failure is logged and
     the pass goes on (`season_lifecycle_service.py:480-481`)."""
-    from types import SimpleNamespace
-
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.core.services.season_lifecycle_service import post_driver_notice
+    from leaguebot.signup.services.closing_steps import post_driver_notice
 
     refusal = StepFailedOnDiscord("the closing notice could not be posted")
-    hooks = SimpleNamespace(
-        post_signup_notice=AsyncMock(side_effect=refusal),
-        lock_signup_channel=AsyncMock(),
-        cancel_signup_timeout=MagicMock(),
+    wizard_service, scheduler_service = _signup_side(
+        trigger_channel_hold=AsyncMock(side_effect=refusal)
     )
     driver = {"user_id": "1004", "state": "PENDING_ADMIN_APPROVAL", "is_test_driver": 0}
 
     with pytest.raises(StepFailedOnDiscord):
         await post_driver_notice(
-            MagicMock(), driver, hooks=hooks,
+            MagicMock(), driver, wizard_service=wizard_service,
             notice="🔒 This season has ended. This channel will be automatically deleted in 24 hours.",
         )
 
-    hooks.post_signup_notice.assert_awaited_once()
-    hooks.lock_signup_channel.assert_not_awaited()
-    hooks.cancel_signup_timeout.assert_not_called()
+    wizard_service.trigger_channel_hold.assert_awaited_once()
+    wizard_service.lock_signup_channel.assert_not_awaited()
+    scheduler_service.cancel_job.assert_not_called()
+    scheduler_service.disarm.assert_not_called()
 
 
 async def test_a_driver_role_discord_will_not_take_back_raises(tmp_path):
