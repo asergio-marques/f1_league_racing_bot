@@ -39,6 +39,7 @@ from tests.support.change_queue import (
     discard_job,
     http_error,
     member_interaction,
+    refuse_the_job,
     retry_job,
     run_queue,
     step_rows,
@@ -555,6 +556,41 @@ async def test_a_signup_channel_the_driver_pass_cannot_close_stops_the_queue(tmp
     assert [uid for uid, _notice in league.notices] == [SIGNING_UP]
     assert league.locked == [SIGNING_UP]
     assert len(_success_lines(league)) == 1
+
+
+#: The season end's jobs a module defines: the job, and the name the log channel's notice gives it
+#: when it stops the queue, as it always has. Kimi (105) is signing up; Pro's round 4 had its
+#: Phase 2 forecast posted (message 8002) under test mode.
+_MODULE_JOBS = [
+    pytest.param("signup_notice", f"telling <@{SIGNING_UP}> that their signup has closed",
+                 id="signup_notice"),
+    pytest.param("close_signup", f"closing the signup of <@{SIGNING_UP}>", id="close_signup"),
+    pytest.param("delete_forecast",
+                 f"deleting the Phase 2 forecast of round 4 in <#{DIVISIONS[PRO][3].forecast}>",
+                 id="delete_forecast"),
+]
+
+
+@pytest.mark.parametrize("job, name", _MODULE_JOBS)
+async def test_a_module_s_job_of_the_season_s_end_is_named_as_today_when_it_stops_the_queue(
+    tmp_path, job, name,
+):
+    """Every round final, test mode on, weather on; Kimi (105) part-way through signing up, and
+    Pro's round 4 Phase 2 forecast posted (message 8002) under test mode. The season is completed
+    and the save of one job a module defines for it fails, so the queue stops at it: the log
+    channel's notice that the queue stopped names the job word for word as it always has."""
+    league = await pending_completion_league(tmp_path, weather=True, test_mode=True)
+    await signing_up(league)
+    await posted_forecast(league, round_id(PRO, 4), 2, 8002)
+    await refuse_the_job(league.db_path, SEASON_COMPLETE_KIND, job, True)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert (await _stopped_at(league))[0] == job
+    stops = [line for line in _log_lines(league) if "The queue is stopped at job #" in line]
+    # Both ends of the name pinned: the notice reads "… stopped at job #N: {name} for {request} …".
+    assert f": {_logged(name)} for " in stops[-1]
 
 
 async def test_a_stop_part_way_is_finished_on_restart_and_posts_no_final_classification_twice(
