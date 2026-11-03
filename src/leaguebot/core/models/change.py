@@ -197,8 +197,9 @@ CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
 def forecasts_named(phases: Iterable[int]) -> str:
     """The forecasts a clean-up deletes, named by their phases as every text of the clean-up
     names them: "the Phase 2 forecast", "the Phase 1 and 2 forecasts", or "the forecast" where no
-    phase is known. Here so that core (test mode, the amendment, the restart) and weather name
-    the clean-up alike, the phase it really deletes and never one that is not standing."""
+    phase is known. Here so that core (the amendment, the restart) and weather (its changes and
+    its advance step) name the clean-up alike, the phase it really deletes and never one that is
+    not standing."""
     known = sorted(set(phases))
     if not known:
         return "the forecast"
