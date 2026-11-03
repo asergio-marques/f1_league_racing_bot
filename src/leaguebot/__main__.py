@@ -150,10 +150,7 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     from leaguebot.core.services import backup_service
     from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
     from leaguebot.image.services import driver_portrait_service
-    from leaguebot.signup.services.wizard_service import inactivity_job_id
-    from leaguebot.signup.services.closing_steps import (
-        INACTIVITY_TIMER, window_close_jobs, window_close_steps,
-    )
+    from leaguebot.signup.services.closing_steps import window_close_jobs, window_close_steps
     from leaguebot.weather.services import forecast_cleanup_service
     from leaguebot.weather.services.forecast_changes import forecast_steps
 
@@ -172,18 +169,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
             return False
         config = await bot.signup_module_service.get_config()
         return config is not None and config.signups_open
-
-    async def post_signup_notice(user_id: str, guild: discord.Guild, notice: str):
-        return await bot.wizard_service.trigger_channel_hold(
-            user_id, guild, notice, lock=False, raise_on_failure=True
-        )
-
-    async def lock_signup_channel(user_id: str, guild: discord.Guild) -> None:
-        await bot.wizard_service.lock_signup_channel(user_id, guild)
-
-    def cancel_signup_timeout(user_id: str) -> None:
-        bot.scheduler_service.cancel_job(inactivity_job_id(user_id))
-        bot.scheduler_service.disarm(INACTIVITY_TIMER, user_id)
 
     async def discard_portraits(accounts):
         return await driver_portrait_service.discard_portraits(bot, accounts)
@@ -228,9 +213,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
         window_open=window_open,
         # Read when it runs: a test replaces the scheduler's method after registering.
         cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
-        post_signup_notice=post_signup_notice,
-        lock_signup_channel=lock_signup_channel,
-        cancel_signup_timeout=cancel_signup_timeout,
         discard_portraits=discard_portraits,
         plan_forecast_flush=plan_forecast_flush,
         forecast_steps=forecast_steps(now=lambda: bot.change_queue.now()),
@@ -322,11 +304,21 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
     """Make the hooks a season's end declares, and sign each module's part up to them, in the order
     core calls them: what stands in the way of the completion and of the cancellation (results'
-    refusal of a season with a round being amended)."""
+    refusal of a season with a round being amended); the jobs planned for each driver a season's
+    end returns (signup's); and the steps the modules define for it (signup's notice and close)."""
     from leaguebot.results.services import result_submission_service
+    from leaguebot.signup.services import closing_steps
 
     bot.season_end_refused = AwaitedHook()
     bot.season_end_refused.subscribe(result_submission_service.season_end_refusal)
+    bot.driver_returned_jobs = Hook()
+    bot.driver_returned_jobs.subscribe(closing_steps.driver_returned_jobs)
+    bot.season_end_steps = Hook()
+    bot.season_end_steps.subscribe(partial(
+        closing_steps.season_end_steps,
+        wizard_service=lambda: bot.wizard_service,
+        scheduler_service=lambda: bot.scheduler_service,
+    ))
 
 
 async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "Path":
@@ -804,7 +796,14 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(forecast_clean_up_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(forecast_flush_change(now=lambda: bot.change_queue.now()))
     hooks = _season_end_hooks(bot)
-    bot.change_queue.register(wind_down_change(placement=bot.placement_service, hooks=hooks))
+    bot.change_queue.register(
+        wind_down_change(
+            placement=bot.placement_service,
+            hooks=hooks,
+            driver_returned_jobs=bot.driver_returned_jobs,
+            season_end_steps=bot.season_end_steps,
+        )
+    )
     bot.change_queue.register(
         season_complete_change(
             modules=bot.module_service,
@@ -812,6 +811,8 @@ def register_change_types(bot: LeagueBot) -> None:
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
             season_end_refused=bot.season_end_refused,
+            driver_returned_jobs=bot.driver_returned_jobs,
+            season_end_steps=bot.season_end_steps,
             hooks=hooks,
         )
     )
@@ -825,13 +826,19 @@ def register_change_types(bot: LeagueBot) -> None:
             rounds_called_off=bot.rounds_called_off,
             cancellation_steps=bot.cancellation_steps,
             season_end_refused=bot.season_end_refused,
+            driver_returned_jobs=bot.driver_returned_jobs,
+            season_end_steps=bot.season_end_steps,
             hooks=hooks,
             now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(
         season_abort_change(
-            seasons=bot.season_service, placement=bot.placement_service, hooks=hooks
+            seasons=bot.season_service,
+            placement=bot.placement_service,
+            driver_returned_jobs=bot.driver_returned_jobs,
+            season_end_steps=bot.season_end_steps,
+            hooks=hooks,
         )
     )
     # The season's approval is judged again as it runs: the clock is the queue's, the windows the

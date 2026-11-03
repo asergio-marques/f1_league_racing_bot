@@ -108,10 +108,6 @@ async def _pass(db_path):
     return result
 
 
-#: Why the three tests of one driver's signup jobs fail until signup holds those jobs itself.
-_SIGNUP_OWNS_ITS_JOBS = "#283: signup's own season end jobs do not exist yet"
-
-
 def _signup_side(**wizard_overrides):
     """The wizard service and the scheduler service a driver's signup jobs are handed, each
     recording its calls: the closing notice posted (a channel held), the channel's lock, and the
@@ -180,7 +176,6 @@ async def test_a_former_driver_keeps_their_placement_and_history(db_path):
         assert (await cursor.fetchone())[0] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_SIGNUP_OWNS_ITS_JOBS)
 async def test_a_signup_in_review_has_its_channel_closed():
     """Driver 1004's signup is in review when the season ends. Their `signup_notice` job posts
     the closing notice in their signup channel, then their `close_signup` job locks the channel
@@ -257,7 +252,6 @@ async def test_the_driver_role_survives_disabling_signup_and_is_still_revoked(db
     member.remove_roles.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=_SIGNUP_OWNS_ITS_JOBS)
 async def test_an_inactivity_timer_already_gone_does_not_stop_the_pass():
     """Driver 1004's inactivity timeout has already fired, so the scheduler no longer holds it:
     their `close_signup` job still locks the channel and is done, raising nothing."""
@@ -520,7 +514,6 @@ async def test_the_pass_on_the_save_handed_names_each_driver_its_discord_side_re
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_SIGNUP_OWNS_ITS_JOBS)
 async def test_a_signup_channel_that_cannot_be_held_raises():
     """Driver 1004's signup is in review when the season ends. Discord refuses the closing
     notice in their signup channel: the `signup_notice` job raises, for the queue to stop on,

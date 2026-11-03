@@ -2,7 +2,7 @@
 
 A season ends when a league admin runs `/season complete`, `/season cancel` or `/season abort`,
 and in no other way: each is a change type of the queue (`season_end_changes`,
-`cancellation_changes`), whose jobs this module holds the shared ones of (`season_end_steps`) and
+`cancellation_changes`), whose jobs this module holds the shared ones of (`shared_steps`) and
 whose saves it holds the writes of (`write_driver_history_entries_on`, `season_role_targets_on`).
 
 There was once a second entry point, `check_and_schedule_season_end`, which armed a timer to end a
@@ -32,7 +32,7 @@ from leaguebot.core.services.season_lifecycle_service import (
 
 if TYPE_CHECKING:
     import aiosqlite
-    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.core.utils.hooks import AwaitedHook, Hook
     from leaguebot.core.services.placement_service import PlacementService
 
 log = logging.getLogger(__name__)
@@ -266,7 +266,9 @@ async def season_role_targets_on(db: aiosqlite.Connection, season_id: int) -> li
     return targets
 
 
-def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> dict[str, Step]:
+def shared_steps(
+    placement: "PlacementService", hooks: SeasonEndHooks, *, season_end_steps: "Hook"
+) -> dict[str, Step]:
     """The jobs the completion, the cancellation and the abort share (#439), each an ACT.
 
     - `revoke_roles`: one driver's division, team and driver roles taken back, from the targets
@@ -279,7 +281,8 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
     - `discard_portraits`: the portraits of the drivers the driver pass deleted removed.
     - `discard_backup`: the saved test-mode state deleted (a completion's alone).
     - `forget_setup`: the setup held in memory let go of (an abort's alone).
-    - the three jobs of one driver's Discord side (`close_signup_steps`).
+    - the jobs of one driver's Discord side (`close_signup_steps`), among them those the modules
+      define for a season's end (*season_end_steps*).
 
     Every one raises where it fails, for the queue to stop on.
     """
@@ -370,5 +373,5 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
         DELETE_FORECAST: hooks.forecast_steps[DELETE_FORECAST],
         # A forecast posted in parts has `delete_forecast` plan a delete for each earlier part.
         standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
-        **close_signup_steps(placement, hooks),
+        **close_signup_steps(placement, hooks, season_end_steps=season_end_steps),
     }

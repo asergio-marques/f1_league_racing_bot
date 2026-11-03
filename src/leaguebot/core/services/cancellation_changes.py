@@ -152,8 +152,8 @@ from leaguebot.core.services.season_end_service import (
     REVOKE_ROLES,
     SEASON_END_CAUSE,
     refusal_of_the_modules,
-    season_end_steps,
     season_role_targets_on,
+    shared_steps,
     write_driver_history_entries_on,
 )
 from leaguebot.core.services.season_lifecycle_service import (
@@ -1341,6 +1341,8 @@ def season_cancel_change(
     rounds_called_off: AwaitedHook,
     cancellation_steps: Hook,
     season_end_refused: AwaitedHook,
+    driver_returned_jobs: Hook,
+    season_end_steps: Hook,
     hooks: SeasonEndHooks,
     now: Callable[[], datetime],
 ) -> ChangeType:
@@ -1349,7 +1351,8 @@ def season_cancel_change(
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *modules*, the
     *seasons* service, the *scheduler*, the *placement* service (which takes back roles), the hooks
     the modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_steps*,
-    *season_end_refused*), the season end's *hooks* and the queue's clock *now*.
+    *season_end_refused*, *driver_returned_jobs*, *season_end_steps*), the season end's *hooks* and
+    the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1543,6 +1546,7 @@ def season_cancel_change(
             driver_jobs(
                 driver_pass.drivers, driver_pass.driver_role_id,
                 notice=SEASON_ENDED_NOTICE, reason=SEASON_CANCELLED_REASON,
+                driver_returned_jobs=driver_returned_jobs,
             )
         )
         if driver_pass.accounts:
@@ -1652,7 +1656,7 @@ def season_cancel_change(
         **_follow_steps(
             modules=modules, seasons=seasons, scope=notices.SCOPE_SEASON,
         ),
-        **season_end_steps(placement, hooks),
+        **shared_steps(placement, hooks, season_end_steps=season_end_steps),
         **_steps_of_the_modules(cancellation_steps),
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,

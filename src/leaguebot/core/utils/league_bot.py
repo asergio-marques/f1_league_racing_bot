@@ -117,10 +117,14 @@ class LeagueBot(commands.Bot):
     rounds_called_off: AwaitedHook
     cancellation_steps: Hook
     #: The moments of a season's end, each module signing up its part: what stands in the way of
-    #: the completion and of the cancellation (each hands back a refusal or None). The builder
-    #: makes them and hands them to the season's end (architecture.md, "A hook core declares is a
-    #: list of subscribers").
+    #: the completion and of the cancellation (each hands back a refusal or None), the jobs planned
+    #: for each driver returned (each hands back the steps it plans for the driver), and the steps
+    #: a module defines for it (each hands back its step definitions by name). The builder makes
+    #: them and hands them to the season's end (architecture.md, "A hook core declares is a list
+    #: of subscribers").
     season_end_refused: AwaitedHook
+    driver_returned_jobs: Hook
+    season_end_steps: Hook
     #: Starts the retry cog's loop. The builder sets it, so that `setup_hook` reaches the loop
     #: without importing the cog, which nothing below the cogs may do.
     start_retry_loop: Callable[[], None]

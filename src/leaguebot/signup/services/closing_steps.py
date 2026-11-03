@@ -19,7 +19,7 @@ lane alone. It needs only its channel to stand, not the signup it closes: that h
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -39,7 +39,11 @@ from leaguebot.core.models.change import (
 from leaguebot.core.services import standing_posts
 from leaguebot.core.services.audit_service import record_system_change_on
 from leaguebot.core.services.season_end_changes import season_ending_on
-from leaguebot.core.services.season_lifecycle_service import advance_on_window_close_on
+from leaguebot.core.services.season_lifecycle_service import (
+    NO_CHANNEL_LEFT,
+    advance_on_window_close_on,
+    require_guild,
+)
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -54,7 +58,9 @@ from leaguebot.signup.services.signup_posting import post
 
 if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
+    from leaguebot.signup.services.wizard_service import WizardService
 
 #: The job that deletes the reason a manager typed after Reject, ahead of the closing notice that
 #: gives it.
@@ -97,12 +103,22 @@ EXPIRED_NOTICE = (
     "This channel will be automatically deleted in 24 hours."
 )
 
+#: The states of a driver whose signup is still in progress or in review: a season's end that
+#: returns such a driver to Not Signed Up tells their signup channel and closes it.
+_SIGNUP_IN_PROGRESS: frozenset[str] = frozenset({
+    "PENDING_SIGNUP_COMPLETION",
+    "PENDING_ADMIN_APPROVAL",
+    "AWAITING_CORRECTION_PARAMETER",
+    "PENDING_DRIVER_CORRECTION",
+})
+
 __all__ = [
     "ARM_DELETION", "CLOSED_NOTICE", "CLOSE_CAUSES", "CLOSE_SIGNUP", "DELETE_BUTTON", "DELETE_REASON",
     "DELETE_TIMER",
     "CHANNEL_GONE", "DELETE_KIND", "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND",
-    "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "ask_channel_delete", "ask_expiry", "closing_change",
-    "closing_steps", "reason_delete_change", "take_reason_down", "window_close_jobs", "window_close_steps",
+    "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "ask_channel_delete", "ask_expiry", "close_driver_signup",
+    "closing_change", "closing_steps", "driver_returned_jobs", "post_driver_notice", "reason_delete_change",
+    "season_end_steps", "take_reason_down", "window_close_jobs", "window_close_steps",
 ]
 
 
@@ -228,6 +244,124 @@ def closing_steps(*, now: Callable[[], datetime], arm_once: Callable[[str, str, 
         SIGNUP_NOTICE: Step(SIGNUP_NOTICE, StepKind.ACT, signup_notice, describe=describe_notice),
         CLOSE_SIGNUP: Step(CLOSE_SIGNUP, StepKind.ACT, close_signup, describe=describe_close),
         ARM_DELETION: Step(ARM_DELETION, StepKind.ACT, arm_deletion, describe=describe_arm),
+    }
+
+
+def driver_returned_jobs(driver: Mapping[str, Any], *, notice: str) -> tuple[PlannedStep, ...]:
+    """The jobs signup plans for one driver a season's end returns to Not Signed Up: a signup still
+    in progress or in review is told *notice* (`signup_notice`) and then has its channel closed
+    (`close_signup`); any other driver needs nothing of signup. *driver* holds their ``user_id``
+    and ``state`` (the one they were in). Subscribed to core's `driver_returned_jobs`."""
+    if driver["state"] not in _SIGNUP_IN_PROGRESS:
+        return ()
+    user_id = str(driver["user_id"])
+    return (
+        PlannedStep(SIGNUP_NOTICE, {"user_id": user_id, "notice": notice}),
+        PlannedStep(CLOSE_SIGNUP, {"user_id": user_id}),
+    )
+
+
+async def post_driver_notice(
+    guild: discord.Guild, driver: Mapping[str, Any], *, wizard_service: "WizardService", notice: str
+) -> dict:
+    """Tell one driver's signup channel *notice*, before anything is locked (the `signup_notice`
+    job of a season's end).
+
+    *driver* holds their ``user_id``. A refusal from Discord raises, for the queue to stop on with
+    the channel still readable and writable; a wizard with no channel, or a channel gone, is
+    nothing to tell and the job is done.
+    """
+    held = await wizard_service.trigger_channel_hold(
+        str(driver["user_id"]), guild, notice, lock=False, raise_on_failure=True
+    )
+    return {"no_channel": True} if held.channel_id is None else {}
+
+
+def cancel_signup_timeout(scheduler_service: "SchedulerService", user_id: str) -> None:
+    """Remove one driver's inactivity timeout, and the record of its timer; one the scheduler no
+    longer holds is nothing to remove."""
+    # Imported here: the wizard service imports this module.
+    from leaguebot.signup.services.wizard_service import inactivity_job_id
+
+    scheduler_service.cancel_job(inactivity_job_id(user_id))
+    scheduler_service.disarm(INACTIVITY_TIMER, user_id)
+
+
+async def close_driver_signup(
+    guild: discord.Guild,
+    driver: Mapping[str, Any],
+    *,
+    wizard_service: "WizardService",
+    scheduler_service: "SchedulerService",
+) -> dict:
+    """Close one driver's signup channel and cancel their inactivity timeout (the `close_signup`
+    job of a season's end).
+
+    The channel loses the driver's write access and its deletion is armed 24 hours on. It runs
+    whether the `signup_notice` job before it went through or was discarded. A timeout the
+    scheduler no longer holds is nothing to cancel.
+    """
+    user_id = str(driver["user_id"])
+    await wizard_service.lock_signup_channel(user_id, guild)
+    cancel_signup_timeout(scheduler_service, user_id)
+    return {}
+
+
+def season_end_steps(
+    *,
+    wizard_service: Callable[[], "WizardService"],
+    scheduler_service: Callable[[], "SchedulerService"],
+    line_prefix: str | None = None,
+) -> dict[str, Step]:
+    """The two jobs of one driver's signup channel at a season's end, by name: `signup_notice`
+    tells the channel why it closes and `close_signup` locks it. A driver with no signup channel
+    left is passed over by `signup_notice`, and `close_signup` then has nothing to lock or delete.
+    The change's closing outcome names them; where the change has no closing line of its own,
+    *line_prefix* ("System | Every division is done") has the notice job write one. Subscribed to
+    core's `season_end_steps`.
+
+    *wizard_service* and *scheduler_service* are getters, so that each is the one the bot holds
+    when the job runs.
+    """
+
+    async def signup_notice(ctx: StepContext) -> StepResult:
+        guild = await require_guild(ctx.bot)
+        result = await post_driver_notice(
+            guild, ctx.step_payload, wizard_service=wizard_service(),
+            notice=str(ctx.step_payload["notice"]),
+        )
+        lines: tuple[str, ...] = ()
+        if result.get("no_channel") and line_prefix:
+            who = f"<@{ctx.step_payload['user_id']}>"
+            lines = (f"{line_prefix} | {NO_CHANNEL_LEFT.format(who=who)}",)
+        return StepResult(result=result, lines=lines)
+
+    async def close_signup(ctx: StepContext) -> StepResult:
+        guild = await require_guild(ctx.bot)
+        user_id = str(ctx.step_payload["user_id"])
+        if any(
+            view.name == SIGNUP_NOTICE and view.done
+            and str(view.payload.get("user_id")) == user_id
+            and (view.result or {}).get("no_channel")
+            for view in ctx.steps
+        ):
+            # Nothing to lock or delete: the notice found no channel left.
+            cancel_signup_timeout(scheduler_service(), user_id)
+            return StepResult(result={"no_channel": True})
+        return StepResult(result=await close_driver_signup(
+            guild, ctx.step_payload, wizard_service=wizard_service(),
+            scheduler_service=scheduler_service(),
+        ))
+
+    async def describe_notice(ctx: StepContext) -> str:
+        return f"telling <@{ctx.step_payload['user_id']}> that their signup has closed"
+
+    async def describe_close(ctx: StepContext) -> str:
+        return f"closing the signup of <@{ctx.step_payload['user_id']}>"
+
+    return {
+        SIGNUP_NOTICE: Step(SIGNUP_NOTICE, StepKind.ACT, signup_notice, describe=describe_notice),
+        CLOSE_SIGNUP: Step(CLOSE_SIGNUP, StepKind.ACT, close_signup, describe=describe_close),
     }
 
 

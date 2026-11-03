@@ -89,8 +89,8 @@ from leaguebot.core.services.season_end_service import (
     REVOKE_ROLES,
     SEASON_END_CAUSE,
     refusal_of_the_modules,
-    season_end_steps,
     season_role_targets_on,
+    shared_steps,
     write_driver_history_entries_on,
 )
 from leaguebot.core.services.season_lifecycle_service import (
@@ -120,7 +120,7 @@ from leaguebot.core.services.season_service import (
     refresh_division_status_on,
 )
 from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
@@ -531,15 +531,17 @@ def season_complete_change(
     scheduler: "SchedulerService",
     placement: "PlacementService",
     season_end_refused: AwaitedHook,
+    driver_returned_jobs: Hook,
+    season_end_steps: Hook,
     hooks: SeasonEndHooks,
 ) -> ChangeType:
     """The change that completes the confirmed season; see the module.
 
     The builder hands in *modules* (which of results and attendance are on), the *seasons*
     service (the season the check reads), the *scheduler* (whose season-end job `settle` removes),
-    the *placement* service (which takes back roles), the hook the modules sign up to
-    (*season_end_refused*) and the season end's *hooks* (what other modules and the cog do for
-    it).
+    the *placement* service (which takes back roles), the hooks the modules sign up to
+    (*season_end_refused*, *driver_returned_jobs*, *season_end_steps*) and the season end's
+    *hooks* (what other modules and the cog do for it).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -656,6 +658,7 @@ def season_complete_change(
             driver_jobs(
                 driver_pass.drivers, driver_pass.driver_role_id,
                 notice=SEASON_ENDED_NOTICE, reason=SEASON_ENDED_REASON,
+                driver_returned_jobs=driver_returned_jobs,
             )
         )
         if driver_pass.accounts:
@@ -805,7 +808,7 @@ def season_complete_change(
     async def describe_close(_ctx: StepContext) -> str:
         return "recording the completion of the season"
 
-    winding = wind_down_steps(hooks)
+    winding = wind_down_steps(hooks, driver_returned_jobs)
     turn_down = winding[TURN_DOWN_STEP]
 
     async def turn_down_then_settle(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
@@ -829,7 +832,7 @@ def season_complete_change(
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
         **winding,
         TURN_DOWN_STEP: replace(turn_down, run=turn_down_then_settle),
-        **season_end_steps(placement, hooks),
+        **shared_steps(placement, hooks, season_end_steps=season_end_steps),
     }
     return ChangeType(
         kind=SEASON_COMPLETE,
@@ -846,13 +849,16 @@ def season_abort_change(
     *,
     seasons: "SeasonService",
     placement: "PlacementService",
+    driver_returned_jobs: Hook,
+    season_end_steps: Hook,
     hooks: SeasonEndHooks,
 ) -> ChangeType:
     """The change that aborts the season being set up; see the module.
 
     The payload is ``{"season_id"}``: a season set up has no number until its placements are
     confirmed. The builder hands in the *seasons* service (the season the check reads), the
-    *placement* service (which takes back roles) and the season end's *hooks*.
+    *placement* service (which takes back roles), the hooks the modules sign up to
+    (*driver_returned_jobs*, *season_end_steps*) and the season end's *hooks*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -901,6 +907,7 @@ def season_abort_change(
             driver_jobs(
                 driver_pass.drivers, driver_pass.driver_role_id,
                 notice=SEASON_ENDED_NOTICE, reason=SEASON_ENDED_REASON,
+                driver_returned_jobs=driver_returned_jobs,
             )
         )
         if driver_pass.accounts:
@@ -987,7 +994,7 @@ def season_abort_change(
             "set up until the bot restarts"
         )
 
-    shared = season_end_steps(placement, hooks)
+    shared = shared_steps(placement, hooks, season_end_steps=season_end_steps)
     steps: dict[str, Step] = {
         **shared,
         # Only an abort holds a setup the bot must let go of, so the mark is not on the shared step.
