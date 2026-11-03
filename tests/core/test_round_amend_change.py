@@ -1539,7 +1539,8 @@ async def test_a_module_s_job_of_the_amendment_is_named_as_today_when_it_stops_t
         await _place_and_discard_past_the_deadline(league)
 
     assert await _stopped_at(league) == job
-    assert name in _stop_notices(league)[-1]
+    # Both ends of the name pinned: the notice reads "… stopped at job #N: {name} for {request} …".
+    assert f": {name} for " in _stop_notices(league)[-1]
 
 
 async def test_an_amendment_s_clean_up_whose_delete_is_refused_stops_the_queue(tmp_path):
