@@ -593,13 +593,15 @@ async def test_a_lapse_whose_entry_was_replaced_does_nothing(tmp_path, monkeypat
     assert not any(text.startswith("⌛") for text in _sent(press))
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the bot has no hook for the in-memory clear")
 async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(tmp_path):
     """`/bot pack` and `/bot factory-reset` clear the league's state in memory: every pending
     reason goes, and its lapse with it, so no lapse fires into a league that has changed.
     Managers 77 and 78 press Reject and Request Changes on Kimi's panel; the league's memory is
-    cleared, handed the change queue: both lapses are cancelled, no reason is left waiting, and
-    no lapse is recorded or told. The lapses keep their five minutes: a lapse of no length would
-    fire while the second press reads the database, and leave one pending."""
+    cleared, handed the hook the builder signed signup up to and the change queue: both lapses
+    are cancelled, no reason is left waiting, and no lapse is recorded or told. The lapses keep
+    their five minutes: a lapse of no length would fire while the second press reads the
+    database, and leave one pending."""
     from leaguebot.core.services.in_memory_state import clear_in_memory_state
 
     league = await _league(tmp_path)
@@ -608,7 +610,7 @@ async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(tmp_path
     requesting = await _press(league, "request_changes_button", by=SECOND_MANAGER)
     lapses = [entry["lapse"] for entry in _PENDING_REASONS.values()]
 
-    clear_in_memory_state(league.bot, queue=league.bot.change_queue)
+    clear_in_memory_state(league.bot.in_memory_state_cleared, queue=league.bot.change_queue)
     await asyncio.gather(*lapses, return_exceptions=True)
 
     assert len(lapses) == 2 and all(lapse.cancelled() for lapse in lapses)

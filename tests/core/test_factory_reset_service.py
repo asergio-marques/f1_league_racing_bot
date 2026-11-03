@@ -280,24 +280,28 @@ async def test_the_wipe_frees_the_claim(db_path):
     assert await ConfigService(db_path).get_league_server_id() is None
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the wipe is handed the bot, not the in-memory clear's hook"
+)
 async def test_the_wipe_clears_every_job_and_the_memory(db_path, monkeypatch):
     """The wipe cancels every scheduled job and clears what the bot holds in memory, handing
-    the clear the change queue it was handed (#439 slice 6b, fold-in 6)."""
+    the clear the hook every module's part of it is signed up to and the change queue, both as it
+    was handed them (#439 slice 6b, fold-in 6)."""
     from unittest.mock import MagicMock
 
     cleared = []
     monkeypatch.setattr(
         factory_reset_service, "clear_in_memory_state",
-        lambda bot, *, queue: cleared.append((bot, queue)),
+        lambda hook, *, queue: cleared.append((hook, queue)),
     )
     scheduler = MagicMock()
-    bot = object()
+    hook = object()
     queue = object()
 
-    await factory_reset_service.wipe(db_path, scheduler, bot, queue=queue)
+    await factory_reset_service.wipe(db_path, scheduler, in_memory_state_cleared=hook, queue=queue)
 
     scheduler.cancel_all.assert_called_once_with()
-    assert cleared == [(bot, queue)]
+    assert cleared == [(hook, queue)]
 
 
 async def test_the_wipe_leaves_no_scratch_behind(db_path, tmp_path):

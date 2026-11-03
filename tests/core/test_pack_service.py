@@ -242,21 +242,25 @@ async def test_pack_clears_the_scheduled_work_but_the_portrait_refresh(db_path):
     assert result.scheduled_jobs == 3
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: pack is handed the bot, not the in-memory clear's hook"
+)
 async def test_pack_drops_the_league_state_held_in_memory(db_path, monkeypatch):
-    """A pack clears what the bot holds in memory, handing the clear the change queue it was
-    handed (#439 slice 6b, fold-in 6)."""
+    """A pack clears what the bot holds in memory, handing the clear the hook every module's
+    part of it is signed up to and the change queue, both as it was handed them (#439 slice 6b,
+    fold-in 6)."""
     await _seed(db_path)
     cleared = []
     monkeypatch.setattr(
         "leaguebot.core.services.pack_service.clear_in_memory_state",
-        lambda bot, *, queue: cleared.append((bot, queue)),
+        lambda hook, *, queue: cleared.append((hook, queue)),
     )
-    bot = object()
+    hook = object()
     queue = object()
 
-    await pack(db_path, _scheduler(), bot, queue=queue, **ACTOR)
+    await pack(db_path, _scheduler(), in_memory_state_cleared=hook, queue=queue, **ACTOR)
 
-    assert cleared == [(bot, queue)]
+    assert cleared == [(hook, queue)]
 
 
 # ── What travels with the league ──────────────────────────────────────────

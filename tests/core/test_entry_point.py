@@ -114,6 +114,36 @@ async def test_every_round_kind_has_its_advance_step_after_build(tmp_path):
     assert sorted(ROUND_JOB_KINDS - set(test_mode_service._ADVANCE_STEPS)) == []
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the builder signs no module up to a hook")
+async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
+    """Straight after `build`, each module's part of a moment core declares is signed up to that
+    moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
+    bot's in-memory state cleared: the season setups the season cog holds, then the penalty
+    reviews results holds for staging, then the reasons signup awaits from an admin."""
+    import leaguebot.__main__ as entry_point
+    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.results.services import penalty_wizard
+    from leaguebot.signup.services import signup_views
+
+    called: list[str] = []
+    monkeypatch.setattr(SeasonCog, "clear_pending", lambda self: called.append("season setups"))
+    for module, name, part in (
+        (penalty_wizard, "clear_held_reviews", "penalty reviews"),
+        (signup_views, "clear_pending_reasons", "pending reasons"),
+    ):
+        spy = (lambda part: lambda: called.append(part))(part)
+        monkeypatch.setattr(module, name, spy)
+        if hasattr(entry_point, name):
+            monkeypatch.setattr(entry_point, name, spy)
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    assert called == []
+
+    bot.in_memory_state_cleared.call()
+
+    assert called == ["season setups", "penalty reviews", "pending reasons"]
+
+
 async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):
     """The bot `build` makes starts the retry loop for undelivered log lines once, from
     `setup_hook` at login, and not before: a log line that fails to post is retried until it is
