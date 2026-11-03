@@ -99,10 +99,18 @@ from leaguebot.results.services.review_posting import (
     posting_steps,
     withdraw_round_standings_on,
 )
+from leaguebot.core.services.test_mode_service import (
+    AdvanceOutcome,
+    AdvanceStep,
+    AdvanceStepFailed,
+    PhaseEntry,
+    round_result_status,
+)
 from leaguebot.results.services.result_submission_service import (
     _make_slug,
     expected_session_on,
     get_sessions_for_format,
+    is_submission_open,
 )
 from leaguebot.results.services.standings_service import cascade_recompute_from_round_on
 from leaguebot.results.services.submission_steps import (
@@ -136,7 +144,7 @@ ASK_CLOSE = "ask_close"
 END_ROUND = "end_round"
 
 __all__ = [
-    "ALL_CANCELLED_KIND", "CLOSE_KIND", "KIND", "RESTART_KIND", "ask_submission_open",
+    "ALL_CANCELLED_KIND", "CLOSE_KIND", "KIND", "RESTART_KIND", "advance_step", "ask_submission_open",
     "ask_submission_restart", "submission_all_cancelled_change", "submission_close_change",
     "submission_open_change", "submission_restart_change",
 ]
@@ -374,6 +382,54 @@ async def ask_submission_open(queue: ChangeQueue, db_path: str, round_id: int) -
         KIND, {"round_id": round_id}, what=f"opening {number}'s results submission",
         origin=ChangeOrigin.BOT,
     )
+
+
+def advance_step(queue: ChangeQueue, db_path: str) -> AdvanceStep:
+    """The step `/test-mode advance` runs for a round's results: it asks *queue*, as the bot, to
+    open the round's submission, early.
+
+    **It refuses while a submission channel stands open**, and names the review the round is
+    awaiting, so that the maintainer finishes the round in front of them before stepping past it.
+    A round awaiting appeal verdicts has had its report verdicts settled already, so the refusal
+    reads the round's actual status rather than always saying "penalty review". The round's results
+    job is already down by then (`run_advance_step`): a refusal means the submission is open, so
+    the job has run.
+    """
+
+    async def step(entry: PhaseEntry) -> AdvanceOutcome:
+        division, number = entry["division_name"], entry["round_number"]
+        if await is_submission_open(db_path, entry["round_id"]):
+            status = await round_result_status(db_path, entry["round_id"])
+            if status != "FINAL":
+                review = (
+                    "appeals review" if status == "AWAITING_APPEAL_VERDICTS" else "penalty review"
+                )
+                return AdvanceOutcome.refused(
+                    f"⏸️ **{division}** — **Round {number}** is awaiting {review} approval. "
+                    f"Please complete the {review} in the submission channel before advancing."
+                )
+            # Finalized (shouldn't normally reach here, but handle gracefully)
+            return AdvanceOutcome.refused(
+                f"⏸️ Result submission for **{division}** — **Round {number}** is already in "
+                f"progress. Please submit results in the submission channel before advancing."
+            )
+        try:
+            await queue.ask(
+                KIND, {"round_id": entry["round_id"]},
+                what=f"opening round {number}'s results submission in {division}",
+                origin=ChangeOrigin.BOT,
+            )
+        except Exception as exc:  # noqa: BLE001 — named by the command, which reports it
+            raise AdvanceStepFailed("the round start") from exc
+        return AdvanceOutcome.asked(
+            f"⏩ The result submission of **{division}** — **Round {number}** "
+            f"(**{entry['track_name']}**) is on the change queue: its submission channel "
+            f"appears as soon as the queue reaches it.",
+            f"  phase: result submission (on the change queue)\n  division: {division}\n"
+            f"  round: Round {number}",
+        )
+
+    return step
 
 
 def submission_restart_change() -> ChangeType:

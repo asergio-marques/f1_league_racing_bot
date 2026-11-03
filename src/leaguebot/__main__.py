@@ -1028,12 +1028,13 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
         register_advance(kind, advance)
 
     # Register result submission callback
-    from leaguebot.results.services.submission_changes import ask_submission_open
+    from leaguebot.results.services.submission_changes import advance_step, ask_submission_open
 
     async def _result_submission_cb(round_id: int) -> None:
         await ask_submission_open(bot.change_queue, bot.db_path, round_id)
 
     scheduler.register_timer("results", _result_submission_cb)
+    register_advance("results", advance_step(bot.change_queue, bot.db_path))
 
     # Register RSVP attendance callbacks
     from leaguebot.attendance.services.check_in_changes import (
