@@ -56,7 +56,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from leaguebot.core.models.round import Round, RoundStatus
-from leaguebot.core.models.round_moments import (
+from leaguebot.core.services.round_moments import (
     AttendanceWindows,
     WeatherWindows,
     as_utc,

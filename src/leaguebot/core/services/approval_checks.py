@@ -16,7 +16,7 @@ from typing import Any
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.round_moments import AttendanceWindows, WeatherWindows
+from leaguebot.core.services.round_moments import AttendanceWindows, WeatherWindows
 from leaguebot.core.services.approval_window_service import calendar_faults
 
 log = logging.getLogger(__name__)

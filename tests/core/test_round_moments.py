@@ -63,7 +63,7 @@ def test_round_event_moments(scheduled_at, weather, check_in, offsets):
     before it and their clean-up a day after, only where weather is handed; the check-in's call
     four days before, its last notice twelve hours before, its deadline an hour before and its
     clean-up a day after, only where the check-in is handed. Every moment given is in UTC."""
-    from leaguebot.core.models.round_moments import (
+    from leaguebot.core.services.round_moments import (
         AttendanceWindows,
         WeatherWindows,
         round_event_moments,

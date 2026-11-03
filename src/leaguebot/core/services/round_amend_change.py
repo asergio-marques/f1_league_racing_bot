@@ -59,7 +59,7 @@ from leaguebot.core.services.amendment_rules_service import (
     judge_amendment,
     status_refusal,
 )
-from leaguebot.core.models.round_moments import (
+from leaguebot.core.services.round_moments import (
     AttendanceWindows,
     WeatherWindows,
     as_utc,

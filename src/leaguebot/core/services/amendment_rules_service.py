@@ -48,7 +48,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundFormat, RoundStatus
-from leaguebot.core.models.round_moments import (
+from leaguebot.core.services.round_moments import (
     AttendanceWindows,
     WeatherWindows,
     as_utc,

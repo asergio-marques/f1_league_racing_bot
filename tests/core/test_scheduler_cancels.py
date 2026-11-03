@@ -211,7 +211,7 @@ def test_schedule_round_cleanups_arms_both_clean_ups_from_the_post_race_delay():
     from datetime import datetime, timedelta, timezone
 
     from leaguebot.core.models.round import Round, RoundFormat
-    from leaguebot.core.models.round_moments import POST_RACE_CLEANUP_DELAY
+    from leaguebot.core.services.round_moments import POST_RACE_CLEANUP_DELAY
 
     start = datetime(2020, 6, 1, 14, 0, tzinfo=timezone.utc)
     rnd = Round(

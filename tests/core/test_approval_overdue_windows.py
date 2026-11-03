@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
-from leaguebot.core.models.round_moments import AttendanceWindows, WeatherWindows
+from leaguebot.core.services.round_moments import AttendanceWindows, WeatherWindows
 from leaguebot.core.services.approval_window_service import calendar_faults, overdue_windows
 
 #: The moment every test judges against. Fixed, so the dates below mean the same thing on
@@ -251,7 +251,7 @@ def test_each_window_falls_at_its_event_s_moment():
     behind `NOW`, its check-in called seven days out with a last notice at 36 hours and a
     deadline at 3, and its phases at 6 days, 3 days and 4 hours: each window the approval
     reports falls at the moment the function gives its event."""
-    from leaguebot.core.models.round_moments import round_event_moments
+    from leaguebot.core.services.round_moments import round_event_moments
 
     rnd = _round(days_out=-1)
     attendance = AttendanceWindows(notice_days=7, last_notice_hours=36, deadline_hours=3)
