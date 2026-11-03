@@ -41,7 +41,9 @@ from tests.support.season_league import (
     SEASON_ID,
     SIGNING_UP,
     SIGNUP_CHANNEL_BASE,
+    UNASSIGNED,
     WIND_DOWN_KIND,
+    approved_unplaced,
     driver_state,
     pending_completion_league,
     signing_up,
@@ -171,13 +173,14 @@ async def test_the_turned_down_line_is_written_with_the_save(tmp_path):
 
 async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     """Every division is done with Max's and Charles's placements pending, a driver (105) in
-    review, and signups already shut: the driver in review is told and has their channel locked,
-    the two approved drivers turned down lose the driver role while Lewis keeps it, each
-    driver's jobs together and the drivers in the order the save returns them, and the line
-    says only that the pending placements were turned down, with no claim that signups
-    closed."""
+    review, Valtteri (106) approved and never placed, and signups already shut: the driver in
+    review is told and has their channel locked, the three approved drivers turned down lose the
+    driver role while Lewis keeps it, each driver's jobs together and the drivers in the order
+    the save returns them (Max, Charles, 105, Valtteri), and the line says only that the pending
+    placements were turned down, with no claim that signups closed."""
     league = await _league(tmp_path)
     await signing_up(league)
+    await approved_unplaced(league)
     await _ask(league)
     await run_queue(league.bot)
     jobs = await _jobs(league)
@@ -185,19 +188,21 @@ async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     assert jobs[2:] == [
         ("take_driver_role", MAX), ("take_driver_role", CHARLES),
         ("signup_notice", SIGNING_UP), ("close_signup", SIGNING_UP),
+        ("take_driver_role", UNASSIGNED),
     ]
     assert league.notices == [(SIGNING_UP, "🔒 Every division of this season is done, so its "
                                            "signups are closed. This channel will be "
                                            "automatically deleted in 24 hours.")]
     assert league.locked == [SIGNING_UP]
-    assert league.revoked == {MAX: [DRIVER_ROLE], CHARLES: [DRIVER_ROLE]}
+    assert league.revoked == {MAX: [DRIVER_ROLE], CHARLES: [DRIVER_ROLE],
+                              UNASSIGNED: [DRIVER_ROLE]}
     assert LEWIS not in league.revoked
-    for user_id in (SIGNING_UP, MAX, CHARLES):
+    for user_id in (SIGNING_UP, MAX, CHARLES, UNASSIGNED):
         assert await driver_state(league, user_id) == "NOT_SIGNED_UP"
     assert await _stage(league) == "PENDING_COMPLETION"
     assert not league.errors, league.errors
     lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
-    assert any("System | Every division is done | Pending placements turned down: 3" in line
+    assert any("System | Every division is done | Pending placements turned down: 4" in line
                for line in lines), lines
     assert not any("Signups closed" in line for line in lines)
 
