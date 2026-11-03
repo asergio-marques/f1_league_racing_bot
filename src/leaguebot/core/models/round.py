@@ -1,4 +1,4 @@
-"""Round model."""
+"""Round model, and the plain data that places a round's timed events: its job kinds and windows."""
 from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -98,3 +98,33 @@ class Round:
     phase2_done: bool = False
     phase3_done: bool = False
     status: str = RoundStatus.NOT_RUN.value
+
+
+#: The kinds of the jobs the weather module owns: its three forecast phases and the post-race
+#: clean-up that deletes what they posted.
+WEATHER_JOB_KINDS = frozenset({"weather_p1", "weather_p2", "weather_p3", "cleanup"})
+
+#: The kinds of a round's nine jobs: each is its job id's prefix, and its key the round id. A
+#: job is a round's where its kind is one of these; another job's key, an amendment's lapse
+#: timer's for one, is no round's, however it is numbered.
+ROUND_JOB_KINDS = WEATHER_JOB_KINDS | {
+    "results", "rsvp_notice", "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup",
+}
+
+
+@dataclass(frozen=True)
+class AttendanceWindows:
+    """The three check-in lead times, as `attendance_config` stores them."""
+
+    notice_days: int
+    last_notice_hours: int
+    deadline_hours: int
+
+
+@dataclass(frozen=True)
+class WeatherWindows:
+    """The three forecast phase horizons, as `weather_pipeline_config` stores them."""
+
+    phase_1_days: int
+    phase_2_days: int
+    phase_3_hours: int

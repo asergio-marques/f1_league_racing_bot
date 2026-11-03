@@ -41,15 +41,15 @@ from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.round import Round, RoundFormat
-from leaguebot.core.services.round_moments import (
+from leaguebot.core.models.round import (
     ROUND_JOB_KINDS,
     AttendanceWindows,
+    Round,
+    RoundFormat,
     WeatherWindows,
-    clean_up_moment,
-    round_event_moments,
 )
-from leaguebot.core.services.round_moments import WEATHER_JOB_KINDS as _WEATHER_JOB_PREFIXES
+from leaguebot.core.models.round import WEATHER_JOB_KINDS as _WEATHER_JOB_PREFIXES
+from leaguebot.core.services.round_moments import clean_up_moment, round_event_moments
 
 if TYPE_CHECKING:
     pass

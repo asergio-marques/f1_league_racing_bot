@@ -167,7 +167,7 @@ def _cog(db_path, **overrides):
 async def _approval_windows(cog):
     """The builder's reader of the enabled modules' windows (`LeagueBot.approval_windows`), read
     from the cog's own doubles so that a test switching a module on or off moves it too."""
-    from leaguebot.core.services.round_moments import AttendanceWindows, WeatherWindows
+    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
 
     attendance = weather = None
     if await cog.bot.module_service.is_attendance_enabled():

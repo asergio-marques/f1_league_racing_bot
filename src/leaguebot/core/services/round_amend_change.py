@@ -50,22 +50,18 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.round import (
     ROUND_CANCELLABLE,
     ROUND_RACED_AWAITING_VERDICTS,
+    AttendanceWindows,
     Round,
     RoundFormat,
     RoundStatus,
+    WeatherWindows,
 )
 from leaguebot.core.services.amendment_rules_service import (
     AmendmentVerdict,
     judge_amendment,
     status_refusal,
 )
-from leaguebot.core.services.round_moments import (
-    AttendanceWindows,
-    WeatherWindows,
-    as_utc,
-    clean_up_moment,
-    round_event_moments,
-)
+from leaguebot.core.services.round_moments import as_utc, clean_up_moment, round_event_moments
 from leaguebot.core.services import cancellation_notice_service as notices
 from leaguebot.core.services.cancellation_changes import ROUND_REARM, cancellation_holding_amendment
 from leaguebot.core.services.change_queue import (

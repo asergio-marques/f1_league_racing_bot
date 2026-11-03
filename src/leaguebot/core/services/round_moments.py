@@ -1,55 +1,27 @@
-"""When a round's timed events fall: the lead times that place them, and the delay after the race.
+"""When a round's timed events fall, and the delay after the race that places its clean-ups.
 
 `round_event_moments` is the one function that works out when each of a round's events falls,
-keyed by the kind its job is stored with (`ROUND_JOB_KINDS`); `clean_up_moment` gives the clean-ups'
-alone, and `round_event_moments` places them by it. The scheduler's arming, the approval's
-overdue windows and the amendment's rules all read it, so the rules every copy once carried hold
-in one place: a last notice of 0 hours is no last notice, a deadline of 0 hours is the round's own
-moment, and a moment stored without a zone is UTC.
+keyed by the kind its job is stored with (`ROUND_JOB_KINDS`); `clean_up_moment` gives the
+clean-ups' moment alone, and `round_event_moments` places them by it. The scheduler's arming, the
+approval's overdue windows and the amendment's rules all read `round_event_moments`, so the rules
+every copy once carried hold in one place: a last notice of 0 hours is no last notice, a deadline
+of 0 hours is the round's own moment, and a moment stored without a zone is UTC.
 
-Pure by design: no database, no clock, no scheduler. Models import no service, so each of those
-imports this one place.
+Pure by design: no database, no clock, no scheduler. The kind names and the two window types it
+reads are plain data and live in `core.models.round`, which imports no service.
 """
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-#: The kinds of the jobs the weather module owns: its three forecast phases and the post-race
-#: clean-up that deletes what they posted.
-WEATHER_JOB_KINDS = frozenset({"weather_p1", "weather_p2", "weather_p3", "cleanup"})
-
-#: The kinds of a round's nine jobs: each is its job id's prefix, and its key the round id. A
-#: job is a round's where its kind is one of these; another job's key, an amendment's lapse
-#: timer's for one, is no round's, however it is numbered.
-ROUND_JOB_KINDS = WEATHER_JOB_KINDS | {
-    "results", "rsvp_notice", "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup",
-}
+from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
 
 #: How long after a round's scheduled start its posted messages come down: the weather module's
 #: forecast, whichever of Phases 1 to 3 still stands, and the attendance module's check-in call
 #: with its last notice and its distribution message (#425). One figure for both, so a round's
 #: channels clear together.
 POST_RACE_CLEANUP_DELAY = timedelta(hours=24)
-
-
-@dataclass(frozen=True)
-class AttendanceWindows:
-    """The three check-in lead times, as `attendance_config` stores them."""
-
-    notice_days: int
-    last_notice_hours: int
-    deadline_hours: int
-
-
-@dataclass(frozen=True)
-class WeatherWindows:
-    """The three forecast phase horizons, as `weather_pipeline_config` stores them."""
-
-    phase_1_days: int
-    phase_2_days: int
-    phase_3_hours: int
 
 
 def as_utc(moment: datetime) -> datetime:

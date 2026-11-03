@@ -85,7 +85,7 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.round_moments import AttendanceWindows, WeatherWindows
+    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.placement_service import PlacementService

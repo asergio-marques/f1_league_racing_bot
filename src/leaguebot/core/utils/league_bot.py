@@ -35,7 +35,7 @@ import discord
 from discord.ext import commands
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.round_moments import AttendanceWindows, WeatherWindows
+    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
     from leaguebot.attendance.services.attendance_service import AttendanceService
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.driver_service import DriverService
