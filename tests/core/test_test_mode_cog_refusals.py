@@ -119,35 +119,63 @@ def _real_drivers(cog, monkeypatch):
     monkeypatch.setattr(cog_module, "count_live_real_drivers", AsyncMock(return_value=2))
 
 
-def _nothing_passed_over(monkeypatch) -> None:
-    """No raced round's weather step for advance to name as passed over; the cog's database is
-    none to read it from."""
-    monkeypatch.setattr(cog_module, "get_passed_over_steps", AsyncMock(return_value=[]))
+def _next_step(monkeypatch, entry) -> None:
+    """Advance's next step is *entry*, and no raced round's weather step is passed over, wherever
+    advance reads them: the cog while it picks the step, `test_mode_service` once the one service
+    function does. The cog's database is none to read them from."""
+    reads = {
+        "get_next_pending_phase": AsyncMock(return_value=entry),
+        "get_passed_over_steps": AsyncMock(return_value=[]),
+    }
+    for module in (cog_module, test_mode_service):
+        for name, read in reads.items():
+            if hasattr(module, name):
+                monkeypatch.setattr(module, name, read)
 
 
 def _nothing_left(cog, monkeypatch):
-    monkeypatch.setattr(cog_module, "get_next_pending_phase", AsyncMock(return_value=None))
-    _nothing_passed_over(monkeypatch)
+    _next_step(monkeypatch, None)
 
 
 def _submission_open(status: str):
-    """Round 2 of Pro waiting on its results, its submission channel open, in *status*."""
+    """Round 2 of Pro waiting on its results, its submission channel open, in *status*.
+
+    Results' own step refuses it, read from the round's state; the cog has no database, so once
+    advance runs the step signed up for the kind, a stand-in signed up for `results` refuses as
+    results' step does, and the case holds the cog to sending a refused step's reply as a
+    refusal, recorded in the log channel."""
     def setup(cog, monkeypatch):
         entry = {
             "phase_number": 4,
+            "kind": "results",
             "round_number": 2,
             "round_id": 12,
             "division_name": "Pro",
             "track_name": "Monza",
+            "job_id": None,
         }
-        monkeypatch.setattr(cog_module, "get_next_pending_phase", AsyncMock(return_value=entry))
-        _nothing_passed_over(monkeypatch)
+        _next_step(monkeypatch, entry)
         monkeypatch.setattr(
             result_submission_service, "is_submission_open", AsyncMock(return_value=True)
         )
         monkeypatch.setattr(
             test_mode_service, "round_result_status", AsyncMock(return_value=status)
         )
+        if hasattr(test_mode_service, "register_advance"):
+            from leaguebot.core.services.test_mode_service import AdvanceOutcome
+
+            where = "**Pro** — **Round 2**"
+            reply = (
+                f"⏸️ Result submission for {where} is already in progress. Please submit "
+                f"results in the submission channel before advancing."
+                if status == "FINAL" else
+                f"⏸️ {where} is awaiting penalty review approval. Please complete the penalty "
+                f"review in the submission channel before advancing."
+            )
+            monkeypatch.setattr(test_mode_service, "_ADVANCE_STEPS", {})
+            test_mode_service.register_advance(
+                "results", AsyncMock(return_value=AdvanceOutcome.refused(reply))
+            )
     return setup
 
 

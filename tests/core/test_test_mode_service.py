@@ -694,9 +694,11 @@ async def test_a_round_start_already_asked_of_the_queue_is_not_offered_again(tmp
     assert again is None or again["phase_number"] != 4
 
 
+@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_a_finished_round_s_cleanup_job_is_not_stale(tmp_path) -> None:
     """A finished round offers no other step, which once meant any job of its was thrown away
-    as stale. Its cleanups are still to run."""
+    as stale. Its cleanups are still to run, the check-in clean-up's entry naming its kind,
+    `rsvp_cleanup`."""
     db_path = str(tmp_path / "final_cleanup.db")
     await run_migrations(db_path)
     await _seed_all_done(db_path, [{"track_name": "Monaco"}], results=True)
@@ -706,6 +708,7 @@ async def test_a_finished_round_s_cleanup_job_is_not_stale(tmp_path) -> None:
 
     assert result is not None
     assert (result["phase_number"], result["job_id"]) == (9, "job_9_r1")
+    assert result["kind"] == "rsvp_cleanup"
 
 
 async def test_a_forecast_cleanup_with_no_forecast_standing_is_stale(tmp_path) -> None:
@@ -1024,6 +1027,7 @@ async def _mystery_round_armed(
     return db_path
 
 
+@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
     tmp_path, paused_scheduler
 ) -> None:
@@ -1034,6 +1038,7 @@ async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
     assert result is not None
     assert result["phase_number"] == 0
     assert str(result["job_id"]).startswith("weather_p1_")
+    assert result["kind"] == "weather_p1"
 
 
 async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(

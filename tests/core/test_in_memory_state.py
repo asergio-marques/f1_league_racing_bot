@@ -104,6 +104,9 @@ ARRIVING_EXEMPT = {
     # Each running lane's worker task, keyed by lane: the queue's own tasks, cancelled by
     # `stop()`, never the league's data (6b L10).
     ("core/services/change_queue.py", "_workers"): "#439 6b L10",
+    # Each round job kind's `/test-mode advance` step, signed up by the builder beside its timer
+    # handler: the bot's wiring, not the league's data (#283 S7c).
+    ("core/services/test_mode_service.py", "_ADVANCE_STEPS"): "#283 S7c",
 }
 
 #: Stores that hold no league state, and why.

@@ -102,6 +102,21 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     assert sorted(kinds - set(scheduler._timer_callbacks)) == []
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: no module signs up a /test-mode advance step for its kinds"
+)
+async def test_every_round_kind_has_its_advance_step_after_build(tmp_path):
+    """Straight after `build`, every kind of a round's jobs (the three weather phases, the
+    forecast clean-up, the result submission and the four check-in jobs) has the step
+    `/test-mode advance` runs for it signed up, by the module whose job it is."""
+    from leaguebot.core.models.round import ROUND_JOB_KINDS
+    from leaguebot.core.services import test_mode_service
+
+    await built_bot(tmp_path, now=_NOW)
+
+    assert sorted(ROUND_JOB_KINDS - set(test_mode_service._ADVANCE_STEPS)) == []
+
+
 async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):
     """The bot `build` makes starts the retry loop for undelivered log lines once, from
     `setup_hook` at login, and not before: a log line that fails to post is retried until it is
