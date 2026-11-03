@@ -190,8 +190,8 @@ async def wipe(
     **One counter is carried over: the job number.** A job's number is never reused, so the fresh
     database is told the highest the live one has issued before it replaces it.
 
-    *in_memory_state_cleared* and *queue* travel together: the memory is cleared where both are given, the command
-    handing the queue on to the clear, and left alone otherwise.
+    *in_memory_state_cleared* and *queue* travel together: the memory is cleared where both are
+    given, the command handing the queue on to the clear, and left alone otherwise.
     """
     scheduler_service.cancel_all()
     if in_memory_state_cleared is not None and queue is not None:
