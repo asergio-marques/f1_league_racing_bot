@@ -151,6 +151,21 @@ _AMENDMENT_PARTS = (
      "amendment_clean_ups", "attendance's clean-ups"),
 )
 
+#: Each module's part of a season's end, as the module names it: the moment's hook on the bot, the
+#: module, the subscriber, and what the test calls it, in the order the builder signs them up.
+_SEASON_END_PARTS = (
+    ("season_end_refused", "leaguebot.results.services.result_submission_service",
+     "season_end_refusal", "results' refusal of a season's end"),
+    ("drivers_returned", "leaguebot.signup.services.closing_steps", "drivers_returned_on",
+     "signup's wizards ended"),
+    ("season_end_untold", "leaguebot.signup.services.closing_steps", "take_untold_on",
+     "signup's untold accounts"),
+    ("test_mode_flushed", "leaguebot.weather.services.forecast_cleanup_service",
+     "forecast_deletes", "weather's forecast deletions"),
+    ("drivers_deleted", "leaguebot.image.services.driver_portrait_service", "discard_portraits",
+     "image's portraits discarded"),
+)
+
 #: The steps of an amendment attendance defines, by name, as the amendment names them today.
 _ATTENDANCE_AMENDMENT_STEPS = [
     "announce", "clean_up_check_in", "close_without_call", "delete_message", "distribute",
@@ -158,6 +173,9 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the builder makes no hook of a season's end yet"
+)
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -173,7 +191,12 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     the posts each owes, attendance's then weather's, then the clean-ups due a day after the
     round, weather's then attendance's; the steps each defines, weather's then attendance's, under
     the names the amendment gives them today; and the words an outcome gives a step that was not
-    done, weather's for a forecast."""
+    done, weather's for a forecast. A season's end: what stands in its way, results' refusal while
+    a round is being amended; the drivers it returns, signup's ending of their wizards in the save,
+    and the jobs signup plans for a driver returned; the accounts a discarded close left untold,
+    signup's; the steps each module defines for it, signup's notice and close, then weather's
+    deletion of a forecast; the jobs that clear what test mode posted, weather's; and the drivers
+    deleted, image's discard of their portraits."""
     import importlib
 
     import leaguebot.__main__ as entry_point
@@ -211,6 +234,15 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
                             raising=False)
     monkeypatch.setattr(forecast_changes, "forecast_failure",
                         lambda *_args, **_kwargs: called.append("weather's words"))
+    for _hook, module_name, name, part in _SEASON_END_PARTS:
+        async def season_end_spy(*_args, part=part, **_kwargs):
+            called.append(part)
+        monkeypatch.setattr(importlib.import_module(module_name), name, season_end_spy,
+                            raising=False)
+    monkeypatch.setattr(importlib.import_module("leaguebot.signup.services.closing_steps"),
+                        "driver_returned_jobs",
+                        lambda *_args, **_kwargs: called.append("signup's jobs") or (),
+                        raising=False)
     weather_steps = sorted(
         {*forecast_changes.forecast_steps(now=lambda: _NOW),
          "clean_up_forecast", "notify_invalidation", "rerun_phase"}
@@ -244,6 +276,16 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     called.clear()
     bot.amendment_step_failure.call(None)
     assert called == ["weather's words"]
+    for hook in dict.fromkeys(each[0] for each in _SEASON_END_PARTS):
+        called.clear()
+        await getattr(bot, hook).call()
+        assert called == [part for each, _module, _name, part in _SEASON_END_PARTS if each == hook]
+    called.clear()
+    bot.driver_returned_jobs.call({"user_id": "1", "state": "PENDING_ADMIN_APPROVAL"}, notice="")
+    assert called == ["signup's jobs"]
+    assert [sorted(steps) for steps in bot.season_end_steps.call(line_prefix=None)] == [
+        ["close_signup", "signup_notice"], ["delete_forecast"]
+    ]
 
 
 #: The windows the league configures in the pair test: attendance's three lead times, and
