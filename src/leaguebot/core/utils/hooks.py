@@ -13,8 +13,9 @@ are not called, and it reaches the caller as a direct call's would: the caller's
 (the command's, or the change queue's for a queued step) has it.
 
 `Hook` takes plain subscribers. `AwaitedHook` takes awaited ones, for a moment whose subscribers
-read or write the database, on the connection `call` is handed, where it hands one (the save's,
-where the moment falls inside one); its `call` is a coroutine.
+read or write the database. Where core holds a connection open at the moment (the save's, where
+the moment falls inside one), `call` hands it, and the subscribers read on it; the windows hook,
+whose subscribers open their own as before, hands none. Its `call` is a coroutine.
 
 The bot starting's steps are not this type: `start_up` contains each (architecture.md, "One sweep
 picks up the timed events that were missed").
