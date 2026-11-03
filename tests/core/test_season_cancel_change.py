@@ -1620,7 +1620,8 @@ async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
     """Driver 105 is part-way through the wizard (Pending Signup Completion, their wizard
     collecting their notes) when the cancellation's `end` runs its driver pass. Their wizard is
     unengaged in that save, before any job of theirs runs, and a restart then arms no
-    inactivity job for them and expires nothing."""
+    inactivity job for them and expires nothing. Their channel is told the season has ended,
+    word for word as it always has been."""
     league = await ongoing_league(tmp_path)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     await league.write(
@@ -1636,6 +1637,8 @@ async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
     assert await wizard_state(league, SIGNING_UP) == "UNENGAGED"
     await run_queue(league.bot)
     assert await wizards_recovered(league) == {"armed": [], "expired": []}
+    assert league.notices == [(SIGNING_UP, "🔒 This season has ended. This channel will be "
+                                           "automatically deleted in 24 hours.")]
 
 
 
