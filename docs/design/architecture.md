@@ -720,14 +720,14 @@ passed judges it against the `now` it is handed ("The time is always passed in")
 three changes call them: a season's approval, the amendment of a round (`round_amend_change`), and
 the re-arming of a round whose timed work a refused cancellation took, a change of its own
 (`round_rearm_change`, `season.round.rearm`) built from the amendment's steps. The arming step those
-two share calls `run_result_submission_now` for a passed round. Every path arms through these
-functions. A restart arms nothing, the job store keeping the jobs and the start-up sweep catching up
-those missed (above), and neither does test mode, whose advance brings forward work already armed or
-found due in the database. A round's next-day clean-ups, which its weather and its attendance arming
-both owe, are armed with them: the forecast's by `schedule_round` and the check-in's by
-`schedule_attendance_round`. `schedule_round_cleanups` arms either or both on their own, and the
-re-arming calls it alone for a round raced, or ended cancelled because every session was entered as
-not held.
+two share calls `run_result_submission_now` for a round still to be run whose moment has passed,
+save under test mode. Every path arms through these functions. A restart arms nothing, the job
+store keeping the jobs and the start-up sweep catching up those missed (above), and neither does
+test mode, whose advance brings forward work already armed or found due in the database. A round's
+next-day clean-ups, which its weather and its attendance arming both owe, are armed with them: the
+forecast's by `schedule_round` and the check-in's by `schedule_attendance_round`.
+`schedule_round_cleanups` arms either or both on their own, and the re-arming calls it alone for a
+round raced, or ended cancelled because every session was entered as not held.
 
 **A delay is a one-off timer that asks a change.** The queue holds no delay of its own. Where
 something must happen a set time after a job (a season review's, a correction's or an
