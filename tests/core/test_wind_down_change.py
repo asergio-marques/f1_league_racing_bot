@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import discord
 import pytest
@@ -533,15 +533,9 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
 
 async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_path):
     """Driver 105 is correcting their signup (Pending Driver Correction, their wizard in a
-    correction step) when the wind-down turns the season's pending placements down. Without
-    the hooks the builder hands it, `turn_down` refuses to turn a signup down
-    (`RuntimeError`) before it writes anything: what it wrote is committed, and the database,
-    read afresh, holds no turn-down. With them, 105's wizard is unengaged in `turn_down`'s own
-    save, before any job of theirs runs, and a restart then arms no inactivity job for them and
-    expires nothing."""
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.core.services.season_lifecycle_service import TURN_DOWN_STEP, wind_down_steps
-
+    correction step) when the wind-down turns the season's pending placements down. 105's wizard
+    is unengaged in `turn_down`'s own save, before any job of theirs runs, and a restart then arms
+    no inactivity job for them and expires nothing."""
     league = await _league(tmp_path)
     await signing_up(league, state="PENDING_DRIVER_CORRECTION")
     await league.write(
@@ -549,19 +543,6 @@ async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_pat
         "WHERE discord_user_id = ?",
         str(SIGNING_UP),
     )
-
-    unhooked = wind_down_steps(None)[TURN_DOWN_STEP]
-    async with get_connection(league.db_path) as db:
-        with pytest.raises(RuntimeError, match="a wind-down is run with the hooks the builder"):
-            try:
-                await unhooked.run(db, MagicMock())
-            finally:
-                # Whatever the step wrote before it refused is saved, so that the reads below,
-                # each on a connection of its own, would see it.
-                await db.commit()
-    assert await _pending(league) == 2
-    assert await driver_state(league, SIGNING_UP) == "PENDING_DRIVER_CORRECTION"
-    assert await wizard_state(league, SIGNING_UP) == "COLLECTING_NATIONALITY"
 
     await _ask(league)
     for _ in range(50):
@@ -575,6 +556,64 @@ async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_pat
 
     await run_queue(league.bot)
     assert await wizards_recovered(league) == {"armed": [], "expired": []}
+
+
+@pytest.mark.xfail(strict=True, reason="#283: the turn-down hands its save to no hook yet")
+async def test_a_module_s_part_of_the_turn_down_s_save_runs_on_that_save_s_connection(tmp_path):
+    """Driver 105 (Kimi) in review when the wind-down turns the season's pending placements down.
+    A further module signs up to the drivers a season's end returns and to the accounts its last
+    save finds untold. Both parts are called once, in `turn_down`'s one save, the untold first,
+    each with that save's own connection, `turn_down` not yet done: what each writes on it is
+    unseen elsewhere while the save stands open, and is saved with it. The part for the drivers
+    returned is handed the drivers turned down, 105 among them, already Not Signed Up on that
+    connection while another connection still reads them in review."""
+    from leaguebot.core.db.database import get_connection
+
+    league = await _league(tmp_path)
+    await signing_up(league)
+    await league.write("CREATE TABLE written_by_a_module (part TEXT)")
+    seen: list[tuple[Any, ...]] = []
+
+    async def _written(db: Any, part: str) -> tuple[bool, bool]:
+        """Write *part* on *db*; whether another connection sees nothing written yet, and
+        whether `turn_down` reads as done there."""
+        await db.execute("INSERT INTO written_by_a_module (part) VALUES (?)", (part,))
+        async with get_connection(league.db_path) as other:
+            cursor = await other.execute("SELECT COUNT(*) FROM written_by_a_module")
+            [elsewhere] = await cursor.fetchone()
+        done = any(row["name"] == "turn_down" and row["done_at"]
+                   for row in await step_rows(league.db_path))
+        return elsewhere == 0, done
+
+    async def _returned(db: Any, drivers: Any, *_rest: Any) -> None:
+        cursor = await db.execute(
+            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?",
+            (str(SIGNING_UP),),
+        )
+        found = await cursor.fetchone()
+        unseen, done = await _written(db, "returned")
+        seen.append(("returned", str(SIGNING_UP) in repr(drivers),
+                     found is not None and found[0] == "NOT_SIGNED_UP",
+                     await driver_state(league, SIGNING_UP) == "PENDING_ADMIN_APPROVAL",
+                     unseen, done))
+
+    async def _untold(db: Any, *_rest: Any) -> list[str]:
+        unseen, done = await _written(db, "untold")
+        seen.append(("untold", unseen, done))
+        return []
+
+    league.bot.drivers_returned.subscribe(_returned)
+    league.bot.season_end_untold.subscribe(_untold)
+    await _ask(league)
+
+    await run_queue(league.bot)
+
+    assert seen == [
+        ("untold", True, False),
+        ("returned", True, True, True, True, False),
+    ]
+    rows = await league.rows("SELECT part FROM written_by_a_module ORDER BY rowid")
+    assert [row["part"] for row in rows] == ["untold", "returned"]
 
 
 def _channel_gone(league: Any, user_id: int = SIGNING_UP) -> None:
