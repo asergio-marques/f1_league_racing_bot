@@ -172,7 +172,8 @@ async def test_the_turned_down_line_is_written_with_the_save(tmp_path):
 async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     """Every division is done with Max's and Charles's placements pending, a driver (105) in
     review, and signups already shut: the driver in review is told and has their channel locked,
-    the two approved drivers turned down lose the driver role while Lewis keeps it, and the line
+    the two approved drivers turned down lose the driver role while Lewis keeps it, each
+    driver's jobs together and the drivers in the order the save returns them, and the line
     says only that the pending placements were turned down, with no claim that signups
     closed."""
     league = await _league(tmp_path)
@@ -181,11 +182,10 @@ async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     await run_queue(league.bot)
     jobs = await _jobs(league)
     assert jobs[:2] == [("wind_down", None), ("turn_down", None)]
-    assert sorted(jobs[2:]) == sorted([
-        ("signup_notice", SIGNING_UP), ("close_signup", SIGNING_UP),
+    assert jobs[2:] == [
         ("take_driver_role", MAX), ("take_driver_role", CHARLES),
-    ])
-    assert jobs.index(("signup_notice", SIGNING_UP)) < jobs.index(("close_signup", SIGNING_UP))
+        ("signup_notice", SIGNING_UP), ("close_signup", SIGNING_UP),
+    ]
     assert league.notices == [(SIGNING_UP, "🔒 Every division of this season is done, so its "
                                            "signups are closed. This channel will be "
                                            "automatically deleted in 24 hours.")]
