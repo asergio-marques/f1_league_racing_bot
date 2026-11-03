@@ -1098,11 +1098,14 @@ async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season
     assert lines[1] == f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"
 
 
+@pytest.mark.xfail(strict=True, reason="#283: /bot pack hands the clear the bot, not its hook")
 async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
-    """Issue #383. What the entry holds is the service's to pin; who it names is the cog's."""
+    """Issue #383. What the entry holds is the service's to pin; who it names is the cog's. The
+    pack clears what the bot holds in memory through the bot's own hook for it, called once."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    cog = BotCog(_packing_bot(db_path))
+    bot = _packing_bot(db_path)
+    cog = BotCog(bot)
 
     await _unwrap(cog.handle_pack)(
         cog, _deferred(_interaction(channel_id=CONFIGURED_CHANNEL)), "CONFIRM"
@@ -1110,6 +1113,7 @@ async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
 
     (row,) = await _audit_rows(db_path)
     assert (row["change_type"], row["actor_id"]) == ("BOT_PACKED", 7)
+    bot.in_memory_state_cleared.call.assert_called_once_with()
 
 
 # ── /bot factory-reset ─────────────────────────────────────────────────────
@@ -1219,7 +1223,12 @@ async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monke
     interaction.user.send.assert_not_awaited()
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: /bot factory-reset hands the clear the bot, not its hook"
+)
 async def test_bot_factory_reset_backs_up_then_wipes_then_reports_by_dm(tmp_path):
+    """The wipe clears what the bot holds in memory through the bot's own hook for it, called
+    once."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     bot = _resetting_bot(db_path, tmp_path)
@@ -1237,6 +1246,7 @@ async def test_bot_factory_reset_backs_up_then_wipes_then_reports_by_dm(tmp_path
     assert "direct message" in reply
     progress = interaction.user.send.return_value
     assert progress.edit.await_args_list[-1].kwargs["content"].startswith("✅")
+    bot.in_memory_state_cleared.call.assert_called_once_with()
 
 
 async def test_bot_factory_reset_reports_to_the_log_where_dms_are_closed(tmp_path):
