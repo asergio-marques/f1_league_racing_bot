@@ -712,20 +712,6 @@ async def test_a_fired_check_in_phase_is_logged_by_name(tmp_path, phase, name):
     ]
 
 
-async def test_the_deadline_reply_does_not_say_reserves_were_distributed(tmp_path):
-    """Round 3's deadline is advanced. Its reserves are distributed only once the change queue
-    reaches it, so the reply says it is on the change queue and does not say the distribution
-    is complete."""
-    cog = _make_cog(await _make_db(tmp_path))
-    interaction = _interaction()
-
-    await _advance(cog, interaction, _entry(7))
-
-    replied = _replied(interaction)
-    assert "is on the change queue" in replied
-    assert "Reserve distribution complete" not in replied
-
-
 async def test_a_deadline_whose_announcement_was_refused_is_not_offered_again(tmp_path):
     """Test mode on, attendance and results on. Round 3's check-in deadline has run, its
     distribution saved and marked (`deadline_run_at`), but Discord refused its announcement, so
@@ -863,7 +849,9 @@ async def test_advancing_a_check_in_step_replies_on_the_change_queue(
     is next. Advance asks the change queue for that step by its kind, for the round, and replies
     that it is on the change queue, naming the step, the division and the round, as a weather
     step's reply does; it runs no check-in runner of its own. The step is asked as advance's
-    (`advanced`), judged by no clock."""
+    (`advanced`), judged by no clock. The deadline's reply says only that it is on the change
+    queue, never that its reserves were distributed: they are distributed only once the queue
+    reaches it."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
