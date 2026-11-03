@@ -1455,12 +1455,18 @@ _NAMED_JOBS = [
     pytest.param("moved past round 4", "delete_forecast",
                  "deleting a withdrawn forecast of round 4 in **Pro**",
                  id="delete_forecast withdrawn"),
+    pytest.param("phase 1's forecast superseded at once", "delete_forecast",
+                 "deleting the superseded Phase 1 forecast of round 3 in **Pro**",
+                 id="delete_forecast superseded"),
     pytest.param("moved past round 4", "notify_invalidation",
                  "telling **Pro** its forecasts no longer stand", id="notify_invalidation"),
     pytest.param("round 4 brought before round 3", "post_call",
                  "posting the check-in call of round 3 in **Pro** again", id="post_call"),
     pytest.param("its deadline passed while the save stood stopped", "distribute",
                  "placing the reserves of round 3 in **Pro**", id="distribute"),
+    pytest.param("its call gone before its deadline was run", "close_without_call",
+                 "closing the check-in of round 3 in **Pro**, which has no call",
+                 id="close_without_call"),
     pytest.param("its deadline passed while the save stood stopped", "announce",
                  "posting the reserve announcement of round 3 in **Pro**", id="announce"),
     pytest.param("the day after it passed while the save stood stopped", "clean_up_check_in",
@@ -1478,19 +1484,41 @@ async def test_a_module_s_job_of_the_amendment_is_named_as_today_when_it_stops_t
     phase 2 forecast (message 8002) was posted, and the round is moved 150 days out, so it is
     round 4 by the time its call is taken down, the withdrawn forecast deleted and the division
     told. Round 4 brought before round 3: round 4, with no call, is moved to three days out, so it
-    is round 3 when its call is posted. Its deadline passed while the save stood stopped: round 3,
-    two hours and five minutes out, is moved a day later, the save stops, and ten minutes on, past
-    the old deadline, a league admin discards it, so the deadline is run. The day after it passed
-    while the save stood stopped: weather on too, round 3, thirty minutes out, its phase 3 forecast
-    (message 8003) posted, is moved a day later, the save stops, and a day and forty minutes on a
-    league admin discards it, so what is left of its check-in is cleaned up. The log channel's
-    notice that the queue stopped names the job word for word as it always has."""
-    forecasts = scenario in ("moved past round 4",
-                             "the day after it passed while the save stood stopped")
-    league = await ongoing_league(tmp_path, weather=forecasts, attendance=True,
-                                  **({"horizons": HORIZONS} if forecasts else {}))
+    is round 3 when its call is posted. Phase 1's forecast superseded at once: weather alone on,
+    round 3, nothing drawn, is brought forward to one day out, so phases 1 and 2 are drawn at once
+    and phase 1's forecast is deleted as phase 2's supersedes it. Its deadline passed while the
+    save stood stopped: round 3, two hours and five minutes out, is moved a day later, the save
+    stops, and ten minutes on, past the old deadline, a league admin discards it, so the deadline
+    is run. Its call gone before its deadline was run: as the last, but the round's call record is
+    deleted once the round is armed again, so its check-in is closed as having no call. The day
+    after it passed while the save stood stopped: weather on too, round 3, thirty minutes out, its
+    phase 3 forecast (message 8003) posted, is moved a day later, the save stops, and a day and
+    forty minutes on a league admin discards it, so what is left of its check-in is cleaned up.
+    The log channel's notice that the queue stopped names the job word for word as it always
+    has."""
+    if scenario == "phase 1's forecast superseded at once":
+        league, _ = await _drawn_at_once(tmp_path, days=1)
+    else:
+        forecasts = scenario in ("moved past round 4",
+                                 "the day after it passed while the save stood stopped")
+        league = await ongoing_league(tmp_path, weather=forecasts, attendance=True,
+                                      **({"horizons": HORIZONS} if forecasts else {}))
     await refuse_the_job(league.db_path, "season.round.amend", job, True)
-    if scenario == "moved past round 4":
+    if scenario == "phase 1's forecast superseded at once":
+        await run_queue(league.bot)
+    elif scenario == "its call gone before its deadline was run":
+        await _deadline_not_yet_run(league)
+        await _place_r3(league, hours=2, minutes=5)
+        await _amended(league, scheduled_at=_at(league, days=1, hours=2))
+        with _renumbering_fails():
+            await run_queue(league.bot)
+            assert await _stopped_at(league) == "apply"
+            league.clock.advance(minutes=10)
+            await discard_job(league.bot, run=False)
+        await _run_through(league, "arm")
+        await league.write("DELETE FROM rsvp_embed_messages WHERE round_id = ?", R3)
+        await run_queue(league.bot)
+    elif scenario == "moved past round 4":
         await posted_forecast(league, R3, 2, 8002)
         await _amended(league, scheduled_at=_at(league, days=150))
         await run_queue(league.bot)
