@@ -13,7 +13,14 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import StepFailedOnDiscord, VerdictKind
+from leaguebot.core.models.cancellation import (
+    SCOPE_DIVISION,
+    SCOPE_ROUND,
+    SCOPE_SEASON,
+    CalledOffSteps,
+    CancellationRound,
+)
+from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, VerdictKind
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat
@@ -38,6 +45,7 @@ from leaguebot.core.utils.league_server import CallbackButton, LeagueView
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.results.services.results_post_service import _parse_ids
+from leaguebot.results.services.review_posting import DELETE_CHANNEL
 
 if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
@@ -255,6 +263,88 @@ async def close_submissions_on(
             "UPDATE round_submission_channels SET closed = 1 WHERE round_id = ?", (round_id,)
         )
     return closed
+
+
+def _accepted_in_the_way(scope: str, held: list[tuple[CancellationRound, int]]) -> str:
+    """The refusal of a cancellation of *scope* for the first of *held*, the rounds whose open
+    submission has accepted results, each with its channel: the lowest-numbered round for a
+    division's, the first in the order handed for a season's. The words are results': what the
+    cancellation would lose is the results."""
+    if scope == SCOPE_ROUND:
+        each, channel_id = held[0]
+        return (
+            f"❌ Cannot cancel Round {each.round_number} — results have already been accepted "
+            f"in its submission channel <#{channel_id}>, and cancelling would lose them."
+        )
+    if scope == SCOPE_DIVISION:
+        each, channel_id = min(held, key=lambda found: found[0].round_number)
+        return (
+            f"❌ Cannot cancel **{each.division_name}** — results have already been accepted in "
+            f"the submission channel of round {each.round_number} (<#{channel_id}>), and "
+            "cancelling would lose them."
+        )
+    each, channel_id = held[0]
+    return (
+        f"❌ Cannot cancel the season — results have already been accepted in the submission "
+        f"channel of round {each.round_number} of **{each.division_name}** (<#{channel_id}>), "
+        "and cancelling would lose them."
+    )
+
+
+async def cancellation_refusal(
+    db: aiosqlite.Connection, scope: str, rounds: Iterable[CancellationRound]
+) -> str | None:
+    """What stands in a cancellation's way, as results has it: the refusal where any of *rounds*
+    has an open submission that has accepted results (**owner, 2026-10-08, amending Constitution
+    XII**: a cancellation would lose them, and a round in its review counts), else None.
+
+    Subscribed to core's `cancellation_refused`, which asks it on a connection of its own as the
+    cancellation is asked and as it runs, and again inside the save as a backstop. Reads only.
+    """
+    standing = list(rounds)
+    accepted = {
+        each.round_id: each.channel_id
+        for each in await open_submissions_on(db, [each.round_id for each in standing])
+        if each.accepted
+    }
+    held = [(each, accepted[each.round_id]) for each in standing if each.round_id in accepted]
+    return _accepted_in_the_way(scope, held) if held else None
+
+
+#: Why each scope's cancellation deletes a submission channel, as the job says it.
+_CHANNEL_REASON = {
+    SCOPE_ROUND: "Round cancelled",
+    SCOPE_DIVISION: "Division cancelled",
+    SCOPE_SEASON: "Season cancelled",
+}
+
+
+async def close_called_off_on(
+    db: aiosqlite.Connection, scope: str, rounds: Iterable[CancellationRound]
+) -> CalledOffSteps:
+    """Close the open submission of each of *rounds* on the connection handed, committing nothing,
+    and plan the deletion of each one's channel, in the order handed, first after the save: the
+    channel is where a manager pastes, so it goes before any notice.
+
+    Subscribed to core's `rounds_called_off`. A season's cancellation hands every round of the
+    divisions it ends, whether or not it calls the round off, and every empty submission is
+    closed. A submission that has accepted nothing is all there is to close: the cancellation was
+    refused while one had accepted results (`cancellation_refusal`).
+    """
+    standing = {each.round_id: each for each in rounds}
+    closed = dict(await close_submissions_on(db, list(standing)))
+    return CalledOffSteps(first=tuple(
+        PlannedStep(DELETE_CHANNEL, {
+            "channel_id": closed[round_id],
+            "round_id": round_id,
+            "what": "results submission channel",
+            "reason": _CHANNEL_REASON[scope],
+            "division_name": each.division_name,
+            "round_number": each.round_number,
+        })
+        for round_id, each in standing.items()
+        if round_id in closed
+    ))
 
 
 async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:

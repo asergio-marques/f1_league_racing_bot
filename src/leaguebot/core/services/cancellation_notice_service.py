@@ -33,14 +33,11 @@ from dataclasses import dataclass
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.cancellation import SCOPE_DIVISION, SCOPE_ROUND, SCOPE_SEASON
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.services.notice_handler import send_notice
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
-
-SCOPE_ROUND = "round"
-SCOPE_DIVISION = "division"
-SCOPE_SEASON = "season"
 
 
 @dataclass(frozen=True)

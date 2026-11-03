@@ -5,8 +5,9 @@ cog, then asks the queue for this change. Every other gate it had is the change 
 which judges the request when it is asked and again when it comes up to run, in the words the
 command used, so that a round whose results were entered, or whose submission accepted a session,
 while the cancellation waited is refused with the same reply. It imports nothing from a module and
-no cog: results' readers and closer of the open submissions (`SubmissionHooks`) reach it through
-the builder, and it reads the season through the service it is handed.
+no cog: what the modules take part in (what stands in a cancellation's way, the rounds called off,
+the steps a module plans) reaches it as hooks the builder signs them up to, and it reads the season
+through the service it is handed.
 
 **A round whose submission stands open is cancelled only while it has accepted nothing** (owner,
 2026-10-08, amending Constitution XII): any `session_results` row, of either status, is data the
@@ -85,14 +86,21 @@ division twice, since by then none is still running.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.cancellation import (
+    SCOPE_DIVISION,
+    SCOPE_ROUND,
+    SCOPE_SEASON,
+    CalledOffSteps,
+    CancellationRound,
+)
 from leaguebot.core.models.change import (
     AuditRecord,
     FollowOn,
@@ -167,6 +175,7 @@ from leaguebot.core.services.season_service import (
     discard_uncommitted_placements_on,
 )
 from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
+from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
@@ -350,41 +359,40 @@ def _division_accepted(payload: dict[str, Any], number: int, channel_id: int) ->
     )
 
 
-def _accepted(payload: dict[str, Any], channel_id: int) -> str:
-    return (
-        f"❌ Cannot cancel Round {payload['round_number']} — results have already been accepted "
-        f"in its submission channel <#{channel_id}>, and cancelling would lose them."
+async def _refusal_of_the_modules(
+    hook: AwaitedHook, db: aiosqlite.Connection, scope: str, rounds: list[CancellationRound]
+) -> str | None:
+    """What stands in the way of cancelling *rounds*: the first refusal a module hands back, or
+    None. Each module is asked, on *db*, the connection it is handed (`cancellation_refused`)."""
+    for found in await hook.call(db, scope, rounds):
+        if found is not None:
+            return str(found)
+    return None
+
+
+async def _planned_by_the_modules(
+    hook: AwaitedHook, db: aiosqlite.Connection, scope: str, rounds: list[CancellationRound]
+) -> CalledOffSteps:
+    """What each module does for *rounds*, called off, inside the save on *db*, and the steps it
+    plans (`rounds_called_off`), together in the order the modules signed up."""
+    first: list[PlannedStep] = []
+    with_division: dict[int, list[PlannedStep]] = {}
+    for planned in await hook.call(db, scope, rounds):
+        first += planned.first
+        for division_id, steps in planned.with_division.items():
+            with_division.setdefault(division_id, []).extend(steps)
+    return CalledOffSteps(
+        tuple(first), {division_id: tuple(steps) for division_id, steps in with_division.items()}
     )
 
 
-class OpenSubmissionRead(Protocol):
-    """A round's results submission standing open, as results reads it: its round, its channel,
-    and whether it has accepted any session's results (or a session entered as not held)."""
-
-    @property
-    def round_id(self) -> int: ...
-    @property
-    def channel_id(self) -> int: ...
-    @property
-    def accepted(self) -> bool: ...
-
-
-@dataclasses.dataclass(frozen=True)
-class SubmissionHooks:
-    """What a cancellation needs of results' submissions, handed it by the builder so that this
-    module imports no module (architecture.md, "How modules and core fit together").
-
-    *open_submissions* reads, on a connection of its own, each open submission among some rounds;
-    *open_submissions_on* does so on the save's connection; *close_submissions_on* marks each one
-    closed on it, committing nothing, and gives ``(round_id, channel_id)`` for each; *delete_step*
-    is results' own `delete_channel` job, which deletes a channel and completes where it is
-    already gone.
-    """
-
-    open_submissions: Callable[[str, Iterable[int]], Awaitable[list[Any]]]
-    open_submissions_on: Callable[[aiosqlite.Connection, Iterable[int]], Awaitable[list[Any]]]
-    close_submissions_on: Callable[[aiosqlite.Connection, Iterable[int]], Awaitable[list[tuple[int, int]]]]
-    delete_step: Step
+def _steps_of_the_modules(cancellation_steps: Hook) -> dict[str, Step]:
+    """The step definitions the modules plan in a cancellation, by name, so that core registers
+    steps it does not name."""
+    steps: dict[str, Step] = {}
+    for each in cancellation_steps.call():
+        steps.update(each)
+    return steps
 
 
 @dataclasses.dataclass(frozen=True)
@@ -866,7 +874,9 @@ def round_cancel_change(
     modules: "ModuleService",
     seasons: SeasonService,
     scheduler: "SchedulerService",
-    submissions: SubmissionHooks,
+    cancellation_refused: AwaitedHook,
+    rounds_called_off: AwaitedHook,
+    cancellation_steps: Hook,
     cancellation: CancellationHooks,
     amendment_in_hand: Callable[[int], Awaitable[int | None]],
     now: Callable[[], datetime],
@@ -877,7 +887,8 @@ def round_cancel_change(
     "season_number"}``. It names no season: a payload that does is read as holding every division
     of that season (`review_changes.division_job_in_hand`); the season a job needs travels on the
     jobs' own payloads. The builder hands in the *modules* (each notice's `still_due`), the
-    *seasons* service, the *scheduler*, results' *submissions* (`SubmissionHooks`), attendance's *cancellation* hooks (`CancellationHooks`), *amendment_in_hand* (the job a
+    *seasons* service, the *scheduler*, the hooks the modules sign up to (*cancellation_refused*, *rounds_called_off*, and
+    *cancellation_steps*, whose steps are registered), attendance's *cancellation* hooks (`CancellationHooks`), *amendment_in_hand* (the job a
     `/round amend` of a round of a division waits on, or None) and the queue's clock *now*.
     """
 
@@ -900,7 +911,7 @@ def round_cancel_change(
         round_id = int(payload["round_id"])
         async with get_connection(ctx.db_path) as db:
             cursor = await db.execute(
-                "SELECT status, round_number FROM rounds WHERE id = ?", (round_id,)
+                "SELECT status, round_number, track_name FROM rounds WHERE id = ?", (round_id,)
             )
             row = await cursor.fetchone()
         if row is None:
@@ -931,9 +942,16 @@ def round_cancel_change(
                 return Verdict.refuse(division_being_amended(payload, amended))
         if row["status"] not in ROUND_CANCELLABLE:
             return Verdict.refuse(_results_entered(payload))
-        for each in await submissions.open_submissions(ctx.db_path, [round_id]):
-            if each.accepted:
-                return Verdict.refuse(_accepted(payload, each.channel_id))
+        async with get_connection(ctx.db_path) as db:
+            refusal = await _refusal_of_the_modules(
+                cancellation_refused, db, SCOPE_ROUND,
+                [CancellationRound(
+                    round_id, int(row["round_number"]), row["track_name"],
+                    int(payload["division_id"]), str(payload["division_name"]), season.id, True,
+                )],
+            )
+        if refusal is not None:
+            return Verdict.refuse(refusal)
         return Verdict.go()
 
     # ── The jobs ────────────────────────────────────────────────────────────────
@@ -990,14 +1008,18 @@ def round_cancel_change(
         division = await cursor.fetchone()
         previous = None
         if division is not None:
+            this_round = [CancellationRound(
+                round_id, int(division["round_number"]), division["track_name"],
+                int(division["id"]), str(ctx.payload["division_name"]),
+                int(division["season_id"]), True,
+            )]
             # A backstop for the check: `unarm` lies between them, and a session may have been
             # accepted since. Nothing is written then, and the timed work `unarm` took is armed again.
-            for each in await submissions.open_submissions_on(db, [round_id]):
-                if each.accepted:
-                    return await _refused_rearming(db, ctx, _accepted(
-                        {**ctx.payload, "round_number": division["round_number"]},
-                        each.channel_id,
-                    ), _ROUND_REARM_COMMAND)
+            refusal = await _refusal_of_the_modules(
+                cancellation_refused, db, SCOPE_ROUND, this_round
+            )
+            if refusal is not None:
+                return await _refused_rearming(db, ctx, refusal, _ROUND_REARM_COMMAND)
             previous = await cancel_round_on(
                 db, round_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
             )
@@ -1027,20 +1049,12 @@ def round_cancel_change(
         called = await cursor.fetchone() is not None
         # An open submission with nothing accepted is closed in this save, and its channel
         # deleted first of all after it, since that is where a manager pastes.
-        planned = [
-            PlannedStep(DELETE_CHANNEL, {
-                "channel_id": channel_id,
-                "round_id": closed_round,
-                "what": "results submission channel",
-                "reason": "Round cancelled",
-                "division_name": target["division_name"],
-                "round_number": target["round_number"],
-            })
-            for closed_round, channel_id in await submissions.close_submissions_on(db, [round_id])
-        ]
+        by_modules = await _planned_by_the_modules(rounds_called_off, db, SCOPE_ROUND, this_round)
+        planned = list(by_modules.first)
         planned.append(PlannedStep(NOTIFY_CHECKIN, target))
         if called:
             planned.append(PlannedStep(TAKE_DOWN_CALL, target))
+        planned += by_modules.with_division.get(target["division_id"], ())
         planned += [
             PlannedStep(NOTIFY_FORECAST, target),
             PlannedStep(NOTIFY_RESULTS, target),
@@ -1112,7 +1126,7 @@ def round_cancel_change(
             modules=modules, seasons=seasons, scope=notices.SCOPE_ROUND,
             cancellation=cancellation,
         ),
-        DELETE_CHANNEL: submissions.delete_step,
+        **_steps_of_the_modules(cancellation_steps),
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
             describe=_named(
@@ -1151,7 +1165,9 @@ def division_cancel_change(
     modules: "ModuleService",
     seasons: SeasonService,
     scheduler: "SchedulerService",
-    submissions: SubmissionHooks,
+    cancellation_refused: AwaitedHook,
+    rounds_called_off: AwaitedHook,
+    cancellation_steps: Hook,
     cancellation: CancellationHooks,
     amendment_in_hand: Callable[[int], Awaitable[int | None]],
     now: Callable[[], datetime],
@@ -1167,18 +1183,6 @@ def division_cancel_change(
     such round. In the save the empty submissions of the rounds called off are closed, and the
     deletion of each channel is a job, in round order, first after it.
     """
-
-    async def accepted_in(
-        rounds: list[tuple[int, int]], read: Callable[[list[int]], Awaitable[list[Any]]]
-    ) -> tuple[int, int] | None:
-        """``(round number, channel id)`` of the lowest-numbered round among *rounds*
-        (``(id, number)`` pairs) whose open submission has accepted a session, or None."""
-        numbers = dict(rounds)
-        held = [each for each in await read(list(numbers)) if each.accepted]
-        if not held:
-            return None
-        first = min(held, key=lambda each: numbers[each.round_id])
-        return numbers[first.round_id], first.channel_id
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
@@ -1208,15 +1212,20 @@ def division_cancel_change(
             )
         if row["status"] == "FINISHED":
             return Verdict.refuse(_division_finished(str(row["name"])))
-        found = await accepted_in(
-            [
-                (each.id, each.round_number)
-                for each in await seasons.get_division_rounds(int(payload["division_id"]))
-            ],
-            lambda ids: submissions.open_submissions(ctx.db_path, ids),
-        )
-        if found is not None:
-            return Verdict.refuse(_division_accepted(payload, *found))
+        async with get_connection(ctx.db_path) as db:
+            refusal = await _refusal_of_the_modules(
+                cancellation_refused, db, SCOPE_DIVISION,
+                [
+                    CancellationRound(
+                        each.id, each.round_number, each.track_name, int(payload["division_id"]),
+                        str(payload["division_name"]), season.id,
+                        each.status in ROUND_CANCELLABLE,
+                    )
+                    for each in await seasons.get_division_rounds(int(payload["division_id"]))
+                ],
+            )
+        if refusal is not None:
+            return Verdict.refuse(refusal)
         if ctx.change_id is None:
             held = await cancellation_in_hand(
                 ctx.db_path, division_id=int(payload["division_id"])
@@ -1282,25 +1291,31 @@ def division_cancel_change(
             return await _refused_rearming(db, ctx, refusal or "", _DIVISION_REARM_COMMAND)
 
         cursor = await db.execute(
-            "SELECT id, round_number FROM rounds WHERE division_id = ?", (division_id,)
+            "SELECT id, round_number, track_name, status FROM rounds WHERE division_id = ? "
+            "ORDER BY round_number",
+            (division_id,),
         )
-        numbers = {int(each["id"]): int(each["round_number"]) for each in await cursor.fetchall()}
+        standing = {
+            int(each["id"]): CancellationRound(
+                int(each["id"]), int(each["round_number"]), each["track_name"], division_id,
+                str(payload["division_name"]), int(division["season_id"]),
+                each["status"] in ROUND_CANCELLABLE,
+            )
+            for each in await cursor.fetchall()
+        }
         # A backstop for the check: `unarm` lies between them, and a session may have been
         # accepted since. Nothing is written then, and the timed work `unarm` took is armed again.
-        found = await accepted_in(
-            list(numbers.items()), lambda ids: submissions.open_submissions_on(db, ids)
+        refusal = await _refusal_of_the_modules(
+            cancellation_refused, db, SCOPE_DIVISION, list(standing.values())
         )
-        if found is not None:
-            return await _refused_rearming(
-                db, ctx, _division_accepted(payload, *found), _DIVISION_REARM_COMMAND
-            )
+        if refusal is not None:
+            return await _refused_rearming(db, ctx, refusal, _DIVISION_REARM_COMMAND)
 
         called_off = await cancel_division_on(
             db, division_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
         )
-        closed = sorted(
-            await submissions.close_submissions_on(db, called_off),
-            key=lambda each: numbers[each[0]],
+        after = await _planned_by_the_modules(
+            rounds_called_off, db, SCOPE_DIVISION, [standing[each] for each in called_off]
         )
         # Cancelling the last division still running leaves the season pending completion, in this
         # same save: `cancel_division_on` leaves the season's stage alone, for `/season cancel`.
@@ -1310,17 +1325,7 @@ def division_cancel_change(
             "division_name": str(payload["division_name"]),
             "season_id": int(division["season_id"]),
         }
-        planned = [
-            PlannedStep(DELETE_CHANNEL, {
-                "channel_id": channel_id,
-                "round_id": closed_round,
-                "what": "results submission channel",
-                "reason": "Division cancelled",
-                "division_name": target["division_name"],
-                "round_number": numbers[closed_round],
-            })
-            for closed_round, channel_id in closed
-        ]
+        planned = list(after.first)
         planned.append(PlannedStep(NOTIFY_CHECKIN, target))
         if called_off:
             marks = ",".join("?" * len(called_off))
@@ -1337,6 +1342,7 @@ def division_cancel_change(
                 )
                 for row in await cursor.fetchall()
             ]
+        planned += after.with_division.get(division_id, ())
         planned += [
             PlannedStep(NOTIFY_FORECAST, target),
             PlannedStep(NOTIFY_RESULTS, target),
@@ -1382,7 +1388,7 @@ def division_cancel_change(
             modules=modules, seasons=seasons, scope=notices.SCOPE_DIVISION,
             cancellation=cancellation,
         ),
-        DELETE_CHANNEL: submissions.delete_step,
+        **_steps_of_the_modules(cancellation_steps),
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
             describe=_named("removing the timed work of the rounds of **{division}**"),
@@ -1419,36 +1425,15 @@ def season_amended(held: Any) -> str:
     )
 
 
-def _season_accepted(division_name: str, number: int, channel_id: int) -> str:
-    return (
-        f"❌ Cannot cancel the season — results have already been accepted in the submission "
-        f"channel of round {number} of **{division_name}** (<#{channel_id}>), and cancelling "
-        "would lose them."
-    )
-
-
-def _first_accepted(
-    standing: dict[int, tuple[str, int]], open_ones: Iterable[Any]
-) -> str | None:
-    """The refusal naming the first round, by division then round, whose open submission has
-    accepted a session, or None. *standing* maps a round's id to its division's name and its
-    number, in the order the season lists them."""
-    held = [each for each in open_ones if each.accepted]
-    if not held:
-        return None
-    order = list(standing)
-    first = min(held, key=lambda each: order.index(each.round_id))
-    name, number = standing[first.round_id]
-    return _season_accepted(name, number, first.channel_id)
-
-
 def season_cancel_change(
     *,
     modules: "ModuleService",
     seasons: SeasonService,
     scheduler: "SchedulerService",
     placement: "PlacementService",
-    submissions: SubmissionHooks,
+    cancellation_refused: AwaitedHook,
+    rounds_called_off: AwaitedHook,
+    cancellation_steps: Hook,
     cancellation: CancellationHooks,
     hooks: SeasonEndHooks,
     now: Callable[[], datetime],
@@ -1456,8 +1441,9 @@ def season_cancel_change(
     """The change that cancels the season being raced; see the module.
 
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *modules*, the
-    *seasons* service, the *scheduler*, the *placement* service (which takes back roles), results'
-    *submissions*, the season end's *hooks* and the queue's clock *now*.
+    *seasons* service, the *scheduler*, the *placement* service (which takes back roles), the hooks the
+    modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_steps*), the season
+    end's *hooks* and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1487,15 +1473,21 @@ def season_cancel_change(
         # **Not while a submission holds accepted results** (owner, 2026-10-08, amending
         # Constitution XII): a session accepted, or entered as not held, is data the cancellation
         # would lose, and a round in its review counts.
-        standing: dict[int, tuple[str, int]] = {}
+        standing: list[CancellationRound] = []
         for division in await seasons.get_divisions(season.id):
             if division.status == "CANCELLED":
                 continue
-            for each in await seasons.get_division_rounds(division.id):
-                standing[each.id] = (division.name, each.round_number)
-        refusal = _first_accepted(
-            standing, await submissions.open_submissions(ctx.db_path, list(standing))
-        )
+            standing += [
+                CancellationRound(
+                    each.id, each.round_number, each.track_name, division.id, division.name,
+                    season.id, each.status in ROUND_CANCELLABLE,
+                )
+                for each in await seasons.get_division_rounds(division.id)
+            ]
+        async with get_connection(ctx.db_path) as db:
+            refusal = await _refusal_of_the_modules(
+                cancellation_refused, db, SCOPE_SEASON, standing
+            )
         if refusal is not None:
             return Verdict.refuse(refusal)
         return Verdict.go()
@@ -1544,18 +1536,25 @@ def season_cancel_change(
             return await _refused_rearming(db, ctx, SEASON_NOT_ONGOING, _SEASON_REARM_COMMAND)
 
         cursor = await db.execute(
-            "SELECT d.name AS division_name, r.id AS round_id, r.round_number FROM rounds r "
+            "SELECT d.id AS division_id, d.name AS division_name, r.id AS round_id, "
+            "r.round_number, r.track_name, r.status FROM rounds r "
             "JOIN divisions d ON d.id = r.division_id WHERE d.season_id = ? "
             "AND d.status != 'CANCELLED' ORDER BY d.tier, r.round_number",
             (season_id,),
         )
-        standing = {
-            int(row["round_id"]): (str(row["division_name"]), int(row["round_number"]))
+        standing = [
+            CancellationRound(
+                int(row["round_id"]), int(row["round_number"]), row["track_name"],
+                int(row["division_id"]), str(row["division_name"]), season_id,
+                row["status"] in ROUND_CANCELLABLE,
+            )
             for row in await cursor.fetchall()
-        }
+        ]
         # A backstop for the check: `unarm` lies between them, and a session may have been
         # accepted since. Nothing is written then, and the timed work `unarm` took is armed again.
-        refusal = _first_accepted(standing, await submissions.open_submissions_on(db, list(standing)))
+        refusal = await _refusal_of_the_modules(
+            cancellation_refused, db, SCOPE_SEASON, standing
+        )
         if refusal is not None:
             return await _refused_rearming(db, ctx, refusal, _SEASON_REARM_COMMAND)
 
@@ -1563,10 +1562,7 @@ def season_cancel_change(
         # discarded so that they earn no history, then the rounds raced and awaiting verdicts made
         # final: the driver pass at the end would otherwise delete the drivers of those rounds
         # (#216).
-        closed = sorted(
-            await submissions.close_submissions_on(db, list(standing)),
-            key=lambda each: list(standing).index(each[0]),
-        )
+        after = await _planned_by_the_modules(rounds_called_off, db, SCOPE_SEASON, standing)
         await discard_uncommitted_placements_on(db, season_id)
         await close_raced_rounds_on(
             db, season_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
@@ -1583,17 +1579,7 @@ def season_cancel_change(
             db, season_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
         )
 
-        planned = [
-            PlannedStep(DELETE_CHANNEL, {
-                "channel_id": channel_id,
-                "round_id": closed_round,
-                "what": "results submission channel",
-                "reason": "Season cancelled",
-                "division_name": standing[closed_round][0],
-                "round_number": standing[closed_round][1],
-            })
-            for closed_round, channel_id in closed
-        ]
+        planned = list(after.first)
         for division_id, division_name in running:
             target = {
                 "division_id": division_id,
@@ -1617,6 +1603,7 @@ def season_cancel_change(
                     })
                     for row in await cursor.fetchall()
                 ]
+            planned += after.with_division.get(division_id, ())
             planned += [
                 PlannedStep(NOTIFY_FORECAST, target),
                 PlannedStep(NOTIFY_RESULTS, target),
@@ -1774,7 +1761,7 @@ def season_cancel_change(
             cancellation=cancellation,
         ),
         **season_end_steps(placement, hooks),
-        DELETE_CHANNEL: submissions.delete_step,
+        **_steps_of_the_modules(cancellation_steps),
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
             describe=describing("removing the timed work of the rounds of season {number}"),

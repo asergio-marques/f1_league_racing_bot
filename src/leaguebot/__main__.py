@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
 from leaguebot.core.services.start_up import StartUpStep, start_up
-from leaguebot.core.utils.hooks import Hook
+from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild, LeagueCommandTree, warn_if_serving_several
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
@@ -26,7 +26,7 @@ from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 if TYPE_CHECKING:
     from leaguebot.core.services.calendar_post_service import CalendarCommandOutcome
     from leaguebot.image.services.image_lineup_post import LineupPostOutcome
-    from leaguebot.core.services.cancellation_changes import CancellationHooks, SubmissionHooks
+    from leaguebot.core.services.cancellation_changes import CancellationHooks
     from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.round_amend_change import AmendHooks
     from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
@@ -318,19 +318,19 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     )
 
 
-def _submission_hooks() -> "SubmissionHooks":
-    """What a cancellation needs of results' submissions, handed it here so that core imports no
-    module."""
-    from leaguebot.core.services.cancellation_changes import SubmissionHooks
-    from leaguebot.results.services import result_submission_service
-    from leaguebot.results.services.review_posting import cancellation_delete_step
+def _sign_up_to_cancellations(bot: LeagueBot) -> None:
+    """Make the hooks a cancellation of rounds declares, and sign each module's part up to them,
+    in the order core calls them: what stands in the way (results' refusal of a round whose
+    submission accepted results), the rounds called off (results closes their empty submissions,
+    in the save), and the steps a module plans (results' deletion of a submission channel)."""
+    from leaguebot.results.services import result_submission_service, review_posting
 
-    return SubmissionHooks(
-        open_submissions=result_submission_service.open_submissions,
-        open_submissions_on=result_submission_service.open_submissions_on,
-        close_submissions_on=result_submission_service.close_submissions_on,
-        delete_step=cancellation_delete_step(),
-    )
+    bot.cancellation_refused = AwaitedHook()
+    bot.cancellation_refused.subscribe(result_submission_service.cancellation_refusal)
+    bot.rounds_called_off = AwaitedHook()
+    bot.rounds_called_off.subscribe(result_submission_service.close_called_off_on)
+    bot.cancellation_steps = Hook()
+    bot.cancellation_steps.subscribe(review_posting.cancellation_steps)
 
 
 def _cancellation_hooks(bot: LeagueBot) -> "CancellationHooks":
@@ -891,7 +891,9 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
-            submissions=_submission_hooks(),
+            cancellation_refused=bot.cancellation_refused,
+            rounds_called_off=bot.rounds_called_off,
+            cancellation_steps=bot.cancellation_steps,
             cancellation=_cancellation_hooks(bot),
             hooks=hooks,
             now=lambda: bot.change_queue.now(),
@@ -985,7 +987,9 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
-            submissions=_submission_hooks(),
+            cancellation_refused=bot.cancellation_refused,
+            rounds_called_off=bot.rounds_called_off,
+            cancellation_steps=bot.cancellation_steps,
             cancellation=_cancellation_hooks(bot),
             amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),
@@ -996,7 +1000,9 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
-            submissions=_submission_hooks(),
+            cancellation_refused=bot.cancellation_refused,
+            rounds_called_off=bot.rounds_called_off,
+            cancellation_steps=bot.cancellation_steps,
             cancellation=_cancellation_hooks(bot),
             amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),
@@ -1204,6 +1210,7 @@ async def build(settings: Settings) -> LeagueBot:
         bot.image_validity_service,
     )
 
+    _sign_up_to_cancellations(bot)
     register_change_types(bot)
     register_scheduler_callbacks(bot)
 

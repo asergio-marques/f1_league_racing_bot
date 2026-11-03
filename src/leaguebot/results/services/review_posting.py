@@ -1077,7 +1077,13 @@ def cancellation_delete_step() -> Step:
     return dataclasses.replace(posting_steps()[DELETE_CHANNEL], record=_record_submission_channel_gone)
 
 
+def cancellation_steps() -> dict[str, Step]:
+    """The steps results plans in a cancellation of rounds, by name: the deletion of a submission
+    channel. Subscribed to core's `cancellation_steps`."""
+    return {DELETE_CHANNEL: cancellation_delete_step()}
+
+
 __all__ = [
-    "cancellation_delete_step", "NAMES", "display_names", "DEFAULT_NOTICE", "DELETE_BATCH_NOTICE", "DELETE_CHANNEL", "DELETE_MESSAGE", "POST_BATCH_NOTICE",
+    "cancellation_steps", "cancellation_delete_step", "NAMES", "display_names", "DEFAULT_NOTICE", "DELETE_BATCH_NOTICE", "DELETE_CHANNEL", "DELETE_MESSAGE", "POST_BATCH_NOTICE",
     "POST_SESSION_RESULTS", "POST_STANDINGS", "POST_STANDINGS_AFRESH", "not_done", "plan_division_posts", "plan_posts", "posting_steps",
 ]

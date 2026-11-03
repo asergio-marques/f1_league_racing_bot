@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.results.services.attendance_hook import AttendanceAfterReview
     from leaguebot.core.services.output_router import OutputRouter
-    from leaguebot.core.utils.hooks import Hook
+    from leaguebot.core.utils.hooks import AwaitedHook, Hook
 
 
 class LeagueBot(commands.Bot):
@@ -94,6 +94,15 @@ class LeagueBot(commands.Bot):
     #: signs them up, so that core's clear reaches no module and no cog (architecture.md, "A hook
     #: core declares is a list of subscribers").
     in_memory_state_cleared: Hook
+    #: The moments of a cancellation of rounds (a round's, a division's or a season's), each module
+    #: signing up its part: what stands in the way (each hands back a refusal or None), the rounds
+    #: called off, inside the save (each hands back the steps it plans), and the steps a module
+    #: plans (each hands back its step definitions by name). The builder makes them and hands them
+    #: to the three cancellations (architecture.md, "A hook core declares is a list of
+    #: subscribers").
+    cancellation_refused: AwaitedHook
+    rounds_called_off: AwaitedHook
+    cancellation_steps: Hook
     #: Starts the retry cog's loop. The builder sets it, so that `setup_hook` reaches the loop
     #: without importing the cog, which nothing below the cogs may do.
     start_retry_loop: Callable[[], None]

@@ -525,7 +525,6 @@ async def test_the_jobs_run_in_today_s_order(tmp_path):
 _ITS_CHANNEL = 4242
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a cancellation plans no subscriber's steps")
 async def test_a_subscriber_s_planned_steps_are_planned_in_the_save_in_order(tmp_path):
     """A module of the test's own signs up to the rounds called off, after results and
     attendance, and plans a channel deleted ahead of every notice and, for Pro, round 4's call

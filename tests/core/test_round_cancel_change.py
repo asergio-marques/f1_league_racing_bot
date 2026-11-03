@@ -1440,7 +1440,6 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_save_and_its
 _STOOD_IN_THE_WAY = "❌ Cannot cancel Round 3 — a module of the test's own stands in the way."
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a cancellation asks no subscriber what stands in its way")
 @pytest.mark.parametrize("where", ["asked", "in the save"])
 async def test_a_subscriber_s_refusal_stops_the_cancellation_in_the_check_and_the_save_writing_nothing(
     tmp_path, where,
