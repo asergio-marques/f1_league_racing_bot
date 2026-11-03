@@ -536,6 +536,16 @@ async def _open_submission(db_path: str, status: str) -> None:
         await db.commit()
 
 
+def _assert_refused(cog, interaction, reply: str) -> None:
+    """The maintainer got *reply* alone, and the log channel holds one refusal line naming them,
+    `/test-mode advance` and the reply's reason, and no success line."""
+    assert _replied(interaction) == reply
+    reason = reply.removeprefix("⏸️").strip()
+    assert _log_lines(cog) == [
+        f"⛔ `/test-mode advance` refused for Maintainer (<@77>) — {reason}"
+    ]
+
+
 async def _noop(kind: str, key: int) -> None:
     return None
 
@@ -586,18 +596,25 @@ async def test_the_round_s_real_results_job_is_cancelled_before_the_wizard_opens
 
 
 async def test_an_open_submission_blocks_the_next_advance(tmp_path):
-    """The maintainer has to finish the round in front of them before stepping past it."""
+    """The maintainer has to finish the round in front of them before stepping past it. Round
+    3's submission channel stands open, the round awaiting its results: advance asks nothing,
+    refuses naming the penalty review, and records the refusal in the log channel."""
     db_path = await _make_db(tmp_path)
     await _open_submission(db_path, "AWAITING_RESULTS")
     cog = _make_cog(db_path)
     interaction = _interaction()
+    interaction.client = cog.bot
 
     mocks = await _advance(cog, interaction, _entry(4))
 
     assert _asked(cog) == []
     if "run_result_submission_job" in mocks:
         mocks["run_result_submission_job"].assert_not_awaited()
-    assert "awaiting" in _replied(interaction)
+    _assert_refused(
+        cog, interaction,
+        "⏸️ **Division 1** — **Round 3** is awaiting penalty review approval. Please complete "
+        "the penalty review in the submission channel before advancing.",
+    )
 
 
 async def test_a_round_awaiting_penalty_review_names_that_review(tmp_path):
@@ -605,10 +622,15 @@ async def test_a_round_awaiting_penalty_review_names_that_review(tmp_path):
     await _open_submission(db_path, "AWAITING_REPORT_VERDICTS")
     cog = _make_cog(db_path)
     interaction = _interaction()
+    interaction.client = cog.bot
 
     await _advance(cog, interaction, _entry(4))
 
-    assert "penalty review" in _replied(interaction)
+    _assert_refused(
+        cog, interaction,
+        "⏸️ **Division 1** — **Round 3** is awaiting penalty review approval. Please complete "
+        "the penalty review in the submission channel before advancing.",
+    )
 
 
 async def test_a_round_awaiting_appeals_names_the_appeals_review(tmp_path):
@@ -618,27 +640,35 @@ async def test_a_round_awaiting_appeals_names_the_appeals_review(tmp_path):
     await _open_submission(db_path, "AWAITING_APPEAL_VERDICTS")
     cog = _make_cog(db_path)
     interaction = _interaction()
+    interaction.client = cog.bot
 
     await _advance(cog, interaction, _entry(4))
 
-    replied = _replied(interaction)
-    assert "appeals review" in replied
-    assert "penalty review" not in replied
+    _assert_refused(
+        cog, interaction,
+        "⏸️ **Division 1** — **Round 3** is awaiting appeals review approval. Please complete "
+        "the appeals review in the submission channel before advancing.",
+    )
 
 
 async def test_a_finalised_round_with_an_open_channel_says_so_differently(tmp_path):
     """The defensive case: nothing is awaiting review, so the message is about the
-    submission being in progress rather than about a review to complete."""
+    submission being in progress rather than about a review to complete. The refusal is
+    recorded in the log channel."""
     db_path = await _make_db(tmp_path)
     await _open_submission(db_path, "FINAL")
     cog = _make_cog(db_path)
     interaction = _interaction()
+    interaction.client = cog.bot
 
     await _advance(cog, interaction, _entry(4))
 
-    replied = _replied(interaction)
-    assert "already in progress" in replied
-    assert "awaiting" not in replied
+    assert _asked(cog) == []
+    _assert_refused(
+        cog, interaction,
+        "⏸️ Result submission for **Division 1** — **Round 3** is already in progress. Please "
+        "submit results in the submission channel before advancing.",
+    )
 
 
 # ---------------------------------------------------------------------------
