@@ -350,14 +350,6 @@ def _results_entered(payload: dict[str, Any]) -> str:
     )
 
 
-def _division_accepted(payload: dict[str, Any], number: int, channel_id: int) -> str:
-    return (
-        f"❌ Cannot cancel **{payload['division_name']}** — results have already been accepted in "
-        f"the submission channel of round {number} (<#{channel_id}>), and cancelling would lose "
-        "them."
-    )
-
-
 async def _refusal_of_the_modules(
     hook: AwaitedHook, db: aiosqlite.Connection, scope: str, rounds: list[CancellationRound]
 ) -> str | None:
