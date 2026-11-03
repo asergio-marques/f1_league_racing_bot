@@ -521,6 +521,59 @@ async def test_the_jobs_run_in_today_s_order(tmp_path):
     assert sent == [PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar]
 
 
+#: The channel a module of the test's own plans deleted first of all after the save.
+_ITS_CHANNEL = 4242
+
+
+@pytest.mark.xfail(strict=True, reason="#283: a cancellation plans no subscriber's steps")
+async def test_a_subscriber_s_planned_steps_are_planned_in_the_save_in_order(tmp_path):
+    """A module of the test's own signs up to the rounds called off, after results and
+    attendance, and plans a channel deleted ahead of every notice and, for Pro, round 4's call
+    taken down after Pro's check-in notice. Cancelling Pro, it is handed the save's connection and
+    the rounds the save called off, each with its division and marked called off, and once the
+    save is done its steps stand where it placed them: the channel's deletion straight after the
+    save, then Pro's check-in notice, attendance's own take-down of round 3's call, the module's
+    take-down of round 4's, then the forecast and results notes, the calendar and the close."""
+    import aiosqlite
+
+    from leaguebot.core.models.cancellation import CalledOffSteps
+    from leaguebot.core.models.change import PlannedStep
+
+    league = await ongoing_league(tmp_path)
+    seen: list[tuple[str, list[tuple[int, int, str, bool]]]] = []
+
+    async def plans(db, scope, rounds):
+        assert isinstance(db, aiosqlite.Connection)
+        seen.append((scope, [(each.round_id, each.division_id, each.division_name,
+                              each.called_off) for each in rounds]))
+        return CalledOffSteps(
+            first=(PlannedStep("delete_channel", {
+                "channel_id": _ITS_CHANNEL, "round_id": R4, "what": "test channel",
+                "reason": "Division cancelled", "division_name": "Pro", "round_number": 4,
+            }),),
+            with_division={PRO: (PlannedStep("take_down_call", {
+                "division_id": PRO, "division_name": "Pro", "season_id": SEASON_ID,
+                "round_id": R4, "round_number": 4,
+            }),)},
+        )
+
+    league.bot.rounds_called_off.subscribe(plans)
+    await _asked(league)
+
+    await _run_through(league, "apply")
+
+    jobs = await _jobs(league)
+    [saved] = [job for job in jobs if job["name"] == "apply"]
+    assert seen == [("division", [(rid, PRO, "Pro", True)
+                                  for rid in saved["result"]["called_off"]])]
+    assert [job["name"] for job in jobs] == [
+        "unarm", "apply", "delete_channel", "notify_checkin", "take_down_call", "take_down_call",
+        "notify_forecast", "notify_results", "post_calendar", "close",
+    ]
+    assert json.loads(jobs[2]["payload"])["channel_id"] == _ITS_CHANNEL
+    assert [json.loads(job["payload"])["round_id"] for job in jobs[4:6]] == [R3, R4]
+
+
 async def test_every_round_of_the_division_loses_its_timed_work(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)

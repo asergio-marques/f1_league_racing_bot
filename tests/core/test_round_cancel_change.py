@@ -1436,6 +1436,62 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_save_and_its
     assert len([line for line in _log_lines(league) if ARMED_AGAIN in line]) == 1
 
 
+#: What a module of the test's own, signed up to stand in a cancellation's way, refuses in.
+_STOOD_IN_THE_WAY = "❌ Cannot cancel Round 3 — a module of the test's own stands in the way."
+
+
+@pytest.mark.xfail(strict=True, reason="#283: a cancellation asks no subscriber what stands in its way")
+@pytest.mark.parametrize("where", ["asked", "in the save"])
+async def test_a_subscriber_s_refusal_stops_the_cancellation_in_the_check_and_the_save_writing_nothing(
+    tmp_path, where,
+):
+    """A module of the test's own signs up to what stands in the way of a cancellation of rounds,
+    and is handed the save's rounds: round 3 of Pro. Asked, where it refuses from the first, `/round
+    cancel` is refused at once in its words and nothing is queued or removed. In the save, where it
+    refuses only once the removal of the timed work has stopped and been retried, the save refuses
+    in its words as the backstop: the reply says so and that the timed work is being armed again,
+    by a change that runs. Either way one refusal line is written, every round keeps its status,
+    no round's cancellation is audited and no channel is posted in."""
+    league = await ongoing_league(tmp_path)
+    seen: list[tuple[str, list[tuple[int, int, str]]]] = []
+    refusing = {"now": where == "asked"}
+
+    async def stands_in_the_way(_db, scope, rounds):
+        seen.append((scope, [(each.round_id, each.round_number, each.division_name)
+                             for each in rounds]))
+        return _STOOD_IN_THE_WAY if refusing["now"] else None
+
+    league.bot.cancellation_refused.subscribe(stands_in_the_way)
+    before = await league.rows("SELECT id, status FROM rounds ORDER BY id")
+
+    interaction = await _asked(league)
+    if where == "asked":
+        assert reply(interaction) == _STOOD_IN_THE_WAY
+        assert await cancellation_changes(league) == []
+        await run_queue(league.bot)
+        assert league.unarmed == []
+    else:
+        unarming = league.bot.scheduler_service.cancel_round
+        league.bot.scheduler_service.cancel_round = MagicMock(
+            side_effect=RuntimeError("the job store is locked")
+        )
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "unarm"
+        refusing["now"] = True
+        league.bot.scheduler_service.cancel_round = unarming
+        await retry_job(league.bot)
+        assert _STOOD_IN_THE_WAY in reply(interaction)
+        assert REARMING in reply(interaction)
+        assert (await _change(league))["state"] == "DONE"
+        assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
+
+    assert seen[0] == ("round", [(R3, 3, "Pro")])
+    assert len(_refusal_lines(league)) == 1
+    assert await league.rows("SELECT id, status FROM rounds ORDER BY id") == before
+    assert await _round_audits(league) == []
+    assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
+
+
 async def test_a_re_arming_queued_behind_a_cancellation_that_then_calls_the_round_off_is_dropped(
     tmp_path,
 ):

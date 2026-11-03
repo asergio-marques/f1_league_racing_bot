@@ -114,13 +114,33 @@ async def test_every_round_kind_has_its_advance_step_after_build(tmp_path):
     assert sorted(ROUND_JOB_KINDS - set(test_mode_service._ADVANCE_STEPS)) == []
 
 
+#: Each module's part of a cancellation of rounds, as the module names it: the moment's hook on
+#: the bot, the module, the subscriber, and what the test calls it.
+_CANCELLATION_PARTS = (
+    ("cancellation_refused", "leaguebot.results.services.result_submission_service",
+     "cancellation_refusal", "results' refusal"),
+    ("rounds_called_off", "leaguebot.results.services.result_submission_service",
+     "close_called_off_on", "results' close"),
+    ("rounds_called_off", "leaguebot.attendance.services.check_in_changes",
+     "take_down_called_off_on", "attendance's take-down"),
+)
+
+
+@pytest.mark.xfail(strict=True, reason="#283: no module is signed up to a cancellation's hooks")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
     bot's in-memory state cleared: the season setups the season cog holds, then the penalty
-    reviews results holds for staging, then the reasons signup awaits from an admin."""
+    reviews results holds for staging, then the reasons signup awaits from an admin. A
+    cancellation of rounds: what stands in its way, results' refusal of a round whose open
+    submission has accepted results; the rounds called off, results' close of their empty
+    submissions, then attendance's take-down of their calls; and the steps a module plans,
+    results' deletion of a submission channel, then attendance's take-down of a call."""
+    import importlib
+
     import leaguebot.__main__ as entry_point
     from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.services.cancellation_notice_service import SCOPE_ROUND
     from leaguebot.results.services import penalty_wizard
     from leaguebot.signup.services import signup_views
 
@@ -134,6 +154,11 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         monkeypatch.setattr(module, name, spy)
         if hasattr(entry_point, name):
             monkeypatch.setattr(entry_point, name, spy)
+    for _hook, module_name, name, part in _CANCELLATION_PARTS:
+        async def awaited_spy(*_args, part=part, **_kwargs):
+            called.append(part)
+        monkeypatch.setattr(importlib.import_module(module_name), name, awaited_spy,
+                            raising=False)
 
     bot = await built_bot(tmp_path, now=_NOW)
     assert called == []
@@ -141,6 +166,15 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     bot.in_memory_state_cleared.call()
 
     assert called == ["season setups", "penalty reviews", "pending reasons"]
+    called.clear()
+    await bot.cancellation_refused.call(None, SCOPE_ROUND, ())
+    assert called == ["results' refusal"]
+    called.clear()
+    await bot.rounds_called_off.call(None, SCOPE_ROUND, ())
+    assert called == ["results' close", "attendance's take-down"]
+    assert [sorted(steps) for steps in bot.cancellation_steps.call()] == [
+        ["delete_channel"], ["take_down_call"]
+    ]
 
 
 async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):
