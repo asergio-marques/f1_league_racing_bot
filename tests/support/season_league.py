@@ -18,10 +18,10 @@ league's `clock`, which a test moves on (`league.clock.advance`).
 The bot is `league_bot`'s: the one the entry point's `build` makes, every service and change type
 the builder's (`league_queue`). It reads the enabled modules' windows as the builder has it read
 them, attendance's settings through `_attendance`, and a real `SeasonCog` holds the season's setup
-in memory. The
-scheduler is a double recording each `schedule_*` call in `league.armed`. The league's server
-holds every channel above, the review's channel (610) among them, the roles above and the three
-drivers; `absent`, `fetch_fails`, `grant_fails` and `roles_gone` make Discord answer otherwise.
+in memory. The scheduler is a double recording each `schedule_*` call in `league.armed`. The
+league's server holds every channel above, the review's channel (610) among them, the roles above
+and the three drivers; `absent`, `fetch_fails`, `grant_fails` and `roles_gone` make Discord answer
+otherwise.
 
 Two of the press's gates read the season through helpers whose own tests stand elsewhere, and are
 answered "nothing wrong" here unless a test says otherwise: the team names and the lineups
@@ -48,12 +48,12 @@ results submission for a round, its channel standing on the server; `cancel_roun
 
 For `/round amend` on the queue (slice 4b, amendment A), `ongoing_league` also takes the weather
 horizons (`horizons`, written to `weather_pipeline_config`) and the phases each round has had
-performed (`phases_done`, by round id), and the bot reads the amendment's windows as the builder
-has it read them: attendance's only where it is on, weather's always. The scheduler double records `schedule_round` as weather's arming. `amend_round` runs
-`/round amend` as admin 77 and presses the Confirm it offered, giving the press;
-`amendment_changes` lists the amendments asked of the queue; `accept_session` saves a session's
-results as the wizard does on accepting them; `posted_forecast` records a phase's forecast as
-posted, its message standing in the division's forecast channel.
+performed (`phases_done`, by round id), and the bot reads the amendment's windows as the builder has
+it read them: attendance's only where it is on, weather's always. The scheduler double records
+`schedule_round` as weather's arming. `amend_round` runs `/round amend` as admin 77 and presses the
+Confirm it offered, giving the press; `amendment_changes` lists the amendments asked of the queue;
+`accept_session` saves a session's results as the wizard does on accepting them; `posted_forecast`
+records a phase's forecast as posted, its message standing in the division's forecast channel.
 
 For a season's end on the queue (slice 5), `ongoing_league` also takes *test_mode*,
 *signups_open* and *held* (`season_end_extras`): the members holding their division, team and
