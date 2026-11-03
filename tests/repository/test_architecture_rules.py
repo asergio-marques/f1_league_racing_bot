@@ -2448,7 +2448,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
         (1, PASS["core"]),
     ("core/services/test_mode_service.py", "build_review_summary"): (5, PASS["core"]),
     ("core/services/test_mode_service.py", "get_next_pending_phase"): (5, PASS["core"]),
-    ("core/services/test_mode_service.py", "standing_forecast_phases"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_ensure_single_config"): (2, PASS["core"]),
     ("image/services/driver_portrait_service.py", "assigned_driver_ids"): (3, PASS["image"]),
     ("image/services/image_config_service.py", "ImageConfigService.season_division_names"):
