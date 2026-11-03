@@ -58,6 +58,8 @@ from leaguebot.core.models.change import (
     VerdictKind,
 )
 from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.services.round_moments import read_round_windows
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.services import approval_checks, season_classification_service
 from leaguebot.core.services import lineup_posting, standing_posts
 from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
@@ -278,7 +280,7 @@ def season_approval_change(
     seasons: SeasonService,
     scheduler: "SchedulerService",
     placement: "PlacementService",
-    windows: Callable[[], Awaitable[tuple["AttendanceWindows | None", "WeatherWindows | None"]]],
+    round_windows_read: AwaitedHook,
     rasteriser_fault: Callable[[], str | None],
     snapshot_points_on: Callable[[aiosqlite.Connection, int], Awaitable[None]],
     forget_setup: Callable[[], None],
@@ -288,8 +290,8 @@ def season_approval_change(
 
     The builder hands in *modules* and *config* (which modules are on, and test mode), the
     *seasons* service (the divisions and rounds the check, the arming and the calendar read), the
-    *scheduler* and the *placement* service, *windows* (the enabled modules' windows,
-    `LeagueBot.approval_windows`), *rasteriser_fault* (what is wrong with the host's drawing
+    *scheduler* and the *placement* service, *round_windows_read* (the hook the enabled
+    modules' windows are read through), *rasteriser_fault* (what is wrong with the host's drawing
     program, None where nothing is), results' *snapshot_points_on* (the points snapshot on a
     handed save, which reads results' own switch), *forget_setup* (lets go of the setup the
     season cog holds in memory) and *now* (the queue's clock).
@@ -323,7 +325,7 @@ def season_approval_change(
         # What the fingerprint does not cover: the clock, the server and the host.
         divisions = await seasons.get_divisions(season_id)
         rounds = {each.id: await seasons.get_division_rounds(each.id) for each in divisions}
-        attendance, weather = await windows()
+        attendance, weather = await read_round_windows(round_windows_read)
         dates = approval_checks.date_refusal(
             divisions, rounds, now=now(), attendance=attendance, weather=weather
         )
@@ -494,7 +496,7 @@ def season_approval_change(
             for division in divisions
             for each in await seasons.get_division_rounds(division.id)
         ]
-        attendance, weather = await windows()
+        attendance, weather = await read_round_windows(round_windows_read)
         if weather is not None:
             scheduler.schedule_all_rounds(
                 rounds,

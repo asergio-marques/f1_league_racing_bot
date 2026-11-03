@@ -61,7 +61,12 @@ from leaguebot.core.services.amendment_rules_service import (
     judge_amendment,
     status_refusal,
 )
-from leaguebot.core.services.round_moments import as_utc, clean_up_moment, round_event_moments
+from leaguebot.core.services.round_moments import (
+    as_utc,
+    clean_up_moment,
+    read_round_windows,
+    round_event_moments,
+)
 from leaguebot.core.services import cancellation_notice_service as notices
 from leaguebot.core.services.cancellation_changes import ROUND_REARM, cancellation_holding_amendment
 from leaguebot.core.services.change_queue import (
@@ -75,6 +80,7 @@ from leaguebot.core.services.change_queue import (
 )
 from leaguebot.core.services.season_service import renumber_rounds_on, round_called
 from leaguebot.core.services.notice_handler import send_notice
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
@@ -154,9 +160,7 @@ class AmendHooks:
     """What the amendment needs of weather, attendance and the formatting of the round list.
 
     The builder fills it, so that this module imports no module (architecture.md, "How modules and
-    core fit together"). *windows* gives the lead times the amendment is judged against, as
-    `LeagueBot.amendment_windows` does: attendance's only where it is on, weather's always.
-    *withdraw_phases_on*, *reopen_check_in_on* write on the connection a save hands them and commit
+    core fit together"). *withdraw_phases_on*, *reopen_check_in_on* write on the connection a save hands them and commit
     nothing. *forecast_steps* are weather's jobs (its draw, its post, the deletion of a forecast
     and the planning of deletions), which the amendment runs as jobs of its own: *plan_phase* plans
     the draw of a phase now, the draw planning its post and the post the deletion of the forecast
@@ -179,7 +183,6 @@ class AmendHooks:
     the division's rounds for the reply.
     """
 
-    windows: Callable[[], Awaitable[tuple[AttendanceWindows | None, WeatherWindows]]]
     withdraw_phases_on: Callable[[aiosqlite.Connection, int, Iterable[int]], Awaitable[None]]
     forecast_steps: Mapping[str, Step]
     plan_phase: Callable[[int, int], tuple[PlannedStep, ...]]
@@ -240,6 +243,7 @@ def round_amend_change(
     seasons: "SeasonService",
     scheduler: "SchedulerService",
     hooks: AmendHooks,
+    round_windows_read: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that amends a round; see the module.
@@ -248,10 +252,12 @@ def round_amend_change(
     *changes* being ``[[field, value]]`` (`payload_changes`). It names no season: a payload that
     does is read as holding every division of that season (`review_changes.division_job_in_hand`).
     The builder hands in the *modules* (each post's `still_due`), the *seasons* service, the
-    *scheduler*, the *hooks* of the other modules and the queue's clock *now*.
+    *scheduler*, the *hooks* of the other modules, *round_windows_read* (the hook their windows are
+    read through) and the queue's clock *now*.
     """
     return _round_change(
-        rearm=False, modules=modules, seasons=seasons, scheduler=scheduler, hooks=hooks, now=now
+        rearm=False, modules=modules, seasons=seasons, scheduler=scheduler, hooks=hooks,
+        round_windows_read=round_windows_read, now=now,
     )
 
 
@@ -261,6 +267,7 @@ def round_rearm_change(
     seasons: "SeasonService",
     scheduler: "SchedulerService",
     hooks: AmendHooks,
+    round_windows_read: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that arms a round's timed work again after a refused cancellation; see the module.
@@ -272,7 +279,8 @@ def round_rearm_change(
     The bot asks it, on the league's lane, one for each round.
     """
     return _round_change(
-        rearm=True, modules=modules, seasons=seasons, scheduler=scheduler, hooks=hooks, now=now
+        rearm=True, modules=modules, seasons=seasons, scheduler=scheduler, hooks=hooks,
+        round_windows_read=round_windows_read, now=now,
     )
 
 
@@ -283,6 +291,7 @@ def _round_change(
     seasons: "SeasonService",
     scheduler: "SchedulerService",
     hooks: AmendHooks,
+    round_windows_read: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The steps of `round_amend_change`, and with *rearm* the change that arms a round again.
@@ -290,6 +299,14 @@ def _round_change(
     Only the check, the due-ness of the judging and the arming, their refusal to be discarded, the
     change's kind, key and words differ between the two; every other step is the amendment's.
     """
+
+    async def read_windows() -> tuple[AttendanceWindows | None, WeatherWindows]:
+        """The lead times the amendment is judged against, read through the windows hook:
+        attendance's only where it is on, weather's always."""
+        attendance, weather = await read_round_windows(round_windows_read, amending=True)
+        if weather is None:
+            raise LookupError("no module handed back weather's window to the amendment")
+        return attendance, weather
 
     async def rearm_check(ctx: CheckContext) -> Verdict:
         """A re-arming is due while the round can still be cancelled, or, for its clean-ups alone,
@@ -322,7 +339,7 @@ def _round_change(
         rnd = await seasons.get_round(int(payload["round_id"]))
         if rnd is None:
             return Verdict.refuse(ROUND_GONE)
-        attendance, weather = await hooks.windows()
+        attendance, weather = await read_windows()
         verdict = judge_amendment(
             rnd,
             amended_values(payload["changes"]),
@@ -390,7 +407,7 @@ def _round_change(
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
-        attendance, weather = await hooks.windows()
+        attendance, weather = await read_windows()
         return StepResult(
             result={
                 "judged": True,

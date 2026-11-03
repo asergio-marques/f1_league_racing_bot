@@ -58,6 +58,7 @@ from leaguebot.core.services.mid_season_confirm_change import (
     every_division_done_refusal,
 )
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
+from leaguebot.core.services.round_moments import read_round_windows
 from leaguebot.core.services.season_review_changes import (
     CONFIRMED,
     EXPIRED,
@@ -1417,11 +1418,11 @@ class SeasonCog(commands.Cog):
 
         Read once rather than per division: the date faults are judged a division at a time,
         and a league with eight of them would otherwise pay eight times over for two configs
-        that cannot have changed in between. The reader is the bot's (`LeagueBot.approval_windows`,
-        set by the builder, where the modules meet), so that the change queue's check of the
-        approval reads the same windows without a cog (#439).
+        that cannot have changed in between. They are read through the bot's hook
+        (`LeagueBot.round_windows_read`, signed up to by the modules in the builder), so that the
+        change queue's check of the approval reads the same windows without a cog (#439).
         """
-        return await self.bot.approval_windows()
+        return await read_round_windows(self.bot.round_windows_read)
 
     def _calendar_fault_lines(self, fault) -> list[str]:
         """One division's date faults, as the error lines posted with its calendar.
@@ -5591,10 +5592,10 @@ async def _judge_round_amendment(
     """
     from leaguebot.core.services.amendment_rules_service import judge_amendment
 
-    # The windows are the builder's (`LeagueBot.amendment_windows`), the same reader the change
-    # on the queue judges through; weather's are read whatever the module's state, as a forecast
+    # The windows are read through the bot's hook (`LeagueBot.round_windows_read`), as the change
+    # on the queue reads them; weather's are read whatever the module's state, as a forecast
     # posted while weather was on is still posted.
-    attendance, weather = await bot.amendment_windows()
+    attendance, weather = await read_round_windows(bot.round_windows_read, amending=True)
 
     return judge_amendment(
         rnd, dict(amendments), now=now, attendance=attendance, weather=weather

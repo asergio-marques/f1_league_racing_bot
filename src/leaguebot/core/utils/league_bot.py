@@ -27,7 +27,7 @@ the check in turn.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
@@ -35,7 +35,6 @@ import discord
 from discord.ext import commands
 
 if TYPE_CHECKING:
-    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
     from leaguebot.attendance.services.attendance_service import AttendanceService
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.driver_service import DriverService
@@ -81,14 +80,13 @@ class LeagueBot(commands.Bot):
     image_config_service: ImageConfigService
     image_validity_service: ImageValidityService
     image_render_service: ImageRenderService
-    #: The lead times the enabled modules configure, `(attendance, weather)`, either None where
-    #: that module is off. The builder sets it, where the modules meet, so that core's approval
-    #: reads them without importing attendance or weather (#439).
-    approval_windows: Callable[[], Awaitable[tuple[AttendanceWindows | None, WeatherWindows | None]]]
-    #: The lead times a round amendment is judged against, `(attendance, weather)`: attendance's
-    #: None where that module is off, weather's always set. The builder sets it, as it does
-    #: `approval_windows`, so that `/round amend` and its change read the same windows (#439).
-    amendment_windows: Callable[[], Awaitable[tuple[AttendanceWindows | None, WeatherWindows]]]
+    #: The moment a round's timing windows are read (the season's approval and review, and the
+    #: amendment of a round): each module signs up a function handing back its own window, or
+    #: nothing where its module is off, handed whether the round is being *amended*. The builder
+    #: makes it and signs them up, so that core's approval reads them without importing attendance
+    #: or weather (architecture.md, "A hook core declares is a list of subscribers");
+    #: `read_round_windows` gathers what they hand back.
+    round_windows_read: AwaitedHook
     #: The moment the bot's in-memory state is cleared (`/bot pack`, `/bot factory-reset`): each
     #: module that holds league state in memory signs its clear up. The builder makes it and
     #: signs them up, so that core's clear reaches no module and no cog (architecture.md, "A hook

@@ -7,7 +7,8 @@ and the amendment's rules all read `round_event_moments`, so for them the rules 
 a last notice of 0 hours is no last notice, a deadline of 0 hours is the round's own moment, and a
 moment stored without a zone is UTC.
 
-Pure by design: no database, no clock, no scheduler. The two window types `round_event_moments`
+Pure by design: no database, no clock, no scheduler; `read_round_windows` only gathers what the
+modules' subscribers to the windows hook hand back. The two window types `round_event_moments`
 reads, and the kind names its keys match (`ROUND_JOB_KINDS`), are plain data and live in
 `core.models.round`, which imports no service.
 """
@@ -17,12 +18,30 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 
 from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
+from leaguebot.core.utils.hooks import AwaitedHook
 
 #: How long after a round's scheduled start its posted messages come down: the weather module's
 #: forecast, whichever of Phases 1 to 3 still stands, and the attendance module's check-in call
 #: with its last notice and its distribution message (#425). One figure for both, so a round's
 #: channels clear together.
 POST_RACE_CLEANUP_DELAY = timedelta(hours=24)
+
+
+async def read_round_windows(
+    windows_read: AwaitedHook, *, amending: bool = False
+) -> tuple[AttendanceWindows | None, WeatherWindows | None]:
+    """The lead times the modules configure, as `(attendance, weather)`, the way
+    `round_event_moments` and the judges take them: each hands back its window or nothing.
+
+    Every module signed up to the hook checks its own switch and hands nothing where it is off,
+    so that a window is there only for a module that is on. With *amending*, a module says whether
+    its window counts while it is off: a forecast posted while weather was on is still posted, and
+    whether it survives an amendment is what the track and format rules turn on.
+    """
+    handed = await windows_read.call(amending=amending)
+    attendance = next((each for each in handed if isinstance(each, AttendanceWindows)), None)
+    weather = next((each for each in handed if isinstance(each, WeatherWindows)), None)
+    return attendance, weather
 
 
 def as_utc(moment: datetime) -> datetime:

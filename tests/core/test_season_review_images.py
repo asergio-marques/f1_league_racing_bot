@@ -22,13 +22,6 @@ from leaguebot.core.utils.hooks import AwaitedHook
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
-#: Why a test whose stand-in bot is read its windows through the hook fails until
-#: the season cog reads through it.
-_NO_WINDOWS_HOOK = (
-    "#283: the season cog reads the windows through `bot.approval_windows`, "
-    "not the windows hook"
-)
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -540,7 +533,6 @@ def _assert_standing(cog, question) -> None:
     assert _asked(cog, "season.review.take_down") == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_a_press_refused_by_a_gate_leaves_the_review_standing(tmp_path, monkeypatch):
     """The review's one round is dated 90 days ago, so Alex's Approve is refused at the press,
     told its round's date has already gone by. Nothing is asked of the queue, the review is left
@@ -565,7 +557,6 @@ async def test_a_press_refused_by_a_gate_leaves_the_review_standing(tmp_path, mo
     assert await _prompt_rows(cog) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_a_press_cancelled_at_the_backup_question_leaves_the_review_standing(
     tmp_path, monkeypatch
 ):
@@ -590,7 +581,6 @@ async def test_a_press_cancelled_at_the_backup_question_leaves_the_review_standi
     assert await _prompt_rows(cog) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
     tmp_path, monkeypatch
 ):
@@ -702,7 +692,6 @@ async def _kinds_queued(cog) -> list[str]:
     return [row["kind"] for row in await change_rows(cog.bot.db_path)]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_a_press_the_queue_refuses_at_once_leaves_the_review_standing(tmp_path, monkeypatch):
     """Every gate at the press passes, so Alex's approval goes through the button to the queue,
     whose own check refuses it at once (a round's date gone by while the press was worked). That
@@ -733,7 +722,6 @@ async def test_a_press_the_queue_refuses_at_once_leaves_the_review_standing(tmp_
     question.delete.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review_as_expired(
     tmp_path, monkeypatch
 ):
@@ -781,7 +769,6 @@ async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review_as
     question.channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_a_press_asked_of_the_queue_takes_the_review_down(tmp_path, monkeypatch):
     """The one press that ends the review: every gate passed, Alex's approval is asked of the
     change queue, and the review's take-down is asked before it, ending confirmed and naming Q

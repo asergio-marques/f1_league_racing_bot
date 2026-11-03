@@ -30,13 +30,6 @@ SERVER_ID = 12608
 SEASON_ID = 11
 USER_ID = 77
 
-#: Why a test whose stand-in bot is read its windows through the hook fails until
-#: the season cog reads through it.
-_NO_WINDOWS_HOOK = (
-    "#283: the season cog reads the windows through `bot.approval_windows`, "
-    "not the windows hook"
-)
-
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +227,6 @@ def _replied(interaction) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_a_configured_signup_module_does_not_block_approval(db_path):
     cog = _cog(db_path, signup_enabled=True, signup_config=_signup_config())
     interaction = _interaction()
@@ -258,7 +250,6 @@ async def test_an_unconfigured_signup_module_blocks_approval(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_the_league_s_roles_are_not_checked_again_at_placements(db_path):
     """Confirming the configuration required both roles while signup was enabled, and
     fixed them until the season ends (issue #276): they cannot have gone missing since."""
@@ -273,7 +264,6 @@ async def test_the_league_s_roles_are_not_checked_again_at_placements(db_path):
     _assert_asked(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_a_signup_module_with_no_configuration_row_does_not_block(db_path):
     """Nothing has been configured at all, which `/signup channel` will create — and a
     refusal naming three commands when the module was merely switched on and forgotten
@@ -286,7 +276,6 @@ async def test_a_signup_module_with_no_configuration_row_does_not_block(db_path)
     _assert_asked(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_a_disabled_signup_module_is_not_checked(db_path):
     """A league that does not run signups through the bot has no configuration to be
     missing."""
@@ -303,7 +292,6 @@ async def test_a_disabled_signup_module_is_not_checked(db_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_a_configured_attendance_module_does_not_block_approval(db_path):
     cog = _cog(
         db_path, attendance_enabled=True, attendance_config=_attendance_config()
@@ -332,7 +320,6 @@ async def test_a_season_with_no_points_configuration_attached_is_refused(db_path
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_a_disabled_results_module_is_not_checked(db_path):
     """A league not running results is asked for none of its settings.
 

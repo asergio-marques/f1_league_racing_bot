@@ -34,13 +34,6 @@ from leaguebot.core.cogs.season_cog import SeasonCog
 
 SERVER_ID = 11808
 
-#: Why a test whose stand-in bot is read its windows through the hook fails until
-#: the season cog reads through it.
-_NO_WINDOWS_HOOK = (
-    "#283: the season cog reads the windows through `bot.approval_windows`, "
-    "not the windows hook"
-)
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -219,7 +212,6 @@ def test_both_faults_name_the_command_that_fixes_them():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_a_league_running_neither_module_has_no_windows():
     """Nothing to be inside, so nothing can be refused for it — a league running only the
     results module must not be blocked by windows it does not have."""
@@ -232,7 +224,6 @@ async def test_a_league_running_neither_module_has_no_windows():
     assert weather is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_the_weather_windows_are_read_when_the_module_is_on():
     cog = _reading_windows(weather_enabled=True)
 
@@ -245,7 +236,6 @@ async def test_the_weather_windows_are_read_when_the_module_is_on():
     assert weather.phase_3_hours == 2
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_one_module_on_leaves_the_other_s_windows_absent():
     """The two are independent, and a league running attendance without weather must not
     be judged against phase horizons it never configured."""
@@ -258,7 +248,6 @@ async def test_one_module_on_leaves_the_other_s_windows_absent():
     assert weather is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_a_disabled_module_s_configuration_is_not_even_read():
     """The read is the cost this helper exists to avoid paying per division; doing it for
     a module that is off would be the whole saving given back."""
@@ -271,7 +260,6 @@ async def test_a_disabled_module_s_configuration_is_not_even_read():
     weather_read.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_HOOK)
 async def test_the_windows_reflect_what_the_league_configured():
     """A league that shortened its notice to two days is judged against two, not against
     the packaged default — which is the point of reading them at all."""

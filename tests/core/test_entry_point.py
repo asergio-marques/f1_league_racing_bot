@@ -254,7 +254,6 @@ _ATTENDANCE_SET = (3, 12, 1)
 _WEATHER_SET = (4, 1, 3)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a round's timing windows are not read through a hook")
 @pytest.mark.parametrize("amending", [False, True], ids=["the approval", "the amendment"])
 @pytest.mark.parametrize("weather_on", [False, True], ids=["weather off", "weather on"])
 @pytest.mark.parametrize("attendance_on", [False, True], ids=["attendance off", "attendance on"])

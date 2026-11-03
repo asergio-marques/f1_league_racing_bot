@@ -25,11 +25,13 @@ from leaguebot.attendance.models.attendance import (
 )
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.core.models.round import AttendanceWindows
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.output_router import OutputRouter
 
 
@@ -659,6 +661,22 @@ class AttendanceService:
 
 
 # ── Row-to-dataclass helpers ───────────────────────────────────────────────
+
+
+async def round_window(
+    attendance: AttendanceService, modules: "ModuleService", *, amending: bool
+) -> AttendanceWindows | None:
+    """Attendance's part of a round's timing windows read: its three lead times, or None where
+    the module is off, since a league without attendance has no check-in to lose or to be inside
+    the window of. Counts as off for an amendment too, so *amending* changes nothing here."""
+    if not await modules.is_attendance_enabled():
+        return None
+    config = await attendance.get_or_create_config()
+    return AttendanceWindows(
+        notice_days=config.rsvp_notice_days,
+        last_notice_hours=config.rsvp_last_notice_hours,
+        deadline_hours=config.rsvp_deadline_hours,
+    )
 
 
 def _dra_from_row(row: aiosqlite.Row) -> DriverRoundAttendance:

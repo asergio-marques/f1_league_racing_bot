@@ -27,7 +27,6 @@ from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 if TYPE_CHECKING:
     from leaguebot.core.services.calendar_post_service import CalendarCommandOutcome
     from leaguebot.image.services.image_lineup_post import LineupPostOutcome
-    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.round_amend_change import AmendHooks
     from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
 
@@ -114,74 +113,6 @@ def create_bot() -> LeagueBot:
     bot.add_listener(_warn_if_serving_several, "on_guild_join")
 
     return bot
-
-
-async def read_approval_windows(
-    bot: LeagueBot,
-) -> "tuple[AttendanceWindows | None, WeatherWindows | None]":
-    """The lead times the enabled modules configure, as `(attendance, weather)`.
-
-    Either is None where that module is off: there is no window to be inside. The builder is
-    where attendance and weather meet core, so the season's approval reads them through
-    `bot.approval_windows`, which is this, and core imports neither module (#439).
-    """
-    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
-    from leaguebot.core.services.round_amend_change import AmendHooks
-
-    attendance = None
-    if await bot.module_service.is_attendance_enabled():
-        att = await bot.attendance_service.get_or_create_config()
-        attendance = AttendanceWindows(
-            notice_days=att.rsvp_notice_days,
-            last_notice_hours=att.rsvp_last_notice_hours,
-            deadline_hours=att.rsvp_deadline_hours,
-        )
-
-    weather = None
-    if await bot.module_service.is_weather_enabled():
-        from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
-
-        wx = await get_weather_pipeline_config(bot.db_path)
-        weather = WeatherWindows(
-            phase_1_days=wx.phase_1_days,
-            phase_2_days=wx.phase_2_days,
-            phase_3_hours=wx.phase_3_hours,
-        )
-
-    return attendance, weather
-
-
-async def read_amendment_windows(
-    bot: LeagueBot,
-) -> "tuple[AttendanceWindows | None, WeatherWindows]":
-    """The lead times a round amendment is judged against, as `(attendance, weather)`.
-
-    Attendance's is None where that module is off: a league without attendance has no check-in
-    to lose. Weather's is read whatever the module's state, because a forecast posted while
-    weather was on is still posted, and whether it survives the amendment is what the track and
-    format rules turn on. `/round amend` offers and judges through `bot.amendment_windows`, which
-    is this, and so does its change on the queue, so the two cannot read different windows (#439).
-    """
-    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
-    from leaguebot.core.services.round_amend_change import AmendHooks
-    from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
-
-    attendance = None
-    if await bot.module_service.is_attendance_enabled():
-        att = await bot.attendance_service.get_or_create_config()
-        attendance = AttendanceWindows(
-            notice_days=att.rsvp_notice_days,
-            last_notice_hours=att.rsvp_last_notice_hours,
-            deadline_hours=att.rsvp_deadline_hours,
-        )
-
-    wx = await get_weather_pipeline_config(bot.db_path)
-    weather = WeatherWindows(
-        phase_1_days=wx.phase_1_days,
-        phase_2_days=wx.phase_2_days,
-        phase_3_hours=wx.phase_3_hours,
-    )
-    return attendance, weather
 
 
 def _forget_setup(bot: LeagueBot) -> None:
@@ -318,6 +249,22 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     )
 
 
+def _sign_up_to_round_windows(bot: LeagueBot) -> None:
+    """Make the hook a round's timing windows read declares, and sign each module up to it, in
+    the order core gathers them: attendance's window, then weather's. Each is handed whether the
+    round is being amended and checks its own switch."""
+    from leaguebot.attendance.services import attendance_service
+    from leaguebot.weather.services import weather_config_service
+
+    bot.round_windows_read = AwaitedHook()
+    bot.round_windows_read.subscribe(partial(
+        attendance_service.round_window, bot.attendance_service, bot.module_service
+    ))
+    bot.round_windows_read.subscribe(partial(
+        weather_config_service.round_window, bot.module_service, bot.db_path
+    ))
+
+
 def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     """Make the hooks a cancellation of rounds declares, and sign each module's part up to them,
     in the order core calls them: what stands in the way (results' refusal of a round whose
@@ -437,14 +384,10 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     )
     from leaguebot.weather.utils.message_builder import invalidation_message
 
-    async def windows() -> "tuple[AttendanceWindows | None, WeatherWindows]":
-        return await bot.amendment_windows()
-
     def plan_phase(round_id: int, phase: int) -> "tuple[PlannedStep, ...]":
         return (PlannedStep(DRAW_FORECAST, {"round_id": round_id, "phase": phase}),)
 
     return AmendHooks(
-        windows=windows,
         withdraw_phases_on=phase_withdrawal.withdraw_phases_on,
         forecast_steps=forecast_steps(now=lambda: bot.change_queue.now()),
         plan_phase=plan_phase,
@@ -910,7 +853,7 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
-            windows=lambda: bot.approval_windows(),
+            round_windows_read=bot.round_windows_read,
             rasteriser_fault=rasteriser_fault,
             snapshot_points_on=snapshot_configs_to_season_on,
             forget_setup=lambda: _forget_setup(bot),
@@ -963,6 +906,7 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             hooks=_amend_hooks(bot),
+            round_windows_read=bot.round_windows_read,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -972,6 +916,7 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             hooks=_amend_hooks(bot),
+            round_windows_read=bot.round_windows_read,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -1182,8 +1127,7 @@ async def build(settings: Settings) -> LeagueBot:
     # Attendance's share of a round's review, handed the placement service it moves seats
     # through; results' change types reach attendance through it alone (#439).
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
-    bot.approval_windows = lambda: read_approval_windows(bot)
-    bot.amendment_windows = lambda: read_amendment_windows(bot)
+    _sign_up_to_round_windows(bot)
 
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService
