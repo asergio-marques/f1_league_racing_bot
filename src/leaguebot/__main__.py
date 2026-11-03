@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
 from leaguebot.core.services.start_up import StartUpStep, start_up
+from leaguebot.core.utils.hooks import Hook
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild, LeagueCommandTree, warn_if_serving_several
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
@@ -1187,10 +1188,6 @@ async def build(settings: Settings) -> LeagueBot:
     bot.approval_windows = lambda: read_approval_windows(bot)
     bot.amendment_windows = lambda: read_amendment_windows(bot)
 
-    from leaguebot.results.services.penalty_wizard import clear_held_reviews
-
-    bot.clear_held_reviews = clear_held_reviews
-
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService
 
@@ -1229,7 +1226,8 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.core.cogs.clean_cog import CleanCog
 
     await bot.add_cog(BotCog(bot))
-    await bot.add_cog(SeasonCog(bot))
+    season_cog = SeasonCog(bot)
+    await bot.add_cog(season_cog)
     await bot.add_cog(AmendmentCog(bot))
     await bot.add_cog(TestModeCog(bot))
     await bot.add_cog(TrackCog(bot))
@@ -1246,6 +1244,16 @@ async def build(settings: Settings) -> LeagueBot:
     await bot.add_cog(AttendanceCog(bot))
     await bot.add_cog(ImageCog(bot))
     await bot.add_cog(CleanCog(bot))
+
+    # The bot's in-memory state cleared (`/bot pack`, `/bot factory-reset`): each module signs up
+    # what it holds, in the order the clear drops them.
+    from leaguebot.results.services.penalty_wizard import clear_held_reviews
+    from leaguebot.signup.services.signup_views import clear_pending_reasons
+
+    bot.in_memory_state_cleared = Hook()
+    bot.in_memory_state_cleared.subscribe(season_cog.clear_pending)
+    bot.in_memory_state_cleared.subscribe(clear_held_reviews)
+    bot.in_memory_state_cleared.subscribe(clear_pending_reasons)
 
     # Register ALL persistent views so button interactions survive bot restarts.
     # Views with optional __init__ params resolve driver context from channel at

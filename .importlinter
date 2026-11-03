@@ -34,8 +34,6 @@ forbidden_modules =
     leaguebot.*.cogs
 allow_indirect_imports = True
 ignore_imports =
-    # #283: the in-memory state reaches for the seasons being set up.
-    leaguebot.core.services.in_memory_state -> leaguebot.core.cogs.season_cog
     # #285: the check-in rules live in the cog.
     leaguebot.attendance.services.rsvp_service -> leaguebot.attendance.cogs.attendance_cog
 
@@ -136,7 +134,6 @@ ignore_imports =
     leaguebot.core.services.season_service -> leaguebot.results.services.result_submission_service
     leaguebot.core.services.test_roster_service -> leaguebot.results.models.points_config
     # #283: signup:
-    leaguebot.core.services.in_memory_state -> leaguebot.signup.services.signup_views
     leaguebot.core.cogs.module_cog -> leaguebot.signup.models.signup_module
     leaguebot.core.services.placement_service -> leaguebot.signup.models.signup_module
     # #283: weather:

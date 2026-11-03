@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.results.services.attendance_hook import AttendanceAfterReview
     from leaguebot.core.services.output_router import OutputRouter
+    from leaguebot.core.utils.hooks import Hook
 
 
 class LeagueBot(commands.Bot):
@@ -88,10 +89,11 @@ class LeagueBot(commands.Bot):
     #: None where that module is off, weather's always set. The builder sets it, as it does
     #: `approval_windows`, so that `/round amend` and its change read the same windows (#439).
     amendment_windows: Callable[[], Awaitable[tuple[AttendanceWindows | None, WeatherWindows]]]
-    #: Drops the penalty reviews results holds for staging changes. The builder sets it, so that
-    #: the clear of what the bot holds in memory reaches results without looking its cog up by
-    #: name or importing it (#439).
-    clear_held_reviews: Callable[[], None]
+    #: The moment the bot's in-memory state is cleared (`/bot pack`, `/bot factory-reset`): each
+    #: module that holds league state in memory signs its clear up. The builder makes it and
+    #: signs them up, so that core's clear reaches no module and no cog (architecture.md, "A hook
+    #: core declares is a list of subscribers").
+    in_memory_state_cleared: Hook
     #: Starts the retry cog's loop. The builder sets it, so that `setup_hook` reaches the loop
     #: without importing the cog, which nothing below the cogs may do.
     start_retry_loop: Callable[[], None]

@@ -747,7 +747,7 @@ class BotCog(commands.Cog):
             result = await pack_service.pack(
                 self.bot.db_path,
                 self.bot.scheduler_service,
-                self.bot,
+                self.bot.in_memory_state_cleared,
                 self.bot.change_queue,
                 actor_id=interaction.user.id,
                 actor_name=str(interaction.user),
@@ -847,7 +847,7 @@ class BotCog(commands.Cog):
         # where the closing line goes is learned now.
         log_channel = await self.bot.output_router.log_destination()
         await factory_reset_service.wipe(
-            db_path, scheduler, self.bot, self.bot.change_queue
+            db_path, scheduler, self.bot.in_memory_state_cleared, self.bot.change_queue
         )
         log.warning(
             "/bot factory-reset by %s (id=%s): the league was erased; backup at %s",

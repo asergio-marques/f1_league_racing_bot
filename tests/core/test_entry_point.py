@@ -114,7 +114,6 @@ async def test_every_round_kind_has_its_advance_step_after_build(tmp_path):
     assert sorted(ROUND_JOB_KINDS - set(test_mode_service._ADVANCE_STEPS)) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the builder signs no module up to a hook")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The

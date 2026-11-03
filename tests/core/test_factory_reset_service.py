@@ -280,9 +280,6 @@ async def test_the_wipe_frees_the_claim(db_path):
     assert await ConfigService(db_path).get_league_server_id() is None
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the wipe is handed the bot, not the in-memory clear's hook"
-)
 async def test_the_wipe_clears_every_job_and_the_memory(db_path, monkeypatch):
     """The wipe cancels every scheduled job and clears what the bot holds in memory, handing
     the clear the hook every module's part of it is signed up to and the change queue, both as it

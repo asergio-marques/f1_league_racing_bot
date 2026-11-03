@@ -44,7 +44,7 @@ from leaguebot.core.services.change_queue import ChangeQueue
 from leaguebot.core.services.config_service import RELEASE_CLAIM_SQL
 from leaguebot.core.services.in_memory_state import clear_in_memory_state
 from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.hooks import Hook
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
@@ -170,7 +170,7 @@ async def _cleared_configuration(db) -> dict[str, Any]:
 async def pack(
     db_path: str,
     scheduler_service: "SchedulerService",
-    bot: LeagueBot | None = None,
+    in_memory_state_cleared: Hook | None = None,
     queue: ChangeQueue | None = None,
     *,
     actor_id: int,
@@ -178,9 +178,10 @@ async def pack(
 ) -> PackResult:
     """Clear everything tied to this server and free the claim. Raises `PackRefused`.
 
-    *bot*, where given with *queue*, has its in-memory league state dropped too; the command
-    passes both, the queue being handed on to the clear, and a test of the database alone need
-    not. The two travel together: given one without the other, the memory is left alone. *actor_id* and *actor_name* are the member
+    *in_memory_state_cleared*, the bot's hook for the clear, where given with *queue*, has its
+    in-memory league state dropped too; the command passes both, the queue being handed on to
+    the clear, and a test of the database alone need not. The two travel together: given one
+    without the other, the memory is left alone. *actor_id* and *actor_name* are the member
     who packed, and have no default: nothing but a member's command packs the bot.
     """
     async with get_connection(db_path) as db:
@@ -253,8 +254,8 @@ async def pack(
         await db.commit()
 
     jobs = scheduler_service.cancel_all(keep=KEPT_JOBS)
-    if bot is not None and queue is not None:
-        clear_in_memory_state(bot, queue=queue)
+    if in_memory_state_cleared is not None and queue is not None:
+        clear_in_memory_state(in_memory_state_cleared, queue=queue)
 
     result = PackResult(
         team_roles=team_roles, wizards=wizards, queued_messages=queued, scheduled_jobs=jobs

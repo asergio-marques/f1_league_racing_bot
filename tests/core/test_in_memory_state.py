@@ -34,9 +34,6 @@ from tests.support.change_queue import (
 
 SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "leaguebot"
 
-#: Why a test clearing through the hook fails until the build hands the clear one.
-_NO_HOOK = "#283: the in-memory clear is handed the bot, not the hook its modules sign up to"
-
 #: When the built bot's change queue takes "now" to be.
 _NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -214,7 +211,6 @@ def _pending_reasons() -> dict:
     raise AssertionError("no module holds the pending reasons")
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_HOOK)
 async def test_the_clear_empties_every_store(tmp_path):
     """On the bot the builder makes, a season setup is under way and an admin's reason is
     pending; cleared through the bot's hook for it, the season setup is gone and so is the
@@ -236,7 +232,6 @@ async def test_the_clear_empties_every_store(tmp_path):
     assert lapse.cancelled()
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_HOOK)
 async def test_clearing_a_leagues_state_drops_the_penalty_reviews_held_for_staging(tmp_path):
     """A review handed on to a staging change is gone after the clear through the hook of the
     bot the builder makes, so a factory reset leaves no review of a round that no longer exists
@@ -254,7 +249,6 @@ async def test_clearing_a_leagues_state_drops_the_penalty_reviews_held_for_stagi
     assert held_review(7, appeals=True) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_HOOK)
 async def test_clearing_a_leagues_state_forgets_what_became_of_a_reviews_button():
     """A review's button was pressed and its press is under way; after the clear, with no module
     signed up to its hook, no review's mark is left, so a review of the same question id in the
@@ -270,7 +264,6 @@ async def test_clearing_a_leagues_state_forgets_what_became_of_a_reviews_button(
     assert _PRESSES == {}
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_HOOK)
 async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queue_holds(tmp_path):
     """A factory reset deletes the changes the queue holds replies for (#439), so the clear, with
     no module signed up to its hook, makes the queue forget them: a change finishing afterwards

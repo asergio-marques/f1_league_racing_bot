@@ -593,7 +593,6 @@ async def test_a_lapse_whose_entry_was_replaced_does_nothing(tmp_path, monkeypat
     assert not any(text.startswith("⌛") for text in _sent(press))
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the bot has no hook for the in-memory clear")
 async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(tmp_path):
     """`/bot pack` and `/bot factory-reset` clear the league's state in memory: every pending
     reason goes, and its lapse with it, so no lapse fires into a league that has changed.
