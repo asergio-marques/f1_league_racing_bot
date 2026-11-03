@@ -14,6 +14,9 @@ are not called, and it reaches the caller as a direct call's would: the caller's
 
 `Hook` takes plain subscribers. `AwaitedHook` takes awaited ones, for a moment that falls inside a
 save, where the subscribers run on the connection `call` is handed; its `call` is a coroutine.
+
+The bot starting's steps are not this type: `start_up` contains each (architecture.md, "One sweep
+picks up the timed events that were missed").
 """
 
 from __future__ import annotations
