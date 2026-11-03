@@ -20,14 +20,13 @@ nothing, whatever the path arrives at it (core specification) — and the calend
 core, is refreshed whatever the modules.
 
 **Every send is a job of its own.** A season's, a division's and a round's cancellation all run
-on the change queue (`cancellation_changes`), where each notice (`post_module_notice`) and each
-call taken down (attendance's `take_down_call`) is a job: one Discord refuses stops the queue until it is
-retried or discarded, and is named only once discarded. So each raises, turning only a failure
-Discord caused into `StepFailedOnDiscord` and letting a fault of the bot's own through unchanged.
+on the change queue (`cancellation_changes`), where each notice (`post_module_notice`) is a job:
+one Discord refuses stops the queue until it is retried or discarded, and is named only once
+discarded. So each raises, turning only a failure Discord caused into `StepFailedOnDiscord` and
+letting a fault of the bot's own through unchanged.
 """
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 import discord
@@ -276,39 +275,6 @@ async def checkin_record(db_path: str, division, round_id: int) -> str:
     if reserves:
         lines.append(f"\n    reserves: {', '.join(reserves)}")
     return "".join(lines)
-
-
-async def take_down_call(
-    bot: LeagueBot,
-    division,
-    round_id: int,
-    *,
-    check_in_deletes: Callable[[int, int], Awaitable[bool]],
-) -> dict:
-    """Read *round_id*'s check-in, then take its call down, as a job on the change queue.
-
-    No job runs it now: the take-down of a cancellation and of an amendment is attendance's own
-    step (`check_in_changes.take_down_steps`, `check_in_changes.take_down_call`). The call comes
-    down through *check_in_deletes*, attendance's own delete steps, called with the round and the
-    division, giving True where a call stood. Its record is not forgotten here: the job's record
-    does it, in the save that marks the job done.
-
-    Returns `{"audit", "taken_down"}`: the log-channel record of the check-in (`checkin_record`),
-    read **before** the call comes down, and whether a call stood. Where a message cannot be
-    deleted it raises `StepFailedOnDiscord` whose `result` is `{"audit", "undeleted"}`, so the
-    audit is kept on the job whether it goes through or is discarded, and the call's record
-    stays for the next try, which reads the audit again. The raise is `from` the Discord failure
-    that caused it, as *check_in_deletes* raises it.
-    """
-    audit = await checkin_record(bot.db_path, division, round_id)
-    try:
-        taken_down = await check_in_deletes(round_id, division.id)
-    except StepFailedOnDiscord as exc:
-        undeleted = (exc.result or {}).get("undeleted", [])
-        raise StepFailedOnDiscord(
-            exc.reason, result={"audit": audit, "undeleted": undeleted}
-        ) from exc.__cause__
-    return {"audit": audit, "taken_down": taken_down}
 
 
 #: How many failures a reply names before summing up the rest, and how long one line may run.
