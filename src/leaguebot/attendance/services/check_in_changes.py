@@ -100,6 +100,12 @@ from leaguebot.core.services.change_queue import (
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.notice_handler import delete_notice
+from leaguebot.core.services.test_mode_service import (
+    AdvanceOutcome,
+    AdvanceStep,
+    AdvanceStepFailed,
+    PhaseEntry,
+)
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 
@@ -1427,3 +1433,76 @@ async def ask_check_in_deadline(
         "division_name": row["division_name"], "round_number": row["round_number"],
     }
     await queue.ask(CHECK_IN_DEADLINE, payload, what=_doing_deadline(payload), origin=origin)
+
+
+def advance_steps(queue: ChangeQueue, db_path: str) -> dict[str, AdvanceStep]:
+    """The step `/test-mode advance` runs for each of attendance's kinds of round job: the check-in
+    call, last notice, deadline and clean-up, each asking *queue* as the bot, early.
+
+    **Each is asked as advance's** (`advanced`): judged by no clock, so that under test mode the
+    step that ends the check-in is the one advance fires, a past-dated round's call being posted
+    however late it is. The payload carries the entry's division and round numbers and no
+    division id, as the timers' does not carry the flag; the call's also says it replaces nothing
+    and is not late. A fault is named as the command words the step ("the RSVP notice"). Each
+    step's words, and the change it asks, are what advance has always said and asked.
+    """
+
+    def step_for(
+        kind: str, *, step: str, what: str, emoji: str, name: str, job: str, taken_down: str | None
+    ) -> AdvanceStep:
+        async def run(entry: PhaseEntry) -> AdvanceOutcome:
+            division, number = entry["division_name"], entry["round_number"]
+            payload: dict[str, Any] = {
+                "round_id": entry["round_id"], "division_name": division,
+                "round_number": number, "advanced": True,
+            }
+            if kind == CHECK_IN_CALL:
+                payload |= {"replaces": None, "late": False}
+            try:
+                change = await queue.ask(
+                    kind, payload, what=f"{what} of round {number} in **{division}**",
+                    origin=ChangeOrigin.BOT,
+                )
+            except Exception as exc:  # noqa: BLE001 — named by the command, which reports it
+                raise AdvanceStepFailed(step) from exc
+            if change is None:
+                return AdvanceOutcome.not_due(
+                    f"{emoji} The **{name}** for **{division}** — **Round {number}** was not due."
+                )
+            if taken_down is not None:
+                reply = (
+                    f"{emoji} The **{name}** for **{division}** — **Round {number}** is on the "
+                    f"change queue: it {taken_down} as soon as the queue reaches it."
+                )
+            else:
+                reply = (
+                    f"{emoji} The **{name}** for **{division}** — **Round {number}** "
+                    f"(**{entry['track_name']}**) is on the change queue: it goes to the RSVP "
+                    f"channel as soon as the queue reaches it."
+                )
+            return AdvanceOutcome.asked(
+                reply, f"  phase: {job}\n  division: {division}\n  round: {number}"
+            )
+
+        return run
+
+    return {
+        "rsvp_notice": step_for(
+            CHECK_IN_CALL, step="the RSVP notice", what="the RSVP notice", emoji="📨",
+            name="RSVP notice", job="rsvp_notice", taken_down=None,
+        ),
+        "rsvp_last_notice": step_for(
+            CHECK_IN_LAST_NOTICE, step="the RSVP last-notice", what="the RSVP last-notice",
+            emoji="⏰", name="RSVP last-notice", job="rsvp_last_notice", taken_down=None,
+        ),
+        "rsvp_deadline": step_for(
+            CHECK_IN_DEADLINE, step="the RSVP deadline", what="the RSVP deadline", emoji="🏁",
+            name="RSVP deadline", job="rsvp_deadline", taken_down=None,
+        ),
+        "rsvp_cleanup": step_for(
+            CHECK_IN_CLEAN_UP, step="the check-in cleanup",
+            what="taking down the check-in a day after the round", emoji="🧹",
+            name="check-in cleanup", job="rsvp_cleanup",
+            taken_down="takes down the check-in call, last notice and reserve announcement",
+        ),
+    }

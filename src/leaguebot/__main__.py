@@ -1038,6 +1038,7 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
 
     # Register RSVP attendance callbacks
     from leaguebot.attendance.services.check_in_changes import (
+        advance_steps as check_in_advance_steps,
         ask_check_in_call,
         ask_check_in_clean_up,
         ask_check_in_deadline,
@@ -1069,6 +1070,8 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
     scheduler.register_timer("rsvp_last_notice", _rsvp_last_notice_cb)
     scheduler.register_timer("rsvp_deadline", _rsvp_deadline_cb)
     scheduler.register_timer("rsvp_cleanup", _rsvp_cleanup_cb)
+    for kind, advance in check_in_advance_steps(bot.change_queue, bot.db_path).items():
+        register_advance(kind, advance)
 
     # Register the daily driver-portrait refresh and re-arm it after a restart. Unlike
     # every other job here the trigger is recurring, so recovery re-adds it rather than

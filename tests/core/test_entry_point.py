@@ -102,9 +102,6 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     assert sorted(kinds - set(scheduler._timer_callbacks)) == []
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: no module signs up a /test-mode advance step for its kinds"
-)
 async def test_every_round_kind_has_its_advance_step_after_build(tmp_path):
     """Straight after `build`, every kind of a round's jobs (the three weather phases, the
     forecast clean-up, the result submission and the four check-in jobs) has the step
