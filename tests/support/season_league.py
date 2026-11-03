@@ -16,8 +16,9 @@ reads the host's clock (the review's five minutes, the dates gate), and the queu
 league's `clock`, which a test moves on (`league.clock.advance`).
 
 The bot is `league_bot`'s: the one the entry point's `build` makes, every service and change type
-the builder's (`league_queue`). It reads the enabled modules' windows through the builder's reader as
-`bot.approval_windows`, and a real `SeasonCog` holds the season's setup in memory. The
+the builder's (`league_queue`). It reads the enabled modules' windows as the builder has it read
+them, attendance's settings through `_attendance`, and a real `SeasonCog` holds the season's setup
+in memory. The
 scheduler is a double recording each `schedule_*` call in `league.armed`. The league's server
 holds every channel above, the review's channel (610) among them, the roles above and the three
 drivers; `absent`, `fetch_fails`, `grant_fails` and `roles_gone` make Discord answer otherwise.
@@ -47,9 +48,8 @@ results submission for a round, its channel standing on the server; `cancel_roun
 
 For `/round amend` on the queue (slice 4b, amendment A), `ongoing_league` also takes the weather
 horizons (`horizons`, written to `weather_pipeline_config`) and the phases each round has had
-performed (`phases_done`, by round id), and the bot reads the amendment's windows through
-`bot.amendment_windows`, as the builder's reader does: attendance's only where it is on, weather's
-always. The scheduler double records `schedule_round` as weather's arming. `amend_round` runs
+performed (`phases_done`, by round id), and the bot reads the amendment's windows as the builder
+has it read them: attendance's only where it is on, weather's always. The scheduler double records `schedule_round` as weather's arming. `amend_round` runs
 `/round amend` as admin 77 and presses the Confirm it offered, giving the press;
 `amendment_changes` lists the amendments asked of the queue; `accept_session` saves a session's
 results as the wizard does on accepting them; `posted_forecast` records a phase's forecast as
@@ -258,8 +258,6 @@ class SeasonLeague:
         bot.image_config_service.get_config = AsyncMock(return_value=None)
         bot.image_config_service.get_toggles = AsyncMock(return_value={})
         bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
-        bot.approval_windows = lambda: _approval_windows(self)
-        bot.amendment_windows = lambda: _amendment_windows(self)
         self.cog = SeasonCog(bot)
         self._hold_setup(self.cog, key=ADMIN_ID)
         bot.get_cog = MagicMock(side_effect=lambda name: self.cog if name == "SeasonCog" else None)
@@ -421,31 +419,6 @@ class SeasonLeague:
         await restart_queue(self.bot)
 
 
-async def _approval_windows(league: SeasonLeague) -> Any:
-    """The builder's reader of the enabled modules' windows (`LeagueBot.approval_windows`)."""
-    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
-
-    modules = league.bot.module_service
-    attendance = weather = None
-    if await modules.is_attendance_enabled():
-        att = await league._attendance()
-        attendance = AttendanceWindows(
-            notice_days=att.rsvp_notice_days,
-            last_notice_hours=att.rsvp_last_notice_hours,
-            deadline_hours=att.rsvp_deadline_hours,
-        )
-    if await modules.is_weather_enabled():
-        from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
-
-        wx = await get_weather_pipeline_config(league.db_path)
-        weather = WeatherWindows(
-            phase_1_days=wx.phase_1_days,
-            phase_2_days=wx.phase_2_days,
-            phase_3_hours=wx.phase_3_hours,
-        )
-    return attendance, weather
-
-
 def _attach_amendment_service(bot: Any, db_path: str) -> None:
     """The real `AmendmentService` while it stands, so that its record of the amendments being
     applied is what the cancellations read; nothing once `/round amend` is on the change queue and
@@ -455,30 +428,6 @@ def _attach_amendment_service(bot: Any, db_path: str) -> None:
     except ImportError:
         return
     bot.amendment_service = AmendmentService(db_path)
-
-
-async def _amendment_windows(league: SeasonLeague) -> Any:
-    """The builder's reader of the windows an amendment is judged against
-    (`LeagueBot.amendment_windows`): attendance's only where it is on, weather's always, since a
-    forecast posted while weather was on is still posted."""
-    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
-    from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
-
-    attendance = None
-    if await league.bot.module_service.is_attendance_enabled():
-        att = await league._attendance()
-        attendance = AttendanceWindows(
-            notice_days=att.rsvp_notice_days,
-            last_notice_hours=att.rsvp_last_notice_hours,
-            deadline_hours=att.rsvp_deadline_hours,
-        )
-    wx = await get_weather_pipeline_config(league.db_path)
-    weather = WeatherWindows(
-        phase_1_days=wx.phase_1_days,
-        phase_2_days=wx.phase_2_days,
-        phase_3_hours=wx.phase_3_hours,
-    )
-    return attendance, weather
 
 
 async def make_db(tmp_path: Any, now: datetime, *, extra_drivers: bool) -> str:
