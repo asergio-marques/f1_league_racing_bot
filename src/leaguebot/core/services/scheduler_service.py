@@ -93,7 +93,6 @@ _JOB_SUFFIX_RE = re.compile(r"_s\d+_d\d+_r\d+(?:_id\d+)?$")
 # because that is what its callers already hold.
 
 
-
 def _round_job_suffix(rnd: "Round", season_number: int, division_tier: int) -> str:
     """The ``_s{S}_d{D}_r{R}_id{round_id}`` tail every one of a round's job IDs carries.
 
@@ -525,12 +524,15 @@ class SchedulerService:
         last notice and distribution message; *forecast* and *check_in* choose which are armed
         (``schedule_round`` arms the first through `_arm_forecast_cleanup`,
         ``schedule_attendance_round`` calls this for the second alone, and a refused
-        cancellation arms both for a round raced, or ended cancelled as not held, #439). The forecast's is armed whatever the hour, as ever; the check-in's only while its
-        moment is still ahead of *now*, the restart's catch-up taking one already past
+        cancellation arms both for a round raced, or ended cancelled as not held, #439). The
+        forecast's is armed whatever the hour, as ever; the check-in's only while its moment is
+        still ahead of *now*, the restart's catch-up taking one already past
         (`_recover_missed_cleanups`). Both replace a job of the same id.
         """
         if forecast:
-            self._arm_forecast_cleanup(rnd, season_number=season_number, division_tier=division_tier)
+            self._arm_forecast_cleanup(
+                rnd, season_number=season_number, division_tier=division_tier
+            )
 
         if check_in:
             suffix = _round_job_suffix(rnd, season_number, division_tier)
