@@ -126,6 +126,16 @@ _CANCELLATION_PARTS = (
 )
 
 
+#: Each module's subscriber to a round's timing windows read, as the module names it, and what the
+#: test calls it, in the order the builder signs them up.
+_WINDOWS_PARTS = (
+    ("leaguebot.attendance.services.attendance_service", "round_window", "attendance's window"),
+    ("leaguebot.weather.services.weather_config_service", "round_window", "weather's window"),
+)
+
+
+@pytest.mark.xfail(strict=True, reason="#283: the builder signs no module up to a round's timing "
+                   "windows read")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -134,7 +144,9 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     cancellation of rounds: what stands in its way, results' refusal of a round whose open
     submission has accepted results; the rounds called off, results' close of their empty
     submissions, then attendance's take-down of their calls; and the steps a module plans,
-    results' deletion of a submission channel, then attendance's take-down of a call."""
+    results' deletion of a submission channel, then attendance's take-down of a call. A round's
+    timing windows read: attendance's window, then weather's, each handed whether the round is
+    being amended."""
     import importlib
 
     import leaguebot.__main__ as entry_point
@@ -158,6 +170,11 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
             called.append(part)
         monkeypatch.setattr(importlib.import_module(module_name), name, awaited_spy,
                             raising=False)
+    for module_name, name, part in _WINDOWS_PARTS:
+        async def window_spy(*_args, part=part, amending, **_kwargs):
+            called.append(f"{part}, amending {amending}")
+        monkeypatch.setattr(importlib.import_module(module_name), name, window_spy,
+                            raising=False)
 
     bot = await built_bot(tmp_path, now=_NOW)
     assert called == []
@@ -174,6 +191,59 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     assert [sorted(steps) for steps in bot.cancellation_steps.call()] == [
         ["delete_channel"], ["take_down_call"]
     ]
+    called.clear()
+    await bot.round_windows_read.call(amending=True)
+    assert called == ["attendance's window, amending True", "weather's window, amending True"]
+
+
+#: The windows the league configures in the pair test: attendance's three lead times, and
+#: weather's three horizons, each unlike its default.
+_ATTENDANCE_SET = (3, 12, 1)
+_WEATHER_SET = (4, 1, 3)
+
+
+@pytest.mark.xfail(strict=True, reason="#283: a round's timing windows are not read through a hook")
+@pytest.mark.parametrize("amending", [False, True], ids=["the approval", "the amendment"])
+@pytest.mark.parametrize("weather_on", [False, True], ids=["weather off", "weather on"])
+@pytest.mark.parametrize("attendance_on", [False, True], ids=["attendance off", "attendance on"])
+async def test_the_windows_hook_hands_each_caller_today_s_pair(
+    tmp_path, attendance_on, weather_on, amending
+):
+    """A league whose check-in calls go out 3 days ahead, their last notice 12 hours and their
+    deadline 1 hour before the round, and whose forecasts fall 4 days, 1 day and 3 hours before
+    it, with attendance and weather each on or off. Read through the hook the builder makes,
+    `(attendance, weather)` is what each caller has always received: attendance's window only
+    where attendance is on; weather's, for the season's approval, only where weather is on, and
+    for an amendment whatever weather's switch, since a forecast posted while weather was on is
+    still posted."""
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
+    from leaguebot.core.services.round_moments import read_round_windows
+    from tests.support.change_queue import seed_server
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    await seed_server(bot.db_path)
+    async with get_connection(bot.db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_config (id, module_enabled, rsvp_notice_days, "
+            "rsvp_last_notice_hours, rsvp_deadline_hours) VALUES (1, ?, ?, ?, ?)",
+            (int(attendance_on), *_ATTENDANCE_SET),
+        )
+        await db.execute(
+            "INSERT INTO weather_pipeline_config (id, phase_1_days, phase_2_days, phase_3_hours) "
+            "VALUES (1, ?, ?, ?)",
+            _WEATHER_SET,
+        )
+        await db.execute("UPDATE server_configs SET weather_module_enabled = ?",
+                         (int(weather_on),))
+        await db.commit()
+
+    pair = await read_round_windows(bot.round_windows_read, amending=amending)
+
+    assert pair == (
+        AttendanceWindows(*_ATTENDANCE_SET) if attendance_on else None,
+        WeatherWindows(*_WEATHER_SET) if weather_on or amending else None,
+    )
 
 
 async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):

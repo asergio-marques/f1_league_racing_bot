@@ -63,15 +63,18 @@ def test_setup_hook_is_the_bot_types_one_behaviour():
     assert own == ["setup_hook"]
 
 
-def test_the_approval_windows_reader_is_declared_and_set_by_the_builder():
-    """The season cog reads the enabled modules' windows through `bot.approval_windows`, which
-    `LeagueBot` declares and the builder sets, so that core imports neither attendance nor
-    weather, nor `__main__` (#439, slice 4a)."""
+@pytest.mark.xfail(strict=True, reason="#283: the season cog reads the windows through "
+                   "`bot.approval_windows`, not the windows hook")
+def test_the_windows_hook_is_declared_and_made_by_the_builder():
+    """The season cog reads the enabled modules' windows through `bot.round_windows_read`, the
+    hook `LeagueBot` declares and the builder makes, so that core imports neither attendance nor
+    weather, nor `__main__`; the two readers it replaces are gone (#439, slice 4a)."""
     from leaguebot.core.cogs.season_cog import SeasonCog
 
-    assert "approval_windows" in _declared()
-    assert "approval_windows" in _attached_in_bot_py()
-    assert "self.bot.approval_windows()" in inspect.getsource(SeasonCog._approval_windows)
+    assert "round_windows_read" in _declared()
+    assert "round_windows_read" in _attached_in_bot_py()
+    assert "self.bot.round_windows_read" in inspect.getsource(SeasonCog._approval_windows)
+    assert not {"approval_windows", "amendment_windows"} & (_declared() | _attached_in_bot_py())
 
 
 def test_the_season_approval_is_registered():
