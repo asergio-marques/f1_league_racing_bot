@@ -5,8 +5,9 @@ Provides async functions consumed by TestModeCog, among them:
   - toggle_test_mode_nationality: flip whether mock drivers carry a nationality
   - count_live_real_drivers:      how many real drivers stand in the way of enabling test mode
   - get_next_pending_phase:       find the earliest un-executed phase across all rounds
-  - register_advance, run_advance_step: the step `/test-mode advance` runs for each kind of a
-                                  round's job, signed up by its module, and the running of it
+  - register_advance, advance_next_step: the step `/test-mode advance` runs for each kind of a
+                                  round's job, signed up by its module, and the one call that
+                                  picks it, takes its job down and runs it
   - build_review_summary:         format a full season/division/round status string
 """
 
@@ -14,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any, TypedDict
@@ -153,6 +154,51 @@ async def run_advance_step(
         )
     scheduler_service.cancel_round(entry["round_id"], only=frozenset({kind}))
     return await step(entry)
+
+
+@dataclass(frozen=True)
+class AdvanceRun:
+    """What `advance_next_step` did at one moment.
+
+    *entry* is the step picked, None where nothing is left to advance, and *passed_over* the
+    weather steps of raced rounds passed over on the way. *outcome* is what became of the step,
+    and *failure* the exception of a step that failed, in place of an outcome: one of the two is
+    set where an entry was picked.
+    """
+
+    entry: PhaseEntry | None
+    passed_over: list[PhaseEntry] = field(default_factory=list)
+    outcome: AdvanceOutcome | None = None
+    failure: AdvanceStepFailed | None = None
+
+
+async def advance_next_step(
+    db_path: str,
+    scheduler_service: SchedulerService,
+    *,
+    now: datetime,
+    announce: Callable[[PhaseEntry, list[PhaseEntry]], Awaitable[None]],
+) -> AdvanceRun:
+    """Pick the next step and the steps passed over at the one moment *now*, announce them, take
+    the step's job down and run its kind's step (`run_advance_step`).
+
+    One moment judges both, so that a race time falling between two readings cannot leave a step
+    both offered and named, or neither. *announce* is awaited with the entry and the steps passed
+    over once a step is picked, before the step runs, so that the command can name them first;
+    where nothing is left to advance it is not awaited and the steps passed over are returned
+    with no entry. A step that fails is returned as *failure*, not raised; any other fault
+    propagates.
+    """
+    entry = await get_next_pending_phase(db_path, scheduler_service, now=now)
+    passed_over = await get_passed_over_steps(db_path, now=now)
+    if entry is None:
+        return AdvanceRun(None, passed_over)
+    await announce(entry, passed_over)
+    try:
+        outcome = await run_advance_step(scheduler_service, entry)
+    except AdvanceStepFailed as exc:
+        return AdvanceRun(entry, passed_over, failure=exc)
+    return AdvanceRun(entry, passed_over, outcome=outcome)
 
 
 # ---------------------------------------------------------------------------

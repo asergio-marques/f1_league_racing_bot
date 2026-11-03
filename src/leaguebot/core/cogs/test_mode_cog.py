@@ -24,6 +24,7 @@ is open, and to *disable* it while a running season holds fake drivers.
 
 from __future__ import annotations
 
+import functools
 import logging
 from datetime import datetime, timezone
 
@@ -35,13 +36,10 @@ from leaguebot.core.services.test_mode_service import (
     toggle_test_mode,
     toggle_test_mode_nationality,
     count_live_real_drivers,
-    get_next_pending_phase,
     PhaseEntry,
     build_review_summary,
-    get_passed_over_steps,
     AdvanceStatus,
-    AdvanceStepFailed,
-    run_advance_step,
+    advance_next_step,
 )
 from leaguebot.core.models.change import (
     FORECAST_FLUSH,
@@ -282,20 +280,18 @@ class TestModeCog(commands.Cog):
 
         # One moment for the step offered and the steps passed over, so that a race time falling
         # between two readings cannot leave a step both offered and named, or neither.
-        now = datetime.now(timezone.utc)
-        entry = await get_next_pending_phase(
+        run = await advance_next_step(
             self.bot.db_path,
             self.bot.scheduler_service,
-            now=now,
+            now=datetime.now(timezone.utc),
+            announce=functools.partial(self._announce_advance, interaction),
         )
-        # The weather steps of raced rounds passed over on the way, named before the step
-        # advanced (owner, 2026-10-12, "Advance names what it skipped").
-        passed_over = [
-            _passed_over_line(step)
-            for step in await get_passed_over_steps(self.bot.db_path, now=now)
-        ]
+        entry = run.entry
 
         if entry is None:
+            # The weather steps of raced rounds passed over on the way, named before the step
+            # advanced (owner, 2026-10-12, "Advance names what it skipped").
+            passed_over = [_passed_over_line(step) for step in run.passed_over]
             if passed_over:
                 said = (
                     "Nothing else is due: the weather steps above were passed over, their races "
@@ -320,33 +316,18 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        for part in chunk_message("\n".join(passed_over)) if passed_over else ():
-            await interaction.followup.send(part, ephemeral=True)
-
-        phase_number = entry["phase_number"]
-
-        log.info(
-            "Test mode advance: Phase %s, round=%d (id=%d), division=%s, track=%s",
-            "mystery-notice" if phase_number == 0 else phase_number,
-            entry["round_number"],
-            entry["round_id"],
-            entry["division_name"],
-            entry["track_name"],
-        )
-
-        # The entry's kind's own step runs, its job taken down first (`run_advance_step`); this
-        # command words nothing of it but a failure's report, and the step's outcome.
-        try:
-            outcome = await run_advance_step(self.bot.scheduler_service, entry)
-        except Exception as exc:  # noqa: BLE001 — reported here, to name the step and the round
-            step, track = entry["kind"], None
-            fault: BaseException = exc
-            if isinstance(exc, AdvanceStepFailed):
-                step, track, fault = exc.step, exc.track, exc.__cause__ or exc
+        # A step that failed is reported here, to name the step and the round; any other fault
+        # goes to the command tree's handler.
+        if run.failure is not None:
+            failure = run.failure
             await report_failure(
-                interaction, fault, what=self._advance_what(interaction, step, entry, track=track)
+                interaction,
+                failure.__cause__ or failure,
+                what=self._advance_what(interaction, failure.step, entry, track=failure.track),
             )
             return
+        outcome = run.outcome
+        assert outcome is not None  # an entry picked ends in an outcome or a failure
         if outcome.status is AdvanceStatus.REFUSED:
             await refuse(interaction, outcome.reply, what=describe(interaction))
             return
@@ -356,6 +337,28 @@ class TestModeCog(commands.Cog):
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
                 f"{outcome.log}",
             )
+
+    @staticmethod
+    async def _announce_advance(
+        interaction: discord.Interaction,
+        entry: PhaseEntry,
+        passed_over: list[PhaseEntry],
+    ) -> None:
+        """Name the steps passed over to the maintainer and note the step picked, before it
+        runs."""
+        lines = [_passed_over_line(step) for step in passed_over]
+        for part in chunk_message("\n".join(lines)) if lines else ():
+            await interaction.followup.send(part, ephemeral=True)
+
+        phase_number = entry["phase_number"]
+        log.info(
+            "Test mode advance: Phase %s, round=%d (id=%d), division=%s, track=%s",
+            "mystery-notice" if phase_number == 0 else phase_number,
+            entry["round_number"],
+            entry["round_id"],
+            entry["division_name"],
+            entry["track_name"],
+        )
 
     @staticmethod
     def _advance_what(
