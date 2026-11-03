@@ -170,20 +170,23 @@ def _failure_lines(cog) -> list[str]:
 
 def _assert_failure_recorded(cog, interaction, phase: str) -> None:
     """The maintainer got the standard failure reply and the log channel one failure line,
-    each naming *phase*, the division and the round, the line the kind of fault too (#482)."""
+    each naming *phase*, the division and the round, the line the kind of fault too (#482).
+
+    The step is named exactly as advance names it, "at <step> for Division 1, Round 3", so a
+    module's step that words its name differently fails here. *phase* may carry the division and
+    the round already (a weather phase adds its track after them)."""
+    named = phase if " for Division 1, Round 3" in phase else f"{phase} for Division 1, Round 3"
     replied = _replied(interaction)
     assert "stopped on a fault in the bot" in replied
     assert "internal error" not in replied
     assert "Check the bot logs" not in replied
-    for text in (phase, "Division 1", "Round 3"):
-        assert text.lower() in replied.lower()
+    assert f"at {named}" in replied
     lines = _failure_lines(cog)
     assert len(lines) == 1
     line = lines[0]
     assert "`/test-mode advance`" in line
     assert "failed for Maintainer (<@77>) — RuntimeError." in line
-    for text in (phase, "Division 1", "Round 3"):
-        assert text.lower() in line.lower()
+    assert f"at {named}" in line
 
 
 def _replied(interaction) -> str:
@@ -233,13 +236,19 @@ def _advancing(bot, entry, *, passed=None, sign_up: bool = True):
     from leaguebot.core.cogs import test_mode_cog
     from leaguebot.core.services import test_mode_service
 
-    if sign_up:
-        register_scheduler_callbacks(bot)
     reads = {
         "get_next_pending_phase": AsyncMock(return_value=entry),
         "get_passed_over_steps": AsyncMock(return_value=list(passed or [])),
     }
     with ExitStack() as stack:
+        # The steps are signed up into a registry the module keeps for the process, so it is
+        # put back as it was when the test ends: otherwise the steps bound to this test's bot
+        # would answer the next test's advance on the same worker.
+        steps = getattr(test_mode_service, "_ADVANCE_STEPS", None)
+        if isinstance(steps, dict):
+            stack.enter_context(patch.dict(steps))
+        if sign_up:
+            register_scheduler_callbacks(bot)
         for module in (test_mode_cog, test_mode_service):
             for name, read in reads.items():
                 if hasattr(module, name):
@@ -778,7 +787,7 @@ CLEANUPS_ASKED = [
 ]
 
 
-async def test_each_cleanup_reaches_its_own_runner(tmp_path):
+async def test_an_advanced_forecast_cleanup_is_asked_of_the_change_queue(tmp_path):
     """The forecast cleanup (8) of round 3 of Division 1 is next, no forecast row standing. It
     is asked of the change queue as a `weather.forecast.clean_up` of the round, replying
     '🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on the change queue: …',
