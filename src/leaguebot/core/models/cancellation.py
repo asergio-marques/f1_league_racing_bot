@@ -2,8 +2,10 @@
 
 A round's, a division's or a season's cancellation declares three moments the modules take part
 in (architecture.md, "A hook core declares is a list of subscribers"): what stands in its way,
-the rounds called off, and the steps a module plans. Each is handed the *scope* (`SCOPE_ROUND`,
-`SCOPE_DIVISION` or `SCOPE_SEASON`) and the rows concerned, each a `CancellationRound`.
+the rounds called off, and the steps a module plans. The first two are handed the *scope*
+(`SCOPE_ROUND`, `SCOPE_DIVISION` or `SCOPE_SEASON`) and the rows concerned, each a
+`CancellationRound`; the third is handed nothing, and is called as each cancellation's change type
+is made, so that core registers the steps it does not name.
 """
 
 from __future__ import annotations

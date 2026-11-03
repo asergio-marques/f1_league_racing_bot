@@ -825,9 +825,10 @@ def round_cancel_change(
     "season_number"}``. It names no season: a payload that does is read as holding every division
     of that season (`review_changes.division_job_in_hand`); the season a job needs travels on the
     jobs' own payloads. The builder hands in the *modules* (each notice's `still_due`), the
-    *seasons* service, the *scheduler*, the hooks the modules sign up to (*cancellation_refused*, *rounds_called_off*, and
-    *cancellation_steps*, whose steps are registered), *amendment_in_hand* (the job a
-    `/round amend` of a round of a division waits on, or None) and the queue's clock *now*.
+    *seasons* service, the *scheduler*, the hooks the modules sign up to (*cancellation_refused*,
+    *rounds_called_off*, and *cancellation_steps*, whose steps are registered),
+    *amendment_in_hand* (the job a `/round amend` of a round of a division waits on, or None) and
+    the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1354,9 +1355,9 @@ def season_cancel_change(
     """The change that cancels the season being raced; see the module.
 
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *modules*, the
-    *seasons* service, the *scheduler*, the *placement* service (which takes back roles), the hooks the
-    modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_steps*), the season
-    end's *hooks* and the queue's clock *now*.
+    *seasons* service, the *scheduler*, the *placement* service (which takes back roles), the hooks
+    the modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_steps*), the
+    season end's *hooks* and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
