@@ -161,8 +161,8 @@ from leaguebot.core.services.season_lifecycle_service import (
     SeasonEndHooks,
     advance_to_pending_completion_on,
     driver_jobs,
-    end_signup_wizards_on,
     run_driver_pass_on,
+    untold_accounts_on,
 )
 from leaguebot.core.services.season_service import (
     SeasonImmutableError,
@@ -1341,6 +1341,8 @@ def season_cancel_change(
     rounds_called_off: AwaitedHook,
     cancellation_steps: Hook,
     season_end_refused: AwaitedHook,
+    drivers_returned: AwaitedHook,
+    season_end_untold: AwaitedHook,
     driver_returned_jobs: Hook,
     season_end_steps: Hook,
     hooks: SeasonEndHooks,
@@ -1351,8 +1353,8 @@ def season_cancel_change(
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *modules*, the
     *seasons* service, the *scheduler*, the *placement* service (which takes back roles), the hooks
     the modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_steps*,
-    *season_end_refused*, *driver_returned_jobs*, *season_end_steps*), the season end's *hooks* and
-    the queue's clock *now*.
+    *season_end_refused*, *drivers_returned*, *season_end_untold*, *driver_returned_jobs*,
+    *season_end_steps*), the season end's *hooks* and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1535,7 +1537,7 @@ def season_cancel_change(
         test_mode = await test_mode_on(db)
         await write_driver_history_entries_on(db, season_id, number, force_cancelled=True)
         driver_pass = await run_driver_pass_on(db)
-        await end_signup_wizards_on(db, hooks, driver_pass.drivers)
+        await drivers_returned.call(db, driver_pass.drivers)
         if test_mode:
             await switch_test_mode_off_on(db)
         # The season's row is the last thing written (Constitution, the Season Archive). The
@@ -1582,7 +1584,7 @@ def season_cancel_change(
         The drivers a discarded window close returned and nobody told are named here and their
         marks taken, whatever else this save finds.
         """
-        untold = await hooks.take_closing_notices_on(db)
+        untold = await untold_accounts_on(season_end_untold, db)
         result = {"closed": True, "untold": untold}
         refused = _refused(ctx)
         if refused is not None:

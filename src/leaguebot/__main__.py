@@ -187,13 +187,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     async def clear_closing_notices_on(db: aiosqlite.Connection, accounts: Sequence[str]) -> None:
         await bot.signup_module_service.clear_closing_notices_on(db, accounts)
 
-    async def take_closing_notices_on(db: aiosqlite.Connection) -> list[str]:
-        return await bot.signup_module_service.take_closing_notices_on(db)
-
-    async def end_wizards_on(db: aiosqlite.Connection, accounts: Sequence[str]) -> None:
-        for account in accounts:
-            await bot.signup_module_service.end_wizard_on(db, str(account))
-
     async def window_jobs(cause: str, returned: int) -> "tuple[PlannedStep, ...]":
         config = await bot.signup_module_service.get_config()
         return window_close_jobs(
@@ -220,8 +213,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
         forget_setup=lambda: _forget_setup(bot),
         owed_closing_notices=owed_closing_notices,
         clear_closing_notices_on=clear_closing_notices_on,
-        take_closing_notices_on=take_closing_notices_on,
-        end_wizards_on=end_wizards_on,
     )
 
 
@@ -304,13 +295,22 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
     """Make the hooks a season's end declares, and sign each module's part up to them, in the order
     core calls them: what stands in the way of the completion and of the cancellation (results'
-    refusal of a season with a round being amended); the jobs planned for each driver a season's
-    end returns (signup's); and the steps the modules define for it (signup's notice and close)."""
+    refusal of a season with a round being amended); inside its saves, signup's ending of the
+    wizards of the drivers returned and its accounts left untold; the jobs planned for each driver
+    returned (signup's); and the steps the modules define for it (signup's notice and close)."""
     from leaguebot.results.services import result_submission_service
     from leaguebot.signup.services import closing_steps
 
     bot.season_end_refused = AwaitedHook()
     bot.season_end_refused.subscribe(result_submission_service.season_end_refusal)
+    bot.drivers_returned = AwaitedHook()
+    bot.drivers_returned.subscribe(
+        partial(closing_steps.drivers_returned_on, lambda: bot.signup_module_service)
+    )
+    bot.season_end_untold = AwaitedHook()
+    bot.season_end_untold.subscribe(
+        partial(closing_steps.take_untold_on, lambda: bot.signup_module_service)
+    )
     bot.driver_returned_jobs = Hook()
     bot.driver_returned_jobs.subscribe(closing_steps.driver_returned_jobs)
     bot.season_end_steps = Hook()
@@ -800,6 +800,8 @@ def register_change_types(bot: LeagueBot) -> None:
         wind_down_change(
             placement=bot.placement_service,
             hooks=hooks,
+            drivers_returned=bot.drivers_returned,
+            season_end_untold=bot.season_end_untold,
             driver_returned_jobs=bot.driver_returned_jobs,
             season_end_steps=bot.season_end_steps,
         )
@@ -811,6 +813,8 @@ def register_change_types(bot: LeagueBot) -> None:
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
             season_end_refused=bot.season_end_refused,
+            drivers_returned=bot.drivers_returned,
+            season_end_untold=bot.season_end_untold,
             driver_returned_jobs=bot.driver_returned_jobs,
             season_end_steps=bot.season_end_steps,
             hooks=hooks,
@@ -826,6 +830,8 @@ def register_change_types(bot: LeagueBot) -> None:
             rounds_called_off=bot.rounds_called_off,
             cancellation_steps=bot.cancellation_steps,
             season_end_refused=bot.season_end_refused,
+            drivers_returned=bot.drivers_returned,
+            season_end_untold=bot.season_end_untold,
             driver_returned_jobs=bot.driver_returned_jobs,
             season_end_steps=bot.season_end_steps,
             hooks=hooks,
@@ -836,6 +842,8 @@ def register_change_types(bot: LeagueBot) -> None:
         season_abort_change(
             seasons=bot.season_service,
             placement=bot.placement_service,
+            drivers_returned=bot.drivers_returned,
+            season_end_untold=bot.season_end_untold,
             driver_returned_jobs=bot.driver_returned_jobs,
             season_end_steps=bot.season_end_steps,
             hooks=hooks,

@@ -565,7 +565,6 @@ async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_pat
     assert await wizards_recovered(league) == {"armed": [], "expired": []}
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the turn-down hands its save to no hook yet")
 async def test_a_module_s_part_of_the_turn_down_s_save_runs_on_that_save_s_connection(tmp_path):
     """Driver 105 (Kimi) in review when the wind-down turns the season's pending placements down.
     A further module signs up to the drivers a season's end returns and to the accounts its last

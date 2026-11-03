@@ -19,7 +19,7 @@ lane alone. It needs only its channel to stand, not the signup it closes: that h
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -117,8 +117,9 @@ __all__ = [
     "DELETE_TIMER",
     "CHANNEL_GONE", "DELETE_KIND", "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND",
     "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "ask_channel_delete", "ask_expiry", "close_driver_signup",
-    "closing_change", "closing_steps", "driver_returned_jobs", "post_driver_notice", "reason_delete_change",
-    "season_end_steps", "take_reason_down", "window_close_jobs", "window_close_steps",
+    "closing_change", "closing_steps", "driver_returned_jobs", "drivers_returned_on", "post_driver_notice",
+    "reason_delete_change", "season_end_steps", "take_reason_down", "take_untold_on", "window_close_jobs",
+    "window_close_steps",
 ]
 
 
@@ -259,6 +260,32 @@ def driver_returned_jobs(driver: Mapping[str, Any], *, notice: str) -> tuple[Pla
         PlannedStep(SIGNUP_NOTICE, {"user_id": user_id, "notice": notice}),
         PlannedStep(CLOSE_SIGNUP, {"user_id": user_id}),
     )
+
+
+async def drivers_returned_on(
+    signup_module_service: Callable[[], "SignupModuleService"],
+    db: aiosqlite.Connection,
+    drivers: Sequence[Mapping[str, Any]],
+) -> None:
+    """Mark over the signup wizard of each of *drivers* a season's end returns to Not Signed Up
+    whose signup was in progress or in review, on the save's connection, committing nothing, so
+    that a restart finds no wizard still engaged for a signup that has ended and tells nobody it
+    expired. *drivers* are mappings of ``user_id`` and ``state``. Subscribed to core's
+    `drivers_returned`; *signup_module_service* is a getter, so that it is the service the bot
+    holds when the save runs."""
+    for driver in drivers:
+        if driver["state"] in _SIGNUP_IN_PROGRESS:
+            await signup_module_service().end_wizard_on(db, str(driver["user_id"]))
+
+
+async def take_untold_on(
+    signup_module_service: Callable[[], "SignupModuleService"], db: aiosqlite.Connection
+) -> list[str]:
+    """The accounts a discarded close of the signup window returned and nobody told, with their
+    mark cleared, on the save's connection, committing nothing: the change's last save names
+    them. Subscribed to core's `season_end_untold`; *signup_module_service* is a getter, as for
+    `drivers_returned_on`."""
+    return await signup_module_service().take_closing_notices_on(db)
 
 
 async def post_driver_notice(

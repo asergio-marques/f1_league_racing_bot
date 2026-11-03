@@ -38,7 +38,7 @@ from leaguebot.core.services.change_queue import (
     StepContext,
 )
 from leaguebot.core.services.season_service import commit_placements_on
-from leaguebot.core.utils.hooks import Hook
+from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
@@ -282,10 +282,6 @@ class SeasonEndHooks:
       notice, read on a connection of its own, for a check before a step or a step with no save
       open.
     - *clear_closing_notices_on*: sets those accounts' mark back to none, on the save's connection.
-    - *take_closing_notices_on*: reads the accounts still owed and clears them, on the save's
-      connection, for a change's last save to name the drivers a discarded close left untold.
-    - *end_wizards_on*: marks these accounts' signup wizards over, on the save's connection, for
-      the driver pass and the turn-down to end a signup in the save that returns the driver.
     - *window_jobs*: the jobs that close the signup window in its channel once a close has
       returned its drivers (the Sign Up button's deletion, the "Signups are now closed" post whose
       record closes the window), given the close's cause and the number of drivers it returned.
@@ -303,8 +299,6 @@ class SeasonEndHooks:
     forget_setup: Callable[[], None]
     owed_closing_notices: Callable[[], Awaitable[list[str]]]
     clear_closing_notices_on: Callable[[aiosqlite.Connection, Sequence[str]], Awaitable[None]]
-    take_closing_notices_on: Callable[[aiosqlite.Connection], Awaitable[list[str]]]
-    end_wizards_on: Callable[[aiosqlite.Connection, Sequence[str]], Awaitable[None]]
     window_jobs: Callable[[str, int], Awaitable[tuple[PlannedStep, ...]]]
     window_steps: Mapping[str, Step]
 
@@ -393,24 +387,12 @@ def driver_jobs(
     return tuple(planned)
 
 
-async def end_signup_wizards_on(
-    db: aiosqlite.Connection,
-    hooks: SeasonEndHooks | None,
-    drivers: Sequence[Mapping[str, Any]],
-) -> None:
-    """Mark over the signup wizard of each of *drivers* whose signup was in progress or in review.
-
-    Called in the save that returns them to Not Signed Up (the driver pass, the turn-down), on
-    that save's connection and through signup's own hook, so that a restart finds no wizard still
-    engaged for a signup that has ended and tells nobody it expired. Nothing is asked of the hooks
-    where no driver is in that case. *drivers* are mappings of ``user_id`` and ``state``.
-    """
-    accounts = [str(d["user_id"]) for d in drivers if d["state"] in _SIGNUP_IN_PROGRESS]
-    if not accounts:
-        return
-    if hooks is None:
-        raise RuntimeError("a season's end is run with the hooks the builder hands it")
-    await hooks.end_wizards_on(db, accounts)
+async def untold_accounts_on(season_end_untold: AwaitedHook, db: aiosqlite.Connection) -> list[str]:
+    """The accounts a discarded window close returned and nobody told, from every module that
+    keeps them (`season_end_untold`), on the connection of the change's last save, in the order the
+    modules signed up. Each module hands back the accounts it found and clears its mark of them, so
+    they are named once."""
+    return [str(account) for found in await season_end_untold.call(db) for account in found]
 
 
 def window_closed_jobs(user_ids: Sequence[str]) -> tuple[PlannedStep, ...]:
@@ -571,10 +553,12 @@ async def wind_down_not_due_on(db: aiosqlite.Connection) -> str | None:
 
 def wind_down_change(
     *,
-    placement: PlacementService | None = None,
-    hooks: SeasonEndHooks | None = None,
-    driver_returned_jobs: Hook | None = None,
-    season_end_steps: Hook | None = None,
+    placement: PlacementService,
+    hooks: SeasonEndHooks,
+    drivers_returned: AwaitedHook,
+    season_end_untold: AwaitedHook,
+    driver_returned_jobs: Hook,
+    season_end_steps: Hook,
 ) -> ChangeType:
     """The change that takes a season whose every division is done to Pending completion.
 
@@ -591,10 +575,9 @@ def wind_down_change(
     3. Then, for each driver turned down, `signup_notice` and `close_signup` for a signup in review,
        or `take_driver_role` for an approved driver.
 
-    *placement*, *hooks* and the hooks the modules sign up to (*driver_returned_jobs*,
-    *season_end_steps*) are what the jobs reach Discord and the other modules through, handed by
-    the builder. Without them the change is only described, which is all a caller needs that names
-    its kind (``wind_down_change().kind``) and never runs it.
+    *placement*, *hooks* and the hooks the modules sign up to (*drivers_returned*,
+    *season_end_untold*, *driver_returned_jobs*, *season_end_steps*) are what the jobs reach
+    Discord and the other modules through, handed by the builder.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -612,14 +595,16 @@ def wind_down_change(
             return (f"System | Every division is done | Incomplete\n  not done: {WINDOW_NOT_CLOSED}",)
         return ()
 
-    steps = wind_down_steps(hooks, driver_returned_jobs)
-    if placement is not None and hooks is not None and season_end_steps is not None:
-        steps.update(
-            close_signup_steps(
-                placement, hooks, season_end_steps=season_end_steps,
-                line_prefix="System | Every division is done",
-            )
+    steps = wind_down_steps(
+        hooks, drivers_returned=drivers_returned, season_end_untold=season_end_untold,
+        driver_returned_jobs=driver_returned_jobs,
+    )
+    steps.update(
+        close_signup_steps(
+            placement, hooks, season_end_steps=season_end_steps,
+            line_prefix="System | Every division is done",
         )
+    )
     return ChangeType(
         kind=WIND_DOWN,
         opening=(PlannedStep(WIND_DOWN_STEP), PlannedStep(TURN_DOWN_STEP)),
@@ -633,7 +618,11 @@ def wind_down_change(
 
 
 def wind_down_steps(
-    hooks: SeasonEndHooks | None, driver_returned_jobs: Hook | None
+    hooks: SeasonEndHooks,
+    *,
+    drivers_returned: AwaitedHook,
+    season_end_untold: AwaitedHook,
+    driver_returned_jobs: Hook,
 ) -> dict[str, Step]:
     """The two jobs that take a season whose every division is done out of its ongoing stages.
 
@@ -646,12 +635,12 @@ def wind_down_steps(
        Signed Up, moves the season on to Pending completion and writes its line.
 
     The jobs that tell and close each driver's signup (`close_signup_steps`) are the change's own
-    to carry. Without *hooks* and *driver_returned_jobs* the jobs are only described.
+    to carry. The modules' parts of the `turn_down` save are its hooks: the accounts a discarded
+    close left untold (*season_end_untold*), then the drivers returned (*drivers_returned*) and the
+    jobs planned for each (*driver_returned_jobs*).
     """
 
     async def wind_down(ctx: StepContext) -> StepResult:
-        if hooks is None:
-            raise RuntimeError("a wind-down is run with the hooks the builder hands it")
         returned, window = await close_window_for_wind_down(ctx.bot, hooks, kept=ctx.kept)
         return StepResult(
             result={"returned": list(returned)}, then=(*window, *window_closed_jobs(returned))
@@ -660,7 +649,7 @@ def wind_down_steps(
     async def turn_down(db: aiosqlite.Connection, _ctx: StepContext) -> StepResult:
         # A window close discarded after it returned drivers leaves them marked as owed their
         # notice, with no job planned for them: they are named here and their marks taken.
-        untold = await hooks.take_closing_notices_on(db) if hooks is not None else []
+        untold = await untold_accounts_on(season_end_untold, db)
         untold_lines = tuple(
             "System | Every division is done | "
             f"<@{account}> was returned to Not Signed Up when signups closed, but was not told "
@@ -679,23 +668,14 @@ def wind_down_steps(
             return StepResult(result={"moved": False}, lines=untold_lines)
         drivers: list[dict] = []
         if stage != SeasonStage.ONGOING.value:
-            if hooks is None and any(
-                d["current_state"] in _SIGNUP_IN_PROGRESS
-                for d in await _pending_placement_drivers_on(db, season_id)
-            ):
-                # Refused before anything is written: a signup turned down is marked over in
-                # this save, through the hooks.
-                raise RuntimeError("a wind-down is run with the hooks the builder hands it")
             drivers = await turn_down_pending_placements_on(db, season_id)
-            await end_signup_wizards_on(db, hooks, drivers)
+            await drivers_returned.call(db, drivers)
             current, _ = await _stage_and_whether_done_on(db, season_id)
             if current in (SeasonStage.ONGOING_SIGNUPS.value, SeasonStage.ONGOING_PLACEMENTS.value):
                 await _move_on(db, season_id, SeasonStage(current), SeasonStage.ONGOING)
         moved = await advance_to_pending_completion_on(db, season_id)
         cursor = await db.execute("SELECT driver_role_id FROM server_configs")
         config = await cursor.fetchone()
-        if driver_returned_jobs is None:
-            raise RuntimeError("a wind-down is run with the hooks the builder hands it")
         planned = driver_jobs(
             drivers, config["driver_role_id"] if config else None,
             notice=WIND_DOWN_NOTICE, reason="Season's divisions done; signup turned down",
@@ -838,14 +818,6 @@ DRIVER_PASS_STATES: tuple[str, ...] = (
     "AWAITING_CORRECTION_PARAMETER",
     "PENDING_DRIVER_CORRECTION",
 )
-
-#: The states of a driver whose signup is still in progress or in review.
-_SIGNUP_IN_PROGRESS: frozenset[str] = frozenset({
-    "PENDING_SIGNUP_COMPLETION",
-    "PENDING_ADMIN_APPROVAL",
-    "AWAITING_CORRECTION_PARAMETER",
-    "PENDING_DRIVER_CORRECTION",
-})
 
 
 async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bool) -> list[str]:

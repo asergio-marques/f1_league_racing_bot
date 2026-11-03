@@ -108,8 +108,8 @@ from leaguebot.core.services.season_lifecycle_service import (
     advance_to_pending_completion_on,
     driver_jobs,
     require_guild,
-    end_signup_wizards_on,
     run_driver_pass_on,
+    untold_accounts_on,
     wind_down_not_due_on,
     wind_down_steps,
 )
@@ -531,6 +531,8 @@ def season_complete_change(
     scheduler: "SchedulerService",
     placement: "PlacementService",
     season_end_refused: AwaitedHook,
+    drivers_returned: AwaitedHook,
+    season_end_untold: AwaitedHook,
     driver_returned_jobs: Hook,
     season_end_steps: Hook,
     hooks: SeasonEndHooks,
@@ -540,8 +542,8 @@ def season_complete_change(
     The builder hands in *modules* (which of results and attendance are on), the *seasons*
     service (the season the check reads), the *scheduler* (whose season-end job `settle` removes),
     the *placement* service (which takes back roles), the hooks the modules sign up to
-    (*season_end_refused*, *driver_returned_jobs*, *season_end_steps*) and the season end's
-    *hooks* (what other modules and the cog do for it).
+    (*season_end_refused*, *drivers_returned*, *season_end_untold*, *driver_returned_jobs*,
+    *season_end_steps*) and the season end's *hooks* (what other modules and the cog do for it).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -648,7 +650,7 @@ def season_complete_change(
         test_mode = await test_mode_on(db)
         await write_driver_history_entries_on(db, season_id, number)
         driver_pass = await run_driver_pass_on(db)
-        await end_signup_wizards_on(db, hooks, driver_pass.drivers)
+        await drivers_returned.call(db, driver_pass.drivers)
         if test_mode:
             await switch_test_mode_off_on(db)
         # The archive is the last thing written (Constitution, the Season Archive).
@@ -743,7 +745,7 @@ def season_complete_change(
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         # The drivers a discarded window close returned and nobody told are named here and their
         # marks taken, whatever else this save finds.
-        untold = await hooks.take_closing_notices_on(db)
+        untold = await untold_accounts_on(season_end_untold, db)
         result = {"closed": True, "untold": untold}
         refused = _refused(ctx)
         if refused is not None:
@@ -808,7 +810,10 @@ def season_complete_change(
     async def describe_close(_ctx: StepContext) -> str:
         return "recording the completion of the season"
 
-    winding = wind_down_steps(hooks, driver_returned_jobs)
+    winding = wind_down_steps(
+        hooks, drivers_returned=drivers_returned, season_end_untold=season_end_untold,
+        driver_returned_jobs=driver_returned_jobs,
+    )
     turn_down = winding[TURN_DOWN_STEP]
 
     async def turn_down_then_settle(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
@@ -849,6 +854,8 @@ def season_abort_change(
     *,
     seasons: "SeasonService",
     placement: "PlacementService",
+    drivers_returned: AwaitedHook,
+    season_end_untold: AwaitedHook,
     driver_returned_jobs: Hook,
     season_end_steps: Hook,
     hooks: SeasonEndHooks,
@@ -858,7 +865,8 @@ def season_abort_change(
     The payload is ``{"season_id"}``: a season set up has no number until its placements are
     confirmed. The builder hands in the *seasons* service (the season the check reads), the
     *placement* service (which takes back roles), the hooks the modules sign up to
-    (*driver_returned_jobs*, *season_end_steps*) and the season end's *hooks*.
+    (*drivers_returned*, *season_end_untold*, *driver_returned_jobs*, *season_end_steps*) and the
+    season end's *hooks*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -896,7 +904,7 @@ def season_abort_change(
 
         test_mode = await test_mode_on(db)
         driver_pass = await run_driver_pass_on(db)
-        await end_signup_wizards_on(db, hooks, driver_pass.drivers)
+        await drivers_returned.call(db, driver_pass.drivers)
         if test_mode:
             await switch_test_mode_off_on(db)
         # The season's deletion is the last thing written. The saved test-mode state is kept: a
@@ -939,7 +947,7 @@ def season_abort_change(
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         # The drivers a discarded window close returned and nobody told are named here and their
         # marks taken, whatever else this save finds.
-        untold = await hooks.take_closing_notices_on(db)
+        untold = await untold_accounts_on(season_end_untold, db)
         result = {"closed": True, "untold": untold}
         refused = _refused(ctx)
         if refused is not None:

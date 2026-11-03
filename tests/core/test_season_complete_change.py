@@ -603,7 +603,6 @@ _END_SAVES = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a season's end hands its saves to no hook yet")
 @pytest.mark.parametrize("kind, standing", _END_SAVES)
 async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(
     tmp_path, kind, standing,
