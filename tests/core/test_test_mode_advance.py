@@ -315,13 +315,19 @@ _NO_ADVANCE_STEPS = (
 
 @pytest.mark.xfail(strict=True, reason=_NO_ADVANCE_STEPS)
 @pytest.mark.parametrize("job_id", ["queued_job", None], ids=["from-the-job-store", "from-state"])
-@pytest.mark.parametrize("phase_number", sorted(set(KIND_OF_PHASE) - {0}))
+@pytest.mark.parametrize(
+    "phase_number",
+    sorted(KIND_OF_PHASE),
+    ids=lambda n: "mystery-notice-weather_p1" if n == 0 else f"{n}-{KIND_OF_PHASE[n]}",
+)
 async def test_advance_runs_the_kinds_own_step(tmp_path, monkeypatch, phase_number, job_id):
     """Round 3 of Division 1's step of each kind is next (its job queued, or found from database
-    state), and a stand-in step is signed up for that kind alone. Advance takes the round's job
-    of that kind down, then runs that step once, handed the entry; it sends the step's reply to
-    the maintainer and writes the step's fields to the log channel under the success line, and
-    asks nothing of the change queue itself."""
+    state), a mystery round's notice among them under the `weather_p1` it is armed as, and a
+    stand-in step is signed up for that kind alone. Advance takes the round's job of that kind
+    down, then runs that step once, handed the entry; it sends the step's reply to the
+    maintainer and writes the step's fields to the log channel under the success line, and asks
+    nothing of the change queue itself. A notice found from database state whose job is still
+    queued is taken down so, and cannot post a second time (#426)."""
     from leaguebot.core.services import test_mode_service
     from leaguebot.core.services.test_mode_service import AdvanceOutcome, register_advance
 
