@@ -520,8 +520,9 @@ async def test_a_withdrawn_forecast_discord_will_not_delete_stops_the_queue_keep
 
 
 async def test_the_invalidation_notice_notifies_nobody(tmp_path):
-    """Weather on; round 3's posted phase 1 forecast is withdrawn by moving the round ninety-one
-    days on. The notice in Pro's forecast channel that the forecasts no longer stand notifies
+    """Weather on; round 3, at Silverstone, has its posted phase 1 forecast withdrawn by moving
+    the round ninety-one days on. The notice in Pro's forecast channel that the forecasts no
+    longer stand reads, word for word, as it always has, naming the track, and notifies
     nobody."""
     league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
     await posted_forecast(league, R3, 1, 8001)
@@ -530,6 +531,11 @@ async def test_the_invalidation_notice_notifies_nobody(tmp_path):
     await run_queue(league.bot)
 
     assert await _stopped_at(league) is None
+    assert league.texts(PRO_CH.forecast) == [
+        "⚠️ **Weather Forecast Invalidated**\nThe configuration for **Silverstone** has been "
+        "amended by an admin. All previously published forecasts for this round have been "
+        "invalidated. An updated forecast will be posted automatically."
+    ]
     [call] = league.channel(PRO_CH.forecast).send.await_args_list
     assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
 
