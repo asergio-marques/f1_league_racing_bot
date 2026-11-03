@@ -414,8 +414,10 @@ async def test_a_mystery_notice_is_posted(tmp_path, phase_number):
     [(kind, payload)] = _asked(cog)
     assert kind == FORECAST
     assert (payload["round_id"], payload["phase"]) == (ROUND_ID, 0)
-    assert ("🔮 The **Mystery Round notice** for **Division 1** — **Round 3** is on the change "
-            "queue") in _replied(interaction)
+    assert _replied(interaction) == (
+        "🔮 The **Mystery Round notice** for **Division 1** — **Round 3** is on the change "
+        "queue: it goes to the division forecast channel as soon as the queue reaches it."
+    )
 
 
 async def test_a_posted_mystery_notice_is_recorded(tmp_path):
@@ -425,10 +427,12 @@ async def test_a_posted_mystery_notice_is_recorded(tmp_path):
 
     await _advance(cog, _interaction(), _entry(0))
 
-    [line] = _log_lines(cog)
-    assert line.startswith("Maintainer (<@77>) | /test-mode advance | Success")
-    assert "Mystery Round notice" in line
-    assert "Division 1" in line and "Round 3" in line
+    assert _log_lines(cog) == [
+        "Maintainer (<@77>) | /test-mode advance | Success\n"
+        "  phase: Mystery Round notice\n"
+        "  division: Division 1\n"
+        "  round: Round 3"
+    ]
 
 
 async def test_a_failing_mystery_notice_is_reported_not_raised(tmp_path):
@@ -444,7 +448,7 @@ async def test_a_failing_mystery_notice_is_reported_not_raised(tmp_path):
 
     await _advance(cog, interaction, _entry(0))
 
-    _assert_failure_recorded(cog, interaction, "Mystery Round notice")
+    _assert_failure_recorded(cog, interaction, "the Mystery Round notice")
 
 
 async def test_a_failing_notice_is_not_marked_done(tmp_path):
@@ -482,9 +486,10 @@ async def test_advancing_a_round_start_replies_on_the_change_queue(tmp_path):
 
     [(kind, payload)] = _asked(cog)
     assert (kind, payload["round_id"]) == ("results.submission.open", ROUND_ID)
-    replied = _replied(interaction)
-    assert "is on the change queue" in replied
-    assert "**Division 1**" in replied and "Round 3" in replied
+    assert _replied(interaction) == (
+        "⏩ The result submission of **Division 1** — **Round 3** (**Silverstone Circuit**) is "
+        "on the change queue: its submission channel appears as soon as the queue reaches it."
+    )
     if "run_result_submission_job" in mocks:
         mocks["run_result_submission_job"].assert_not_awaited()
 
@@ -497,12 +502,26 @@ async def test_an_opened_submission_is_recorded_as_asked_of_the_queue(tmp_path):
 
     await _advance(cog, _interaction(), _entry(4))
 
-    [line] = _log_lines(cog)
-    assert line.startswith("Maintainer (<@77>) | /test-mode advance")
-    assert "Division 1" in line and "Round 3" in line
-    assert "submitted" not in line.lower()
-    assert "phase: result submission (on the change queue)" in line
-    assert "started" not in line and "runs on its own" not in line
+    assert _log_lines(cog) == [
+        "Maintainer (<@77>) | /test-mode advance | Success\n"
+        "  phase: result submission (on the change queue)\n"
+        "  division: Division 1\n"
+        "  round: Round 3"
+    ]
+
+
+async def test_a_failing_round_start_is_reported_not_raised(tmp_path):
+    """Round 3 of Division 1's result submission (4) is next, none open, and the change queue
+    cannot save its ask. The standard failure reply and one failure line name the round start,
+    the division and the round (#482)."""
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+    interaction.client = cog.bot
+    cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("x"))
+
+    await _advance(cog, interaction, _entry(4))
+
+    _assert_failure_recorded(cog, interaction, "the round start")
 
 
 async def _open_submission(db_path: str, status: str) -> None:
@@ -628,7 +647,8 @@ async def test_a_finalised_round_with_an_open_channel_says_so_differently(tmp_pa
 
 
 @pytest.mark.parametrize(
-    "phase,phrase", [(5, "RSVP notice"), (6, "RSVP last-notice"), (7, "RSVP deadline")]
+    "phase,phrase",
+    [(5, "the RSVP notice"), (6, "the RSVP last-notice"), (7, "the RSVP deadline")],
 )
 async def test_a_failing_check_in_phase_is_reported_not_raised(tmp_path, phase, phrase):
     """The change queue cannot save the step's ask. The standard failure reply and one failure
@@ -648,12 +668,18 @@ async def test_a_failing_check_in_phase_is_reported_not_raised(tmp_path, phase, 
 )
 async def test_a_fired_check_in_phase_is_logged_by_name(tmp_path, phase, name):
     """Test mode still writes to the league's log, so a maintainer can reconstruct what
-    the rehearsal did."""
+    the rehearsal did: one success line naming the maintainer, the step, the division and the
+    round, the round by its number alone."""
     cog = _make_cog(await _make_db(tmp_path))
 
     await _advance(cog, _interaction(), _entry(phase))
 
-    assert f"phase: {name}" in str(cog.bot.output_router.post_log.await_args.args[0])
+    assert _log_lines(cog) == [
+        "Maintainer (<@77>) | /test-mode advance | Success\n"
+        f"  phase: {name}\n"
+        "  division: Division 1\n"
+        "  round: 3"
+    ]
 
 
 async def test_the_deadline_reply_does_not_say_reserves_were_distributed(tmp_path):
@@ -732,12 +758,18 @@ async def test_each_cleanup_reaches_its_own_runner(tmp_path, phase, runner, labe
     [(kind, payload)] = _asked(cog)
     if phase == 8:
         assert (kind, payload["round_id"]) == (FORECAST_CLEAN_UP, ROUND_ID)
-        assert ("🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on the change "
-                "queue") in _replied(interaction)
+        # No forecast row stands in the database, so the reply names "the forecast".
+        assert _replied(interaction) == (
+            "🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on the change "
+            "queue: it deletes the forecast as soon as the queue reaches it."
+        )
     else:
         assert (kind, payload["round_id"]) == (CHECK_IN_CLEAN_UP, ROUND_ID)
-        assert "is on the change queue" in _replied(interaction)
-    assert label in _replied(interaction)
+        assert _replied(interaction) == (
+            "🧹 The **check-in cleanup** for **Division 1** — **Round 3** is on the change "
+            "queue: it takes down the check-in call, last notice and reserve announcement as "
+            "soon as the queue reaches it."
+        )
 
 
 @pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS_ASKED)
@@ -751,7 +783,7 @@ async def test_a_failing_cleanup_is_reported_not_raised(tmp_path, phase, runner,
 
     await _advance(cog, interaction, _entry(phase))
 
-    _assert_failure_recorded(cog, interaction, label)
+    _assert_failure_recorded(cog, interaction, f"the {label}")
 
 
 @pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS)
@@ -760,7 +792,12 @@ async def test_a_fired_cleanup_is_logged_by_name(tmp_path, phase, runner, label,
 
     await _advance(cog, _interaction(), _entry(phase))
 
-    assert f"phase: {prefix}" in str(cog.bot.output_router.post_log.await_args.args[0])
+    assert _log_lines(cog) == [
+        "Maintainer (<@77>) | /test-mode advance | Success\n"
+        f"  phase: {prefix}\n"
+        "  division: Division 1\n"
+        "  round: 3"
+    ]
 
 
 #: Each check-in step advance asks of the change queue: its phase, its kind, and the name its
@@ -771,6 +808,30 @@ CHECK_IN_STEPS = [
     pytest.param(7, CHECK_IN_DEADLINE, "RSVP deadline", id="deadline"),
     pytest.param(9, CHECK_IN_CLEAN_UP, "check-in cleanup", id="clean-up"),
 ]
+
+
+#: Each check-in step's reply once it is on the change queue, by its phase.
+CHECK_IN_ASKED = {
+    **{
+        phase: f"{emoji} The **{name}** for **Division 1** — **Round 3** "
+               "(**Silverstone Circuit**) is on the change queue: it goes to the RSVP channel as "
+               "soon as the queue reaches it."
+        for phase, emoji, name in (
+            (5, "📨", "RSVP notice"), (6, "⏰", "RSVP last-notice"), (7, "🏁", "RSVP deadline"),
+        )
+    },
+    9: "🧹 The **check-in cleanup** for **Division 1** — **Round 3** is on the change queue: it "
+       "takes down the check-in call, last notice and reserve announcement as soon as the queue "
+       "reaches it.",
+}
+
+#: Each check-in step's reply where the change queue drops it as not due, by its phase.
+CHECK_IN_NOT_DUE = {
+    5: "📨 The **RSVP notice** for **Division 1** — **Round 3** was not due.",
+    6: "⏰ The **RSVP last-notice** for **Division 1** — **Round 3** was not due.",
+    7: "🏁 The **RSVP deadline** for **Division 1** — **Round 3** was not due.",
+    9: "🧹 The **check-in cleanup** for **Division 1** — **Round 3** was not due.",
+}
 
 
 @pytest.mark.parametrize("phase,kind,label", CHECK_IN_STEPS)
@@ -790,13 +851,27 @@ async def test_advancing_a_check_in_step_replies_on_the_change_queue(
     [(asked_kind, payload)] = _asked(cog)
     assert (asked_kind, payload["round_id"]) == (kind, ROUND_ID)
     assert payload["advanced"] is True
-    replied = _replied(interaction)
-    assert "is on the change queue" in replied
-    assert label in replied
-    assert "**Division 1**" in replied and "Round 3" in replied
+    assert _replied(interaction) == CHECK_IN_ASKED[phase]
     for name in _CHECK_IN_RUNNERS:
         if name in mocks:
             mocks[name].assert_not_awaited()
+
+
+@pytest.mark.parametrize("phase,kind,label", CHECK_IN_STEPS)
+async def test_a_check_in_step_the_queue_drops_says_it_was_not_due(tmp_path, phase, kind, label):
+    """Round 3 of Division 1's check-in call (5), last notice (6), deadline (7) or clean-up (9)
+    is next, and the change queue drops the step's ask as not due. Advance asks for it once and
+    replies that it was not due, naming the step, the division and the round, and not that it
+    is on the change queue."""
+    cog = _make_cog(await _make_db(tmp_path))
+    cog.bot.change_queue.ask = AsyncMock(return_value=None)
+    interaction = _interaction()
+
+    await _advance(cog, interaction, _entry(phase))
+
+    [(asked_kind, payload)] = _asked(cog)
+    assert (asked_kind, payload["round_id"]) == (kind, ROUND_ID)
+    assert _replied(interaction) == CHECK_IN_NOT_DUE[phase]
 
 
 # ---------------------------------------------------------------------------
@@ -817,8 +892,11 @@ async def test_each_weather_phase_asks_the_queue_for_its_phase(tmp_path, phase):
     [(kind, payload)] = _asked(cog)
     assert kind == FORECAST
     assert (payload["round_id"], payload["phase"]) == (ROUND_ID, phase)
-    assert (f"⏩ **Phase {phase}** for **Division 1** — **Silverstone Circuit** is on the "
-            "change queue") in _replied(interaction)
+    assert _replied(interaction) == (
+        f"⏩ **Phase {phase}** for **Division 1** — **Silverstone Circuit** is on the change "
+        "queue: its forecast goes to the forecast channel and its calculation to the log "
+        "channel as soon as the queue reaches it."
+    )
 
 
 async def test_a_failing_weather_phase_names_the_round_and_track(tmp_path):
@@ -832,8 +910,9 @@ async def test_a_failing_weather_phase_names_the_round_and_track(tmp_path):
 
     await _advance(cog, interaction, _entry(1))
 
-    _assert_failure_recorded(cog, interaction, "Phase 1")
-    assert "Silverstone Circuit" in _replied(interaction)
+    _assert_failure_recorded(
+        cog, interaction, "Phase 1 for Division 1, Round 3 (Silverstone Circuit)"
+    )
 
 
 async def test_a_fired_weather_phase_is_logged_with_its_track(tmp_path):
@@ -841,9 +920,13 @@ async def test_a_fired_weather_phase_is_logged_with_its_track(tmp_path):
 
     await _advance(cog, _interaction(), _entry(3))
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[0])
-    assert "phase: 3" in logged
-    assert "track: Silverstone Circuit" in logged
+    assert _log_lines(cog) == [
+        "Maintainer (<@77>) | /test-mode advance | Success\n"
+        "  phase: 3\n"
+        "  division: Division 1\n"
+        "  track: Silverstone Circuit\n"
+        "  round: 3"
+    ]
 
 
 # ---------------------------------------------------------------------------
