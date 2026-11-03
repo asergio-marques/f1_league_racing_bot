@@ -5,13 +5,18 @@ Provides async functions consumed by TestModeCog, among them:
   - toggle_test_mode_nationality: flip whether mock drivers carry a nationality
   - count_live_real_drivers:      how many real drivers stand in the way of enabling test mode
   - get_next_pending_phase:       find the earliest un-executed phase across all rounds
+  - register_advance, run_advance_step: the step `/test-mode advance` runs for each kind of a
+                                  round's job, signed up by its module, and the running of it
   - build_review_summary:         format a full season/division/round status string
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import aiosqlite
@@ -46,11 +51,110 @@ class PhaseEntry(TypedDict):
     #: call, its last notice and its deadline, 8|9 = the forecast and the check-in cleanups a
     #: day after the round (#425).
     phase_number: int
+    #: The kind of round job the step is armed under (`ROUND_JOB_KINDS`): `weather_p1` for the
+    #: mystery notice (0) as for Phase 1, the key of the step its module signed up
+    #: (`register_advance`).
+    kind: str
     track_name: str
     division_name: str
     #: The APScheduler job the entry came from; None wherever it was found from database
     #: state instead — result submission always, and any phase the job store has lost.
     job_id: str | None
+
+
+#: The kind of round job each phase number is armed under: `weather_p1` for the mystery notice
+#: (0) too, which weather's step tells from Phase 1 by the round's format.
+PHASE_KINDS = {
+    0: "weather_p1", 1: "weather_p1", 2: "weather_p2", 3: "weather_p3", 4: "results",
+    5: "rsvp_notice", 6: "rsvp_last_notice", 7: "rsvp_deadline", 8: "cleanup", 9: "rsvp_cleanup",
+}
+
+
+# ---------------------------------------------------------------------------
+# The step advance runs for each kind of round job
+# ---------------------------------------------------------------------------
+
+class AdvanceStatus(Enum):
+    ASKED = "asked"
+    NOT_DUE = "not due"
+    REFUSED = "refused"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class AdvanceOutcome:
+    """What became of the step `/test-mode advance` ran, as its module words it.
+
+    *reply* goes to the maintainer. *log* is the lines of the success line in the log channel
+    below its first, which the command writes; *step*, *track* and *error* name a failure for
+    `report_failure`. The command makes the replies and lines of its own from nothing here, so
+    a module's step owns every word of its kind's advance.
+    """
+
+    status: AdvanceStatus
+    reply: str = ""
+    log: str = ""
+    step: str = ""
+    track: str | None = None
+    error: Exception | None = None
+
+    @classmethod
+    def asked(cls, reply: str, log: str) -> AdvanceOutcome:
+        """The step is on the change queue: *reply* to the maintainer, *log* under the success
+        line."""
+        return cls(AdvanceStatus.ASKED, reply, log)
+
+    @classmethod
+    def not_due(cls, reply: str) -> AdvanceOutcome:
+        """The change queue dropped the step as not due: *reply* alone, nothing logged."""
+        return cls(AdvanceStatus.NOT_DUE, reply)
+
+    @classmethod
+    def refused(cls, reply: str) -> AdvanceOutcome:
+        """The step is refused: *reply* as a refusal, recorded in the log channel."""
+        return cls(AdvanceStatus.REFUSED, reply)
+
+    @classmethod
+    def failed(
+        cls, step: str, error: Exception, *, track: str | None = None
+    ) -> AdvanceOutcome:
+        """The step raised *error* at *step* (and the round's *track*, where a weather phase)."""
+        return cls(AdvanceStatus.FAILED, step=step, track=track, error=error)
+
+
+#: A kind's step, handed the entry it was picked for.
+AdvanceStep = Callable[[PhaseEntry], Awaitable[AdvanceOutcome]]
+
+#: Each round job kind's step, signed up by the builder before the bot connects, as the
+#: scheduler's handler of the kind is (`register_timer`).
+_ADVANCE_STEPS: dict[str, AdvanceStep] = {}
+
+
+def register_advance(kind: str, step: AdvanceStep) -> None:
+    """Sign up *step* as what `/test-mode advance` runs for a job of *kind*."""
+    _ADVANCE_STEPS[kind] = step
+
+
+async def run_advance_step(scheduler_service: SchedulerService, entry: PhaseEntry) -> AdvanceOutcome:
+    """Run the step signed up for the *entry*'s kind and return what became of it.
+
+    The round's job of that kind is taken down first, by round and kind, whether the entry came
+    from the job store or was found from database state: left queued, it would fire the step
+    again at its own moment. It goes before the step runs, so that a step that raises leaves no
+    job to ask it a second time. A kind with no step signed up, or a step that raises, is a
+    failure outcome, not an exception.
+    """
+    kind = entry["kind"]
+    step = _ADVANCE_STEPS.get(kind)
+    if step is None:
+        return AdvanceOutcome.failed(
+            kind, LookupError(f"no /test-mode advance step is signed up for {kind}")
+        )
+    scheduler_service.cancel_round(entry["round_id"], only=frozenset({kind}))
+    try:
+        return await step(entry)
+    except Exception as exc:  # noqa: BLE001 — reported by the command, to name the step
+        return AdvanceOutcome.failed(kind, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +288,7 @@ def _weather_entry(row: Any, phase: int) -> PhaseEntry:
         round_number=row["round_number"],
         division_id=row["division_id"],
         phase_number=phase,
+        kind=PHASE_KINDS[phase],
         track_name=row["track_name"] or ("Mystery" if is_mystery else "Unknown"),
         division_name=row["division_name"],
         job_id=None,
@@ -422,6 +527,7 @@ async def get_next_pending_phase(
             round_number=row["round_number"],
             division_id=row["division_id"],
             phase_number=phase,
+            kind=PHASE_KINDS[phase],
             track_name=row["track_name"] or ("Mystery" if is_mystery else "Unknown"),
             division_name=row["division_name"],
             job_id=job_id,
@@ -488,6 +594,7 @@ async def get_next_pending_phase(
                 round_number=row["round_number"],
                 division_id=row["division_id"],
                 phase_number=phase,
+                kind=PHASE_KINDS[phase],
                 track_name=row["track_name"] or ("Mystery" if is_mystery else "Unknown"),
                 division_name=row["division_name"],
                 job_id=None,

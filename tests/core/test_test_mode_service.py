@@ -239,7 +239,6 @@ async def test_empty_queue_returns_none(tmp_path) -> None:
     assert result is None
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_mystery_round_notice_pending_returns_entry(tmp_path) -> None:
     """Mystery round with notice unsent (phase1_done=0) returns a phase_number=0 entry, found
     from database state and named by the `weather_p1` kind its job is armed under."""
@@ -265,7 +264,6 @@ async def test_mystery_round_notice_done_excluded(tmp_path) -> None:
     assert result is None
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_phase_number_ordering_within_round(tmp_path) -> None:
     """Phase 1 done, Phase 2 not done → returns phase_number 2, of kind `weather_p2`."""
     db_path = str(tmp_path / "bot.db")
@@ -487,7 +485,6 @@ async def test_misfired_fallback_weather_disabled_skips_phases(tmp_path) -> None
     assert result is None
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_misfired_fallback_canonical_order(tmp_path) -> None:
     """Canonical order: P1 → RSVP-notice → P2 → RSVP-last → P3 → RSVP-deadline, each entry
     named by its job's kind: `weather_p1`, `rsvp_notice`, `weather_p2`, `rsvp_last_notice`,
@@ -550,7 +547,6 @@ async def test_misfired_fallback_canonical_order(tmp_path) -> None:
     assert r is not None and (r["phase_number"], r["kind"]) == (7, "rsvp_deadline")
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_earlier_misfired_round_beats_later_scheduler_job(tmp_path) -> None:
     """Earlier round with misfired phases must be advanced before a later
     round whose scheduler job is still pending, its entry named by the `weather_p1` kind. The
@@ -641,7 +637,6 @@ def _job(round_id: int, phase: int, *, days: float) -> dict:
     }
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_a_round_ends_with_its_forecast_then_its_check_in_coming_down(tmp_path) -> None:
     """With nothing else pending, what is left standing is what remains to take down — the
     forecast first, as the two fall together and it is the lower step. Each entry, found from
@@ -706,7 +701,6 @@ async def test_a_round_start_already_asked_of_the_queue_is_not_offered_again(tmp
     assert again is None or again["phase_number"] != 4
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_a_finished_round_s_cleanup_job_is_not_stale(tmp_path) -> None:
     """A finished round offers no other step, which once meant any job of its was thrown away
     as stale. Its cleanups are still to run, the check-in clean-up's entry naming its kind,
@@ -778,7 +772,6 @@ async def test_the_database_fallback_offers_the_cleanups_last(tmp_path) -> None:
     assert (result["round_id"], result["phase_number"]) == (2, 1)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 @pytest.mark.parametrize("found", ["job in the store", "database fallback"])
 async def test_a_forecast_cleanup_is_offered_for_an_earlier_phase_still_standing(
     tmp_path, found
@@ -1040,7 +1033,6 @@ async def _mystery_round_armed(
     return db_path
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
     tmp_path, paused_scheduler
 ) -> None:
@@ -1266,7 +1258,6 @@ async def test_a_raced_round_s_weather_steps_are_passed_over(tmp_path, scheduler
     assert (result["round_id"], result["phase_number"]) == (2, 1)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a pending step's entry does not carry its kind")
 async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> None:
     """Weather and results are on. Round 1 (Bahrain) was raced an hour ago with none of its
     phases done and no results submitted: advance passes over its weather steps alone, and
