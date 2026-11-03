@@ -1,14 +1,15 @@
 """When a round's timed events fall, and the delay after the race that places its clean-ups.
 
-`round_event_moments` is the one function that works out when each of a round's events falls,
-keyed by the kind its job is stored with (`ROUND_JOB_KINDS`); `clean_up_moment` gives the
-clean-ups' moment alone, and `round_event_moments` places them by it. The scheduler's arming, the
-approval's overdue windows and the amendment's rules all read `round_event_moments`, so the rules
-every copy once carried hold in one place: a last notice of 0 hours is no last notice, a deadline
-of 0 hours is the round's own moment, and a moment stored without a zone is UTC.
+`round_event_moments` works out when each of a round's events falls, keyed by the kind its job is
+stored with (`ROUND_JOB_KINDS`); `clean_up_moment` gives the clean-ups' moment alone, and
+`round_event_moments` places them by it. The scheduler's arming, the approval's overdue windows
+and the amendment's rules all read `round_event_moments`, so for them the rules hold in one place:
+a last notice of 0 hours is no last notice, a deadline of 0 hours is the round's own moment, and a
+moment stored without a zone is UTC.
 
-Pure by design: no database, no clock, no scheduler. The kind names and the two window types it
-reads are plain data and live in `core.models.round`, which imports no service.
+Pure by design: no database, no clock, no scheduler. The two window types `round_event_moments`
+reads, and the kind names its keys match (`ROUND_JOB_KINDS`), are plain data and live in
+`core.models.round`, which imports no service.
 """
 from __future__ import annotations
 
