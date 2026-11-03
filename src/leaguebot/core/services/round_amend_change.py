@@ -4,8 +4,9 @@
 asks the queue for this change, which is judged when it is asked and again when it comes up to run,
 in the words Confirm used: a round that has gone, a window that has passed or results entered
 while the amendment waited refuse it with the same reply. It imports nothing from a module and no
-cog: what it needs of weather, attendance and the formatting of the round list reaches it through
-the `AmendHooks` the builder fills, and it reads the season through the service it is handed.
+cog: what it needs of weather and attendance reaches it through the hooks the builder makes and
+signs them up to (the windows, the save, the posts and clean-ups, the steps they define and the
+words for a step left undone), and it reads the season through the service it is handed.
 
 **The refusal because a cancellation is in hand is made only as the change is asked for**
 (`CheckContext.change_id` is None), through `cancellation_changes.cancellation_holding_amendment`.
@@ -30,7 +31,6 @@ from __future__ import annotations
 import dataclasses
 import json
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -39,9 +39,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
-    GuildUnavailable,
     PlannedStep,
-    StepFailedOnDiscord,
     StepKind,
     StepResult,
     Verdict,
@@ -62,11 +60,11 @@ from leaguebot.core.services.amendment_rules_service import (
     status_refusal,
 )
 from leaguebot.core.services.round_moments import (
-    as_utc,
-    clean_up_moment,
     read_round_windows,
     round_event_moments,
 )
+from leaguebot.core.services.round_moments import phases_due as round_moments_phases_due
+from leaguebot.core.services.round_steps import JUDGE, named_now, round_number_now as number_now
 from leaguebot.core.services import cancellation_notice_service as notices
 from leaguebot.core.services.cancellation_changes import ROUND_REARM, cancellation_holding_amendment
 from leaguebot.core.services.change_queue import (
@@ -79,9 +77,8 @@ from leaguebot.core.services.change_queue import (
     in_hand,
 )
 from leaguebot.core.services.season_service import renumber_rounds_on, round_called
-from leaguebot.core.services.notice_handler import send_notice
-from leaguebot.core.utils.hooks import AwaitedHook
-from leaguebot.core.utils.league_server import league_guild
+from leaguebot.core.utils.formatting import format_round_list
+from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
@@ -90,7 +87,6 @@ if TYPE_CHECKING:
     from leaguebot.core.services.season_service import SeasonService
 
 __all__ = [
-    "AmendHooks",
     "ROUND_AMEND",
     "amendment_in_hand",
     "payload_changes",
@@ -100,8 +96,8 @@ __all__ = [
 
 ROUND_AMEND = "season.round.amend"
 
-#: The job names, as the stop notice, the tests and `StepView` know them.
-JUDGE = "judge"
+#: The job names, as the stop notice, the tests and `StepView` know them. The core ones first, then
+#: those the outcome names for the words of a step left undone (the modules define each step).
 UNARM = "unarm"
 APPLY = "apply"
 ARM = "arm"
@@ -109,23 +105,14 @@ CLOSE = "close"
 TAKE_DOWN_CALL = "take_down_call"
 POST_CALL = "post_call"
 DELETE_FORECAST = "delete_forecast"
-#: Weather's own job, which the amendment plans a clean-up through under its own name.
-PLAN_FORECAST_DELETES = "plan_forecast_deletes"
-DRAW_FORECAST = "draw_forecast"
 NOTIFY_INVALIDATION = "notify_invalidation"
 RERUN_PHASE = "rerun_phase"
-#: Attendance's own jobs of a check-in deadline, which the amendment plans as the deadline's
-#: timer would, under the names attendance gives them (core names a kind's jobs as strings).
 DISTRIBUTE = "distribute"
-CLOSE_WITHOUT_CALL = "close_without_call"
 LOCK_CALL = "lock_call"
 ANNOUNCE = "announce"
 CLEAN_UP_FORECAST = "clean_up_forecast"
 CLEAN_UP_CHECK_IN = "clean_up_check_in"
-#: Attendance's own jobs of taking a check-in down, under the names attendance gives them.
-PLAN_CLEAN_UP = "plan"
 DELETE_MESSAGE = "delete_message"
-MARK_CLEARED = "mark_cleared"
 
 AMENDED = "✅ Round amended successfully."
 NOTHING_AMENDED = (
@@ -153,47 +140,6 @@ def no_longer_amendable(reasons: Iterable[str]) -> str:
         + "\n".join(f"• {reason}" for reason in reasons)
         + f"\n\n{_NOTHING_CHANGED}"
     )
-
-
-@dataclass(frozen=True)
-class AmendHooks:
-    """What the amendment needs of weather, attendance and the formatting of the round list.
-
-    The builder fills it, so that this module imports no module (architecture.md, "How modules and
-    core fit together"). *forecast_steps* are weather's jobs (its draw, its post, the deletion of a forecast
-    and the planning of deletions), which the amendment runs as jobs of its own: *plan_phase* plans
-    the draw of a phase now, the draw planning its post and the post the deletion of the forecast
-    it supersedes, and *forecast_failure* names what a discarded one of them leaves. *call_steps*
-    are attendance's own jobs of a check-in call (its post), which the amendment runs as a job of
-    its own, the call posted and recorded in one save by the job that posts it. A call posted
-    again beside one a discarded take-down left standing replaces its record, and leaves it
-    standing where the new one fails. *give_up_text* gives the line reporting a call whose deadline passed before it could be
-    posted, or None where there is nothing to give up (a call standing, results in, the check-in
-    over), and *give_up_on* closes the round's check-in on the connection a save hands it, as the
-    start-up recovery does, clearing in the same save any check-in answers left for the round and
-    the placements made on them, and says whether it did; it raises where the close cannot be
-    saved, so that the queue stops rather than report a give-up never made.
-    *deadline_steps* are attendance's own jobs of a check-in deadline (placing the reserves, taking
-    the buttons off the call, posting the announcement) and *clean_up_steps* its jobs of taking a
-    check-in down (the plan of the deletions, each deletion, the mark that it is over), which the
-    amendment plans as the timers would for a moment that passed while it stood stopped, so that
-    Discord refusing one stops the queue (its forecast, whichever of Phases 1 to 3 stands, is
-    deleted by a job planned through *forecast_steps*). *round_list* formats
-    the division's rounds for the reply.
-    """
-
-    forecast_steps: Mapping[str, Step]
-    plan_phase: Callable[[int, int], tuple[PlannedStep, ...]]
-    forecast_failure: Callable[[StepView], tuple[str, str] | None]
-    invalidation_text: Callable[[str], str]
-    call_steps: Mapping[str, Step]
-    give_up_text: Callable[[str, int], Awaitable[str | None]]
-    give_up_on: Callable[[aiosqlite.Connection, int], Awaitable[bool]]
-    deadline_steps: Mapping[str, Step]
-    clean_up_steps: Mapping[str, Step]
-    round_list: Callable[[list[Round]], str]
-    check_in_deletes: Callable[[int, int], Awaitable[bool]]
-    forget_check_in_on: Callable[[aiosqlite.Connection, int, int], Awaitable[None]]
 
 
 def payload_changes(amendments: Iterable[tuple[str, object]]) -> list[list[str]]:
@@ -239,7 +185,8 @@ def round_amend_change(
     modules: "ModuleService",
     seasons: "SeasonService",
     scheduler: "SchedulerService",
-    hooks: AmendHooks,
+    amendment_steps: Hook,
+    amendment_step_failure: Hook,
     round_windows_read: AwaitedHook,
     round_amended: AwaitedHook,
     round_armed: AwaitedHook,
@@ -252,13 +199,14 @@ def round_amend_change(
     *changes* being ``[[field, value]]`` (`payload_changes`). It names no season: a payload that
     does is read as holding every division of that season (`review_changes.division_job_in_hand`).
     The builder hands in the *modules* (each post's `still_due`), the *seasons* service, the
-    *scheduler*, the *hooks* of the other modules, *round_windows_read* (the hook their windows are
+    *scheduler*, *round_windows_read* (the hook their windows are
     read through), *round_amended* (the moment inside the save), *round_armed* and
     *round_clean_ups_due* (the moments the round is armed again, at which the modules plan their
     posts and their clean-ups) and the queue's clock *now*.
     """
     return _round_change(
-        rearm=False, modules=modules, seasons=seasons, scheduler=scheduler, hooks=hooks,
+        rearm=False, modules=modules, seasons=seasons, scheduler=scheduler,
+        amendment_steps=amendment_steps, amendment_step_failure=amendment_step_failure,
         round_windows_read=round_windows_read, round_amended=round_amended,
         round_armed=round_armed, round_clean_ups_due=round_clean_ups_due, now=now,
     )
@@ -269,7 +217,8 @@ def round_rearm_change(
     modules: "ModuleService",
     seasons: "SeasonService",
     scheduler: "SchedulerService",
-    hooks: AmendHooks,
+    amendment_steps: Hook,
+    amendment_step_failure: Hook,
     round_windows_read: AwaitedHook,
     round_amended: AwaitedHook,
     round_armed: AwaitedHook,
@@ -285,7 +234,8 @@ def round_rearm_change(
     The bot asks it, on the league's lane, one for each round.
     """
     return _round_change(
-        rearm=True, modules=modules, seasons=seasons, scheduler=scheduler, hooks=hooks,
+        rearm=True, modules=modules, seasons=seasons, scheduler=scheduler,
+        amendment_steps=amendment_steps, amendment_step_failure=amendment_step_failure,
         round_windows_read=round_windows_read, round_amended=round_amended,
         round_armed=round_armed, round_clean_ups_due=round_clean_ups_due, now=now,
     )
@@ -297,7 +247,8 @@ def _round_change(
     modules: "ModuleService",
     seasons: "SeasonService",
     scheduler: "SchedulerService",
-    hooks: AmendHooks,
+    amendment_steps: Hook,
+    amendment_step_failure: Hook,
     round_windows_read: AwaitedHook,
     round_amended: AwaitedHook,
     round_armed: AwaitedHook,
@@ -391,16 +342,10 @@ def _round_change(
 
     async def round_number_now(ctx: OutcomeContext) -> Any:
         """The number the round bears now, the press's where it cannot be read."""
-        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
-        return ctx.payload["round_number"] if rnd is None else rnd.round_number
+        return await number_now(seasons, ctx)
 
     def named(text: str) -> Callable[[StepContext], Awaitable[str]]:
-        async def describe(ctx: StepContext) -> str:
-            return text.format(
-                number=await round_number_now(ctx), division=ctx.payload["division_name"]
-            )
-
-        return describe
+        return named_now(seasons, text)
 
     # ── The jobs ────────────────────────────────────────────────────────────────
 
@@ -574,40 +519,10 @@ def _round_change(
         )
         return now() < moments["weather_p1"]
 
-    def call_fell_due(rnd: Round, attendance: dict[str, Any] | None) -> bool:
-        """Whether the round's check-in call has fallen due, at the queue's clock and the windows
-        `judge` read: its moment has passed. Where its deadline has passed too, the call is given
-        up rather than posted (`post_call`), the boundaries the start-up recovery of a missed call
-        holds to (`_recover_missed_check_in_calls`)."""
-        if attendance is None:
-            return False
-        moments = round_event_moments(
-            rnd.scheduled_at, weather=None, attendance=AttendanceWindows(**attendance)
-        )
-        return moments["rsvp_notice"] <= now()
-
-    def deadline_passed(rnd: Round, attendance: dict[str, Any]) -> bool:
-        """Whether the round's check-in deadline has passed, at the queue's clock."""
-        moments = round_event_moments(
-            rnd.scheduled_at, weather=None, attendance=AttendanceWindows(**attendance)
-        )
-        return moments["rsvp_deadline"] <= now()
-
     def phases_due(rnd: Round, weather: dict[str, Any]) -> list[int]:
         """The forecast phases to draw at once, as the round stands at the queue's clock and the
-        windows `judge` read: each not yet drawn whose horizon has passed, for a round whose moment
-        is still ahead and which is no mystery round, as the start-up recovery judges a missed
-        phase (`_recover_missed_phases`)."""
-        moment, at = as_utc(rnd.scheduled_at), now()
-        if rnd.format == RoundFormat.MYSTERY or moment <= at:
-            return []
-        moments = round_event_moments(moment, weather=WeatherWindows(**weather), attendance=None)
-        horizons = {
-            1: (rnd.phase1_done, moments["weather_p1"]),
-            2: (rnd.phase2_done, moments["weather_p2"]),
-            3: (rnd.phase3_done, moments["weather_p3"]),
-        }
-        return [n for n, (done, horizon) in horizons.items() if not done and horizon <= at]
+        windows `judge` read (`round_moments.phases_due`)."""
+        return round_moments_phases_due(rnd, WeatherWindows(**weather), now())
 
     async def arm_due(ctx: StepContext) -> bool:
         """The arming is due where the timed work was removed and the round may still be
@@ -773,189 +688,6 @@ def _round_change(
             + not_done(ctx),
         )
 
-    async def attendance_on(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
-
-    def reposting(ctx: StepContext) -> bool:
-        """Whether the call is posted again in place of one the amendment took down (its step
-        payload, ``{"repost": True}``), rather than posted for the first time."""
-        return bool(ctx.step_payload.get("repost"))
-
-    def replacing(ctx: StepContext) -> bool:
-        """Whether the call to post again replaces one still standing: the old call, whose
-        take-down a league admin discarded. Otherwise any call standing when the post runs was
-        posted after the take-down, or after the arming, by its timer, a restart or
-        `/attendance post-check-in`, and is the round's live call."""
-        return reposting(ctx) and discarded(view(ctx, TAKE_DOWN_CALL))
-
-    async def call_state(db_path: str, round_id: int) -> tuple[bool, bool]:
-        """Whether a call stands for the round, and whether its check-in is over
-        (``checkin_cleared``), read when the job runs."""
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT r.checkin_cleared, EXISTS (SELECT 1 FROM rsvp_embed_messages m "
-                "WHERE m.round_id = r.id) AS called FROM rounds r WHERE r.id = ?",
-                (round_id,),
-            )
-            found = await cursor.fetchone()
-        if found is None:
-            return False, False
-        return bool(found["called"]), bool(found["checkin_cleared"])
-
-    async def call_still_due(ctx: StepContext) -> bool:
-        """The call is posted only while attendance is on and the call has fallen due as the
-        round stands when this job runs, and, as the start-up recovery of a missed call judges it
-        (`_recover_missed_check_in_calls`), only where no call stands and the round's check-in
-        is not over, both read then (owner, 2026-10-09). A call posted between the arming and
-        this job, by its timer, a restart or `/attendance post-check-in`, is the round's live
-        call, and posting again would call the division twice. The one exception is the old call
-        a discarded take-down left standing, which a repost replaces (`replacing`), unless the
-        check-in is over by then, as a clean-up a day after the round leaves it. A call still to
-        come is posted by its timer, armed with the round; one whose deadline has passed is given
-        up (`post_call`)."""
-        if not await modules.is_attendance_enabled():
-            return False
-        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
-        judgement = judged(ctx) or {}
-        if rnd is None or not call_fell_due(rnd, judgement.get("windows", {}).get("attendance")):
-            return False
-        standing, cleared = await call_state(ctx.db_path, rnd.id)
-        if cleared:
-            return False
-        return replacing(ctx) or not standing
-
-    async def weather_on(_ctx: StepContext) -> bool:
-        return await modules.is_weather_enabled()
-
-    async def phase_still_due(ctx: StepContext) -> bool:
-        """A phase is drawn at once only while weather is on and the phase is still due as the
-        round stands when this job runs (`phases_due`): not drawn yet, its horizon passed, the
-        race still ahead and the round no mystery round. A job before it can stop and be retried
-        after the race, and a forecast for a round already raced is no forecast (owner,
-        2026-10-09)."""
-        if not await modules.is_weather_enabled():
-            return False
-        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
-        judgement = judged(ctx) or {}
-        weather = judgement.get("windows", {}).get("weather")
-        if rnd is None or weather is None:
-            return False
-        return int(ctx.step_payload["phase"]) in phases_due(rnd, weather)
-
-    async def take_down_call(ctx: StepContext) -> StepResult:
-        """Take the round's standing check-in call down, keeping its record and stopping the queue
-        where Discord will not delete a message. The check-in's audit it reads is not written.
-        Whether the call is posted again is not settled here but by the next job, when it runs."""
-        division = await seasons.get_division(int(ctx.payload["division_id"]))
-        if division is None:
-            raise LookupError(f"division {ctx.payload['division_id']} is no longer there")
-        taken = await notices.take_down_call(
-            ctx.bot, division, int(ctx.payload["round_id"]),
-            check_in_deletes=hooks.check_in_deletes,
-        )
-        return StepResult(result={"taken_down": taken["taken_down"]})
-
-    async def forget_call(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
-        """Drop the taken-down call's record, in the save that marks the job done. Its answers
-        stay: they are what the call posted again carries."""
-        if result.result.get("taken_down"):
-            await hooks.forget_check_in_on(
-                db, int(ctx.payload["round_id"]), int(ctx.payload["division_id"])
-            )
-
-    async def post_call(ctx: StepContext) -> StepResult:
-        """Post the call, carrying every answer already given. Discord refusing it stops the queue
-        (owner, 2026-10-10, decision 3), attendance raising with what is left for the round, which
-        the stop notice says (owner, 2026-10-11) and a Discard reads in `not_done`.
-
-        The call is posted by attendance's own job (`hooks.call_steps`), which posts nothing it
-        cannot record: the job's record writes the call in the save that marks the job done. A call
-        posted again in place of one the amendment took down (`reposting`) carries the answers of
-        the drivers still of the division, and where a discarded take-down left the old call
-        standing (`replacing`) the new call's record replaces the old one's. The old call's
-        messages are not deleted again: the discarded take-down names those left, for deletion by
-        hand.
-
-        Where the round's check-in deadline has passed by the time it runs, as after a stop,
-        nothing is posted: the round's check-in is closed and the log channel told in the job's
-        record, as the start-up recovery gives up a missed call (owner, 2026-10-09). A call is
-        given up only where none stands and the check-in is not over: one standing is the round's
-        live call, or the old one a discarded take-down left, and a check-in over is settled, and
-        either is left as it is. Given up, any answers left to a call the amendment took down,
-        and the placements made on them, are cleared in the same save, so that the log channel's
-        line that the round counts nothing against anyone holds true (owner, 2026-10-09: "Clear
-        the answers, keep the line true"). The call is posted under test mode too, unlike the
-        start-up recovery, which leaves a test season's calls to `/test-mode advance` (owner,
-        2026-10-09: "Post it anyway")."""
-        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
-        if rnd is None:
-            raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
-        attendance = (judged(ctx) or {}).get("windows", {}).get("attendance")
-        if attendance is not None and deadline_passed(rnd, attendance):
-            standing, cleared = await call_state(ctx.db_path, rnd.id)
-            if standing or cleared:
-                return StepResult(result={"left": True})
-            text = await hooks.give_up_text(ctx.db_path, rnd.id)
-            if text is None:
-                # Its results came in, or its check-in closed, as the give-up reads it.
-                return StepResult(result={"left": True})
-            return StepResult(result={"given_up": True}, lines=(text,))
-        carried = dataclasses.replace(
-            ctx, step_payload={**ctx.step_payload, "replacing": replacing(ctx)}
-        )
-        return await hooks.call_steps[POST_CALL].run(carried)
-
-    async def record_call(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
-        """The call's record, or the give-up's close, in the save that marks the job done; a call
-        left as it stood is recorded as nothing."""
-        if (result.result or {}).get("given_up"):
-            await hooks.give_up_on(db, int(ctx.payload["round_id"]))
-            return
-        if not (result.result or {}).get("new"):
-            return  # left as it stood: nothing posted, nothing to record
-        record = hooks.call_steps[POST_CALL].record
-        if record is not None:
-            await record(db, ctx, result)
-
-    async def notify_invalidation(ctx: StepContext) -> StepResult:
-        """Tell the division's forecast channel that its forecasts no longer stand. A channel never
-        set is done and unnamed; one set and gone, or a send Discord refuses, stops the queue."""
-        division = await seasons.get_division(int(ctx.payload["division_id"]))
-        if division is None:
-            raise LookupError(f"division {ctx.payload['division_id']} is no longer there")
-        if not division.forecast_channel_id:
-            return StepResult(result={"unset": True})
-        guild = await league_guild(ctx.bot)
-        if guild is None:
-            raise GuildUnavailable("the league's server is not in the cache")
-        channel = guild.get_channel(int(division.forecast_channel_id))
-        if channel is None:
-            raise StepFailedOnDiscord(
-                f"the channel <#{division.forecast_channel_id}> is no longer on the server"
-            )
-        try:
-            await send_notice(
-                channel,
-                hooks.invalidation_text(str(ctx.step_payload["track"])),
-                mentions=discord.AllowedMentions.none(),
-            )
-        except discord.HTTPException as exc:
-            raise StepFailedOnDiscord(
-                f"the message could not be posted to <#{division.forecast_channel_id}>: {exc}"
-            ) from exc
-        return StepResult(result={"sent": True})
-
-    async def rerun_phase(ctx: StepContext) -> StepResult:
-        """Plan the draw of a phase whose horizon has already passed, by the amended moment or while
-        the amendment stood stopped, where it is still due when the job runs (`phase_still_due`).
-        The draw, its post and the deletion of the forecast it supersedes are jobs of the
-        amendment's own, in that order, before the next phase's: Discord refusing the post or the
-        deletion stops the queue (owner, 2026-10-10)."""
-        phase = int(ctx.step_payload["phase"])
-        return StepResult(
-            result={"phase": phase}, then=hooks.plan_phase(int(ctx.payload["round_id"]), phase)
-        )
-
     async def close_due(ctx: StepContext) -> bool:
         """The close is due where the amendment was saved, and where a job before the save was
         discarded, to read the number the round bears then for the reply."""
@@ -970,7 +702,7 @@ def _round_change(
         rounds = [] if rnd is None else await seasons.get_division_rounds(rnd.division_id)
         return StepResult(
             result={
-                "round_list": hooks.round_list(rounds) if rounds and saved(ctx) else "",
+                "round_list": format_round_list(rounds) if rounds and saved(ctx) else "",
                 "round_number": ctx.payload["round_number"] if rnd is None else rnd.round_number,
             }
         )
@@ -1123,42 +855,13 @@ def _round_change(
                     f"after the round, and a league admin discarded it; delete it by hand "
                     f"({link})",
                 ))
-            elif (weather := hooks.forecast_failure(each)) is not None:
-                failures.append(notices.NoticeFailure(division, *weather))
+            elif (undone := next(
+                (line for line in amendment_step_failure.call(each) if line is not None), None
+            )) is not None:
+                failures.append(notices.NoticeFailure(division, *undone))
         if not failures:
             return ""
         return "\n⚠️ **Not done**\n" + "\n".join(f"  • {each.describe()}" for each in failures)
-
-    async def describe_forecast_delete(ctx: StepContext) -> str:
-        if ctx.step_payload.get("clean_up"):
-            return (
-                f"deleting the Phase {ctx.step_payload['phase']} forecast of round "
-                f"{await round_number_now(ctx)} in **{ctx.payload['division_name']}** a day "
-                f"after it"
-            )
-        if ctx.step_payload.get("superseded"):
-            return (
-                f"deleting the superseded Phase {ctx.step_payload['phase']} forecast of round "
-                f"{await round_number_now(ctx)} in **{ctx.payload['division_name']}**"
-            )
-        return await named("deleting a withdrawn forecast of round {number} in **{division}**")(ctx)
-
-    async def describe_clean_up(ctx: StepContext) -> str:
-        """The clean-up a day after the round, named by the forecasts standing when it was planned
-        (`standing`), never by a phase that is not."""
-        return (
-            f"deleting {forecasts_named(ctx.step_payload.get('standing', ()))} of round "
-            f"{await round_number_now(ctx)} in **{ctx.payload['division_name']}** a day after it"
-        )
-
-    async def describe_draw(ctx: StepContext) -> str:
-        """The draw of a phase the amendment makes at once, and the job that plans it, each
-        naming its phase."""
-        phase = ctx.step_payload.get("phase", ctx.payload.get("phase"))
-        return (
-            f"drawing the Phase {phase} forecast of round {await round_number_now(ctx)} in "
-            f"**{ctx.payload['division_name']}** now"
-        )
 
     steps: dict[str, Step] = {
         JUDGE: Step(
@@ -1177,61 +880,8 @@ def _round_change(
             ARM, StepKind.ACT, arm, still_due=arm_due, undiscardable=never_runs,
             describe=named("arming the timed work of round {number} in **{division}** again"),
         ),
-        TAKE_DOWN_CALL: Step(
-            TAKE_DOWN_CALL, StepKind.ACT, take_down_call, still_due=attendance_on, record=forget_call,
-            describe=named("taking down the check-in call of round {number} in **{division}**"),
-        ),
-        POST_CALL: Step(
-            POST_CALL, StepKind.ACT, post_call, still_due=call_still_due, record=record_call,
-            describe=named("posting the check-in call of round {number} in **{division}** again"),
-        ),
-        # Weather's own jobs, the draw and the deletion named for what the amendment does with them.
-        **hooks.forecast_steps,
-        DRAW_FORECAST: dataclasses.replace(
-            hooks.forecast_steps[DRAW_FORECAST], describe=describe_draw,
-        ),
-        DELETE_FORECAST: dataclasses.replace(
-            hooks.forecast_steps[DELETE_FORECAST], describe=describe_forecast_delete,
-        ),
-        NOTIFY_INVALIDATION: Step(
-            NOTIFY_INVALIDATION, StepKind.ACT, notify_invalidation, still_due=weather_on,
-            describe=named("telling **{division}** its forecasts no longer stand"),
-        ),
-        RERUN_PHASE: Step(
-            RERUN_PHASE, StepKind.ACT, rerun_phase, still_due=phase_still_due,
-            describe=describe_draw,
-        ),
-        # Attendance's own jobs of a deadline, named for the round the amendment stands for.
-        DISTRIBUTE: dataclasses.replace(
-            hooks.deadline_steps[DISTRIBUTE],
-            describe=named("placing the reserves of round {number} in **{division}**"),
-        ),
-        CLOSE_WITHOUT_CALL: dataclasses.replace(
-            hooks.deadline_steps[CLOSE_WITHOUT_CALL],
-            describe=named(
-                "closing the check-in of round {number} in **{division}**, which has no call"
-            ),
-        ),
-        LOCK_CALL: hooks.deadline_steps[LOCK_CALL],
-        ANNOUNCE: dataclasses.replace(
-            hooks.deadline_steps[ANNOUNCE],
-            describe=named("posting the reserve announcement of round {number} in **{division}**"),
-        ),
-        CLEAN_UP_FORECAST: dataclasses.replace(
-            hooks.forecast_steps[PLAN_FORECAST_DELETES], name=CLEAN_UP_FORECAST,
-            still_due=weather_on,
-            describe=describe_clean_up,
-        ),
-        # Attendance's own jobs of a clean-up: its plan under the amendment's name for it, the
-        # deletions and the mark that the check-in is over.
-        CLEAN_UP_CHECK_IN: dataclasses.replace(
-            hooks.clean_up_steps[PLAN_CLEAN_UP], name=CLEAN_UP_CHECK_IN,
-            describe=named(
-                "finding what is left of the check-in of round {number} in **{division}**"
-            ),
-        ),
-        DELETE_MESSAGE: hooks.clean_up_steps[DELETE_MESSAGE],
-        MARK_CLEARED: hooks.clean_up_steps[MARK_CLEARED],
+        # What each module defines of the amendment, by name: it plans them as the round is armed.
+        **{name: step for defined in amendment_steps.call() for name, step in defined.items()},
         CLOSE: Step(
             CLOSE, StepKind.ACT, close, still_due=close_due,
             describe=named("listing the rounds of **{division}** for the reply"),

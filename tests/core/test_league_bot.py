@@ -190,9 +190,10 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     arming of a round's timed work again after a refused cancellation, its reserve placement and
     the marking of its check-in over included, and the ending of a round whose every session was
     entered as not held. Every other job a league admin may discard."""
-    from leaguebot.__main__ import register_change_types
+    from leaguebot.__main__ import _sign_up_to_amendments, register_change_types
 
     bot = MagicMock()
+    _sign_up_to_amendments(bot)
     register_change_types(bot)
 
     marked = sorted(

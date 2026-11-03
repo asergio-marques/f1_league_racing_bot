@@ -851,8 +851,6 @@ async def test_a_discarded_save_amends_nothing_and_arms_the_round_again_as_it_wa
     assert _success_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the amendment's save calls no module signed up to "
-                   "a round amended")
 async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_renumbering(
     tmp_path, reposts,
 ):

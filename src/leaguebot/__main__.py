@@ -27,7 +27,6 @@ from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 if TYPE_CHECKING:
     from leaguebot.core.services.calendar_post_service import CalendarCommandOutcome
     from leaguebot.image.services.image_lineup_post import LineupPostOutcome
-    from leaguebot.core.services.round_amend_change import AmendHooks
     from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
 
 #: The oldest discord.py the bot runs on. `/team add` and `/team modify` take their input in a
@@ -270,7 +269,8 @@ def _sign_up_to_amendments(bot: LeagueBot) -> None:
     order core calls them: inside the save, weather's withdrawal of the forecasts the amendment
     withdraws, then attendance's reopening of its check-in; as the round is armed again, the posts
     each owes, attendance's then weather's, then the clean-ups due a day after the round,
-    weather's then attendance's."""
+    weather's then attendance's; the steps each defines for the amendment, weather's then
+    attendance's; and the words an outcome gives a step left undone, weather's for a forecast."""
     from leaguebot.attendance.services import check_in_changes
     from leaguebot.weather.services import forecast_changes, phase_withdrawal
 
@@ -283,6 +283,21 @@ def _sign_up_to_amendments(bot: LeagueBot) -> None:
     bot.round_clean_ups_due = AwaitedHook()
     bot.round_clean_ups_due.subscribe(forecast_changes.amendment_clean_ups)
     bot.round_clean_ups_due.subscribe(check_in_changes.amendment_clean_ups)
+    bot.amendment_steps = Hook()
+    bot.amendment_steps.subscribe(partial(
+        forecast_changes.amendment_steps,
+        now=lambda: bot.change_queue.now(), seasons=bot.season_service, modules=bot.module_service,
+    ))
+    bot.amendment_steps.subscribe(partial(
+        check_in_changes.amendment_steps,
+        bot.attendance_service,
+        now=lambda: bot.change_queue.now(),
+        seasons=bot.season_service,
+        modules=bot.module_service,
+        deletes=check_in_changes.check_in_deletes(bot, bot.attendance_service),
+    ))
+    bot.amendment_step_failure = Hook()
+    bot.amendment_step_failure.subscribe(forecast_changes.forecast_failure)
 
 
 def _sign_up_to_cancellations(bot: LeagueBot) -> None:
@@ -377,50 +392,6 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
         return families[str(payload.get("view", "approve"))](cog, int(payload["reviewer_id"]))
 
     return make
-
-
-def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
-    """What `/round amend`'s change needs of weather and attendance, handed it here so that core
-    imports neither. Each is looked up as it is called, so that nothing is bound before it is
-    needed."""
-    from leaguebot.attendance.services.check_in_changes import (
-        check_in_clean_up_steps,
-        check_in_deadline_steps,
-        check_in_deletes,
-        check_in_steps,
-        close_check_in_on,
-        forget_check_in_call_on,
-        give_up_text_for,
-    )
-    from leaguebot.core.models.change import PlannedStep
-    from leaguebot.core.services.round_amend_change import AmendHooks
-    from leaguebot.core.utils.formatting import format_round_list
-    from leaguebot.weather.services.forecast_changes import (
-        DRAW_FORECAST,
-        forecast_failure,
-        forecast_steps,
-    )
-    from leaguebot.weather.utils.message_builder import invalidation_message
-
-    def plan_phase(round_id: int, phase: int) -> "tuple[PlannedStep, ...]":
-        return (PlannedStep(DRAW_FORECAST, {"round_id": round_id, "phase": phase}),)
-
-    return AmendHooks(
-        forecast_steps=forecast_steps(now=lambda: bot.change_queue.now()),
-        plan_phase=plan_phase,
-        forecast_failure=forecast_failure,
-        invalidation_text=invalidation_message,
-        call_steps=check_in_steps(bot.attendance_service, now=lambda: bot.change_queue.now()),
-        give_up_text=give_up_text_for,
-        give_up_on=close_check_in_on,
-        deadline_steps=check_in_deadline_steps(
-            bot.attendance_service, now=lambda: bot.change_queue.now()
-        ),
-        clean_up_steps=check_in_clean_up_steps(),
-        round_list=format_round_list,
-        check_in_deletes=check_in_deletes(bot, bot.attendance_service),
-        forget_check_in_on=forget_check_in_call_on,
-    )
 
 
 def register_change_types(bot: LeagueBot) -> None:
@@ -921,7 +892,8 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
-            hooks=_amend_hooks(bot),
+            amendment_steps=bot.amendment_steps,
+            amendment_step_failure=bot.amendment_step_failure,
             round_windows_read=bot.round_windows_read,
             round_amended=bot.round_amended,
             round_armed=bot.round_armed,
@@ -934,7 +906,8 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
-            hooks=_amend_hooks(bot),
+            amendment_steps=bot.amendment_steps,
+            amendment_step_failure=bot.amendment_step_failure,
             round_windows_read=bot.round_windows_read,
             round_amended=bot.round_amended,
             round_armed=bot.round_armed,

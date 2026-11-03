@@ -287,12 +287,11 @@ async def take_down_call(
 ) -> dict:
     """Read *round_id*'s check-in, then take its call down, as a job on the change queue.
 
-    The amendment's take-down; a cancellation's is attendance's own step
-    (`check_in_changes.take_down_call`). The call comes down through *check_in_deletes*,
-    attendance's own delete steps as the builder hands them (`AmendHooks.check_in_deletes`), so
-    that this module imports nothing of attendance: called with the round and the division, it
-    gives True where a call stood. Its record is not forgotten here: the job's record does it, in
-    the save that marks the job done.
+    No job runs it now: the take-down of a cancellation and of an amendment is attendance's own
+    step (`check_in_changes.take_down_steps`, `check_in_changes.take_down_call`). The call comes
+    down through *check_in_deletes*, attendance's own delete steps, called with the round and the
+    division, giving True where a call stood. Its record is not forgotten here: the job's record
+    does it, in the save that marks the job done.
 
     Returns `{"audit", "taken_down"}`: the log-channel record of the check-in (`checkin_record`),
     read **before** the call comes down, and whether a call stood. Where a message cannot be

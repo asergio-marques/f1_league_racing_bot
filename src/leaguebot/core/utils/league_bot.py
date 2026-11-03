@@ -97,6 +97,11 @@ class LeagueBot(commands.Bot):
     round_amended: AwaitedHook
     round_armed: AwaitedHook
     round_clean_ups_due: AwaitedHook
+    #: The steps each module defines for the amendment of a round and its arming again, by name
+    #: (each subscriber hands back its definitions), and the words an outcome gives a step left
+    #: undone (each hands back a thing and what to do, or None for a step not its own).
+    amendment_steps: Hook
+    amendment_step_failure: Hook
     #: The moment the bot's in-memory state is cleared (`/bot pack`, `/bot factory-reset`): each
     #: module that holds league state in memory signs its clear up. The builder makes it and
     #: signs them up, so that core's clear reaches no module and no cog (architecture.md, "A hook

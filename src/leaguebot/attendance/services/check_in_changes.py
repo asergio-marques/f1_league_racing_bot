@@ -102,6 +102,7 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.notice_handler import delete_notice
 from leaguebot.core.services.round_moments import clean_up_moment, round_event_moments
+from leaguebot.core.services.round_steps import judged_windows, named_now
 from leaguebot.core.services.test_mode_service import (
     AdvanceOutcome,
     AdvanceStep,
@@ -376,7 +377,7 @@ def check_in_deletes(
     bot: LeagueBot, service: AttendanceService
 ) -> Callable[[int, int], Awaitable[bool]]:
     """Attendance's delete of a round's check-in call, as a cancellation's take-down and an
-    amendment's ask it (`take_down_call`, `AmendHooks.check_in_deletes`).
+    amendment's ask it (`take_down_call`, through `take_down_steps`).
 
     Called with the round and the division it takes the call down with the last notice and the
     reserve announcement beside it, each from the channel it was posted in (the last two go to the
@@ -767,6 +768,174 @@ async def give_up_text_for(db_path: str, round_id: int) -> str | None:
                  "nothing given up", round_id)
         return None
     return given_up_text(row)
+
+
+def amendment_steps(
+    service: AttendanceService,
+    *,
+    now: Callable[[], datetime],
+    seasons: season_service.SeasonService,
+    modules: ModuleService,
+    deletes: Callable[[int, int], Awaitable[bool]],
+) -> dict[str, Step]:
+    """The jobs attendance defines for an amendment, by name: taking the round's call down
+    (`take_down_steps`, named for the number the round bears now), posting it again, the three of
+    a check-in deadline (placing the reserves, taking the buttons off the call, announcing),
+    closing a check-in that has no call, and the four of taking a check-in down (its plan under
+    the amendment's name `CLEAN_UP_CHECK_IN`, each deletion, the mark that it is over). *service* is
+    attendance's, *now* the queue's clock, *seasons* reads the round, *modules* says whether
+    attendance is on and *deletes* is `check_in_deletes`. Subscribed to core's `amendment_steps`.
+    """
+    taken_down = take_down_steps(seasons=seasons, modules=modules, deletes=deletes)
+    call = check_in_steps(service, now=now)
+    deadline = check_in_deadline_steps(service, now=now)
+    clean_up = check_in_clean_up_steps()
+
+    def named(text: str) -> Callable[[StepContext], Awaitable[str]]:
+        return named_now(seasons, text)
+
+    def view(ctx: StepContext, name: str) -> Any:
+        return next((each for each in reversed(ctx.steps) if each.name == name), None)
+
+    def reposting(ctx: StepContext) -> bool:
+        """Whether the call is posted again in place of one the amendment took down (its step
+        payload, ``{"repost": True}``), rather than posted for the first time."""
+        return bool(ctx.step_payload.get("repost"))
+
+    def replacing(ctx: StepContext) -> bool:
+        """Whether the call to post again replaces one still standing: the old call, whose
+        take-down a league admin discarded. Otherwise any call standing when the post runs was
+        posted after the take-down, or after the arming, by its timer, a restart or
+        `/attendance post-check-in`, and is the round's live call."""
+        taking_down = view(ctx, TAKE_DOWN_CALL)
+        return reposting(ctx) and taking_down is not None and "discarded" in (
+            taking_down.result or {}
+        )
+
+    def window(ctx: StepContext) -> AttendanceWindows | None:
+        """The window the amendment's judging kept, which the call is judged against."""
+        return judged_windows(ctx)[0]
+
+    async def call_state(db_path: str, round_id: int) -> tuple[bool, bool]:
+        """Whether a call stands for the round, and whether its check-in is over
+        (``checkin_cleared``), read when the job runs."""
+        async with get_connection(db_path) as db:
+            row = await _call_row(db, round_id)
+            standing = await _standing(db, round_id)
+        if row is None:
+            return False, False
+        return standing is not None, bool(row["checkin_cleared"])
+
+    async def call_still_due(ctx: StepContext) -> bool:
+        """The call is posted only while attendance is on and the call has fallen due as the
+        round stands when this job runs, and, as the start-up recovery of a missed call judges it
+        (`_recover_missed_check_in_calls`), only where no call stands and the round's check-in
+        is not over, both read then (owner, 2026-10-09). A call posted between the arming and
+        this job, by its timer, a restart or `/attendance post-check-in`, is the round's live
+        call, and posting again would call the division twice. The one exception is the old call
+        a discarded take-down left standing, which a repost replaces (`replacing`), unless the
+        check-in is over by then, as a clean-up a day after the round leaves it. A call still to
+        come is posted by its timer, armed with the round; one whose deadline has passed is given
+        up (`post_call`)."""
+        if not await modules.is_attendance_enabled():
+            return False
+        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
+        if rnd is None or not _call_fell_due(rnd, window(ctx), now):
+            return False
+        standing, cleared = await call_state(ctx.db_path, rnd.id)
+        if cleared:
+            return False
+        return replacing(ctx) or not standing
+
+    async def post_call(ctx: StepContext) -> StepResult:
+        """Post the call, carrying every answer already given. Discord refusing it stops the queue
+        (owner, 2026-10-10, decision 3), attendance raising with what is left for the round, which
+        the stop notice says (owner, 2026-10-11) and a Discard reads in the amendment's outcome.
+
+        The call is posted by the check-in call's own job, which posts nothing it cannot record:
+        the job's record writes the call in the save that marks the job done. A call posted again
+        in place of one the amendment took down (`reposting`) carries the answers of the drivers
+        still of the division, and where a discarded take-down left the old call standing
+        (`replacing`) the new call's record replaces the old one's. The old call's messages are
+        not deleted again: the discarded take-down names those left, for deletion by hand.
+
+        Where the round's check-in deadline has passed by the time it runs, as after a stop,
+        nothing is posted: the round's check-in is closed and the log channel told in the job's
+        record, as the start-up recovery gives up a missed call (owner, 2026-10-09). A call is
+        given up only where none stands and the check-in is not over: one standing is the round's
+        live call, or the old one a discarded take-down left, and a check-in over is settled, and
+        either is left as it is. Given up, any answers left to a call the amendment took down,
+        and the placements made on them, are cleared in the same save, so that the log channel's
+        line that the round counts nothing against anyone holds true (owner, 2026-10-09: "Clear
+        the answers, keep the line true"). The call is posted under test mode too, unlike the
+        start-up recovery, which leaves a test season's calls to `/test-mode advance` (owner,
+        2026-10-09: "Post it anyway")."""
+        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
+        if rnd is None:
+            raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
+        attendance = window(ctx)
+        if attendance is not None and _deadline_passed(rnd, attendance, now):
+            standing, cleared = await call_state(ctx.db_path, rnd.id)
+            if standing or cleared:
+                return StepResult(result={"left": True})
+            text = await give_up_text_for(ctx.db_path, rnd.id)
+            if text is None:
+                # Its results came in, or its check-in closed, as the give-up reads it.
+                return StepResult(result={"left": True})
+            return StepResult(result={"given_up": True}, lines=(text,))
+        carried = dataclasses.replace(
+            ctx, step_payload={**ctx.step_payload, "replacing": replacing(ctx)}
+        )
+        return await call[POST_CALL].run(carried)
+
+    async def record_call(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        """The call's record, or the give-up's close, in the save that marks the job done; a call
+        left as it stood is recorded as nothing."""
+        if (result.result or {}).get("given_up"):
+            await close_check_in_on(db, int(ctx.payload["round_id"]))
+            return
+        if not (result.result or {}).get("new"):
+            return  # left as it stood: nothing posted, nothing to record
+        record = call[POST_CALL].record
+        if record is not None:
+            await record(db, ctx, result)
+
+    return {
+        TAKE_DOWN_CALL: dataclasses.replace(
+            taken_down[TAKE_DOWN_CALL],
+            describe=named("taking down the check-in call of round {number} in **{division}**"),
+        ),
+        POST_CALL: Step(
+            POST_CALL, StepKind.ACT, post_call, still_due=call_still_due, record=record_call,
+            describe=named("posting the check-in call of round {number} in **{division}** again"),
+        ),
+        # The jobs of a deadline, named for the round the amendment stands for.
+        DISTRIBUTE: dataclasses.replace(
+            deadline[DISTRIBUTE],
+            describe=named("placing the reserves of round {number} in **{division}**"),
+        ),
+        CLOSE_WITHOUT_CALL: dataclasses.replace(
+            deadline[CLOSE_WITHOUT_CALL],
+            describe=named(
+                "closing the check-in of round {number} in **{division}**, which has no call"
+            ),
+        ),
+        LOCK_CALL: deadline[LOCK_CALL],
+        ANNOUNCE: dataclasses.replace(
+            deadline[ANNOUNCE],
+            describe=named("posting the reserve announcement of round {number} in **{division}**"),
+        ),
+        # The jobs of a clean-up: its plan under the amendment's name for it, the deletions and
+        # the mark that the check-in is over.
+        CLEAN_UP_CHECK_IN: dataclasses.replace(
+            clean_up[PLAN_CLEAN_UP], name=CLEAN_UP_CHECK_IN,
+            describe=named(
+                "finding what is left of the check-in of round {number} in **{division}**"
+            ),
+        ),
+        DELETE_MESSAGE: clean_up[DELETE_MESSAGE],
+        MARK_CLEARED: clean_up[MARK_CLEARED],
+    }
 
 
 def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -> dict[str, Step]:

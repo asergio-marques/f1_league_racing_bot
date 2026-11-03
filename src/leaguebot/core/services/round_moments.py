@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 
-from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
+from leaguebot.core.models.round import AttendanceWindows, Round, RoundFormat, WeatherWindows
 from leaguebot.core.utils.hooks import AwaitedHook
 
 #: How long after a round's scheduled start its posted messages come down: the weather module's
@@ -42,6 +42,22 @@ async def read_round_windows(
     attendance = next((each for each in handed if isinstance(each, AttendanceWindows)), None)
     weather = next((each for each in handed if isinstance(each, WeatherWindows)), None)
     return attendance, weather
+
+
+def phases_due(rnd: Round, weather: WeatherWindows, at: datetime) -> list[int]:
+    """The forecast phases to draw at once at *at*: each not yet drawn whose horizon has passed,
+    for a round whose moment is still ahead and which is no mystery round, as the start-up recovery
+    judges a missed phase (`_recover_missed_phases`)."""
+    moment = as_utc(rnd.scheduled_at)
+    if rnd.format == RoundFormat.MYSTERY or moment <= at:
+        return []
+    moments = round_event_moments(moment, weather=weather, attendance=None)
+    horizons = {
+        1: (rnd.phase1_done, moments["weather_p1"]),
+        2: (rnd.phase2_done, moments["weather_p2"]),
+        3: (rnd.phase3_done, moments["weather_p3"]),
+    }
+    return [n for n, (done, horizon) in horizons.items() if not done and horizon <= at]
 
 
 def as_utc(moment: datetime) -> datetime:
