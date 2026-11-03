@@ -43,6 +43,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import (
     ROUND_JOB_KINDS,
+    ROUND_JOB_PHASES,
     AttendanceWindows,
     Round,
     RoundFormat,
@@ -814,16 +815,6 @@ class SchedulerService:
         # For test-mode advance, result submission is detected via DB state
         # (rounds_with_results fallback) so that past-dated results jobs
         # that already auto-fired don't block or double-trigger the wizard.
-        _PHASE_PREFIX_MAP = {
-            "weather_p1":       1,
-            "weather_p2":       2,
-            "weather_p3":       3,
-            "rsvp_notice":      5,
-            "rsvp_last_notice": 6,
-            "rsvp_deadline":    7,
-            "cleanup":          8,
-            "rsvp_cleanup":     9,
-        }
         result: list[dict] = []
         for job in self._scheduler.get_jobs():
             if job.next_run_time is None:
@@ -835,7 +826,7 @@ class SchedulerService:
             event_type = _job_event_type(job.id)
             if event_type is None:
                 continue
-            phase = _PHASE_PREFIX_MAP.get(event_type)
+            phase = ROUND_JOB_PHASES.get(event_type)
             if phase is None:
                 continue  # results, season_end, etc.
             result.append(

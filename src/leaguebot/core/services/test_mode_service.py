@@ -31,6 +31,7 @@ from leaguebot.core.models.change import (
     FORECAST,
     FORECAST_CLEAN_UP,
 )
+from leaguebot.core.models.round import ROUND_JOB_PHASES
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
@@ -65,9 +66,8 @@ class PhaseEntry(TypedDict):
 
 #: The kind of round job each phase number is armed under: `weather_p1` for the mystery notice
 #: (0) too, which weather's step tells from Phase 1 by the round's format.
-PHASE_KINDS = {
-    0: "weather_p1", 1: "weather_p1", 2: "weather_p2", 3: "weather_p3", 4: "results",
-    5: "rsvp_notice", 6: "rsvp_last_notice", 7: "rsvp_deadline", 8: "cleanup", 9: "rsvp_cleanup",
+PHASE_KINDS = {phase: kind for kind, phase in ROUND_JOB_PHASES.items()} | {
+    0: "weather_p1", 4: "results",
 }
 
 
