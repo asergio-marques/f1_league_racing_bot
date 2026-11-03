@@ -613,10 +613,10 @@ async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(
     round final), cancelled (ongoing) or aborted (in Placements). The part for the drivers returned
     is called once, in `end`, with that save's own connection and the drivers the pass returned,
     Kimi among them: on that connection Kimi's signup has already ended and the season is not yet
-    archived or deleted, while another connection still reads Kimi as signing up. The part for the untold is called
-    once, in `close`, with that save's own connection, `end` done and `close` not. What the part for the drivers returned writes on its
-    connection is unseen elsewhere while `end` stands open, and what each writes is saved with its
-    save."""
+    archived or deleted, while another connection still reads Kimi as signing up. The part for the
+    untold is called once, in `close`, with that save's own connection, `end` done and `close` not.
+    What the part for the drivers returned writes on its connection is unseen elsewhere while `end`
+    stands open, and what each writes is saved with its save."""
     from leaguebot.core.db.database import get_connection
     from tests.support.season_league import (
         abort_season,
