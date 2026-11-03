@@ -134,8 +134,32 @@ _WINDOWS_PARTS = (
 )
 
 
+#: Each module's part of a round amended, as the module names it: the moment's hook on the bot,
+#: the module, the subscriber, and what the test calls it, in the order the builder signs them up.
+_AMENDMENT_PARTS = (
+    ("round_amended", "leaguebot.weather.services.phase_withdrawal", "round_amended_on",
+     "weather's withdrawal"),
+    ("round_amended", "leaguebot.attendance.services.check_in_changes", "round_amended_on",
+     "attendance's reopening"),
+    ("round_armed", "leaguebot.attendance.services.check_in_changes", "amendment_posts",
+     "attendance's posts"),
+    ("round_armed", "leaguebot.weather.services.forecast_changes", "amendment_posts",
+     "weather's posts"),
+    ("round_clean_ups_due", "leaguebot.weather.services.forecast_changes", "amendment_clean_ups",
+     "weather's clean-ups"),
+    ("round_clean_ups_due", "leaguebot.attendance.services.check_in_changes",
+     "amendment_clean_ups", "attendance's clean-ups"),
+)
+
+#: The steps of an amendment attendance defines, by name, as the amendment names them today.
+_ATTENDANCE_AMENDMENT_STEPS = [
+    "announce", "clean_up_check_in", "close_without_call", "delete_message", "distribute",
+    "lock_call", "mark_cleared", "post_call", "take_down_call",
+]
+
+
 @pytest.mark.xfail(strict=True, reason="#283: the builder signs no module up to a round's timing "
-                   "windows read")
+                   "windows read, nor to a round amended")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -146,7 +170,12 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     submissions, then attendance's take-down of their calls; and the steps a module plans,
     results' deletion of a submission channel, then attendance's take-down of a call. A round's
     timing windows read: attendance's window, then weather's, each handed whether the round is
-    being amended."""
+    being amended. A round amended: inside the save, weather's withdrawal of the forecasts the
+    amendment withdraws, then attendance's reopening of its check-in; as the round is armed again,
+    the posts each owes, attendance's then weather's, then the clean-ups due a day after the
+    round, weather's then attendance's; the steps each defines, weather's then attendance's, under
+    the names the amendment gives them today; and the words an outcome gives a step that was not
+    done, weather's for a forecast."""
     import importlib
 
     import leaguebot.__main__ as entry_point
@@ -154,6 +183,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     from leaguebot.core.services.cancellation_notice_service import SCOPE_ROUND
     from leaguebot.results.services import penalty_wizard
     from leaguebot.signup.services import signup_views
+    from leaguebot.weather.services import forecast_changes
 
     called: list[str] = []
     monkeypatch.setattr(SeasonCog, "clear_pending", lambda self: called.append("season setups"))
@@ -176,6 +206,18 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         monkeypatch.setattr(importlib.import_module(module_name), name, window_spy,
                             raising=False)
 
+    for _hook, module_name, name, part in _AMENDMENT_PARTS:
+        async def amendment_spy(*_args, part=part, **_kwargs):
+            called.append(part)
+        monkeypatch.setattr(importlib.import_module(module_name), name, amendment_spy,
+                            raising=False)
+    monkeypatch.setattr(forecast_changes, "forecast_failure",
+                        lambda *_args, **_kwargs: called.append("weather's words"))
+    weather_steps = sorted(
+        {*forecast_changes.forecast_steps(now=lambda: _NOW),
+         "clean_up_forecast", "notify_invalidation", "rerun_phase"}
+    )
+
     bot = await built_bot(tmp_path, now=_NOW)
     assert called == []
 
@@ -194,6 +236,16 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     called.clear()
     await bot.round_windows_read.call(amending=True)
     assert called == ["attendance's window, amending True", "weather's window, amending True"]
+    for hook in ("round_amended", "round_armed", "round_clean_ups_due"):
+        called.clear()
+        await getattr(bot, hook).call(None, 0)
+        assert called == [part for each, _module, _name, part in _AMENDMENT_PARTS if each == hook]
+    assert [sorted(steps) for steps in bot.amendment_steps.call()] == [
+        weather_steps, _ATTENDANCE_AMENDMENT_STEPS
+    ]
+    called.clear()
+    bot.amendment_step_failure.call(None)
+    assert called == ["weather's words"]
 
 
 #: The windows the league configures in the pair test: attendance's three lead times, and

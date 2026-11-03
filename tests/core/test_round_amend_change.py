@@ -845,6 +845,47 @@ async def test_a_discarded_save_amends_nothing_and_arms_the_round_again_as_it_wa
     assert _success_lines(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the amendment's save calls no module signed up to "
+                   "a round amended")
+async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_renumbering(
+    tmp_path,
+):
+    """Pro's round 3 is moved 150 days out, past round 4. A module signed up to a round amended,
+    after weather and attendance, is called once, with the save's own connection and round 3: on
+    that connection core's audit of the move and round 3's new moment are written already, while
+    another connection still reads the old moment, since the save has not committed; and round 3
+    still bears number 3, the division not yet renumbered. Once the queue has run, round 3 is
+    round 4."""
+    from leaguebot.core.db.database import get_connection
+
+    league = await ongoing_league(tmp_path)
+    [old] = await league.rows("SELECT scheduled_at FROM rounds WHERE id = ?", R3)
+    seen: list[tuple[Any, ...]] = []
+
+    async def _part(db: Any, rid: int, *_rest: Any, **_kwargs: Any) -> dict[str, Any]:
+        cursor = await db.execute("SELECT round_number, scheduled_at FROM rounds WHERE id = ?",
+                                  (rid,))
+        number, moment = await cursor.fetchone()
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM audit_entries WHERE change_type = 'round.scheduled_at' "
+            "AND new_value = ?", (moment,),
+        )
+        [audited] = await cursor.fetchone()
+        async with get_connection(league.db_path) as other:
+            cursor = await other.execute("SELECT scheduled_at FROM rounds WHERE id = ?", (rid,))
+            [outside] = await cursor.fetchone()
+        seen.append((rid, number, moment != old["scheduled_at"], audited,
+                     outside == old["scheduled_at"]))
+        return {}
+
+    league.bot.round_amended.subscribe(_part)
+    await _amended(league, scheduled_at=_at(league, days=150))
+    await run_queue(league.bot)
+
+    assert seen == [(R3, 3, True, 1, True)]
+    assert (await _numbers(league))[R3] == 4
+
+
 async def test_a_discarded_amendment_is_named_by_the_number_the_round_bears_when_the_reply_is_made(
     tmp_path, monkeypatch,
 ):
