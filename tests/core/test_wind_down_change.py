@@ -186,7 +186,9 @@ async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
         ("take_driver_role", MAX), ("take_driver_role", CHARLES),
     ])
     assert jobs.index(("signup_notice", SIGNING_UP)) < jobs.index(("close_signup", SIGNING_UP))
-    assert [uid for uid, _notice in league.notices] == [SIGNING_UP]
+    assert league.notices == [(SIGNING_UP, "🔒 Every division of this season is done, so its "
+                                           "signups are closed. This channel will be "
+                                           "automatically deleted in 24 hours.")]
     assert league.locked == [SIGNING_UP]
     assert league.revoked == {MAX: [DRIVER_ROLE], CHARLES: [DRIVER_ROLE]}
     assert LEWIS not in league.revoked

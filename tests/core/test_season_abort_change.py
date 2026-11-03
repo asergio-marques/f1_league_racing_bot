@@ -462,7 +462,8 @@ async def test_a_signup_channel_the_driver_pass_cannot_close_stops_the_queue(tmp
 
     del league.hold_fails[SIGNING_UP]
     await retry_job(league.bot)
-    assert [uid for uid, _notice in league.notices] == [SIGNING_UP]
+    assert league.notices == [(SIGNING_UP, "🔒 This season has ended. This channel will be "
+                                           "automatically deleted in 24 hours.")]
     assert league.locked == [SIGNING_UP]
     assert len(_success_lines(league)) == 1
 
