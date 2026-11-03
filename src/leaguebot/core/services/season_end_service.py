@@ -32,6 +32,7 @@ from leaguebot.core.services.season_lifecycle_service import (
 
 if TYPE_CHECKING:
     import aiosqlite
+    from leaguebot.core.utils.hooks import AwaitedHook
     from leaguebot.core.services.placement_service import PlacementService
 
 log = logging.getLogger(__name__)
@@ -49,6 +50,18 @@ FORGET_SETUP = "forget_setup"
 
 #: The cause the window's close is recorded under, where a season's end closes it.
 SEASON_END_CAUSE = "season end"
+
+
+async def refusal_of_the_modules(
+    season_end_refused: "AwaitedHook", db_path: str, season_id: int, ending: str
+) -> str | None:
+    """What stands in the way of the season's *ending* (`COMPLETION` or `CANCELLATION`): the first
+    refusal a module hands back, or None. Each module is asked, with the database's path and the
+    season's id, and reads on a connection of its own (`season_end_refused`)."""
+    for found in await season_end_refused.call(db_path, season_id, ending):
+        if found is not None:
+            return str(found)
+    return None
 
 
 async def write_driver_history_entries_on(

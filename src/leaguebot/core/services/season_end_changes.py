@@ -10,8 +10,8 @@ holds the change; the cog holds the press.
 words the command used: no season being raced, or the payload's season no longer the one; a round
 being amended, which would carry its corrections into the final classification before they are
 approved; rounds still to be finalised, or a division neither finished nor cancelled. It imports
-no module and no cog: results' open amendment reaches it through the builder's `SeasonEndHooks`,
-and `ctx.bot` is used for Discord alone.
+no module and no cog: results' refusal of a round being amended reaches it through the
+`season_end_refused` hook the builder hands it, and `ctx.bot` is used for Discord alone.
 
 **The jobs, in the order the core specification sets**, each of which stops the queue where it
 fails:
@@ -68,6 +68,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
+from leaguebot.core.models.season_end import COMPLETION
 from leaguebot.core.services import approval_checks, season_classification_service, standing_posts
 from leaguebot.core.services.change_queue import (
     ChangeType,
@@ -87,6 +88,7 @@ from leaguebot.core.services.season_end_service import (
     FORGET_SETUP,
     REVOKE_ROLES,
     SEASON_END_CAUSE,
+    refusal_of_the_modules,
     season_end_steps,
     season_role_targets_on,
     write_driver_history_entries_on,
@@ -118,6 +120,7 @@ from leaguebot.core.services.season_service import (
     refresh_division_status_on,
 )
 from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
@@ -364,17 +367,6 @@ async def season_ending_jobs(db_path: str) -> list[int | None]:
     return [job for _payload, job in await in_hand(db_path, kinds)]
 
 
-def amended(held: Any) -> str:
-    """The refusal for a round being amended: its corrections would reach the final
-    classification before they are approved (#345)."""
-    return (
-        f"❌ Cannot complete season — round {held['round_number']} of "
-        f"**{held['division_name']}** is being amended in <#{held['channel_id']}>. "
-        "Finish or cancel it first: completing posts every division's final "
-        "classification, which would carry its corrections before they are approved."
-    )
-
-
 def view_of(ctx: OutcomeContext, name: str) -> StepView | None:
     """The last job named *name*: a save tried again is planned afresh, and the last stands."""
     return next((view for view in reversed(ctx.steps) if view.name == name), None)
@@ -538,14 +530,16 @@ def season_complete_change(
     seasons: "SeasonService",
     scheduler: "SchedulerService",
     placement: "PlacementService",
+    season_end_refused: AwaitedHook,
     hooks: SeasonEndHooks,
 ) -> ChangeType:
     """The change that completes the confirmed season; see the module.
 
     The builder hands in *modules* (which of results and attendance are on), the *seasons*
     service (the season the check reads), the *scheduler* (whose season-end job `settle` removes),
-    the *placement* service (which takes back roles) and the season end's *hooks* (what other
-    modules and the cog do for it).
+    the *placement* service (which takes back roles), the hook the modules sign up to
+    (*season_end_refused*) and the season end's *hooks* (what other modules and the cog do for
+    it).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -565,9 +559,11 @@ def season_complete_change(
         # **Not while a round is being amended** (#345, decided 2026-09-21): completing posts
         # each division's final classification from the database, which holds an open
         # amendment's corrections before they are approved.
-        held = await hooks.amendment_open(ctx.db_path, season.id)
+        held = await refusal_of_the_modules(
+            season_end_refused, ctx.db_path, season.id, COMPLETION
+        )
         if held is not None:
-            return Verdict.refuse(amended(held))
+            return Verdict.refuse(held)
 
         async with get_connection(ctx.db_path) as db:
             refusal = await completion_refusal_on(db, season.id)

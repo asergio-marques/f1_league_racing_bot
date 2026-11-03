@@ -117,6 +117,7 @@ from leaguebot.core.models.round import (
 )
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
+from leaguebot.core.models.season_end import CANCELLATION
 from leaguebot.core.services import approval_checks
 from leaguebot.core.services import cancellation_notice_service as notices
 from leaguebot.core.services import standing_posts
@@ -150,6 +151,7 @@ from leaguebot.core.services.season_end_service import (
     FLUSH_FORECASTS,
     REVOKE_ROLES,
     SEASON_END_CAUSE,
+    refusal_of_the_modules,
     season_end_steps,
     season_role_targets_on,
     write_driver_history_entries_on,
@@ -1329,17 +1331,6 @@ def division_cancel_change(
     )
 
 
-def season_amended(held: Any) -> str:
-    """The refusal of a season's cancellation while a round is being amended: its corrections
-    would reach every driver's history before they are approved (#345)."""
-    return (
-        f"❌ Cannot cancel the season — round {held['round_number']} of "
-        f"**{held['division_name']}** is being amended in <#{held['channel_id']}>. "
-        "Finish or cancel it first: cancelling writes every driver's history from the "
-        "standings, which would carry its corrections before they are approved."
-    )
-
-
 def season_cancel_change(
     *,
     modules: "ModuleService",
@@ -1349,6 +1340,7 @@ def season_cancel_change(
     cancellation_refused: AwaitedHook,
     rounds_called_off: AwaitedHook,
     cancellation_steps: Hook,
+    season_end_refused: AwaitedHook,
     hooks: SeasonEndHooks,
     now: Callable[[], datetime],
 ) -> ChangeType:
@@ -1356,8 +1348,8 @@ def season_cancel_change(
 
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *modules*, the
     *seasons* service, the *scheduler*, the *placement* service (which takes back roles), the hooks
-    the modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_steps*), the
-    season end's *hooks* and the queue's clock *now*.
+    the modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_steps*,
+    *season_end_refused*), the season end's *hooks* and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1380,9 +1372,11 @@ def season_cancel_change(
         # **Not while a round is being amended** (#345, decided 2026-09-21): cancelling writes
         # every driver's history from the standings, which hold an open amendment's corrections
         # before they are approved, and the history is never rewritten.
-        held = await hooks.amendment_open(ctx.db_path, season.id)
+        held = await refusal_of_the_modules(
+            season_end_refused, ctx.db_path, season.id, CANCELLATION
+        )
         if held is not None:
-            return Verdict.refuse(season_amended(held))
+            return Verdict.refuse(held)
 
         # **Not while a submission holds accepted results** (owner, 2026-10-08, amending
         # Constitution XII): a session accepted, or entered as not held, is data the cancellation

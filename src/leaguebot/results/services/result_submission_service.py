@@ -21,6 +21,7 @@ from leaguebot.core.models.cancellation import (
     CancellationRound,
 )
 from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, VerdictKind
+from leaguebot.core.models.season_end import COMPLETION
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat
@@ -1437,6 +1438,33 @@ async def open_amendment_in_season(db_path: str, season_id: int):
             (season_id,),
         )
         return await cursor.fetchone()
+
+
+async def season_end_refusal(db_path: str, season_id: int, ending: str) -> str | None:
+    """What stands in the way of the season's *ending* (`COMPLETION` or `CANCELLATION`), as results
+    has it: the refusal where a round is being amended, else None (#345, decided 2026-09-21).
+
+    The corrections of an amendment open reach the final classification a completion posts and the
+    history a cancellation writes, before they are approved. Subscribed to core's
+    `season_end_refused`, which asks it with the database's path as the end is asked and as it
+    runs. Reads only.
+    """
+    held = await open_amendment_in_season(db_path, season_id)
+    if held is None:
+        return None
+    where = (
+        f"round {held['round_number']} of **{held['division_name']}** is being amended in "
+        f"<#{held['channel_id']}>. Finish or cancel it first: "
+    )
+    if ending == COMPLETION:
+        return (
+            f"❌ Cannot complete season — {where}completing posts every division's final "
+            "classification, which would carry its corrections before they are approved."
+        )
+    return (
+        f"❌ Cannot cancel the season — {where}cancelling writes every driver's history from the "
+        "standings, which would carry its corrections before they are approved."
+    )
 
 
 async def held_by_amendment(

@@ -150,7 +150,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     from leaguebot.core.services import backup_service
     from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
     from leaguebot.image.services import driver_portrait_service
-    from leaguebot.results.services import result_submission_service
     from leaguebot.signup.services.wizard_service import inactivity_job_id
     from leaguebot.signup.services.closing_steps import (
         INACTIVITY_TIMER, window_close_jobs, window_close_steps,
@@ -188,9 +187,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
 
     async def discard_portraits(accounts):
         return await driver_portrait_service.discard_portraits(bot, accounts)
-
-    async def amendment_open(db_path: str, season_id: int):
-        return await result_submission_service.open_amendment_in_season(db_path, season_id)
 
     async def plan_forecast_flush() -> "tuple[PlannedStep, ...]":
         return await forecast_cleanup_service.forecast_deletes(bot.db_path)
@@ -236,7 +232,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
         lock_signup_channel=lock_signup_channel,
         cancel_signup_timeout=cancel_signup_timeout,
         discard_portraits=discard_portraits,
-        amendment_open=amendment_open,
         plan_forecast_flush=plan_forecast_flush,
         forecast_steps=forecast_steps(now=lambda: bot.change_queue.now()),
         discard_backup=discard_backup,
@@ -322,6 +317,16 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
         modules=bot.module_service,
         deletes=check_in_changes.check_in_deletes(bot, bot.attendance_service),
     ))
+
+
+def _sign_up_to_season_end(bot: LeagueBot) -> None:
+    """Make the hooks a season's end declares, and sign each module's part up to them, in the order
+    core calls them: what stands in the way of the completion and of the cancellation (results'
+    refusal of a season with a round being amended)."""
+    from leaguebot.results.services import result_submission_service
+
+    bot.season_end_refused = AwaitedHook()
+    bot.season_end_refused.subscribe(result_submission_service.season_end_refusal)
 
 
 async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "Path":
@@ -806,6 +811,7 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
+            season_end_refused=bot.season_end_refused,
             hooks=hooks,
         )
     )
@@ -818,6 +824,7 @@ def register_change_types(bot: LeagueBot) -> None:
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
             cancellation_steps=bot.cancellation_steps,
+            season_end_refused=bot.season_end_refused,
             hooks=hooks,
             now=lambda: bot.change_queue.now(),
         )
@@ -1142,6 +1149,7 @@ async def build(settings: Settings) -> LeagueBot:
     )
 
     _sign_up_to_cancellations(bot)
+    _sign_up_to_season_end(bot)
     register_change_types(bot)
     register_scheduler_callbacks(bot)
 
