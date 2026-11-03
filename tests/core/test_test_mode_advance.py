@@ -47,6 +47,7 @@ import pytest
 # as a test class, and warns that it cannot because the cog has an `__init__`.
 from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.round import Round, RoundFormat
 from tests.support.undecorate import undecorate
 
@@ -199,12 +200,27 @@ def _log_lines(cog) -> list[str]:
     return [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
 
 
-def _asked(cog) -> list[tuple[str, dict]]:
-    """Each change advance asked of the change queue: its kind and its payload."""
+def _asked(cog) -> list[tuple[str, dict, str | None, ChangeOrigin]]:
+    """Each change advance asked of the change queue: its kind, its payload, its `what` (the
+    text of the queue's lines about it in the log channel) and its origin, the member's where
+    none is given, as `ChangeQueue.ask` takes it."""
     return [
-        (call.args[0], call.args[1] if len(call.args) > 1 else call.kwargs["payload"])
+        (
+            call.args[0],
+            call.args[1] if len(call.args) > 1 else call.kwargs["payload"],
+            call.kwargs.get("what"),
+            call.kwargs.get("origin", ChangeOrigin.MEMBER),
+        )
         for call in cog.bot.change_queue.ask.await_args_list
     ]
+
+
+def _forecast_asked(phase: int, what: str) -> tuple[str, dict, str, ChangeOrigin]:
+    """The `weather.forecast` of *phase* of round 3 of Division 1 (0 its mystery notice), asked
+    as the bot's under *what*, as advance asks it today."""
+    payload = {"round_id": ROUND_ID, "phase": phase, "division_name": "Division 1",
+               "round_number": 3}
+    return FORECAST, payload, what, ChangeOrigin.BOT
 
 
 @contextmanager
@@ -411,9 +427,9 @@ async def test_a_mystery_notice_is_posted(tmp_path, phase_number):
 
     await _advance(cog, interaction, _entry(phase_number))
 
-    [(kind, payload)] = _asked(cog)
-    assert kind == FORECAST
-    assert (payload["round_id"], payload["phase"]) == (ROUND_ID, 0)
+    assert _asked(cog) == [
+        _forecast_asked(0, "posting the mystery round notice of round 3 in **Division 1**")
+    ]
     assert _replied(interaction) == (
         "🔮 The **Mystery Round notice** for **Division 1** — **Round 3** is on the change "
         "queue: it goes to the division forecast channel as soon as the queue reaches it."
@@ -484,8 +500,10 @@ async def test_advancing_a_round_start_replies_on_the_change_queue(tmp_path):
 
     mocks = await _advance(cog, interaction, _entry(4))
 
-    [(kind, payload)] = _asked(cog)
-    assert (kind, payload["round_id"]) == ("results.submission.open", ROUND_ID)
+    assert _asked(cog) == [(
+        "results.submission.open", {"round_id": ROUND_ID},
+        "opening round 3's results submission in Division 1", ChangeOrigin.BOT,
+    )]
     assert _replied(interaction) == (
         "⏩ The result submission of **Division 1** — **Round 3** (**Silverstone Circuit**) is "
         "on the change queue: its submission channel appears as soon as the queue reaches it."
@@ -771,8 +789,13 @@ async def test_each_cleanup_reaches_its_own_runner(tmp_path):
 
     await _advance(cog, interaction, _entry(8))
 
-    [(kind, payload)] = _asked(cog)
-    assert (kind, payload["round_id"]) == (FORECAST_CLEAN_UP, ROUND_ID)
+    assert _asked(cog) == [(
+        FORECAST_CLEAN_UP,
+        {"round_id": ROUND_ID, "phases": [1, 2, 3], "clean_up": True, "standing": [],
+         "division_name": "Division 1", "round_number": 3},
+        "deleting the forecast of round 3 in **Division 1** a day after it",
+        ChangeOrigin.BOT,
+    )]
     assert _replied(interaction) == (
         "🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on the change "
         "queue: it deletes the forecast as soon as the queue reaches it."
@@ -832,6 +855,15 @@ CHECK_IN_ASKED = {
        "reaches it.",
 }
 
+#: The `what` each check-in step is asked under, by its phase: the text of the change queue's
+#: lines about it in the log channel.
+CHECK_IN_WHAT = {
+    5: "the RSVP notice of round 3 in **Division 1**",
+    6: "the RSVP last-notice of round 3 in **Division 1**",
+    7: "the RSVP deadline of round 3 in **Division 1**",
+    9: "taking down the check-in a day after the round of round 3 in **Division 1**",
+}
+
 #: Each check-in step's reply where the change queue drops it as not due, by its phase.
 CHECK_IN_NOT_DUE = {
     5: "📨 The **RSVP notice** for **Division 1** — **Round 3** was not due.",
@@ -857,9 +889,11 @@ async def test_advancing_a_check_in_step_replies_on_the_change_queue(
 
     mocks = await _advance(cog, interaction, _entry(phase))
 
-    [(asked_kind, payload)] = _asked(cog)
-    assert (asked_kind, payload["round_id"]) == (kind, ROUND_ID)
-    assert payload["advanced"] is True
+    payload = {"round_id": ROUND_ID, "division_name": "Division 1", "round_number": 3,
+               "advanced": True}
+    if phase == 5:
+        payload |= {"replaces": None, "late": False}
+    assert _asked(cog) == [(kind, payload, CHECK_IN_WHAT[phase], ChangeOrigin.BOT)]
     assert _replied(interaction) == CHECK_IN_ASKED[phase]
     for name in _CHECK_IN_RUNNERS:
         if name in mocks:
@@ -878,7 +912,7 @@ async def test_a_check_in_step_the_queue_drops_says_it_was_not_due(tmp_path, pha
 
     await _advance(cog, interaction, _entry(phase))
 
-    [(asked_kind, payload)] = _asked(cog)
+    [(asked_kind, payload, _what, _origin)] = _asked(cog)
     assert (asked_kind, payload["round_id"]) == (kind, ROUND_ID)
     assert _replied(interaction) == CHECK_IN_NOT_DUE[phase]
 
@@ -898,9 +932,9 @@ async def test_each_weather_phase_asks_the_queue_for_its_phase(tmp_path, phase):
 
     await _advance(cog, interaction, _entry(phase))
 
-    [(kind, payload)] = _asked(cog)
-    assert kind == FORECAST
-    assert (payload["round_id"], payload["phase"]) == (ROUND_ID, phase)
+    assert _asked(cog) == [
+        _forecast_asked(phase, f"drawing the Phase {phase} forecast of round 3 in **Division 1**")
+    ]
     assert _replied(interaction) == (
         f"⏩ **Phase {phase}** for **Division 1** — **Silverstone Circuit** is on the change "
         "queue: its forecast goes to the forecast channel and its calculation to the log "
@@ -1225,7 +1259,7 @@ async def test_advance_names_the_raced_steps_it_passed_over_before_the_step_it_a
     assert places == sorted(places)
     assert all(place < replied.index(ADVANCED) for place in places)
     assert replied.count("⏭️") == len(named)
-    [(kind, payload)] = _asked(cog)
+    [(kind, payload, _what, _origin)] = _asked(cog)
     assert (kind, payload["phase"]) == (FORECAST, 1)
 
 
