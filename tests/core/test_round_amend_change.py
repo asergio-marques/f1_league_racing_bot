@@ -848,19 +848,35 @@ async def test_a_discarded_save_amends_nothing_and_arms_the_round_again_as_it_wa
 @pytest.mark.xfail(strict=True, reason="#283: the amendment's save calls no module signed up to "
                    "a round amended")
 async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_renumbering(
-    tmp_path,
+    tmp_path, reposts,
 ):
-    """Pro's round 3 is moved 150 days out, past round 4. A module signed up to a round amended,
-    after weather and attendance, is called once, with the save's own connection and round 3: on
+    """Weather and attendance on; round 3's call stands and its phase 2 forecast (message 8002)
+    was posted. A further module signs up, after weather and attendance, to a round amended, to
+    the round armed again and to the steps an amendment plans, and the queue is restarted so that
+    its step is known. Pro's round 3 is moved 150 days out, past round 4.
+
+    The module's part of the save is called once, with the save's own connection and round 3: on
     that connection core's audit of the move and round 3's new moment are written already, while
     another connection still reads the old moment, since the save has not committed; and round 3
-    still bears number 3, the division not yet renumbered. Once the queue has run, round 3 is
-    round 4."""
-    from leaguebot.core.db.database import get_connection
+    still bears number 3, the division not yet renumbered. What it hands back is kept with the
+    save, not in memory: the queue is restarted once the save is made, and the module's part of
+    the round armed again still finds it among what it is handed, and plans its own step from it.
+    The steps run in order: attendance's take-down of the call, weather's deletion of the
+    withdrawn forecast and its notice, then the further module's step, carrying what the save
+    handed back, then the reply's round list. Once the queue has run, round 3 is round 4."""
+    from collections.abc import Mapping
 
-    league = await ongoing_league(tmp_path)
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
+    from leaguebot.core.services.change_queue import Step
+    from tests.support.change_queue import restart_queue
+
+    further = "a_further_module_s_post"
+    league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    await posted_forecast(league, R3, 2, 8002)
     [old] = await league.rows("SELECT scheduled_at FROM rounds WHERE id = ?", R3)
     seen: list[tuple[Any, ...]] = []
+    carried: list[Any] = []
 
     async def _part(db: Any, rid: int, *_rest: Any, **_kwargs: Any) -> dict[str, Any]:
         cursor = await db.execute("SELECT round_number, scheduled_at FROM rounds WHERE id = ?",
@@ -876,13 +892,34 @@ async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_ren
             [outside] = await cursor.fetchone()
         seen.append((rid, number, moment != old["scheduled_at"], audited,
                      outside == old["scheduled_at"]))
-        return {}
+        return {further: [rid, number]}
+
+    async def _posts(*args: Any, **kwargs: Any) -> tuple[PlannedStep, ...]:
+        [kept] = [each[further] for each in (*args, *kwargs.values())
+                  if isinstance(each, Mapping) and further in each]
+        return (PlannedStep(further, {"from_the_save": kept}),)
+
+    async def _post(ctx: Any) -> StepResult:
+        carried.append(ctx.step_payload["from_the_save"])
+        return StepResult()
 
     league.bot.round_amended.subscribe(_part)
+    league.bot.round_armed.subscribe(_posts)
+    league.bot.amendment_steps.subscribe(
+        lambda: {further: Step(further, StepKind.ACT, _post)}
+    )
+    await restart_queue(league.bot)
     await _amended(league, scheduled_at=_at(league, days=150))
+    await _run_through(league, "apply")
+    await restart_queue(league.bot)
     await run_queue(league.bot)
 
     assert seen == [(R3, 3, True, 1, True)]
+    assert await _ran(league) == [
+        "judge", "unarm", "apply", "arm", "take_down_call", "delete_forecast",
+        "notify_invalidation", further, "close",
+    ]
+    assert carried == [[R3, 3]]
     assert (await _numbers(league))[R3] == 4
 
 
