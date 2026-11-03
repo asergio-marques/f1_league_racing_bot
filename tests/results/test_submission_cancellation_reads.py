@@ -89,12 +89,9 @@ async def test_an_open_submission_counts_as_accepted_once_any_session_is_saved(
     """Round 1's submission (channel 690) stands open with nothing accepted, or with a session's
     results accepted, or with a session entered as not held; or it has been closed, a session
     accepted. Round 2's submission stands open too, but round 2 is not asked about, and round 3
-    has none. Asked about rounds 1 and 3, both readers give round 1's submission alone, accepted
+    has none. Asked about rounds 1 and 3, the reader gives round 1's submission alone, accepted
     once any session of it is saved, and nothing for a closed submission."""
-    from leaguebot.results.services.result_submission_service import (
-        open_submissions,
-        open_submissions_on,
-    )
+    from leaguebot.results.services.result_submission_service import open_submissions_on
 
     db_path = await _make_db(tmp_path)
     await _submission(db_path, ROUND_ID, closed=case == "closed")
@@ -105,7 +102,6 @@ async def test_an_open_submission_counts_as_accepted_once_any_session_is_saved(
     elif case == "closed":
         await _session(db_path, ROUND_ID, "ACTIVE")
 
-    assert _read(await open_submissions(db_path, [ROUND_ID, THIRD_ROUND_ID])) == expected
     async with get_connection(db_path) as db:
         assert _read(await open_submissions_on(db, [ROUND_ID, THIRD_ROUND_ID])) == expected
 

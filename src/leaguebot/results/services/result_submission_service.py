@@ -148,12 +148,6 @@ async def open_submissions_on(
     return found
 
 
-async def open_submissions(db_path: str, round_ids: Iterable[int]) -> list[OpenSubmission]:
-    """`open_submissions_on` on a connection of its own."""
-    async with get_connection(db_path) as db:
-        return await open_submissions_on(db, round_ids)
-
-
 # ---------------------------------------------------------------------------
 # Which session each dialogue expects next (#439)
 #
