@@ -708,23 +708,26 @@ sweep to apply, which puts a module's rule in core.
 **Jobs are made only through the scheduler service.** Nothing else arms, finds or removes a job. A
 round's job is named from the round and the event, so arming it again replaces the old one instead
 of adding a second (the `_round_job_suffix` docstring in the scheduler service). A round's timed
-work is armed by the scheduler service's own functions. Each reads when the round's events fall
-from `round_event_moments`, or, for a clean-up alone, from `clean_up_moment`, by which
-`round_event_moments` places the clean-ups too. `schedule_round` arms its forecasts, and its results
-submission through `schedule_result_submission_jobs`, which also arms the submission alone.
-`schedule_all_rounds` arms a season's rounds through `schedule_round`. `schedule_attendance_round`
-arms its check-in. Beside them, `run_result_submission_now` runs at once
-the submission of a round whose moment has passed. Only three changes call them: a season's
-approval, the amendment of a round (`round_amend_change`), and the re-arming of a round whose timed
-work a refused cancellation took, a change of its own (`round_rearm_change`, `season.round.rearm`)
-built from the amendment's steps. The arming step those two share calls `run_result_submission_now`
-for a passed round. Every path arms through these functions. A restart arms nothing, the job store
-keeping the jobs and the start-up sweep catching up those missed (above), and neither does test
-mode, whose advance brings forward work already armed or found due in the database. A round's
-next-day clean-ups, which its weather and its attendance arming both owe, are armed from the same
-moments: the forecast's by `schedule_round` and the check-in's by `schedule_attendance_round`,
-and both by `schedule_round_cleanups`, which the re-arming calls alone for a round raced, or ended
-cancelled because every session was entered as not held.
+work is armed by the scheduler service's own functions. Each reads when the round's events fall from
+`round_event_moments`, but for the clean-ups. Every clean-up is armed at the moment
+`clean_up_moment` gives, and `round_event_moments` places both clean-ups by it too. `schedule_round`
+arms a round's forecasts and, through `schedule_result_submission_jobs`, its results submission;
+that function arms only the submission, and a season's approval and an amendment also call it on its
+own. `schedule_all_rounds` arms a season's rounds through `schedule_round`, and
+`schedule_attendance_round` a round's check-in. An arming function that skips a job whose moment has
+passed judges it against the `now` it is handed ("The time is always passed in"). Beside them,
+`run_result_submission_now` runs at once the submission of a round whose moment has passed. Only
+three changes call them: a season's approval, the amendment of a round (`round_amend_change`), and
+the re-arming of a round whose timed work a refused cancellation took, a change of its own
+(`round_rearm_change`, `season.round.rearm`) built from the amendment's steps. The arming step those
+two share calls `run_result_submission_now` for a passed round. Every path arms through these
+functions. A restart arms nothing, the job store keeping the jobs and the start-up sweep catching up
+those missed (above), and neither does test mode, whose advance brings forward work already armed or
+found due in the database. A round's next-day clean-ups, which its weather and its attendance arming
+both owe, are armed with them: the forecast's by `schedule_round` and the check-in's by
+`schedule_attendance_round`. `schedule_round_cleanups` arms either or both on their own, and the
+re-arming calls it alone for a round raced, or ended cancelled because every session was entered as
+not held.
 
 **A delay is a one-off timer that asks a change.** The queue holds no delay of its own. Where
 something must happen a set time after a job (a season review's, a correction's or an
