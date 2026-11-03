@@ -593,33 +593,43 @@ async def test_a_module_s_job_of_the_season_s_end_is_named_as_today_when_it_stop
     assert f": {_logged(name)} for " in stops[-1]
 
 
-#: Each end of a season whose saves a module's part joins: the change's kind, and its save that
-#: returns the drivers.
+#: Each end of a season whose saves a module's part joins: the change's kind, and the season's
+#: status while its save that returns the drivers stands open, the season not yet ended.
 _END_SAVES = [
-    pytest.param(SEASON_COMPLETE_KIND, id="completion"),
-    pytest.param(SEASON_CANCEL_KIND, id="cancellation"),
+    pytest.param(SEASON_COMPLETE_KIND, "ACTIVE", id="completion"),
+    pytest.param(SEASON_CANCEL_KIND, "ACTIVE", id="cancellation"),
+    pytest.param(SEASON_ABORT_KIND, "SETUP", id="abort"),
 ]
 
 
 @pytest.mark.xfail(strict=True, reason="#283: a season's end hands its saves to no hook yet")
-@pytest.mark.parametrize("kind", _END_SAVES)
-async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(tmp_path, kind):
+@pytest.mark.parametrize("kind, standing", _END_SAVES)
+async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(
+    tmp_path, kind, standing,
+):
     """Kimi (105) part-way through signing up. A further module signs up to the drivers a season's
     end returns and to the accounts its last save finds untold, and the season is completed (every
-    round final), or cancelled (ongoing). The part for the drivers returned is called
-    once, in `end`, with that save's own connection and the drivers the pass returned, Kimi among
-    them: on that connection Kimi's signup has already ended and the season is not yet archived,
-    while another connection still reads Kimi as signing up. The part for the untold is called
+    round final), cancelled (ongoing) or aborted (in Placements). The part for the drivers returned
+    is called once, in `end`, with that save's own connection and the drivers the pass returned,
+    Kimi among them: on that connection Kimi's signup has already ended and the season is not yet
+    archived or deleted, while another connection still reads Kimi as signing up. The part for the untold is called
     once, in `close`, with that save's own connection, `end` done and `close` not. What the part for the drivers returned writes on its
     connection is unseen elsewhere while `end` stands open, and what each writes is saved with its
     save."""
     from leaguebot.core.db.database import get_connection
-    from tests.support.season_league import cancel_season, ongoing_league
+    from tests.support.season_league import (
+        abort_season,
+        cancel_season,
+        ongoing_league,
+        setup_league,
+    )
 
     if kind == SEASON_COMPLETE_KIND:
         league = await pending_completion_league(tmp_path)
-    else:
+    elif kind == SEASON_CANCEL_KIND:
         league = await ongoing_league(tmp_path)
+    else:
+        league = await setup_league(tmp_path)
     await signing_up(league)
     before = await driver_state(league, SIGNING_UP)
     await league.write("CREATE TABLE written_by_a_module (part TEXT)")
@@ -649,7 +659,7 @@ async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(t
         [status] = await cursor.fetchone()
         unseen, done = await _written(db, "returned")
         seen.append(("returned", str(SIGNING_UP) in repr(drivers),
-                     found is None or found[0] != before, status == "ACTIVE",
+                     found is None or found[0] != before, status == standing,
                      await driver_state(league, SIGNING_UP) == before, unseen,
                      done.get("end"), done.get("close")))
 
@@ -662,8 +672,10 @@ async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(t
     league.bot.season_end_untold.subscribe(_untold)
     if kind == SEASON_COMPLETE_KIND:
         await _asked(league)
-    else:
+    elif kind == SEASON_CANCEL_KIND:
         await cancel_season(league)
+    else:
+        await abort_season(league)
 
     await run_queue(league.bot)
 
