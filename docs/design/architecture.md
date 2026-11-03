@@ -161,13 +161,12 @@ turns itself on and off").
 the rows concerned, and the connection of the save it runs in, where the moment falls inside one.
 Each module signs up a function of its own, and core calls each in the order they signed up. A
 subscriber may hand something back, which the hook gathers in that order; what core does with it is
-the moment's: a line to write, a step to plan, a refusal. The
-hook names no module and no module's operation, so a module's part of the moment is the module's own
-code, and a module added later signs up without core changing. A hook keyed by a kind takes one
-function for each key instead, as a kind of timed job takes its one handler (see "Timed work and
-restarts"). A link the dependency table allows between two modules is not one of core's hooks: there
-the module depended on may name what it asks of its dependant, as results does of attendance
-(below).
+the moment's: a line to write, a step to plan, a refusal to give. The hook names no module and no
+module's operation, so a module's part of the moment is the module's own code, and a module added
+later signs up without core changing. A hook keyed by a kind takes one function for each key
+instead, as a kind of timed job takes its one handler (see "Timed work and restarts"). A link the
+dependency table allows between two modules is not one of core's hooks: there the module depended on
+may name what it asks of its dependant, as results does of attendance (below).
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
