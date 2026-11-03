@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 import aiosqlite
@@ -26,7 +27,6 @@ from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 if TYPE_CHECKING:
     from leaguebot.core.services.calendar_post_service import CalendarCommandOutcome
     from leaguebot.image.services.image_lineup_post import LineupPostOutcome
-    from leaguebot.core.services.cancellation_changes import CancellationHooks
     from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.round_amend_change import AmendHooks
     from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
@@ -322,30 +322,24 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     """Make the hooks a cancellation of rounds declares, and sign each module's part up to them,
     in the order core calls them: what stands in the way (results' refusal of a round whose
     submission accepted results), the rounds called off (results closes their empty submissions,
-    in the save), and the steps a module plans (results' deletion of a submission channel)."""
+    in the save, then attendance's take-down of their calls), and the steps a module plans
+    (results' deletion of a submission channel, then attendance's take-down of a call)."""
+    from leaguebot.attendance.services import check_in_changes
     from leaguebot.results.services import result_submission_service, review_posting
 
     bot.cancellation_refused = AwaitedHook()
     bot.cancellation_refused.subscribe(result_submission_service.cancellation_refusal)
     bot.rounds_called_off = AwaitedHook()
     bot.rounds_called_off.subscribe(result_submission_service.close_called_off_on)
+    bot.rounds_called_off.subscribe(check_in_changes.take_down_called_off_on)
     bot.cancellation_steps = Hook()
     bot.cancellation_steps.subscribe(review_posting.cancellation_steps)
-
-
-def _cancellation_hooks(bot: LeagueBot) -> "CancellationHooks":
-    """What a cancellation needs of attendance's check-in call, handed it here so that core
-    imports nothing of attendance."""
-    from leaguebot.attendance.services.check_in_changes import (
-        check_in_deletes,
-        forget_check_in_call_on,
-    )
-    from leaguebot.core.services.cancellation_changes import CancellationHooks
-
-    return CancellationHooks(
-        check_in_deletes=check_in_deletes(bot, bot.attendance_service),
-        forget_check_in_on=forget_check_in_call_on,
-    )
+    bot.cancellation_steps.subscribe(partial(
+        check_in_changes.take_down_steps,
+        seasons=bot.season_service,
+        modules=bot.module_service,
+        deletes=check_in_changes.check_in_deletes(bot, bot.attendance_service),
+    ))
 
 
 async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "Path":
@@ -894,7 +888,6 @@ def register_change_types(bot: LeagueBot) -> None:
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
             cancellation_steps=bot.cancellation_steps,
-            cancellation=_cancellation_hooks(bot),
             hooks=hooks,
             now=lambda: bot.change_queue.now(),
         )
@@ -990,7 +983,6 @@ def register_change_types(bot: LeagueBot) -> None:
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
             cancellation_steps=bot.cancellation_steps,
-            cancellation=_cancellation_hooks(bot),
             amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),
         )
@@ -1003,7 +995,6 @@ def register_change_types(bot: LeagueBot) -> None:
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
             cancellation_steps=bot.cancellation_steps,
-            cancellation=_cancellation_hooks(bot),
             amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),
         )

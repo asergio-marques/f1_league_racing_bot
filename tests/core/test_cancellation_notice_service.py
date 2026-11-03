@@ -28,9 +28,6 @@ from leaguebot.core.services import cancellation_notice_service as cns
 from tests.support.change_queue import in_a_job
 from tests.support.mentions import NOBODY, notified
 
-#: Why the take-down's tests fail until the build moves the take-down into attendance.
-_TAKE_DOWN_IN_ATTENDANCE = "#283: the take-down of a call is still core's, not attendance's"
-
 SEASON_ID = 1
 DIVISION_ID = 11
 ROLE_ID = 555
@@ -327,7 +324,6 @@ async def _audit(tmp_path, *, distribute=False, round_ids=(ROUND_ID,)):
     return NS(audit="".join(audits))
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKE_DOWN_IN_ATTENDANCE)
 async def test_the_audit_groups_the_drivers_by_their_answer(tmp_path):
     """Before a distribution, the audit says nothing of reserves."""
     report = await _audit(tmp_path)
@@ -340,7 +336,6 @@ async def test_the_audit_groups_the_drivers_by_their_answer(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKE_DOWN_IN_ATTENDANCE)
 async def test_the_audit_names_the_reserves_once_they_are_distributed(tmp_path):
     report = await _audit(tmp_path, distribute=True)
     assert "\n    accepted: <@101>, <@103> (Reserve 3), <@104> (Reserve 4)" in report.audit
@@ -349,7 +344,6 @@ async def test_the_audit_names_the_reserves_once_they_are_distributed(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKE_DOWN_IN_ATTENDANCE)
 async def test_a_round_whose_call_never_went_out_is_not_audited(tmp_path):
     report = await _audit(tmp_path, round_ids=(999,))
     assert report.audit == ""
@@ -432,7 +426,6 @@ async def test_a_raising_notice_names_a_channel_never_set(tmp_path):
     channels[FORECAST].send.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKE_DOWN_IN_ATTENDANCE)
 async def test_the_take_down_reads_the_check_in_before_the_call_comes_down(tmp_path):
     """Round 3 (Monza) has its call standing, Lewis (101) accepted and Max (102) declined.
     Attendance's take-down reads that check-in first, then asks its delete steps
@@ -452,7 +445,6 @@ async def test_the_take_down_reads_the_check_in_before_the_call_comes_down(tmp_p
     assert deletes.calls == [(ROUND_ID, DIVISION_ID)]
 
 
-@pytest.mark.xfail(strict=True, reason=_TAKE_DOWN_IN_ATTENDANCE)
 async def test_a_take_down_discord_refuses_raises_keeping_the_audit_and_the_ids(tmp_path):
     """Round 3's call, its last notice and its distribution (9001-9003) stand, and attendance's
     delete steps report Discord refusing all three. Attendance's take-down raises

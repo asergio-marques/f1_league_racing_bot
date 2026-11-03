@@ -21,7 +21,7 @@ core, is refreshed whatever the modules.
 
 **Every send is a job of its own.** A season's, a division's and a round's cancellation all run
 on the change queue (`cancellation_changes`), where each notice (`post_module_notice`) and each
-call taken down (`take_down_call`) is a job: one Discord refuses stops the queue until it is
+call taken down (attendance's `take_down_call`) is a job: one Discord refuses stops the queue until it is
 retried or discarded, and is named only once discarded. So each raises, turning only a failure
 Discord caused into `StepFailedOnDiscord` and letting a fault of the bot's own through unchanged.
 """
@@ -287,10 +287,12 @@ async def take_down_call(
 ) -> dict:
     """Read *round_id*'s check-in, then take its call down, as a job on the change queue.
 
-    The call comes down through *check_in_deletes*, attendance's own delete steps as the builder
-    hands them (`CancellationHooks.check_in_deletes`), so that this module imports nothing of
-    attendance: called with the round and the division, it gives True where a call stood. Its
-    record is not forgotten here: the job's record does it, in the save that marks the job done.
+    The amendment's take-down; a cancellation's is attendance's own step
+    (`check_in_changes.take_down_call`). The call comes down through *check_in_deletes*,
+    attendance's own delete steps as the builder hands them (`AmendHooks.check_in_deletes`), so
+    that this module imports nothing of attendance: called with the round and the division, it
+    gives True where a call stood. Its record is not forgotten here: the job's record does it, in
+    the save that marks the job done.
 
     Returns `{"audit", "taken_down"}`: the log-channel record of the check-in (`checkin_record`),
     read **before** the call comes down, and whether a call stood. Where a message cannot be

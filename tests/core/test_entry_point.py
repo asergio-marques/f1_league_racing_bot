@@ -126,7 +126,6 @@ _CANCELLATION_PARTS = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#283: no module is signed up to a cancellation's hooks")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The

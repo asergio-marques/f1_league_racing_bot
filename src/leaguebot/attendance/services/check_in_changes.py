@@ -63,9 +63,9 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 import aiosqlite
@@ -75,6 +75,7 @@ from leaguebot.attendance.models.attendance import AttendanceConfig, RsvpEmbedMe
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.cancellation import CalledOffSteps, CancellationRound
 from leaguebot.core.models.change import (
     CHECK_IN_CALL,
     CHECK_IN_CLEAN_UP,
@@ -89,7 +90,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat
-from leaguebot.core.services import season_service, standing_posts
+from leaguebot.core.services import cancellation_notice_service, season_service, standing_posts
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
     ChangeType,
@@ -109,6 +110,9 @@ from leaguebot.core.services.test_mode_service import (
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 
+if TYPE_CHECKING:
+    from leaguebot.core.services.module_service import ModuleService
+
 log = logging.getLogger(__name__)
 
 GIVE_UP = "give_up"
@@ -122,6 +126,8 @@ ANNOUNCE = "announce"
 PLAN_CLEAN_UP = "plan"
 DELETE_MESSAGE = "delete_message"
 MARK_CLEARED = "mark_cleared"
+#: Taking a round's call down when a cancellation calls the round off (`take_down_steps`).
+TAKE_DOWN_CALL = "take_down_call"
 
 
 def _value(ctx: StepContext, key: str, default: Any = None) -> Any:
@@ -367,7 +373,7 @@ def check_in_deletes(
     bot: LeagueBot, service: AttendanceService
 ) -> Callable[[int, int], Awaitable[bool]]:
     """Attendance's delete of a round's check-in call, as a cancellation's take-down and an
-    amendment's ask it (`CancellationHooks.check_in_deletes`, `AmendHooks.check_in_deletes`).
+    amendment's ask it (`take_down_call`, `AmendHooks.check_in_deletes`).
 
     Called with the round and the division it takes the call down with the last notice and the
     reserve announcement beside it, each from the channel it was posted in (the last two go to the
@@ -451,6 +457,131 @@ async def _forget_vanished_call(
             )
 
     return forget
+
+
+async def take_down_call(
+    bot: LeagueBot,
+    division: Any,
+    round_id: int,
+    *,
+    check_in_deletes: Callable[[int, int], Awaitable[bool]],
+) -> dict[str, Any]:
+    """Read *round_id*'s check-in, then take its call down, as a job on the change queue.
+
+    *division* is anything with an `id` and a `name`. The call comes down through
+    *check_in_deletes* (`check_in_deletes`): called with the round and the division, it gives True
+    where a call stood. Its record is not forgotten here: the job's record does it, in the save
+    that marks the job done.
+
+    Returns `{"audit", "taken_down"}`: the log-channel record of the check-in (core's
+    `checkin_record`, which stays core's until the notices move), read **before** the call comes
+    down, and whether a call stood. Where a message cannot be deleted it raises
+    `StepFailedOnDiscord` whose `result` is `{"audit", "undeleted"}`, so the audit is kept on the
+    job whether it goes through or is discarded, and the call's record stays for the next try,
+    which reads the audit again. The raise is `from` the Discord failure that caused it, as
+    *check_in_deletes* raises it.
+    """
+    audit = await cancellation_notice_service.checkin_record(bot.db_path, division, round_id)
+    try:
+        taken_down = await check_in_deletes(round_id, division.id)
+    except StepFailedOnDiscord as exc:
+        undeleted = (exc.result or {}).get("undeleted", [])
+        raise StepFailedOnDiscord(
+            exc.reason, result={"audit": audit, "undeleted": undeleted}
+        ) from exc.__cause__
+    return {"audit": audit, "taken_down": taken_down}
+
+
+async def take_down_called_off_on(
+    db: aiosqlite.Connection, _scope: str, rounds: Iterable[CancellationRound]
+) -> CalledOffSteps:
+    """Plan the take-down of the check-in call of each of *rounds* that a cancellation calls off
+    and that has one standing, reading attendance's own table on the save's connection and
+    writing nothing. Subscribed to core's `rounds_called_off`.
+
+    A call is taken down for a round in round order, planned for its division straight after the
+    division's check-in notice (`take_down_steps` runs each).
+    """
+    called_off = sorted(
+        (each for each in rounds if each.called_off), key=lambda each: each.round_number
+    )
+    if not called_off:
+        return CalledOffSteps()
+    marks = ",".join("?" * len(called_off))
+    cursor = await db.execute(
+        f"SELECT DISTINCT round_id FROM rsvp_embed_messages WHERE round_id IN ({marks})",  # noqa: S608
+        [each.round_id for each in called_off],
+    )
+    standing = {int(row["round_id"]) for row in await cursor.fetchall()}
+    with_division: dict[int, list[PlannedStep]] = {}
+    for each in called_off:
+        if each.round_id in standing:
+            with_division.setdefault(each.division_id, []).append(PlannedStep(TAKE_DOWN_CALL, {
+                "division_id": each.division_id,
+                "division_name": each.division_name,
+                "season_id": each.season_id,
+                "round_id": each.round_id,
+                "round_number": each.round_number,
+            }))
+    return CalledOffSteps(
+        with_division={division_id: tuple(steps) for division_id, steps in with_division.items()}
+    )
+
+
+def take_down_steps(
+    *,
+    seasons: season_service.SeasonService,
+    modules: ModuleService,
+    deletes: Callable[[int, int], Awaitable[bool]],
+) -> dict[str, Step]:
+    """The step a cancellation takes a round's call down with, by name: `take_down_call` reads the
+    check-in, deletes the call's messages through *deletes* (`check_in_deletes`) and, in the save
+    that marks the job done, forgets the call's record. A job that fails to delete stops the
+    queue; it is due only while *modules* has attendance on. The builder hands in *seasons* (the
+    division the job names) and signs this up, with them bound, to core's `cancellation_steps`."""
+
+    async def take_down(ctx: StepContext) -> StepResult:
+        payload = ctx.step_payload
+        division = next(
+            (
+                each
+                for each in await seasons.get_divisions(int(payload["season_id"]))
+                if each.id == int(payload["division_id"])
+            ),
+            None,
+        )
+        if division is None:
+            raise LookupError(f"division {payload['division_id']} is no longer there")
+        return StepResult(
+            result=await take_down_call(
+                ctx.bot, division, int(payload["round_id"]),
+                check_in_deletes=deletes,
+            )
+        )
+
+    async def forget_call(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        """Drop the call's record once its messages are down, in the save that marks the job done."""
+        if result.result.get("taken_down"):
+            await forget_check_in_call_on(
+                db, int(ctx.step_payload["round_id"]), int(ctx.step_payload["division_id"])
+            )
+
+    async def attendance_on(_ctx: StepContext) -> bool:
+        return await modules.is_attendance_enabled()
+
+    async def describe(ctx: StepContext) -> str:
+        payload = ctx.step_payload
+        return (
+            f"taking down the check-in call of round {payload['round_number']} in "
+            f"**{payload['division_name']}**"
+        )
+
+    return {
+        TAKE_DOWN_CALL: Step(
+            TAKE_DOWN_CALL, StepKind.ACT, take_down, still_due=attendance_on, record=forget_call,
+            describe=describe,
+        ),
+    }
 
 
 def given_up_text(row: aiosqlite.Row) -> str:
