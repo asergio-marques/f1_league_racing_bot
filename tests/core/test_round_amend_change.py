@@ -23,6 +23,7 @@ import importlib
 import json
 import sqlite3
 import sys
+from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -352,19 +353,25 @@ def _unarming_mended(league: Any) -> None:
     league.bot.scheduler_service.cancel_round = MagicMock(side_effect=league.unarmed.append)
 
 
-def _judging_fails(league: Any) -> None:
+def _judging_fails(monkeypatch: Any) -> Callable[[], None]:
     """The amendment's windows can be read once more, by the check as the change starts, and
-    not again, so that the change stops at `judge`."""
-    reading = league.bot.amendment_windows
+    not again, so that the change stops at `judge`: weather's settings, which an amendment reads
+    whatever weather's switch, cannot be read a second time. Gives what mends it."""
+    from leaguebot.weather.services import weather_config_service
+
+    reading = weather_config_service.get_weather_pipeline_config
     reads = {"n": 0}
 
-    def _read() -> Any:
+    async def _read(db_path: str) -> Any:
         reads["n"] += 1
         if reads["n"] >= 2:
             raise RuntimeError("database is locked")
-        return reading()
+        return await reading(db_path)
 
-    league.bot.amendment_windows = _read
+    monkeypatch.setattr(weather_config_service, "get_weather_pipeline_config", _read)
+    return lambda: monkeypatch.setattr(
+        weather_config_service, "get_weather_pipeline_config", reading
+    )
 
 
 async def _stopped_blocker(league: Any) -> None:
@@ -633,7 +640,7 @@ async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_word
 
 
 async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_is_refused_by_the_save(
-    tmp_path,
+    tmp_path, monkeypatch,
 ):
     """Attendance on, its check-in deadline one hour before the round. Pro's round 3 is moved to
     two hours from now and confirmed; the check passes, and the judgement stops, its windows
@@ -644,16 +651,15 @@ async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_i
     league = await ongoing_league(tmp_path, attendance=True)
     await league.write("UPDATE attendance_config SET rsvp_deadline_hours = 1 WHERE id = 1")
     before = await _moment(league)
-    reading = league.bot.amendment_windows
     await _amended(league, scheduled_at=_at(league, hours=2))
-    _judging_fails(league)
+    mend = _judging_fails(monkeypatch)
     await run_queue(league.bot)
     assert await _stopped_at(league) == "judge"
     await cancel_round(league, "Am", 4)
     assert not league.errors, league.errors
 
     league.clock.advance(hours=2, minutes=1)
-    league.bot.amendment_windows = reading
+    mend()
     await retry_job(league.bot)
 
     refused = (
@@ -795,7 +801,7 @@ async def test_the_jobs_run_in_today_s_order(tmp_path, phases, reposts, weather,
 
 @pytest.mark.parametrize("stopped", ["judge", "unarm"])
 async def test_a_discarded_judgement_or_removal_amends_nothing_and_leaves_the_timed_work(
-    tmp_path, stopped,
+    tmp_path, stopped, monkeypatch,
 ):
     """The amendment stops at its judgement (its windows cannot be read) or at the removal of
     the timed work, and a league admin discards it: nothing is amended, the round keeps its timed
@@ -804,7 +810,7 @@ async def test_a_discarded_judgement_or_removal_amends_nothing_and_leaves_the_ti
     before = await _moment(league)
     press = await _amended(league, scheduled_at=_at(league, days=91))
     if stopped == "judge":
-        _judging_fails(league)
+        _judging_fails(monkeypatch)
     else:
         _unarming_fails(league)
     await run_queue(league.bot)

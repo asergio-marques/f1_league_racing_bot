@@ -216,19 +216,21 @@ async def test_a_re_arming_whose_round_can_no_longer_be_cancelled_is_dropped(tmp
     pytest.param("judge"),
     pytest.param("arm"),
 ])
-async def test_the_re_arming_cannot_be_discarded(tmp_path, job):
+async def test_the_re_arming_cannot_be_discarded(tmp_path, job, monkeypatch):
     """Pro's round 3's re-arming stops the queue: (judge) the windows it is judged by cannot be
     read, or (arm) the scheduler refuses to arm it. A league admin's Discard on the stopped job is
     refused, saying round 3 in **Pro** would be left with no timed work, never run; the queue
     stays stopped at it and nothing is armed. Once the fault is mended, a Retry arms the round."""
     league = await ongoing_league(tmp_path)
     assert await _ask_rearm(league) is not None
-    windows = league.bot.amendment_windows
+    from leaguebot.weather.services import weather_config_service
+
+    reading = weather_config_service.get_weather_pipeline_config
     if job == "judge":
-        def _unreadable() -> Any:
+        async def _unreadable(_db_path: str) -> Any:
             raise RuntimeError("database is locked")
 
-        league.bot.amendment_windows = _unreadable
+        monkeypatch.setattr(weather_config_service, "get_weather_pipeline_config", _unreadable)
     else:
         league.arming_fails = RuntimeError("job store unavailable")
     await run_queue(league.bot)
@@ -241,7 +243,7 @@ async def test_the_re_arming_cannot_be_discarded(tmp_path, job):
     assert (await stopped_job(league.db_path))["id"] == stopped["id"]
     assert league.armed == []
 
-    league.bot.amendment_windows = windows
+    monkeypatch.setattr(weather_config_service, "get_weather_pipeline_config", reading)
     league.arming_fails = None
     await retry_job(league.bot)
 
