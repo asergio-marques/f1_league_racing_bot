@@ -905,7 +905,7 @@ async def test_a_check_in_step_the_queue_drops_says_it_was_not_due(tmp_path, pha
     """Round 3 of Division 1's check-in call (5), last notice (6), deadline (7) or clean-up (9)
     is next, and the change queue drops the step's ask as not due. Advance asks for it once and
     replies that it was not due, naming the step, the division and the round, and not that it
-    is on the change queue."""
+    is on the change queue; it writes nothing to the log channel, as the step did nothing."""
     cog = _make_cog(await _make_db(tmp_path))
     cog.bot.change_queue.ask = AsyncMock(return_value=None)
     interaction = _interaction()
@@ -915,6 +915,7 @@ async def test_a_check_in_step_the_queue_drops_says_it_was_not_due(tmp_path, pha
     [(asked_kind, payload, _what, _origin)] = _asked(cog)
     assert (asked_kind, payload["round_id"]) == (kind, ROUND_ID)
     assert _replied(interaction) == CHECK_IN_NOT_DUE[phase]
+    assert _log_lines(cog) == []
 
 
 # ---------------------------------------------------------------------------
@@ -1040,7 +1041,7 @@ async def test_an_advanced_phase_of_a_raced_round_says_it_was_not_due(tmp_path):
     Circuit) was raced an hour ago with its Phase 1 not done (weather switched on after it).
     The maintainer advances its Phase 1: the change queue drops it as not due (A25), so the reply
     says it was not due and why, and not that it is on the change queue; nothing is asked of the
-    queue, nothing posted, and the phase stays undone."""
+    queue, nothing posted, nothing written to the log channel, and the phase stays undone."""
     from tests.support.change_queue import change_rows, run_queue, stopped_job
     from tests.support.season_league import DIVISIONS, PRO, ongoing_league, round_id
 
@@ -1072,6 +1073,7 @@ async def test_an_advanced_phase_of_a_raced_round_says_it_was_not_due(tmp_path):
     assert [row for row in await change_rows(league.db_path) if row["kind"] == FORECAST] == []
     assert await stopped_job(league.db_path) is None
     assert [mid for kind, cid, mid in league.events if cid == forecast] == []
+    assert league.log() == ""
     [row] = await league.rows("SELECT phase1_done FROM rounds WHERE id = ?", round_)
     assert row["phase1_done"] == 0
 
@@ -1147,7 +1149,8 @@ async def test_an_advanced_mystery_notice_of_a_raced_round_says_it_was_not_due(t
     """Season 3 is being raced in test mode, with weather on; Pro's round 3 is a mystery round
     raced an hour ago whose notice never went out. The maintainer advances its notice (0): the
     change queue drops it as not due (A25), so the reply says it was not due and why, and not
-    that it is on the change queue; nothing is asked of the queue, and nothing posted."""
+    that it is on the change queue; nothing is asked of the queue, nothing posted, and nothing
+    written to the log channel."""
     from tests.support.change_queue import change_rows, run_queue, stopped_job
     from tests.support.season_league import DIVISIONS, PRO, ongoing_league, round_id
 
@@ -1177,6 +1180,7 @@ async def test_an_advanced_mystery_notice_of_a_raced_round_says_it_was_not_due(t
     assert [row for row in await change_rows(league.db_path) if row["kind"] == FORECAST] == []
     assert await stopped_job(league.db_path) is None
     assert [mid for kind, cid, mid in league.events if cid == forecast] == []
+    assert league.log() == ""
 
 
 async def test_an_advanced_forecast_cleanup_with_no_forecast_standing_says_it_was_not_due(
@@ -1185,7 +1189,8 @@ async def test_an_advanced_forecast_cleanup_with_no_forecast_standing_says_it_wa
     """Season 3 is being raced in test mode, with weather on; Pro's round 3 was raced a day and
     an hour ago and no forecast of it is recorded. The maintainer advances its forecast cleanup
     (8): the change queue drops it as not due, so the reply says it was not due as no forecast
-    stands, and not that it is on the change queue; nothing is asked of the queue."""
+    stands, and not that it is on the change queue; nothing is asked of the queue, and nothing
+    written to the log channel."""
     from tests.support.change_queue import change_rows, stopped_job
     from tests.support.season_league import PRO, ongoing_league, round_id
 
@@ -1213,6 +1218,7 @@ async def test_an_advanced_forecast_cleanup_with_no_forecast_standing_says_it_wa
     assert [row for row in await change_rows(league.db_path)
             if row["kind"] == FORECAST_CLEAN_UP] == []
     assert await stopped_job(league.db_path) is None
+    assert league.log() == ""
 
 
 # ---------------------------------------------------------------------------
