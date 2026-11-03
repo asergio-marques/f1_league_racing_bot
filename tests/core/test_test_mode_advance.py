@@ -1188,18 +1188,27 @@ async def test_advance_reads_the_clock_once_for_the_step_it_offers_and_those_it_
 # step carries `advanced` and is judged by no clock (test-mode.md :100).
 
 
-async def _ask_as_advance(league, kind: str, round_id: int, round_number: int) -> None:
-    """Ask the change queue for check-in step *kind* of *round_id* as advance does, through the
-    cog's own ask, with the league's real queue; the queue is not run."""
+async def _ask_as_advance(league, phase_number: int, round_id: int, round_number: int) -> None:
+    """Run `/test-mode advance`, with test mode on, while Pro's check-in step *phase_number* of
+    *round_id* is next (found from database state), each kind's step signed up as the builder
+    signs it up (`_advancing`), with the league's real queue; the queue is not run."""
+    await league.set_test_mode(True)
+    # The step's job is taken down by round and kind; the league's double records a round's jobs
+    # taken down by round alone.
+    league.bot.scheduler_service.cancel_round = MagicMock()
     cog = _Cog.__new__(_Cog)
     cog.bot = league.bot
-    entry = {"round_id": round_id, "round_number": round_number, "division_name": "Pro"}
-    await cog._ask_check_in(entry, kind, "advancing the check-in")
+    entry = {"phase_number": phase_number, "kind": KIND_OF_PHASE[phase_number],
+             "round_id": round_id, "round_number": round_number,
+             "division_name": "Pro", "track_name": "Silverstone Circuit", "job_id": None}
+    with _advancing(league.bot, entry):
+        await undecorate(_Cog.advance)(cog, _interaction())
 
 
 async def test_advance_posts_a_past_dated_rounds_call_instead_of_giving_it_up(tmp_path):
     """Round 4 was raced an hour ago, so its check-in deadline passed three hours ago and no call
-    was ever posted for it. Advance asks its call and the queue runs: the call is posted in
+    was ever posted for it. With test mode on, the maintainer advances its call (5) and the queue
+    runs: the call is posted in
     Pro's check-in channel and recorded, the round's check-in is left open, and no line says the
     call was given up."""
     from datetime import timedelta as delta
@@ -1217,7 +1226,7 @@ async def test_advance_posts_a_past_dated_rounds_call_instead_of_giving_it_up(tm
     league = await _call_league(tmp_path)
     await _round_4_in(league, delta(hours=-1))
 
-    await _ask_as_advance(league, CHECK_IN_CALL, ROUND_4, 4)
+    await _ask_as_advance(league, 5, ROUND_4, 4)
     await run_queue(league.bot)
 
     assert len(_sent(league)) == 1
@@ -1232,7 +1241,8 @@ async def test_advance_posts_a_past_dated_rounds_call_instead_of_giving_it_up(tm
 
 async def test_an_advanced_last_notice_is_posted_after_the_real_deadline(tmp_path):
     """Round 3 is an hour off, so its two-hour deadline passed an hour ago, and its call stands
-    with no last notice. Advance asks the last notice and the queue runs: it is posted in Pro's
+    with no last notice. With test mode on, the maintainer advances the last notice (6) and the
+    queue runs: it is posted in Pro's
     check-in channel, not dropped for the real clock."""
     from datetime import timedelta as delta
 
@@ -1244,7 +1254,7 @@ async def test_an_advanced_last_notice_is_posted_after_the_real_deadline(tmp_pat
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
                        when.replace(tzinfo=None).isoformat(), ROUND_3)
 
-    await _ask_as_advance(league, CHECK_IN_LAST_NOTICE, ROUND_3, 3)
+    await _ask_as_advance(league, 6, ROUND_3, 3)
     await run_queue(league.bot)
 
     [posted] = _sent(league)
@@ -1254,7 +1264,8 @@ async def test_an_advanced_last_notice_is_posted_after_the_real_deadline(tmp_pat
 
 async def test_an_advanced_deadline_places_the_reserves_on_every_answer_held(tmp_path):
     """Round 3's deadline passed an hour ago. Rhea accepted half an hour before it and Sam ten
-    minutes after it. A timer's deadline places Rhea alone; advance's places both, Sam at least
+    minutes after it. A timer's deadline places Rhea alone; with test mode on, the deadline the
+    maintainer advances (7) places both, Sam at least
     on standby, whatever the real clock says."""
     from datetime import timedelta as delta
 
@@ -1274,7 +1285,7 @@ async def test_an_advanced_deadline_places_the_reserves_on_every_answer_held(tmp
     deadline = _deadline(league)
     await _reserves(league, rhea=deadline - delta(minutes=30), sam=deadline + delta(minutes=10))
 
-    await _ask_as_advance(league, CHECK_IN_DEADLINE, ROUND_3, 3)
+    await _ask_as_advance(league, 7, ROUND_3, 3)
     await run_queue(league.bot)
 
     assert await _placement(league, RHEA) == (FERRARI, 0)
