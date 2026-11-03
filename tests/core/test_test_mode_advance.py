@@ -331,14 +331,6 @@ async def test_an_empty_queue_says_so_and_names_what_comes_next(tmp_path):
 # Each kind's own step
 # ---------------------------------------------------------------------------
 
-#: Why advance does not yet run the kind's own step.
-_NO_ADVANCE_STEPS = (
-    "#283: advance switches on the entry's phase number rather than running the step signed up "
-    "for its kind"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_NO_ADVANCE_STEPS)
 @pytest.mark.parametrize("job_id", ["queued_job", None], ids=["from-the-job-store", "from-state"])
 @pytest.mark.parametrize(
     "phase_number",
@@ -389,7 +381,6 @@ async def test_advance_runs_the_kinds_own_step(tmp_path, monkeypatch, phase_numb
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ADVANCE_STEPS)
 async def test_advance_reports_a_kind_with_no_step_signed_up(tmp_path, monkeypatch):
     """Round 3 of Division 1's Phase 2 is next, and no step is signed up for `weather_p2`.
     Advance raises nothing: the maintainer gets the standard failure reply and the log channel
@@ -419,11 +410,7 @@ async def test_advance_reports_a_kind_with_no_step_signed_up(tmp_path, monkeypat
 
 @pytest.mark.parametrize("phase_number", [
     pytest.param(0, id="as the notice"),
-    pytest.param(1, id="as its weather_p1", marks=pytest.mark.xfail(
-        strict=True,
-        reason="#283: advance runs the entry's phase, not weather's weather_p1 step, which "
-               "decides the notice by the round's format",
-    )),
+    pytest.param(1, id="as its weather_p1"),
 ])
 async def test_a_mystery_notice_is_posted(tmp_path, phase_number):
     """Round 3 of Division 1 is a mystery round whose notice is next, its entry the notice (0)

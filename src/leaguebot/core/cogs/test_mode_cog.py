@@ -39,18 +39,13 @@ from leaguebot.core.services.test_mode_service import (
     PhaseEntry,
     build_review_summary,
     get_passed_over_steps,
-    standing_forecast_phases,
+    AdvanceStatus,
+    AdvanceStepFailed,
+    run_advance_step,
 )
 from leaguebot.core.models.change import (
-    CHECK_IN_CALL,
-    CHECK_IN_CLEAN_UP,
-    CHECK_IN_DEADLINE,
-    CHECK_IN_LAST_NOTICE,
-    FORECAST,
-    FORECAST_CLEAN_UP,
     FORECAST_FLUSH,
     ChangeOrigin,
-    forecasts_named,
 )
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import backup_service
@@ -339,314 +334,28 @@ class TestModeCog(commands.Cog):
             entry["track_name"],
         )
 
-        # ── Mystery round notice (phase_number=0) ──────────────────────────────
-        if phase_number == 0:
-            # Take the round's notice job down so it doesn't ask for the notice again at its own
-            # moment, and before asking, so that an ask that raised leaves no job to fire the
-            # notice a second time. By round and the `weather_p1` it is armed under, rather
-            # than by the entry's job: one found from database state carries none, yet its job
-            # may still be queued (#426).
-            self.bot.scheduler_service.cancel_round(
-                entry["round_id"], only=frozenset({"weather_p1"})
-            )
-            try:
-                asked = await self._ask_forecast(entry, 0)
-            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
-                await report_failure(
-                    interaction, exc, what=self._advance_what(interaction, "the Mystery Round notice", entry)
-                )
-                return
-            if asked is None:
-                await interaction.followup.send(
-                    f"🔮 The **Mystery Round notice** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** was not due: its race has been run.",
-                    ephemeral=True,
-                )
-                return
-            await interaction.followup.send(
-                f"🔮 The **Mystery Round notice** for "
-                f"**{entry['division_name']}** — **Round {entry['round_number']}** is on the "
-                f"change queue: it goes to the division forecast channel as soon as the queue "
-                f"reaches it.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-                f"  phase: Mystery Round notice\n"
-                f"  division: {entry['division_name']}\n"
-                f"  round: Round {entry['round_number']}",
-            )
-            return
-
-        # ── Result submission (phase_number=4) ───────────────────────────────────
-        if phase_number == 4:
-            from leaguebot.results.services.result_submission_service import (
-                is_submission_open,
-            )
-            from leaguebot.core.services.test_mode_service import round_result_status
-
-            # Guard: if a submission channel is already open, the admin must complete
-            # that submission before advancing to the next round.
-            if await is_submission_open(self.bot.db_path, entry["round_id"]):
-                # Results are not final until the appeals review is approved. A round sitting
-                # awaiting appeal verdicts has had its report verdicts settled already,
-                # so name whichever review is actually standing rather than always the first.
-                status = await round_result_status(self.bot.db_path, entry["round_id"])
-                if status != "FINAL":
-                    review = (
-                        "appeals review"
-                        if status == "AWAITING_APPEAL_VERDICTS"
-                        else "penalty review"
-                    )
-                    await refuse(
-                        interaction,
-                        f"⏸️ **{entry['division_name']}** — **Round {entry['round_number']}** "
-                        f"is awaiting {review} approval. Please complete the {review} in the "
-                        f"submission channel before advancing.",
-                        what=describe(interaction),
-                    )
-                    return
-                # Finalized (shouldn't normally reach here, but handle gracefully)
-                await refuse(
-                    interaction,
-                    f"⏸️ Result submission for "
-                    f"**{entry['division_name']}** — **Round {entry['round_number']}** "
-                    f"is already in progress. Please submit results in the submission "
-                    f"channel before advancing.",
-                    what=describe(interaction),
-                )
-                return
-
-            # Cancel the round's own results job before opening its wizard by hand. A
-            # weather-enabled season arms one for every round, test mode or not, and left
-            # queued it would fire again once its time came. The entry carries no job ID —
-            # results jobs never come from the job store — so it is found by round and
-            # prefix rather than by an ID rebuilt here (issue #139).
-            self.bot.scheduler_service.cancel_round(
-                entry["round_id"], only=frozenset({"results"})
-            )
-            try:
-                # Core names results' kind as a string and imports nothing of results.
-                await self.bot.change_queue.ask(
-                    "results.submission.open",
-                    {"round_id": entry["round_id"]},
-                    what=(
-                        f"opening round {entry['round_number']}'s results submission "
-                        f"in {entry['division_name']}"
-                    ),
-                    origin=ChangeOrigin.BOT,
-                )
-            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
-                await report_failure(
-                    interaction, exc, what=self._advance_what(interaction, "the round start", entry)
-                )
-                return
-            await interaction.followup.send(
-                f"⏩ The result submission of **{entry['division_name']}** — "
-                f"**Round {entry['round_number']}** (**{entry['track_name']}**) is on the change "
-                f"queue: its submission channel appears as soon as the queue reaches it.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-                f"  phase: result submission (on the change queue)\n"
-                f"  division: {entry['division_name']}\n"
-                f"  round: Round {entry['round_number']}",
-            )
-            return
-
-        # ── The check-in's call, last notice and deadline (phase_number=5, 6 and 7) ────
-        if phase_number in (5, 6, 7):
-            kind, step, emoji, name = {
-                5: (CHECK_IN_CALL, "the RSVP notice", "📨", "RSVP notice"),
-                6: (CHECK_IN_LAST_NOTICE, "the RSVP last-notice", "⏰", "RSVP last-notice"),
-                7: (CHECK_IN_DEADLINE, "the RSVP deadline", "🏁", "RSVP deadline"),
-            }[phase_number]
-            if entry["job_id"] is not None:
-                self.bot.scheduler_service.cancel_job(entry["job_id"])
-            try:
-                asked = await self._ask_check_in(entry, kind, step)
-            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
-                await report_failure(
-                    interaction, exc, what=self._advance_what(interaction, step, entry)
-                )
-                return
-            if asked is None:
-                await interaction.followup.send(
-                    f"{emoji} The **{name}** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** was not due.",
-                    ephemeral=True,
-                )
-                return
-            await interaction.followup.send(
-                f"{emoji} The **{name}** for **{entry['division_name']}** — "
-                f"**Round {entry['round_number']}** (**{entry['track_name']}**) is on the "
-                f"change queue: it goes to the RSVP channel as soon as the queue reaches it.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-                f"  phase: {('rsvp_notice', 'rsvp_last_notice', 'rsvp_deadline')[phase_number - 5]}\n"
-                f"  division: {entry['division_name']}\n"
-                f"  round: {entry['round_number']}",
-            )
-            return
-
-        # ── The cleanups a day after the round (phase_number=8 and 9, #425) ─────
-        if phase_number in (8, 9):
-            # By prefix rather than by the entry's job, which is None where the step was found
-            # from database state; a job left queued would fire again at its own moment.
-            prefix = "cleanup" if phase_number == 8 else "rsvp_cleanup"
-            what = "forecast cleanup" if phase_number == 8 else "check-in cleanup"
-            self.bot.scheduler_service.cancel_round(entry["round_id"], only=frozenset({prefix}))
-            standing: list[int] = []
-            try:
-                if phase_number == 8:
-                    standing = await standing_forecast_phases(self.bot.db_path, entry["round_id"])
-                    asked = await self._ask_forecast_clean_up(entry, standing)
-                else:
-                    asked = await self._ask_check_in(
-                        entry, CHECK_IN_CLEAN_UP, "taking down the check-in a day after the round"
-                    )
-            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
-                await report_failure(
-                    interaction, exc, what=self._advance_what(interaction, f"the {what}", entry)
-                )
-                return
-            if asked is None:
-                await interaction.followup.send(
-                    f"🧹 The **forecast cleanup** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** was not due: no forecast stands."
-                    if phase_number == 8 else
-                    f"🧹 The **check-in cleanup** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** was not due.",
-                    ephemeral=True,
-                )
-                return
-            if phase_number == 8:
-                reply = (
-                    f"🧹 The **forecast cleanup** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** is on the change queue: it deletes "
-                    f"{forecasts_named(standing)} as soon as the queue reaches it."
-                )
-            else:
-                reply = (
-                    f"🧹 The **check-in cleanup** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** is on the change queue: it takes down "
-                    f"the check-in call, last notice and reserve announcement as soon as the "
-                    f"queue reaches it."
-                )
-            await interaction.followup.send(reply, ephemeral=True)
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-                f"  phase: {prefix}\n"
-                f"  division: {entry['division_name']}\n"
-                f"  round: {entry['round_number']}",
-            )
-            return
-
-        # ── Normal weather phase dispatch ───────────────────────────────────────
-        # Cancel the scheduler job before asking so it doesn't double-fire later
-        if entry["job_id"] is not None:
-            self.bot.scheduler_service.cancel_job(entry["job_id"])
-
+        # The entry's kind's own step runs, its job taken down first (`run_advance_step`); this
+        # command words nothing of it but a failure's report, and the step's outcome.
         try:
-            asked = await self._ask_forecast(entry, phase_number)
-        except Exception as exc:  # noqa: BLE001 — reported here, to name the phase and the round
+            outcome = await run_advance_step(self.bot.scheduler_service, entry)
+        except Exception as exc:  # noqa: BLE001 — reported here, to name the step and the round
+            step, track = entry["kind"], None
+            fault: BaseException = exc
+            if isinstance(exc, AdvanceStepFailed):
+                step, track, fault = exc.step, exc.track, exc.__cause__ or exc
             await report_failure(
-                interaction,
-                exc,
-                what=self._advance_what(
-                    interaction, f"Phase {phase_number}", entry, track=entry["track_name"]
-                ),
+                interaction, fault, what=self._advance_what(interaction, step, entry, track=track)
             )
             return
-        if asked is None:
-            # The forecast's check dropped it (A25): its race has been run. Nothing is on the queue.
-            await interaction.followup.send(
-                f"⏩ **Phase {phase_number}** for **{entry['division_name']}** — "
-                f"**Round {entry['round_number']}** was not due: its race has been run.",
-                ephemeral=True,
-            )
+        if outcome.status is AdvanceStatus.REFUSED:
+            await refuse(interaction, outcome.reply, what=describe(interaction))
             return
-
-        await interaction.followup.send(
-            f"⏩ **Phase {phase_number}** for "
-            f"**{entry['division_name']}** — **{entry['track_name']}** is on the change "
-            f"queue: its forecast goes to the forecast channel and its calculation to the log "
-            f"channel as soon as the queue reaches it.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-            f"  phase: {phase_number}\n"
-            f"  division: {entry['division_name']}\n"
-            f"  track: {entry['track_name']}\n"
-            f"  round: {entry['round_number']}",
-        )
-    async def _ask_forecast(self, entry: PhaseEntry, phase: int) -> int | None:
-        """Ask the change queue, as the bot's, for *phase* of the entry's round (0 is a mystery
-        round's notice), standing in for the timer that `/test-mode advance` fires early. Returns
-        the change's id, or None where the forecast's check dropped it as not due."""
-        where = f"round {entry['round_number']} in **{entry['division_name']}**"
-        what = (
-            f"posting the mystery round notice of {where}"
-            if phase == 0
-            else f"drawing the Phase {phase} forecast of {where}"
-        )
-        return await self.bot.change_queue.ask(
-            FORECAST,
-            {
-                "round_id": entry["round_id"],
-                "phase": phase,
-                "division_name": entry["division_name"],
-                "round_number": entry["round_number"],
-            },
-            what=what,
-            origin=ChangeOrigin.BOT,
-        )
-
-    async def _ask_check_in(self, entry: PhaseEntry, kind: str, what: str) -> int | None:
-        """Ask the change queue, as the bot's, for the check-in step *kind* of the entry's round,
-        standing in for the timer that `/test-mode advance` fires early. Returns the change's id,
-        or None where the step's check dropped it as not due."""
-        payload: dict[str, object] = {
-            "round_id": entry["round_id"],
-            "division_name": entry["division_name"],
-            "round_number": entry["round_number"],
-            # Judged by no clock: under test mode the step that ends the check-in is the one
-            # advance fires, a past-dated round's call being posted however late it is.
-            "advanced": True,
-        }
-        if kind == CHECK_IN_CALL:
-            payload |= {"replaces": None, "late": False}
-        return await self.bot.change_queue.ask(
-            kind,
-            payload,
-            what=f"{what} of round {entry['round_number']} in **{entry['division_name']}**",
-            origin=ChangeOrigin.BOT,
-        )
-
-    async def _ask_forecast_clean_up(self, entry: PhaseEntry, standing: list[int]) -> int | None:
-        """Ask the change queue, as the bot's, to delete the forecast still standing (Phase 1 to 3)
-        of the entry's round, as its timer does a day after the race, named by the phases
-        *standing*. Returns the change's id, or None where no forecast stands."""
-        return await self.bot.change_queue.ask(
-            FORECAST_CLEAN_UP,
-            {
-                "round_id": entry["round_id"],
-                "phases": [1, 2, 3],
-                "clean_up": True,
-                "standing": standing,
-                "division_name": entry["division_name"],
-                "round_number": entry["round_number"],
-            },
-            what=(
-                f"deleting {forecasts_named(standing)} of round {entry['round_number']} in "
-                f"**{entry['division_name']}** a day after it"
-            ),
-            origin=ChangeOrigin.BOT,
-        )
+        await interaction.followup.send(outcome.reply, ephemeral=True)
+        if outcome.status is AdvanceStatus.ASKED:
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
+                f"{outcome.log}",
+            )
 
     @staticmethod
     def _advance_what(
