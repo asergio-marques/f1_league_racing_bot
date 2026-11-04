@@ -1286,7 +1286,8 @@ async def refresh_division_status_on(db: aiosqlite.Connection, division_id: int)
     fact and `/season cancel` can tell the running divisions apart from the called-off ones.
     Stored state can drift from the rounds it summarises, so this is called from every place a
     round's outcome settles — a round made FINAL or CANCELLED, by core's closers (all but
-    `close_raced_rounds_on`, whose season's cancellation then cancels the divisions) or by the
+    `cancel_division_on`, which cancels the division itself, and `close_raced_rounds_on`, whose
+    season's cancellation then cancels the divisions) or by the
     results module's own changes (the appeals approval, a round that starts with results off) — and
     again from the completion's first save, which cannot afford to strand a league on a stale
     row a second time (issue #154).
