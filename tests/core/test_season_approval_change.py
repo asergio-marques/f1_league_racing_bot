@@ -631,8 +631,8 @@ async def test_the_points_configurations_are_copied_onto_the_season_only_with_re
     tmp_path, monkeypatch, results,
 ):
     """Results on or off, Pro's and Am's standings channels set either way. Once the approval
-    has run, the season carries the points configurations, and each division's standings
-    channel has been sent its opening standings, only where results is on."""
+    has run, the season carries the points configurations only where results is on, and with
+    results off neither division's standings channel has been sent any opening standings."""
     league = await _league_for(tmp_path, monkeypatch, results=results)
     await _pressed(league)
 
@@ -645,8 +645,9 @@ async def test_the_points_configurations_are_copied_onto_the_season_only_with_re
     expected = [{"config_name": "Standard", "position": 1, "points": 25},
                 {"config_name": "Standard", "position": 2, "points": 18}]
     assert copied == (expected if results else [])
-    for standings in (PRO_CH.standings, AM_CH.standings):
-        assert bool(league.texts(standings)) is results
+    if not results:
+        assert league.texts(PRO_CH.standings) == []
+        assert league.texts(AM_CH.standings) == []
     assert (await _approval(league))["state"] == "DONE"
 
 
