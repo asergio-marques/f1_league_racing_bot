@@ -1723,6 +1723,35 @@ async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or
     assert await stopped_job(league.db_path) is None
 
 
+async def test_a_completion_whose_wind_down_close_is_discarded_closes_the_window_itself(tmp_path):
+    """The season Ongoing with signups open and every division done, driver 105 still filling in
+    the wizard, and admin 77 completes it: the completion winds the season down first. Returning
+    105 fails, so the wind-down's close of the window stops the queue, and once the database takes
+    it the admin discards that close. The queue runs on: the completion's own close closes the
+    window, 105 is told once and has their channel closed, and the season is completed. Neither
+    the reply nor the closing line names the window as not closed, as today."""
+    league = await pending_completion_league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
+    await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
+    await _refuse_returning(league, SIGNING_UP)
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is not None
+    assert (await league.season())["stage"] == "ONGOING_SIGNUPS"
+    assert await window_open(league)
+    await league.write("DROP TRIGGER refuse_return")
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert not await window_open(league)
+    assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED)]
+    assert league.locked == [SIGNING_UP]
+    assert await _status(league) == "COMPLETED"
+    assert WINDOW_OPEN not in reply(interaction)
+    [line] = _closing_lines(league)
+    assert WINDOW_OPEN not in line, line
+
+
 async def _league_ending(tmp_path: Any, end: str) -> Any:
     """The league whose season *end* closes: being set up for the abort, ongoing for the
     cancellation, ongoing with signups and every division done for the wind-down, pending
