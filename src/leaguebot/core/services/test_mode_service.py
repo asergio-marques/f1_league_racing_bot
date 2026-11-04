@@ -259,10 +259,7 @@ async def turn_test_mode_on(db_path: str, *, test_mode_turned_on: AwaitedHook) -
             "UPDATE server_configs SET test_mode_active = 1",
         )
         live = await live_season_stage_on(db)
-        if live is None:
-            await db.commit()
-            return []
-        handed_back = await test_mode_turned_on.call(db, live[0])
+        handed_back = await test_mode_turned_on.call(db, live[0]) if live is not None else []
         await db.commit()
     return [name for names in handed_back for name in names]
 
