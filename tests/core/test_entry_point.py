@@ -278,9 +278,11 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
             called.append(part)
         monkeypatch.setattr(importlib.import_module(module_name), name, season_end_spy,
                             raising=False)
+    handed: list[tuple] = []
     for _hook, module_name, name, part in _DELETE_PARTS:
-        async def delete_spy(*_args, part=part, **_kwargs):
+        async def delete_spy(*args, part=part, **_kwargs):
             called.append(part)
+            handed.append(args)
         monkeypatch.setattr(importlib.import_module(module_name), name, delete_spy,
                             raising=False)
     monkeypatch.setattr(importlib.import_module("leaguebot.signup.services.closing_steps"),
@@ -337,8 +339,11 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     assert not hasattr(bot, "season_end_untold")
     for hook in dict.fromkeys(each[0] for each in _DELETE_PARTS):
         called.clear()
+        handed.clear()
         await getattr(bot, hook).call(None, *_DELETE_PAYLOADS[hook])
         assert called == [part for each, _module, _name, part in _DELETE_PARTS if each == hook]
+        # Each part is handed the connection, then what the delete names.
+        assert handed == [(None, *_DELETE_PAYLOADS[hook])] * len(called)
 
 
 #: The windows the league configures in the pair test: attendance's three lead times, and
