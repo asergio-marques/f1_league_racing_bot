@@ -1332,6 +1332,7 @@ async def end_rounds_awaiting_results_on(
     actor_id: int,
     actor_name: str,
     now: datetime,
+    rounds_made_final: AwaitedHook,
 ) -> list[dict]:
     """Close every round of the active season that only the results module could move.
 
@@ -1410,6 +1411,9 @@ async def end_rounds_awaiting_results_on(
                 stamp,
             ),
         )
+
+    if rows:
+        await rounds_made_final.call(db, [row["id"] for row in rows])
 
     # Each of those rounds may have been the last thing its division was waiting on, and a
     # division finishing is what lets `/season complete` run at all (issue #154).
@@ -1694,6 +1698,7 @@ async def close_raced_rounds_on(
     actor_id: int,
     actor_name: str,
     now: datetime,
+    rounds_made_final: AwaitedHook,
 ) -> list[int]:
     """Close as FINAL every round of *season_id* raced but whose verdicts are open, on *db*.
 
@@ -1750,6 +1755,8 @@ async def close_raced_rounds_on(
                 now.isoformat(),
             ),
         )
+    if rows:
+        await rounds_made_final.call(db, [row["id"] for row in rows])
     return [row["id"] for row in rows]
 
 

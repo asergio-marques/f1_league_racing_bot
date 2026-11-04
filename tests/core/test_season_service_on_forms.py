@@ -558,10 +558,6 @@ async def test_a_season_s_divisions_are_cancelled_on_the_save_handed_leaving_its
         assert await _statuses(db, "rounds", [unraced]) == {unraced: "NOT_RUN"}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: close_raced_rounds_on does not yet hand its rounds to rounds_made_final",
-)
 async def test_raced_rounds_are_closed_on_the_save_handed(tmp_path) -> None:
     """Round 1 is awaiting its report verdicts, round 2 not yet run. Round 1 is made final and
     audited at the moment handed, and handed alone to the hook a round made final calls, once, on

@@ -259,6 +259,15 @@ def _sign_up_to_pack(bot: LeagueBot) -> None:
     bot.bot_packed.subscribe(results_purge_service.bot_packed_on)
 
 
+def _sign_up_to_rounds_made_final(bot: LeagueBot) -> None:
+    """Make the hook a round's results made final declares, and sign each module's part up to it:
+    results marking the drivers who raced each round as former drivers, on the closing's
+    connection, inside its save (architecture.md, "How modules and core fit together"). The
+    builder hands it to the two closers that make a round FINAL: results turned off, and a
+    season cancelled."""
+    bot.rounds_made_final = AwaitedHook()
+
+
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
     """Make the hooks a season's end declares, and sign each module's part up to them, in the order
     core calls them: what stands in the way of the completion and of the cancellation (results'
@@ -519,7 +528,10 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.results.services.review_stage_change import review_stage_change
 
     bot.change_queue.register(
-        results_off_change(attendance_off_on=bot.attendance_service.switch_off_on)
+        results_off_change(
+            attendance_off_on=bot.attendance_service.switch_off_on,
+            rounds_made_final=bot.rounds_made_final,
+        )
     )
     bot.change_queue.register(submission_open_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(submission_restart_change())
@@ -814,6 +826,7 @@ def register_change_types(bot: LeagueBot) -> None:
             placement=bot.placement_service,
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
+            rounds_made_final=bot.rounds_made_final,
             cancellation_steps=bot.cancellation_steps,
             season_end_refused=bot.season_end_refused,
             season_end_closes=bot.season_end_closes,
@@ -1158,6 +1171,7 @@ async def build(settings: Settings) -> LeagueBot:
     )
 
     _sign_up_to_cancellations(bot)
+    _sign_up_to_rounds_made_final(bot)
     _sign_up_to_season_end(bot)
     _sign_up_to_deletes(bot)
     _sign_up_to_pack(bot)

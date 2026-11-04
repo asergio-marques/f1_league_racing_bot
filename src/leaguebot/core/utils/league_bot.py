@@ -116,6 +116,11 @@ class LeagueBot(commands.Bot):
     cancellation_refused: AwaitedHook
     rounds_called_off: AwaitedHook
     cancellation_steps: Hook
+    #: The rounds a closer made FINAL (results turned off, a season cancelled), given the closing's
+    #: connection and the rounds' ids: each module signing up its part inside the save (results
+    #: marks the drivers who raced them as former drivers). The builder makes it and hands it to
+    #: the two closers; a round made CANCELLED is never handed.
+    rounds_made_final: AwaitedHook
     #: The moments of a season's end, each module signing up its part: what stands in the way of
     #: the completion and of the cancellation (each hands back a refusal or None); the jobs that
     #: close what a module holds open, given the cause and the season's number where it has one

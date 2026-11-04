@@ -65,6 +65,7 @@ from leaguebot.core.services.season_lifecycle_service import (
     modules_frozen_for_completion,
 )
 from leaguebot.core.services.season_service import end_rounds_awaiting_results_on
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.results.services.results_purge_service import (
     CHANNEL_KINDS,
     MESSAGE_KINDS,
@@ -94,12 +95,16 @@ _CLOSE = "close"
 
 
 def results_off_change(
-    *, attendance_off_on: Callable[[aiosqlite.Connection], Awaitable[bool]]
+    *,
+    attendance_off_on: Callable[[aiosqlite.Connection], Awaitable[bool]],
+    rounds_made_final: AwaitedHook,
 ) -> ChangeType:
     """The change that turns Results & Standings off, with attendance where the payload asks.
 
     *attendance_off_on* switches attendance off on the connection it is handed, committing
-    nothing, and says whether attendance was on. The payload is ``{"cascade_attendance": bool}``.
+    nothing, and says whether attendance was on. *rounds_made_final* is the hook the closing of the
+    rounds waiting on results calls with the rounds it made FINAL. The payload is
+    ``{"cascade_attendance": bool}``.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -127,6 +132,7 @@ def results_off_change(
             actor_id=ctx.actor_id,
             actor_name=ctx.actor_name,
             now=datetime.now(timezone.utc),
+            rounds_made_final=rounds_made_final,
         )
 
         counts = {

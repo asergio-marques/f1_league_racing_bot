@@ -1186,9 +1186,6 @@ async def test_uncommitted_placements_are_discarded(tmp_path):
     assert await _status(league) == "ACTIVE"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the season's cancellation does not yet call rounds_made_final"
-)
 async def test_a_raced_round_awaiting_verdicts_is_made_final_before_the_driver_pass(tmp_path):
     """Pro's round 2, awaiting its verdicts, is made final in `apply`, before the driver pass, and
     handed alone, once, to the hook a round made final calls; Pro's rounds 3 and 4 and Am's four,

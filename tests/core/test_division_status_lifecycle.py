@@ -312,10 +312,6 @@ async def _audits(db_path: str, change_type: str) -> int:
         return (await cursor.fetchone())[0]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: end_rounds_awaiting_results_on does not yet hand its rounds to rounds_made_final",
-)
 async def test_rounds_closed_on_a_handed_connection_are_saved_only_when_the_caller_commits(
     tmp_path,
 ):

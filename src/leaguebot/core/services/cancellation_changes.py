@@ -1325,6 +1325,7 @@ def season_cancel_change(
     placement: "PlacementService",
     cancellation_refused: AwaitedHook,
     rounds_called_off: AwaitedHook,
+    rounds_made_final: AwaitedHook,
     cancellation_steps: Hook,
     season_end_refused: AwaitedHook,
     season_end_closes: Hook,
@@ -1340,7 +1341,8 @@ def season_cancel_change(
 
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *modules*, the
     *seasons* service, the *scheduler*, the *placement* service (which takes back roles), the hooks
-    the modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_steps*,
+    the modules sign up to (*cancellation_refused*, *rounds_called_off*, *rounds_made_final*,
+    *cancellation_steps*,
     *season_end_refused*, *season_end_closes*, *drivers_returned*, *driver_returned_jobs*,
     *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook each driver deleted calls
     (*profiles_deleted*) and the queue's clock *now*.
@@ -1467,7 +1469,12 @@ def season_cancel_change(
         after = await _planned_by_the_modules(rounds_called_off, db, SCOPE_SEASON, standing)
         await discard_uncommitted_placements_on(db, season_id)
         await close_raced_rounds_on(
-            db, season_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
+            db,
+            season_id,
+            actor_id=ctx.actor_id,
+            actor_name=ctx.actor_name,
+            now=now(),
+            rounds_made_final=rounds_made_final,
         )
         # Told: every division still running. A division cancelled was told when it was, and one
         # finished has no round left to call off and nothing to hear.
