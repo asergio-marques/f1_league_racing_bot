@@ -363,8 +363,8 @@ def season_end_steps(
     tells the channel why it closes and `close_signup` locks it. A driver with no signup channel
     left is passed over by `signup_notice`, and `close_signup` then has nothing to lock or delete.
     The change's closing outcome names them; where the change has no closing line of its own,
-    *line_prefix* ("System | Every division is done") has the notice job write one. Subscribed to
-    core's `season_end_steps`.
+    *line_prefix* ("System | Every division is done") has the notice job write one. Not subscribed
+    itself: signup's `window_changes.season_end_steps`, which is, includes it.
 
     *wizard_service* and *scheduler_service* are getters, so that each is the one the bot holds
     when the job runs.

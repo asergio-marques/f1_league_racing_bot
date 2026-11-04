@@ -19,7 +19,7 @@ fails:
 1. `settle` (a save): the scheduler's season-end job removed, each division still marked Active
    brought up to date with its rounds, and the season, now in Pending completion, planned its jobs.
    A season still in one of the ongoing stages whose every division is done is wound down first
-   (`wind_down`, `turn_down`, as the wind-down change does them) and settled again.
+   (its `turn_down`, as the wind-down change does it) and settled again.
 2. Each division's `final_standings`, then its `final_sheet`, drawn against its last round with
    results while the season is still active.
 3. A `revoke_roles` for each real driver, then `close_window`, then `flush_forecasts` where test
