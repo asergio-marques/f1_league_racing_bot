@@ -238,7 +238,7 @@ def _round_at(round_id: int, round_number: int):
 def test_renumbering_does_not_destroy_a_sibling_rounds_jobs():
     """Two rounds that swap numbers must never share a job ID.
 
-    `renumber_rounds` rewrites the numbers of a whole division whenever an amendment changes
+    `renumber_rounds_on` rewrites the numbers of a whole division whenever an amendment changes
     the order of its rounds, and only the amended round is re-armed — so the sibling kept jobs
     named for a number it no longer held. The next amendment of *that* sibling then scheduled
     onto the same ID, and because every `add_job` passes ``replace_existing=True`` it silently

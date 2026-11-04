@@ -21,6 +21,7 @@ seasons still in SETUP are read — an active season has no pending configuratio
 from __future__ import annotations
 
 import os
+import sqlite3
 from datetime import date, datetime, timezone
 
 import pytest
@@ -186,6 +187,52 @@ async def test_duplicating_onto_a_held_tier_is_refused(tmp_path):
         await service.duplicate_division(source, "Am", 556, tier=1)
 
     assert len(await service.get_divisions(SEASON_ID)) == 1
+
+
+#: Faults part-way through a duplicate: a trigger refusing the copy's rounds as they are
+#: inserted, after the division is, or refusing any write of a round's number.
+FAIL_COPYING_ROUNDS = (
+    "CREATE TRIGGER fail_copying BEFORE INSERT ON rounds "
+    "BEGIN SELECT RAISE(ABORT, 'duplicate failed'); END"
+)
+FAIL_RENUMBERING = (
+    "CREATE TRIGGER fail_renumbering BEFORE UPDATE OF round_number ON rounds "
+    "BEGIN SELECT RAISE(ABORT, 'duplicate failed'); END"
+)
+
+
+@pytest.mark.parametrize("fault", [
+    pytest.param(
+        FAIL_COPYING_ROUNDS, id="copying-the-rounds",
+        marks=pytest.mark.xfail(
+            strict=True, reason="#283: duplicate_division saves the division apart"
+        ),
+    ),
+    pytest.param(
+        FAIL_RENUMBERING, id="renumbering",
+        marks=pytest.mark.xfail(
+            strict=True, reason="#283: duplicate_division saves the division apart"
+        ),
+    ),
+])
+async def test_a_duplicate_that_fails_part_way_leaves_nothing_behind(tmp_path, fault):
+    """Pro, tier 1, with rounds 1 and 2. Duplicating it as Am, tier 2, fails once the division is
+    inserted, as the rounds are copied or as they are renumbered. It is one save, so nothing of it
+    is kept: Pro is the season's only division, and its two rounds the only rounds."""
+    db_path = await _make_db(tmp_path, name="dup_fault")
+    service = SeasonService(db_path)
+    source = await _source(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(fault)
+        await db.commit()
+
+    with pytest.raises(sqlite3.IntegrityError, match="duplicate failed"):
+        await service.duplicate_division(source, "Am", 556, tier=2)
+
+    assert [d.id for d in await service.get_divisions(SEASON_ID)] == [source]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT division_id FROM rounds")
+        assert [row[0] for row in await cursor.fetchall()] == [source, source]
 
 
 async def test_duplicating_onto_a_negative_tier_is_refused(tmp_path):

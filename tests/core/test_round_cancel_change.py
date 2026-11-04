@@ -730,7 +730,12 @@ async def _renumbered(league: Any) -> None:
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
                        (league.clock.now + timedelta(days=200)).replace(tzinfo=None).isoformat(),
                        round_id(PRO, 2))
-    await league.bot.season_service.renumber_rounds(PRO)
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services.season_service import renumber_rounds_on
+
+    async with get_connection(league.db_path) as db:
+        await renumber_rounds_on(db, PRO)
+        await db.commit()
     assert (await league.rows("SELECT round_number FROM rounds WHERE id = ?", R3)) == [
         {"round_number": 2}
     ]

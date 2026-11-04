@@ -5,7 +5,7 @@ check-in calls, deadlines, result submission — is a row in a job store keyed b
 identifiers, so the identifier scheme is load-bearing in a way nothing else in the bot is.
 
 **The round id in the suffix prevents a silent catastrophe**, and the function's own docstring
-records it. `renumber_rounds` rewrites the numbers of a whole division whenever an amendment
+records it. `renumber_rounds_on` rewrites the numbers of a whole division whenever an amendment
 changes the order of its rounds, and nothing re-arms the jobs of the rounds that merely
 shifted — so a round that became number 4 kept jobs saying `r5`, and the next amendment of the
 round that became number 5 scheduled `..._r5` on top of them. Every `add_job` passes
