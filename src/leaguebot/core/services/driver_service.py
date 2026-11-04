@@ -332,8 +332,10 @@ async def _merge(
 
     Every column naming the absorbed driver by profile is moved onto the kept one, its
     accounts with them; the former-driver flag is kept if either held it; and the absorbed
-    profile is deleted. The refusals before this guarantee no two rows collide on a key.
-    Nothing naming a driver by account is touched.
+    profile is deleted. The modules re-point their own rows through *profiles_merged*, called
+    on this connection with the kept and absorbed ids before core's own five tables, which keep
+    their order. The refusals before this guarantee no two rows collide on a key. Nothing
+    naming a driver by account is touched.
     """
     await profiles_merged.call(db, kept["id"], absorbed["id"])
     moved = (kept["id"], absorbed["id"])

@@ -677,10 +677,12 @@ async def delete_driver_profiles(
 ) -> list[str]:
     """Delete *profile_ids* and everything that holds them, within the caller's transaction.
 
-    Every reference to a profile without a cascade has to go, or let go, first: seats are
-    vacated, placements and attendance rows deleted, and result and standings rows let go of
-    the profile while naming the driver by user id still. A driver's signups are keyed by the
-    Discord account and are never touched.
+    Every reference to a profile without a cascade has to go, or let go, first. The modules'
+    parts go through *profiles_deleted*, called on this connection with the profile ids before
+    core's own rows: attendance deletes its rows of the drivers, and results lets go of the
+    profile in its result and standings rows while naming the driver by user id still. Core's
+    own are then seen to: seats are vacated and placements deleted. A driver's signups are keyed
+    by the Discord account and are never touched.
 
     *keep_history* keeps the driver's history entries, which name them by identifier and let
     go of the profile themselves (`driver_history_entries.driver_profile_id` is `ON DELETE SET
