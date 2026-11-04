@@ -26,6 +26,7 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
+from leaguebot.core.services.driver_service import set_former_drivers_on
 from leaguebot.core.services.team_service import resolve_team_reference
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.input_validator import (
@@ -556,14 +557,12 @@ async def recompute_former_drivers_for_round(
         )
         raced_elsewhere = {r["profile_id"] for r in await cursor.fetchall()}
 
-    from leaguebot.core.services.driver_service import set_former_drivers_on
-
     await set_former_drivers_on(
         db, {p: p in raced_here or p in raced_elsewhere for p in candidates}
     )
 
 
-async def rounds_made_final_on(db, round_ids: Iterable[int]) -> None:
+async def rounds_made_final_on(db: aiosqlite.Connection, round_ids: Iterable[int]) -> None:
     """Mark the drivers who raced each of *round_ids* as former drivers, on the save's connection.
 
     Results' part of the rounds a closer of core's made FINAL (`rounds_made_final`): core hands
