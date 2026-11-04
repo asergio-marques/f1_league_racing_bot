@@ -286,22 +286,6 @@ async def _describe_division(db, division_id: int) -> str:
     return f"Season {row[0]} {row[1]}" if row else f"division {division_id}"
 
 
-#: Every column naming a driver by their profile, which a merge moves onto the driver kept.
-#: The division memberships come first: moving a placement fires the
-#: `driver_division_membership_on_update` trigger, which would otherwise add the membership a
-#: second time.
-_PROFILE_COLUMNS = (
-    "driver_division_memberships",
-    "team_seats",
-    "driver_season_assignments",
-    "driver_history_entries",
-    "driver_standings_snapshots",
-    "race_session_results",
-    "qualifying_session_results",
-    "driver_accounts",
-)
-
-
 #: The states of a driver whose signup is under way: collecting their answers, in review, or
 #: in correction. A reassign waits for it to be finished or withdrawn.
 SIGNUP_IN_PROGRESS = frozenset({
@@ -352,11 +336,28 @@ async def _merge(
     Nothing naming a driver by account is touched.
     """
     await profiles_merged.call(db, kept["id"], absorbed["id"])
-    for table in _PROFILE_COLUMNS:
-        await db.execute(
-            f"UPDATE {table} SET driver_profile_id = ? WHERE driver_profile_id = ?",
-            (kept["id"], absorbed["id"]),
-        )
+    moved = (kept["id"], absorbed["id"])
+    # The division memberships come first: moving a placement fires the
+    # `driver_division_membership_on_update` trigger, which would otherwise add the membership a
+    # second time.
+    await db.execute(
+        "UPDATE driver_division_memberships SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        moved,
+    )
+    await db.execute(
+        "UPDATE team_seats SET driver_profile_id = ? WHERE driver_profile_id = ?", moved
+    )
+    await db.execute(
+        "UPDATE driver_season_assignments SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        moved,
+    )
+    await db.execute(
+        "UPDATE driver_history_entries SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        moved,
+    )
+    await db.execute(
+        "UPDATE driver_accounts SET driver_profile_id = ? WHERE driver_profile_id = ?", moved
+    )
     await db.execute(
         "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND ? = 1",
         (kept["id"], int(bool(absorbed["former_driver"]))),

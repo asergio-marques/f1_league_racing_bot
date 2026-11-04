@@ -359,6 +359,55 @@ async def season_deleted_on(db: aiosqlite.Connection, season_id: int) -> None:
     await db.execute("DELETE FROM season_points_links WHERE season_id = ?", (season_id,))
 
 
+async def profiles_deleted_on(db: aiosqlite.Connection, profile_ids: list[int]) -> None:
+    """Let go of the drivers *profile_ids* in results' rows on *db*, committing nothing: their
+    race and qualifying results and the standings that name them lose the profile, and keep
+    naming the driver by their user id, as they always did.
+
+    Core hands it the profile ids as it deletes the drivers, in the delete's own save, so that
+    the rows let go of the profile with the drivers' deletion or not at all (architecture.md,
+    "The database").
+    """
+    marks = ",".join("?" * len(profile_ids))
+    await db.execute(
+        "UPDATE race_session_results SET driver_profile_id = NULL "
+        f"WHERE driver_profile_id IN ({marks})",  # noqa: S608
+        profile_ids,
+    )
+    await db.execute(
+        "UPDATE qualifying_session_results SET driver_profile_id = NULL "
+        f"WHERE driver_profile_id IN ({marks})",  # noqa: S608
+        profile_ids,
+    )
+    await db.execute(
+        "UPDATE driver_standings_snapshots SET driver_profile_id = NULL "
+        f"WHERE driver_profile_id IN ({marks})",  # noqa: S608
+        profile_ids,
+    )
+
+
+async def profiles_merged_on(db: aiosqlite.Connection, kept_id: int, absorbed_id: int) -> None:
+    """Move results' rows of the driver *absorbed_id* onto the driver *kept_id* on *db*,
+    committing nothing: their race and qualifying results and the standings that name them.
+
+    Core hands it both profile ids as it merges the drivers, inside the merge's one transaction,
+    before the absorbed profile is deleted (architecture.md, "The database").
+    """
+    moved = (kept_id, absorbed_id)
+    await db.execute(
+        "UPDATE race_session_results SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        moved,
+    )
+    await db.execute(
+        "UPDATE qualifying_session_results SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        moved,
+    )
+    await db.execute(
+        "UPDATE driver_standings_snapshots SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        moved,
+    )
+
+
 async def _delete_rows(db: aiosqlite.Connection, round_ids: list[int]) -> tuple[int, int]:
     """Delete the result rows of *round_ids* in foreign-key order on *db*, committing nothing.
     Returns (sessions, standings).

@@ -21,12 +21,6 @@ from leaguebot.core.services.driver_service import DriverService
 from tests.support.teams import seed_team_instances
 from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
 
-#: Why each test marked with it fails until the driver hooks are handed.
-NO_MERGE_HOOK = (
-    "#283: the builder makes no profiles_merged hook to hand a merge, and reassign_user_id "
-    "takes none"
-)
-
 SERVER_ID = 2440
 A, B, C = "6501", "6502", "6503"
 
@@ -300,7 +294,6 @@ async def test_leftover_results_in_a_shared_division_are_refused(tmp_path):
     await _refused(db_path, "both took part in Season 1 Pro")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_failure_part_way_through_a_merge_changes_nothing(tmp_path):
     """E33: one transaction, the modules' part included. A, seated in the live season, is given
     B's account; B raced Season 1 Am and holds a history entry there. The merge hook carries the

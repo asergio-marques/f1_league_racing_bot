@@ -715,11 +715,6 @@ async def delete_driver_profiles(
         await db.execute(
             f"DELETE FROM driver_history_entries WHERE driver_profile_id IN ({placeholders})", ids
         )
-    for table in ("race_session_results", "qualifying_session_results", "driver_standings_snapshots"):
-        await db.execute(
-            f"UPDATE {table} SET driver_profile_id = NULL WHERE driver_profile_id IN ({placeholders})",
-            ids,
-        )
     await db.execute(f"DELETE FROM driver_profiles WHERE id IN ({placeholders})", ids)
     return accounts
 
