@@ -298,7 +298,7 @@ async def toggle_test_mode_nationality(db_path: str) -> bool:
     it stands in for it, so the graphics of a server under test may be seen with flags and
     without them without the real signup setting being touched.
 
-    Same atomic UPDATE style as turn_test_mode_off, for the same reason. Returns False if the
+    One atomic relative UPDATE, so no read-modify-write race can occur. Returns False if the
     server has no config row (bot not initialised).
     """
     async with get_connection(db_path) as db:
