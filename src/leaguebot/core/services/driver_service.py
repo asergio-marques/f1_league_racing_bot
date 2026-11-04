@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import aiosqlite
@@ -213,6 +214,23 @@ async def current_account_map(db) -> dict[int, int]:
         except (TypeError, ValueError):
             continue
     return mapping
+
+
+async def set_former_drivers_on(db, former: Mapping[int, bool]) -> None:
+    """Set `driver_profiles.former_driver` for each profile in *former* (profile id -> flag), on
+    the connection handed and in the save it belongs to.
+
+    The flag is core's, so whoever works out who has raced, results, writes it through here and
+    never into the table. Only a row whose value differs is written, and nothing is committed:
+    the flag moves with whatever made the round final. No audit row is added; the flag is
+    derived from results, and `DriverService.set_former_driver` is the test-mode command that
+    sets it by hand, with its own save and its own audit row.
+    """
+    for profile_id, value in sorted(former.items()):
+        await db.execute(
+            "UPDATE driver_profiles SET former_driver = ? WHERE id = ? AND former_driver != ?",
+            (int(value), profile_id, int(value)),
+        )
 
 
 async def _division_exists(db, division_id: int) -> bool:

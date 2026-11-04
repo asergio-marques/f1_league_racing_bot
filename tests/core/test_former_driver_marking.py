@@ -638,9 +638,6 @@ async def test_cancelling_a_season_leaves_another_seasons_rounds_alone(tmp_path)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: core has no writer of the former-driver flag on a handed connection"
-)
 async def test_core_s_flag_writer_sets_and_clears_on_the_save_handed_committing_nothing(tmp_path):
     """The flag is core's (driver_profiles), so results' recompute writes it through core's
     `set_former_drivers_on`, on the connection of the save that made the round final.

@@ -552,12 +552,11 @@ async def recompute_former_drivers_for_round(
         )
         raced_elsewhere = {r["profile_id"] for r in await cursor.fetchall()}
 
-    for profile_id in sorted(candidates):
-        should_be_former = profile_id in raced_here or profile_id in raced_elsewhere
-        await db.execute(
-            "UPDATE driver_profiles SET former_driver = ? WHERE id = ? AND former_driver != ?",
-            (int(should_be_former), profile_id, int(should_be_former)),
-        )
+    from leaguebot.core.services.driver_service import set_former_drivers_on
+
+    await set_former_drivers_on(
+        db, {p: p in raced_here or p in raced_elsewhere for p in candidates}
+    )
 
 
 @posts_in_a_job
