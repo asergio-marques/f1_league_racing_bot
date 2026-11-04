@@ -34,7 +34,7 @@ from discord.ext import commands
 
 from leaguebot.core.services.test_mode_service import (
     turn_test_mode_on,
-    toggle_test_mode,
+    turn_test_mode_off,
     toggle_test_mode_nationality,
     count_live_real_drivers,
     PhaseEntry,
@@ -150,7 +150,7 @@ class TestModeCog(commands.Cog):
                 + (f"\n  seeded_configs: {', '.join(new_configs)}" if new_configs else ""),
             )
         else:
-            await toggle_test_mode(
+            await turn_test_mode_off(
                 self.bot.db_path,
             )
             # Defer so the flush (multiple Discord API calls) has time to complete

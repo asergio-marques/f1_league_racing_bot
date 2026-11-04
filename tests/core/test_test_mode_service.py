@@ -14,7 +14,7 @@ from leaguebot.core.services.scheduler_service import SchedulerService
 from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.services.test_mode_service import (
-    toggle_test_mode,
+    turn_test_mode_off,
     toggle_test_mode_nationality,
     count_live_real_drivers,
     get_next_pending_phase,
@@ -89,33 +89,43 @@ async def _seed(db_path: str, rounds: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# toggle_test_mode
+# turn_test_mode_off
 # ---------------------------------------------------------------------------
 
 async def test_toggle_enables_test_mode(tmp_path) -> None:
-    """First toggle flips flag from 0 → 1 and returns True."""
+    """A server with test mode active: turning it off sets the flag absolutely to 0 and
+    reports that it changed something."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
     await _seed(db_path, [])
-    result = await toggle_test_mode(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET test_mode_active = 1")
+        await db.commit()
+    result = await turn_test_mode_off(db_path)
     assert result is True
+    async with get_connection(db_path) as db:
+        row = await (await db.execute("SELECT test_mode_active FROM server_configs")).fetchone()
+    assert row["test_mode_active"] == 0
 
 
 async def test_toggle_disables_test_mode(tmp_path) -> None:
-    """Second toggle flips flag back from 1 → 0 and returns False."""
+    """A server with test mode already off: turning it off again is absolute, not relative —
+    it must not flip the flag back on, and reports no change (#283)."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
     await _seed(db_path, [])
-    await toggle_test_mode(db_path)   # enable
-    result = await toggle_test_mode(db_path)  # disable
+    result = await turn_test_mode_off(db_path)
     assert result is False
+    async with get_connection(db_path) as db:
+        row = await (await db.execute("SELECT test_mode_active FROM server_configs")).fetchone()
+    assert row["test_mode_active"] == 0
 
 
 async def test_toggle_missing_config_returns_false(tmp_path) -> None:
-    """toggle_test_mode returns False when there is no config row."""
+    """turn_test_mode_off returns False when there is no config row."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)  # no seed — no server_config row
-    result = await toggle_test_mode(db_path)
+    result = await turn_test_mode_off(db_path)
     assert result is False
 
 
@@ -293,7 +303,9 @@ async def test_nationality_toggle_leaves_test_mode_itself_alone(tmp_path) -> Non
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
     await _seed(db_path, [])
-    await toggle_test_mode(db_path)  # enable test mode
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET test_mode_active = 1")  # enable test mode
+        await db.commit()
     await toggle_test_mode_nationality(db_path)
     async with get_connection(db_path) as db:
         row = await (

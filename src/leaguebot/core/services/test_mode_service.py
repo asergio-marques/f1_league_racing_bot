@@ -1,7 +1,7 @@
 """test_mode_service — Test mode state management and phase queue.
 
 Provides async functions consumed by TestModeCog, among them:
-  - toggle_test_mode:             flip the test_mode_active flag in server_configs
+  - turn_test_mode_off:           switch the test_mode_active flag off in server_configs
   - toggle_test_mode_nationality: flip whether mock drivers carry a nationality
   - count_live_real_drivers:      how many real drivers stand in the way of enabling test mode
   - get_next_pending_phase:       find the earliest un-executed phase across all rounds
@@ -206,28 +206,35 @@ async def advance_next_step(
 # Toggle
 # ---------------------------------------------------------------------------
 
-async def toggle_test_mode(db_path: str) -> bool:
-    """Flip test_mode_active and return the NEW value.
+async def turn_test_mode_off(db_path: str) -> bool:
+    """Switch test_mode_active off absolutely, and return whether it changed anything.
 
-    Uses a single atomic UPDATE so no read-modify-write race can occur.
-    Returns False if the server has no config row (bot not initialised).
+    `/test-mode toggle`'s off-path decides *that* it is turning test mode off from an earlier
+    read (`entering = ... not config.test_mode_active`), taken before this call; the write
+    itself must not depend on that same read again, or two presses racing each other could
+    both take the off-path and the second's relative flip put the flag back on under a reply
+    that said "disabled" (#283). So the UPDATE sets the flag to 0 outright, never `1 -
+    test_mode_active`, and is idempotent: a second call finds it already off and reports no
+    change.
+
+    Returns False if the server has no config row (bot not initialised) or test mode was
+    already off.
     """
     async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE server_configs "
-            "SET test_mode_active = 1 - test_mode_active "
-            "",
-        )
-        await db.commit()
         cursor = await db.execute(
             "SELECT test_mode_active FROM server_configs",
         )
         row = await cursor.fetchone()
+        if row is None:
+            log.error("turn_test_mode_off: no server_config row")
+            return False
+        was_active = bool(row["test_mode_active"])
+        await db.execute(
+            "UPDATE server_configs SET test_mode_active = 0",
+        )
+        await db.commit()
 
-    if row is None:
-        log.error("toggle_test_mode: no server_config row")
-        return False
-    return bool(row["test_mode_active"])
+    return was_active
 
 
 async def turn_test_mode_on(db_path: str, *, test_mode_turned_on: AwaitedHook) -> list[str]:
@@ -285,7 +292,7 @@ async def toggle_test_mode_nationality(db_path: str) -> bool:
     it stands in for it, so the graphics of a server under test may be seen with flags and
     without them without the real signup setting being touched.
 
-    Same atomic UPDATE as toggle_test_mode, for the same reason. Returns False if the
+    Same atomic UPDATE style as turn_test_mode_off, for the same reason. Returns False if the
     server has no config row (bot not initialised).
     """
     async with get_connection(db_path) as db:
