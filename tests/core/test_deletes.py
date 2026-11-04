@@ -318,11 +318,11 @@ _LET_GO = {
 
 
 @pytest.mark.parametrize("deleted", [
-    "season",
+    pytest.param("season"),
     "division",
     "round",
-    _DRIVER_KEEPING_HISTORY,
-    _DRIVER_LOSING_HISTORY,
+    pytest.param(_DRIVER_KEEPING_HISTORY),
+    pytest.param(_DRIVER_LOSING_HISTORY),
 ])
 async def test_every_delete_leaves_no_orphan(tmp_path, deleted):
     """A row in every table under two seasons; the first season's own row of *deleted* (the
