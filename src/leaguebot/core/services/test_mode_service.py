@@ -245,6 +245,10 @@ async def turn_test_mode_on(db_path: str, *, test_mode_turned_on: AwaitedHook) -
     and nothing seeded — the flip used to be its own commit, and each module's part another,
     which could leave test mode on with no configuration, or with only some of them (#283).
 
+    Calls the hook only where a season stands in Configuration; otherwise seeds nothing and
+    returns an empty list, as the old on-path did. The toggle refuses to run without one, so this
+    is only reached through a race between that check and this save.
+
     Returns what the hook's subscribers handed back, concatenated in sign-up order (results'
     names of the points configurations it newly created, today's only subscriber).
     """
@@ -255,8 +259,10 @@ async def turn_test_mode_on(db_path: str, *, test_mode_turned_on: AwaitedHook) -
             "UPDATE server_configs SET test_mode_active = 1",
         )
         live = await live_season_stage_on(db)
-        season_id = live[0] if live is not None else None
-        handed_back = await test_mode_turned_on.call(db, season_id)
+        if live is None:
+            await db.commit()
+            return []
+        handed_back = await test_mode_turned_on.call(db, live[0])
         await db.commit()
     return [name for names in handed_back for name in names]
 
