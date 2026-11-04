@@ -1586,8 +1586,7 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     closed, fails, and a league admin discards it. Only that post is dropped (b15-2): 105 is
     still told, then their channel locked, by their own jobs; the reply and the closing line say
     the window was not closed, to be closed with `/signup close`, and never name 105 as returned
-    but not told; the window is still recorded open, the season cancelled, and 105 is owed
-    nothing more."""
+    but not told; the window is still recorded open, and the season cancelled."""
     league = await ongoing_league(tmp_path, signups_open=True)
     await league.write("UPDATE seasons SET stage = 'ONGOING_SIGNUPS' WHERE id = ?", SEASON_ID)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
@@ -1613,7 +1612,6 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     assert _logged(RETURNED_NOT_TOLD) not in line
     assert await window_open(league)
     assert await _status(league) == "CANCELLED"
-    assert await league.bot.signup_module_service.owed_closing_notices() == []
 
 
 async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):

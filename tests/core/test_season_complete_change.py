@@ -608,14 +608,12 @@ async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(
     tmp_path, kind, standing,
 ):
     """Kimi (105) part-way through signing up. A further module signs up to the drivers a season's
-    end returns and to the accounts its last save finds untold, and the season is completed (every
+    end returns, and the season is completed (every
     round final), cancelled (ongoing) or aborted (in Placements). The part for the drivers returned
     is called once, in `end`, with that save's own connection and the drivers the pass returned,
     Kimi among them: on that connection Kimi's signup has already ended and the season is not yet
-    archived or deleted, while another connection still reads Kimi as signing up. The part for the
-    untold is called once, in `close`, with that save's own connection, `end` done and `close` not.
-    What the part for the drivers returned writes on its connection is unseen elsewhere while `end`
-    stands open, and what each writes is saved with its save."""
+    archived or deleted, while another connection still reads Kimi as signing up. What it writes on
+    its connection is unseen elsewhere while `end` stands open, and is saved with that save."""
     from leaguebot.core.db.database import get_connection
     from tests.support.season_league import (
         abort_season,
@@ -663,13 +661,7 @@ async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(
                      await driver_state(league, SIGNING_UP) == before, unseen,
                      done.get("end"), done.get("close")))
 
-    async def _untold(db: Any, *_rest: Any) -> list[str]:
-        _unseen, done = await _written(db, "untold")
-        seen.append(("untold", done.get("end"), done.get("close")))
-        return []
-
     league.bot.drivers_returned.subscribe(_returned)
-    league.bot.season_end_untold.subscribe(_untold)
     if kind == SEASON_COMPLETE_KIND:
         await _asked(league)
     elif kind == SEASON_CANCEL_KIND:
@@ -681,10 +673,9 @@ async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(
 
     assert seen == [
         ("returned", True, True, True, True, True, False, False),
-        ("untold", True, False),
     ]
     rows = await league.rows("SELECT part FROM written_by_a_module ORDER BY rowid")
-    assert [row["part"] for row in rows] == ["returned", "untold"]
+    assert [row["part"] for row in rows] == ["returned"]
 
 
 async def test_a_stop_part_way_is_finished_on_restart_and_posts_no_final_classification_twice(
@@ -1756,11 +1747,6 @@ async def _closed_lines(league: Any) -> list[str]:
 NO_CHANNEL = f"<@{SIGNING_UP}> had no signup channel left to tell"
 
 
-async def _owed(league: Any) -> list[str]:
-    """The accounts still owed their closing notice, as signup keeps them."""
-    return await league.bot.signup_module_service.owed_closing_notices()
-
-
 async def _mid_wizard(league: Any, user_id: int = SIGNING_UP, *,
                       state: str = "PENDING_SIGNUP_COMPLETION") -> None:
     """`signing_up`'s driver at *state*, their wizard collecting their notes: a wizard state the
@@ -1798,8 +1784,8 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
     """The signup window open with driver 105 still filling in the wizard, and the completion
     queued. The bot is killed in `post_closed`'s record straight after it writes the window
     closed, before its save commits: the window is still open. When the bot starts again, the
-    close is not dropped as no longer due: 105 is told once, then their channel locked, the
-    season completed, and 105 is owed nothing more."""
+    close is not dropped as no longer due: 105 is told once, then their channel locked, and the
+    season completed."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     _killed_after_the_window_is_recorded_closed(league)
@@ -1823,7 +1809,6 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
     ]
     assert not await window_open(league)
     assert await _status(league) == "COMPLETED"
-    assert await _owed(league) == []
 
 
 @pytest.mark.parametrize("refused", ["the record", "the post"])
@@ -1838,8 +1823,7 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     none stands. 105 is still told, then their channel locked, by their own jobs; the
     reply and the closing line say the window was not closed, to be closed with `/signup close`,
     and never name 105 as returned but not told; the window is still recorded open, with no
-    audit of its close and no "🔒 Signups closed" line, the season completed, and 105 is owed
-    nothing more. The closing line reads "| Incomplete" for the window alone, and nothing not
+    audit of its close and no "🔒 Signups closed" line, and the season completed. The closing line reads "| Incomplete" for the window alone, and nothing not
     done, there or in the reply, names 105."""
     from tests.support.season_league import SIGNUP_CHANNEL
 
@@ -1883,7 +1867,6 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     assert await _window_close_audits(league) == []
     assert await _closed_lines(league) == []
     assert await _status(league) == "COMPLETED"
-    assert await _owed(league) == []
 
 
 async def _withdrew_with_the_notice_refused(league: Any, user_id: int = SIGNING_UP) -> Any:

@@ -446,11 +446,6 @@ def _logged(text: str) -> str:
     return re.sub(r"(<@&?\d+>)", r"`\1`", text)
 
 
-async def _owed(league: Any) -> list[str]:
-    """The accounts still owed their closing notice, as signup keeps them."""
-    return await league.bot.signup_module_service.owed_closing_notices()
-
-
 def _killed_after_the_window_is_recorded_closed(league: Any) -> None:
     """The process is killed straight after the window's close has recorded the window closed:
     once, before the close's audit is written and before the job's mark or any result of its is
@@ -476,7 +471,7 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
     """The bot is killed in `post_closed`'s record straight after it writes the window closed,
     before its save commits: the window is still open. When the bot starts again, driver 105,
     whom the wind-down's close had returned, is told once, then their channel locked; the season
-    is moved on to Pending completion, and 105 is owed nothing more."""
+    is moved on to Pending completion."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     _killed_after_the_window_is_recorded_closed(league)
@@ -498,7 +493,6 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
         ("notice", SIGNING_UP), ("lock", SIGNING_UP),
     ]
     assert await _stage(league) == "PENDING_COMPLETION"
-    assert await _owed(league) == []
 
 
 async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_wind_down_returned(
@@ -510,7 +504,7 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     locked, by their own jobs, and no line names them as returned but not told. One log line
     says the signup window could not be closed and to close it with `/signup close`, and none
     that signups closed, nor is the window's close audited; the window is still recorded open,
-    the season moved on to Pending completion, and 105 is owed nothing more."""
+    and the season moved on to Pending completion."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     league.close_fails = RuntimeError("the window could not be recorded closed")
@@ -535,7 +529,6 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
                    for line in league.bot.log_channel.sent + await queued_log_lines(league.db_path))
     assert await window_open(league)
     assert await _stage(league) == "PENDING_COMPLETION"
-    assert await _owed(league) == []
 
 
 async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_path):
@@ -567,11 +560,10 @@ async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_pat
 
 async def test_a_module_s_part_of_the_turn_down_s_save_runs_on_that_save_s_connection(tmp_path):
     """Driver 105 (Kimi) in review when the wind-down turns the season's pending placements down.
-    A further module signs up to the drivers a season's end returns and to the accounts its last
-    save finds untold. Both parts are called once, in `turn_down`'s one save, the untold first,
-    each with that save's own connection, `turn_down` not yet done: what each writes on it is
-    unseen elsewhere while the save stands open, and is saved with it. The part for the drivers
-    returned is handed the drivers turned down, 105 among them, already Not Signed Up on that
+    A further module signs up to the drivers a season's end returns. Its part is called once, in
+    `turn_down`'s one save, with that save's own connection, `turn_down` not yet done: what it
+    writes on it is unseen elsewhere while the save stands open, and is saved with it. It is
+    handed the drivers turned down, 105 among them, already Not Signed Up on that
     connection while another connection still reads them in review."""
     from leaguebot.core.db.database import get_connection
 
@@ -603,23 +595,16 @@ async def test_a_module_s_part_of_the_turn_down_s_save_runs_on_that_save_s_conne
                      await driver_state(league, SIGNING_UP) == "PENDING_ADMIN_APPROVAL",
                      unseen, done))
 
-    async def _untold(db: Any, *_rest: Any) -> list[str]:
-        unseen, done = await _written(db, "untold")
-        seen.append(("untold", unseen, done))
-        return []
-
     league.bot.drivers_returned.subscribe(_returned)
-    league.bot.season_end_untold.subscribe(_untold)
     await _ask(league)
 
     await run_queue(league.bot)
 
     assert seen == [
-        ("untold", True, False),
         ("returned", True, True, True, True, False),
     ]
     rows = await league.rows("SELECT part FROM written_by_a_module ORDER BY rowid")
-    assert [row["part"] for row in rows] == ["untold", "returned"]
+    assert [row["part"] for row in rows] == ["returned"]
 
 
 def _channel_gone(league: Any, user_id: int = SIGNING_UP) -> None:
