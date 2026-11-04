@@ -1623,9 +1623,6 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
 
 # ── The window's close returns its drivers in one save (#283, S8e) ──────────────────
 
-#: Why the close's drivers are not yet returned in one save.
-ONE_SAVE = "#283: a season's end returns each driver still signing up in a save of their own"
-
 #: A driver still filling in the wizard alongside `SIGNING_UP`, read after them.
 SIGNING_UP_TOO = SIGNING_UP + 1
 
@@ -1658,7 +1655,6 @@ CLOSING_LINE = {
 THEN = ["retry", "discard"]
 
 
-@pytest.mark.xfail(strict=True, reason=ONE_SAVE)
 @pytest.mark.parametrize("then", THEN)
 @pytest.mark.parametrize("end", ENDS)
 async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or_none(
@@ -1667,13 +1663,20 @@ async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or
     """The signup window open with drivers 105 and 106 still filling in the wizard, and the
     season's completion, cancellation, abort or wind-down asked. Returning 106 fails: the close
     stops with neither driver returned, both still signing up, nobody told and the window open.
-    Once the database takes it, a Retry returns both, each is told once and has their channel
-    closed, the window is closed and the queue runs on to the end. A Discard instead leaves both
-    still signing up, the window open, nobody told, and no line naming anyone as returned but not
-    told (decision 64, 'All or nothing'); the reply names the window, alone, as not closed, to be
-    closed with `/signup close`, and so does the closing line. The wind-down, which has neither,
-    writes one "System | Every division is done | Incomplete" line naming the window as not closed
-    (decision 65), as a discarded closed notice of the wind-down does today."""
+    Once the database takes it, a Retry returns both, each is told once that signups have closed
+    and has their channel closed, the window is closed and the queue runs on to the end. A Discard
+    instead returns neither and tells nobody that signups have closed, and leaves the window open,
+    with no line naming anyone as returned but not told (decision 64, 'All or nothing').
+
+    What the queue then does to the drivers depends on the end. The completion, the cancellation
+    and the abort run on to their end save, which returns every driver still in a state to Not
+    Signed Up and deletes each real driver without the former-driver flag, as today: after a Retry
+    both are gone, and after a Discard both are gone too, each told once that the season has ended
+    and having their channel closed. Their reply names the window, alone, as not closed, to be
+    closed with `/signup close`, and so does the closing line. The wind-down deletes nobody: after
+    a Retry both are Not Signed Up; after a Discard both are still signing up, nobody is told, and
+    it writes one "System | Every division is done | Incomplete" line naming the window, alone, as
+    not closed (decision 65), as a discarded closed notice of the wind-down does today."""
     league = await _league_ending(tmp_path, end)
     await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
     await signing_up(league, SIGNING_UP_TOO, state="PENDING_SIGNUP_COMPLETION")
@@ -1692,20 +1695,31 @@ async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or
     if then == "discard":
         await discard_job(league.bot)
 
-        assert await driver_state(league, SIGNING_UP) == "PENDING_SIGNUP_COMPLETION"
-        assert await driver_state(league, SIGNING_UP_TOO) == "PENDING_SIGNUP_COMPLETION"
-        assert league.notices == [] and league.locked == []
         assert await window_open(league)
         untold = "was returned to Not Signed Up when signups closed"
         assert interaction is None or untold not in reply(interaction)
         lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
         assert not any(untold in line for line in lines)
-        # What was not done is named as today: the window, alone, to be closed by hand.
         if interaction is None:
-            assert [line for line in _log_lines(league) if WINDOW_OPEN in line] == [
-                f"System | Every division is done | Incomplete\n  not done: {WINDOW_OPEN}"
-            ]
+            # The wind-down deletes nobody: both are still signing up, and nobody is told.
+            assert await driver_state(league, SIGNING_UP) == "PENDING_SIGNUP_COMPLETION"
+            assert await driver_state(league, SIGNING_UP_TOO) == "PENDING_SIGNUP_COMPLETION"
+            assert league.notices == [] and league.locked == []
+            [line] = [each for each in _log_lines(league)
+                      if each.startswith("System | Every division is done | ")]
+            assert line.startswith("System | Every division is done | Incomplete\n"), line
+            assert [each.split("  not done: ", 1)[1] for each in line.splitlines()
+                    if each.startswith("  not done: ")] == [WINDOW_OPEN]
             return
+        # The end save returns and deletes both, and its own driver jobs tell each the season
+        # has ended and close their channel, as today.
+        assert await driver_state(league, SIGNING_UP) is None
+        assert await driver_state(league, SIGNING_UP_TOO) is None
+        ended = ("🔒 This season has ended. This channel will be automatically deleted in 24 "
+                 "hours.")
+        assert league.notices == [(SIGNING_UP, ended), (SIGNING_UP_TOO, ended)]
+        assert league.locked == [SIGNING_UP, SIGNING_UP_TOO]
+        # What was not done is named as today: the window, alone, to be closed by hand.
         assert _not_done(reply(interaction)) == [WINDOW_OPEN]
         command, status = CLOSING_LINE[end]
         [line] = [each for each in _log_lines(league) if f"| {command} | " in each]
@@ -1715,8 +1729,10 @@ async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or
         return
     await retry_job(league.bot)
 
-    assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
-    assert await driver_state(league, SIGNING_UP_TOO) == "NOT_SIGNED_UP"
+    # The completion, the cancellation and the abort delete both at their end save, as today.
+    returned = "NOT_SIGNED_UP" if end == "wind-down" else None
+    assert await driver_state(league, SIGNING_UP) == returned
+    assert await driver_state(league, SIGNING_UP_TOO) == returned
     assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED), (SIGNING_UP_TOO, SIGNUPS_CLOSED)]
     assert league.locked == [SIGNING_UP, SIGNING_UP_TOO]
     assert not await window_open(league)
