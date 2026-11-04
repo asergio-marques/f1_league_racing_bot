@@ -19,22 +19,13 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services import season_classification_service as service
 from tests.support.change_queue import in_a_job
+from tests.support.season_classification import bot_on as _bot
+from tests.support.season_classification import classification_posts as _opening_posts
+from tests.support.season_classification import first_round_id as _first_round_id
+from tests.support.season_classification import guild_double as _guild
+from tests.support.season_classification import seed_season as _seed
 
 pytestmark = pytest.mark.asyncio
-
-
-def _bot(path):
-    """A bot carrying a real db path — the name resolution reads it."""
-    bot = MagicMock()
-    bot.db_path = path
-    return bot
-
-
-def _guild():
-    guild = MagicMock()
-    guild.id = 1
-    guild.get_channel.return_value = MagicMock()
-    return guild
 
 
 @pytest.fixture
@@ -42,60 +33,6 @@ async def db_path(tmp_path):
     path = str(tmp_path / "classification.db")
     await run_migrations(path)
     return path
-
-
-async def _seed(path, *, server_id=1, divisions=("Div A",)):
-    """A season, its divisions, one round each, and a seated driver per division."""
-    ids: list[int] = []
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (?, 1, 2, 3)",
-            (server_id,),
-        )
-        cur = await db.execute(
-            "INSERT INTO seasons (start_date, status, season_number) "
-            "VALUES ('2026-01-01', 'ACTIVE', 1)"
-        )
-        season_id = cur.lastrowid
-        for index, name in enumerate(divisions):
-            cur = await db.execute(
-                "INSERT INTO divisions (season_id, name, mention_role_id, "
-                "forecast_channel_id) VALUES (?, ?, ?, ?)",
-                (season_id, name, 10 + index, 20 + index),
-            )
-            division_id = cur.lastrowid
-            ids.append(division_id)
-            await db.execute(
-                "INSERT INTO division_results_config "
-                "(division_id, results_channel_id, standings_channel_id) "
-                "VALUES (?, ?, ?)",
-                (division_id, 800 + index, 900 + index),
-            )
-            await db.execute(
-                "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-                "VALUES (?, 1, 'NORMAL', '2026-02-01T18:00:00')",
-                (division_id,),
-            )
-            cur = await db.execute(
-                "INSERT INTO driver_profiles (discord_user_id, current_state) "
-                "VALUES (?, 'ACTIVE')",
-                (500 + index,),
-            )
-            profile_id = cur.lastrowid
-            cur = await db.execute(
-                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
-                "VALUES (?, 'Apex Racing', 'Apex Racing', 2, 0)",
-                (division_id,),
-            )
-            await db.execute(
-                "INSERT INTO team_seats (team_instance_id, seat_number, "
-                "driver_profile_id) VALUES (?, 1, ?)",
-                (cur.lastrowid, profile_id),
-            )
-        await db.commit()
-    return season_id, ids
 
 
 # ── The opening classification ────────────────────────────────────────────
@@ -106,31 +43,6 @@ async def _seed(path, *, server_id=1, divisions=("Div A",)):
 # queue to stop on. The standings channel is read from `division_results_config`, where
 # `/division results-channel` keeps it; the approval used to look for it on a division read
 # that never carries it, so no opening standings were ever posted.
-
-
-def _opening_posts(standings=None, attendance=None):
-    """The opening standings, through whichever of results' two posting functions it uses,
-    and the sheet. Both standings doubles are the one mock, so a test reads either; the
-    recording `post_standings` is created where #439 6b has deleted it."""
-    standings = standings or AsyncMock(return_value=[])
-    return (
-        patch(
-            "leaguebot.results.services.results_post_service.post_standings", standings, create=True,
-        ),
-        patch("leaguebot.results.services.results_post_service.produce_standings", standings),
-        patch(
-            "leaguebot.attendance.services.attendance_service.post_attendance_sheet",
-            attendance or AsyncMock(return_value=None),
-        ),
-    )
-
-
-async def _first_round_id(path, division_id: int) -> int:
-    async with get_connection(path) as db:
-        cursor = await db.execute(
-            "SELECT id FROM rounds WHERE division_id = ? AND round_number = 1", (division_id,)
-        )
-        return (await cursor.fetchone())["id"]
 
 
 async def test_the_opening_posts_both_sheets_for_every_division(db_path):
