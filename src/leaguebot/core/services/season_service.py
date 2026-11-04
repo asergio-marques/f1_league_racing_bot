@@ -626,8 +626,6 @@ class SeasonService:
                 await db.execute(f"DELETE FROM race_session_results WHERE session_result_id IN ({sph})", session_result_ids)
                 await db.execute(f"DELETE FROM qualifying_session_results WHERE session_result_id IN ({sph})", session_result_ids)
             await db.execute(f"DELETE FROM session_results WHERE round_id IN ({ph})", round_ids)
-            await db.execute(f"DELETE FROM forecast_messages WHERE round_id IN ({ph})", round_ids)
-            await db.execute(f"DELETE FROM phase_results WHERE round_id IN ({ph})", round_ids)
             await db.execute(f"DELETE FROM sessions WHERE round_id IN ({ph})", round_ids)
 
         # ── Results module: season-level children ───────────────────────
@@ -816,8 +814,6 @@ class SeasonService:
 
             if round_ids:
                 ph = ",".join("?" * len(round_ids))
-                await db.execute(f"DELETE FROM forecast_messages WHERE round_id IN ({ph})", round_ids)
-                await db.execute(f"DELETE FROM phase_results WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM sessions WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM rounds WHERE division_id = ?", (division_id,))
 
@@ -948,8 +944,6 @@ class SeasonService:
             division_id: int = row[0]
 
             await rounds_deleted.call(db, [round_id])
-            await db.execute("DELETE FROM forecast_messages WHERE round_id = ?", (round_id,))
-            await db.execute("DELETE FROM phase_results WHERE round_id = ?", (round_id,))
             await db.execute("DELETE FROM sessions WHERE round_id = ?", (round_id,))
             await db.execute("DELETE FROM rounds WHERE id = ?", (round_id,))
             await db.commit()

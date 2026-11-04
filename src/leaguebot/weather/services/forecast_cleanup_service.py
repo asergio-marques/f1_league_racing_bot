@@ -112,6 +112,23 @@ async def forget_forecast_on(
     )
 
 
+async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> None:
+    """Delete weather's rows of *round_ids* on *db*, committing nothing: the round's drawn phases
+    and the record of each forecast posted for it.
+
+    Core hands it the round ids as it deletes the rounds, in the delete's own save, so that the
+    module's rows go with the round or not at all (architecture.md, "The database"). Only the rows
+    go: a forecast already posted is not taken down here.
+    """
+    marks = ",".join("?" * len(round_ids))
+    await db.execute(
+        f"DELETE FROM forecast_messages WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+    await db.execute(
+        f"DELETE FROM phase_results WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+
+
 # ---------------------------------------------------------------------------
 # T010 + T013 — the forecasts a clean-up or a flush deletes, as jobs
 # ---------------------------------------------------------------------------

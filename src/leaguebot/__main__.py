@@ -221,9 +221,11 @@ def _sign_up_to_deletes(bot: LeagueBot) -> None:
     delete's connection, inside its save (architecture.md, "The database")."""
     from leaguebot.attendance.services import attendance_service
     from leaguebot.signup.services import signup_module_service
+    from leaguebot.weather.services import forecast_cleanup_service
 
     bot.rounds_deleted = AwaitedHook()
     bot.rounds_deleted.subscribe(attendance_service.rounds_deleted_on)
+    bot.rounds_deleted.subscribe(forecast_cleanup_service.rounds_deleted_on)
     bot.divisions_deleted = AwaitedHook()
     bot.divisions_deleted.subscribe(attendance_service.divisions_deleted_on)
     bot.season_deleted = AwaitedHook()
