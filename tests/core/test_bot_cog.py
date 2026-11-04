@@ -31,6 +31,7 @@ import os
 import re
 from unittest.mock import AsyncMock, MagicMock
 
+import aiosqlite
 import discord
 import pytest
 
@@ -1120,7 +1121,9 @@ async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
     assert (row["change_type"], row["actor_id"]) == ("BOT_PACKED", 7)
     bot.in_memory_state_cleared.call.assert_called_once_with()
     bot.bot_packed.call.assert_awaited_once()
-    assert len(bot.bot_packed.call.await_args.args) == 1
+    (handed,) = bot.bot_packed.call.await_args.args
+    assert isinstance(handed, aiosqlite.Connection)
+    assert bot.bot_packed.call.await_args.kwargs == {}
 
 
 # ── /bot factory-reset ─────────────────────────────────────────────────────
