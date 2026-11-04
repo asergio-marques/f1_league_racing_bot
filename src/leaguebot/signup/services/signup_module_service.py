@@ -11,6 +11,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.services.pack_service import CLEARED_SIGNUP_CHANNEL_ID, CLEARED_WIZARDS
 from leaguebot.signup.models.signup_module import (
     AvailabilitySlot,
     ConfigSnapshot,
@@ -920,3 +921,26 @@ async def season_deleted_on(db: aiosqlite.Connection, season_id: int) -> None:
     await db.execute("DELETE FROM signup_records WHERE season_id = ?", (season_id,))
     await db.execute("DELETE FROM signup_windows WHERE season_id = ?", (season_id,))
     await db.execute("DELETE FROM season_signup_config WHERE season_id = ?", (season_id,))
+
+
+async def bot_packed_on(db: aiosqlite.Connection) -> dict[str, Any]:
+    """Clear signup's rows tied to the server the bot leaves, on *db*, committing nothing: every
+    wizard record, and the signup channel, the Sign Up button's message and the closed post's
+    message in the configuration, if it has one.
+
+    Core hands it the pack's connection, so that signup's rows go with the rest of the pack or
+    not at all (architecture.md, "The database"). The module stays enabled with nothing
+    configured, which is the state `/module enable signup` itself leaves it in. It hands back what
+    the reply and the audit entry report: how many wizards it cleared, and the signup channel's
+    id as it stood, None where there was no configuration.
+    """
+    row = await (await db.execute("SELECT signup_channel_id FROM signup_module_config")).fetchone()
+    wizards = (await db.execute("DELETE FROM signup_wizard_records")).rowcount
+    await db.execute(
+        "UPDATE signup_module_config SET signup_channel_id = NULL, "
+        "signup_button_message_id = NULL, signup_closed_message_id = NULL"
+    )
+    return {
+        CLEARED_WIZARDS: wizards,
+        CLEARED_SIGNUP_CHANNEL_ID: None if row is None else row["signup_channel_id"],
+    }

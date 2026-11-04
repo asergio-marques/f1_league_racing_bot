@@ -54,6 +54,12 @@ log = logging.getLogger(__name__)
 #: The stages that end a season. Any other stage — or none yet — is a current season.
 _FINISHED_STAGES: tuple[str, ...] = (SeasonStage.COMPLETED.value, SeasonStage.CANCELLED.value)
 
+#: What a module's part of the pack hands back, as a mapping, for the reply and the audit entry:
+#: the number of signup wizards cleared, and the signup channel's id as it stood (None where the
+#: league has none). A part that has neither hands back nothing.
+CLEARED_WIZARDS = "wizards"
+CLEARED_SIGNUP_CHANNEL_ID = "signup_channel_id"
+
 #: Scheduled work pack leaves armed. The daily portrait refresh is a standing instruction from
 #: an image setting pack keeps, and does nothing while no server is claimed.
 KEPT_JOBS: frozenset[str] = frozenset({PORTRAIT_REFRESH_JOB_ID})
@@ -144,11 +150,12 @@ _AUDITED_SETTINGS: tuple[str, ...] = (
 )
 
 
-async def _cleared_configuration(db) -> dict[str, Any]:
+async def _cleared_configuration(db, signup_channel_id: int | None) -> dict[str, Any]:
     """The configuration pack is about to clear, for its audit entry (issue #383).
 
     Every setting and role a league set upon this server: the four settings and the claim,
-    the two league roles, the hub, the signup channel and each team's role. The next
+    the two league roles, the hub, the signup channel (*signup_channel_id*, as the signup module
+    handed it back) and each team's role. The next
     server's `/bot init` is audited as replacing nothing, so this entry is the only place
     in the database the values survive.
     """
@@ -157,9 +164,7 @@ async def _cleared_configuration(db) -> dict[str, Any]:
     cleared: dict[str, Any] = {
         column: None if row is None else row[column] for column in _AUDITED_SETTINGS
     }
-    cursor = await db.execute("SELECT signup_channel_id FROM signup_module_config")
-    row = await cursor.fetchone()
-    cleared["signup_channel_id"] = None if row is None else row["signup_channel_id"]
+    cleared["signup_channel_id"] = signup_channel_id
     cursor = await db.execute(
         "SELECT team_name, role_id FROM team_role_configs ORDER BY team_name"
     )
@@ -196,22 +201,17 @@ async def pack(
                 raise PackRefused(job_id=job[0], stopped=job[1], lane=job[2])
 
             # Each module clears its own rows, on this connection, in this transaction.
-            await bot_packed.call(db)
+            handed_back: dict[str, Any] = {}
+            for answer in await bot_packed.call(db):
+                handed_back.update(answer or {})
+            wizards = int(handed_back.get(CLEARED_WIZARDS, 0))
 
-            cleared = await _cleared_configuration(db)
+            cleared = await _cleared_configuration(db, handed_back.get(CLEARED_SIGNUP_CHANNEL_ID))
 
             team_roles = (await db.execute("DELETE FROM team_role_configs")).rowcount
-            wizards = (await db.execute("DELETE FROM signup_wizard_records")).rowcount
             queued = (await db.execute("DELETE FROM pending_messages")).rowcount
             await db.execute("DELETE FROM season_review_prompts")
             # No change is open (refused above), so the queue holds only history, which stays.
-
-            # The signup module stays enabled with nothing configured, which is the state
-            # `/module enable signup` itself leaves it in.
-            await db.execute(
-                "UPDATE signup_module_config SET signup_channel_id = NULL, "
-                "signup_button_message_id = NULL, signup_closed_message_id = NULL"
-            )
 
             # The league's two roles are core's (issue #276), but a role belongs to its
             # server: the next server's `/bot init` finds none, as it finds no team role.

@@ -1915,7 +1915,7 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/services/module_service.py", "ModuleService.set_images_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_signup_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_weather_enabled"): (1, PASS["core"]),
-    ("core/services/pack_service.py", "pack"): (6, PASS["core"]),
+    ("core/services/pack_service.py", "pack"): (4, PASS["core"]),
     ("core/services/test_roster_service.py", "_ensure_single_config"): (4, PASS["core"]),
     ("results/services/result_submission_service.py", "recompute_former_drivers_for_round"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "_restore_from_snapshot_on"): (2, PASS["results"]),
@@ -2421,7 +2421,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/module_service.py", "ModuleService.is_attendance_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.is_images_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.is_results_enabled"): (1, PASS["core"]),
-    ("core/services/pack_service.py", "_cleared_configuration"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.get_unassigned_drivers_for_export"):
         (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.get_unassigned_drivers_seeded"):

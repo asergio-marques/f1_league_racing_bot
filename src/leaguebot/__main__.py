@@ -247,7 +247,10 @@ def _sign_up_to_pack(bot: LeagueBot) -> None:
     """Make the hook the bot packed declares, for the modules to sign up to: each module clearing
     its own rows tied to the server the bot leaves, on the pack's connection, inside its one
     transaction (architecture.md, "The database"). The builder hands it to `/bot pack`."""
+    from leaguebot.signup.services import signup_module_service
+
     bot.bot_packed = AwaitedHook()
+    bot.bot_packed.subscribe(signup_module_service.bot_packed_on)
 
 
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
