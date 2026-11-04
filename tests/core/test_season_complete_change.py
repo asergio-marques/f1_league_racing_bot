@@ -1623,24 +1623,31 @@ async def _refuse_returning(league: Any, user_id: int) -> None:
     )
 
 
+#: Each end of a season that closes the signup window, as `_ending` names it.
+ENDS = ["completion", "cancellation", "abort", "wind-down"]
+
+
 @pytest.mark.xfail(strict=True, reason=ONE_SAVE)
-async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or_none(tmp_path):
+@pytest.mark.parametrize("end", ENDS)
+async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or_none(
+    tmp_path, end,
+):
     """The signup window open with drivers 105 and 106 still filling in the wizard, and the
-    completion queued. Returning 106 fails: the close stops with neither driver returned, both
-    still signing up, nobody told and the window open. Once the database takes it, a Retry returns
-    both, each is told once and has their channel closed, the window is closed and the season is
-    completed."""
-    league = await pending_completion_league(tmp_path, signups_open=True)
+    season's completion, cancellation, abort or wind-down asked. Returning 106 fails: the close
+    stops with neither driver returned, both still signing up, nobody told and the window open.
+    Once the database takes it, a Retry returns both, each is told once and has their channel
+    closed, the window is closed and the queue runs on to the end."""
+    league = await _league_ending(tmp_path, end)
     await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
     await signing_up(league, SIGNING_UP_TOO, state="PENDING_SIGNUP_COMPLETION")
     await _refuse_returning(league, SIGNING_UP_TOO)
-    await _asked(league)
+    await _ending(league, end)
 
     await run_queue(league.bot)
 
-    assert await _stopped_at(league) == ("close_window", None)
     assert await driver_state(league, SIGNING_UP) == "PENDING_SIGNUP_COMPLETION"
     assert await driver_state(league, SIGNING_UP_TOO) == "PENDING_SIGNUP_COMPLETION"
+    assert await _stopped_at(league) == ("close_window", None)
     assert league.notices == [] and league.locked == []
     assert await window_open(league)
 
@@ -1652,7 +1659,24 @@ async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or
     assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED), (SIGNING_UP_TOO, SIGNUPS_CLOSED)]
     assert league.locked == [SIGNING_UP, SIGNING_UP_TOO]
     assert not await window_open(league)
-    assert await _status(league) == "COMPLETED"
+    assert await stopped_job(league.db_path) is None
+
+
+async def _league_ending(tmp_path: Any, end: str) -> Any:
+    """The league whose season *end* closes: being set up for the abort, ongoing for the
+    cancellation, ongoing with signups and every division done for the wind-down, pending
+    completion for the completion; its signup window open."""
+    from tests.support.season_league import ongoing_league, setup_league
+
+    if end == "abort":
+        return await setup_league(tmp_path, signups_open=True)
+    if end == "cancellation":
+        return await ongoing_league(tmp_path, signups_open=True)
+    if end == "wind-down":
+        return await pending_completion_league(
+            tmp_path, stage="ONGOING_SIGNUPS", signups_open=True
+        )
+    return await pending_completion_league(tmp_path, signups_open=True)
 
 
 async def _ending(league: Any, end: str) -> None:
@@ -1685,18 +1709,7 @@ async def test_a_season_s_close_that_fails_is_named_in_the_stop_notice_as_today(
     """The signup window open with driver 105 still filling in the wizard, and the season's
     completion, cancellation, abort or wind-down asked. Returning 105 fails: the queue stops, and
     its stop notice names the job that closes the window in the words it uses today."""
-    from tests.support.season_league import ongoing_league, setup_league
-
-    if end == "abort":
-        league = await setup_league(tmp_path, signups_open=True)
-    elif end == "cancellation":
-        league = await ongoing_league(tmp_path, signups_open=True)
-    elif end == "wind-down":
-        league = await pending_completion_league(
-            tmp_path, stage="ONGOING_SIGNUPS", signups_open=True
-        )
-    else:
-        league = await pending_completion_league(tmp_path, signups_open=True)
+    league = await _league_ending(tmp_path, end)
     await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
     await _refuse_returning(league, SIGNING_UP)
     await _ending(league, end)
