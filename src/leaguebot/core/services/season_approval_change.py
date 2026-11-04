@@ -37,7 +37,7 @@ and what a league admin discarded. A job tried again posts as text (Constitution
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -83,6 +83,7 @@ from leaguebot.core.services.season_service import (
     transition_to_active_on,
 )
 from leaguebot.core.services.notice_handler import delete_notice, send_notice
+from leaguebot.core.services.season_lifecycle_service import kept_line
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
@@ -126,7 +127,6 @@ ARM = "arm"
 GRANT_ROLES = "grant_roles"
 POST_BATCH_NOTICE = "post_batch_notice"
 REFRESH_LINEUP = "refresh_lineup"
-OPENING_STANDINGS = "opening_standings"
 OPENING_SHEET = "opening_sheet"
 DELETE_BATCH_NOTICE = "delete_batch_notice"
 TELL_REVIEW_CHANNEL = "tell_review_channel"
@@ -275,34 +275,24 @@ def driver_roles_step(placement: Any, name: str = GRANT_ROLES) -> Step:
 async def core_opening_posts_on(
     db: aiosqlite.Connection, division_id: int, division_name: str
 ) -> tuple[PlannedStep, ...]:
-    """Core's own opening standings and opening sheet jobs for *division_id*, signed up to
-    *placements_confirmed* as its only subscribers for now (#283: results' and attendance's own
-    modules take these over in a later commit). Whether each runs is decided as it runs, by its
-    module's switch (`core_opening_posts_steps`)."""
-    target = {"division_id": division_id, "division_name": division_name}
-    return (PlannedStep(OPENING_STANDINGS, target), PlannedStep(OPENING_SHEET, target))
+    """Core's own opening sheet job for *division_id*, signed up to *placements_confirmed*
+    after results' own opening standings (#283: attendance's own module takes this over in a
+    later commit). Whether it runs is decided as it runs, by attendance's switch
+    (`core_opening_posts_steps`)."""
+    return (PlannedStep(OPENING_SHEET, {"division_id": division_id, "division_name": division_name}),)
 
 
 def core_opening_posts_steps(modules: "ModuleService") -> dict[str, Step]:
-    """Core's own step definitions for the opening standings and opening sheet, signed up to
-    *placements_confirmed_steps* beside `core_opening_posts_on` (#283, see there)."""
+    """Core's own step definition for the opening sheet, signed up to
+    *placements_confirmed_steps* beside results' `season_standings_posts.opening_steps` (#283:
+    attendance's own module takes this over in a later commit; results' opening standings has
+    already moved to `season_standings_posts`, which plans and defines its own step)."""
 
     def describing(template: str) -> Callable[[StepContext], Awaitable[str]]:
         async def describe(ctx: StepContext) -> str:
             return template.format(name=ctx.step_payload["division_name"])
 
         return describe
-
-    async def opening_standings(ctx: StepContext) -> StepResult:
-        guild = await _guild(ctx.bot)
-        await season_classification_service.post_opening_standings(
-            ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
-            as_text=ctx.tries > 0, kept=ctx.kept,
-        )
-        return StepResult()
-
-    async def standings_due(_ctx: StepContext) -> bool:
-        return await modules.is_results_enabled()
 
     async def opening_sheet(ctx: StepContext) -> StepResult:
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
@@ -331,10 +321,6 @@ def core_opening_posts_steps(modules: "ModuleService") -> dict[str, Step]:
         return await modules.is_attendance_enabled()
 
     return {
-        OPENING_STANDINGS: Step(
-            OPENING_STANDINGS, StepKind.ACT, opening_standings, still_due=standings_due,
-            describe=describing("posting the opening standings of **{name}**"),
-        ),
         OPENING_SHEET: Step(
             OPENING_SHEET, StepKind.ACT, opening_sheet, still_due=sheet_due,
             describe=describing("posting the opening attendance sheet of **{name}**"),
@@ -689,7 +675,7 @@ def season_approval_change(
             f"{ctx.named} | /season placements-review | Placements confirmed\n"
             f"  season: {applied.get('season_number', ctx.payload['season_number'])}\n"
             f"  season_id: {applied.get('season_id', ctx.payload['season_id'])}"
-            + "".join(f"\n  not done: {line}" for line in _left(ctx))
+            + "".join(f"\n  not done: {line}" for line in _left(ctx, steps))
         )
         return StepResult(result={"closed": True}, lines=tuple(lines))
 
@@ -790,7 +776,7 @@ def season_approval_change(
             f"Season #{applied.get('season_number', ctx.payload['season_number'])} "
             f"(ID: {applied.get('season_id', ctx.payload['season_id'])})"
         )
-        text += approval_checks.not_done_section(_left(ctx, told=False))
+        text += approval_checks.not_done_section(_left(ctx, steps, told=False))
         report = _calendar_report(ctx)
         if report:
             head, *rest = report.splitlines()
@@ -914,10 +900,11 @@ def _applied(ctx: OutcomeContext) -> bool:
     return not (_discarded(view) or result.get("refused") or result.get("unjudged"))
 
 
-def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
+def _left(ctx: OutcomeContext, steps: Mapping[str, Step], *, told: bool = True) -> list[str]:
     """What was not done, one line for each job a league admin discarded, in the order of the
     jobs, the drivers whose roles were not granted gathered into one line. *told* adds the review's
-    channel not told, which the member's reply cannot carry."""
+    channel not told, which the member's reply cannot carry. A module's own opening post is named
+    in its own step's words (`kept_line`); the jobs core still defines keep their own branches."""
     lines: list[str] = []
     ungranted: list[str] = []
     ungranted_at: int | None = None
@@ -925,7 +912,10 @@ def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
         if not _discarded(view):
             continue
         each = view.payload
-        if view.name == GRANT_ROLES:
+        words = kept_line(steps, view)
+        if words is not None:
+            lines.append(words)
+        elif view.name == GRANT_ROLES:
             if ungranted_at is None:
                 ungranted_at = len(lines)
                 lines.append("")
@@ -941,21 +931,6 @@ def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
             )
         elif view.name == standing_posts.DELETE_REPLACED:
             lines.append(standing_posts.not_deleted(view) or "")
-        elif view.name == OPENING_STANDINGS:
-            lines.append(
-                f"**{each['division_name']}** — its opening standings could not be posted. No "
-                f"command posts them again; the first round's results post the standings as "
-                f"usual."
-            )
-            stranded = (view.result or {}).get("new")
-            if stranded:
-                ids = ", ".join(str(each_id) for each_id in stranded)
-                lines.append(
-                    f"**{each['division_name']}** — a part of its opening standings was posted "
-                    f"before the job stopped and stands in "
-                    f"<#{(view.result or {}).get('channel_id')}> (message {ids}): delete it by "
-                    f"hand."
-                )
         elif view.name == OPENING_SHEET:
             lines.append(
                 f"**{each['division_name']}** — its opening attendance sheet could not be "

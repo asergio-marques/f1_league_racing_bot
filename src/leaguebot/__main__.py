@@ -289,15 +289,18 @@ def _sign_up_to_placements_confirmed(bot: LeagueBot) -> None:
     connection and the division's id and name (architecture.md, "How modules and core fit
     together"), and the step it defines for its own job, by name. The builder hands them to
     `season_approval_change`. Results signs up first, so each division's jobs stay lineup,
-    calendar, standings, sheet. #283: core's own opening posts are signed up for now, until
-    results and attendance take them over."""
+    calendar, standings, sheet. #283: attendance's opening sheet is still signed up through
+    core's copy, until attendance takes it over."""
     from leaguebot.core.services.season_approval_change import (
         core_opening_posts_on, core_opening_posts_steps,
     )
+    from leaguebot.results.services import season_standings_posts
 
     bot.placements_confirmed = AwaitedHook()
+    bot.placements_confirmed.subscribe(season_standings_posts.placements_confirmed_on)
     bot.placements_confirmed.subscribe(core_opening_posts_on)
     bot.placements_confirmed_steps = Hook()
+    bot.placements_confirmed_steps.subscribe(season_standings_posts.opening_steps)
     bot.placements_confirmed_steps.subscribe(partial(
         core_opening_posts_steps, bot.module_service
     ))

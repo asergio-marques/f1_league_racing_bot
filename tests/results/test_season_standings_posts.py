@@ -31,8 +31,6 @@ from tests.support.season_classification import (
 )
 from tests.support.season_league import AM, DIVISIONS, PRO, season_league
 
-_NOT_RESULTS_YET = "#283: the opening standings are not yet posted by results' own module"
-
 
 @pytest.fixture
 async def db_path(tmp_path):
@@ -41,7 +39,6 @@ async def db_path(tmp_path):
     return path
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_the_opening_standings_are_posted_for_every_division(db_path):
     """Div A and Div B, one round and one seated driver each: each division's opening standings
     are posted once, under the opening's heading."""
@@ -64,7 +61,6 @@ async def test_the_opening_standings_are_posted_for_every_division(db_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_the_opening_standings_are_drawn_against_the_division_s_first_round(db_path):
     """Not because they stand after it — the grid of rounds is read from the calendar."""
     from leaguebot.results.services import season_standings_posts as service
@@ -89,7 +85,6 @@ async def test_the_opening_standings_are_drawn_against_the_division_s_first_roun
     assert standings.await_args.args[2] == opener
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_a_division_with_no_rounds_posts_no_opening_standings(db_path):
     """Div A's only round deleted: its opening standings post nothing."""
     from leaguebot.results.services import season_standings_posts as service
@@ -109,7 +104,6 @@ async def test_a_division_with_no_rounds_posts_no_opening_standings(db_path):
     assert standings.await_count == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_the_opening_standings_post_reads_the_division_s_standings_channel(db_path):
     """Div A's standings channel (900) is set with `/division results-channel`, in the results
     module's own settings: the opening classification is posted there, both championships."""
@@ -138,7 +132,6 @@ async def test_the_opening_standings_post_reads_the_division_s_standings_channel
     assert args[10] == "", "the opening carries no lifecycle label"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_an_opening_standings_channel_set_and_gone_raises(db_path):
     """Div A's standings channel (900) has been deleted from the server: the job raises for
     the queue to stop on, rather than passing over the division in silence."""
@@ -159,7 +152,6 @@ async def test_an_opening_standings_channel_set_and_gone_raises(db_path):
     standings.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_a_division_with_no_standings_channel_set_posts_no_opening_standings(
     tmp_path, monkeypatch,
 ):
