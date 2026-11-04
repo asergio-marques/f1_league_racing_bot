@@ -244,9 +244,21 @@ def cog(db_path):
 
 class TestEnabling:
     async def test_a_clean_server_may_enter_test_mode(self, cog, db_path):
+        """The season in Configuration has no points configuration. Switching test mode on seeds
+        "Standard" and "Half Points", through results' part of the builder's hook, and the reply
+        and the log line name both, word for word."""
         interaction = await _toggle(cog)
 
-        assert "**enabled**" in interaction.reply
+        assert interaction.reply == (
+            "✅ Test mode **enabled**. Use `/test-mode advance` to step through phases, or "
+            "`/test-mode review` to inspect season status."
+            "\n📌 Added default point configs: **Standard, Half Points**"
+        )
+        cog.bot.output_router.post_log.assert_awaited_once_with(
+            "Tester (<@1>) | /test-mode toggle | Success\n"
+            "  test_mode: enabled\n"
+            "  seeded_configs: Standard, Half Points"
+        )
         assert await _flag(db_path) is True
 
     async def test_a_real_driver_refuses_it(self, cog, db_path):
@@ -325,24 +337,6 @@ class TestTheSeasonsStage:
 
         assert "**disabled**" in interaction.reply
         assert await _flag(db_path) is False
-
-
-async def test_switching_test_mode_on_names_the_configurations_it_seeded(cog, db_path):
-    """The season in Configuration has no points configuration. Switching test mode on seeds
-    "Standard" and "Half Points", through results' part of the builder's hook, and the reply and
-    the log line name both, word for word."""
-    interaction = await _toggle(cog)
-
-    assert interaction.reply == (
-        "✅ Test mode **enabled**. Use `/test-mode advance` to step through phases, or "
-        "`/test-mode review` to inspect season status."
-        "\n📌 Added default point configs: **Standard, Half Points**"
-    )
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        "Tester (<@1>) | /test-mode toggle | Success\n"
-        "  test_mode: enabled\n"
-        "  seeded_configs: Standard, Half Points"
-    )
 
 
 @pytest.mark.xfail(
