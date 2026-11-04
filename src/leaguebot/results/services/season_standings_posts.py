@@ -28,7 +28,6 @@ from typing import Any
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.change_queue import Step, StepContext
-from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.utils.league_bot import LeagueBot
 
 OPENING_STANDINGS = "opening_standings"
@@ -44,6 +43,8 @@ async def _opening_round(db_path: str, division_id: int):
     empty, which is exactly what an opening sheet should show. Approval refuses a division with no
     rounds, so None cannot normally happen.
     """
+    from leaguebot.core.services.season_service import SeasonService
+
     rounds = await SeasonService(db_path).get_division_rounds(division_id)
     return rounds[0] if rounds else None
 
