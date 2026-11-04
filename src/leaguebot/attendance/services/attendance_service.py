@@ -686,6 +686,35 @@ async def divisions_deleted_on(db: aiosqlite.Connection, division_ids: list[int]
     )
 
 
+async def profiles_deleted_on(db: aiosqlite.Connection, profile_ids: list[int]) -> None:
+    """Delete attendance's rows of the drivers *profile_ids* on *db*, committing nothing: each
+    driver's attendance of every round, with the pardons that hang from it (they go by the
+    cascade from the attendance row).
+
+    Core hands it the profile ids as it deletes the drivers, in the delete's own save, so that
+    the module's rows go with the drivers or not at all (architecture.md, "The database").
+    """
+    marks = ",".join("?" * len(profile_ids))
+    await db.execute(
+        f"DELETE FROM driver_round_attendance WHERE driver_profile_id IN ({marks})",  # noqa: S608
+        profile_ids,
+    )
+
+
+async def profiles_merged_on(db: aiosqlite.Connection, kept_id: int, absorbed_id: int) -> None:
+    """Move attendance's rows of the driver *absorbed_id* onto the driver *kept_id* on *db*,
+    committing nothing: their attendance of every round.
+
+    Core hands it both profile ids as it merges the drivers, inside the merge's one transaction,
+    before the absorbed profile is deleted (architecture.md, "The database"). The merge's
+    refusals guarantee that the two drivers never held one round between them.
+    """
+    await db.execute(
+        "UPDATE driver_round_attendance SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        (kept_id, absorbed_id),
+    )
+
+
 # ── Row-to-dataclass helpers ───────────────────────────────────────────────
 
 

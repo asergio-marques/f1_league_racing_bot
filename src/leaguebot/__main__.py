@@ -236,7 +236,9 @@ def _sign_up_to_deletes(bot: LeagueBot) -> None:
     bot.season_deleted.subscribe(results_purge_service.season_deleted_on)
     bot.season_deleted.subscribe(signup_module_service.season_deleted_on)
     bot.profiles_deleted = AwaitedHook()
+    bot.profiles_deleted.subscribe(attendance_service.profiles_deleted_on)
     bot.profiles_merged = AwaitedHook()
+    bot.profiles_merged.subscribe(attendance_service.profiles_merged_on)
 
 
 def _sign_up_to_season_end(bot: LeagueBot) -> None:

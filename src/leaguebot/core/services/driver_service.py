@@ -295,7 +295,6 @@ _PROFILE_COLUMNS = (
     "team_seats",
     "driver_season_assignments",
     "driver_history_entries",
-    "driver_round_attendance",
     "driver_standings_snapshots",
     "race_session_results",
     "qualifying_session_results",
