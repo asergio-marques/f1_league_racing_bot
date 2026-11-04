@@ -100,8 +100,7 @@ CREATE TABLE team_seats (
 -- division_results_config
 CREATE TABLE division_results_config (
     division_id          INTEGER PRIMARY KEY
-                             REFERENCES divisions(id)
-                             ON DELETE CASCADE,
+                             REFERENCES divisions(id),
     results_channel_id   INTEGER,
     standings_channel_id INTEGER,
     reserves_in_standings INTEGER NOT NULL DEFAULT 1
@@ -111,8 +110,7 @@ CREATE TABLE division_results_config (
 CREATE TABLE season_points_links (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     season_id   INTEGER NOT NULL
-                    REFERENCES seasons(id)
-                    ON DELETE CASCADE,
+                    REFERENCES seasons(id),
     config_name TEXT    NOT NULL,
     UNIQUE (season_id, config_name)
 );
@@ -145,8 +143,7 @@ CREATE TABLE points_config_fl (
 CREATE TABLE season_points_entries (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     season_id    INTEGER NOT NULL
-                     REFERENCES seasons(id)
-                     ON DELETE CASCADE,
+                     REFERENCES seasons(id),
     config_name  TEXT    NOT NULL,
     session_type TEXT    NOT NULL,
     position     INTEGER NOT NULL,
@@ -158,8 +155,7 @@ CREATE TABLE season_points_entries (
 CREATE TABLE season_points_fl (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     season_id         INTEGER NOT NULL
-                          REFERENCES seasons(id)
-                          ON DELETE CASCADE,
+                          REFERENCES seasons(id),
     config_name       TEXT    NOT NULL,
     session_type      TEXT    NOT NULL,
     fl_points         INTEGER NOT NULL DEFAULT 0,
@@ -170,8 +166,7 @@ CREATE TABLE season_points_fl (
 -- season_amendment_state
 CREATE TABLE season_amendment_state (
     season_id        INTEGER PRIMARY KEY
-                         REFERENCES seasons(id)
-                         ON DELETE CASCADE,
+                         REFERENCES seasons(id),
     amendment_active INTEGER NOT NULL DEFAULT 0,
     modified_flag    INTEGER NOT NULL DEFAULT 0
 );
@@ -180,8 +175,7 @@ CREATE TABLE season_amendment_state (
 CREATE TABLE season_modification_entries (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     season_id    INTEGER NOT NULL
-                     REFERENCES seasons(id)
-                     ON DELETE CASCADE,
+                     REFERENCES seasons(id),
     config_name  TEXT    NOT NULL,
     session_type TEXT    NOT NULL,
     position     INTEGER NOT NULL,
@@ -193,8 +187,7 @@ CREATE TABLE season_modification_entries (
 CREATE TABLE season_modification_fl (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     season_id         INTEGER NOT NULL
-                          REFERENCES seasons(id)
-                          ON DELETE CASCADE,
+                          REFERENCES seasons(id),
     config_name       TEXT    NOT NULL,
     session_type      TEXT    NOT NULL,
     fl_points         INTEGER NOT NULL DEFAULT 0,
@@ -206,8 +199,7 @@ CREATE TABLE season_modification_fl (
 CREATE TABLE session_results (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id           INTEGER NOT NULL
-                           REFERENCES rounds(id)
-                           ON DELETE CASCADE,
+                           REFERENCES rounds(id),
     division_id        INTEGER NOT NULL
                            REFERENCES divisions(id),
     session_type       TEXT    NOT NULL,
@@ -230,8 +222,7 @@ CREATE TABLE session_results (
 CREATE TABLE driver_standings_snapshots (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id            INTEGER NOT NULL
-                            REFERENCES rounds(id)
-                            ON DELETE CASCADE,
+                            REFERENCES rounds(id),
     division_id         INTEGER NOT NULL
                             REFERENCES divisions(id),
     driver_user_id      INTEGER NOT NULL,
@@ -252,8 +243,7 @@ CREATE INDEX idx_dss_driver_profile
 CREATE TABLE team_standings_snapshots (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id            INTEGER NOT NULL
-                            REFERENCES rounds(id)
-                            ON DELETE CASCADE,
+                            REFERENCES rounds(id),
     division_id         INTEGER NOT NULL
                             REFERENCES divisions(id),
     team_instance_id    INTEGER NOT NULL REFERENCES team_instances(id),
@@ -268,8 +258,7 @@ CREATE TABLE team_standings_snapshots (
 CREATE TABLE round_submission_channels (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id   INTEGER NOT NULL
-                   REFERENCES rounds(id)
-                   ON DELETE CASCADE,
+                   REFERENCES rounds(id),
     channel_id INTEGER NOT NULL,
     created_at TEXT    NOT NULL,
     closed     INTEGER NOT NULL DEFAULT 0, in_penalty_review INTEGER NOT NULL DEFAULT 0, results_posted   INTEGER NOT NULL DEFAULT 0, prompt_message_id INTEGER, resubmitting               INTEGER NOT NULL DEFAULT 0, resubmit_prompt_message_id INTEGER, resubmit_started_by INTEGER,
@@ -297,8 +286,7 @@ CREATE TABLE tracks (
 CREATE TABLE driver_round_attendance (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id           INTEGER NOT NULL
-                           REFERENCES rounds(id)
-                           ON DELETE CASCADE,
+                           REFERENCES rounds(id),
     division_id        INTEGER NOT NULL
                            REFERENCES divisions(id),
     driver_profile_id  INTEGER NOT NULL
@@ -317,8 +305,7 @@ CREATE INDEX idx_dra_round_division
 CREATE TABLE rsvp_embed_messages (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id    INTEGER NOT NULL
-                    REFERENCES rounds(id)
-                    ON DELETE CASCADE,
+                    REFERENCES rounds(id),
     division_id INTEGER NOT NULL
                     REFERENCES divisions(id),
     message_id  TEXT    NOT NULL,
@@ -434,7 +421,7 @@ CREATE TABLE "appeal_records" (
 -- never taken down either (decided 2026-09-21).
 CREATE TABLE verdict_banner_messages (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    round_id        INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+    round_id        INTEGER NOT NULL REFERENCES rounds(id),
     channel_id      TEXT    NOT NULL,
     message_id      TEXT    NOT NULL,
     posted_at       TEXT    NOT NULL,
@@ -496,7 +483,7 @@ CREATE INDEX idx_rounds_division ON rounds(division_id);
 
 -- season_signup_config
 CREATE TABLE season_signup_config (
-    season_id            INTEGER PRIMARY KEY REFERENCES seasons(id) ON DELETE CASCADE,
+    season_id            INTEGER PRIMARY KEY REFERENCES seasons(id),
     nationality_required INTEGER NOT NULL,
     time_type            TEXT    NOT NULL,
     time_image_required  INTEGER NOT NULL,
@@ -539,8 +526,7 @@ CREATE TABLE "attendance_config" (
 -- attendance_division_config
 CREATE TABLE "attendance_division_config" (
     division_id            INTEGER PRIMARY KEY
-                               REFERENCES divisions(id)
-                               ON DELETE CASCADE,
+                               REFERENCES divisions(id),
     rsvp_channel_id        TEXT,
     attendance_channel_id  TEXT,
     attendance_message_id  TEXT
@@ -630,7 +616,7 @@ CREATE TABLE "points_config_store" (
 -- round_amend_channels
 CREATE TABLE "round_amend_channels" (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    round_id     INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+    round_id     INTEGER NOT NULL REFERENCES rounds(id),
     channel_id   INTEGER NOT NULL,
     -- session_types: the sessions this amendment re-enters, as a JSON array of session-type
     -- values in running order (#345). One amendment covers any number of a round's sessions,
@@ -682,7 +668,7 @@ CREATE TABLE "round_amend_channels" (
 -- the paste said the session was cancelled. config_name is NULL while the points configuration
 -- is still to be chosen, and the session is then expected again.
 CREATE TABLE resubmission_drafts (
-    round_id     INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+    round_id     INTEGER NOT NULL REFERENCES rounds(id),
     session_type TEXT    NOT NULL,
     status       TEXT    NOT NULL DEFAULT 'ACTIVE',
     rows_json    TEXT    NOT NULL,
@@ -766,7 +752,7 @@ CREATE TABLE "signup_availability_slots" (
 -- signup_windows
 CREATE TABLE "signup_windows" (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-    season_id            INTEGER NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+    season_id            INTEGER NOT NULL REFERENCES seasons(id),
     selected_tracks_json TEXT    NOT NULL DEFAULT '[]',
     close_at             TEXT,
     opened_at            TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -777,7 +763,7 @@ CREATE INDEX idx_signup_windows_season ON signup_windows(season_id);
 -- signup_records
 CREATE TABLE "signup_records" (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-    season_id             INTEGER REFERENCES seasons(id) ON DELETE CASCADE,
+    season_id             INTEGER REFERENCES seasons(id),
     window_id             INTEGER REFERENCES signup_windows(id) ON DELETE SET NULL,
     discord_user_id       TEXT    NOT NULL,
     discord_username      TEXT,

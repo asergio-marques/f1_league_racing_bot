@@ -161,10 +161,6 @@ async def test_every_table_the_baseline_creates_is_named_in_src(db_path):
 # ── Cascades ──────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: twenty keys from a module's table to a core table still cascade",
-)
 async def test_no_module_table_cascades_from_a_core_table(db_path):
     """A module deletes its own rows when core deletes a season, division or round, on the hook
     core calls (architecture.md, "The database"): a key from a module's table to a core table
