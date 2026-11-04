@@ -826,7 +826,12 @@ class SeasonService:
         hour_offset: float = 0.0,
         tier: int = 0,
     ) -> Division:
-        """Copy a division (and all its rounds with shifted datetimes) into a new division."""
+        """Copy a division (and all its rounds with shifted datetimes) into a new division.
+
+        One save: the tier refusal comes before any write, then the division, its rounds
+        and their renumbering are written on one connection and committed once, so a refusal
+        or a fault part-way leaves no division and no round behind.
+        """
         from datetime import timedelta
         src_rounds = await self.get_division_rounds(division_id)
         async with get_connection(self._db_path) as db:
@@ -914,7 +919,10 @@ class SeasonService:
         """Delete a round and renumber siblings.
 
         Each module deletes its own rows of the round through *rounds_deleted*, on the
-        transaction's connection; core then deletes the round's sessions and the round.
+        transaction's connection; core then deletes the round's sessions and the round,
+        and renumbers the division's remaining rounds. One save: all of it commits once,
+        so a fault part-way leaves the round, its siblings' numbers and the modules' rows
+        as they were.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
