@@ -39,6 +39,7 @@ from tests.support.change_queue import (
     discard_job,
     http_error,
     member_interaction,
+    queued_log_lines,
     refuse_the_job,
     retry_job,
     run_queue,
@@ -1618,21 +1619,29 @@ async def _refuse_returning(league: Any, user_id: int) -> None:
 ENDS = ["completion", "cancellation", "abort", "wind-down"]
 
 
+#: What the league manager does with the stopped close: Retry once the database takes it, or
+#: Discard it.
+THEN = ["retry", "discard"]
+
+
 @pytest.mark.xfail(strict=True, reason=ONE_SAVE)
+@pytest.mark.parametrize("then", THEN)
 @pytest.mark.parametrize("end", ENDS)
 async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or_none(
-    tmp_path, end,
+    tmp_path, end, then,
 ):
     """The signup window open with drivers 105 and 106 still filling in the wizard, and the
     season's completion, cancellation, abort or wind-down asked. Returning 106 fails: the close
     stops with neither driver returned, both still signing up, nobody told and the window open.
     Once the database takes it, a Retry returns both, each is told once and has their channel
-    closed, the window is closed and the queue runs on to the end."""
+    closed, the window is closed and the queue runs on to the end. A Discard instead leaves both
+    still signing up, the window open, nobody told, and no line naming anyone as returned but not
+    told (decision 64, 'All or nothing')."""
     league = await _league_ending(tmp_path, end)
     await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
     await signing_up(league, SIGNING_UP_TOO, state="PENDING_SIGNUP_COMPLETION")
     await _refuse_returning(league, SIGNING_UP_TOO)
-    await _ending(league, end)
+    interaction = await _ending(league, end)
 
     await run_queue(league.bot)
 
@@ -1643,6 +1652,18 @@ async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or
     assert await window_open(league)
 
     await league.write("DROP TRIGGER refuse_return")
+    if then == "discard":
+        await discard_job(league.bot)
+
+        assert await driver_state(league, SIGNING_UP) == "PENDING_SIGNUP_COMPLETION"
+        assert await driver_state(league, SIGNING_UP_TOO) == "PENDING_SIGNUP_COMPLETION"
+        assert league.notices == [] and league.locked == []
+        assert await window_open(league)
+        untold = "was returned to Not Signed Up when signups closed"
+        assert interaction is None or untold not in reply(interaction)
+        lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+        assert not any(untold in line for line in lines)
+        return
     await retry_job(league.bot)
 
     assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
@@ -1670,22 +1691,23 @@ async def _league_ending(tmp_path: Any, end: str) -> Any:
     return await pending_completion_league(tmp_path, signups_open=True)
 
 
-async def _ending(league: Any, end: str) -> None:
+async def _ending(league: Any, end: str) -> Any:
     """Ask for *end* of the season: `/season complete`, `/season cancel`, `/season abort`, or the
-    wind-down the bot asks once every division is done."""
+    wind-down the bot asks once every division is done. Gives the command's interaction, or None
+    for the wind-down, which no one types."""
     from leaguebot.core.models.change import ChangeOrigin
     from tests.support.season_league import WIND_DOWN_KIND, abort_season, cancel_season
 
     if end == "completion":
-        await _asked(league)
-    elif end == "cancellation":
-        await cancel_season(league)
-    elif end == "abort":
-        await abort_season(league)
-    else:
-        await league.bot.change_queue.ask(
-            WIND_DOWN_KIND, {}, origin=ChangeOrigin.BOT, what="Winding the season down",
-        )
+        return await _asked(league)
+    if end == "cancellation":
+        return await cancel_season(league)
+    if end == "abort":
+        return await abort_season(league)
+    await league.bot.change_queue.ask(
+        WIND_DOWN_KIND, {}, origin=ChangeOrigin.BOT, what="Winding the season down",
+    )
+    return None
 
 
 @pytest.mark.parametrize(("end", "named"), [
