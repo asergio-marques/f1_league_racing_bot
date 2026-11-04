@@ -5,10 +5,10 @@ same on every server, so a driver's profile, accounts, history and portrait mean
 thing on the next one, as do completed and cancelled seasons, which stay whole, their divisions,
 rounds and results with the channel and role ids those rows carry (history, which nothing acts
 on), the team list, the points configurations and every module setting that is not a channel
-or a role. What is cleared is what the bot acts on and edits by: the claim, the league's two
-roles, the hub, the team roles and the signup channel, the record of the messages the bot posted
-(those of past seasons' rows too), and the
-scheduled work that would post into them.
+or a role. What is cleared is what the bot acts on and edits by: the claim and the four
+settings, the league's two roles, the hub, the team roles and the signup channel, the record of
+the messages the bot posted (those of past seasons' rows too), and the scheduled work that would
+post into them.
 
 **Each module clears its own rows.** The pack calls the bot's hook (*bot_packed*) on its one
 connection, and signup, weather, attendance and results each clear what is theirs, in that order
@@ -165,9 +165,8 @@ async def _cleared_configuration(db, signup_channel_id: int | None) -> dict[str,
 
     Every setting and role a league set upon this server: the four settings and the claim,
     the two league roles, the hub, the signup channel (*signup_channel_id*, as the signup module
-    handed it back) and each team's role. The next
-    server's `/bot init` is audited as replacing nothing, so this entry is the only place
-    in the database the values survive.
+    handed it back) and each team's role. The next server's `/bot init` is audited as replacing
+    nothing, so this entry is the only place in the database the values survive.
     """
     cursor = await db.execute(f"SELECT {', '.join(_AUDITED_SETTINGS)} FROM server_configs")
     row = await cursor.fetchone()
