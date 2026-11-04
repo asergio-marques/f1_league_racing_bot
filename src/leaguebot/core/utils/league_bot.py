@@ -124,7 +124,7 @@ class LeagueBot(commands.Bot):
     #: the steps it plans for the driver); the steps a module defines for it (each hands back its
     #: step definitions by name); the jobs that clear what test mode posted (each hands back the
     #: steps it plans); and the drivers deleted, given their accounts (each hands back how many
-    #: portraits it removed). The builder makes them and hands them to the season's end
+    #: things of theirs it removed). The builder makes them and hands them to the season's end
     #: (architecture.md, "A hook core declares is a list of subscribers").
     season_end_refused: AwaitedHook
     season_end_closes: Hook

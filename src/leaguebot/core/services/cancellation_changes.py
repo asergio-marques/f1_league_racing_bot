@@ -118,7 +118,6 @@ from leaguebot.core.models.round import (
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.models.season_end import CANCELLATION
-from leaguebot.core.services import approval_checks
 from leaguebot.core.services import cancellation_notice_service as notices
 from leaguebot.core.services import standing_posts
 from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
@@ -158,6 +157,7 @@ from leaguebot.core.services.season_lifecycle_service import (
     close_jobs,
     driver_jobs,
     run_driver_pass_on,
+    steps_of_the_modules,
 )
 from leaguebot.core.services.season_service import (
     SeasonImmutableError,
@@ -372,15 +372,6 @@ async def _planned_by_the_modules(
     return CalledOffSteps(
         tuple(first), {division_id: tuple(steps) for division_id, steps in with_division.items()}
     )
-
-
-def _steps_of_the_modules(cancellation_steps: Hook) -> dict[str, Step]:
-    """The step definitions the modules plan in a cancellation, by name, so that core registers
-    steps it does not name."""
-    steps: dict[str, Step] = {}
-    for each in cancellation_steps.call():
-        steps.update(each)
-    return steps
 
 
 #: The job names, as the stop notice, the tests and `StepView` know them.
@@ -1055,7 +1046,7 @@ def round_cancel_change(
         **_follow_steps(
             modules=modules, seasons=seasons, scope=notices.SCOPE_ROUND,
         ),
-        **_steps_of_the_modules(cancellation_steps),
+        **steps_of_the_modules(cancellation_steps),
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
             describe=_named(
@@ -1300,7 +1291,7 @@ def division_cancel_change(
         **_follow_steps(
             modules=modules, seasons=seasons, scope=notices.SCOPE_DIVISION,
         ),
-        **_steps_of_the_modules(cancellation_steps),
+        **steps_of_the_modules(cancellation_steps),
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
             describe=_named("removing the timed work of the rounds of **{division}**"),
@@ -1642,7 +1633,7 @@ def season_cancel_change(
             placement, scheduler, season_end_steps=season_end_steps,
             test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
         ),
-        **_steps_of_the_modules(cancellation_steps),
+        **steps_of_the_modules(cancellation_steps),
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
             describe=describing("removing the timed work of the rounds of season {number}"),

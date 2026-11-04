@@ -6,12 +6,11 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
-import aiosqlite
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
