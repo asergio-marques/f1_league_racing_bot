@@ -21,6 +21,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from tests.support.change_queue import in_a_job
 from tests.support.season_classification import (
     bot_on,
     classification_posts,
@@ -28,6 +29,7 @@ from tests.support.season_classification import (
     guild_double,
     seed_season,
 )
+from tests.support.season_league import AM, DIVISIONS, PRO, season_league
 
 _NOT_RESULTS_YET = "#283: the opening standings are not yet posted by results' own module"
 
@@ -155,3 +157,26 @@ async def test_an_opening_standings_channel_set_and_gone_raises(db_path):
         )
 
     standings.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
+async def test_a_division_with_no_standings_channel_set_posts_no_opening_standings(
+    tmp_path, monkeypatch,
+):
+    """Am's standings channel never set: its opening standings job posts nothing and raises
+    nothing, while Pro's posts."""
+    from leaguebot.results.services import season_standings_posts
+
+    league = await season_league(tmp_path, monkeypatch=monkeypatch, results=True)
+    await league.write(
+        "UPDATE division_results_config SET standings_channel_id = NULL WHERE division_id = ?", AM,
+    )
+
+    for division in (PRO, AM):
+        with in_a_job():
+            await season_standings_posts.post_opening_standings(
+                league.bot, league.guild, league.db_path, division, as_text=False,
+            )
+
+    assert league.texts(DIVISIONS[PRO][3].standings)
+    assert league.texts(DIVISIONS[AM][3].standings) == []
