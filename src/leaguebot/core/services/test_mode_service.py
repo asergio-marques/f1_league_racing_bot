@@ -239,13 +239,13 @@ async def turn_test_mode_off(db_path: str) -> bool:
 
 async def turn_test_mode_on(db_path: str, *, test_mode_turned_on: AwaitedHook) -> list[str]:
     """Turn test mode on in one save: flip the flag, then call *test_mode_turned_on* on the same
-    connection with the season currently in Configuration's id, before the commit.
+    connection with the live season's id, before the commit.
 
     A fault in a module's part rolls the whole save back, so a stop part-way leaves test mode off
     and nothing seeded — the flip used to be its own commit, and each module's part another,
     which could leave test mode on with no configuration, or with only some of them (#283).
 
-    Calls the hook only where a season stands in Configuration; otherwise seeds nothing and
+    Calls the hook only where a season is live (SETUP or ACTIVE); otherwise seeds nothing and
     returns an empty list, as the old on-path did. The toggle refuses to run without one, so this
     is only reached through a race between that check and this save.
 
