@@ -123,10 +123,6 @@ async def test_toggle_missing_config_returns_false(tmp_path) -> None:
 # turn_test_mode_on
 # ---------------------------------------------------------------------------
 
-#: Why each test fails until turning test mode on is one save calling the modules' hook.
-_NOT_ONE_SAVE_YET = "#283: test mode is not yet turned on in one save calling the modules' hook"
-
-
 async def _configuring(db_path: str) -> int:
     """A server not in test mode, and a season in Configuration. Returns the season's id."""
     async with get_connection(db_path) as db:
@@ -149,7 +145,6 @@ async def _test_mode_active(db_path: str) -> bool:
         return bool((await cursor.fetchone())["test_mode_active"])
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ONE_SAVE_YET)
 async def test_turning_test_mode_on_hands_the_season_to_each_module_inside_its_save(tmp_path):
     """A server not in test mode, with a season in Configuration. Two parts are signed up to test
     mode turned on: one hands back that it created "Sprint Ladder", the other "Wet Ladder".
@@ -180,7 +175,6 @@ async def test_turning_test_mode_on_hands_the_season_to_each_module_inside_its_s
     assert await _test_mode_active(db_path) is True
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ONE_SAVE_YET)
 async def test_a_fault_in_a_modules_part_leaves_test_mode_off_and_nothing_seeded(tmp_path):
     """A server not in test mode, with a season in Configuration. Results' part, as the builder
     signs it up, seeds "Standard" and "Half Points"; a second part signed up after it fails.

@@ -121,6 +121,10 @@ class LeagueBot(commands.Bot):
     #: marks the drivers who raced them as former drivers). The builder makes it and hands it to
     #: the two closers; a round made CANCELLED is never handed.
     rounds_made_final: AwaitedHook
+    #: Test mode turned on, given the save's connection and the current season's id: each module
+    #: signing up its part, seeding what it seeds for a season under test (results' points
+    #: configurations). The builder makes it and hands it to `turn_test_mode_on`.
+    test_mode_turned_on: AwaitedHook
     #: The moments of a season's end, each module signing up its part: what stands in the way of
     #: the completion and of the cancellation (each hands back a refusal or None); the jobs that
     #: close what a module holds open, given the cause and the season's number where it has one

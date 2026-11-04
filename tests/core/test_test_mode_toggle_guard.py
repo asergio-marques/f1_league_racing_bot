@@ -339,9 +339,6 @@ class TestTheSeasonsStage:
         assert await _flag(db_path) is False
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the toggle does not yet turn test mode on through the hook"
-)
 async def test_switching_test_mode_on_names_what_the_modules_handed_back(cog, db_path):
     """Two parts are signed up to test mode turned on: one hands back that it created "Sprint
     Ladder", the other that it created nothing. Switching test mode on names "Sprint Ladder" alone,

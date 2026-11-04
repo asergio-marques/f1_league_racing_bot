@@ -210,7 +210,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (2, PASS["signup"]),
-    ("core/cogs/test_mode_cog.py", "TestModeCog.toggle"): (2, PASS["core"]),
     ("core/cogs/track_cog.py", "TrackCog.track_list"): (1, PASS["core"]),
 }
 
@@ -2103,8 +2102,8 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/team_service.py", "TeamService.seed_division_teams"): (1, PASS["core"]),
     ("core/services/test_mode_service.py", "toggle_test_mode"): (1, PASS["core"]),
     ("core/services/test_mode_service.py", "toggle_test_mode_nationality"): (1, PASS["core"]),
+    ("core/services/test_mode_service.py", "turn_test_mode_on"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_delete_test_drivers_in_division"): (1, PASS["core"]),
-    ("core/services/test_roster_service.py", "_ensure_single_config"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "add_test_driver"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "add_test_drivers_in_bulk"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "clear_all_test_drivers"): (1, PASS["core"]),

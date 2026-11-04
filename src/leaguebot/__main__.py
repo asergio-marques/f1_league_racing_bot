@@ -271,6 +271,17 @@ def _sign_up_to_rounds_made_final(bot: LeagueBot) -> None:
     bot.rounds_made_final.subscribe(result_submission_service.rounds_made_final_on)
 
 
+def _sign_up_to_test_mode_turned_on(bot: LeagueBot) -> None:
+    """Make the hook test mode turned on declares, and sign each module's part up to it: what a
+    module seeds for a season under test, on the connection of the save that turns test mode on,
+    given the season's id (architecture.md, "How modules and core fit together"). The builder
+    hands it to `turn_test_mode_on`."""
+    from leaguebot.core.services import test_roster_service
+
+    bot.test_mode_turned_on = AwaitedHook()
+    bot.test_mode_turned_on.subscribe(test_roster_service.ensure_test_configs)
+
+
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
     """Make the hooks a season's end declares, and sign each module's part up to them, in the order
     core calls them: what stands in the way of the completion and of the cancellation (results'
@@ -1175,6 +1186,7 @@ async def build(settings: Settings) -> LeagueBot:
 
     _sign_up_to_cancellations(bot)
     _sign_up_to_rounds_made_final(bot)
+    _sign_up_to_test_mode_turned_on(bot)
     _sign_up_to_season_end(bot)
     _sign_up_to_deletes(bot)
     _sign_up_to_pack(bot)

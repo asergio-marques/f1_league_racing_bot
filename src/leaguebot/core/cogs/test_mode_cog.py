@@ -33,6 +33,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.services.test_mode_service import (
+    turn_test_mode_on,
     toggle_test_mode,
     toggle_test_mode_nationality,
     count_live_real_drivers,
@@ -127,33 +128,16 @@ class TestModeCog(commands.Cog):
                 )
                 return
 
-        new_state = await toggle_test_mode(
-            self.bot.db_path,
-        )
-        if new_state:
-            # Auto-seed default point configs for the current season (SETUP or ACTIVE)
+        entering = config is not None and not config.test_mode_active
+        if entering:
             await interaction.response.defer(ephemeral=True)
-            from leaguebot.core.db.database import get_connection
-            from leaguebot.core.services.test_roster_service import ensure_test_configs
-
-            async with get_connection(self.bot.db_path) as db:
-                season_cursor = await db.execute(
-                    "SELECT id FROM seasons WHERE status IN ('SETUP', 'ACTIVE')",
-                )
-                season_row = await season_cursor.fetchone()
-
-            new_configs: list[str] = []
-            config_note = ""
-            if season_row is not None:
-                new_configs = await ensure_test_configs(
-                    season_id=season_row["id"],
-                    db_path=self.bot.db_path,
-                )
-                if new_configs:
-                    config_note = (
-                        f"\n📌 Added default point configs: **{', '.join(new_configs)}**"
-                    )
-
+            new_configs = await turn_test_mode_on(
+                self.bot.db_path, test_mode_turned_on=self.bot.test_mode_turned_on
+            )
+            config_note = (
+                f"\n📌 Added default point configs: **{', '.join(new_configs)}**"
+                if new_configs else ""
+            )
             msg = (
                 "✅ Test mode **enabled**. "
                 "Use `/test-mode advance` to step through phases, "
@@ -166,6 +150,9 @@ class TestModeCog(commands.Cog):
                 + (f"\n  seeded_configs: {', '.join(new_configs)}" if new_configs else ""),
             )
         else:
+            await toggle_test_mode(
+                self.bot.db_path,
+            )
             # Defer so the flush (multiple Discord API calls) has time to complete
             await interaction.response.defer(ephemeral=True)
             # The forecasts posted under test mode are deleted by the change queue, each by a

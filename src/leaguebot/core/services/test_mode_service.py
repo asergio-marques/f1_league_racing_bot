@@ -230,6 +230,30 @@ async def toggle_test_mode(db_path: str) -> bool:
     return bool(row["test_mode_active"])
 
 
+async def turn_test_mode_on(db_path: str, *, test_mode_turned_on: AwaitedHook) -> list[str]:
+    """Turn test mode on in one save: flip the flag, then call *test_mode_turned_on* on the same
+    connection with the season currently in Configuration's id, before the commit.
+
+    A fault in a module's part rolls the whole save back, so a stop part-way leaves test mode off
+    and nothing seeded — the flip used to be its own commit, and each module's part another,
+    which could leave test mode on with no configuration, or with only some of them (#283).
+
+    Returns what the hook's subscribers handed back, concatenated in sign-up order (results'
+    names of the points configurations it newly created, today's only subscriber).
+    """
+    from leaguebot.core.services.season_lifecycle_service import live_season_stage_on
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE server_configs SET test_mode_active = 1",
+        )
+        live = await live_season_stage_on(db)
+        season_id = live[0] if live is not None else None
+        handed_back = await test_mode_turned_on.call(db, season_id)
+        await db.commit()
+    return [name for names in handed_back for name in names]
+
+
 async def switch_test_mode_off_on(
     db: aiosqlite.Connection, *, profiles_deleted: AwaitedHook
 ) -> int:

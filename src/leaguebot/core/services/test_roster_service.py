@@ -691,10 +691,11 @@ async def _delete_test_drivers_in_division(
 # ─── Test config seeding ─────────────────────────────────────────────────────
 
 async def ensure_test_configs(
+    db: aiosqlite.Connection,
     season_id: int,
-    db_path: str,
 ) -> list[str]:
-    """Idempotently create "Standard" and "Half Points" configs and attach to season.
+    """Idempotently create "Standard" and "Half Points" configs and attach to season, on *db*,
+    committing nothing.
 
     Returns a list of config names that were newly created (empty if both already existed).
     """
@@ -725,11 +726,11 @@ async def ensure_test_configs(
 
     for config_name, session_entries, fl_configs in configs:
         newly_created = await _ensure_single_config(
+            db,
             season_id=season_id,
             config_name=config_name,
             session_entries=session_entries,
             fl_configs=fl_configs,
-            db_path=db_path,
         )
         if newly_created:
             created.append(config_name)
@@ -738,13 +739,14 @@ async def ensure_test_configs(
 
 
 async def _ensure_single_config(
+    db: aiosqlite.Connection,
     season_id: int,
     config_name: str,
     session_entries: dict[SessionType, dict[int, int]],
     fl_configs: dict[SessionType, tuple[int, int]],
-    db_path: str,
 ) -> bool:
-    """Create and attach *config_name* if it does not yet exist in the season.
+    """Create and attach *config_name* if it does not yet exist in the season, on *db*, committing
+    nothing.
 
     *session_entries* maps each SessionType to its position→points dict.
     *fl_configs* maps each SessionType that has an FL bonus to (fl_points, fl_position_limit).
@@ -765,55 +767,52 @@ async def _ensure_single_config(
     populated. A seeded config is a config; it does not get its own private path
     through the schema.
     """
-    async with get_connection(db_path) as db:
-        # Check if already in season_points_links
-        cursor = await db.execute(
-            "SELECT 1 FROM season_points_links WHERE season_id = ? AND config_name = ?",
-            (season_id, config_name),
-        )
-        already_linked = await cursor.fetchone() is not None
+    # Check if already in season_points_links
+    cursor = await db.execute(
+        "SELECT 1 FROM season_points_links WHERE season_id = ? AND config_name = ?",
+        (season_id, config_name),
+    )
+    already_linked = await cursor.fetchone() is not None
 
-        if already_linked:
-            return False
+    if already_linked:
+        return False
 
-        # Create the server-level config and take its id — the entries hang off it.
-        await db.execute(
-            "INSERT OR IGNORE INTO points_config_store (config_name) VALUES (?)",
-            (config_name,),
-        )
-        cursor = await db.execute(
-            "SELECT id FROM points_config_store WHERE config_name = ?",
-            (config_name,),
-        )
-        config_id = (await sole_row(cursor))["id"]
+    # Create the server-level config and take its id — the entries hang off it.
+    await db.execute(
+        "INSERT OR IGNORE INTO points_config_store (config_name) VALUES (?)",
+        (config_name,),
+    )
+    cursor = await db.execute(
+        "SELECT id FROM points_config_store WHERE config_name = ?",
+        (config_name,),
+    )
+    config_id = (await sole_row(cursor))["id"]
 
-        # Link to season
-        await db.execute(
-            "INSERT OR IGNORE INTO season_points_links (season_id, config_name) VALUES (?, ?)",
-            (season_id, config_name),
-        )
+    # Link to season
+    await db.execute(
+        "INSERT OR IGNORE INTO season_points_links (season_id, config_name) VALUES (?, ?)",
+        (season_id, config_name),
+    )
 
-        for session_type, pos_map in session_entries.items():
-            for pos, points in pos_map.items():
-                await db.execute(
-                    "INSERT INTO points_config_entries "
-                    "(config_id, session_type, position, points) VALUES (?, ?, ?, ?) "
-                    "ON CONFLICT(config_id, session_type, position) "
-                    "DO UPDATE SET points = excluded.points",
-                    (config_id, session_type.value, pos, points),
-                )
-
-        for session_type, (fl_pts, fl_pos_limit) in fl_configs.items():
+    for session_type, pos_map in session_entries.items():
+        for pos, points in pos_map.items():
             await db.execute(
-                "INSERT INTO points_config_fl "
-                "(config_id, session_type, fl_points, fl_position_limit) "
-                "VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(config_id, session_type) DO UPDATE SET "
-                "fl_points = excluded.fl_points, "
-                "fl_position_limit = excluded.fl_position_limit",
-                (config_id, session_type.value, fl_pts, fl_pos_limit),
+                "INSERT INTO points_config_entries "
+                "(config_id, session_type, position, points) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(config_id, session_type, position) "
+                "DO UPDATE SET points = excluded.points",
+                (config_id, session_type.value, pos, points),
             )
 
-        await db.commit()
+    for session_type, (fl_pts, fl_pos_limit) in fl_configs.items():
+        await db.execute(
+            "INSERT INTO points_config_fl "
+            "(config_id, session_type, fl_points, fl_position_limit) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(config_id, session_type) DO UPDATE SET "
+            "fl_points = excluded.fl_points, "
+            "fl_position_limit = excluded.fl_position_limit",
+            (config_id, session_type.value, fl_pts, fl_pos_limit),
+        )
 
     return True
