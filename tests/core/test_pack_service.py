@@ -383,13 +383,29 @@ async def test_pack_keeps_the_teams_points_and_module_settings(db_path):
 
 
 @pytest.mark.xfail(strict=True, reason=NO_PACK_HOOK)
-async def test_pack_is_audited_with_every_setting_and_role_it_cleared(db_path):
+@pytest.mark.parametrize(
+    ("signup_configured", "signup_channel", "wizards"),
+    [(True, 80, 1), (False, None, 0)],
+    ids=["signup configured", "signup never configured"],
+)
+async def test_pack_is_audited_with_every_setting_and_role_it_cleared(
+    db_path, signup_configured, signup_channel, wizards
+):
     """Issue #383. The log line goes to a server the league is leaving; the audit entry is
     what keeps who packed and what the settings held. Message ids are the bot's record of
-    its own posts, not configuration, and are not in it."""
+    its own posts, not configuration, and are not in it. A league whose signup holds no
+    configuration (never enabled, or disabled since) keeps the signup channel's key in the
+    entry, empty before and after, and packs no signup wizard (#283)."""
     await _seed(db_path)
+    if not signup_configured:
+        async with get_connection(db_path) as db:
+            await db.execute("DELETE FROM signup_wizard_records")
+            await db.execute("DELETE FROM signup_module_config")
+            await db.commit()
 
-    await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    result = await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+
+    assert result.wizards == wizards
 
     row = await _one(db_path, "SELECT * FROM audit_entries WHERE change_type = 'BOT_PACKED'")
     assert (row["actor_id"], row["actor_name"], row["division_id"]) == (7, "admin", None)
@@ -402,7 +418,7 @@ async def test_pack_is_audited_with_every_setting_and_role_it_cleared(db_path):
         "base_role_id": 5,
         "driver_role_id": 6,
         "hub_channel_id": 7,
-        "signup_channel_id": 80,
+        "signup_channel_id": signup_channel,
         "team_roles": {"Ferrari": 70},
     }
     assert json.loads(row["new_value"]) == {
