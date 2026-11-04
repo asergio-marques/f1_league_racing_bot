@@ -126,6 +126,7 @@ BACKUP_KEPT = (
 )
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
 SIGNUPS_CLOSED = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
+BUTTON_KEPT = "The Sign Up button could not be removed from the signup channel."
 WINDOW_OPEN = (
     "The signup window could not be closed. Close it with `/signup close`. "
     "Where a close time is set, run `/signup close-time cancel` first, and where a season's end "
@@ -1332,6 +1333,16 @@ async def _window_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
     return league
 
 
+async def _button_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
+    from tests.support.season_league import SIGNUP_BUTTON, SIGNUP_CHANNEL
+
+    league = await pending_completion_league(tmp_path, signups_open=True)
+    league.channel(SIGNUP_CHANNEL).messages[SIGNUP_BUTTON].delete = AsyncMock(
+        side_effect=_forbidden()
+    )
+    return league
+
+
 async def _flush_refused(tmp_path: Any, monkeypatch: Any) -> Any:
     _flush_failing(monkeypatch, {"now": True})
     return await pending_completion_league(tmp_path, test_mode=True)
@@ -1360,6 +1371,7 @@ async def _sheet_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
 #: Each job a league admin may discard: the league that makes it fail, where the queue stops,
 #: and what the reply and the line say was not done.
 _DISCARDS = {
+    "delete_button": (_button_refused, ("delete_button", None), BUTTON_KEPT),
     "post_closed": (_window_refused, ("post_closed", None), WINDOW_OPEN),
     "flush_forecasts": (_flush_refused, ("flush_forecasts", None), FORECASTS_KEPT),
     "close_signup": (_lock_refused, ("close_signup", SIGNING_UP), SIGNUP_KEPT),
@@ -1619,6 +1631,15 @@ async def _refuse_returning(league: Any, user_id: int) -> None:
 ENDS = ["completion", "cancellation", "abort", "wind-down"]
 
 
+#: The command each end's closing line names, and the word it reads with the window not closed,
+#: as today: a completion reads "Incomplete", a cancellation and an abort "Success".
+CLOSING_LINE = {
+    "completion": ("/season complete", "Incomplete"),
+    "cancellation": ("/season cancel", "Success"),
+    "abort": ("/season abort", "Success"),
+}
+
+
 #: What the league manager does with the stopped close: Retry once the database takes it, or
 #: Discard it.
 THEN = ["retry", "discard"]
@@ -1636,7 +1657,8 @@ async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or
     Once the database takes it, a Retry returns both, each is told once and has their channel
     closed, the window is closed and the queue runs on to the end. A Discard instead leaves both
     still signing up, the window open, nobody told, and no line naming anyone as returned but not
-    told (decision 64, 'All or nothing')."""
+    told (decision 64, 'All or nothing'); the reply names the window, alone, as not closed, to be
+    closed with `/signup close`, and so does the closing line (one log line for the wind-down)."""
     league = await _league_ending(tmp_path, end)
     await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
     await signing_up(league, SIGNING_UP_TOO, state="PENDING_SIGNUP_COMPLETION")
@@ -1663,6 +1685,16 @@ async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or
         assert interaction is None or untold not in reply(interaction)
         lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
         assert not any(untold in line for line in lines)
+        # What was not done is named as today: the window, alone, to be closed by hand.
+        if interaction is None:
+            assert len([line for line in league.bot.log_channel.sent if WINDOW_OPEN in line]) == 1
+            return
+        assert _not_done(reply(interaction)) == [WINDOW_OPEN]
+        command, status = CLOSING_LINE[end]
+        [line] = [each for each in _log_lines(league) if f"| {command} | " in each]
+        assert line.startswith(f"Admin (`<@77>`) | {command} | {status}"), line
+        assert [each.split("  not done: ", 1)[1] for each in line.splitlines()
+                if each.startswith("  not done: ")] == [WINDOW_OPEN]
         return
     await retry_job(league.bot)
 
