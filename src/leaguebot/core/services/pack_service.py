@@ -2,10 +2,20 @@
 
 **What is the league's travels; what is the server's stays behind.** A Discord user id is the
 same on every server, so a driver's profile, accounts, history and portrait mean the same
-thing on the next one, as do completed seasons, the team list, the points configurations and
-every module setting that is not a channel or a role. A channel id, a role id or a message id
-names something on *this* server and nothing on another, so those are cleared, with the claim
-itself and the scheduled work that would post into them.
+thing on the next one, as do completed and cancelled seasons, which stay whole, their divisions,
+rounds and results with the channel and role ids those rows carry (history, which nothing acts
+on), the team list, the points configurations and every module setting that is not a channel
+or a role. What is cleared is what the bot acts on and edits by: the claim, the league's two
+roles, the hub, the team roles and the signup channel, the record of the messages the bot posted
+(those of past seasons' rows too), and the
+scheduled work that would post into them.
+
+**Each module clears its own rows.** The pack calls the bot's hook (*bot_packed*) on its one
+connection, and signup, weather, attendance and results each clear what is theirs, in that order
+(`__main__._sign_up_to_pack`). Signup hands back what the reply and the audit entry report: the
+signup wizards it cleared and the signup channel's id as it stood. The pack itself clears
+only core's own: the team roles, the queued messages, the review prompts, the server's roles,
+hub and claim, and the divisions' lineup and calendar message ids.
 
 **Refused while the league has a current season** (decided 2026-09-19): a season in any stage
 short of completed or cancelled, which is read off the lifecycle `stage` rather than the
@@ -183,6 +193,9 @@ async def pack(
     actor_name: str,
 ) -> PackResult:
     """Clear everything tied to this server and free the claim. Raises `PackRefused`.
+
+    *bot_packed* is the bot's hook for the modules' own clear, called once on the pack's
+    connection, after the refusals and before the claim is released.
 
     *in_memory_state_cleared*, the bot's hook for the clear, where given with *queue*, has its
     in-memory league state dropped too; the command passes both, the queue being handed on to
