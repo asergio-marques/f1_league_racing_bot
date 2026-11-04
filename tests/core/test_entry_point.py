@@ -211,6 +211,14 @@ _PACK_PARTS = (
     ("leaguebot.results.services.results_purge_service", "bot_packed_on", "results' pack"),
 )
 
+#: Each module's part of a round's results made final, as the module names it: the module, the
+#: subscriber, and what the test calls it, in the order the builder signs them up. Each marks the
+#: drivers who raced the rounds as former drivers, on the closing's connection.
+_FINAL_PARTS = (
+    ("leaguebot.results.services.result_submission_service", "rounds_made_final_on",
+     "results' former drivers"),
+)
+
 #: The steps of an amendment attendance defines, by name, as the amendment names them today.
 _ATTENDANCE_AMENDMENT_STEPS = [
     "announce", "clean_up_check_in", "close_without_call", "delete_message", "distribute",
@@ -218,6 +226,9 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the builder does not yet make rounds_made_final or sign results up"
+)
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -245,7 +256,8 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     module deleting or letting go of its own rows of them, attendance's then results'; and a
     driver merged into another, each re-pointing its own, attendance's then results'. The bot
     packed, each module clearing its own rows tied to the server left behind: signup's, weather's,
-    attendance's then results'."""
+    attendance's then results'. A round's results made final, handed the closing's connection and
+    the rounds' ids: results' marking of the drivers who raced them as former drivers."""
     import importlib
 
     import leaguebot.__main__ as entry_point
@@ -292,6 +304,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     for module_name, name, part in (
         *((module_name, name, part) for _hook, module_name, name, part in _DELETE_PARTS),
         *_PACK_PARTS,
+        *_FINAL_PARTS,
     ):
         async def delete_spy(*args, part=part, **_kwargs):
             called.append(part)
@@ -363,6 +376,12 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     assert called == [part for _module, _name, part in _PACK_PARTS]
     # Each part is handed the pack's connection, and nothing else.
     assert handed == [(None,)] * len(called)
+    called.clear()
+    handed.clear()
+    await bot.rounds_made_final.call(None, [0])
+    assert called == [part for _module, _name, part in _FINAL_PARTS]
+    # Each part is handed the closing's connection, then the ids of the rounds made final.
+    assert handed == [(None, [0])] * len(called)
 
 
 #: The windows the league configures in the pair test: attendance's three lead times, and

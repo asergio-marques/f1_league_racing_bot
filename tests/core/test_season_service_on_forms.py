@@ -558,10 +558,16 @@ async def test_a_season_s_divisions_are_cancelled_on_the_save_handed_leaving_its
         assert await _statuses(db, "rounds", [unraced]) == {unraced: "NOT_RUN"}
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: close_raced_rounds_on does not yet hand its rounds to rounds_made_final",
+)
 async def test_raced_rounds_are_closed_on_the_save_handed(tmp_path) -> None:
     """Round 1 is awaiting its report verdicts, round 2 not yet run. Round 1 is made final and
-    audited at the moment handed; round 2 is left to the divisions' cancellation."""
+    audited at the moment handed, and handed alone to the hook a round made final calls, once, on
+    the save's connection; round 2 is left to the divisions' cancellation, and never handed."""
     from leaguebot.core.services.season_service import close_raced_rounds_on
+    from tests.support.final_hook import recording_hook
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _end_seed(db_path)
@@ -572,12 +578,15 @@ async def test_raced_rounds_are_closed_on_the_save_handed(tmp_path) -> None:
         )
         await db.commit()
 
+    hook, handed = recording_hook()
     async with get_connection(db_path) as db:
         closed = await close_raced_rounds_on(
-            db, season_id, actor_id=ACTOR_ID, actor_name=ACTOR_NAME, now=END_NOW
+            db, season_id, actor_id=ACTOR_ID, actor_name=ACTOR_NAME, now=END_NOW,
+            rounds_made_final=hook,
         )
 
         assert closed == [awaiting]
+        assert handed == [(db, [awaiting])]
         assert await _statuses(db, "rounds", [awaiting, unraced]) == {
             awaiting: "FINAL",
             unraced: "NOT_RUN",

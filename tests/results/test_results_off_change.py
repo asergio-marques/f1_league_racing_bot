@@ -163,6 +163,10 @@ def _league(db_path: str, *, guild: bool = True) -> Any:
     bot.season_end_steps = Hook()
     # The hook through which the modules close what each holds open as a season ends.
     bot.season_end_closes = Hook()
+    # The hook a round made final calls, as the builder makes it, no module signed up: turning
+    # results off erases the season's results before it closes the rounds, so results' part would
+    # mark nobody.
+    bot.rounds_made_final = AwaitedHook()
     bot.channels = {
         cid: _FakeChannel(cid)
         for cid in (RESULTS_CHANNEL_ID, STANDINGS_CHANNEL_ID, VERDICTS_CHANNEL_ID,

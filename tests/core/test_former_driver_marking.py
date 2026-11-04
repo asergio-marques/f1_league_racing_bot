@@ -30,6 +30,12 @@ from leaguebot.results.services.result_submission_service import (
 )
 from tests.support.teams import seed_team_instances
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
+from tests.support.final_hook import rounds_made_final
+
+#: Why a closer's test fails until the build: the closer takes the hook a round made final calls.
+_CLOSER_TAKES_THE_HOOK = (
+    "#283: the closers do not yet take the rounds_made_final hook the builder makes"
+)
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -447,6 +453,7 @@ async def test_a_round_with_no_results_changes_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_CLOSER_TAKES_THE_HOOK)
 async def test_closing_rounds_with_the_module_off_marks_who_raced_them(tmp_path):
     """`end_rounds_awaiting_results_on` is the other way a round becomes final (#167, #216).
 
@@ -457,7 +464,8 @@ async def test_closing_rounds_with_the_module_off_marks_who_raced_them(tmp_path)
 
     In turning results off the season's results are erased in the same save, before the rounds
     are closed, so there it finds nothing. The marking is pinned on its own, with the results
-    still standing, so that a round closed with its results kept marks who raced it.
+    still standing, so that a round closed with its results kept marks who raced it: core hands
+    the rounds it closed to the hook the builder makes, and results' part marks their drivers.
     """
     from datetime import datetime, timezone
 
@@ -477,6 +485,7 @@ async def test_closing_rounds_with_the_module_off_marks_who_raced_them(tmp_path)
         await end_rounds_awaiting_results_on(
             db, actor_id=5, actor_name="Admin",
             now=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc),
+            rounds_made_final=rounds_made_final(),
         )
         await db.commit()
 
@@ -491,8 +500,9 @@ async def test_closing_rounds_with_the_module_off_marks_who_raced_them(tmp_path)
 
 async def _close_raced(db_path: str) -> list[int]:
     """Close season 1's raced rounds with `close_raced_rounds_on` on one connection, as the
-    season's cancellation does in its first save on the change queue, and commit it, which the
-    form does not. Gives the rounds it closed."""
+    season's cancellation does in its first save on the change queue, handed the hook a round
+    made final calls as the builder makes it, and commit it, which the form does not. Gives the
+    rounds it closed."""
     from datetime import datetime, timezone
 
     from leaguebot.core.services.season_service import close_raced_rounds_on
@@ -504,11 +514,13 @@ async def _close_raced(db_path: str) -> list[int]:
             actor_id=5,
             actor_name="Admin",
             now=datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc),
+            rounds_made_final=rounds_made_final(),
         )
         await db.commit()
     return closed
 
 
+@pytest.mark.xfail(strict=True, reason=_CLOSER_TAKES_THE_HOOK)
 async def test_cancelling_a_season_closes_a_round_whose_verdicts_are_open(tmp_path):
     """The rounds a cancellation may not call off are made final instead (#216).
 
@@ -536,6 +548,7 @@ async def test_cancelling_a_season_closes_a_round_whose_verdicts_are_open(tmp_pa
     assert await _former(db_path, 32) == 0, "a did-not-start entry marked a driver"
 
 
+@pytest.mark.xfail(strict=True, reason=_CLOSER_TAKES_THE_HOOK)
 async def test_a_driver_of_a_closed_round_survives_the_driver_pass(tmp_path):
     """The harm the close prevents, stated end to end (#216).
 
@@ -571,6 +584,7 @@ async def test_a_driver_of_a_closed_round_survives_the_driver_pass(tmp_path):
         assert (await cursor.fetchone())["driver_profile_id"] == 31, "a result was orphaned"
 
 
+@pytest.mark.xfail(strict=True, reason=_CLOSER_TAKES_THE_HOOK)
 async def test_cancelling_a_season_leaves_an_unraced_round_to_the_cascade(tmp_path):
     """A round with no results entered is the cascade's to cancel, not this function's.
 
@@ -592,6 +606,7 @@ async def test_cancelling_a_season_leaves_an_unraced_round_to_the_cascade(tmp_pa
         ]
 
 
+@pytest.mark.xfail(strict=True, reason=_CLOSER_TAKES_THE_HOOK)
 async def test_cancelling_a_season_leaves_another_seasons_rounds_alone(tmp_path):
     """Scoped by season, so cancelling one never closes a round of another."""
     db_path = await _make_db(tmp_path, name="cancel_other_season")
@@ -616,3 +631,41 @@ async def test_cancelling_a_season_leaves_another_seasons_rounds_alone(tmp_path)
     closed = await _close_raced(db_path)
 
     assert closed == [21]
+
+
+# ---------------------------------------------------------------------------
+# Core's writer of the flag, which results' recompute writes through
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: core has no writer of the former-driver flag on a handed connection"
+)
+async def test_core_s_flag_writer_sets_and_clears_on_the_save_handed_committing_nothing(tmp_path):
+    """The flag is core's (driver_profiles), so results' recompute writes it through core's
+    `set_former_drivers_on`, on the connection of the save that made the round final.
+
+    Driver 31 is not a former driver and is made one; driver 32 is one and is cleared; driver 33
+    is one and stays one. On the connection handed, 31 and 33 read as former drivers and 32 does
+    not, and only the two rows whose value differs are written. The writer commits nothing: rolled
+    back, every flag is as it was.
+    """
+    from leaguebot.core.services.driver_service import set_former_drivers_on
+
+    db_path = await _make_db(tmp_path, name="flag_writer")
+    await _set_former(db_path, 32, 1)
+    await _set_former(db_path, 33, 1)
+
+    async with get_connection(db_path) as db:
+        before = db.total_changes
+        await set_former_drivers_on(db, {31: True, 32: False, 33: True})
+        assert db.total_changes - before == 2, "a row whose value was unchanged was written"
+        cursor = await db.execute(
+            "SELECT id, former_driver FROM driver_profiles WHERE id IN (31, 32, 33) ORDER BY id"
+        )
+        assert [(r["id"], r["former_driver"]) for r in await cursor.fetchall()] == [
+            (31, 1), (32, 0), (33, 1),
+        ]
+        await db.rollback()
+
+    assert [await _former(db_path, p) for p in (31, 32, 33)] == [0, 1, 1]

@@ -312,23 +312,37 @@ async def _audits(db_path: str, change_type: str) -> int:
         return (await cursor.fetchone())[0]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: end_rounds_awaiting_results_on does not yet hand its rounds to rounds_made_final",
+)
 async def test_rounds_closed_on_a_handed_connection_are_saved_only_when_the_caller_commits(
     tmp_path,
 ):
+    """Pro's round 1 is final and round 2 awaits its results. Closing on a connection whose caller
+    rolls back leaves nothing; closing again and committing makes round 2 final, audited once,
+    and finishes Pro. Each time, round 2 alone is handed to the hook a round made final calls,
+    once, on the connection the closing was handed; round 1, final already, never is."""
     from datetime import datetime, timezone
 
     from leaguebot.core.services.season_service import end_rounds_awaiting_results_on
+    from tests.support.final_hook import recording_hook
 
     db_path = await _make_db(tmp_path)
     await _add_division(db_path, 11, name="Pro")
     await _add_round(db_path, 11, 1, RoundStatus.FINAL.value)
     await _add_round(db_path, 11, 2, RoundStatus.AWAITING_RESULTS.value, track="Monza")
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT id FROM rounds WHERE round_number = 2")
+        awaiting = (await cursor.fetchone())["id"]
     now = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+    hook, handed = recording_hook()
 
     async with get_connection(db_path) as db:
         closed = await end_rounds_awaiting_results_on(
-            db, actor_id=4242, actor_name="Admin#0001", now=now
+            db, actor_id=4242, actor_name="Admin#0001", now=now, rounds_made_final=hook
         )
+        assert handed == [(db, [awaiting])]
         await db.rollback()
 
     assert [(r["division"], r["round_number"], r["status"]) for r in closed] == [
@@ -338,8 +352,12 @@ async def test_rounds_closed_on_a_handed_connection_are_saved_only_when_the_call
     assert await _status(db_path, 11) == "ACTIVE"
     assert await _audits(db_path, "round.status") == 0
 
+    handed.clear()
     async with get_connection(db_path) as db:
-        await end_rounds_awaiting_results_on(db, actor_id=4242, actor_name="Admin#0001", now=now)
+        await end_rounds_awaiting_results_on(
+            db, actor_id=4242, actor_name="Admin#0001", now=now, rounds_made_final=hook
+        )
+        assert handed == [(db, [awaiting])]
         await db.commit()
 
     assert await _round_statuses(db_path) == ["FINAL", "FINAL"]

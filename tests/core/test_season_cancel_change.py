@@ -1186,8 +1186,18 @@ async def test_uncommitted_placements_are_discarded(tmp_path):
     assert await _status(league) == "ACTIVE"
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the season's cancellation does not yet call rounds_made_final"
+)
 async def test_a_raced_round_awaiting_verdicts_is_made_final_before_the_driver_pass(tmp_path):
+    """Pro's round 2, awaiting its verdicts, is made final in `apply`, before the driver pass, and
+    handed alone, once, to the hook a round made final calls; Pro's rounds 3 and 4 and Am's four,
+    which the cancellation makes CANCELLED, never are."""
+    from tests.support.final_hook import recorder
+
     league = await ongoing_league(tmp_path)
+    record, handed = recorder()
+    league.bot.rounds_made_final.subscribe(record)
     await _asked(league)
 
     await _run_through(league, "apply")
@@ -1196,7 +1206,12 @@ async def test_a_raced_round_awaiting_verdicts_is_made_final_before_the_driver_p
     assert await driver_state(league, MAX) == "ASSIGNED"
 
     await run_queue(league.bot)
-    assert (await _rounds(league))[R2] == "FINAL"
+    rounds = await _rounds(league)
+    assert rounds[R2] == "FINAL"
+    assert {each for each, status in rounds.items() if status == "CANCELLED"} == {
+        R3, R4, *(round_id(AM, number) for number in range(1, 5))
+    }
+    assert [ids for _db, ids in handed] == [[R2]]
     assert await _status(league) == "CANCELLED"
 
 
