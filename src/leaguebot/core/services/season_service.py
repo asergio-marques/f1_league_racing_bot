@@ -28,6 +28,7 @@ from leaguebot.core.models.season import (
     status_of_stage,
 )
 from leaguebot.core.models.session import Session, SessionType, SESSIONS_BY_FORMAT
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.input_validator import NAME
 
 #: Rendered from the model's sets so the queries below cannot drift from the rule they
@@ -556,7 +557,14 @@ class SeasonService:
         return [dict(r) for r in rows]
 
     @staticmethod
-    async def delete_season(db: aiosqlite.Connection, season_id: int) -> None:
+    async def delete_season(
+        db: aiosqlite.Connection,
+        season_id: int,
+        *,
+        rounds_deleted: AwaitedHook,
+        divisions_deleted: AwaitedHook,
+        season_deleted: AwaitedHook,
+    ) -> None:
         """FK-safe cascade delete of one season and all its child records.
 
         What `/season abort` leaves of a season whose placements were never confirmed: nothing
@@ -595,6 +603,12 @@ class SeasonService:
                 division_ids,
             )
             round_ids = [r[0] for r in await cursor.fetchall()]
+
+        if round_ids:
+            await rounds_deleted.call(db, round_ids)
+        if division_ids:
+            await divisions_deleted.call(db, division_ids)
+        await season_deleted.call(db, season_id)
 
         # ── Results module: round-level children ────────────────────────
         if round_ids:
@@ -776,7 +790,13 @@ class SeasonService:
             )
             await db.commit()
 
-    async def delete_division(self, division_id: int) -> None:
+    async def delete_division(
+        self,
+        division_id: int,
+        *,
+        rounds_deleted: AwaitedHook,
+        divisions_deleted: AwaitedHook,
+    ) -> None:
         """Delete a division with its rounds, teams and seats, in one transaction.
 
         Fails while a driver is placed in it: the seat the placement points at has no delete
@@ -789,6 +809,10 @@ class SeasonService:
             )
             round_rows = await cursor.fetchall()
             round_ids = [r[0] for r in round_rows]
+
+            if round_ids:
+                await rounds_deleted.call(db, round_ids)
+            await divisions_deleted.call(db, [division_id])
 
             if round_ids:
                 ph = ",".join("?" * len(round_ids))
@@ -912,7 +936,7 @@ class SeasonService:
             await renumber_rounds_on(db, division_id)
             await db.commit()
 
-    async def delete_round(self, round_id: int) -> None:
+    async def delete_round(self, round_id: int, *, rounds_deleted: AwaitedHook) -> None:
         """Delete a round and renumber siblings."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -923,6 +947,7 @@ class SeasonService:
                 return
             division_id: int = row[0]
 
+            await rounds_deleted.call(db, [round_id])
             await db.execute("DELETE FROM forecast_messages WHERE round_id = ?", (round_id,))
             await db.execute("DELETE FROM phase_results WHERE round_id = ?", (round_id,))
             await db.execute("DELETE FROM sessions WHERE round_id = ?", (round_id,))

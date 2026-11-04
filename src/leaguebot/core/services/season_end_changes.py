@@ -821,6 +821,9 @@ def season_abort_change(
     season_end_steps: Hook,
     test_mode_flushed: AwaitedHook,
     drivers_deleted: AwaitedHook,
+    rounds_deleted: AwaitedHook,
+    divisions_deleted: AwaitedHook,
+    season_deleted: AwaitedHook,
     forget_setup: Callable[[], None],
 ) -> ChangeType:
     """The change that aborts the season being set up; see the module.
@@ -830,7 +833,8 @@ def season_abort_change(
     *scheduler* (whose job store holds the saved test-mode state's scheduler half), the
     *placement* service (which takes back roles), the hooks the modules sign up to
     (*season_end_closes*, *drivers_returned*, *driver_returned_jobs*, *season_end_steps*,
-    *test_mode_flushed*, *drivers_deleted*) and *forget_setup* (lets go of the setup the season cog
+    *test_mode_flushed*, *drivers_deleted*), the hooks the season's deletion calls
+    (*rounds_deleted*, *divisions_deleted*, *season_deleted*) and *forget_setup* (lets go of the setup the season cog
     holds in memory).
     """
 
@@ -874,7 +878,12 @@ def season_abort_change(
             await switch_test_mode_off_on(db)
         # The season's deletion is the last thing written. The saved test-mode state is kept: a
         # season aborted is one abandoned.
-        await SeasonService.delete_season(db, season_id)
+        await SeasonService.delete_season(
+            db, season_id,
+            rounds_deleted=rounds_deleted,
+            divisions_deleted=divisions_deleted,
+            season_deleted=season_deleted,
+        )
 
         planned = list(
             driver_jobs(

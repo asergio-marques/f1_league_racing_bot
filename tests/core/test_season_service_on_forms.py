@@ -658,10 +658,6 @@ async def test_uncommitted_placements_are_discarded_on_the_save_handed(tmp_path)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: delete_season takes no delete hooks, and the builder makes none to hand it",
-)
 async def test_a_season_is_deleted_on_the_save_handed_and_nothing_committed(tmp_path) -> None:
     """A season being set up, its division and its rounds, deleted on the save with the delete
     hooks the builder makes; rolled back, every row of it is still there."""

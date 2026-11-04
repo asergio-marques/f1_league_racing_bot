@@ -40,9 +40,6 @@ OTHER_DIVISION_ID = 12
 ROUND_ID = 21
 OTHER_ROUND_ID = 22
 
-#: Why each test here fails until the delete takes its hooks.
-NO_HOOKS = "#283: delete_season takes no delete hooks, and the builder makes none to hand it"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -214,7 +211,6 @@ async def _delete(db_path, season_id) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_a_test_driver_is_deleted_with_the_season(tmp_path):
     """A test-mode roster exists to fill a rehearsal. Leaving the profiles behind would
     accumulate fake drivers across every rehearsal a league runs."""
@@ -226,7 +222,6 @@ async def test_a_test_driver_is_deleted_with_the_season(tmp_path):
     assert await _count(db_path, "driver_profiles", "id", test_profile) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_a_real_driver_outlives_the_season(tmp_path):
     """A driver profile is the league's record of a person. They are unseated by the
     delete, not removed from the league."""
@@ -238,7 +233,6 @@ async def test_a_real_driver_outlives_the_season(tmp_path):
     assert await _count(db_path, "driver_profiles", "id", real_profile) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_another_seasons_test_drivers_are_left_alone(tmp_path):
     """Test drivers are collected through the deleted season's divisions, so a rehearsal
     running in one season must not clear the roster of another."""
@@ -250,7 +244,6 @@ async def test_another_seasons_test_drivers_are_left_alone(tmp_path):
     assert await _count(db_path, "driver_profiles", "id", other_test_profile) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_a_test_driver_holding_a_row_beyond_the_season_is_deleted_all_the_same(tmp_path):
     """The season's own rows go with its rounds, but not a row elsewhere naming the driver.
     No flow puts one there, the abort having switched test mode off and deleted every fake
@@ -273,7 +266,6 @@ async def test_a_test_driver_holding_a_row_beyond_the_season_is_deleted_all_the_
     assert await _count(db_path, "driver_round_attendance") == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_a_test_drivers_history_is_kept_by_identifier(tmp_path):
     """As switching test mode off keeps it: a driver created again under the same identifier
     holds it as their own (#220)."""
@@ -301,7 +293,6 @@ async def test_a_test_drivers_history_is_kept_by_identifier(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_a_season_with_no_divisions_deletes_cleanly(tmp_path):
     """Every `IN (...)` is built from a list that may be empty, and an unguarded `IN ()` is
     a syntax error — so this is the case most likely to break a tidy-up of the function."""
@@ -325,7 +316,6 @@ async def test_a_season_with_no_divisions_deletes_cleanly(tmp_path):
     assert await _count(db_path, "seasons") == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_a_division_with_no_rounds_deletes_cleanly(tmp_path):
     """The round id list is empty while the division list is not — the mixed case, and the
     one neither empty-season nor full-season coverage reaches."""
@@ -354,7 +344,6 @@ async def test_a_division_with_no_rounds_deletes_cleanly(tmp_path):
     assert await _count(db_path, "divisions") == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 @pytest.mark.parametrize("status", ["ACTIVE", "COMPLETED", "CANCELLED"])
 async def test_a_season_whose_number_is_committed_is_refused(tmp_path, status):
     """Its number is how the league names that season, and nothing is removed."""
@@ -371,7 +360,6 @@ async def test_a_season_whose_number_is_committed_is_refused(tmp_path, status):
     assert await _count(db_path, "rounds", "division_id", DIVISION_ID) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_deleting_a_season_that_is_not_there_is_not_an_error(tmp_path):
     """A delete racing another that already removed the season must not raise, or it would
     report a failure for work that is already done."""

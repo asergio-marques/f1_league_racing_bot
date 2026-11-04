@@ -452,9 +452,6 @@ async def test_a_round_cancelled_in_a_division_typed_in_another_case_names_it_as
     [
         pytest.param(
             5, "✅ Round **5** deleted from **Pro** and rounds renumbered.", id="deleted",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#283: /round delete hands the delete no hook"
-            ),
         ),
         pytest.param(9, "❌ Round 9 not found in division `Pro`.", id="round_not_found"),
     ],

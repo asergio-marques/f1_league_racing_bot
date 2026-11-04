@@ -133,6 +133,12 @@ class LeagueBot(commands.Bot):
     season_end_steps: Hook
     test_mode_flushed: AwaitedHook
     drivers_deleted: AwaitedHook
+    #: A season, a division or a round deleted: each module deletes its own rows on the delete's
+    #: connection, given the ids deleted (the rounds', the divisions', then the season's id). The
+    #: builder makes them and hands them to the deletes (architecture.md, "The database").
+    rounds_deleted: AwaitedHook
+    divisions_deleted: AwaitedHook
+    season_deleted: AwaitedHook
     #: Starts the retry cog's loop. The builder sets it, so that `setup_hook` reaches the loop
     #: without importing the cog, which nothing below the cogs may do.
     start_retry_loop: Callable[[], None]

@@ -40,9 +40,6 @@ from tests.support.delete_hooks import DIVISION_HOOKS, delete_hooks
 
 SERVER_ID = 9808
 
-#: Why a division delete fails until it takes its hooks.
-NO_HOOKS = "#283: delete_division takes no delete hooks, and the builder makes none to hand it"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -342,7 +339,6 @@ async def test_a_division_is_renamed(tmp_path):
     assert (await service.get_divisions(1))[0].name == "Premier"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_a_division_with_a_driver_placed_in_it_is_not_deleted(tmp_path):
     """A division is deleted only once every driver placed in it has been unassigned
     (core specification, Divisions; decided 2026-09-25, #282). The deletion is destructive
@@ -381,7 +377,6 @@ async def test_a_division_with_a_driver_placed_in_it_is_not_deleted(tmp_path):
     assert await _count(db_path, "session_results", "round_id = ?", (110,)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_deleting_one_division_leaves_its_neighbours_alone(tmp_path):
     """The deletes are all keyed on the division, and a missing `WHERE` would take the
     whole season's lineup with it."""
@@ -398,7 +393,6 @@ async def test_deleting_one_division_leaves_its_neighbours_alone(tmp_path):
     assert await _count(db_path, "team_seats", "team_instance_id = ?", (120,)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_deleting_a_division_with_no_rounds_is_not_an_error(tmp_path):
     """A division added during setup and removed before any round was scheduled."""
     db_path = await _make_db(tmp_path)

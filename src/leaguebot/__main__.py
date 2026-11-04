@@ -215,6 +215,15 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     ))
 
 
+def _sign_up_to_deletes(bot: LeagueBot) -> None:
+    """Make the hooks a season, a division or a round deleted declares, and sign each module's
+    part up to them, in the order core calls them: each module deleting its own rows, on the
+    delete's connection, inside its save (architecture.md, "The database")."""
+    bot.rounds_deleted = AwaitedHook()
+    bot.divisions_deleted = AwaitedHook()
+    bot.season_deleted = AwaitedHook()
+
+
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
     """Make the hooks a season's end declares, and sign each module's part up to them, in the order
     core calls them: what stands in the way of the completion and of the cancellation (results'
@@ -791,6 +800,9 @@ def register_change_types(bot: LeagueBot) -> None:
             season_end_steps=bot.season_end_steps,
             test_mode_flushed=bot.test_mode_flushed,
             drivers_deleted=bot.drivers_deleted,
+            rounds_deleted=bot.rounds_deleted,
+            divisions_deleted=bot.divisions_deleted,
+            season_deleted=bot.season_deleted,
             forget_setup=lambda: _forget_setup(bot),
         )
     )
@@ -1109,6 +1121,7 @@ async def build(settings: Settings) -> LeagueBot:
 
     _sign_up_to_cancellations(bot)
     _sign_up_to_season_end(bot)
+    _sign_up_to_deletes(bot)
     register_change_types(bot)
     register_scheduler_callbacks(bot)
 

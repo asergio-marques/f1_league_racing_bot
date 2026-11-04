@@ -3170,7 +3170,11 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        await self.bot.season_service.delete_division(div.id)
+        await self.bot.season_service.delete_division(
+            div.id,
+            rounds_deleted=self.bot.rounds_deleted,
+            divisions_deleted=self.bot.divisions_deleted,
+        )
 
         cfg = self._get_pending()
         if cfg is not None:
@@ -4398,7 +4402,9 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        await self.bot.season_service.delete_round(rnd.id)
+        await self.bot.season_service.delete_round(
+            rnd.id, rounds_deleted=self.bot.rounds_deleted
+        )
 
         cfg = self._get_pending()
         if cfg is not None:
