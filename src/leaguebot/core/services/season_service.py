@@ -1053,8 +1053,10 @@ async def set_round_status_on(
     The status alone: nothing else about the round is written, and this imports nothing of any
     module, so the results module sets a round's place in its review through core's own writer
     and the write is part of whatever save it is handed (issue #439). What else moves with the
-    status, a round's former drivers becoming marked as it turns FINAL, is the caller's, written
-    on the same connection.
+    status, a round's former drivers becoming marked as it turns FINAL, is the caller's: results'
+    own paths (the appeals approval, an amendment, the revert) mark them through results' own
+    recompute, and the two closers of core's that make a round FINAL hand the rounds to the hook
+    a round made final calls (`rounds_made_final`), in the same save.
 
     The write is guarded, as every write of a round's status here is, so that a stale caller
     cannot drag a round backwards. With *only_from* the round must stand in one of those states
@@ -1283,9 +1285,10 @@ async def refresh_division_status_on(db: aiosqlite.Connection, division_id: int)
     Division status is stored rather than derived, so that cancelling a division can record the
     fact and `/season cancel` can tell the running divisions apart from the called-off ones.
     Stored state can drift from the rounds it summarises, so this is called from every place a
-    round's outcome settles — the appeals approval in result_submission_service,
-    `cancel_round_on` and `end_round_not_held_on` — and again from the completion's first save,
-    which cannot afford to strand a league on a stale row a second time (issue #154).
+    round's outcome settles — a round made FINAL or CANCELLED, by core's closers or by the
+    results module's own changes (the appeals approval, a round that starts with results off) — and
+    again from the completion's first save, which cannot afford to strand a league on a stale
+    row a second time (issue #154).
 
     The `status = 'ACTIVE'` guard is what makes it safe to call anywhere: a division still in
     SETUP has not started, and a CANCELLED one was called off deliberately. Neither is a division
@@ -1350,10 +1353,20 @@ async def end_rounds_awaiting_results_on(
     A NOT_RUN round is left where it is. It waits on the clock rather than on results, and
     the round's start closes it as FINAL at its own moment with the module off.
 
-    Everything is written on *db*, the rounds, their former drivers, the ``round.status``
-    audit and each division the closing finishes, with the season it was the last of; nothing
-    is committed, so that the caller saves it with the switch-off (issue #439). Nothing here
-    opens a connection of its own or awaits Discord.
+    Everything is written on *db*, the rounds, the ``round.status`` audit and each division the
+    closing finishes, with the season it was the last of; nothing is committed, so that the
+    caller saves it with the switch-off (issue #439). Nothing here opens a connection of its own
+    or awaits Discord.
+
+    The rounds are then handed, once, with *rounds_made_final*, the hook a round made final
+    calls, on *db* and in the same save: the modules sign their parts up to it, and results'
+    marks the drivers who raced them as former drivers (#216), the first pass's own finaliser
+    being a results command that will never run for them. **Usually that marks nobody**, and
+    that is correct rather than wasteful: turning the module off erases the season's results in
+    the same save, before reaching here, and a driver whose results have been erased has raced
+    nothing the bot still knows of. It marks where a league disables between seasons with an
+    older season's results intact, and where the rounds are closed on their own. No round made
+    CANCELLED is handed to it, and a round already final is not.
 
     Returns one dict per round closed — ``division``, ``round_number``, ``track_name`` and
     the ``status`` it was taken from — so the caller can report what it did.
@@ -1695,7 +1708,10 @@ async def close_raced_rounds_on(
     The former-driver flag is set at the FINAL transition (#216). A driver whose only round is
     one of these is flagless when the driver pass runs, and the pass deletes a flagless profile
     at Not Signed Up, which would discard the results this rule forbids discarding. Closing the
-    rounds first marks their drivers, and the pass keeps them.
+    rounds first marks their drivers, and the pass keeps them: the rounds closed are handed,
+    once, with *rounds_made_final*, the hook a round made final calls, on *db* and in the same
+    save, and results' part of it marks their drivers (a round with no results marks nobody).
+    The rounds the cancellation calls off are never handed to it.
 
     Committing nothing. Gives the ids closed, for the caller to report.
     """

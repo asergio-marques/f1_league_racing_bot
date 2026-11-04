@@ -483,7 +483,11 @@ async def recompute_former_drivers_for_round(
     """Set the former-driver flag from one round's final results, both ways (#216).
 
     Runs on the caller's connection and commits nothing, so the flag moves in the same
-    transaction as whatever made the round final.
+    transaction as whatever made the round final. The flag is core's: this works out who has
+    raced and writes it through core's `set_former_drivers_on`, never into the table itself.
+    Five paths reach it, each in the save that made the round final: the appeals finaliser, an
+    amendment's stage three, the revert, and, through :func:`rounds_made_final_on`, the two
+    closers of core's that make a round FINAL (results switched off, a season cancelled).
 
     The core specification's **Leaving the league** section is the rule: a driver has raced a
     round only once that round is FINAL and only by its final results, an entry recording that
