@@ -214,6 +214,34 @@ async def test_a_fault_in_a_modules_part_leaves_test_mode_off_and_nothing_seeded
         assert await cursor.fetchall() == []
 
 
+async def test_turning_test_mode_on_with_no_live_season_seeds_nothing(tmp_path):
+    """A server not in test mode, with no season set up or active. Turning test mode on, with
+    results' part signed up as the builder signs it, still saves test mode on, hands no module a
+    season, seeds no points configuration and gives back no names."""
+    from leaguebot.core.services.test_mode_service import turn_test_mode_on
+    from tests.support.turned_on_hook import turned_on_hook
+
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs "
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+            "VALUES (1, 100, 200, 300)"
+        )
+        await db.commit()
+
+    names = await turn_test_mode_on(db_path, test_mode_turned_on=turned_on_hook())
+
+    assert names == []
+    assert await _test_mode_active(db_path) is True
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT config_name FROM points_config_store")
+        assert await cursor.fetchall() == []
+        cursor = await db.execute("SELECT config_name FROM season_points_links")
+        assert await cursor.fetchall() == []
+
+
 # ---------------------------------------------------------------------------
 # count_live_real_drivers
 # ---------------------------------------------------------------------------
