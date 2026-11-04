@@ -925,7 +925,9 @@ async def test_a_stale_division_is_finished_in_the_first_save_and_the_season_mov
 
 @pytest.mark.xfail(
     strict=True,
-    reason="#283: the completion winds down through core's wind_down job, not signup's close_window",
+    reason=(
+        "#283: the completion winds down through core's wind_down job, not signup's close_window"
+    ),
 )
 async def test_a_season_in_an_ongoing_stage_with_every_division_done_is_wound_down_first(tmp_path):
     """The season Ongoing placements with every division done, Max's placement pending, and
@@ -1927,8 +1929,9 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     none stands. 105 is still told, then their channel locked, by their own jobs; the
     reply and the closing line say the window was not closed, to be closed with `/signup close`,
     and never name 105 as returned but not told; the window is still recorded open, with no
-    audit of its close and no "🔒 Signups closed" line, and the season completed. The closing line reads "| Incomplete" for the window alone, and nothing not
-    done, there or in the reply, names 105."""
+    audit of its close and no "🔒 Signups closed" line, and the season completed. The closing
+    line reads "| Incomplete" for the window alone, and nothing not done, there or in the reply,
+    names 105."""
     from tests.support.season_league import SIGNUP_CHANNEL
 
     league = await pending_completion_league(tmp_path, signups_open=True)

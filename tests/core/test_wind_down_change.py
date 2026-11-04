@@ -63,7 +63,6 @@ from tests.support.season_league import (
 SIGNUP_S_CLOSE = "#283: the wind-down opens with core's wind_down job, not signup's close_window"
 
 
-
 async def _league(tmp_path: Any, *, stage: str = "ONGOING_PLACEMENTS",
                   signups_open: bool = False) -> Any:
     """The season at *stage*, every division done, Max's and Charles's placements pending and a

@@ -189,9 +189,10 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     the names the amendment gives them today; and the words an outcome gives a step that was not
     done, weather's for a forecast. A season's end: what stands in its way, results' refusal while
     a round is being amended; the drivers it returns, signup's ending of their wizards in the save,
-    and the jobs signup plans for a driver returned; the jobs that close what a module holds open,
-    signup's close of its window; the steps each module defines for it, signup's notice and close, its
-    window's close, the Sign Up button's deletion and the closed post, then weather's deletion of a forecast; the jobs that clear what test mode posted, weather's; and the drivers
+    and the jobs signup plans for a driver returned; the jobs that close what a module holds
+    open, signup's close of its window; the steps each module defines for it, signup's notice and
+    close, its window's close, the Sign Up button's deletion and the closed post, then weather's
+    deletion of a forecast; the jobs that clear what test mode posted, weather's; and the drivers
     deleted, image's discard of their portraits."""
     import importlib
 

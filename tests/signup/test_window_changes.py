@@ -364,8 +364,8 @@ async def test_a_discarded_close_arming_names_the_commands_that_arm_it_again(tmp
 # ---------------------------------------------------------------------------
 #
 # Today `/signup close`, its Confirm Close button, the close timer, a restart past the close time
-# and `/module disable signup` close the window through `execute_forced_close`, off the queue:
-# each step that fails is named and the rest run on. On the queue each asks `signup.close` (or
+# and `/module disable signup` close the window off the queue: each step that fails is named and
+# the rest run on. On the queue each asks `signup.close` (or
 # `module.off:signup`): `return_drivers` returns each driver still filling in the wizard to Not
 # Signed Up, `delete_button` deletes the Sign Up message, `post_closed` posts the closed notice
 # and, in its record, saves the window closed, the season's move and the audit in one save; then
