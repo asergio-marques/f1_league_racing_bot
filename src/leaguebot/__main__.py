@@ -283,6 +283,26 @@ def _sign_up_to_test_mode_turned_on(bot: LeagueBot) -> None:
     bot.test_mode_turned_on.subscribe(points_config_service.seed_test_configs_on)
 
 
+def _sign_up_to_placements_confirmed(bot: LeagueBot) -> None:
+    """Make the hooks placements confirmed (the season's approval) declares, and sign each
+    module's opening post up to them: the jobs it plans for a division, handed the save's
+    connection and the division's id and name (architecture.md, "How modules and core fit
+    together"), and the step it defines for its own job, by name. The builder hands them to
+    `season_approval_change`. Results signs up first, so each division's jobs stay lineup,
+    calendar, standings, sheet. #283: core's own opening posts are signed up for now, until
+    results and attendance take them over."""
+    from leaguebot.core.services.season_approval_change import (
+        core_opening_posts_on, core_opening_posts_steps,
+    )
+
+    bot.placements_confirmed = AwaitedHook()
+    bot.placements_confirmed.subscribe(core_opening_posts_on)
+    bot.placements_confirmed_steps = Hook()
+    bot.placements_confirmed_steps.subscribe(partial(
+        core_opening_posts_steps, bot.module_service
+    ))
+
+
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
     """Make the hooks a season's end declares, and sign each module's part up to them, in the order
     core calls them: what stands in the way of the completion and of the cancellation (results'
@@ -886,6 +906,8 @@ def register_change_types(bot: LeagueBot) -> None:
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
             round_windows_read=bot.round_windows_read,
+            placements_confirmed=bot.placements_confirmed,
+            placements_confirmed_steps=bot.placements_confirmed_steps,
             rasteriser_fault=rasteriser_fault,
             snapshot_points_on=snapshot_configs_to_season_on,
             forget_setup=lambda: _forget_setup(bot),
@@ -1188,6 +1210,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_cancellations(bot)
     _sign_up_to_rounds_made_final(bot)
     _sign_up_to_test_mode_turned_on(bot)
+    _sign_up_to_placements_confirmed(bot)
     _sign_up_to_season_end(bot)
     _sign_up_to_deletes(bot)
     _sign_up_to_pack(bot)

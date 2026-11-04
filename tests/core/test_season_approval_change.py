@@ -669,11 +669,6 @@ async def test_the_approval_is_audited_with_the_season_and_the_placements_commit
     }
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the approval does not yet plan the modules' opening posts through the "
-    "placements confirmed hook",
-)
 async def test_each_driver_s_roles_division_s_lineup_calendar_and_opening_posts_are_jobs_of_their_own(
     tmp_path, monkeypatch,
 ):

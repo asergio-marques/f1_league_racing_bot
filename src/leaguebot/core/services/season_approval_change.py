@@ -59,7 +59,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.round_moments import read_round_windows
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.services import approval_checks, season_classification_service
 from leaguebot.core.services import lineup_posting, standing_posts
 from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
@@ -272,6 +272,77 @@ def driver_roles_step(placement: Any, name: str = GRANT_ROLES) -> Step:
     return Step(name, StepKind.ACT, grant_roles, describe=describe_grant)
 
 
+async def core_opening_posts_on(
+    db: aiosqlite.Connection, division_id: int, division_name: str
+) -> tuple[PlannedStep, ...]:
+    """Core's own opening standings and opening sheet jobs for *division_id*, signed up to
+    *placements_confirmed* as its only subscribers for now (#283: results' and attendance's own
+    modules take these over in a later commit). Whether each runs is decided as it runs, by its
+    module's switch (`core_opening_posts_steps`)."""
+    target = {"division_id": division_id, "division_name": division_name}
+    return (PlannedStep(OPENING_STANDINGS, target), PlannedStep(OPENING_SHEET, target))
+
+
+def core_opening_posts_steps(modules: "ModuleService") -> dict[str, Step]:
+    """Core's own step definitions for the opening standings and opening sheet, signed up to
+    *placements_confirmed_steps* beside `core_opening_posts_on` (#283, see there)."""
+
+    def describing(template: str) -> Callable[[StepContext], Awaitable[str]]:
+        async def describe(ctx: StepContext) -> str:
+            return template.format(name=ctx.step_payload["division_name"])
+
+        return describe
+
+    async def opening_standings(ctx: StepContext) -> StepResult:
+        guild = await _guild(ctx.bot)
+        await season_classification_service.post_opening_standings(
+            ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
+            as_text=ctx.tries > 0, kept=ctx.kept,
+        )
+        return StepResult()
+
+    async def standings_due(_ctx: StepContext) -> bool:
+        return await modules.is_results_enabled()
+
+    async def opening_sheet(ctx: StepContext) -> StepResult:
+        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        guild = await _guild(ctx.bot)
+        result = await season_classification_service.post_opening_sheet(
+            ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
+            as_text=ctx.tries > 0,
+        )
+        then: tuple[PlannedStep, ...] = ()
+        if result.get("takes_slot"):
+            then = standing_posts.replaced(
+                result.get("channel_id"), result.get("old"), result.get("new"),
+                what="attendance sheet",
+                division_name=str(ctx.step_payload.get("division_name", "the division")),
+            )
+        return StepResult(result=result, then=then)
+
+    async def record_opening_sheet(
+        db: aiosqlite.Connection, ctx: StepContext, result: StepResult
+    ) -> None:
+        await season_classification_service.record_sheet_on(
+            db, int(ctx.step_payload["division_id"]), result.result
+        )
+
+    async def sheet_due(_ctx: StepContext) -> bool:
+        return await modules.is_attendance_enabled()
+
+    return {
+        OPENING_STANDINGS: Step(
+            OPENING_STANDINGS, StepKind.ACT, opening_standings, still_due=standings_due,
+            describe=describing("posting the opening standings of **{name}**"),
+        ),
+        OPENING_SHEET: Step(
+            OPENING_SHEET, StepKind.ACT, opening_sheet, still_due=sheet_due,
+            describe=describing("posting the opening attendance sheet of **{name}**"),
+            record=record_opening_sheet,
+        ),
+    }
+
+
 def season_approval_change(
     *,
     modules: "ModuleService",
@@ -280,6 +351,8 @@ def season_approval_change(
     scheduler: "SchedulerService",
     placement: "PlacementService",
     round_windows_read: AwaitedHook,
+    placements_confirmed: AwaitedHook,
+    placements_confirmed_steps: Hook,
     rasteriser_fault: Callable[[], str | None],
     snapshot_points_on: Callable[[aiosqlite.Connection, int], Awaitable[None]],
     forget_setup: Callable[[], None],
@@ -290,10 +363,13 @@ def season_approval_change(
     The builder hands in *modules* and *config* (which modules are on, and test mode), the
     *seasons* service (the divisions and rounds the check, the arming and the calendar read), the
     *scheduler* and the *placement* service, *round_windows_read* (the hook the enabled
-    modules' windows are read through), *rasteriser_fault* (what is wrong with the host's drawing
-    program, None where nothing is), results' *snapshot_points_on* (the points snapshot on a
-    handed save, which reads results' own switch), *forget_setup* (lets go of the setup the
-    season cog holds in memory) and *now* (the queue's clock).
+    modules' windows are read through), *placements_confirmed* (the hook each module's opening
+    post is planned through, called inside the save for each division in turn, on the save's
+    connection) and *placements_confirmed_steps* (each module's step definitions for its own
+    opening post, by name), *rasteriser_fault* (what is wrong with the host's drawing program,
+    None where nothing is), results' *snapshot_points_on* (the points snapshot on a handed save,
+    which reads results' own switch), *forget_setup* (lets go of the setup the season cog holds
+    in memory) and *now* (the queue's clock).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -447,9 +523,15 @@ def season_approval_change(
                 steps.append(PlannedStep(REFRESH_LINEUP, target))
             if division["calendar_channel_id"]:
                 steps.append(PlannedStep(POST_CALENDAR, target))
-            # Whether each is due is decided as it runs, by its module's switch.
-            steps.append(PlannedStep(OPENING_STANDINGS, target))
-            steps.append(PlannedStep(OPENING_SHEET, target))
+            # Each module hands back the jobs it plans for this division; whether each is due is
+            # decided as it runs, by its own module's switch.
+            steps.extend(
+                job
+                for jobs in await placements_confirmed.call(
+                    db, int(division["id"]), str(division["name"])
+                )
+                for job in jobs
+            )
         if divisions and channel_id:
             steps.append(PlannedStep(DELETE_BATCH_NOTICE, {"channel_id": int(channel_id)}))
 
@@ -550,43 +632,6 @@ def season_approval_change(
         """The notice is deleted only where it was posted: a discarded post leaves none."""
         return posted_notice(ctx) is not None
 
-    async def opening_standings(ctx: StepContext) -> StepResult:
-        guild = await _guild(ctx.bot)
-        await season_classification_service.post_opening_standings(
-            ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
-            as_text=ctx.tries > 0, kept=ctx.kept,
-        )
-        return StepResult()
-
-    async def standings_due(_ctx: StepContext) -> bool:
-        return await modules.is_results_enabled()
-
-    async def opening_sheet(ctx: StepContext) -> StepResult:
-        await standing_posts.remove_kept(ctx.bot, ctx.kept)
-        guild = await _guild(ctx.bot)
-        result = await season_classification_service.post_opening_sheet(
-            ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
-            as_text=ctx.tries > 0,
-        )
-        then: tuple[PlannedStep, ...] = ()
-        if result.get("takes_slot"):
-            then = standing_posts.replaced(
-                result.get("channel_id"), result.get("old"), result.get("new"),
-                what="attendance sheet",
-                division_name=str(ctx.step_payload.get("division_name", "the division")),
-            )
-        return StepResult(result=result, then=then)
-
-    async def record_opening_sheet(
-        db: aiosqlite.Connection, ctx: StepContext, result: StepResult
-    ) -> None:
-        await season_classification_service.record_sheet_on(
-            db, int(ctx.step_payload["division_id"]), result.result
-        )
-
-    async def sheet_due(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
-
     async def delete_batch_notice(ctx: StepContext) -> StepResult:
         posted = posted_notice(ctx)
         if posted is None:
@@ -683,12 +728,6 @@ def season_approval_change(
             f"<#{ctx.step_payload['channel_id']}>"
         )
 
-    def describing(template: str) -> Callable[[StepContext], Awaitable[str]]:
-        async def describe(ctx: StepContext) -> str:
-            return template.format(name=ctx.step_payload["division_name"])
-
-        return describe
-
     async def describe_tell(ctx: StepContext) -> str:
         return (
             f"telling <#{ctx.payload['channel_id']}> how the approval of season "
@@ -777,15 +816,11 @@ def season_approval_change(
         ),
         REFRESH_LINEUP: lineup_posting.lineup_step(placement, name=REFRESH_LINEUP),
         **calendar_steps(seasons),
-        OPENING_STANDINGS: Step(
-            OPENING_STANDINGS, StepKind.ACT, opening_standings, still_due=standings_due,
-            describe=describing("posting the opening standings of **{name}**"),
-        ),
-        OPENING_SHEET: Step(
-            OPENING_SHEET, StepKind.ACT, opening_sheet, still_due=sheet_due,
-            describe=describing("posting the opening attendance sheet of **{name}**"),
-            record=record_opening_sheet,
-        ),
+        **{
+            name: step
+            for defined in placements_confirmed_steps.call()
+            for name, step in defined.items()
+        },
         DELETE_BATCH_NOTICE: Step(
             DELETE_BATCH_NOTICE, StepKind.DELETE, delete_batch_notice, still_due=notice_posted,
             describe=describe_notice_delete,
