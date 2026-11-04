@@ -834,8 +834,8 @@ def season_abort_change(
     *placement* service (which takes back roles), the hooks the modules sign up to
     (*season_end_closes*, *drivers_returned*, *driver_returned_jobs*, *season_end_steps*,
     *test_mode_flushed*, *drivers_deleted*), the hooks the season's deletion calls
-    (*rounds_deleted*, *divisions_deleted*, *season_deleted*) and *forget_setup* (lets go of the setup the season cog
-    holds in memory).
+    (*rounds_deleted*, *divisions_deleted*, *season_deleted*) and *forget_setup* (lets go of the
+    setup the season cog holds in memory).
     """
 
     async def check(ctx: CheckContext) -> Verdict:

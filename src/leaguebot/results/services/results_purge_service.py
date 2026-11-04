@@ -360,7 +360,7 @@ async def season_deleted_on(db: aiosqlite.Connection, season_id: int) -> None:
 
 
 async def _delete_rows(db: aiosqlite.Connection, round_ids: list[int]) -> tuple[int, int]:
-    """Delete the season's result rows in foreign-key order on *db*, committing nothing.
+    """Delete the result rows of *round_ids* in foreign-key order on *db*, committing nothing.
     Returns (sessions, standings).
 
     ``penalty_records`` and ``appeal_records`` go first. Each points at a driver's row in
