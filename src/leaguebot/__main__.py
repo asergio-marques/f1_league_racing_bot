@@ -219,8 +219,12 @@ def _sign_up_to_deletes(bot: LeagueBot) -> None:
     """Make the hooks a season, a division or a round deleted declares, and sign each module's
     part up to them, in the order core calls them: each module deleting its own rows, on the
     delete's connection, inside its save (architecture.md, "The database")."""
+    from leaguebot.attendance.services import attendance_service
+
     bot.rounds_deleted = AwaitedHook()
+    bot.rounds_deleted.subscribe(attendance_service.rounds_deleted_on)
     bot.divisions_deleted = AwaitedHook()
+    bot.divisions_deleted.subscribe(attendance_service.divisions_deleted_on)
     bot.season_deleted = AwaitedHook()
 
 

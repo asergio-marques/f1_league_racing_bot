@@ -660,6 +660,32 @@ class AttendanceService:
         )
 
 
+async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> None:
+    """Delete attendance's rows of *round_ids* on *db*, committing nothing: each driver's
+    attendance of the round, with the pardons that hang from it, and the round's RSVP embed.
+
+    Core hands it the round ids as it deletes the rounds, in the delete's own save, so that the
+    module's rows go with the round or not at all (architecture.md, "The database").
+    """
+    marks = ",".join("?" * len(round_ids))
+    await db.execute(
+        f"DELETE FROM driver_round_attendance WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+    await db.execute(
+        f"DELETE FROM rsvp_embed_messages WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+
+
+async def divisions_deleted_on(db: aiosqlite.Connection, division_ids: list[int]) -> None:
+    """Delete attendance's settings of *division_ids* on *db*, committing nothing: the
+    division's channels for the RSVP and the attendance sheet."""
+    marks = ",".join("?" * len(division_ids))
+    await db.execute(
+        f"DELETE FROM attendance_division_config WHERE division_id IN ({marks})",  # noqa: S608
+        division_ids,
+    )
+
+
 # ── Row-to-dataclass helpers ───────────────────────────────────────────────
 
 
