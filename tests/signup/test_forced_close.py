@@ -9,7 +9,6 @@ season's end change, pinned in the core season end tests; they no longer come th
 from __future__ import annotations
 
 import os
-from functools import partial
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -76,9 +75,6 @@ def _bot(db_path, *, config=_UNSET, channel=None, guild=True):
         else config
     )
     bot.signup_module_service.set_window_closed = AsyncMock()
-    bot.driver_service = MagicMock()
-    bot.driver_service.transition = AsyncMock()
-    bot.driver_service.ids_in_states = AsyncMock(side_effect=partial(_ids_in_states, db_path))
     bot.scheduler_service = MagicMock()
     bot.scheduler_service._scheduler = MagicMock()
     bot.wizard_service = MagicMock()
@@ -88,17 +84,6 @@ def _bot(db_path, *, config=_UNSET, channel=None, guild=True):
     bot.get_guild = MagicMock(return_value=g if guild else None)
     bot._channel = channel
     return bot
-
-
-async def _ids_in_states(db_path, states) -> list[str]:
-    """The ids of the drivers in *states*, as core's driver service gives them to the close."""
-    async with get_connection(db_path) as db:
-        placeholders = ",".join("?" for _ in states)
-        cursor = await db.execute(
-            f"SELECT discord_user_id FROM driver_profiles WHERE current_state IN ({placeholders})",
-            tuple(state.value for state in states),
-        )
-        return [str(row["discord_user_id"]) for row in await cursor.fetchall()]
 
 
 def _services_of(bot) -> dict:
