@@ -131,7 +131,6 @@ ignore_imports =
     leaguebot.core.cogs.season_cog -> leaguebot.results.services.season_points_service
     leaguebot.core.services.season_classification_service -> leaguebot.results.services.results_post_service
     leaguebot.core.services.season_classification_service -> leaguebot.results.services.standings_service
-    leaguebot.core.services.season_service -> leaguebot.results.services.result_submission_service
     leaguebot.core.services.test_roster_service -> leaguebot.results.models.points_config
     # #283: signup:
     leaguebot.core.cogs.module_cog -> leaguebot.signup.models.signup_module

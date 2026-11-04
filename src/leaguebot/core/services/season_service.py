@@ -1374,26 +1374,11 @@ async def end_rounds_awaiting_results_on(
     )
     rows = [dict(r) for r in await cursor.fetchall()]
 
-    from leaguebot.results.services.result_submission_service import (
-        recompute_former_drivers_for_round,
-    )
-
     for row in rows:
         await db.execute(
             "UPDATE rounds SET status = ? WHERE id = ?",
             (RoundStatus.FINAL.value, row["id"]),
         )
-        # These rounds were raced and their results submitted; it is only the scoring
-        # that has been abandoned. Closing them as FINAL is what makes those results
-        # final, so it is here that their drivers become former drivers (#216) — the
-        # first pass's own finaliser is a results command and will never run for them.
-        #
-        # **Usually this finds nothing**, and that is correct rather than wasteful:
-        # turning the module off erases the season's results in the same save, before
-        # reaching here, and a driver whose results have been erased has raced nothing
-        # the bot still knows of. It marks where a league disables between seasons with
-        # an older season's results intact, and where the rounds are closed on their own.
-        await recompute_former_drivers_for_round(db, row["id"])
         await db.execute(
             """
             INSERT INTO audit_entries
@@ -1714,10 +1699,6 @@ async def close_raced_rounds_on(
 
     Committing nothing. Gives the ids closed, for the caller to report.
     """
-    from leaguebot.results.services.result_submission_service import (
-        recompute_former_drivers_for_round,
-    )
-
     cursor = await db.execute(
         f"""
         SELECT r.id, r.status, d.id AS division_id
@@ -1736,9 +1717,6 @@ async def close_raced_rounds_on(
             "UPDATE rounds SET status = ? WHERE id = ?",
             (RoundStatus.FINAL.value, row["id"]),
         )
-        # The round's results are final as of the line above, so its drivers become
-        # former drivers here, which is the whole point of closing them (#216).
-        await recompute_former_drivers_for_round(db, row["id"])
         await db.execute(
             """
             INSERT INTO audit_entries

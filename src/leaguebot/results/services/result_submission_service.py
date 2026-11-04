@@ -559,6 +559,17 @@ async def recompute_former_drivers_for_round(
     )
 
 
+async def rounds_made_final_on(db, round_ids: Iterable[int]) -> None:
+    """Mark the drivers who raced each of *round_ids* as former drivers, on the save's connection.
+
+    Results' part of the rounds a closer of core's made FINAL (`rounds_made_final`): core hands
+    the rounds it closed, when results is switched off and when a season is cancelled, and each
+    round is recomputed as :func:`recompute_former_drivers_for_round` does it. Commits nothing.
+    """
+    for round_id in round_ids:
+        await recompute_former_drivers_for_round(db, round_id)
+
+
 @posts_in_a_job
 async def send_appeals_prompt(
     bot: LeagueBot, sub_channel: discord.TextChannel, state: "PenaltyReviewState"

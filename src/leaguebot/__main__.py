@@ -265,7 +265,10 @@ def _sign_up_to_rounds_made_final(bot: LeagueBot) -> None:
     connection, inside its save (architecture.md, "How modules and core fit together"). The
     builder hands it to the two closers that make a round FINAL: results turned off, and a
     season cancelled."""
+    from leaguebot.results.services import result_submission_service
+
     bot.rounds_made_final = AwaitedHook()
+    bot.rounds_made_final.subscribe(result_submission_service.rounds_made_final_on)
 
 
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
