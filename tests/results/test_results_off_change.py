@@ -64,9 +64,6 @@ COMPLETABLE = "the season can still be completed"
 MAY_REMAIN = "may still be posted — delete them by hand"
 #: The stop line's opening, as the queue writes it.
 STOPPED_AT = "❌ The queue is stopped at job #"
-#: Why the wind-down cannot yet run on this bot double: its first job is core's close of the
-#: signup window, which reads the signup module's service.
-CORE_CLOSES_THE_WINDOW = "#283: the wind-down closes the signup window through core's own job"
 
 RESULTS_CHANNEL_ID = 9001
 STANDINGS_CHANNEL_ID = 9002
@@ -830,7 +827,6 @@ async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_compl
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=CORE_CLOSES_THE_WINDOW)
 async def test_the_season_is_wound_down_as_a_change_of_its_own(tmp_path):
     """A season with placements still open has the wind-down's work left to do: the bot winds it
     down as a change of its own, and the season moves on to Pending completion."""
@@ -849,7 +845,6 @@ async def test_the_season_is_wound_down_as_a_change_of_its_own(tmp_path):
         assert [row["stage"] for row in await cursor.fetchall()] == ["PENDING_COMPLETION"]
 
 
-@pytest.mark.xfail(strict=True, reason=CORE_CLOSES_THE_WINDOW)
 async def test_a_season_that_cannot_be_wound_down_is_reported_and_the_switch_off_stands(
     tmp_path,
 ):

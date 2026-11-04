@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -69,8 +69,8 @@ from leaguebot.core.services.change_queue import (
 )
 from leaguebot.core.services.season_end_changes import season_ending, season_ending_jobs
 from leaguebot.core.services.season_lifecycle_service import (
-    WINDOW_CLOSED_NOTICE,
-    WINDOW_NOT_CLOSED,
+    ABORT_CAUSE,
+    WIND_DOWN_CAUSE,
     WINDOW_OPENS_FROM,
     advance_on_window_open_on,
     live_season_stage,
@@ -79,11 +79,17 @@ from leaguebot.core.utils.channel_guard import league_role_faults
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.signup.services.closing_steps import (
     ARM_DELETION,
+    BUTTON_KEPT,
     CLOSE_SIGNUP,
+    CLOSE_WINDOW,
     DELETE_BUTTON,
     POST_CLOSED,
     SIGNUP_NOTICE,
+    WINDOW_CLOSED_NOTICE,
+    WINDOW_NOT_CLOSED,
     closing_steps,
+    season_end_steps as driver_steps,
+    window_close_jobs,
     window_close_steps,
 )
 from leaguebot.signup.services.signup_posting import post
@@ -93,7 +99,9 @@ if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
+    from leaguebot.signup.services.wizard_service import WizardService
 
 OPEN = "signup.open"
 POST_INFO = "post_info"
@@ -419,19 +427,79 @@ def window_was_closed(steps: tuple[StepView, ...]) -> bool:
     ) and not any(view.name == RETURN_DRIVERS and discarded(view) for view in steps)
 
 
+#: What a close plans once it has returned its drivers: given the job, the signup channel and the
+#: Sign Up button's message where the configuration holds them, and each driver returned with the
+#: signup channel their wizard held, it gives the jobs that follow.
+PlanAfter = Callable[
+    [StepContext, int | None, int | None, Sequence[tuple[str, int | None]]],
+    tuple[PlannedStep, ...],
+]
+
+
+def planned_by_a_member_s_close(
+    ctx: StepContext, channel_id: int | None, button_id: int | None,
+    returned: Sequence[tuple[str, int | None]],
+) -> tuple[PlannedStep, ...]:
+    """The jobs after the return of a close the queue was asked for: the Sign Up button's
+    deletion and the "Signups are now closed" post (whose record closes the window and moves the
+    season on), then for each driver whose wizard held a channel their notice, lock and deletion's
+    arming. The payload's ``audit_action`` is what the close is audited under."""
+    planned: list[PlannedStep] = []
+    if button_id is not None and channel_id is not None:
+        planned.append(PlannedStep(DELETE_BUTTON, {
+            "channel_id": int(channel_id), "message_id": int(button_id),
+            "what": "Sign Up button", "division_name": "signups",
+        }))
+    planned.append(PlannedStep(POST_CLOSED, {
+        "channel_id": None if channel_id is None else int(channel_id),
+        "audit_action": str(ctx.step_payload["audit_action"]), "advance_season": True,
+    }))
+    told: list[PlannedStep] = []
+    for account, wizard_channel in returned:
+        if wizard_channel is not None:
+            shared = {"user_id": account, "channel_id": int(wizard_channel)}
+            told += [
+                PlannedStep(SIGNUP_NOTICE, {**shared, "notice": WINDOW_CLOSED_NOTICE}),
+                PlannedStep(CLOSE_SIGNUP, shared),
+                PlannedStep(ARM_DELETION, shared),
+            ]
+    return (*planned, *told)
+
+
+def planned_by_a_season_s_end(
+    ctx: StepContext, channel_id: int | None, button_id: int | None,
+    returned: Sequence[tuple[str, int | None]],
+) -> tuple[PlannedStep, ...]:
+    """The jobs after the return of a close at a season's end: the Sign Up button's deletion and
+    the "Signups are now closed" post (whose record closes the window, with its audit and the line
+    for the cause the job was given), then for each driver returned their notice and the closing
+    of their channel, which the season's end tells and locks itself."""
+    planned = list(window_close_jobs(
+        str(ctx.step_payload["cause"]), len(returned),
+        channel_id=channel_id, button_message_id=button_id,
+    ))
+    for account, _wizard_channel in returned:
+        planned.append(PlannedStep(SIGNUP_NOTICE, {"user_id": account, "notice": WINDOW_CLOSED_NOTICE}))
+        planned.append(PlannedStep(CLOSE_SIGNUP, {"user_id": account}))
+    return tuple(planned)
+
+
 def return_drivers_step(
     *,
     signup_module_service: Callable[[], "SignupModuleService"],
     returned_by_close: Collection[DriverState],
     cancel_timers: Callable[[str], None],
+    name: str = RETURN_DRIVERS,
+    plan_after: PlanAfter = planned_by_a_member_s_close,
 ) -> Step:
-    """The `return_drivers` job of a change that closes the window: one save that returns each
-    driver still filling in the wizard to Not Signed Up, ends their wizard, cancels their timers
-    and plans every job that follows, so that a driver returned is never left without their
-    notice. It plans the Sign Up button's deletion and the "Signups are now closed" post (whose
-    record closes the window and moves the season on), then each driver's notice, lock and
-    deletion's arming; its payload is the ``audit_action`` the close is audited under. Its
-    arguments are those of `window_close_change`; `module.off:signup` uses it too."""
+    """The job of a change that closes the window: one save that returns each driver still filling
+    in the wizard to Not Signed Up, ends their wizard, cancels their timers and plans every job
+    that follows (*plan_after*), so that a driver returned is never left without their notice.
+    It returns every driver or none: a save that fails returns nobody. By default (a close the
+    queue was asked for, and `module.off:signup`) it plans the Sign Up button's deletion and the
+    "Signups are now closed" post, then each driver's notice, lock and deletion's arming; its
+    payload is the ``audit_action`` the close is audited under. Its other arguments are those of
+    `window_close_change`; a season's end plans its own (`season_end_close_step`)."""
 
     async def return_drivers(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         states = [state.value for state in returned_by_close]
@@ -447,8 +515,7 @@ def return_drivers_step(
         config = await cursor.fetchone()
         channel_id = None if config is None else config["signup_channel_id"]
         button_id = None if config is None else config["signup_button_message_id"]
-        returned: list[str] = []
-        told: list[PlannedStep] = []
+        returned: list[tuple[str, int | None]] = []
         for row in rows:
             account = str(row["discord_user_id"])
             try:
@@ -458,37 +525,121 @@ def return_drivers_step(
             except ValueError:
                 continue  # the state machine's refusal: the driver moved on since they were read
             await signup_module_service().end_wizard_on(db, account)
-            returned.append(account)
             cursor = await db.execute(
                 "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
                 (account,),
             )
             wizard = await cursor.fetchone()
-            if wizard is not None and wizard["signup_channel_id"] is not None:
-                shared = {"user_id": account, "channel_id": int(wizard["signup_channel_id"])}
-                told += [
-                    PlannedStep(SIGNUP_NOTICE, {**shared, "notice": WINDOW_CLOSED_NOTICE}),
-                    PlannedStep(CLOSE_SIGNUP, shared),
-                    PlannedStep(ARM_DELETION, shared),
-                ]
-        planned: list[PlannedStep] = []
-        if button_id is not None and channel_id is not None:
-            planned.append(PlannedStep(DELETE_BUTTON, {
-                "channel_id": int(channel_id), "message_id": int(button_id),
-                "what": "Sign Up button", "division_name": "signups",
-            }))
-        planned.append(PlannedStep(POST_CLOSED, {
-            "channel_id": None if channel_id is None else int(channel_id),
-            "audit_action": str(ctx.step_payload["audit_action"]), "advance_season": True,
-        }))
-        for account in returned:
+            returned.append((account, None if wizard is None else wizard["signup_channel_id"]))
+        planned = plan_after(ctx, channel_id, button_id, returned)
+        for account, _wizard_channel in returned:
             cancel_timers(account)
-        return StepResult(result={"returned": returned}, then=(*planned, *told))
+        return StepResult(result={"returned": [account for account, _ in returned]}, then=planned)
 
     async def describe_return(_ctx: StepContext) -> str:
         return "returning the drivers still signing up to Not Signed Up"
 
-    return Step(RETURN_DRIVERS, StepKind.SAVE, return_drivers, describe=describe_return)
+    return Step(name, StepKind.SAVE, return_drivers, describe=describe_return)
+
+
+def season_end_close_step(
+    *,
+    modules: Callable[[], "ModuleService"],
+    signup_module_service: Callable[[], "SignupModuleService"],
+    returned_by_close: Collection[DriverState],
+    cancel_timers: Callable[[str], None],
+    cancel_close_timer: Callable[[], None],
+    line_prefix: str | None = None,
+) -> Step:
+    """The `close_window` job of a season's end (a completion, a cancellation, the abort of the
+    season being set up and the wind-down's close as every division is done): where signup is on
+    and its window open, the close timer cancelled and the window's close done in one save that
+    returns every driver still filling in the wizard or none (`return_drivers_step`), planning the
+    Sign Up button's deletion, the "Signups are now closed" post that closes the window, and each
+    returned driver's notice and channel's closing. Its payload is the ``cause`` (a key of
+    `CLOSE_CAUSES`) and the season's number where it has one.
+
+    A Discard of the close leaves the window open and every driver as they were: nothing is
+    returned, and it is named as the window not closed (`WINDOW_NOT_CLOSED`) in the outcome of the
+    season's end, except for the close of a wind-down a completion began (cause ``divisions
+    done``, no *line_prefix*), whose window the completion's own close closes. The change that has
+    no closing line of its own (*line_prefix*, the wind-down) names it in a line of its own."""
+
+    returning = return_drivers_step(
+        signup_module_service=signup_module_service, returned_by_close=returned_by_close,
+        cancel_timers=cancel_timers, name=CLOSE_WINDOW, plan_after=planned_by_a_season_s_end,
+    )
+
+    async def close_window(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        cancel_close_timer()
+        return await returning.run(db, ctx)
+
+    async def window_stands(_ctx: StepContext) -> bool:
+        if not await modules().is_signup_enabled():
+            return False
+        config = await signup_module_service().get_config()
+        return config is not None and config.signups_open
+
+    async def describe_window(ctx: StepContext) -> str:
+        cause = ctx.step_payload.get("cause")
+        number = ctx.step_payload.get("season_number")
+        if cause == WIND_DOWN_CAUSE:
+            return "winding the season down"
+        if cause == ABORT_CAUSE:
+            return "closing the signup window as the season being set up is aborted"
+        if number:
+            return f"closing the signup window as season {number} ends"
+        return "closing the signup window as the season ends"
+
+    def not_done(view: StepView) -> str | None:
+        if line_prefix is None and view.payload.get("cause") == WIND_DOWN_CAUSE:
+            return None
+        return WINDOW_NOT_CLOSED
+
+    return Step(
+        CLOSE_WINDOW, StepKind.SAVE, close_window, still_due=window_stands,
+        describe=describe_window, not_done=not_done,
+    )
+
+
+def season_end_steps(
+    *,
+    wizard_service: Callable[[], "WizardService"],
+    scheduler_service: Callable[[], "SchedulerService"],
+    modules: Callable[[], "ModuleService"],
+    signup_module_service: Callable[[], "SignupModuleService"],
+    returned_by_close: Collection[DriverState],
+    cancel_timers: Callable[[str], None],
+    cancel_close_timer: Callable[[], None],
+    now: Callable[[], datetime],
+    line_prefix: str | None = None,
+) -> dict[str, Step]:
+    """Signup's jobs at a season's end, by name: the close of its window (`close_window`), the Sign
+    Up button's deletion and the closed post it plans, and each driver's notice and channel's
+    closing. Where the change has no closing line of its own (*line_prefix*, the wind-down), only
+    the window's staying open is named when a job is discarded. Subscribed to core's
+    `season_end_steps`; the services are getters, so that each is the one the bot holds when the
+    job runs."""
+    steps = {
+        **driver_steps(
+            wizard_service=wizard_service, scheduler_service=scheduler_service,
+            line_prefix=line_prefix,
+        ),
+        **window_close_steps(signup_module_service=signup_module_service, now=now),
+        CLOSE_WINDOW: season_end_close_step(
+            modules=modules, signup_module_service=signup_module_service,
+            returned_by_close=returned_by_close, cancel_timers=cancel_timers,
+            cancel_close_timer=cancel_close_timer, line_prefix=line_prefix,
+        ),
+    }
+    steps[POST_CLOSED] = dataclasses.replace(
+        steps[POST_CLOSED], not_done=lambda _view: WINDOW_NOT_CLOSED
+    )
+    if line_prefix is None:
+        steps[DELETE_BUTTON] = dataclasses.replace(
+            steps[DELETE_BUTTON], not_done=lambda _view: BUTTON_KEPT
+        )
+    return steps
 
 
 async def season_end_close_refusal(db_path: str) -> str | None:

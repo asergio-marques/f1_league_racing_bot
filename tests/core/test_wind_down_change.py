@@ -59,9 +59,6 @@ from tests.support.season_league import (
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
 
-#: Why the wind-down still opens with core's own `wind_down` job.
-SIGNUP_S_CLOSE = "#283: the wind-down opens with core's wind_down job, not signup's close_window"
-
 
 async def _league(tmp_path: Any, *, stage: str = "ONGOING_PLACEMENTS",
                   signups_open: bool = False) -> Any:
@@ -175,7 +172,6 @@ async def test_the_turned_down_line_is_written_with_the_save(tmp_path):
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=SIGNUP_S_CLOSE)
 async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     """Every division is done with Max's and Charles's placements pending, a driver (105) in
     review, Valtteri (106) approved and never placed, and signups already shut: signup's close of
@@ -213,7 +209,6 @@ async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     assert not any("Signups closed" in line for line in lines)
 
 
-@pytest.mark.xfail(strict=True, reason=SIGNUP_S_CLOSE)
 async def test_a_plain_ongoing_season_is_moved_on_with_no_driver_job(tmp_path):
     """A season Ongoing, every division done and signups shut: signup's close of the window finds
     nothing to close, the season is moved on to Pending completion, and no driver has a job."""

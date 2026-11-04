@@ -923,12 +923,6 @@ async def test_a_stale_division_is_finished_in_the_first_save_and_the_season_mov
     assert await _status(league) == "COMPLETED"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#283: the completion winds down through core's wind_down job, not signup's close_window"
-    ),
-)
 async def test_a_season_in_an_ongoing_stage_with_every_division_done_is_wound_down_first(tmp_path):
     """The season Ongoing placements with every division done, Max's placement pending, and
     signups shut. Admin 77 completes it: the first settle finds it still ongoing and winds it down

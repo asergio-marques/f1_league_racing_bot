@@ -384,6 +384,10 @@ class Step:
     is handed the context and the error and returns the result the job is marked done with (see the
     module). It is for a step whose fault leaves nothing half-done and nothing waiting on it, so a
     step cannot carry both it and *undiscardable*.
+
+    *not_done*, where set, is the step's own words for what a league admin's Discard of it leaves
+    undone, given the discarded job, or None where that job leaves nothing to say: the outcome of
+    a change that carries the step reads it instead of naming the step.
     """
 
     name: str
@@ -395,6 +399,7 @@ class Step:
     record: Callable[[aiosqlite.Connection, StepContext, StepResult], Awaitable[None]] | None = None
     undiscardable: Callable[[StepContext], Awaitable[str]] | None = None
     on_fault: Callable[[StepContext, BaseException], StepResult] | None = None
+    not_done: Callable[[StepView], str | None] | None = None
 
 
 @dataclass(frozen=True)

@@ -141,28 +141,23 @@ from leaguebot.core.services.season_end_changes import (
     season_end_refusal,
     shared_not_done,
     test_mode_on,
-    untold_lines,
-    untold_log,
-    untold_of,
 )
 from leaguebot.core.services.season_end_service import (
-    CLOSE_WINDOW,
     DISCARD_PORTRAITS,
     FLUSH_FORECASTS,
     REVOKE_ROLES,
-    SEASON_END_CAUSE,
     refusal_of_the_modules,
     season_role_targets_on,
     shared_steps,
     write_driver_history_entries_on,
 )
 from leaguebot.core.services.season_lifecycle_service import (
+    SEASON_END_CAUSE,
     WIND_DOWN,
-    SeasonEndHooks,
     advance_to_pending_completion_on,
+    close_jobs,
     driver_jobs,
     run_driver_pass_on,
-    untold_accounts_on,
 )
 from leaguebot.core.services.season_service import (
     SeasonImmutableError,
@@ -1341,13 +1336,12 @@ def season_cancel_change(
     rounds_called_off: AwaitedHook,
     cancellation_steps: Hook,
     season_end_refused: AwaitedHook,
+    season_end_closes: Hook,
     drivers_returned: AwaitedHook,
-    season_end_untold: AwaitedHook,
     driver_returned_jobs: Hook,
     season_end_steps: Hook,
     test_mode_flushed: AwaitedHook,
     drivers_deleted: AwaitedHook,
-    hooks: SeasonEndHooks,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that cancels the season being raced; see the module.
@@ -1355,8 +1349,8 @@ def season_cancel_change(
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *modules*, the
     *seasons* service, the *scheduler*, the *placement* service (which takes back roles), the hooks
     the modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_steps*,
-    *season_end_refused*, *drivers_returned*, *season_end_untold*, *driver_returned_jobs*,
-    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the season end's *hooks* and the
+    *season_end_refused*, *season_end_closes*, *drivers_returned*, *driver_returned_jobs*,
+    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*) and the
     queue's clock *now*.
     """
 
@@ -1517,7 +1511,9 @@ def season_cancel_change(
                 "role_ids": [int(role) for role in target_driver["role_ids"]],
                 "reason": SEASON_CANCELLED_REASON,
             }))
-        planned.append(PlannedStep(CLOSE_WINDOW, {"cause": SEASON_END_CAUSE}))
+        planned.extend(
+            close_jobs(season_end_closes, SEASON_END_CAUSE, int(ctx.payload["season_number"]))
+        )
         if await test_mode_on(db):
             planned.append(PlannedStep(FLUSH_FORECASTS))
         planned.append(PlannedStep(END))
@@ -1582,13 +1578,8 @@ def season_cancel_change(
         return None
 
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        """Write the one line that records the cancellation, or the refusal a save met.
-
-        The drivers a discarded window close returned and nobody told are named here and their
-        marks taken, whatever else this save finds.
-        """
-        untold = await untold_accounts_on(season_end_untold, db)
-        result = {"closed": True, "untold": untold}
+        """Write the one line that records the cancellation, or the refusal a save met."""
+        result = {"closed": True}
         refused = _refused(ctx)
         if refused is not None:
             return StepResult(
@@ -1598,41 +1589,27 @@ def season_cancel_change(
                         ctx.named, SEASON_COMMAND, reply_reason(refused),
                         detail=_rearming_detail(ctx),
                     ),
-                    *untold_log(ctx.named, "/season cancel", untold),
                 ),
             )
         if _discarded(_view(ctx, UNARM)):
-            return StepResult(result=result, lines=untold_log(ctx.named, "/season cancel", untold))
+            return StepResult(result=result)
         if not _season_ended(ctx):
             # The season is not cancelled, but what was discarded on the way is still named.
             failed = notices.failure_log_lines(not_notified(ctx))
             if not failed:
-                return StepResult(
-                    result=result, lines=untold_log(ctx.named, "/season cancel", untold)
-                )
-            return StepResult(result=result, lines=(
-                f"{ctx.named} | /season cancel | Incomplete" + failed
-                + "".join(f"\n  not done: {each}" for each in untold_lines(untold)),
-            ))
+                return StepResult(result=result)
+            return StepResult(
+                result=result, lines=(f"{ctx.named} | /season cancel | Incomplete" + failed,)
+            )
         line = (
             f"{ctx.named} | /season cancel | Success"
             + checkin_audit(ctx)
             + notices.failure_log_lines(not_notified(ctx))
-            + "".join(f"\n  not done: {each}" for each in shared_not_done(ctx, untold))
+            + "".join(f"\n  not done: {each}" for each in shared_not_done(ctx, steps))
         )
         return StepResult(result=result, lines=(line,))
 
     def outcome(ctx: OutcomeContext) -> str:
-        text = _outcome(ctx)
-        if (
-            not _discarded(_view(ctx, UNARM))
-            and _season_ended(ctx)
-            and not _refused(ctx)
-        ):
-            return text
-        return text + approval_checks.not_done_section(untold_lines(untold_of(ctx)))
-
-    def _outcome(ctx: OutcomeContext) -> str:
         number = ctx.payload["season_number"]
         if _discarded(_view(ctx, UNARM)):
             return SEASON_UNARM_DISCARDED.format(number=number)
@@ -1647,7 +1624,7 @@ def season_cancel_change(
             SEASON_CANCELLED
             + notices.failure_lines(not_notified(ctx))
             + not_done_reply(
-                shared_not_done(ctx), discarded=anything_discarded(ctx, untold_of(ctx))
+                shared_not_done(ctx, steps), discarded=anything_discarded(ctx)
             )
         )
 
@@ -1662,7 +1639,7 @@ def season_cancel_change(
             modules=modules, seasons=seasons, scope=notices.SCOPE_SEASON,
         ),
         **shared_steps(
-            placement, scheduler, hooks, season_end_steps=season_end_steps,
+            placement, scheduler, season_end_steps=season_end_steps,
             test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
         ),
         **_steps_of_the_modules(cancellation_steps),

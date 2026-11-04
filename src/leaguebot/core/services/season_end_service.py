@@ -21,13 +21,8 @@ from leaguebot.core.models.change import StepKind, StepResult
 from leaguebot.core.services import backup_service, standing_posts
 from leaguebot.core.services.change_queue import Step, StepContext
 from leaguebot.core.services.season_lifecycle_service import (
-    SeasonEndHooks,
     close_signup_steps,
-    close_signup_window,
-    drivers_told_record,
-    kept_returned,
     require_guild,
-    window_closed_jobs,
 )
 
 if TYPE_CHECKING:
@@ -40,7 +35,6 @@ log = logging.getLogger(__name__)
 
 #: The jobs every end of a season shares, as the stop notice, the tests and ``StepView`` know them.
 REVOKE_ROLES = "revoke_roles"
-CLOSE_WINDOW = "close_window"
 FLUSH_FORECASTS = "flush_forecasts"
 #: Weather's job that deletes one forecast, which the outcome names where one was left undone
 #: (weather defines the step and plans it for each forecast `flush_forecasts` clears).
@@ -48,9 +42,6 @@ DELETE_FORECAST = "delete_forecast"
 DISCARD_PORTRAITS = "discard_portraits"
 DISCARD_BACKUP = "discard_backup"
 FORGET_SETUP = "forget_setup"
-
-#: The cause the window's close is recorded under, where a season's end closes it.
-SEASON_END_CAUSE = "season end"
 
 
 async def refusal_of_the_modules(
@@ -270,7 +261,6 @@ async def season_role_targets_on(db: aiosqlite.Connection, season_id: int) -> li
 def shared_steps(
     placement: "PlacementService",
     scheduler: "SchedulerService",
-    hooks: SeasonEndHooks,
     *,
     season_end_steps: "Hook",
     test_mode_flushed: "AwaitedHook",
@@ -280,9 +270,6 @@ def shared_steps(
 
     - `revoke_roles`: one driver's division, team and driver roles taken back, from the targets
       the save read (`season_role_targets_on`). A member who left or a role gone is passed over.
-    - `close_window`: the signup close timer cancelled and the window closed, where it stands open;
-      it plans the window's own jobs (`delete_button`, `post_closed`, which closes the window) and a
-      `signup_notice` and a `close_signup` for each driver the close returned.
     - `flush_forecasts`: plans the jobs the modules signed up to *test_mode_flushed* hand back for
       what test mode posted (weather's deletion of each forecast), so that each deletion is a job
       of its own and a refusal stops the queue there.
@@ -291,7 +278,7 @@ def shared_steps(
     - `discard_backup`: the saved test-mode state deleted, with the *scheduler*'s job store (a
       completion's alone).
     - the jobs of one driver's Discord side (`close_signup_steps`), among them those the modules
-      define for a season's end (*season_end_steps*).
+      define for a season's end (*season_end_steps*), signup's close of its window among them.
 
     Every one raises where it fails, for the queue to stop on.
     """
@@ -309,30 +296,6 @@ def shared_steps(
         number = ctx.payload.get("season_number")
         of = f" of season {number}" if number else ""
         return f"taking back <@{ctx.step_payload['user_id']}>'s roles{of}"
-
-    async def window_due(ctx: StepContext) -> bool:
-        # A close that stopped after returning its drivers has drivers left to tell and close.
-        return (
-            await hooks.window_open()
-            or bool(kept_returned(ctx.kept))
-            or bool(await hooks.owed_closing_notices())
-        )
-
-    async def close_window(ctx: StepContext) -> StepResult:
-        returned, window = await close_signup_window(
-            ctx.bot, hooks, str(ctx.step_payload.get("cause", SEASON_END_CAUSE)), kept=ctx.kept
-        )
-        return StepResult(
-            result={"returned": list(returned)}, then=(*window, *window_closed_jobs(returned))
-        )
-
-    async def describe_window(ctx: StepContext) -> str:
-        number = ctx.payload.get("season_number")
-        return (
-            f"closing the signup window as season {number} ends"
-            if number
-            else "closing the signup window as the season ends"
-        )
 
     async def flush_forecasts(_ctx: StepContext) -> StepResult:
         planned = tuple(step for found in await test_mode_flushed.call() for step in found)
@@ -358,10 +321,6 @@ def shared_steps(
 
     return {
         REVOKE_ROLES: Step(REVOKE_ROLES, StepKind.ACT, revoke_roles, describe=describe_revoke),
-        CLOSE_WINDOW: Step(
-            CLOSE_WINDOW, StepKind.ACT, close_window, still_due=window_due, describe=describe_window,
-            record=drivers_told_record(hooks),
-        ),
         FLUSH_FORECASTS: Step(
             FLUSH_FORECASTS, StepKind.ACT, flush_forecasts, describe=describe_flush
         ),
@@ -373,5 +332,5 @@ def shared_steps(
         ),
         # A forecast posted in parts has `delete_forecast` plan a delete for each earlier part.
         standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
-        **close_signup_steps(placement, hooks, season_end_steps=season_end_steps),
+        **close_signup_steps(placement, season_end_steps=season_end_steps),
     }

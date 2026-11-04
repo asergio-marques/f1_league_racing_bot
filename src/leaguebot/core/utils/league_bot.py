@@ -117,18 +117,18 @@ class LeagueBot(commands.Bot):
     rounds_called_off: AwaitedHook
     cancellation_steps: Hook
     #: The moments of a season's end, each module signing up its part: what stands in the way of
-    #: the completion and of the cancellation (each hands back a refusal or None); inside its saves,
-    #: the drivers returned (each module's part on the save's connection) and the accounts a
-    #: discarded close left untold (each hands back what it found, on the last save's
-    #: connection); the jobs planned for each driver returned (each hands back the steps it plans
-    #: for the driver); the steps a module defines for it (each hands back its step definitions
-    #: by name); the jobs that clear what test mode posted (each hands back the steps it plans);
-    #: and the drivers deleted, given their accounts (each hands back how many portraits it
-    #: removed). The builder makes them and hands them to the season's end
+    #: the completion and of the cancellation (each hands back a refusal or None); the jobs that
+    #: close what a module holds open, given the cause and the season's number where it has one
+    #: (each hands back the steps it plans); inside its saves, the drivers returned (each module's
+    #: part on the save's connection); the jobs planned for each driver returned (each hands back
+    #: the steps it plans for the driver); the steps a module defines for it (each hands back its
+    #: step definitions by name); the jobs that clear what test mode posted (each hands back the
+    #: steps it plans); and the drivers deleted, given their accounts (each hands back how many
+    #: portraits it removed). The builder makes them and hands them to the season's end
     #: (architecture.md, "A hook core declares is a list of subscribers").
     season_end_refused: AwaitedHook
+    season_end_closes: Hook
     drivers_returned: AwaitedHook
-    season_end_untold: AwaitedHook
     driver_returned_jobs: Hook
     season_end_steps: Hook
     test_mode_flushed: AwaitedHook

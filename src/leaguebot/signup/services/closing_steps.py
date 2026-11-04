@@ -70,6 +70,22 @@ CLOSE_SIGNUP = "close_signup"
 ARM_DELETION = "arm_deletion"
 DELETE_BUTTON = "delete_button"
 POST_CLOSED = "post_closed"
+#: The job that closes the window at a season's end, which core plans through its hook for the
+#: close of what a module holds open.
+CLOSE_WINDOW = "close_window"
+#: What the signup channel of a driver is told where the signup window closes under it.
+WINDOW_CLOSED_NOTICE = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
+#: What a close, a season's end or a wind-down says of a window it could not close. A close time
+#: that was armed stays armed, and `/signup close` refuses while one is, so it is named first; it
+#: refuses too while a season's end or wind-down is in hand on the queue, so that is named too.
+WINDOW_NOT_CLOSED = (
+    "The signup window could not be closed. Close it with `/signup close`. "
+    "Where a close time is set, run `/signup close-time cancel` first, and where a season's end "
+    "or wind-down is still on the queue, let it finish first, as `/signup close` is refused "
+    "until then."
+)
+#: What a discarded deletion of the Sign Up button leaves for a league admin to do.
+BUTTON_KEPT = "The Sign Up button could not be removed from the signup channel."
 #: What the signup channel is left saying once the window has closed.
 CLOSED_NOTICE = "🔒 Signups are now closed."
 #: How a close nobody ran is audited and its line headed, by the cause the change gives it.
@@ -78,6 +94,9 @@ CLOSE_CAUSES: dict[str, tuple[str, str]] = {
     "divisions done": (
         "SIGNUP_DIVISIONS_DONE_CLOSE", "🔒 Signups closed as every division is done"
     ),
+    # The abort of a season being set up is a cause of its own for the words of the job, and is
+    # recorded as a season's end is.
+    "abort": ("SIGNUP_SEASON_END_CLOSE", "🔒 Signups closed as the season ended"),
 }
 #: The kind of the change that closes one driver's signup channel on the driver's own lane.
 KIND = "signup.closing"
@@ -113,12 +132,13 @@ _SIGNUP_IN_PROGRESS: frozenset[str] = frozenset({
 })
 
 __all__ = [
-    "ARM_DELETION", "CLOSED_NOTICE", "CLOSE_CAUSES", "CLOSE_SIGNUP", "DELETE_BUTTON", "DELETE_REASON",
+    "ARM_DELETION", "BUTTON_KEPT", "CLOSED_NOTICE", "CLOSE_CAUSES", "CLOSE_SIGNUP", "CLOSE_WINDOW",
+    "DELETE_BUTTON", "DELETE_REASON",
     "DELETE_TIMER",
     "CHANNEL_GONE", "DELETE_KIND", "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND",
-    "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "ask_channel_delete", "ask_expiry", "close_driver_signup",
+    "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "WINDOW_CLOSED_NOTICE", "WINDOW_NOT_CLOSED", "ask_channel_delete", "ask_expiry", "close_driver_signup",
     "closing_change", "closing_steps", "driver_returned_jobs", "drivers_returned_on", "post_driver_notice",
-    "reason_delete_change", "season_end_steps", "take_reason_down", "take_untold_on", "window_close_jobs",
+    "reason_delete_change", "season_end_closes", "season_end_steps", "take_reason_down", "window_close_jobs",
     "window_close_steps",
 ]
 
@@ -278,14 +298,13 @@ async def drivers_returned_on(
             await signup_module_service().end_wizard_on(db, str(driver["user_id"]))
 
 
-async def take_untold_on(
-    signup_module_service: Callable[[], "SignupModuleService"], db: aiosqlite.Connection
-) -> list[str]:
-    """The accounts a discarded close of the signup window returned and nobody told, with their
-    mark cleared, on the save's connection, committing nothing: the change's last save names
-    them. Subscribed to core's `season_end_untold`; *signup_module_service* is a getter, as for
-    `drivers_returned_on`."""
-    return await signup_module_service().take_closing_notices_on(db)
+def season_end_closes(*, cause: str, season_number: int | None = None) -> tuple[PlannedStep, ...]:
+    """The job signup plans to close its window as a season ends (`close_window`, which does
+    nothing where signup is off or its window is not open): *cause* is the season's end, the abort
+    of the season being set up or the wind-down's close as every division is done, and
+    *season_number* the season's, where it has one, for the words of the job. Subscribed to core's
+    `season_end_closes`."""
+    return (PlannedStep(CLOSE_WINDOW, {"cause": cause, "season_number": season_number}),)
 
 
 async def post_driver_notice(

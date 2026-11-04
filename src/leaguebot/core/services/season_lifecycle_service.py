@@ -24,7 +24,6 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     GuildUnavailable,
     PlannedStep,
-    StepFailedOnDiscord,
     StepKind,
     StepResult,
     Verdict,
@@ -36,6 +35,7 @@ from leaguebot.core.services.change_queue import (
     OutcomeContext,
     Step,
     StepContext,
+    StepView,
 )
 from leaguebot.core.services.season_service import commit_placements_on
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
@@ -252,64 +252,39 @@ async def turn_down_pending_placements_on(db: aiosqlite.Connection, season_id: i
     ]
 
 
-class WindowClosed(Protocol):
-    """What the signup window's close gives back: the accounts it returned to Not Signed Up."""
-
-    @property
-    def returned_ids(self) -> Sequence[str]: ...
-
-
-@dataclass(frozen=True)
-class SeasonEndHooks:
-    """What a season's end needs of signup's window and its close, handed it by the builder.
-
-    The wind-down, the completion, the cancellation and the abort share them. Each field is the
-    function it stands for, bound in ``__main__._season_end_hooks``:
-
-    - *close_signups*: signup's close nobody ran, holding no channel (the queue's jobs do), giving
-      the drivers it returned; None where there was no window to close.
-    - *window_open*: signup on and its window open.
-    - *cancel_close_timer*: removes the signup close timer.
-    - *owed_closing_notices*: the accounts the window's close returned and owes their closing
-      notice, read on a connection of its own, for a check before a step or a step with no save
-      open.
-    - *clear_closing_notices_on*: sets those accounts' mark back to none, on the save's connection.
-    - *window_jobs*: the jobs that close the signup window in its channel once a close has
-      returned its drivers (the Sign Up button's deletion, the "Signups are now closed" post whose
-      record closes the window), given the close's cause and the number of drivers it returned.
-    - *window_steps*: signup's two jobs those are, `delete_button` and `post_closed`, for the
-      change's `steps`.
-    """
-
-    close_signups: Callable[[LeagueBot, str], Awaitable[WindowClosed | None]]
-    window_open: Callable[[], Awaitable[bool]]
-    cancel_close_timer: Callable[[], None]
-    owed_closing_notices: Callable[[], Awaitable[list[str]]]
-    clear_closing_notices_on: Callable[[aiosqlite.Connection, Sequence[str]], Awaitable[None]]
-    window_jobs: Callable[[str, int], Awaitable[tuple[PlannedStep, ...]]]
-    window_steps: Mapping[str, Step]
-
-
 #: The jobs of one driver's Discord side of a season's end, as the stop notice, the tests and
 #: ``StepView`` know them.
 SIGNUP_NOTICE = "signup_notice"
 CLOSE_SIGNUP = "close_signup"
 TAKE_DRIVER_ROLE = "take_driver_role"
-#: The jobs that close the window in its channel, signup's own, which a season's end names.
-DELETE_BUTTON = "delete_button"
-POST_CLOSED = "post_closed"
-#: What a season's end, a wind-down or a close says of a window it could not close. A close time
-#: that was armed stays armed, and `/signup close` refuses while one is, so it is named first; it
-#: refuses too while a season's end or wind-down is in hand on the queue, so that is named too.
-WINDOW_NOT_CLOSED = (
-    "The signup window could not be closed. Close it with `/signup close`. "
-    "Where a close time is set, run `/signup close-time cancel` first, and where a season's end "
-    "or wind-down is still on the queue, let it finish first, as `/signup close` is refused "
-    "until then."
-)
+#: Why a season's end closes what a module holds open, as the hook is handed it: the season's
+#: end (a completion, a cancellation), the abort of the season being set up, and the wind-down's
+#: close as every division is done.
+SEASON_END_CAUSE = "season end"
+ABORT_CAUSE = "abort"
+WIND_DOWN_CAUSE = "divisions done"
 
-#: What a signup channel is told where the signup window closes under it.
-WINDOW_CLOSED_NOTICE = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
+
+def close_jobs(
+    season_end_closes: Hook, cause: str, season_number: int | None = None
+) -> tuple[PlannedStep, ...]:
+    """The jobs that close what each module holds open as a season ends, in the order the modules
+    signed up to *season_end_closes*, given the *cause* and the season's number where the words of
+    a job need it."""
+    return tuple(
+        step
+        for jobs in season_end_closes.call(cause=cause, season_number=season_number)
+        for step in jobs
+    )
+
+
+def kept_line(steps: Mapping[str, Step], view: StepView) -> str | None:
+    """The line a job a league admin discarded leaves for doing by hand, in its own step's words
+    (`Step.not_done`), or None where the step has none."""
+    step = steps.get(view.name)
+    if step is None or step.not_done is None or "discarded" not in (view.result or {}):
+        return None
+    return step.not_done(view)
 
 
 async def require_guild(bot: LeagueBot) -> discord.Guild:
@@ -374,94 +349,13 @@ def driver_jobs(
     return tuple(planned)
 
 
-async def untold_accounts_on(season_end_untold: AwaitedHook, db: aiosqlite.Connection) -> list[str]:
-    """The accounts a discarded window close returned and nobody told, from every module that
-    keeps them (`season_end_untold`), on the connection of the change's last save, in the order the
-    modules signed up. Each module hands back the accounts it found and clears its mark of them, so
-    they are named once."""
-    return [str(account) for found in await season_end_untold.call(db) for account in found]
-
-
-def window_closed_jobs(user_ids: Sequence[str]) -> tuple[PlannedStep, ...]:
-    """The jobs for each driver the signup window's close returned: told, then their channel closed."""
-    planned: list[PlannedStep] = []
-    for user_id in user_ids:
-        planned.append(
-            PlannedStep(SIGNUP_NOTICE, {"user_id": str(user_id), "notice": WINDOW_CLOSED_NOTICE})
-        )
-        planned.append(PlannedStep(CLOSE_SIGNUP, {"user_id": str(user_id)}))
-    return tuple(planned)
-
-
-def kept_returned(kept: Mapping[str, Any] | None) -> tuple[str, ...]:
-    """The drivers a close that stopped part-way had already returned, from the result it kept."""
-    return tuple(str(user_id) for user_id in (kept or {}).get("returned", ()))
-
-
-async def close_signup_window(
-    bot: LeagueBot, hooks: SeasonEndHooks, cause: str, *, kept: Mapping[str, Any] | None = None
-) -> tuple[tuple[str, ...], tuple[PlannedStep, ...]]:
-    """Cancel the signup close timer and return the drivers of the window where it stands open (#439).
-
-    Gives the accounts the close returned to Not Signed Up, whose channels the queue's jobs then
-    tell and close, and the jobs that close the window itself in its channel (the Sign Up button's
-    deletion and the "Signups are now closed" post, whose record closes the window), planned where
-    the window stood open: the close itself posts and records nothing. Raises what the close
-    raises, for the queue to stop on; a window not open is nothing to close.
-
-    *kept* is what the job's last try left when it stopped: a close that stopped after returning
-    its drivers fails with their ids as its result, and the next try finds none left to return.
-    They are given with whatever it returns now, so that no driver's channel goes untold and
-    open.
-    """
-    before = kept_returned(kept)
-    now: tuple[str, ...] = ()
-    stood_open = await hooks.window_open()
-    if stood_open:
-        hooks.cancel_close_timer()
-        try:
-            closed = await hooks.close_signups(bot, cause)
-        except StepFailedOnDiscord as stopped:
-            found = kept_returned(stopped.result)
-            stopped.result = {
-                **(stopped.result or {}), "returned": list(dict.fromkeys((*before, *found)))
-            }
-            raise
-        if closed is not None:
-            now = tuple(str(user_id) for user_id in closed.returned_ids)
-    # Read after the close: a try cut off after it returned its drivers left each marked as owed
-    # their notice, in the save that returned them.
-    owed = tuple(str(user_id) for user_id in await hooks.owed_closing_notices())
-    returned = tuple(dict.fromkeys((*before, *now, *owed)))
-    jobs = await hooks.window_jobs(cause, len(returned)) if stood_open else ()
-    return returned, jobs
-
-
-def drivers_told_record(
-    hooks: SeasonEndHooks | None,
-) -> Callable[[aiosqlite.Connection, StepContext, StepResult], Awaitable[None]]:
-    """The `Step.record` of a job that plans the jobs telling the drivers a window close returned.
-
-    It clears those drivers' marks in the save that marks the job done and inserts the jobs it
-    planned, so that from that save the queue's own records hold them and no later read of the
-    marks finds them again: each is told once.
-    """
-
-    async def record(db: aiosqlite.Connection, _ctx: StepContext, result: StepResult) -> None:
-        if hooks is None:
-            return
-        returned = [str(user_id) for user_id in (result.result or {}).get("returned", ())]
-        await hooks.clear_closing_notices_on(db, returned)
-
-    return record
-
-
-async def close_window_for_wind_down(
-    bot: LeagueBot, hooks: SeasonEndHooks, *, kept: Mapping[str, Any] | None = None
-) -> tuple[tuple[str, ...], tuple[PlannedStep, ...]]:
-    """Close the signup window as every division is done, giving the drivers it returned and the
-    jobs that close the window itself."""
-    return await close_signup_window(bot, hooks, "divisions done", kept=kept)
+def steps_of_the_modules(hook: Hook, **handed: Any) -> dict[str, Step]:
+    """The step definitions the modules hand back to *hook* (called with *handed*), merged by name,
+    so that core registers steps it does not name."""
+    steps: dict[str, Step] = {}
+    for defined in hook.call(**handed):
+        steps.update(defined)
+    return steps
 
 
 #: How a driver the season's end could not tell for want of a signup channel is named.
@@ -470,7 +364,6 @@ NO_CHANNEL_LEFT = "{who} had no signup channel left to tell"
 
 def close_signup_steps(
     placement: PlacementService,
-    hooks: SeasonEndHooks,
     *,
     season_end_steps: Hook,
     line_prefix: str | None = None,
@@ -478,7 +371,7 @@ def close_signup_steps(
     """The jobs of one driver's Discord side, shared by every change that ends signups: the
     driver role's taking back, and the steps the modules define for a season's end
     (`season_end_steps`, handed *line_prefix* for the closing line a change with none of its own
-    writes) with the window's own two.
+    writes).
     """
 
     async def take_role(ctx: StepContext) -> StepResult:
@@ -495,10 +388,8 @@ def close_signup_steps(
 
     steps: dict[str, Step] = {
         TAKE_DRIVER_ROLE: Step(TAKE_DRIVER_ROLE, StepKind.ACT, take_role, describe=describe_role),
-        **hooks.window_steps,
+        **steps_of_the_modules(season_end_steps, line_prefix=line_prefix),
     }
-    for defined in season_end_steps.call(line_prefix=line_prefix):
-        steps.update(defined)
     return steps
 
 
@@ -510,7 +401,6 @@ FROZEN_FOR_COMPLETION_REFUSAL = (
 
 #: The kind of the change that winds a season down.
 WIND_DOWN = "season.wind_down"
-WIND_DOWN_STEP = "wind_down"
 TURN_DOWN_STEP = "turn_down"
 
 #: What a signup channel is told where the wind-down turns its signup down.
@@ -541,9 +431,8 @@ async def wind_down_not_due_on(db: aiosqlite.Connection) -> str | None:
 def wind_down_change(
     *,
     placement: PlacementService,
-    hooks: SeasonEndHooks,
+    season_end_closes: Hook,
     drivers_returned: AwaitedHook,
-    season_end_untold: AwaitedHook,
     driver_returned_jobs: Hook,
     season_end_steps: Hook,
 ) -> ChangeType:
@@ -555,16 +444,17 @@ def wind_down_change(
     finished or cancelled; where it is not, the change is dropped. Its jobs, each of which stops
     the queue where it fails:
 
-    1. `wind_down`: the signup window closed, where one stands open (`close_window_for_wind_down`);
-       each driver the close returned is then told and their channel closed, as jobs of their own.
+    1. The jobs the modules plan to close what each holds open (`season_end_closes`, for the cause
+       `WIND_DOWN_CAUSE`): signup's closes its window where one stands open, and tells and closes
+       the channel of each driver it returned, as jobs of its own.
     2. `turn_down`: one save turns down the pending placements, returns their drivers to Not
        Signed Up, moves the season on to Pending completion and writes its line.
     3. Then, for each driver turned down, `signup_notice` and `close_signup` for a signup in review,
        or `take_driver_role` for an approved driver.
 
-    *placement*, *hooks* and the hooks the modules sign up to (*drivers_returned*,
-    *season_end_untold*, *driver_returned_jobs*, *season_end_steps*) are what the jobs reach
-    Discord and the other modules through, handed by the builder.
+    *placement* and the hooks the modules sign up to (*season_end_closes*, *drivers_returned*,
+    *driver_returned_jobs*, *season_end_steps*) are what the jobs reach Discord and the other
+    modules through, handed by the builder.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -575,26 +465,29 @@ def wind_down_change(
     def outcome(_ctx: OutcomeContext) -> str:
         return ""
 
+    def plan(_payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        return (*close_jobs(season_end_closes, WIND_DOWN_CAUSE), PlannedStep(TURN_DOWN_STEP))
+
     def finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
-        # Only a window the close could not record is told: the drivers it returned are told by
-        # jobs of their own, whatever became of the post.
-        if any(view.name == POST_CLOSED and "discarded" in (view.result or {}) for view in ctx.steps):
-            return (f"System | Every division is done | Incomplete\n  not done: {WINDOW_NOT_CLOSED}",)
+        # Only what the modules' close left undone is told, in their own words: the drivers it
+        # returned are told by jobs of their own, whatever became of the post.
+        left = [text for view in ctx.steps if (text := kept_line(steps, view)) is not None]
+        if left:
+            return ("System | Every division is done | Incomplete"
+                    + "".join(f"\n  not done: {text}" for text in left),)
         return ()
 
-    steps = wind_down_steps(
-        hooks, drivers_returned=drivers_returned, season_end_untold=season_end_untold,
-        driver_returned_jobs=driver_returned_jobs,
-    )
+    steps = wind_down_steps(drivers_returned=drivers_returned, driver_returned_jobs=driver_returned_jobs)
     steps.update(
         close_signup_steps(
-            placement, hooks, season_end_steps=season_end_steps,
+            placement, season_end_steps=season_end_steps,
             line_prefix="System | Every division is done",
         )
     )
     return ChangeType(
         kind=WIND_DOWN,
-        opening=(PlannedStep(WIND_DOWN_STEP), PlannedStep(TURN_DOWN_STEP)),
+        opening=(),
+        plan=plan,
         steps=steps,
         check=check,
         key=lambda _payload: WIND_DOWN,
@@ -605,54 +498,33 @@ def wind_down_change(
 
 
 def wind_down_steps(
-    hooks: SeasonEndHooks,
     *,
     drivers_returned: AwaitedHook,
-    season_end_untold: AwaitedHook,
     driver_returned_jobs: Hook,
 ) -> dict[str, Step]:
-    """The two jobs that take a season whose every division is done out of its ongoing stages.
+    """The job that takes a season whose every division is done out of its ongoing stages.
 
     Shared by the change that winds a season down and by the completion, which winds one down
-    first where it finds one (#439):
-
-    1. `wind_down`: the signup window closed, where one stands open; each driver the close
-       returned is then told and their channel closed, as jobs of their own.
-    2. `turn_down`: one save turns down the pending placements, returns their drivers to Not
-       Signed Up, moves the season on to Pending completion and writes its line.
-
-    The jobs that tell and close each driver's signup (`close_signup_steps`) are the change's own
-    to carry. The modules' parts of the `turn_down` save are its hooks: the accounts a discarded
-    close left untold (*season_end_untold*), then the drivers returned (*drivers_returned*) and the
-    jobs planned for each (*driver_returned_jobs*).
+    first where it finds one (#439): `turn_down`, one save that turns down the pending placements,
+    returns their drivers to Not Signed Up, moves the season on to Pending completion and writes
+    its line. The jobs that close what the modules hold open come before it
+    (`close_jobs`), and the jobs that tell and close each driver's signup
+    (`close_signup_steps`) are the change's own to carry. The modules' parts of the `turn_down`
+    save are its hooks: the drivers returned (*drivers_returned*) and the jobs planned for each
+    (*driver_returned_jobs*).
     """
 
-    async def wind_down(ctx: StepContext) -> StepResult:
-        returned, window = await close_window_for_wind_down(ctx.bot, hooks, kept=ctx.kept)
-        return StepResult(
-            result={"returned": list(returned)}, then=(*window, *window_closed_jobs(returned))
-        )
-
     async def turn_down(db: aiosqlite.Connection, _ctx: StepContext) -> StepResult:
-        # A window close discarded after it returned drivers leaves them marked as owed their
-        # notice, with no job planned for them: they are named here and their marks taken.
-        untold = await untold_accounts_on(season_end_untold, db)
-        untold_lines = tuple(
-            "System | Every division is done | "
-            f"<@{account}> was returned to Not Signed Up when signups closed, but was not told "
-            "and their channel was not closed: tell them and delete it by hand."
-            for account in untold
-        )
         cursor = await db.execute(
             "SELECT id FROM seasons WHERE status IN ('SETUP', 'ACTIVE') ORDER BY id DESC LIMIT 1"
         )
         row = await cursor.fetchone()
         if row is None:
-            return StepResult(result={"moved": False}, lines=untold_lines)
+            return StepResult(result={"moved": False})
         season_id = int(row["id"])
         stage, done = await _stage_and_whether_done_on(db, season_id)
         if stage is None or SeasonStage(stage) not in ONGOING_STAGES or not done:
-            return StepResult(result={"moved": False}, lines=untold_lines)
+            return StepResult(result={"moved": False})
         drivers: list[dict] = []
         if stage != SeasonStage.ONGOING.value:
             drivers = await turn_down_pending_placements_on(db, season_id)
@@ -673,19 +545,12 @@ def wind_down_steps(
             if drivers
             else ()
         )
-        return StepResult(result={"moved": moved}, lines=(*untold_lines, *lines), then=planned)
-
-    async def describe(_ctx: StepContext) -> str:
-        return "winding the season down"
+        return StepResult(result={"moved": moved}, lines=lines, then=planned)
 
     async def describe_turn_down(_ctx: StepContext) -> str:
         return "turning the pending placements down and moving the season on"
 
     return {
-        WIND_DOWN_STEP: Step(
-            WIND_DOWN_STEP, StepKind.ACT, wind_down, describe=describe,
-            record=drivers_told_record(hooks),
-        ),
         TURN_DOWN_STEP: Step(
             TURN_DOWN_STEP, StepKind.SAVE, turn_down, describe=describe_turn_down
         ),

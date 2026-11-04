@@ -53,7 +53,7 @@ held after the save.
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -80,36 +80,33 @@ from leaguebot.core.services.change_queue import (
     in_hand,
 )
 from leaguebot.core.services.season_end_service import (
-    CLOSE_WINDOW,
     DISCARD_BACKUP,
     DELETE_FORECAST,
     DISCARD_PORTRAITS,
     FLUSH_FORECASTS,
     FORGET_SETUP,
     REVOKE_ROLES,
-    SEASON_END_CAUSE,
     refusal_of_the_modules,
     season_role_targets_on,
     shared_steps,
     write_driver_history_entries_on,
 )
 from leaguebot.core.services.season_lifecycle_service import (
+    ABORT_CAUSE,
     CLOSE_SIGNUP,
-    DELETE_BUTTON,
     NO_CHANNEL_LEFT,
-    POST_CLOSED,
+    SEASON_END_CAUSE,
     SIGNUP_NOTICE,
     TAKE_DRIVER_ROLE,
     TURN_DOWN_STEP,
     WIND_DOWN,
-    WIND_DOWN_STEP,
-    WINDOW_NOT_CLOSED,
-    SeasonEndHooks,
+    WIND_DOWN_CAUSE,
     advance_to_pending_completion_on,
+    close_jobs,
     driver_jobs,
+    kept_line,
     require_guild,
     run_driver_pass_on,
-    untold_accounts_on,
     wind_down_not_due_on,
     wind_down_steps,
 )
@@ -209,18 +206,11 @@ BACKUP_KEPT = (
     "The saved test-mode state could not be deleted. It is deleted with the next `/test-mode "
     "toggle` that switches test mode off."
 )
-WINDOW_KEPT = WINDOW_NOT_CLOSED
-#: What a discarded deletion of the Sign Up button leaves for a league admin to do.
-BUTTON_KEPT = "The Sign Up button could not be removed from the signup channel."
 FORECASTS_KEPT = (
     "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
     "forecast channel."
 )
 PORTRAITS_KEPT = "The portraits of the drivers deleted could not be discarded."
-RETURNED_NOT_TOLD = (
-    "{who} was returned to Not Signed Up when signups closed, but was not told and their "
-    "channel was not closed: tell them and delete it by hand."
-)
 
 
 def _forecast_kept(view: StepView) -> str:
@@ -372,38 +362,16 @@ def view_of(ctx: OutcomeContext, name: str) -> StepView | None:
     return next((view for view in reversed(ctx.steps) if view.name == name), None)
 
 
-def untold_of(ctx: OutcomeContext) -> list[str]:
-    """The accounts the change's last save took the marks of: drivers a window close returned
-    that a league admin's Discard left untold, as the `close` job recorded them."""
-    view = view_of(ctx, CLOSE)
-    return [str(account) for account in ((view.result if view else None) or {}).get("untold", ())]
-
-
-def untold_lines(accounts: Sequence[str]) -> list[str]:
-    """How each driver a discarded window close returned, and nobody told, is named."""
-    return [RETURNED_NOT_TOLD.format(who=f"<@{account}>") for account in accounts]
-
-
-def untold_log(named: str, command: str, accounts: Sequence[str]) -> tuple[str, ...]:
-    """The line naming those drivers where the change's own closing line is not written."""
-    if not accounts:
-        return ()
-    return (
-        f"{named} | {command} | Incomplete"
-        + "".join(f"\n  not done: {each}" for each in untold_lines(accounts)),
-    )
-
-
 def discarded(view: StepView | None) -> bool:
     """Whether a league admin discarded the job."""
     return view is not None and "discarded" in (view.result or {})
 
 
-def anything_discarded(ctx: OutcomeContext, untold: Sequence[str]) -> bool:
-    """Whether a league admin discarded any job of the change, the drivers a discarded window
-    close left untold (*untold*) counting as one. Only then is a season's end incomplete: a driver
-    with no signup channel left is named beneath a line that still reads as a success."""
-    return any(discarded(view) for view in ctx.steps) or bool(untold)
+def anything_discarded(ctx: OutcomeContext) -> bool:
+    """Whether a league admin discarded any job of the change. Only then is a season's end
+    incomplete: a driver with no signup channel left is named beneath a line that still reads as
+    a success."""
+    return any(discarded(view) for view in ctx.steps)
 
 
 def not_done_reply(lines: Sequence[str], *, discarded: bool) -> str:
@@ -417,15 +385,15 @@ def not_done_reply(lines: Sequence[str], *, discarded: bool) -> str:
     return "\n\n" + "\n".join(lines)
 
 
-def shared_not_done(ctx: OutcomeContext, untold: Sequence[str] | None = None) -> list[str]:
+def shared_not_done(ctx: OutcomeContext, steps: Mapping[str, Step]) -> list[str]:
     """What the jobs every end of a season shares left undone, one line for each job a league
     admin discarded, in the order of the jobs, the drivers whose roles were not taken back
     gathered into one line.
 
     A signup channel whose notice was discarded but which was closed is named as closed without
-    its notice; one that was not closed is named as not closed alone. Drivers a discarded window
-    close returned, and nobody told, are named last: *untold* where the change's last save has
-    just taken them, else what that save recorded.
+    its notice; one that was not closed is named as not closed alone. A job whose step words its
+    own discard (`Step.not_done` of one of the change's *steps*, signup's close of its window) is
+    named in those words.
     """
     lines: list[str] = []
     roles: list[str] = []
@@ -441,15 +409,14 @@ def shared_not_done(ctx: OutcomeContext, untold: Sequence[str] | None = None) ->
         if not discarded(view):
             continue
         each = view.payload
-        if view.name == REVOKE_ROLES:
+        words = kept_line(steps, view)
+        if words is not None:
+            lines.append(words)
+        elif view.name == REVOKE_ROLES:
             if roles_at is None:
                 roles_at = len(lines)
                 lines.append("")
             roles.append(f"<@{each['user_id']}>")
-        elif view.name in (CLOSE_WINDOW, POST_CLOSED):
-            lines.append(WINDOW_KEPT)
-        elif view.name == DELETE_BUTTON:
-            lines.append(BUTTON_KEPT)
         elif view.name == FLUSH_FORECASTS:
             lines.append(FORECASTS_KEPT)
         elif view.name == DELETE_FORECAST:
@@ -484,7 +451,6 @@ def shared_not_done(ctx: OutcomeContext, untold: Sequence[str] | None = None) ->
             f"{', '.join(roles)} — their roles{of} could not be taken back. Remove their "
             "division and team roles and the driver role by hand."
         )
-    lines.extend(untold_lines(untold_of(ctx) if untold is None else untold))
     return lines
 
 
@@ -515,10 +481,10 @@ def _classification_not_done(ctx: OutcomeContext) -> list[str]:
     return lines
 
 
-def _not_done(ctx: OutcomeContext, untold: Sequence[str] | None = None) -> list[str]:
+def _not_done(ctx: OutcomeContext, steps: Mapping[str, Step]) -> list[str]:
     """What a league admin's Discards left undone, in the order of the jobs."""
     # The jobs run the classification first, then the shared ones, then the backup's deletion.
-    lines = [*_classification_not_done(ctx), *shared_not_done(ctx, untold)]
+    lines = [*_classification_not_done(ctx), *shared_not_done(ctx, steps)]
     if discarded(view_of(ctx, DISCARD_BACKUP)):
         lines.append(BACKUP_KEPT)
     return lines
@@ -531,22 +497,20 @@ def season_complete_change(
     scheduler: "SchedulerService",
     placement: "PlacementService",
     season_end_refused: AwaitedHook,
+    season_end_closes: Hook,
     drivers_returned: AwaitedHook,
-    season_end_untold: AwaitedHook,
     driver_returned_jobs: Hook,
     season_end_steps: Hook,
     test_mode_flushed: AwaitedHook,
     drivers_deleted: AwaitedHook,
-    hooks: SeasonEndHooks,
 ) -> ChangeType:
     """The change that completes the confirmed season; see the module.
 
     The builder hands in *modules* (which of results and attendance are on), the *seasons*
     service (the season the check reads), the *scheduler* (whose season-end job `settle` removes),
     the *placement* service (which takes back roles), the hooks the modules sign up to
-    (*season_end_refused*, *drivers_returned*, *season_end_untold*, *driver_returned_jobs*,
-    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*) and the season end's *hooks* (what
-    the signup window's close needs of signup).
+    (*season_end_refused*, *season_end_closes*, *drivers_returned*, *driver_returned_jobs*,
+    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -611,7 +575,10 @@ def season_complete_change(
                 return StepResult(result={"unsettled": True})
             return StepResult(
                 result={"wound_down": True},
-                then=(PlannedStep(WIND_DOWN_STEP), PlannedStep(TURN_DOWN_STEP)),
+                then=(
+                    *close_jobs(season_end_closes, WIND_DOWN_CAUSE),
+                    PlannedStep(TURN_DOWN_STEP),
+                ),
             )
         if stage is not SeasonStage.PENDING_COMPLETION:
             return StepResult(result={"refused": NO_SEASON})
@@ -632,7 +599,7 @@ def season_complete_change(
                     },
                 )
             )
-        planned.append(PlannedStep(CLOSE_WINDOW, {"cause": SEASON_END_CAUSE}))
+        planned.extend(close_jobs(season_end_closes, SEASON_END_CAUSE, number))
         if await test_mode_on(db):
             planned.append(PlannedStep(FLUSH_FORECASTS))
         planned.append(PlannedStep(END))
@@ -745,25 +712,19 @@ def season_complete_change(
             return False
         return len(settles) < 2 or bool((settles[1].result or {}).get("unsettled"))
 
-    async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        # The drivers a discarded window close returned and nobody told are named here and their
-        # marks taken, whatever else this save finds.
-        untold = await untold_accounts_on(season_end_untold, db)
-        result = {"closed": True, "untold": untold}
+    async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        result = {"closed": True}
         refused = _refused(ctx)
         if refused is not None:
             return StepResult(
                 result=result,
-                lines=(
-                    refusal_line(ctx.named, _COMMAND, reply_reason(refused)),
-                    *untold_log(ctx.named, "/season complete", untold),
-                ),
+                lines=(refusal_line(ctx.named, _COMMAND, reply_reason(refused)),),
             )
         if not _completed(ctx):
-            return StepResult(result=result, lines=untold_log(ctx.named, "/season complete", untold))
-        left = _not_done(ctx, untold)
+            return StepResult(result=result)
+        left = _not_done(ctx, steps)
         number = ctx.payload["season_number"]
-        status = "Incomplete" if anything_discarded(ctx, untold) else "Success"
+        status = "Incomplete" if anything_discarded(ctx) else "Success"
         line = (
             f"{ctx.named} | /season complete | {status}\n"
             f"  season: Season #{number}" + "".join(f"\n  not done: {each}" for each in left)
@@ -771,12 +732,6 @@ def season_complete_change(
         return StepResult(result=result, lines=(line,))
 
     def outcome(ctx: OutcomeContext) -> str:
-        text = _outcome(ctx)
-        if _completed(ctx):
-            return text
-        return text + approval_checks.not_done_section(untold_lines(untold_of(ctx)))
-
-    def _outcome(ctx: OutcomeContext) -> str:
         refused = _refused(ctx)
         if refused is not None:
             return refused
@@ -788,7 +743,7 @@ def season_complete_change(
         if not _completed(ctx):
             return END_DISCARDED.format(number=number)
         return COMPLETED + not_done_reply(
-            _not_done(ctx), discarded=anything_discarded(ctx, untold_of(ctx))
+            _not_done(ctx, steps), discarded=anything_discarded(ctx)
         )
 
     # ── How each job is named, in the lines that say it stopped the queue ──────
@@ -814,8 +769,7 @@ def season_complete_change(
         return "recording the completion of the season"
 
     winding = wind_down_steps(
-        hooks, drivers_returned=drivers_returned, season_end_untold=season_end_untold,
-        driver_returned_jobs=driver_returned_jobs,
+        drivers_returned=drivers_returned, driver_returned_jobs=driver_returned_jobs,
     )
     turn_down = winding[TURN_DOWN_STEP]
 
@@ -841,7 +795,7 @@ def season_complete_change(
         **winding,
         TURN_DOWN_STEP: replace(turn_down, run=turn_down_then_settle),
         **shared_steps(
-            placement, scheduler, hooks, season_end_steps=season_end_steps,
+            placement, scheduler, season_end_steps=season_end_steps,
             test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
         ),
     }
@@ -861,14 +815,13 @@ def season_abort_change(
     seasons: "SeasonService",
     scheduler: "SchedulerService",
     placement: "PlacementService",
+    season_end_closes: Hook,
     drivers_returned: AwaitedHook,
-    season_end_untold: AwaitedHook,
     driver_returned_jobs: Hook,
     season_end_steps: Hook,
     test_mode_flushed: AwaitedHook,
     drivers_deleted: AwaitedHook,
     forget_setup: Callable[[], None],
-    hooks: SeasonEndHooks,
 ) -> ChangeType:
     """The change that aborts the season being set up; see the module.
 
@@ -876,9 +829,9 @@ def season_abort_change(
     confirmed. The builder hands in the *seasons* service (the season the check reads), the
     *scheduler* (whose job store holds the saved test-mode state's scheduler half), the
     *placement* service (which takes back roles), the hooks the modules sign up to
-    (*drivers_returned*, *season_end_untold*, *driver_returned_jobs*, *season_end_steps*,
-    *test_mode_flushed*, *drivers_deleted*), *forget_setup* (lets go of the setup the season cog
-    holds in memory) and the season end's *hooks*.
+    (*season_end_closes*, *drivers_returned*, *driver_returned_jobs*, *season_end_steps*,
+    *test_mode_flushed*, *drivers_deleted*) and *forget_setup* (lets go of the setup the season cog
+    holds in memory).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -956,45 +909,34 @@ def season_abort_change(
             return False
         return not (discarded(view) or (view.result or {}).get("refused"))
 
-    async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        # The drivers a discarded window close returned and nobody told are named here and their
-        # marks taken, whatever else this save finds.
-        untold = await untold_accounts_on(season_end_untold, db)
-        result = {"closed": True, "untold": untold}
+    async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        result = {"closed": True}
         refused = _refused(ctx)
         if refused is not None:
             return StepResult(
                 result=result,
-                lines=(
-                    refusal_line(ctx.named, _ABORT_COMMAND, reply_reason(refused)),
-                    *untold_log(ctx.named, "/season abort", untold),
-                ),
+                lines=(refusal_line(ctx.named, _ABORT_COMMAND, reply_reason(refused)),),
             )
         if not _aborted(ctx):
-            return StepResult(result=result, lines=untold_log(ctx.named, "/season abort", untold))
+            return StepResult(result=result)
         counts = _end_result(ctx)
         line = (
             f"{ctx.named} | /season abort | Success\n"
             f"  drivers returned to Not Signed Up: {counts.get('drivers_returned', 0)}\n"
             f"  drivers deleted: {counts.get('drivers_deleted', 0)}"
-            + "".join(f"\n  not done: {each}" for each in shared_not_done(ctx, untold))
+            + "".join(f"\n  not done: {each}" for each in shared_not_done(ctx, steps))
         )
         return StepResult(result=result, lines=(line,))
 
     def outcome(ctx: OutcomeContext) -> str:
         refused = _refused(ctx)
         if refused is not None:
-            return refused + approval_checks.not_done_section(untold_lines(untold_of(ctx)))
+            return refused
         if not _aborted(ctx):
-            return ABORT_END_DISCARDED + approval_checks.not_done_section(
-                untold_lines(untold_of(ctx))
-            )
+            return ABORT_END_DISCARDED
         return ABORTED + not_done_reply(
-            shared_not_done(ctx), discarded=anything_discarded(ctx, untold_of(ctx))
+            shared_not_done(ctx, steps), discarded=anything_discarded(ctx)
         )
-
-    async def describe_window_close(_ctx: StepContext) -> str:
-        return "closing the signup window as the season being set up is aborted"
 
     async def describe_end(_ctx: StepContext) -> str:
         return "aborting the season being set up"
@@ -1022,7 +964,7 @@ def season_abort_change(
         return "letting go of the setup the bot holds in memory"
 
     shared = shared_steps(
-        placement, scheduler, hooks, season_end_steps=season_end_steps,
+        placement, scheduler, season_end_steps=season_end_steps,
         test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
     )
     steps: dict[str, Step] = {
@@ -1033,18 +975,21 @@ def season_abort_change(
             undiscardable=keeps_the_setup,
         ),
         FLUSH_FORECASTS: replace(shared[FLUSH_FORECASTS], still_due=test_mode_still_on),
-        CLOSE_WINDOW: replace(shared[CLOSE_WINDOW], describe=describe_window_close),
         END: Step(END, StepKind.SAVE, end, describe=describe_end),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
     }
-    return ChangeType(
-        kind=SEASON_ABORT,
-        opening=(
-            PlannedStep(CLOSE_WINDOW, {"cause": SEASON_END_CAUSE}),
+    def plan(_payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        return (
+            *close_jobs(season_end_closes, ABORT_CAUSE),
             PlannedStep(FLUSH_FORECASTS),
             PlannedStep(END),
             PlannedStep(CLOSE),
-        ),
+        )
+
+    return ChangeType(
+        kind=SEASON_ABORT,
+        opening=(),
+        plan=plan,
         steps=steps,
         check=check,
         key=lambda payload: f"{SEASON_ABORT}:{payload['season_id']}",
