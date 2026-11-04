@@ -317,7 +317,8 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     assert not hasattr(bot, "season_end_untold")
     for hook in dict.fromkeys(each[0] for each in _DELETE_PARTS):
         called.clear()
-        await getattr(bot, hook).call(None, 0)
+        # A round or division delete hands its ids; a season delete, the season's id.
+        await getattr(bot, hook).call(None, 0 if hook == "season_deleted" else [0])
         assert called == [part for each, _module, _name, part in _DELETE_PARTS if each == hook]
 
 
