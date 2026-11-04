@@ -660,25 +660,43 @@ async def test_the_approval_is_audited_with_the_season_and_the_placements_commit
     }
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the approval does not yet plan the modules' opening posts through the "
+    "placements confirmed hook",
+)
 async def test_each_driver_s_roles_division_s_lineup_calendar_and_opening_posts_are_jobs_of_their_own(
     tmp_path, monkeypatch,
 ):
+    """Results and attendance on, Pro (tier 1) and Am (tier 2), Lewis and Max seated in Pro and
+    Charles in Am. Once the approval has run, its jobs are, in order: the save, letting go of the
+    setup, the arming, each driver's roles, the batch notice, then for Pro and then for Am its
+    lineup, its calendar, its opening standings and its opening sheet, then the notice's deletion,
+    the review's channel told and the closing line. The modules' jobs are planned through the
+    placements confirmed hook, called inside the save, on its connection, once for each division
+    in tier order and handed the division's id and name; a further subscriber signed up to it
+    sees the season already Ongoing on that connection, before it is committed."""
     league = await _league_for(tmp_path, monkeypatch, results=True, attendance=True)
+    handed: list[tuple[Any, ...]] = []
+
+    async def watching(db: Any, division_id: int, division_name: str) -> tuple[()]:
+        cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (SEASON_ID,))
+        stage = (await cursor.fetchone())["stage"]
+        handed.append((db.in_transaction, stage, division_id, division_name))
+        return ()
+
+    league.bot.placements_confirmed.subscribe(watching)
     await _pressed(league)
 
     await run_queue(league.bot)
 
     names = [job["name"] for job in await _jobs(league)]
-    assert names[:3] == ["apply", "forget_setup", "arm"]
-    assert names[-2:] == ["tell_review_channel", "close"]
-    assert sorted(names[3:-2]) == sorted(
-        ["grant_roles"] * 3 + ["post_batch_notice", "delete_batch_notice"]
+    assert names == (
+        ["apply", "forget_setup", "arm"] + ["grant_roles"] * 3 + ["post_batch_notice"]
         + ["refresh_lineup", "post_calendar", "opening_standings", "opening_sheet"] * 2
+        + ["delete_batch_notice", "tell_review_channel", "close"]
     )
-    assert names.index("post_batch_notice") > max(
-        i for i, name in enumerate(names) if name == "grant_roles"
-    )
-    assert names.index("delete_batch_notice") == len(names) - 3
+    assert handed == [(True, "ONGOING", PRO, "Pro"), (True, "ONGOING", AM, "Am")]
     assert list(league.granted) == [LEWIS, MAX, CHARLES]
     sends = [cid for kind, cid, _mid in league.events if kind == "send"]
     for pro, am in ((PRO_CH.lineup, AM_CH.lineup), (PRO_CH.calendar, AM_CH.calendar),
@@ -1527,10 +1545,22 @@ _DISCARDED = {
 }
 
 
+#: How the stop notice names each module's opening post, as it always has.
+_MODULE_STOP_LINES = {
+    "opening_standings": "posting the opening standings of **Pro**",
+    "opening_sheet": "posting the opening attendance sheet of **Pro**",
+}
+
+
 @pytest.mark.parametrize("job", list(_DISCARDED))
 async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
     tmp_path, monkeypatch, job,
 ):
+    """Results and attendance on: each job after the save is made to fail in Pro, the queue
+    stops at it, and a league admin discards it. The approval still succeeds, and the job is
+    named, word for word, under "Not everything could be done" in the reply and as a "not done"
+    line on the approval's log line. A module's opening post is named in the stop notice as it
+    always has been."""
     fail, line = _DISCARDED[job]
     league = await _league_for(tmp_path, monkeypatch, results=True, attendance=True)
     press = await _pressed(league)
@@ -1538,6 +1568,8 @@ async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
 
     await run_queue(league.bot)
     assert await _stopped_at(league) == job
+    if job in _MODULE_STOP_LINES:
+        assert _MODULE_STOP_LINES[job] in league.log()
     await discard_job(league.bot)
 
     assert APPROVED in reply(press)
@@ -1551,6 +1583,59 @@ async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
     logged = line.replace(f"<@{LEWIS}>", f"`<@{LEWIS}>`")  # the log's mentions are in backticks
     assert len(confirmed) == 1 and f"\n  not done: {logged}" in confirmed[0]
     assert (await _approval(league))["state"] == "DONE"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the approval does not yet take a module's discarded opening post from that "
+    "module's own step",
+)
+@pytest.mark.parametrize(
+    ("job", "owner", "fail"),
+    [
+        ("opening_standings", "leaguebot.results.services.season_standings_posts",
+         _fail_standings),
+        ("opening_sheet", "leaguebot.attendance.services.sheet_posting", _fail_sheet),
+    ],
+    ids=["results' opening standings", "attendance's opening sheet"],
+)
+async def test_a_discarded_module_job_is_named_in_its_own_step_s_words(
+    tmp_path, monkeypatch, job, owner, fail,
+):
+    """Results and attendance on. The module that owns the job defines its step with words of its
+    own for a discard ("<job> of Pro, in its own words"); Pro's post fails, the queue stops at it,
+    and a league admin discards it. Those words, and no others core keeps, are what the reply's
+    "Not everything could be done" and the approval's log line name."""
+    import dataclasses
+    import importlib
+
+    module = importlib.import_module(owner)
+    defined = module.opening_steps
+
+    def reworded(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {
+            name: dataclasses.replace(
+                step,
+                not_done=lambda view: f"{view.name} of {view.payload['division_name']}, in its "
+                "own words",
+            )
+            for name, step in defined(*args, **kwargs).items()
+        }
+
+    monkeypatch.setattr(module, "opening_steps", reworded)
+    league = await _league_for(tmp_path, monkeypatch, results=True, attendance=True)
+    press = await _pressed(league)
+    await fail(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == job
+    await discard_job(league.bot)
+
+    line = f"{job} of Pro, in its own words"
+    assert line in _not_done(reply(press))
+    assert _DISCARDED[job][1] not in _not_done(reply(press))
+    confirmed = _confirmed_lines(league)
+    assert len(confirmed) == 1 and f"\n  not done: {line}" in confirmed[0]
 
 
 async def test_no_separate_opening_classification_line_is_written(tmp_path, monkeypatch):

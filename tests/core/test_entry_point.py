@@ -227,6 +227,16 @@ _TEST_MODE_PARTS = (
      "results' points configurations"),
 )
 
+#: Each module's part of placements confirmed, as the module names it: the module, the subscriber,
+#: and what the test calls it, in the order the builder signs them up. Each hands back the jobs it
+#: plans for one division, on the connection of the approval's save.
+_PLACEMENTS_PARTS = (
+    ("leaguebot.results.services.season_standings_posts", "placements_confirmed_on",
+     "results' opening standings"),
+    ("leaguebot.attendance.services.sheet_posting", "placements_confirmed_on",
+     "attendance's opening sheet"),
+)
+
 #: The steps of an amendment attendance defines, by name, as the amendment names them today.
 _ATTENDANCE_AMENDMENT_STEPS = [
     "announce", "clean_up_check_in", "close_without_call", "delete_message", "distribute",
@@ -234,6 +244,11 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the builder does not yet make the placements confirmed hooks or sign results "
+    "and attendance up",
+)
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -264,7 +279,10 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     attendance's then results'. A round's results made final, handed the closing's connection and
     the rounds' ids: results' marking of the drivers who raced them as former drivers. Test mode
     turned on, handed the save's connection and the current season's id: results' seeding of its
-    points configurations."""
+    points configurations. Placements confirmed, handed the approval's save's connection and a
+    division's id and name: the jobs results plans for its opening standings, then attendance's
+    for its opening sheet; and the steps each defines, results' opening standings, then
+    attendance's opening sheet."""
     import importlib
 
     import leaguebot.__main__ as entry_point
@@ -313,6 +331,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         *_PACK_PARTS,
         *_FINAL_PARTS,
         *_TEST_MODE_PARTS,
+        *_PLACEMENTS_PARTS,
     ):
         async def delete_spy(*args, part=part, **_kwargs):
             called.append(part)
@@ -396,6 +415,15 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     assert called == [part for _module, _name, part in _TEST_MODE_PARTS]
     # Each part is handed the save's connection, then the current season's id.
     assert handed == [(None, 0)] * len(called)
+    called.clear()
+    handed.clear()
+    await bot.placements_confirmed.call(None, 0, "Pro")
+    assert called == [part for _module, _name, part in _PLACEMENTS_PARTS]
+    # Each part is handed the save's connection, then the division's id and name.
+    assert handed == [(None, 0, "Pro")] * len(called)
+    assert [sorted(steps) for steps in bot.placements_confirmed_steps.call()] == [
+        ["opening_standings"], ["opening_sheet"]
+    ]
 
 
 #: The windows the league configures in the pair test: attendance's three lead times, and
