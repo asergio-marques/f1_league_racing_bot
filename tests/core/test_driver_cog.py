@@ -191,7 +191,8 @@ MUTATING = [
 
 async def test_reassign_accepts_a_mentioned_old_user(tmp_path):
     """The reply names the current and past accounts, and the roles and any held signup channel
-    move from the account replaced to the one made current (#243)."""
+    move from the account replaced to the one made current (#243). The bot's own merge hook is
+    handed to the service, so each module re-points its own rows of a merged driver (#283)."""
     cog = _make_cog(season=_season())
     interaction = _interaction()
 
@@ -201,6 +202,10 @@ async def test_reassign_accepts_a_mentioned_old_user(tmp_path):
 
     cog.bot.driver_service.reassign_user_id.assert_awaited_once()
     assert cog.bot.driver_service.reassign_user_id.await_args.args[0] == "1"
+    assert (
+        cog.bot.driver_service.reassign_user_id.await_args.kwargs["profiles_merged"]
+        is cog.bot.profiles_merged
+    )
     assert "given a new account" in _replied(interaction)
     assert "Current account : <@2>" in _replied(interaction)
     assert "Past accounts   : <@1>" in _replied(interaction)

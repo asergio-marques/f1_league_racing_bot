@@ -137,6 +137,8 @@ async def test_the_divisions_fake_drivers_are_removed(tmp_path):
 
     clear.assert_awaited_once()
     assert clear.await_args.kwargs["division_name"] == "Pro"
+    # The bot's own delete hook, so each module deletes its own rows of the drivers (#283).
+    assert clear.await_args.kwargs["profiles_deleted"] is cog.bot.profiles_deleted
     assert "Removed **5**" in _replied(interaction)
 
 

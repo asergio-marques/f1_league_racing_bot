@@ -316,6 +316,25 @@ class TestTheSeasonsStage:
         assert await _flag(db_path) is False
 
 
+async def test_switching_test_mode_off_hands_the_bots_delete_hook(cog, db_path):
+    """Switching test mode off deletes every fake driver through the bot's own delete hook, so
+    each module deletes its own rows of them (#283)."""
+    from unittest.mock import patch
+
+    hook = AwaitedHook()
+    cog.bot.profiles_deleted = hook
+    await _in_test_mode(db_path)
+
+    with patch(
+        "leaguebot.core.services.test_roster_service.clear_all_test_drivers",
+        new=AsyncMock(return_value=0),
+    ) as clear:
+        await _toggle(cog)  # off
+
+    clear.assert_awaited_once()
+    assert clear.await_args.kwargs["profiles_deleted"] is hook
+
+
 # ── The saved backup goes with test mode ──────────────────────────────────
 
 

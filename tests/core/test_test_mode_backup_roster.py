@@ -230,16 +230,18 @@ async def test_a_non_numeric_user_id_is_refused_in_its_own_words():
 
 async def test_removing_a_driver_names_them_and_their_team():
     """A fake driver is identified by a numeric id, which is unreadable — the message has
-    to name the driver and the team or the maintainer cannot tell what went."""
+    to name the driver and the team or the maintainer cannot tell what went. The service is
+    handed the bot's own delete hook, so each module deletes its own rows of the driver (#283)."""
     cog = _make_cog()
     interaction = _interaction()
 
     with patch(
         "leaguebot.core.services.test_roster_service.remove_test_driver",
         new=AsyncMock(return_value={"display_name": "Test Lewis", "team_name": "Alpha"}),
-    ):
+    ) as remove:
         await _remove(cog, interaction)
 
+    assert remove.await_args.kwargs["profiles_deleted"] is cog.bot.profiles_deleted
     replied = _replied(interaction)
     assert "Test Lewis" in replied
     assert "Alpha" in replied
