@@ -565,14 +565,17 @@ class SeasonService:
         divisions_deleted: AwaitedHook,
         season_deleted: AwaitedHook,
     ) -> None:
-        """FK-safe cascade delete of one season and all its child records.
+        """Delete one season and everything under it, on the connection handed to it.
 
         What `/season abort` leaves of a season whose placements were never confirmed: nothing
         at all, its signups included (issue #220).
 
-        Called as ``SeasonService.delete_season(db, season_id)`` it writes on the connection
-        handed to it and commits nothing, for the abort's one save to commit. It is a plain
-        function, so the writes below stay keyed to this name (#283).
+        It writes on *db* and commits nothing, for the abort's one save to commit. Each module
+        deletes its own rows of the season through a hook, on that connection: *rounds_deleted*
+        with the season's round ids, then *divisions_deleted* with its division ids (neither
+        when there are none), then *season_deleted* with the season id. Core then deletes its
+        own rows: sessions, the season's test drivers, assignments, teams and seats, rounds,
+        review prompts, divisions and the season.
 
         Raises ``ValueError`` for a season not in SETUP, before anything is deleted. Its number
         is committed from the moment it leaves SETUP, and that number is how a league names
@@ -651,7 +654,6 @@ class SeasonService:
 
         await db.execute("DELETE FROM season_review_prompts WHERE season_id = ?", (season_id,))
         await db.execute("DELETE FROM divisions WHERE season_id = ?", (season_id,))
-        # The season's signups, windows and signup configuration go with it by cascade.
         await db.execute("DELETE FROM seasons WHERE id = ?", (season_id,))
 
     # ------------------------------------------------------------------
@@ -773,6 +775,10 @@ class SeasonService:
         divisions_deleted: AwaitedHook,
     ) -> None:
         """Delete a division with its rounds, teams and seats, in one transaction.
+
+        Each module deletes its own rows through a hook on the transaction's connection:
+        *rounds_deleted* with the division's round ids (none, no call), then *divisions_deleted*
+        with the division's id. Core then deletes its own rows.
 
         Fails while a driver is placed in it: the seat the placement points at has no delete
         action, so removing the seats breaks the placement's foreign key, the whole deletion
@@ -910,7 +916,11 @@ class SeasonService:
             await db.commit()
 
     async def delete_round(self, round_id: int, *, rounds_deleted: AwaitedHook) -> None:
-        """Delete a round and renumber siblings."""
+        """Delete a round and renumber siblings.
+
+        Each module deletes its own rows of the round through *rounds_deleted*, on the
+        transaction's connection; core then deletes the round's sessions and the round.
+        """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT division_id FROM rounds WHERE id = ?", (round_id,)
