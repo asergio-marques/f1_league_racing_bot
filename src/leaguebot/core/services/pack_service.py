@@ -44,7 +44,7 @@ from leaguebot.core.services.change_queue import ChangeQueue
 from leaguebot.core.services.config_service import RELEASE_CLAIM_SQL
 from leaguebot.core.services.in_memory_state import clear_in_memory_state
 from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID
-from leaguebot.core.utils.hooks import Hook
+from leaguebot.core.utils.hooks import AwaitedHook, Hook
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
@@ -173,6 +173,7 @@ async def pack(
     in_memory_state_cleared: Hook | None = None,
     queue: ChangeQueue | None = None,
     *,
+    bot_packed: AwaitedHook,
     actor_id: int,
     actor_name: str,
 ) -> PackResult:
@@ -193,6 +194,9 @@ async def pack(
             job = await pending_job(db)
             if job is not None:
                 raise PackRefused(job_id=job[0], stopped=job[1], lane=job[2])
+
+            # Each module clears its own rows, on this connection, in this transaction.
+            await bot_packed.call(db)
 
             cleared = await _cleared_configuration(db)
 

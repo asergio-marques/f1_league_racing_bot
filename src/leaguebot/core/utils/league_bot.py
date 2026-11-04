@@ -145,6 +145,10 @@ class LeagueBot(commands.Bot):
     #: and the merge. Image's `drivers_deleted` is another hook, called after the save.
     profiles_deleted: AwaitedHook
     profiles_merged: AwaitedHook
+    #: The bot packed (`/bot pack`): each module clears its own rows tied to the server the bot
+    #: leaves, on the pack's connection, given nothing else. The builder makes it and hands it to
+    #: the pack. `in_memory_state_cleared` is another hook, called after the save.
+    bot_packed: AwaitedHook
     #: Starts the retry cog's loop. The builder sets it, so that `setup_hook` reaches the loop
     #: without importing the cog, which nothing below the cogs may do.
     start_retry_loop: Callable[[], None]

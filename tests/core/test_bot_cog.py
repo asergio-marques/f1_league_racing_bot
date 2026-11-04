@@ -1102,7 +1102,6 @@ async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season
     assert lines[1] == f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /bot pack hands pack no hook for the bot packed")
 async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
     """Issue #383. What the entry holds is the service's to pin; who it names is the cog's. The
     pack clears what the bot holds in memory through the bot's own hook for it, called once, and

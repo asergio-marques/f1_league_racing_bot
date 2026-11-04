@@ -243,6 +243,13 @@ def _sign_up_to_deletes(bot: LeagueBot) -> None:
     bot.profiles_merged.subscribe(results_purge_service.profiles_merged_on)
 
 
+def _sign_up_to_pack(bot: LeagueBot) -> None:
+    """Make the hook the bot packed declares, for the modules to sign up to: each module clearing
+    its own rows tied to the server the bot leaves, on the pack's connection, inside its one
+    transaction (architecture.md, "The database"). The builder hands it to `/bot pack`."""
+    bot.bot_packed = AwaitedHook()
+
+
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
     """Make the hooks a season's end declares, and sign each module's part up to them, in the order
     core calls them: what stands in the way of the completion and of the cancellation (results'
@@ -1144,6 +1151,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_cancellations(bot)
     _sign_up_to_season_end(bot)
     _sign_up_to_deletes(bot)
+    _sign_up_to_pack(bot)
     register_change_types(bot)
     register_scheduler_callbacks(bot)
 

@@ -749,6 +749,7 @@ class BotCog(commands.Cog):
                 self.bot.scheduler_service,
                 self.bot.in_memory_state_cleared,
                 self.bot.change_queue,
+                bot_packed=self.bot.bot_packed,
                 actor_id=interaction.user.id,
                 actor_name=str(interaction.user),
             )
