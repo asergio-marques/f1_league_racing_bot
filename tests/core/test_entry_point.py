@@ -201,6 +201,16 @@ _DELETE_PAYLOADS = {
     "profiles_deleted": ([0],), "profiles_merged": (0, 1),
 }
 
+#: Each module's part of the bot packed, as the module names it: the module, the subscriber, and
+#: what the test calls it, in the order the builder signs them up. Each clears the module's own
+#: rows tied to the server left behind, on the pack's connection.
+_PACK_PARTS = (
+    ("leaguebot.signup.services.signup_module_service", "bot_packed_on", "signup's pack"),
+    ("leaguebot.weather.services.forecast_cleanup_service", "bot_packed_on", "weather's pack"),
+    ("leaguebot.attendance.services.attendance_service", "bot_packed_on", "attendance's pack"),
+    ("leaguebot.results.services.results_purge_service", "bot_packed_on", "results' pack"),
+)
+
 #: The steps of an amendment attendance defines, by name, as the amendment names them today.
 _ATTENDANCE_AMENDMENT_STEPS = [
     "announce", "clean_up_check_in", "close_without_call", "delete_message", "distribute",
@@ -208,6 +218,8 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the builder makes no bot_packed hook, and signs "
+                   "no module up to it")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -233,7 +245,9 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     deleting its own rows: of the rounds, attendance's, results' then weather's; of the divisions,
     attendance's then results'; of the season, results' then signup's. A driver deleted, each
     module deleting or letting go of its own rows of them, attendance's then results'; and a
-    driver merged into another, each re-pointing its own, attendance's then results'."""
+    driver merged into another, each re-pointing its own, attendance's then results'. The bot
+    packed, each module clearing its own rows tied to the server left behind: signup's, weather's,
+    attendance's then results'."""
     import importlib
 
     import leaguebot.__main__ as entry_point
@@ -277,7 +291,10 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         monkeypatch.setattr(importlib.import_module(module_name), name, season_end_spy,
                             raising=False)
     handed: list[tuple] = []
-    for _hook, module_name, name, part in _DELETE_PARTS:
+    for module_name, name, part in (
+        *((module_name, name, part) for _hook, module_name, name, part in _DELETE_PARTS),
+        *_PACK_PARTS,
+    ):
         async def delete_spy(*args, part=part, **_kwargs):
             called.append(part)
             handed.append(args)
@@ -342,6 +359,12 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         assert called == [part for each, _module, _name, part in _DELETE_PARTS if each == hook]
         # Each part is handed the connection, then what the delete names.
         assert handed == [(None, *_DELETE_PAYLOADS[hook])] * len(called)
+    called.clear()
+    handed.clear()
+    await bot.bot_packed.call(None)
+    assert called == [part for _module, _name, part in _PACK_PARTS]
+    # Each part is handed the pack's connection, and nothing else.
+    assert handed == [(None,)] * len(called)
 
 
 #: The windows the league configures in the pair test: attendance's three lead times, and

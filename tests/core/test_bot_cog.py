@@ -779,8 +779,11 @@ async def test_a_server_configured_before_the_role_existed_reads_none(tmp_path):
 
 
 def _packing_bot(db_path: str) -> MagicMock:
+    """A bot to pack, its hook for the pack carrying no module's part: what the modules clear is
+    the service's to pin, through the hook the builder makes."""
     bot = _bot(db_path)
     bot.scheduler_service.cancel_all = MagicMock(return_value=0)
+    bot.bot_packed.call = AsyncMock(return_value=[])
     bot.get_cog = MagicMock(return_value=None)
     return bot
 
@@ -1098,9 +1101,12 @@ async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season
     assert lines[1] == f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"
 
 
+@pytest.mark.xfail(strict=True, reason="#283: /bot pack hands pack no hook for the bot packed")
 async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
     """Issue #383. What the entry holds is the service's to pin; who it names is the cog's. The
-    pack clears what the bot holds in memory through the bot's own hook for it, called once."""
+    pack clears what the bot holds in memory through the bot's own hook for it, called once, and
+    has each module clear its own rows through the bot's own hook for the pack, called once on the
+    pack's connection (#283)."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     bot = _packing_bot(db_path)
@@ -1113,6 +1119,8 @@ async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
     (row,) = await _audit_rows(db_path)
     assert (row["change_type"], row["actor_id"]) == ("BOT_PACKED", 7)
     bot.in_memory_state_cleared.call.assert_called_once_with()
+    bot.bot_packed.call.assert_awaited_once()
+    assert len(bot.bot_packed.call.await_args.args) == 1
 
 
 # ── /bot factory-reset ─────────────────────────────────────────────────────
