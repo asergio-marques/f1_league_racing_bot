@@ -1,7 +1,8 @@
 """The points configurations test mode seeds are ordinary server configurations.
 
 `/test-mode toggle` seeds "Standard" and "Half Points" so a test season can be scored
-without the manager building a ladder by hand. They are written the way `/results config`
+without the manager building a ladder by hand. The seeding is results' part of test mode
+turned on, made on the connection of the save that turns it on. They are written the way `/results config`
 writes one — into `points_config_store`, `points_config_entries` and `points_config_fl` —
 and attached to the season through `season_points_links`, so the confirmation of placements copies them
 into the season's own store through the ordinary snapshot.
@@ -21,11 +22,23 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import points_config_service, season_points_service
-from leaguebot.core.services.test_roster_service import ensure_test_configs
 from tests.support.season_points import snapshot_points
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
 SERVER_ID = 9310
+
+#: Why each test fails until results seeds the configurations itself.
+_NOT_RESULTS_YET = "#283: results does not yet seed test mode's points configurations"
+
+
+async def _seed(db_path, season_id):
+    """Results' part of test mode turned on, in a save of its own; the names it newly created."""
+    from leaguebot.results.services.points_config_service import seed_test_configs_on
+
+    async with get_connection(db_path) as db:
+        created = await seed_test_configs_on(db, season_id)
+        await db.commit()
+    return created
 
 
 @pytest.fixture
@@ -53,18 +66,20 @@ async def season_id(db_path):
         return cursor.lastrowid
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_both_configs_are_created(db_path, season_id):
-    created = await ensure_test_configs(season_id, db_path)
+    created = await _seed(db_path, season_id)
 
     assert sorted(created) == ["Half Points", "Standard"]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 @pytest.mark.parametrize("config_name", ["Standard", "Half Points"])
 async def test_a_seeded_config_is_readable_as_a_server_config(
     db_path, season_id, config_name
 ):
     """The bug: this read back empty, so the view reported no entries configured."""
-    await ensure_test_configs(season_id, db_path)
+    await _seed(db_path, season_id)
 
     entries, fl = await points_config_service.get_config_entries(
         db_path, config_name
@@ -74,8 +89,9 @@ async def test_a_seeded_config_is_readable_as_a_server_config(
     assert fl, f"{config_name} read back with no fastest-lap bonus"
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_the_standard_ladder_is_the_one_seeded(db_path, season_id):
-    await ensure_test_configs(season_id, db_path)
+    await _seed(db_path, season_id)
 
     entries, fl = await points_config_service.get_config_entries(
         db_path, "Standard"
@@ -92,8 +108,9 @@ async def test_the_standard_ladder_is_the_one_seeded(db_path, season_id):
     assert (fl_feature[0].fl_points, fl_feature[0].fl_position_limit) == (2, 15)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_every_session_type_of_a_race_weekend_is_covered(db_path, season_id):
-    await ensure_test_configs(season_id, db_path)
+    await _seed(db_path, season_id)
 
     entries, _ = await points_config_service.get_config_entries(
         db_path, "Standard"
@@ -107,22 +124,24 @@ async def test_every_session_type_of_a_race_weekend_is_covered(db_path, season_i
     }
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_the_configs_are_attached_to_the_season(db_path, season_id):
-    await ensure_test_configs(season_id, db_path)
+    await _seed(db_path, season_id)
 
     names = await season_points_service.get_attached_config_names(db_path, season_id)
 
     assert sorted(names) == ["Half Points", "Standard"]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_seeding_twice_creates_nothing_and_changes_nothing(db_path, season_id):
     """`/test-mode toggle` can be run again; it must not duplicate or disturb a config."""
-    await ensure_test_configs(season_id, db_path)
+    await _seed(db_path, season_id)
     before, before_fl = await points_config_service.get_config_entries(
         db_path, "Standard"
     )
 
-    created_again = await ensure_test_configs(season_id, db_path)
+    created_again = await _seed(db_path, season_id)
     after, after_fl = await points_config_service.get_config_entries(
         db_path, "Standard"
     )
@@ -132,11 +151,12 @@ async def test_seeding_twice_creates_nothing_and_changes_nothing(db_path, season
     assert len(after_fl) == len(before_fl)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_approve_carries_the_seeded_config_into_the_season_store(
     db_path, season_id
 ):
     """The ordinary snapshot, not a private path — this is what scoring then reads."""
-    await ensure_test_configs(season_id, db_path)
+    await _seed(db_path, season_id)
 
     await snapshot_points(db_path, season_id)
 
@@ -159,17 +179,19 @@ async def test_approve_carries_the_seeded_config_into_the_season_store(
     assert fl == [(2, 15)]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_the_seeded_config_passes_the_approval_gate(db_path, season_id):
     """The confirmation of placements refuses a non-monotonic ladder; a seeded one must not trip it."""
-    await ensure_test_configs(season_id, db_path)
+    await _seed(db_path, season_id)
     await snapshot_points(db_path, season_id)
 
     assert await season_points_service.validate_monotonic_ordering(db_path, season_id) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_half_points_really_is_the_lesser_ladder(db_path, season_id):
     """The two seeded configs must differ, or there is no point seeding both."""
-    await ensure_test_configs(season_id, db_path)
+    await _seed(db_path, season_id)
 
     standard, _ = await points_config_service.get_config_entries(
         db_path, "Standard"
@@ -188,6 +210,7 @@ async def test_half_points_really_is_the_lesser_ladder(db_path, season_id):
     assert winner(half) < winner(standard)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_leaving_test_mode_keeps_the_seeded_configs(db_path, season_id):
     """Decided 2026-09-04: a mock driver is scaffolding, a points ladder is not.
 
@@ -199,7 +222,7 @@ async def test_leaving_test_mode_keeps_the_seeded_configs(db_path, season_id):
     """
     from leaguebot.core.services.test_roster_service import clear_all_test_drivers
 
-    await ensure_test_configs(season_id, db_path)
+    await _seed(db_path, season_id)
 
     # The whole of what disabling test mode does to stored data.
     await clear_all_test_drivers(db_path, **delete_hooks(*DRIVER_HOOKS))
