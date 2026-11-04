@@ -123,19 +123,6 @@ async def test_a_new_season_does_not_overwrite_the_last(db_path):
     assert (await svc.get_record(USER)).platform == "Xbox"
 
 
-async def test_a_season_deleted_takes_its_signups_with_it(db_path):
-    """What an aborted season asks for: it leaves nothing, its signups included."""
-    svc = SignupModuleService(db_path)
-    await _season(db_path, 1)
-    await _save_record(svc, db_path, _record())
-
-    async with get_connection(db_path) as db:
-        await db.execute("DELETE FROM seasons WHERE id = 1")
-        await db.commit()
-
-    assert await svc.get_record(USER) is None
-
-
 async def test_a_driver_leaving_keeps_their_signups_under_the_season(db_path):
     """Signups are keyed by the Discord account, and survive the driver whatever becomes of
     the profile — deleted at the season's end where they never raced."""

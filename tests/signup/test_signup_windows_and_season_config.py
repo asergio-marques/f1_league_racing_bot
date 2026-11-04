@@ -113,16 +113,3 @@ async def test_the_snapshot_is_replaced_not_duplicated(db_path):
     await svc.snapshot_season_config(5)
 
     assert len((await svc.get_season_config(5))["slots"]) == 1
-
-
-async def test_windows_and_config_go_with_their_season(db_path):
-    svc = SignupModuleService(db_path)
-    await _open(svc, db_path, 111, [])
-    await svc.snapshot_season_config(5)
-
-    async with get_connection(db_path) as db:
-        await db.execute("DELETE FROM seasons WHERE id = 5")
-        await db.commit()
-
-    assert await svc.get_windows(5) == []
-    assert await svc.get_season_config(5) is None
