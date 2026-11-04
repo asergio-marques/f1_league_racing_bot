@@ -639,7 +639,10 @@ class DriverService:
                         if owner["current_state"] in _HOLDS_THE_LIVE_SEASON
                         else (driver, owner)
                     )
-                    await _merge(db, kept, absorbed, actor_id, actor_name, profiles_merged=profiles_merged)
+                    await _merge(
+                        db, kept, absorbed, actor_id, actor_name,
+                        profiles_merged=profiles_merged,
+                    )
                     merged_accounts = owner_accounts
                 elif owner is None:
                     await _refuse_a_shared_division(

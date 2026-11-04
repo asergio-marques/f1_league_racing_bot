@@ -230,7 +230,9 @@ async def toggle_test_mode(db_path: str) -> bool:
     return bool(row["test_mode_active"])
 
 
-async def switch_test_mode_off_on(db: aiosqlite.Connection, *, profiles_deleted: AwaitedHook) -> int:
+async def switch_test_mode_off_on(
+    db: aiosqlite.Connection, *, profiles_deleted: AwaitedHook
+) -> int:
     """Switch test mode off on *db*, committing nothing, deleting every driver it created.
 
     A season's end does it inside the save that records its end, just before the season itself
