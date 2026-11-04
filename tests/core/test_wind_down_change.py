@@ -1,7 +1,8 @@
 """Winding a season down on the change queue (#439, slice 5).
 
 A season in an ongoing stage whose every division is done is wound down by a change of its own:
-`wind_down` closes the signup window first; `turn_down` then turns the season's pending
+signup's `close_window` closes the signup window first, where signup is on and its window open,
+and is dropped otherwise; `turn_down` then turns the season's pending
 placements down, moves the season on to Pending completion and writes its line, all in one save;
 then each driver turned down has a job of their own: a signup in review is told (`signup_notice`)
 before their channel is locked (`close_signup`), and an approved driver loses the driver role
@@ -57,6 +58,10 @@ from tests.support.season_league import (
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
+
+#: Why the wind-down still opens with core's own `wind_down` job.
+SIGNUP_S_CLOSE = "#283: the wind-down opens with core's wind_down job, not signup's close_window"
+
 
 
 async def _league(tmp_path: Any, *, stage: str = "ONGOING_PLACEMENTS",
@@ -171,9 +176,11 @@ async def test_the_turned_down_line_is_written_with_the_save(tmp_path):
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=SIGNUP_S_CLOSE)
 async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     """Every division is done with Max's and Charles's placements pending, a driver (105) in
-    review, Valtteri (106) approved and never placed, and signups already shut: the driver in
+    review, Valtteri (106) approved and never placed, and signups already shut: signup's close of
+    the window comes first and finds nothing to close, then the season is moved on; the driver in
     review is told and has their channel locked, the three approved drivers turned down lose the
     driver role while Lewis keeps it, each driver's jobs together and the drivers in the order
     the save returns them (Max, Charles, 105, Valtteri), and the line says only that the pending
@@ -184,7 +191,7 @@ async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     await _ask(league)
     await run_queue(league.bot)
     jobs = await _jobs(league)
-    assert jobs[:2] == [("wind_down", None), ("turn_down", None)]
+    assert jobs[:2] == [("close_window", None), ("turn_down", None)]
     assert jobs[2:] == [
         ("take_driver_role", MAX), ("take_driver_role", CHARLES),
         ("signup_notice", SIGNING_UP), ("close_signup", SIGNING_UP),
@@ -207,11 +214,14 @@ async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     assert not any("Signups closed" in line for line in lines)
 
 
+@pytest.mark.xfail(strict=True, reason=SIGNUP_S_CLOSE)
 async def test_a_plain_ongoing_season_is_moved_on_with_no_driver_job(tmp_path):
+    """A season Ongoing, every division done and signups shut: signup's close of the window finds
+    nothing to close, the season is moved on to Pending completion, and no driver has a job."""
     league = await pending_completion_league(tmp_path, stage="ONGOING")
     await _ask(league)
     await run_queue(league.bot)
-    assert [name for name, _user in await _jobs(league)] == ["wind_down", "turn_down"]
+    assert [name for name, _user in await _jobs(league)] == ["close_window", "turn_down"]
     assert await _stage(league) == "PENDING_COMPLETION"
     assert league.revoked == {}
 

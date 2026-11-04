@@ -946,10 +946,15 @@ async def test_a_wind_down_its_check_will_drop_holds_no_close_back(tmp_path, ask
     signing up. Nothing ending the season is in hand that would close the window: the member's
     close is not refused, the close goes ahead, the window is closed with its notice posted and
     the season moves on to Ongoing, and the wind-down is dropped."""
+    import json
+
     from tests.support.change_queue import queued_log_lines
 
     async def wind_down_asked() -> None:
-        # As the approval's save queues it, a follow-on of the bot's, unchecked until its turn.
+        # As the approval's save queues it, a follow-on of the bot's, unchecked until its turn,
+        # with the jobs the wind-down itself plans.
+        [wind_down] = [kind for kind in league.bot.change_queue.types
+                       if kind.kind == WIND_DOWN_KIND]
         async with get_connection(league.db_path) as db:
             cursor = await db.execute(
                 "INSERT INTO queued_changes (kind, dedup_key, payload, origin, what) "
@@ -957,11 +962,11 @@ async def test_a_wind_down_its_check_will_drop_holds_no_close_back(tmp_path, ask
                 (WIND_DOWN_KIND, WIND_DOWN_KIND,
                  "Winding the season down after approving round 3's appeals"),
             )
-            for position, name in enumerate(("wind_down", "turn_down")):
+            for position, planned in enumerate(wind_down.opening_steps({})):
                 await db.execute(
                     "INSERT INTO queued_change_steps (change_id, position, name, payload) "
-                    "VALUES (?, ?, ?, '{}')",
-                    (cursor.lastrowid, position, name),
+                    "VALUES (?, ?, ?, ?)",
+                    (cursor.lastrowid, position, planned.name, json.dumps(planned.payload)),
                 )
             await db.commit()
 

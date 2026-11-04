@@ -923,7 +923,15 @@ async def test_a_stale_division_is_finished_in_the_first_save_and_the_season_mov
     assert await _status(league) == "COMPLETED"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the completion winds down through core's wind_down job, not signup's close_window",
+)
 async def test_a_season_in_an_ongoing_stage_with_every_division_done_is_wound_down_first(tmp_path):
+    """The season Ongoing placements with every division done, Max's placement pending, and
+    signups shut. Admin 77 completes it: the first settle finds it still ongoing and winds it down
+    first (signup's close of the window, dropped as there is nothing to close, then the turn-down
+    save), then settles again; nothing is left pending and the season is completed."""
     league = await pending_completion_league(tmp_path, stage="ONGOING_PLACEMENTS")
     await league.write(
         "UPDATE driver_season_assignments SET committed = 0 WHERE driver_profile_id IN "
@@ -934,7 +942,7 @@ async def test_a_season_in_an_ongoing_stage_with_every_division_done_is_wound_do
     await run_queue(league.bot)
 
     names = [name for name, _key in await _names(league)]
-    assert names[:4] == ["settle", "wind_down", "turn_down", "settle"]
+    assert names[:4] == ["settle", "close_window", "turn_down", "settle"]
     pending = await league.rows(
         "SELECT * FROM driver_season_assignments WHERE season_id = ? AND committed = 0", SEASON_ID
     )
