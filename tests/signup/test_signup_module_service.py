@@ -22,10 +22,10 @@ async def _save_record(svc, db_path, record):
     return record_id
 
 
-async def _save_wizard(svc, db_path, wizard, *, starting=False):
+async def _save_wizard(svc, db_path, wizard):
     """Save *wizard* in a save of the test's own, as a signup job's record does."""
     async with get_connection(db_path) as db:
-        await svc.save_wizard_on(db, wizard, starting=starting)
+        await svc.save_wizard_on(db, wizard)
         await db.commit()
 
 
