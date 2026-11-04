@@ -15,6 +15,7 @@ unwrapped the way the other cog suites unwrap them.
 """
 from __future__ import annotations
 
+from functools import cached_property
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -27,6 +28,7 @@ from leaguebot.core.services.config_service import ConfigService
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from tests.support.scheduler import PausingScheduler
+from tests.support.turned_on_hook import turned_on_hook
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 7272
@@ -212,10 +214,19 @@ async def db_path(tmp_path):
     return path
 
 
+class _Bot(SimpleNamespace):
+    """The bot the cog is handed. Its hook for test mode turned on is the builder's, made the
+    first time the cog reads it, so that a test which never turns test mode on never makes it."""
+
+    @cached_property
+    def test_mode_turned_on(self):
+        return turned_on_hook()
+
+
 @pytest.fixture
 def cog(db_path):
     return test_mode_cog.TestModeCog(
-        SimpleNamespace(
+        _Bot(
             db_path=db_path,
             config_service=ConfigService(db_path),
             signup_module_service=SignupModuleService(db_path),
@@ -314,6 +325,55 @@ class TestTheSeasonsStage:
 
         assert "**disabled**" in interaction.reply
         assert await _flag(db_path) is False
+
+
+async def test_switching_test_mode_on_names_the_configurations_it_seeded(cog, db_path):
+    """The season in Configuration has no points configuration. Switching test mode on seeds
+    "Standard" and "Half Points", through results' part of the builder's hook, and the reply and
+    the log line name both, word for word."""
+    interaction = await _toggle(cog)
+
+    assert interaction.reply == (
+        "✅ Test mode **enabled**. Use `/test-mode advance` to step through phases, or "
+        "`/test-mode review` to inspect season status."
+        "\n📌 Added default point configs: **Standard, Half Points**"
+    )
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        "Tester (<@1>) | /test-mode toggle | Success\n"
+        "  test_mode: enabled\n"
+        "  seeded_configs: Standard, Half Points"
+    )
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: the toggle does not yet turn test mode on through the hook"
+)
+async def test_switching_test_mode_on_names_what_the_modules_handed_back(cog, db_path):
+    """Two parts are signed up to test mode turned on: one hands back that it created "Sprint
+    Ladder", the other that it created nothing. Switching test mode on names "Sprint Ladder" alone,
+    in the reply and in the log line, and nothing else is seeded."""
+    hook = AwaitedHook()
+
+    async def created_one(*_args):
+        return ["Sprint Ladder"]
+
+    async def created_none(*_args):
+        return []
+
+    hook.subscribe(created_one)
+    hook.subscribe(created_none)
+    cog.bot.test_mode_turned_on = hook
+
+    interaction = await _toggle(cog)
+
+    assert interaction.reply.endswith("\n📌 Added default point configs: **Sprint Ladder**")
+    assert cog.bot.output_router.post_log.await_args.args[0].endswith(
+        "\n  seeded_configs: Sprint Ladder"
+    )
+    assert await _flag(db_path) is True
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT config_name FROM points_config_store")
+        assert await cursor.fetchall() == [], "the toggle seeded beside the hook's parts"
 
 
 async def test_switching_test_mode_off_hands_the_bots_delete_hook(cog, db_path):
