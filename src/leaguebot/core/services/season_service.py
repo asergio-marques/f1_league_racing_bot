@@ -910,12 +910,6 @@ class SeasonService:
             rows = await cursor.fetchall()
         return [_row_to_round(r) for r in rows]
 
-    async def renumber_rounds(self, division_id: int) -> None:
-        """Rewrite round_number for all rounds in a division, sorted ascending by scheduled_at."""
-        async with get_connection(self._db_path) as db:
-            await renumber_rounds_on(db, division_id)
-            await db.commit()
-
     async def delete_round(self, round_id: int, *, rounds_deleted: AwaitedHook) -> None:
         """Delete a round and renumber siblings.
 

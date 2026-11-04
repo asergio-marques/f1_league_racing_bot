@@ -98,7 +98,7 @@ def _round_job_suffix(rnd: "Round", season_number: int, division_tier: int) -> s
     """The ``_s{S}_d{D}_r{R}_id{round_id}`` tail every one of a round's job IDs carries.
 
     **Why the round id is in there** — a job ID must be unique to its round for the life of
-    that round, and the season, tier and round number are not. `renumber_rounds` rewrites the
+    that round, and the season, tier and round number are not. `renumber_rounds_on` rewrites the
     numbers of a whole division whenever an amendment changes the order of its rounds, and
     nothing re-arms the jobs of the rounds that merely shifted. So a round that became number 4
     kept jobs saying ``r5``, and the next amendment of the round that became number 5 scheduled
