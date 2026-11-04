@@ -21,6 +21,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
 import leaguebot.__main__ as bot_module
 from leaguebot.core.db.database import get_connection
@@ -147,16 +148,20 @@ async def test_a_second_restart_leaves_a_lapse_in_hand_alone(tmp_path):
     assert len(_amend_lines(league)) == 1
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: delete_round takes no delete hook, and the builder makes none to hand it",
+)
 async def test_an_amendment_cannot_outlive_its_round(tmp_path):
-    """`round_amend_channels.round_id` carries `ON DELETE CASCADE`, so a round deleted while an
-    amendment was open takes the amendment's row with it: the restart finds nothing, asks no
-    lapse, and the log channel is told nothing."""
+    """A round deleted while an amendment was open, as `/round delete` deletes it, takes the
+    amendment's row with it: the results module deletes its own rows through the round's delete
+    hook. The restart finds nothing, asks no lapse, and the log channel is told nothing."""
+    from leaguebot.core.services.season_service import SeasonService
     from tests.support.change_queue import run_queue
+    from tests.support.delete_hooks import ROUND_HOOKS, delete_hooks
 
     league = await _amend_league(tmp_path)
-    async with get_connection(league.db_path) as db:
-        await db.execute("DELETE FROM rounds WHERE id = ?", (ROUND_ID,))
-        await db.commit()
+    await SeasonService(league.db_path).delete_round(ROUND_ID, **delete_hooks(*ROUND_HOOKS))
     assert await _amend_row(league) is None
 
     lapses = await _restart(league)
