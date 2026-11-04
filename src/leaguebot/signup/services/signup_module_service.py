@@ -640,18 +640,9 @@ class SignupModuleService:
             return None
         return self._row_to_wizard_record(row)
 
-    async def save_wizard_on(
-        self, db: aiosqlite.Connection, wizard: SignupWizardRecord, *, starting: bool = False
-    ) -> None:
+    async def save_wizard_on(self, db: aiosqlite.Connection, wizard: SignupWizardRecord) -> None:
         """Save the wizard's record on the connection handed, inserting it or updating the one
         the driver holds; commits nothing: the caller's save does.
-
-        *starting* is the save of a signup just begun (Sign Up pressed). It alone clears any
-        closing notice a past close of the window still owes the driver (`end_wizard_on`): a mark
-        a close left standing with no stop to finish it would otherwise survive into the new
-        signup, and a later finish would lock and delete the channel of a signup in progress.
-        Every other save, a step of the signup, leaves the mark as it is, so that a step saved
-        just after a close marked the driver never takes the mark away from that close.
         """
         snapshot_json = (
             json.dumps(self._snapshot_to_dict(wizard.config_snapshot))
@@ -663,7 +654,7 @@ class SignupModuleService:
             signup_channel_id=wizard.signup_channel_id, snapshot_json=snapshot_json,
             draft_answers=wizard.draft_answers,
             current_lap_track_index=wizard.current_lap_track_index,
-            last_activity_at=wizard.last_activity_at, starting=starting,
+            last_activity_at=wizard.last_activity_at,
         )
 
     async def save_wizard_row_on(
@@ -677,14 +668,12 @@ class SignupModuleService:
         draft_answers: dict[str, Any],
         current_lap_track_index: int,
         last_activity_at: str | None,
-        starting: bool = False,
     ) -> None:
         """Insert or update a driver's wizard row on the connection handed; commits nothing.
 
         What `save_wizard_on` writes, for a change that saves the row in the same save as a job's
         mark. *snapshot_json* is the configuration as `_snapshot_to_dict` freezes it, already
-        encoded, so that a job which made it can hand it on in its result. *starting* is as in
-        `save_wizard_on`.
+        encoded, so that a job which made it can hand it on in its result.
         """
         await db.execute(
             """
@@ -699,8 +688,7 @@ class SignupModuleService:
                 config_snapshot_json     = excluded.config_snapshot_json,
                 draft_answers_json       = excluded.draft_answers_json,
                 current_lap_track_index  = excluded.current_lap_track_index,
-                last_activity_at         = excluded.last_activity_at,
-                closing_notice_owed      = CASE WHEN ? THEN 0 ELSE closing_notice_owed END
+                last_activity_at         = excluded.last_activity_at
             """,
             (
                 discord_user_id,
@@ -710,7 +698,6 @@ class SignupModuleService:
                 json.dumps(draft_answers),
                 current_lap_track_index,
                 last_activity_at,
-                int(starting),
             ),
         )
 
@@ -793,79 +780,18 @@ class SignupModuleService:
             (discord_user_id,),
         )
 
-    #: The values of ``signup_wizard_records.closing_notice_owed``: none, owed by the change
-    #: queue's close of the window. (A value 2, owed by a close off the queue, is no longer
-    #: written: no close is made off the queue.)
-    _OWED_NONE = 0
-    _OWED_BY_QUEUE = 1
-
-    async def end_wizard_on(
-        self,
-        db: aiosqlite.Connection,
-        discord_user_id: str,
-        *,
-        closing_notice_owed: bool = False,
-    ) -> None:
+    async def end_wizard_on(self, db: aiosqlite.Connection, discord_user_id: str) -> None:
         """Mark a driver's signup over on the connection handed; commits nothing.
 
-        The wizard is unengaged, so a restart's recovery never re-arms or expires it, and owes its
-        closing notice where asked (*closing_notice_owed*, for the change queue's close of the
-        signup window). The signup channel is kept: the channel's deletion still reads it. A driver
-        with no wizard record is nothing to end.
-
-        The owed mark is a record of work still owed, kept beside the change queue, which
-        architecture.md rejects as a rule ("a separate record of work still owed after a save").
-        It is here on purpose: the window's close returns each driver in a save of its own, before
-        the job that plans their notice and channel jobs is saved, and a kill between the two
-        leaves no queue record to find them by. The mark is written in the save that returns the
-        driver, so that the next try or the restart finds exactly those drivers, and is cleared in
-        the save that plans their jobs (`clear_closing_notices_on`), from which the queue's own
-        records hold them. It is never read from wizard state, so a channel kept on purpose is
-        never found. It is read by `owed_closing_notices` and `take_closing_notices_on`, and is
-        owed by a close of the window and by nothing else. Do not widen the mark further into a
-        general record of owed work.
+        The wizard is unengaged, so a restart's recovery never re-arms or expires it. The signup
+        channel is kept: the channel's deletion still reads it. A driver with no wizard record is
+        nothing to end.
         """
-        owed = self._OWED_BY_QUEUE if closing_notice_owed else self._OWED_NONE
         await db.execute(
-            "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED', "
-            "closing_notice_owed = ? WHERE discord_user_id = ?",
-            (owed, discord_user_id),
+            "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED' "
+            "WHERE discord_user_id = ?",
+            (discord_user_id,),
         )
-
-    async def owed_closing_notices(self) -> list[str]:
-        """The accounts the queue's close owes their closing notice, in the order of their
-        records, on a connection of its own. For a check before a step or a step with no save
-        open; a save reads them with `take_closing_notices_on`."""
-        async with get_connection(self._db_path) as db:
-            return await self._owed_closing_notices_on(db, self._OWED_BY_QUEUE)
-
-    async def clear_closing_notices_on(
-        self, db: aiosqlite.Connection, accounts: Iterable[str]
-    ) -> None:
-        """Set the closing notice owed back to none for these accounts, of either kind, on the
-        connection handed; commits nothing."""
-        for account in accounts:
-            await db.execute(
-                "UPDATE signup_wizard_records SET closing_notice_owed = 0 "
-                "WHERE discord_user_id = ?",
-                (str(account),),
-            )
-
-    async def take_closing_notices_on(self, db: aiosqlite.Connection) -> list[str]:
-        """Read the accounts the queue's close still owes their closing notice and clear them, on
-        the connection handed, so a save needs no second connection; commits nothing."""
-        accounts = await self._owed_closing_notices_on(db, self._OWED_BY_QUEUE)
-        await self.clear_closing_notices_on(db, accounts)
-        return accounts
-
-    @staticmethod
-    async def _owed_closing_notices_on(db: aiosqlite.Connection, kind: int) -> list[str]:
-        cursor = await db.execute(
-            "SELECT discord_user_id FROM signup_wizard_records "
-            "WHERE closing_notice_owed = ? ORDER BY id",
-            (kind,),
-        )
-        return [str(row["discord_user_id"]) for row in await cursor.fetchall()]
 
     async def get_all_active_wizards(self) -> list[SignupWizardRecord]:
         """Return all wizard records not in UNENGAGED state for a server."""

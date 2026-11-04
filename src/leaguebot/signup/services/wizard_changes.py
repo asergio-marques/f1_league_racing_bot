@@ -358,7 +358,7 @@ def start_change(
             db, discord_user_id=str(ctx.step_payload["user_id"]), wizard_state=made["state"],
             signup_channel_id=int(made["channel_id"]), snapshot_json=made["snapshot"],
             draft_answers=made["draft"], current_lap_track_index=0,
-            last_activity_at=made["at"], starting=True,
+            last_activity_at=made["at"],
         )
 
     async def start(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:

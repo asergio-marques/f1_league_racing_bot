@@ -155,12 +155,9 @@ def _league(db_path: str, *, guild: bool = True) -> Any:
     bot.season_service = SeasonService(db_path)
     bot.attendance_service = AttendanceService(db_path)
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    # The wind-down clears the marks of the drivers it returned.
-    bot.signup_module_service.clear_closing_notices_on = AsyncMock(return_value=None)
     # The hooks of a season's end, as the builder makes them, no module signed up to any: the
-    # wind-down returns no driver here, and its last save finds no account untold.
-    for name in ("season_end_refused", "drivers_returned", "season_end_untold",
-                 "test_mode_flushed", "drivers_deleted"):
+    # wind-down returns no driver here.
+    for name in ("season_end_refused", "drivers_returned", "test_mode_flushed", "drivers_deleted"):
         setattr(bot, name, AwaitedHook())
     bot.driver_returned_jobs = Hook()
     bot.season_end_steps = Hook()

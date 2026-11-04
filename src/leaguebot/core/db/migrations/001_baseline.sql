@@ -748,11 +748,6 @@ CREATE TABLE "signup_wizard_records" (
     -- Timestamp of last wizard activity, used for inactivity timeout
     last_activity_at            TEXT    NOT NULL DEFAULT (datetime('now')),
     created_at                  TEXT    NOT NULL DEFAULT (datetime('now')),
-    -- Whether a close of the signup window owes this driver their closing notice: 0 none; 1 the
-    -- change queue's close, cleared when the queue plans the notice. Set in the save that returns
-    -- the driver. (A value 2, a close off the queue, is no longer written: no close is made
-    -- off the queue.)
-    closing_notice_owed         INTEGER NOT NULL DEFAULT 0,
     -- When the correction choices a manager asked for were posted in the driver's channel: the
     -- five minutes to choose run from then. NULL while no correction is awaited.
     correction_offered_at       TEXT
