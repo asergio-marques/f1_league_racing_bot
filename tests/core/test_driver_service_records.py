@@ -35,6 +35,13 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.driver_service import DriverService
 from tests.support.teams import seed_team_instances
+from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
+
+#: Why each test marked with it fails until the driver hooks are handed.
+NO_MERGE_HOOK = (
+    "#283: the builder makes no profiles_merged hook to hand a merge, and reassign_user_id "
+    "takes none"
+)
 
 SERVER_ID = 9108
 OLD_USER = "4242"
@@ -290,6 +297,7 @@ async def test_a_disallowed_transition_from_no_profile_names_what_is_allowed(tmp
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_profile_is_re_keyed_to_the_new_account(tmp_path):
     """How a driver who lost their Discord account keeps their history."""
     db_path = await _make_db(tmp_path)
@@ -297,7 +305,7 @@ async def test_a_profile_is_re_keyed_to_the_new_account(tmp_path):
     service = DriverService(db_path)
 
     outcome = await service.reassign_user_id(
-        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+        OLD_USER, NEW_USER, ACTOR_ID, "Manager", **delete_hooks(*MERGE_HOOKS)
     )
 
     assert outcome.profile.discord_user_id == NEW_USER
@@ -305,16 +313,18 @@ async def test_a_profile_is_re_keyed_to_the_new_account(tmp_path):
     assert await service.get_profile(OLD_USER) is None
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_re_keying_a_user_with_no_profile_is_refused(tmp_path):
     db_path = await _make_db(tmp_path)
     service = DriverService(db_path)
 
     with pytest.raises(ValueError, match="No driver profile"):
         await service.reassign_user_id(
-            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+            OLD_USER, NEW_USER, ACTOR_ID, "Manager", **delete_hooks(*MERGE_HOOKS)
         )
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_two_drivers_both_in_the_live_season_are_not_merged(tmp_path):
     """The new account is a driver of its own, and both are signed up for the live season.
     Merging them is the one thing an account holding a profile could mean (issue #243), and
@@ -327,13 +337,14 @@ async def test_two_drivers_both_in_the_live_season_are_not_merged(tmp_path):
 
     with pytest.raises(ValueError, match="both hold a seat or a signup"):
         await service.reassign_user_id(
-            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+            OLD_USER, NEW_USER, ACTOR_ID, "Manager", **delete_hooks(*MERGE_HOOKS)
         )
 
     assert await service.get_profile(OLD_USER) is not None
     assert await _audit(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_an_account_whose_leftover_results_share_a_division_is_refused(tmp_path):
     """The new account holds no profile but results of its own — a driver deleted for never
     having raced a round in full — in the very division the driver raced. Joined, one person
@@ -346,10 +357,11 @@ async def test_an_account_whose_leftover_results_share_a_division_is_refused(tmp
 
     with pytest.raises(ValueError, match="both took part in Season 1 Pro"):
         await service.reassign_user_id(
-            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+            OLD_USER, NEW_USER, ACTOR_ID, "Manager", **delete_hooks(*MERGE_HOOKS)
         )
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_an_account_holding_only_history_of_its_own_is_accepted(tmp_path):
     """Nothing is rewritten, so leftover history under the new account simply becomes the
     driver's — it shares no division with anything of theirs (issue #243)."""
@@ -359,12 +371,13 @@ async def test_an_account_holding_only_history_of_its_own_is_accepted(tmp_path):
     service = DriverService(db_path)
 
     outcome = await service.reassign_user_id(
-        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+        OLD_USER, NEW_USER, ACTOR_ID, "Manager", **delete_hooks(*MERGE_HOOKS)
     )
 
     assert outcome.profile.discord_user_id == NEW_USER
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, user_id=OLD_USER)
@@ -374,7 +387,7 @@ async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
 
     with pytest.raises(ValueError):
         await service.reassign_user_id(
-            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+            OLD_USER, NEW_USER, ACTOR_ID, "Manager", **delete_hooks(*MERGE_HOOKS)
         )
 
     assert await service.get_profile(OLD_USER) is not None
@@ -385,13 +398,14 @@ async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
     assert await _audit(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_re_key_is_audited_with_both_accounts(tmp_path):
     """The league's only record that a driver's history was moved between accounts."""
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path)
 
     await DriverService(db_path).reassign_user_id(
-        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+        OLD_USER, NEW_USER, ACTOR_ID, "Manager", **delete_hooks(*MERGE_HOOKS)
     )
 
     entry = (await _audit(db_path))[0]
@@ -468,12 +482,15 @@ async def test_the_flag_decides_whether_a_departure_destroys_the_profile(tmp_pat
     assert await _profile_count(db_path) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_the_flag_is_set_through_a_past_account(tmp_path):
     """Any account names the driver (issue #243), the test-mode command included."""
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path)
     service = DriverService(db_path)
-    await service.reassign_user_id(OLD_USER, NEW_USER, ACTOR_ID, "Manager")
+    await service.reassign_user_id(
+        OLD_USER, NEW_USER, ACTOR_ID, "Manager", **delete_hooks(*MERGE_HOOKS)
+    )
 
     assert await service.set_former_driver(
         OLD_USER, True, ACTOR_ID, "Manager"
@@ -513,6 +530,7 @@ async def _every_other_row(db_path: str) -> dict[str, list[tuple]]:
     return rows
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_re_key_rewrites_no_record_of_the_driver(tmp_path):
     """Results, standings, signups, history, a part-finished signup and the fastest-lap
     override all stand under the old account, and every one of them is left exactly so."""
@@ -532,18 +550,19 @@ async def test_a_re_key_rewrites_no_record_of_the_driver(tmp_path):
     before = await _every_other_row(db_path)
 
     await DriverService(db_path).reassign_user_id(
-        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+        OLD_USER, NEW_USER, ACTOR_ID, "Manager", **delete_hooks(*MERGE_HOOKS)
     )
 
     assert await _every_other_row(db_path) == before
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_re_key_keeps_the_old_account_listed(tmp_path):
     db_path = await _make_db(tmp_path)
     profile_id = await _seed_profile(db_path)
 
     await DriverService(db_path).reassign_user_id(
-        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+        OLD_USER, NEW_USER, ACTOR_ID, "Manager", **delete_hooks(*MERGE_HOOKS)
     )
 
     async with get_connection(db_path) as db:

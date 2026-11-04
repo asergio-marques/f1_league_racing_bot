@@ -29,6 +29,13 @@ from leaguebot.results.services.result_submission_service import (
     recompute_former_drivers_for_round,
 )
 from tests.support.teams import seed_team_instances
+from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
+
+#: Why each test marked with it fails until the driver hooks are handed.
+NO_DRIVER_HOOK = (
+    "#283: the builder makes no profiles_deleted hook to hand a driver's delete, and the "
+    "delete takes none"
+)
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -535,6 +542,7 @@ async def test_cancelling_a_season_closes_a_round_whose_verdicts_are_open(tmp_pa
     assert await _former(db_path, 32) == 0, "a did-not-start entry marked a driver"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_a_driver_of_a_closed_round_survives_the_driver_pass(tmp_path):
     """The harm the close prevents, stated end to end (#216).
 
@@ -558,7 +566,7 @@ async def test_a_driver_of_a_closed_round_survives_the_driver_pass(tmp_path):
 
     await _close_raced(db_path)
     async with get_connection(db_path) as db:
-        await run_driver_pass_on(db)
+        await run_driver_pass_on(db, **delete_hooks(*DRIVER_HOOKS))
         await db.commit()
 
     async with get_connection(db_path) as db:

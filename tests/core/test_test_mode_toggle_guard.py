@@ -24,6 +24,7 @@ import pytest
 from leaguebot.core.cogs import test_mode_cog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from tests.support.scheduler import PausingScheduler
 from tests.support.undecorate import undecorate
@@ -221,6 +222,8 @@ def cog(db_path):
             output_router=SimpleNamespace(post_log=AsyncMock()),
             change_queue=SimpleNamespace(ask=AsyncMock(return_value=1)),
             scheduler_service=PausingScheduler(str(Path(db_path).with_name("scheduler.db"))),
+            # A driver deleted, no module signed up: no switch-off here has a fake driver.
+            profiles_deleted=AwaitedHook(),
         )
     )
 

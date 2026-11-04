@@ -21,6 +21,12 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.models.session import SESSIONS_BY_FORMAT
 
+#: Why each test marked with it fails until the driver hooks are handed.
+NO_DRIVER_HOOK = (
+    "#283: the builder makes no profiles_deleted hook to hand a driver's delete, and the "
+    "delete takes none"
+)
+
 SERVER_ID = 10439
 SEASON_ID = 7
 DIVISION_ID = 11
@@ -658,6 +664,7 @@ async def test_uncommitted_placements_are_discarded_on_the_save_handed(tmp_path)
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_a_season_is_deleted_on_the_save_handed_and_nothing_committed(tmp_path) -> None:
     """A season being set up, its division and its rounds, deleted on the save with the delete
     hooks the builder makes; rolled back, every row of it is still there."""

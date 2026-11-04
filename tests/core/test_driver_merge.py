@@ -19,6 +19,13 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services import driver_service
 from leaguebot.core.services.driver_service import DriverService
 from tests.support.teams import seed_team_instances
+from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
+
+#: Why each test marked with it fails until the driver hooks are handed.
+NO_MERGE_HOOK = (
+    "#283: the builder makes no profiles_merged hook to hand a merge, and reassign_user_id "
+    "takes none"
+)
 
 SERVER_ID = 2440
 A, B, C = "6501", "6502", "6503"
@@ -120,8 +127,11 @@ async def _snapshot(db_path: str) -> dict[str, list[tuple]]:
     return out
 
 
-async def _reassign(db_path: str, old: str, new: str):
-    return await DriverService(db_path).reassign_user_id(old, new, 77, "Manager")
+async def _reassign(db_path: str, old: str, new: str, *, hooks=None):
+    """`/driver reassign`'s write, handed the merge hook the builder makes, or *hooks*."""
+    return await DriverService(db_path).reassign_user_id(
+        old, new, 77, "Manager", **(hooks or delete_hooks(*MERGE_HOOKS))
+    )
 
 
 async def _profiles(db_path: str) -> list[tuple]:
@@ -141,6 +151,7 @@ async def _accounts_of(db_path: str, profile_id: int) -> list[str]:
 # ── Merges that go through ─────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_the_profile_holding_the_live_season_is_kept(tmp_path):
     """E28, E29: A raced season 1 and is a former driver; B has signed up for season 3."""
     db_path = await _make_db(tmp_path)
@@ -168,6 +179,7 @@ async def test_the_profile_holding_the_live_season_is_kept(tmp_path):
         )).fetchall()] == [(int(A), b)]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_the_usual_case_keeps_the_seated_driver_on_the_new_account(tmp_path):
     """E35: A is seated in the live season; B signed up and was rejected."""
     db_path = await _make_db(tmp_path)
@@ -183,6 +195,7 @@ async def test_the_usual_case_keeps_the_seated_driver_on_the_new_account(tmp_pat
     assert await _accounts_of(db_path, a) == [A, B]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_the_absorbed_profiles_past_accounts_come_with_it(tmp_path):
     """E34: B's profile once held C."""
     db_path = await _make_db(tmp_path)
@@ -196,6 +209,7 @@ async def test_the_absorbed_profiles_past_accounts_come_with_it(tmp_path):
     assert await _accounts_of(db_path, a) == [A, B, C]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_the_same_division_name_in_different_seasons_is_no_obstacle(tmp_path):
     """E26: Pro in season 1 on A, Pro in season 3 on B — the ordinary case."""
     db_path = await _make_db(tmp_path)
@@ -209,6 +223,7 @@ async def test_the_same_division_name_in_different_seasons_is_no_obstacle(tmp_pa
     assert outcome.profile.id == b
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_different_divisions_of_one_season_are_allowed(tmp_path):
     """E27: as for a driver moved mid-season, one driver with two entries."""
     db_path = await _make_db(tmp_path)
@@ -229,6 +244,7 @@ async def test_different_divisions_of_one_season_are_allowed(tmp_path):
     assert [tuple(r) for r in rows] == [("Am", outcome.profile.id), ("Pro", outcome.profile.id)]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_leftover_results_elsewhere_become_the_drivers(tmp_path):
     """E32: B holds no profile, only results in season 1 Am; the driver raced season 1 Pro."""
     db_path = await _make_db(tmp_path)
@@ -253,6 +269,7 @@ async def _refused(db_path: str, match: str) -> None:
     assert await _snapshot(db_path) == before
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_both_holding_the_live_season_is_refused(tmp_path):
     db_path = await _make_db(tmp_path)
     await _profile(db_path, A, state="ASSIGNED")
@@ -261,6 +278,7 @@ async def test_both_holding_the_live_season_is_refused(tmp_path):
     await _refused(db_path, "both hold a seat or a signup")
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 @pytest.mark.parametrize("part", ["seated", "raced"])
 async def test_both_taking_part_in_one_seasons_division_is_refused(tmp_path, part):
     """A is seated in Season 1 Pro, and B, who holds a profile, took part in it too: seated
@@ -277,6 +295,7 @@ async def test_both_taking_part_in_one_seasons_division_is_refused(tmp_path, par
     await _refused(db_path, "both took part in Season 1 Pro")
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_leftover_results_in_a_shared_division_are_refused(tmp_path):
     """E31: B holds no profile, but raced season 1 Pro, as did the driver."""
     db_path = await _make_db(tmp_path)
@@ -287,20 +306,32 @@ async def test_leftover_results_in_a_shared_division_are_refused(tmp_path):
     await _refused(db_path, "both took part in Season 1 Pro")
 
 
-async def test_a_failure_part_way_through_a_merge_changes_nothing(tmp_path, monkeypatch):
-    """E33: one transaction. A table that cannot be written stands in for any fault."""
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
+async def test_a_failure_part_way_through_a_merge_changes_nothing(tmp_path):
+    """E33: one transaction, the modules' part included. A, seated in the live season, is given
+    B's account; B raced Season 1 Am and holds a history entry there. The merge hook carries the
+    modules' parts and, after them, a part that fails, standing in for any fault: by then results
+    has moved B's result onto A, on the merge's connection. The reassign fails, and nothing is
+    changed: B's profile, accounts, history and result stand as they were."""
     db_path = await _make_db(tmp_path)
     a = await _profile(db_path, A, state="ASSIGNED")
     await _seated(db_path, a, S3_PRO)
     b = await _profile(db_path, B)
     await _history(db_path, b, B, "Am")
-    monkeypatch.setattr(
-        driver_service, "_PROFILE_COLUMNS",
-        (*driver_service._PROFILE_COLUMNS[:4], "no_such_table", *driver_service._PROFILE_COLUMNS[4:]),
-    )
+    await _raced(db_path, B, S1_AM, b)
+    hooks = delete_hooks(*MERGE_HOOKS)
+    moved: list[int] = []
+
+    async def _fails(db, *_ids):
+        cursor = await db.execute("SELECT driver_profile_id FROM race_session_results")
+        moved.extend(row[0] for row in await cursor.fetchall())
+        raise RuntimeError("disk I/O error")
+
+    hooks["profiles_merged"].subscribe(_fails)
     before = await _snapshot(db_path)
 
-    with pytest.raises(Exception, match="no_such_table"):
-        await _reassign(db_path, A, B)
+    with pytest.raises(RuntimeError, match="disk I/O error"):
+        await _reassign(db_path, A, B, hooks=hooks)
 
+    assert moved == [a]  # the module's part was done before the fault
     assert await _snapshot(db_path) == before

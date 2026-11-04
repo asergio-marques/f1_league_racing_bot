@@ -164,9 +164,10 @@ _SEASON_END_PARTS = (
      "image's portraits discarded"),
 )
 
-#: Each module's part of a season, division or round deleted, as the module names it: the hook on
-#: the bot, the module, the subscriber, and what the test calls it, in the order the builder signs
-#: them up. Each deletes the module's own rows on the delete's connection.
+#: Each module's part of a season, division, round or driver deleted, or a driver merged into
+#: another, as the module names it: the hook on the bot, the module, the subscriber, and what the
+#: test calls it, in the order the builder signs them up. Each deletes or re-points the module's
+#: own rows on the delete's connection.
 _DELETE_PARTS = (
     ("rounds_deleted", "leaguebot.attendance.services.attendance_service", "rounds_deleted_on",
      "attendance's rounds"),
@@ -182,7 +183,23 @@ _DELETE_PARTS = (
      "results' season"),
     ("season_deleted", "leaguebot.signup.services.signup_module_service", "season_deleted_on",
      "signup's season"),
+    ("profiles_deleted", "leaguebot.attendance.services.attendance_service",
+     "profiles_deleted_on", "attendance's drivers deleted"),
+    ("profiles_deleted", "leaguebot.results.services.results_purge_service",
+     "profiles_deleted_on", "results' drivers deleted"),
+    ("profiles_merged", "leaguebot.attendance.services.attendance_service",
+     "profiles_merged_on", "attendance's drivers merged"),
+    ("profiles_merged", "leaguebot.results.services.results_purge_service",
+     "profiles_merged_on", "results' drivers merged"),
 )
+
+#: What each delete hook hands its subscribers after the connection: a round or division delete,
+#: the ids; a season's, its id; a driver deleted, the profile ids; a merge, the kept and absorbed
+#: profile ids.
+_DELETE_PAYLOADS = {
+    "rounds_deleted": ([0],), "divisions_deleted": ([0],), "season_deleted": (0,),
+    "profiles_deleted": ([0],), "profiles_merged": (0, 1),
+}
 
 #: The steps of an amendment attendance defines, by name, as the amendment names them today.
 _ATTENDANCE_AMENDMENT_STEPS = [
@@ -191,6 +208,8 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the builder makes no profiles_deleted or "
+                   "profiles_merged hook, and signs no module up to either")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -214,7 +233,9 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     deletion of a forecast; the jobs that clear what test mode posted, weather's; and the drivers
     deleted, image's discard of their portraits. A season, division or round deleted, each module
     deleting its own rows: of the rounds, attendance's, results' then weather's; of the divisions,
-    attendance's then results'; of the season, results' then signup's."""
+    attendance's then results'; of the season, results' then signup's. A driver deleted, each
+    module deleting or letting go of its own rows of them, attendance's then results'; and a
+    driver merged into another, each re-pointing its own, attendance's then results'."""
     import importlib
 
     import leaguebot.__main__ as entry_point
@@ -316,8 +337,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     assert not hasattr(bot, "season_end_untold")
     for hook in dict.fromkeys(each[0] for each in _DELETE_PARTS):
         called.clear()
-        # A round or division delete hands its ids; a season delete, the season's id.
-        await getattr(bot, hook).call(None, 0 if hook == "season_deleted" else [0])
+        await getattr(bot, hook).call(None, *_DELETE_PAYLOADS[hook])
         assert called == [part for each, _module, _name, part in _DELETE_PARTS if each == hook]
 
 

@@ -9,6 +9,13 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.test_roster_service import clear_all_test_drivers
+from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
+
+#: Why each test marked with it fails until the driver hooks are handed.
+NO_DRIVER_HOOK = (
+    "#283: the builder makes no profiles_deleted hook to hand a driver's delete, and the "
+    "delete takes none"
+)
 
 SERVER_ID = 22140
 
@@ -78,15 +85,17 @@ async def _profiles(db_path):
         return [r["id"] for r in await cursor.fetchall()]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_every_fake_driver_is_deleted_seated_or_not_and_the_real_one_kept(db_path):
-    assert await clear_all_test_drivers(db_path) == 2
+    assert await clear_all_test_drivers(db_path, **delete_hooks(*DRIVER_HOOKS)) == 2
 
     assert await _profiles(db_path) == [3]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_a_fake_driver_who_raced_is_deleted_all_the_same(db_path):
     """Attendance and placements held them: the deletion lets go of both."""
-    await clear_all_test_drivers(db_path)
+    await clear_all_test_drivers(db_path, **delete_hooks(*DRIVER_HOOKS))
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -95,8 +104,9 @@ async def test_a_fake_driver_who_raced_is_deleted_all_the_same(db_path):
         assert (await cursor.fetchone())[0] == 0
 
 
+@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_their_history_is_kept_by_identifier(db_path):
-    await clear_all_test_drivers(db_path)
+    await clear_all_test_drivers(db_path, **delete_hooks(*DRIVER_HOOKS))
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -115,11 +125,12 @@ async def _switch_off(db_path):
     from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
 
     async with get_connection(db_path) as db:
-        deleted = await switch_test_mode_off_on(db)
+        deleted = await switch_test_mode_off_on(db, **delete_hooks(*DRIVER_HOOKS))
         await db.commit()
     return deleted
 
 
+@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_a_server_not_in_test_mode_is_left_alone(db_path):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE server_configs SET test_mode_active = 0")
@@ -129,10 +140,11 @@ async def test_a_server_not_in_test_mode_is_left_alone(db_path):
     assert await _profiles(db_path) == [1, 2, 3]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_clearing_one_division_deletes_its_fake_drivers_and_keeps_their_history(db_path):
     from leaguebot.core.services.test_roster_service import _delete_test_drivers_in_division
 
-    assert await _delete_test_drivers_in_division(1, db_path) == 1
+    assert await _delete_test_drivers_in_division(1, db_path, **delete_hooks(*DRIVER_HOOKS)) == 1
 
     # The seated fake driver goes; the unseated one and the real driver stay.
     assert await _profiles(db_path) == [2, 3]
@@ -161,6 +173,7 @@ async def _flag_on(db):
     return (await cursor.fetchone())[0]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_switching_off_on_the_save_handed_commits_nothing(db_path):
     """The two test drivers go and the flag is cleared on the save; rolled back, both drivers and
     the flag are as they were. It takes the save alone, with no bot to flush forecasts through,
@@ -168,7 +181,7 @@ async def test_switching_off_on_the_save_handed_commits_nothing(db_path):
     from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
 
     async with get_connection(db_path) as db:
-        assert await switch_test_mode_off_on(db) == 2
+        assert await switch_test_mode_off_on(db, **delete_hooks(*DRIVER_HOOKS)) == 2
         assert await _profiles_on(db) == [3]
         assert await _flag_on(db) == 0
         await db.rollback()
@@ -176,13 +189,14 @@ async def test_switching_off_on_the_save_handed_commits_nothing(db_path):
         assert await _flag_on(db) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_clearing_the_test_drivers_on_the_save_handed_commits_nothing(db_path):
     """The two test drivers go on the save, their history kept by identifier; rolled back, they
     are back."""
     from leaguebot.core.services.test_roster_service import clear_all_test_drivers_on
 
     async with get_connection(db_path) as db:
-        assert await clear_all_test_drivers_on(db) == 2
+        assert await clear_all_test_drivers_on(db, **delete_hooks(*DRIVER_HOOKS)) == 2
         assert await _profiles_on(db) == [3]
         cursor = await db.execute(
             "SELECT COUNT(*) FROM driver_history_entries WHERE driver_profile_id IS NULL"

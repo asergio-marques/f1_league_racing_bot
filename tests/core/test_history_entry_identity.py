@@ -9,6 +9,13 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
+
+#: Why each test marked with it fails until the driver hooks are handed.
+NO_MERGE_HOOK = (
+    "#283: the builder makes no profiles_merged hook to hand a merge, and reassign_user_id "
+    "takes none"
+)
 
 SERVER_ID = 22120
 
@@ -125,6 +132,7 @@ async def _seed_a_finished_season(db_path: str) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path):
     """Issue #222, as a league sees it: the season ends and the driver's history is right."""
     from leaguebot.core.services.driver_service import DriverService
@@ -132,7 +140,7 @@ async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path)
 
     await _seed_a_finished_season(db_path)
     await DriverService(db_path).reassign_user_id(
-        _OLD_USER, _NEW_USER, 77, "Manager"
+        _OLD_USER, _NEW_USER, 77, "Manager", **delete_hooks(*MERGE_HOOKS)
     )
 
     async with get_connection(db_path) as db:

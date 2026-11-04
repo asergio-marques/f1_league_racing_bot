@@ -1,12 +1,13 @@
 """Every kind of delete, against a database holding a row in every table (architecture.md, "The
 database").
 
-A season, division or round deleted takes everything that refers to it, and nothing else. Core
-deletes its own rows; each module deletes its own on the hook core calls for that kind of delete,
-on the delete's connection, inside its save. A list of the tables a delete has to clear goes stale
-the day a table is added (the hand list this test replaced already had), so the tables are read
-from the schema `run_migrations` builds, and a table the filler cannot fill fails the test by name
-rather than drop out of it.
+A season, division, round or driver deleted takes everything that refers to it, and nothing else;
+a driver merged into another leaves nothing naming the driver absorbed, the driver kept holding
+all of it. Core deletes or re-points its own rows; each module does its own on the hook core calls
+for that kind of delete, on the delete's connection, inside its save. A list of the tables a
+delete has to clear goes stale the day a table is added (the hand list this test replaced already
+had), so the tables are read from the schema `run_migrations` builds, and a table the filler
+cannot fill fails the test by name rather than drop out of it.
 
 **Two of everything.** Every table gets a row under each of two seasons: the first is the one
 deleted from, in setup, the second a completed season beside it. A table no season reaches (a
@@ -20,6 +21,11 @@ deleted with it, and so is what refers to that, to the end of the chain; a key t
 column to NULL instead lets go of the row rather than going with it. The test works out from the
 schema which rows those are, and asserts that the delete leaves every other row exactly as it was
 and none of those.
+
+**A driver deleted lets go of some of what names them.** Their seat stays, empty; their results
+and standings stay, naming them by account still (`LET_GO_OF_A_DRIVER`); and their history stays
+where test mode keeps it, as its key lets go of the driver, and goes with them where it is not
+kept.
 
 **A placed driver is not filled in.** A division whose driver is placed in a seat is not deleted,
 by decision (`test_a_division_with_a_driver_placed_in_it_is_not_deleted`), so the placement's seat
@@ -35,8 +41,23 @@ from typing import Any
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.driver_service import DriverService
+from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 from leaguebot.core.services.season_service import SeasonService
-from tests.support.delete_hooks import DIVISION_HOOKS, ROUND_HOOKS, SEASON_HOOKS, delete_hooks
+from tests.support.delete_hooks import (
+    DIVISION_HOOKS,
+    DRIVER_HOOKS,
+    MERGE_HOOKS,
+    ROUND_HOOKS,
+    SEASON_HOOKS,
+    delete_hooks,
+)
+
+#: Why a delete or a merge that deletes a driver fails until the driver's hooks are handed.
+NO_DRIVER_HOOKS = (
+    "#283: the builder makes no profiles_deleted or profiles_merged hook, and a driver's delete "
+    "and merge take none"
+)
 
 #: A column with no foreign key that names a core row all the same, by what it is called.
 REFERENCE_BY_NAME = {
@@ -54,11 +75,25 @@ OVERRIDES: dict[str, dict[str, tuple[Any, Any]]] = {
     "seasons": {"status": ("SETUP", "COMPLETED"), "stage": ("PLACEMENTS", "COMPLETED")},
     # A placed driver stops a division's delete, by decision: the seat is left empty.
     "driver_season_assignments": {"team_seat_id": (None, None)},
+    # A driver in a state the bot knows, holding no seat or signup, so that the two may merge.
+    "driver_profiles": {"current_state": ("NOT_SIGNED_UP", "NOT_SIGNED_UP")},
 }
 
 #: A column naming a core row that is kept when the row is deleted: the audit keeps its record of
 #: what was done to a division, the division deleted included.
 KEPT_REFERENCES = {("audit_entries", "division_id")}
+
+#: What a driver deleted lets go of rather than takes: the seat they sat in, and the results and
+#: standings that name them by account still.
+LET_GO_OF_A_DRIVER = {
+    ("team_seats", "driver_profile_id"),
+    ("race_session_results", "driver_profile_id"),
+    ("qualifying_session_results", "driver_profile_id"),
+    ("driver_standings_snapshots", "driver_profile_id"),
+}
+
+#: A driver's history: let go of where it is kept, and deleted with them where it is not.
+HISTORY = ("driver_history_entries", "driver_profile_id")
 
 _IN_LIST = r"\b{column}\b[^,]*?\bIN\s*\(\s*('(?:[^']*)'|-?\d+)"
 
@@ -209,6 +244,48 @@ def _under(
         gone |= more
 
 
+def _as_deleted(
+    links: dict[str, list], *, let_go: Iterable[tuple[str, str]] = (),
+    taken: Iterable[tuple[str, str]] = (),
+) -> dict[str, list]:
+    """*links*, the columns *let_go* letting go of the row deleted as a key setting them to NULL
+    would, and those *taken* going with it."""
+    let_go, taken = set(let_go), set(taken)
+    return {
+        table: [
+            (column, parent, to,
+             "SET NULL" if (table, column) in let_go
+             else "NO ACTION" if (table, column) in taken else on_delete)
+            for column, parent, to, on_delete in table_links
+        ]
+        for table, table_links in links.items()
+    }
+
+
+def _left(
+    rows: dict[str, list[dict[str, Any]]], links: dict[str, list], gone: set[tuple[str, int]]
+) -> dict[str, list[dict[str, Any]]]:
+    """The rows a delete leaves: every row not *gone*, a column that lets go of a row gone
+    emptied."""
+    values = {
+        (t, column, value)
+        for t, i in gone for column, value in rows[t][i].items() if value is not None
+    }
+    return {
+        table: [
+            {
+                column: None if any(
+                    named == column and on_delete == "SET NULL" and (parent, to, value) in values
+                    for named, parent, to, on_delete in links[table]
+                ) else value
+                for column, value in row.items()
+            }
+            for i, row in enumerate(table_rows) if (table, i) not in gone
+        ]
+        for table, table_rows in rows.items()
+    }
+
+
 def _sorted(rows: Iterable[dict[str, Any]]) -> list[str]:
     return sorted(repr(sorted(row.items())) for row in rows)
 
@@ -220,26 +297,57 @@ async def _delete(db_path: str, deleted: str, row_id: int) -> None:
             await db.commit()
     elif deleted == "division":
         await SeasonService(db_path).delete_division(row_id, **delete_hooks(*DIVISION_HOOKS))
-    else:
+    elif deleted == "round":
         await SeasonService(db_path).delete_round(row_id, **delete_hooks(*ROUND_HOOKS))
+    else:
+        async with get_connection(db_path) as db:
+            await delete_driver_profiles(
+                db, [row_id], keep_history=deleted == _DRIVER_KEEPING_HISTORY,
+                **delete_hooks(*DRIVER_HOOKS),
+            )
+            await db.commit()
 
 
-_TABLE_OF = {"season": "seasons", "division": "divisions", "round": "rounds"}
+_DRIVER_KEEPING_HISTORY = "driver, history kept"
+_DRIVER_LOSING_HISTORY = "driver, history deleted"
+
+_TABLE_OF = {
+    "season": "seasons", "division": "divisions", "round": "rounds",
+    _DRIVER_KEEPING_HISTORY: "driver_profiles", _DRIVER_LOSING_HISTORY: "driver_profiles",
+}
+
+#: What each delete lets go of rather than takes, and takes where the schema's key would let go.
+_LET_GO = {
+    _DRIVER_KEEPING_HISTORY: {"let_go": {*LET_GO_OF_A_DRIVER, HISTORY}},
+    _DRIVER_LOSING_HISTORY: {"let_go": LET_GO_OF_A_DRIVER, "taken": {HISTORY}},
+}
 
 
-@pytest.mark.parametrize("deleted", ["season", "division", "round"])
+@pytest.mark.parametrize("deleted", [
+    pytest.param("season", marks=pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOKS)),
+    "division",
+    "round",
+    pytest.param(_DRIVER_KEEPING_HISTORY,
+                 marks=pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOKS)),
+    pytest.param(_DRIVER_LOSING_HISTORY,
+                 marks=pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOKS)),
+])
 async def test_every_delete_leaves_no_orphan(tmp_path, deleted):
     """A row in every table under two seasons; the first season's own row of *deleted* (the
-    season itself, in setup; its one division; its one round) is deleted as `/season abort`,
-    `/division delete` and `/round delete` delete it. Nothing referring to it is left, to the end
-    of the chain, and every other row in the database is exactly as it was."""
+    season itself, in setup; its one division; its one round; its driver) is deleted as `/season
+    abort`, `/division delete` and `/round delete` delete it, and as the driver pass deletes a
+    driver (their history deleted) and test mode its drivers (their history kept). Nothing
+    referring to it is left, to the end of the chain, but for what the delete lets go of, which
+    stays, no longer naming it; and every other row in the database is exactly as it was."""
     db_path = os.path.join(str(tmp_path), "every_table.db")
     await run_migrations(db_path)
     filled = await _fill(db_path)
     rows, links = await _snapshot(db_path)
+    links = _as_deleted(links, **_LET_GO.get(deleted, {}))
     target = _TABLE_OF[deleted]
     gone = _under(rows, links, target, filled[target][0]["id"])
     assert len({t for t, _i in gone}) > 1  # the seed is real: something refers to it
+    expected = _left(rows, links, gone)
 
     await _delete(db_path, deleted, filled[target][0]["id"])
 
@@ -247,8 +355,66 @@ async def test_every_delete_leaves_no_orphan(tmp_path, deleted):
     left = {
         table: _sorted(after[table])
         for table in rows
-        if _sorted(after[table]) != _sorted(
-            row for i, row in enumerate(rows[table]) if (table, i) not in gone
-        )
+        if _sorted(after[table]) != _sorted(expected[table])
     }
     assert left == {}, f"tables not as the delete should leave them: {sorted(left)}"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOKS)
+async def test_a_merge_leaves_nothing_naming_the_driver_absorbed(tmp_path):
+    """A row in every table under two seasons, each season's rows naming its own driver. The
+    first season's driver is given the second's account, as `/driver reassign` gives it, which
+    merges the two: the second driver is absorbed into the first. Every row that named the driver
+    absorbed names the driver kept, the absorbed driver is gone, the kept driver's current account
+    is the one given, and the audit holds the merge and the reassign; every other row in the
+    database is exactly as it was."""
+    db_path = os.path.join(str(tmp_path), "every_table.db")
+    await run_migrations(db_path)
+    filled = await _fill(db_path)
+    rows, links = await _snapshot(db_path)
+    kept, absorbed = filled["driver_profiles"]
+    naming = {table: [column for column, parent, _to, _d in table_links
+                      if parent == "driver_profiles"] for table, table_links in links.items()}
+    # The seed is real: every table naming a driver has a row naming the one absorbed.
+    assert {
+        table for table, table_rows in rows.items()
+        if any(row[column] == absorbed["id"] for row in table_rows for column in naming[table])
+    } == {table for table, columns in naming.items() if columns}
+    expected = {
+        table: [
+            {column: kept["id"] if column in naming[table] and value == absorbed["id"] else value
+             for column, value in row.items()}
+            for row in table_rows
+        ]
+        for table, table_rows in rows.items()
+    }
+    expected["driver_profiles"] = [
+        {**row, "discord_user_id": absorbed["discord_user_id"]} if row["id"] == kept["id"] else row
+        for row in rows["driver_profiles"] if row["id"] != absorbed["id"]
+    ]
+
+    await DriverService(db_path).reassign_user_id(
+        kept["discord_user_id"], absorbed["discord_user_id"], 77, "Manager",
+        **delete_hooks(*MERGE_HOOKS),
+    )
+
+    after, _ = await _snapshot(db_path)
+    audit = _sorted(after.pop("audit_entries"))
+    assert set(_sorted(rows["audit_entries"])) <= set(audit)
+    assert len(audit) == len(rows["audit_entries"]) + 2
+    assert {row["change_type"] for row in await _audit_since(db_path, len(rows["audit_entries"]))
+            } == {"DRIVER_PROFILES_MERGED", "DRIVER_USER_ID_REASSIGN"}
+    left = {
+        table: _sorted(after[table])
+        for table in after
+        if _sorted(after[table]) != _sorted(expected[table])
+    }
+    assert left == {}, f"tables not as the merge should leave them: {sorted(left)}"
+
+
+async def _audit_since(db_path: str, count: int) -> list[dict[str, Any]]:
+    """The audit's rows after its first *count*, in the order written."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT * FROM audit_entries ORDER BY id LIMIT -1 OFFSET ?",
+                                  (count,))
+        return [dict(row) for row in await cursor.fetchall()]

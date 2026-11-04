@@ -21,6 +21,13 @@ from leaguebot.core.services.test_roster_service import (
     list_test_drivers,
     remove_test_driver,
 )
+from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
+
+#: Why each test marked with it fails until the driver hooks are handed.
+NO_DRIVER_HOOK = (
+    "#283: the builder makes no profiles_deleted hook to hand a driver's delete, and the "
+    "delete takes none"
+)
 
 SERVER_ID = 7373
 DIVISION = "Division 1"
@@ -175,10 +182,13 @@ class TestTheRosterListCarriesIt:
 
         assert drivers[0]["nationality"] is None
 
+    @pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
     async def test_a_removed_driver_takes_its_nationality_with_it(self, db_path):
         result = await _add(db_path, nationality="Dutch")
 
-        await remove_test_driver(result["discord_user_id"], db_path)
+        await remove_test_driver(
+            result["discord_user_id"], db_path, **delete_hooks(*DRIVER_HOOKS)
+        )
 
         assert await list_test_drivers(DIVISION, db_path) == []
 
@@ -258,6 +268,7 @@ class TestTheNameIsChecked:
 class TestRemovingOneDriver:
     """`roster remove` deletes by the route `roster clear` and switching test mode off take."""
 
+    @pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
     async def test_a_driver_holding_attendance_and_standings_rows_is_deleted(self, db_path):
         """The command is refused outside Placements, before any round has run, so only a fake
         driver outliving a season whose switch-off failed holds either. The deletion `remove`
@@ -285,7 +296,7 @@ class TestRemovingOneDriver:
             )
             await db.commit()
 
-        removed = await remove_test_driver(uid, db_path)
+        removed = await remove_test_driver(uid, db_path, **delete_hooks(*DRIVER_HOOKS))
 
         assert removed == {"display_name": "Mock Alpha", "team_name": "Redline"}
         async with get_connection(db_path) as db:
@@ -298,6 +309,7 @@ class TestRemovingOneDriver:
             )
             assert [tuple(r) for r in await cursor.fetchall()] == [(uid, None)]
 
+    @pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
     async def test_their_history_is_kept_by_identifier(self, db_path):
         """As switching test mode off keeps it: a driver created again under the same
         identifier holds it as their own (#220)."""
@@ -311,7 +323,9 @@ class TestRemovingOneDriver:
             )
             await db.commit()
 
-        await remove_test_driver(result["discord_user_id"], db_path)
+        await remove_test_driver(
+            result["discord_user_id"], db_path, **delete_hooks(*DRIVER_HOOKS)
+        )
 
         async with get_connection(db_path) as db:
             cursor = await db.execute(
