@@ -1604,6 +1604,110 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
     assert await _status(league) == "COMPLETED"
 
 
+# ── The window's close returns its drivers in one save (#283, S8e) ──────────────────
+
+#: Why the close's drivers are not yet returned in one save.
+ONE_SAVE = "#283: a season's end returns each driver still signing up in a save of their own"
+
+#: A driver still filling in the wizard alongside `SIGNING_UP`, read after them.
+SIGNING_UP_TOO = SIGNING_UP + 1
+
+
+async def _refuse_returning(league: Any, user_id: int) -> None:
+    """The database refuses to return driver *user_id* to Not Signed Up, as a disk that fails part
+    of the way through a close would: any save that tries it is undone."""
+    await league.write(
+        "CREATE TRIGGER refuse_return BEFORE UPDATE OF current_state ON driver_profiles "
+        "WHEN NEW.current_state = 'NOT_SIGNED_UP' AND OLD.discord_user_id = '"
+        + str(user_id) + "' BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=ONE_SAVE)
+async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or_none(tmp_path):
+    """The signup window open with drivers 105 and 106 still filling in the wizard, and the
+    completion queued. Returning 106 fails: the close stops with neither driver returned, both
+    still signing up, nobody told and the window open. Once the database takes it, a Retry returns
+    both, each is told once and has their channel closed, the window is closed and the season is
+    completed."""
+    league = await pending_completion_league(tmp_path, signups_open=True)
+    await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
+    await signing_up(league, SIGNING_UP_TOO, state="PENDING_SIGNUP_COMPLETION")
+    await _refuse_returning(league, SIGNING_UP_TOO)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) == ("close_window", None)
+    assert await driver_state(league, SIGNING_UP) == "PENDING_SIGNUP_COMPLETION"
+    assert await driver_state(league, SIGNING_UP_TOO) == "PENDING_SIGNUP_COMPLETION"
+    assert league.notices == [] and league.locked == []
+    assert await window_open(league)
+
+    await league.write("DROP TRIGGER refuse_return")
+    await retry_job(league.bot)
+
+    assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
+    assert await driver_state(league, SIGNING_UP_TOO) == "NOT_SIGNED_UP"
+    assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED), (SIGNING_UP_TOO, SIGNUPS_CLOSED)]
+    assert league.locked == [SIGNING_UP, SIGNING_UP_TOO]
+    assert not await window_open(league)
+    assert await _status(league) == "COMPLETED"
+
+
+async def _ending(league: Any, end: str) -> None:
+    """Ask for *end* of the season: `/season complete`, `/season cancel`, `/season abort`, or the
+    wind-down the bot asks once every division is done."""
+    from leaguebot.core.models.change import ChangeOrigin
+    from tests.support.season_league import WIND_DOWN_KIND, abort_season, cancel_season
+
+    if end == "completion":
+        await _asked(league)
+    elif end == "cancellation":
+        await cancel_season(league)
+    elif end == "abort":
+        await abort_season(league)
+    else:
+        await league.bot.change_queue.ask(
+            WIND_DOWN_KIND, {}, origin=ChangeOrigin.BOT, what="Winding the season down",
+        )
+
+
+@pytest.mark.parametrize(("end", "named"), [
+    ("completion", "closing the signup window as season 3 ends"),
+    ("cancellation", "closing the signup window as season 3 ends"),
+    ("abort", "closing the signup window as the season being set up is aborted"),
+    ("wind-down", "winding the season down"),
+], ids=["completion", "cancellation", "abort", "wind-down"])
+async def test_a_season_s_close_that_fails_is_named_in_the_stop_notice_as_today(
+    tmp_path, end, named,
+):
+    """The signup window open with driver 105 still filling in the wizard, and the season's
+    completion, cancellation, abort or wind-down asked. Returning 105 fails: the queue stops, and
+    its stop notice names the job that closes the window in the words it uses today."""
+    from tests.support.season_league import ongoing_league, setup_league
+
+    if end == "abort":
+        league = await setup_league(tmp_path, signups_open=True)
+    elif end == "cancellation":
+        league = await ongoing_league(tmp_path, signups_open=True)
+    elif end == "wind-down":
+        league = await pending_completion_league(
+            tmp_path, stage="ONGOING_SIGNUPS", signups_open=True
+        )
+    else:
+        league = await pending_completion_league(tmp_path, signups_open=True)
+    await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
+    await _refuse_returning(league, SIGNING_UP)
+    await _ending(league, end)
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is not None
+    stops = [line for line in _log_lines(league) if line.startswith("❌ The queue is stopped at")]
+    assert len(stops) == 1 and f": {named} for " in stops[0], stops
+
+
 # ── A signup's end, marked in the save that ends it (amendment K2) ───────────────────
 
 #: How a driver returned and left untold would be named, in the reply and the line: never for a

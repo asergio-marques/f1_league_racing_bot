@@ -158,8 +158,6 @@ _SEASON_END_PARTS = (
      "season_end_refusal", "results' refusal of a season's end"),
     ("drivers_returned", "leaguebot.signup.services.closing_steps", "drivers_returned_on",
      "signup's wizards ended"),
-    ("season_end_untold", "leaguebot.signup.services.closing_steps", "take_untold_on",
-     "signup's untold accounts"),
     ("test_mode_flushed", "leaguebot.weather.services.forecast_cleanup_service",
      "forecast_deletes", "weather's forecast deletions"),
     ("drivers_deleted", "leaguebot.image.services.driver_portrait_service", "discard_portraits",
@@ -173,6 +171,7 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: core closes signup's window itself at a season's end")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -190,9 +189,9 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     the names the amendment gives them today; and the words an outcome gives a step that was not
     done, weather's for a forecast. A season's end: what stands in its way, results' refusal while
     a round is being amended; the drivers it returns, signup's ending of their wizards in the save,
-    and the jobs signup plans for a driver returned; the accounts a discarded close left untold,
-    signup's; the steps each module defines for it, signup's notice and close, then weather's
-    deletion of a forecast; the jobs that clear what test mode posted, weather's; and the drivers
+    and the jobs signup plans for a driver returned; the jobs that close what a module holds open,
+    signup's close of its window; the steps each module defines for it, signup's notice and close, its
+    window's close, the Sign Up button's deletion and the closed post, then weather's deletion of a forecast; the jobs that clear what test mode posted, weather's; and the drivers
     deleted, image's discard of their portraits."""
     import importlib
 
@@ -280,9 +279,14 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     called.clear()
     bot.driver_returned_jobs.call({"user_id": "1", "state": "PENDING_ADMIN_APPROVAL"}, notice="")
     assert called == ["signup's jobs"]
+    assert [
+        [job.name for job in jobs] for jobs in bot.season_end_closes.call(cause="season end")
+    ] == [["close_window"]]
     assert [sorted(steps) for steps in bot.season_end_steps.call(line_prefix=None)] == [
-        ["close_signup", "signup_notice"], ["delete_forecast"]
+        ["close_signup", "close_window", "delete_button", "post_closed", "signup_notice"],
+        ["delete_forecast"],
     ]
+    assert not hasattr(bot, "season_end_untold")
 
 
 #: The windows the league configures in the pair test: attendance's three lead times, and
