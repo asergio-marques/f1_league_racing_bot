@@ -1156,22 +1156,23 @@ async def test_the_wind_down_is_asked_only_where_the_round_finished_its_division
 async def test_a_wind_down_that_stops_stops_at_its_own_job_and_the_cancellation_reports_success(
     tmp_path,
 ):
-    from leaguebot.core.services import season_lifecycle_service
-
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE seasons SET stage = 'ONGOING_PLACEMENTS' WHERE id = ?", SEASON_ID)
     for number in (2, 4):
         await _set_status(league, "FINAL", round_id(PRO, number))
     await league.write("UPDATE rounds SET status = 'FINAL' WHERE division_id = ?", AM)
     await league.write("UPDATE divisions SET status = 'FINISHED' WHERE id = ?", AM)
+    # The database refuses to move the season on to Pending completion.
+    await league.write(
+        "CREATE TRIGGER refuse_wind_down BEFORE UPDATE OF stage ON seasons "
+        "WHEN NEW.stage = 'PENDING_COMPLETION' BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+    )
     interaction = await _asked(league)
 
-    with patch.object(season_lifecycle_service, "close_window_for_wind_down",
-                      AsyncMock(side_effect=RuntimeError("the signup window would not close"))):
-        await run_queue(league.bot)
+    await run_queue(league.bot)
 
     stopped = await stopped_job(league.db_path)
-    assert stopped is not None and stopped["name"] == "wind_down"
+    assert stopped is not None and stopped["name"] == "turn_down"
     assert stopped["change_id"] != (await _change(league))["id"]
     assert (await _change(league))["state"] == "DONE"
     assert CANCELLED in reply(interaction)

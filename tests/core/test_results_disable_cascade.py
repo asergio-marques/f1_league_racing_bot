@@ -335,13 +335,9 @@ async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
     queue at the wind-down's own job: the wind-down is a change of its own, asked for in the
     switch-off's save, so the stop names it and the switch-off's line carries no "not done"
     (#439)."""
-    from leaguebot.core.services import hub_service, season_lifecycle_service
+    from leaguebot.core.services import hub_service
 
     monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(return_value=None))
-    monkeypatch.setattr(
-        season_lifecycle_service, "close_window_for_wind_down",
-        AsyncMock(side_effect=RuntimeError("the scheduler is down")),
-    )
     db_path = await _make_db(tmp_path, attendance_enabled=False, season_status="ACTIVE")
     async with get_connection(db_path) as db:
         # Placements still open, so the season has the wind-down's work left to do.
@@ -351,6 +347,11 @@ async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
             "INSERT INTO rounds (division_id, round_number, track_name, scheduled_at, format, "
             "status) VALUES (1, 1, 'Bahrain', '2026-01-01T12:00:00', 'NORMAL', "
             "'AWAITING_RESULTS')"
+        )
+        # The database refuses to move the season on to Pending completion.
+        await db.execute(
+            "CREATE TRIGGER refuse_wind_down BEFORE UPDATE OF stage ON seasons "
+            "WHEN NEW.stage = 'PENDING_COMPLETION' BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
         )
         await db.commit()
     cog = await _make_cog(db_path, attendance_enabled=False, queued=True)
@@ -368,10 +369,10 @@ async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
     assert first.startswith(f"Admin (`<@{ACTOR_ID}>`) | /module disable results")
     assert not any(text.startswith("  not done:") for text in beneath)
     [stop] = [line for line in lines if line.startswith(STOPPED_AT)]
-    assert "winding the season down" in stop
+    assert "turning the pending placements down and moving the season on" in stop
     assert "`/module disable results`" in stop
     assert f"Admin (`<@{ACTOR_ID}>`)" in stop
-    assert "failed (the bot hit an internal fault)." in stop
+    assert "failed (the bot could not read or write its database)." in stop
 
 
 # ---------------------------------------------------------------------------
