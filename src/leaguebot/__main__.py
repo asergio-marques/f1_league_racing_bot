@@ -149,10 +149,7 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     from leaguebot.core.models.change import PlannedStep
     from leaguebot.core.services import backup_service
     from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
-    from leaguebot.image.services import driver_portrait_service
     from leaguebot.signup.services.closing_steps import window_close_jobs, window_close_steps
-    from leaguebot.weather.services import forecast_cleanup_service
-    from leaguebot.weather.services.forecast_changes import forecast_steps
 
     async def close_signups(bot_: LeagueBot, cause: str):
         return await close_signups_unattended(
@@ -169,12 +166,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
             return False
         config = await bot.signup_module_service.get_config()
         return config is not None and config.signups_open
-
-    async def discard_portraits(accounts):
-        return await driver_portrait_service.discard_portraits(bot, accounts)
-
-    async def plan_forecast_flush() -> "tuple[PlannedStep, ...]":
-        return await forecast_cleanup_service.forecast_deletes(bot.db_path)
 
     def discard_backup() -> object:
         return backup_service.discard(
@@ -206,9 +197,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
         window_open=window_open,
         # Read when it runs: a test replaces the scheduler's method after registering.
         cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
-        discard_portraits=discard_portraits,
-        plan_forecast_flush=plan_forecast_flush,
-        forecast_steps=forecast_steps(now=lambda: bot.change_queue.now()),
         discard_backup=discard_backup,
         forget_setup=lambda: _forget_setup(bot),
         owed_closing_notices=owed_closing_notices,
@@ -297,9 +285,13 @@ def _sign_up_to_season_end(bot: LeagueBot) -> None:
     core calls them: what stands in the way of the completion and of the cancellation (results'
     refusal of a season with a round being amended); inside its saves, signup's ending of the
     wizards of the drivers returned and its accounts left untold; the jobs planned for each driver
-    returned (signup's); and the steps the modules define for it (signup's notice and close)."""
+    returned (signup's); the steps the modules define for it (signup's notice and close, then
+    weather's deletion of a forecast); the jobs that clear what test mode posted (weather's); and
+    the drivers deleted (image's discard of their portraits)."""
+    from leaguebot.image.services import driver_portrait_service
     from leaguebot.results.services import result_submission_service
     from leaguebot.signup.services import closing_steps
+    from leaguebot.weather.services import forecast_changes, forecast_cleanup_service
 
     bot.season_end_refused = AwaitedHook()
     bot.season_end_refused.subscribe(result_submission_service.season_end_refusal)
@@ -319,6 +311,13 @@ def _sign_up_to_season_end(bot: LeagueBot) -> None:
         wizard_service=lambda: bot.wizard_service,
         scheduler_service=lambda: bot.scheduler_service,
     ))
+    bot.season_end_steps.subscribe(partial(
+        forecast_changes.season_end_steps, now=lambda: bot.change_queue.now()
+    ))
+    bot.test_mode_flushed = AwaitedHook()
+    bot.test_mode_flushed.subscribe(partial(forecast_cleanup_service.forecast_deletes, bot.db_path))
+    bot.drivers_deleted = AwaitedHook()
+    bot.drivers_deleted.subscribe(partial(driver_portrait_service.discard_portraits, bot))
 
 
 async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "Path":
@@ -817,6 +816,8 @@ def register_change_types(bot: LeagueBot) -> None:
             season_end_untold=bot.season_end_untold,
             driver_returned_jobs=bot.driver_returned_jobs,
             season_end_steps=bot.season_end_steps,
+            test_mode_flushed=bot.test_mode_flushed,
+            drivers_deleted=bot.drivers_deleted,
             hooks=hooks,
         )
     )
@@ -834,6 +835,8 @@ def register_change_types(bot: LeagueBot) -> None:
             season_end_untold=bot.season_end_untold,
             driver_returned_jobs=bot.driver_returned_jobs,
             season_end_steps=bot.season_end_steps,
+            test_mode_flushed=bot.test_mode_flushed,
+            drivers_deleted=bot.drivers_deleted,
             hooks=hooks,
             now=lambda: bot.change_queue.now(),
         )
@@ -846,6 +849,8 @@ def register_change_types(bot: LeagueBot) -> None:
             season_end_untold=bot.season_end_untold,
             driver_returned_jobs=bot.driver_returned_jobs,
             season_end_steps=bot.season_end_steps,
+            test_mode_flushed=bot.test_mode_flushed,
+            drivers_deleted=bot.drivers_deleted,
             hooks=hooks,
         )
     )

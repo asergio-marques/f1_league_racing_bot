@@ -1345,6 +1345,8 @@ def season_cancel_change(
     season_end_untold: AwaitedHook,
     driver_returned_jobs: Hook,
     season_end_steps: Hook,
+    test_mode_flushed: AwaitedHook,
+    drivers_deleted: AwaitedHook,
     hooks: SeasonEndHooks,
     now: Callable[[], datetime],
 ) -> ChangeType:
@@ -1354,7 +1356,8 @@ def season_cancel_change(
     *seasons* service, the *scheduler*, the *placement* service (which takes back roles), the hooks
     the modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_steps*,
     *season_end_refused*, *drivers_returned*, *season_end_untold*, *driver_returned_jobs*,
-    *season_end_steps*), the season end's *hooks* and the queue's clock *now*.
+    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the season end's *hooks* and the
+    queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1658,7 +1661,10 @@ def season_cancel_change(
         **_follow_steps(
             modules=modules, seasons=seasons, scope=notices.SCOPE_SEASON,
         ),
-        **shared_steps(placement, hooks, season_end_steps=season_end_steps),
+        **shared_steps(
+            placement, hooks, season_end_steps=season_end_steps,
+            test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
+        ),
         **_steps_of_the_modules(cancellation_steps),
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,

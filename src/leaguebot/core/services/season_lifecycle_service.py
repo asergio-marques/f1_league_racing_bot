@@ -272,10 +272,6 @@ class SeasonEndHooks:
       the drivers it returned; None where there was no window to close.
     - *window_open*: signup on and its window open.
     - *cancel_close_timer*: removes the signup close timer.
-    - *discard_portraits*: removes the portraits obtained for the accounts of drivers deleted.
-    - *plan_forecast_flush*: the jobs that delete each forecast posted under test mode, one for
-      each, which the season end's `flush_forecasts` plans; *forecast_steps* are weather's jobs
-      (among them the deletion of a forecast, which those jobs name).
     - *discard_backup*: deletes the saved test-mode state, raising where it cannot.
     - *forget_setup*: lets go of the setup the season cog holds in memory.
     - *owed_closing_notices*: the accounts the window's close returned and owes their closing
@@ -286,15 +282,12 @@ class SeasonEndHooks:
       returned its drivers (the Sign Up button's deletion, the "Signups are now closed" post whose
       record closes the window), given the close's cause and the number of drivers it returned.
     - *window_steps*: signup's two jobs those are, `delete_button` and `post_closed`, for the
-      change's `steps` (as *forecast_steps* are weather's).
+      change's `steps`.
     """
 
     close_signups: Callable[[LeagueBot, str], Awaitable[WindowClosed | None]]
     window_open: Callable[[], Awaitable[bool]]
     cancel_close_timer: Callable[[], None]
-    discard_portraits: Callable[[Sequence[str]], Awaitable[object]]
-    plan_forecast_flush: Callable[[], Awaitable[tuple[PlannedStep, ...]]]
-    forecast_steps: Mapping[str, Step]
     discard_backup: Callable[[], object]
     forget_setup: Callable[[], None]
     owed_closing_notices: Callable[[], Awaitable[list[str]]]

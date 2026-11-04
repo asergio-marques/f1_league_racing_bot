@@ -535,6 +535,8 @@ def season_complete_change(
     season_end_untold: AwaitedHook,
     driver_returned_jobs: Hook,
     season_end_steps: Hook,
+    test_mode_flushed: AwaitedHook,
+    drivers_deleted: AwaitedHook,
     hooks: SeasonEndHooks,
 ) -> ChangeType:
     """The change that completes the confirmed season; see the module.
@@ -543,7 +545,8 @@ def season_complete_change(
     service (the season the check reads), the *scheduler* (whose season-end job `settle` removes),
     the *placement* service (which takes back roles), the hooks the modules sign up to
     (*season_end_refused*, *drivers_returned*, *season_end_untold*, *driver_returned_jobs*,
-    *season_end_steps*) and the season end's *hooks* (what other modules and the cog do for it).
+    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*) and the season end's *hooks* (what
+    the signup window's close needs of signup).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -837,7 +840,10 @@ def season_complete_change(
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
         **winding,
         TURN_DOWN_STEP: replace(turn_down, run=turn_down_then_settle),
-        **shared_steps(placement, hooks, season_end_steps=season_end_steps),
+        **shared_steps(
+            placement, hooks, season_end_steps=season_end_steps,
+            test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
+        ),
     }
     return ChangeType(
         kind=SEASON_COMPLETE,
@@ -858,6 +864,8 @@ def season_abort_change(
     season_end_untold: AwaitedHook,
     driver_returned_jobs: Hook,
     season_end_steps: Hook,
+    test_mode_flushed: AwaitedHook,
+    drivers_deleted: AwaitedHook,
     hooks: SeasonEndHooks,
 ) -> ChangeType:
     """The change that aborts the season being set up; see the module.
@@ -865,8 +873,8 @@ def season_abort_change(
     The payload is ``{"season_id"}``: a season set up has no number until its placements are
     confirmed. The builder hands in the *seasons* service (the season the check reads), the
     *placement* service (which takes back roles), the hooks the modules sign up to
-    (*drivers_returned*, *season_end_untold*, *driver_returned_jobs*, *season_end_steps*) and the
-    season end's *hooks*.
+    (*drivers_returned*, *season_end_untold*, *driver_returned_jobs*, *season_end_steps*,
+    *test_mode_flushed*, *drivers_deleted*) and the season end's *hooks*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1002,7 +1010,10 @@ def season_abort_change(
             "set up until the bot restarts"
         )
 
-    shared = shared_steps(placement, hooks, season_end_steps=season_end_steps)
+    shared = shared_steps(
+        placement, hooks, season_end_steps=season_end_steps,
+        test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
+    )
     steps: dict[str, Step] = {
         **shared,
         # Only an abort holds a setup the bot must let go of, so the mark is not on the shared step.

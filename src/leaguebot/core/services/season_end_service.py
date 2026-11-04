@@ -41,8 +41,8 @@ log = logging.getLogger(__name__)
 REVOKE_ROLES = "revoke_roles"
 CLOSE_WINDOW = "close_window"
 FLUSH_FORECASTS = "flush_forecasts"
-#: Weather's job that deletes one forecast, which `flush_forecasts` plans for each (the hooks hand
-#: the step, as `SeasonEndHooks.forecast_steps`).
+#: Weather's job that deletes one forecast, which the outcome names where one was left undone
+#: (weather defines the step and plans it for each forecast `flush_forecasts` clears).
 DELETE_FORECAST = "delete_forecast"
 DISCARD_PORTRAITS = "discard_portraits"
 DISCARD_BACKUP = "discard_backup"
@@ -267,7 +267,12 @@ async def season_role_targets_on(db: aiosqlite.Connection, season_id: int) -> li
 
 
 def shared_steps(
-    placement: "PlacementService", hooks: SeasonEndHooks, *, season_end_steps: "Hook"
+    placement: "PlacementService",
+    hooks: SeasonEndHooks,
+    *,
+    season_end_steps: "Hook",
+    test_mode_flushed: "AwaitedHook",
+    drivers_deleted: "AwaitedHook",
 ) -> dict[str, Step]:
     """The jobs the completion, the cancellation and the abort share (#439), each an ACT.
 
@@ -276,9 +281,11 @@ def shared_steps(
     - `close_window`: the signup close timer cancelled and the window closed, where it stands open;
       it plans the window's own jobs (`delete_button`, `post_closed`, which closes the window) and a
       `signup_notice` and a `close_signup` for each driver the close returned.
-    - `flush_forecasts`: plans weather's `delete_forecast` for each forecast posted under test
-      mode, so that each deletion is a job of its own and a refusal stops the queue there.
-    - `discard_portraits`: the portraits of the drivers the driver pass deleted removed.
+    - `flush_forecasts`: plans the jobs the modules signed up to *test_mode_flushed* hand back for
+      what test mode posted (weather's deletion of each forecast), so that each deletion is a job
+      of its own and a refusal stops the queue there.
+    - `discard_portraits`: the portraits of the drivers the driver pass deleted removed, by the
+      modules signed up to *drivers_deleted*.
     - `discard_backup`: the saved test-mode state deleted (a completion's alone).
     - `forget_setup`: the setup held in memory let go of (an abort's alone).
     - the jobs of one driver's Discord side (`close_signup_steps`), among them those the modules
@@ -326,16 +333,16 @@ def shared_steps(
         )
 
     async def flush_forecasts(_ctx: StepContext) -> StepResult:
-        planned = await hooks.plan_forecast_flush()
+        planned = tuple(step for found in await test_mode_flushed.call() for step in found)
         return StepResult(result={"planned": len(planned)}, then=planned)
 
     async def describe_flush(_ctx: StepContext) -> str:
         return "clearing the forecasts posted under test mode"
 
     async def discard_portraits(ctx: StepContext) -> StepResult:
-        removed = await hooks.discard_portraits([str(a) for a in ctx.step_payload["accounts"]])
+        removed = await drivers_deleted.call([str(a) for a in ctx.step_payload["accounts"]])
         # Not "discarded": that is the key a league admin's Discard leaves on a job's result.
-        return StepResult(result={"removed": removed if isinstance(removed, int) else 0})
+        return StepResult(result={"removed": sum(n for n in removed if isinstance(n, int))})
 
     async def describe_portraits(_ctx: StepContext) -> str:
         return "discarding the portraits of the drivers deleted"
@@ -370,7 +377,6 @@ def shared_steps(
             DISCARD_BACKUP, StepKind.ACT, discard_backup, describe=describe_backup
         ),
         FORGET_SETUP: Step(FORGET_SETUP, StepKind.ACT, forget_setup, describe=describe_setup),
-        DELETE_FORECAST: hooks.forecast_steps[DELETE_FORECAST],
         # A forecast posted in parts has `delete_forecast` plan a delete for each earlier part.
         standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
         **close_signup_steps(placement, hooks, season_end_steps=season_end_steps),

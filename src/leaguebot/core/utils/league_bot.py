@@ -121,14 +121,18 @@ class LeagueBot(commands.Bot):
     #: the drivers returned (each module's part on the save's connection) and the accounts a
     #: discarded close left untold (each hands back what it found, on the last save's
     #: connection); the jobs planned for each driver returned (each hands back the steps it plans
-    #: for the driver); and the steps a module defines for it (each hands back its step
-    #: definitions by name). The builder makes them and hands them to the season's end
+    #: for the driver); the steps a module defines for it (each hands back its step definitions
+    #: by name); the jobs that clear what test mode posted (each hands back the steps it plans);
+    #: and the drivers deleted, given their accounts (each hands back how many portraits it
+    #: removed). The builder makes them and hands them to the season's end
     #: (architecture.md, "A hook core declares is a list of subscribers").
     season_end_refused: AwaitedHook
     drivers_returned: AwaitedHook
     season_end_untold: AwaitedHook
     driver_returned_jobs: Hook
     season_end_steps: Hook
+    test_mode_flushed: AwaitedHook
+    drivers_deleted: AwaitedHook
     #: Starts the retry cog's loop. The builder sets it, so that `setup_hook` reaches the loop
     #: without importing the cog, which nothing below the cogs may do.
     start_retry_loop: Callable[[], None]

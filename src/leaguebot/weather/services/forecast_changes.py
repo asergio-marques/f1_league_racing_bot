@@ -856,6 +856,16 @@ async def amendment_clean_ups(
                                             "standing": standing}),)
 
 
+def season_end_steps(
+    *, now: Callable[[], datetime], line_prefix: str | None = None
+) -> dict[str, Step]:
+    """The job weather defines for a season's end, by name: the deletion of a forecast
+    (`DELETE_FORECAST`), which the season end's `flush_forecasts` plans for each forecast posted
+    under test mode. *now* is the queue's clock; *line_prefix* is the closing line some changes
+    write, which a forecast's deletion has no use for. Subscribed to core's `season_end_steps`."""
+    return {DELETE_FORECAST: forecast_steps(now=now)[DELETE_FORECAST]}
+
+
 def amendment_steps(
     *, now: Callable[[], datetime], seasons: SeasonService, modules: ModuleService
 ) -> dict[str, Step]:
