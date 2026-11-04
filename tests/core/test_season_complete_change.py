@@ -1675,7 +1675,9 @@ async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or
     closed, the window is closed and the queue runs on to the end. A Discard instead leaves both
     still signing up, the window open, nobody told, and no line naming anyone as returned but not
     told (decision 64, 'All or nothing'); the reply names the window, alone, as not closed, to be
-    closed with `/signup close`, and so does the closing line (one log line for the wind-down)."""
+    closed with `/signup close`, and so does the closing line. The wind-down, which has neither,
+    writes one "System | Every division is done | Incomplete" line naming the window as not closed
+    (decision 65), as a discarded closed notice of the wind-down does today."""
     league = await _league_ending(tmp_path, end)
     await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
     await signing_up(league, SIGNING_UP_TOO, state="PENDING_SIGNUP_COMPLETION")
@@ -1704,7 +1706,9 @@ async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or
         assert not any(untold in line for line in lines)
         # What was not done is named as today: the window, alone, to be closed by hand.
         if interaction is None:
-            assert len([line for line in league.bot.log_channel.sent if WINDOW_OPEN in line]) == 1
+            assert [line for line in _log_lines(league) if WINDOW_OPEN in line] == [
+                f"System | Every division is done | Incomplete\n  not done: {WINDOW_OPEN}"
+            ]
             return
         assert _not_done(reply(interaction)) == [WINDOW_OPEN]
         command, status = CLOSING_LINE[end]
