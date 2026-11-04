@@ -408,6 +408,20 @@ async def profiles_merged_on(db: aiosqlite.Connection, kept_id: int, absorbed_id
     )
 
 
+async def bot_packed_on(db: aiosqlite.Connection) -> None:
+    """Clear results' rows tied to the server the bot leaves, on *db*, committing nothing: the id
+    of each submission channel's prompt and resubmit prompt, by which they are edited.
+
+    Core hands it the pack's connection, so that results' rows go with the rest of the pack or
+    not at all (architecture.md, "The database"). Only the ids go: a prompt already posted stays
+    where it is, and every result stays with its round.
+    """
+    await db.execute(
+        "UPDATE round_submission_channels "
+        "SET prompt_message_id = NULL, resubmit_prompt_message_id = NULL"
+    )
+
+
 async def _delete_rows(db: aiosqlite.Connection, round_ids: list[int]) -> tuple[int, int]:
     """Delete the result rows of *round_ids* in foreign-key order on *db*, committing nothing.
     Returns (sessions, standings).

@@ -21,9 +21,6 @@ from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID
 from tests.support.pack_hook import pack_hook
 from tests.support.review_prompts import store_review_prompt
 
-#: Why each test marked with it fails until the pack's hook is handed.
-NO_PACK_HOOK = "#283: the builder makes no bot_packed hook to hand a pack, and pack takes none"
-
 SERVER = 4242
 
 #: The member who packs. Nothing but a member's command packs the bot, so it is required.
@@ -282,7 +279,6 @@ async def test_pack_drops_the_league_state_held_in_memory(db_path, monkeypatch):
     assert cleared == [(hook, queue)]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PACK_HOOK)
 async def test_a_fault_after_the_modules_have_cleared_their_rows_changes_nothing(db_path):
     """One transaction, the modules' parts included. A league with one past season and one of
     everything the pack clears; signup, weather, attendance and results have each cleared their

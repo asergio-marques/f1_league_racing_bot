@@ -228,10 +228,6 @@ async def pack(
             await db.execute(
                 "UPDATE divisions SET lineup_message_id = NULL, calendar_message_id = NULL"
             )
-            await db.execute(
-                "UPDATE round_submission_channels "
-                "SET prompt_message_id = NULL, resubmit_prompt_message_id = NULL"
-            )
 
             await db.execute(RELEASE_CLAIM_SQL)
 

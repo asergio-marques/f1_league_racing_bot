@@ -248,6 +248,7 @@ def _sign_up_to_pack(bot: LeagueBot) -> None:
     its own rows tied to the server the bot leaves, on the pack's connection, inside its one
     transaction (architecture.md, "The database"). The builder hands it to `/bot pack`."""
     from leaguebot.attendance.services import attendance_service
+    from leaguebot.results.services import results_purge_service
     from leaguebot.signup.services import signup_module_service
     from leaguebot.weather.services import forecast_cleanup_service
 
@@ -255,6 +256,7 @@ def _sign_up_to_pack(bot: LeagueBot) -> None:
     bot.bot_packed.subscribe(signup_module_service.bot_packed_on)
     bot.bot_packed.subscribe(forecast_cleanup_service.bot_packed_on)
     bot.bot_packed.subscribe(attendance_service.bot_packed_on)
+    bot.bot_packed.subscribe(results_purge_service.bot_packed_on)
 
 
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
