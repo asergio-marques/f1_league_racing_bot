@@ -115,14 +115,17 @@ async def _history(db_path: str, profile_id: int, account: str, division_name: s
 
 
 async def _snapshot(db_path: str) -> dict[str, list[tuple]]:
-    tables = (
-        "driver_profiles", "driver_accounts", "driver_division_memberships",
-        "driver_history_entries", "race_session_results",
-    )
+    """Every row of every table, so that a merge refused or rolled back is seen to change
+    nothing anywhere, the modules' tables included."""
     out: dict[str, list[tuple]] = {}
     async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        )
+        tables = [r["name"] for r in await cursor.fetchall()]
         for table in tables:
-            rows = await (await db.execute(f"SELECT * FROM {table}")).fetchall()
+            rows = await (await db.execute(f"SELECT * FROM '{table}'")).fetchall()
             out[table] = sorted((tuple(r) for r in rows), key=repr)
     return out
 
