@@ -715,6 +715,19 @@ async def profiles_merged_on(db: aiosqlite.Connection, kept_id: int, absorbed_id
     )
 
 
+async def bot_packed_on(db: aiosqlite.Connection) -> None:
+    """Clear attendance's rows tied to the server the bot leaves, on *db*, committing nothing:
+    the record of each RSVP embed posted, by which it is edited, and each division's attendance
+    message id.
+
+    Core hands it the pack's connection, so that attendance's rows go with the rest of the pack
+    or not at all (architecture.md, "The database"). Only the ids go: a message already posted
+    stays where it is, and every driver's attendance stays with its round.
+    """
+    await db.execute("DELETE FROM rsvp_embed_messages")
+    await db.execute("UPDATE attendance_division_config SET attendance_message_id = NULL")
+
+
 # ── Row-to-dataclass helpers ───────────────────────────────────────────────
 
 
