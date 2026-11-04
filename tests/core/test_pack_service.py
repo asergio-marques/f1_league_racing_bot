@@ -296,18 +296,27 @@ async def test_pack_drops_the_league_state_held_in_memory(db_path, monkeypatch):
 @pytest.mark.xfail(strict=True, reason=NO_PACK_HOOK)
 async def test_a_fault_after_the_modules_have_cleared_their_rows_changes_nothing(db_path):
     """One transaction, the modules' parts included. A league with one past season and one of
-    everything the pack clears; every module has cleared its own rows through the bot's hook,
-    on the pack's connection, when a part signed up after them fails. No table is changed, the
-    pack is not recorded, and the scheduled work is left armed."""
+    everything the pack clears; signup, weather, attendance and results have each cleared their
+    own rows through the bot's hook, on the pack's connection (the rows they delete gone, the
+    message and channel ids they clear set to nothing), when a part signed up after them fails.
+    No table is changed, the pack is not recorded, and the scheduled work is left armed."""
     await _seed(db_path)
     hook = pack_hook()
     left_when_it_failed = []
 
     async def fails(db):
-        for table in ("signup_wizard_records", "forecast_messages", "rsvp_embed_messages"):
-            left_when_it_failed.append(
-                (await (await db.execute(f"SELECT COUNT(*) FROM {table}")).fetchone())[0]
-            )
+        for sql in (
+            "SELECT COUNT(*) FROM signup_wizard_records",
+            "SELECT COUNT(*) FROM signup_module_config WHERE signup_channel_id IS NOT NULL"
+            " OR signup_button_message_id IS NOT NULL OR signup_closed_message_id IS NOT NULL",
+            "SELECT COUNT(*) FROM forecast_messages",
+            "SELECT COUNT(*) FROM rsvp_embed_messages",
+            "SELECT COUNT(*) FROM attendance_division_config"
+            " WHERE attendance_message_id IS NOT NULL",
+            "SELECT COUNT(*) FROM round_submission_channels"
+            " WHERE prompt_message_id IS NOT NULL OR resubmit_prompt_message_id IS NOT NULL",
+        ):
+            left_when_it_failed.append((await (await db.execute(sql)).fetchone())[0])
         raise RuntimeError("a module's part failed")
 
     hook.subscribe(fails)
@@ -317,7 +326,7 @@ async def test_a_fault_after_the_modules_have_cleared_their_rows_changes_nothing
     with pytest.raises(RuntimeError, match="a module's part failed"):
         await pack(db_path, scheduler, bot_packed=hook, **ACTOR)
 
-    assert left_when_it_failed == [0, 0, 0]
+    assert left_when_it_failed == [0, 0, 0, 0, 0, 0]
     assert await _tables(db_path) == before
     scheduler.cancel_all.assert_not_called()
 
