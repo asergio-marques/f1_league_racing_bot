@@ -129,6 +129,17 @@ async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> N
     )
 
 
+async def bot_packed_on(db: aiosqlite.Connection) -> None:
+    """Clear weather's rows tied to the server the bot leaves, on *db*, committing nothing: the
+    record of each forecast posted, by which it is edited or deleted.
+
+    Core hands it the pack's connection, so that weather's rows go with the rest of the pack or
+    not at all (architecture.md, "The database"). Only the rows go: a forecast already posted
+    stays where it is, and the drawn phases stay with their rounds.
+    """
+    await db.execute("DELETE FROM forecast_messages")
+
+
 # ---------------------------------------------------------------------------
 # T010 + T013 — the forecasts a clean-up or a flush deletes, as jobs
 # ---------------------------------------------------------------------------

@@ -225,7 +225,6 @@ async def pack(
             )
 
             # The message ids the bot keeps to edit its own posts.
-            await db.execute("DELETE FROM forecast_messages")
             await db.execute("DELETE FROM rsvp_embed_messages")
             await db.execute(
                 "UPDATE divisions SET lineup_message_id = NULL, calendar_message_id = NULL"
