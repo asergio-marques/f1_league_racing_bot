@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
 
 import aiosqlite
@@ -414,21 +413,6 @@ class DriverService:
             return None
         return _row_to_profile(row)
 
-    async def ids_in_states(self, states: Collection[DriverState]) -> list[str]:
-        """The Discord ids of the drivers whose state is one of *states*, in no set order.
-
-        The signup window's close reads the drivers still filling in the wizard through this,
-        since the driver table is core's alone to read.
-        """
-        placeholders = ",".join("?" for _ in states)
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                f"SELECT discord_user_id FROM driver_profiles "
-                f"WHERE current_state IN ({placeholders})",
-                tuple(state.value for state in states),
-            )
-            return [str(row["discord_user_id"]) for row in await cursor.fetchall()]
-
     async def current_account(self, discord_user_id) -> str:
         """The current account of the driver holding *discord_user_id*; see `current_account_of`."""
         async with get_connection(self._db_path) as db:
@@ -466,7 +450,6 @@ class DriverService:
         new_state: DriverState,
         *,
         test_mode_active: bool = False,
-        also_on: Callable[[aiosqlite.Connection], Awaitable[None]] | None = None,
     ) -> DriverProfile | None:
         """Transition a driver to *new_state*.
 
@@ -474,21 +457,11 @@ class DriverService:
         driver without the former-driver flag who reaches NOT_SIGNED_UP is pending deletion,
         and is deleted by the driver pass that ends the season.
 
-        *also_on* is how a caller adds to the transition's save: it is awaited with the
-        transition's own connection after the state is written and before the commit, so the
-        state and whatever it writes are one save, and if it raises both roll back. Core runs it
-        and knows nothing of what it writes. The caller promises that it writes only on the
-        connection handed, commits nothing, and awaits nothing but that connection. A transition
-        that creates a profile saves on a connection of its own, so *also_on* is refused there
-        with ValueError, before anything is written.
-
         Raises ValueError for disallowed transitions.
         """
         profile = await self.get_profile(discord_user_id)
 
         if profile is None:
-            if also_on is not None:
-                raise ValueError("a transition that creates a profile takes no also_on")
             # Absent profile = implicitly NOT_SIGNED_UP (Principle VIII).
             # Allow any transition valid from NOT_SIGNED_UP; create a fresh profile.
             valid = set(ALLOWED_TRANSITIONS.get(DriverState.NOT_SIGNED_UP, set()))
@@ -510,8 +483,6 @@ class DriverService:
                 db, profile.id, profile.current_state, new_state,
                 test_mode_active=test_mode_active,
             )
-            if also_on is not None:
-                await also_on(db)
             await db.commit()
         profile.current_state = new_state
         return profile

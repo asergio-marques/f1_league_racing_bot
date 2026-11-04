@@ -379,7 +379,6 @@ async def test_sign_up_while_a_close_waits_on_the_queue_is_refused_as_closing(tm
         change_queue=league.bot.change_queue,
         module_service=league.bot.module_service,
         signup_module_service=league.bot.signup_module_service,
-        driver_service=league.bot.driver_service,
         cause="timer",
     )
 

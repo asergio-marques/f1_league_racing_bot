@@ -9,7 +9,6 @@ from __future__ import annotations
 from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.change_queue import ChangeQueue
-from leaguebot.core.services.driver_service import DriverService
 from leaguebot.core.services.module_service import ModuleService
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 
@@ -33,7 +32,6 @@ async def close_signups_unattended(
     change_queue: ChangeQueue,
     module_service: ModuleService,
     signup_module_service: SignupModuleService,
-    driver_service: DriverService,
     cause: str,
 ) -> None:
     """Close the signup window where no member ran the close, by asking the change queue's own

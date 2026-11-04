@@ -1001,7 +1001,6 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
             change_queue=bot.change_queue,
             module_service=bot.module_service,
             signup_module_service=bot.signup_module_service,
-            driver_service=bot.driver_service,
             cause="timer",
         )
 
@@ -1316,7 +1315,6 @@ async def _recover_signup_close_timers(bot: LeagueBot) -> None:
             change_queue=bot.change_queue,
             module_service=bot.module_service,
             signup_module_service=bot.signup_module_service,
-            driver_service=bot.driver_service,
             cause="restart",
         )
     else:

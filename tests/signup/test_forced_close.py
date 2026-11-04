@@ -92,7 +92,6 @@ def _services_of(bot) -> dict:
         "change_queue": bot.change_queue,
         "module_service": bot.module_service,
         "signup_module_service": bot.signup_module_service,
-        "driver_service": bot.driver_service,
     }
 
 

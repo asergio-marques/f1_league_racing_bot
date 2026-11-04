@@ -649,7 +649,6 @@ async def test_a_close_that_could_not_record_the_window_closed_names_the_close_t
         change_queue=league.bot.change_queue,
         module_service=league.bot.module_service,
         signup_module_service=league.bot.signup_module_service,
-        driver_service=league.bot.driver_service,
         cause="timer",
     )
     await run_queue(league.bot)
@@ -703,7 +702,6 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
             change_queue=league.bot.change_queue,
             module_service=league.bot.module_service,
             signup_module_service=league.bot.signup_module_service,
-            driver_service=league.bot.driver_service,
             cause=cause,
         )
 
@@ -785,7 +783,6 @@ async def _auto_close(league: SeasonLeague, cause: str) -> None:
         change_queue=league.bot.change_queue,
         module_service=league.bot.module_service,
         signup_module_service=league.bot.signup_module_service,
-        driver_service=league.bot.driver_service,
         cause=cause,
     )
 
