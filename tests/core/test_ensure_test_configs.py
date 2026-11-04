@@ -25,12 +25,6 @@ from leaguebot.core.services.test_roster_service import ensure_test_configs
 from tests.support.season_points import snapshot_points
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
-#: Why each test marked with it fails until the driver hooks are handed.
-NO_DRIVER_HOOK = (
-    "#283: the builder makes no profiles_deleted hook to hand a driver's delete, and the "
-    "delete takes none"
-)
-
 SERVER_ID = 9310
 
 
@@ -194,7 +188,6 @@ async def test_half_points_really_is_the_lesser_ladder(db_path, season_id):
     assert winner(half) < winner(standard)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_leaving_test_mode_keeps_the_seeded_configs(db_path, season_id):
     """Decided 2026-09-04: a mock driver is scaffolding, a points ladder is not.
 

@@ -216,9 +216,10 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
 
 
 def _sign_up_to_deletes(bot: LeagueBot) -> None:
-    """Make the hooks a season, a division or a round deleted declares, and sign each module's
-    part up to them, in the order core calls them: each module deleting its own rows, on the
-    delete's connection, inside its save (architecture.md, "The database")."""
+    """Make the hooks a season, a division, a round or a driver deleted, or a driver merged,
+    declares, and sign each module's part up to them, in the order core calls them: each module
+    deleting or re-pointing its own rows, on the delete's connection, inside its save
+    (architecture.md, "The database")."""
     from leaguebot.attendance.services import attendance_service
     from leaguebot.results.services import results_purge_service
     from leaguebot.signup.services import signup_module_service
@@ -234,6 +235,8 @@ def _sign_up_to_deletes(bot: LeagueBot) -> None:
     bot.season_deleted = AwaitedHook()
     bot.season_deleted.subscribe(results_purge_service.season_deleted_on)
     bot.season_deleted.subscribe(signup_module_service.season_deleted_on)
+    bot.profiles_deleted = AwaitedHook()
+    bot.profiles_merged = AwaitedHook()
 
 
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
@@ -780,6 +783,7 @@ def register_change_types(bot: LeagueBot) -> None:
             season_end_steps=bot.season_end_steps,
             test_mode_flushed=bot.test_mode_flushed,
             drivers_deleted=bot.drivers_deleted,
+            profiles_deleted=bot.profiles_deleted,
         )
     )
     bot.change_queue.register(
@@ -798,6 +802,7 @@ def register_change_types(bot: LeagueBot) -> None:
             season_end_steps=bot.season_end_steps,
             test_mode_flushed=bot.test_mode_flushed,
             drivers_deleted=bot.drivers_deleted,
+            profiles_deleted=bot.profiles_deleted,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -815,6 +820,7 @@ def register_change_types(bot: LeagueBot) -> None:
             rounds_deleted=bot.rounds_deleted,
             divisions_deleted=bot.divisions_deleted,
             season_deleted=bot.season_deleted,
+            profiles_deleted=bot.profiles_deleted,
             forget_setup=lambda: _forget_setup(bot),
         )
     )

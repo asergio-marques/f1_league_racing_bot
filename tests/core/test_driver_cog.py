@@ -113,7 +113,7 @@ def _make_cog(
     bot.driver_service.get_profile = AsyncMock(return_value=profile)
     # The account named as old is taken to be the driver's current one, which it replaces.
     bot.driver_service.reassign_user_id = AsyncMock(
-        side_effect=lambda old, new, *_a: SimpleNamespace(
+        side_effect=lambda old, new, *_a, **_k: SimpleNamespace(
             profile=SimpleNamespace(
                 id=PROFILE_ID,
                 current_state=SimpleNamespace(value="ACTIVE"),

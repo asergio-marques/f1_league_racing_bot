@@ -672,7 +672,9 @@ DRIVER_PASS_STATES: tuple[str, ...] = (
 )
 
 
-async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bool) -> list[str]:
+async def delete_driver_profiles(
+    db, profile_ids: list[int], *, keep_history: bool, profiles_deleted: AwaitedHook
+) -> list[str]:
     """Delete *profile_ids* and everything that holds them, within the caller's transaction.
 
     Every reference to a profile without a cascade has to go, or let go, first: seats are
@@ -701,6 +703,7 @@ async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bo
         ids,
     )
     accounts = [str(r[0]) for r in await cursor.fetchall()]
+    await profiles_deleted.call(db, ids)
     await db.execute(
         f"UPDATE team_seats SET driver_profile_id = NULL WHERE driver_profile_id IN ({placeholders})",
         ids,
@@ -742,7 +745,9 @@ class DriverPass:
     driver_role_id: int | None
 
 
-async def run_driver_pass_on(db: aiosqlite.Connection) -> DriverPass:
+async def run_driver_pass_on(
+    db: aiosqlite.Connection, *, profiles_deleted: AwaitedHook
+) -> DriverPass:
     """The database side of the driver pass that ends a season, on the connection handed.
 
     The pass runs inside the save that records a season's end (completion, cancellation and
@@ -783,7 +788,9 @@ async def run_driver_pass_on(db: aiosqlite.Connection) -> DriverPass:
         "AND former_driver = 0 AND current_state = 'NOT_SIGNED_UP'",
     )
     pending_deletion = [r["id"] for r in await cursor.fetchall()]
-    accounts = await delete_driver_profiles(db, pending_deletion, keep_history=False)
+    accounts = await delete_driver_profiles(
+        db, pending_deletion, keep_history=False, profiles_deleted=profiles_deleted
+    )
     await db.execute(
         "INSERT INTO audit_entries "
         "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "

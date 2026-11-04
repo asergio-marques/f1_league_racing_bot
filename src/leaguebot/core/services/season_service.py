@@ -564,6 +564,7 @@ class SeasonService:
         rounds_deleted: AwaitedHook,
         divisions_deleted: AwaitedHook,
         season_deleted: AwaitedHook,
+        profiles_deleted: AwaitedHook,
     ) -> None:
         """Delete one season and everything under it, on the connection handed to it.
 
@@ -637,7 +638,9 @@ class SeasonService:
                 division_ids,
             )
             test_profile_ids = [r[0] for r in await cursor.fetchall()]
-            await delete_driver_profiles(db, test_profile_ids, keep_history=True)
+            await delete_driver_profiles(
+                db, test_profile_ids, keep_history=True, profiles_deleted=profiles_deleted
+            )
 
             await db.execute(f"DELETE FROM driver_season_assignments WHERE division_id IN ({ph})", division_ids)
 

@@ -8,6 +8,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.driver_profile import DriverProfile, DriverState
+from leaguebot.core.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)
 
@@ -341,7 +342,9 @@ async def _refuse_a_shared_division(
         )
 
 
-async def _merge(db, kept, absorbed, actor_id: int, actor_name: str) -> None:
+async def _merge(
+    db, kept, absorbed, actor_id: int, actor_name: str, *, profiles_merged: AwaitedHook
+) -> None:
     """Fold the *absorbed* profile into the *kept* one, within the caller's transaction.
 
     Every column naming the absorbed driver by profile is moved onto the kept one, its
@@ -349,6 +352,7 @@ async def _merge(db, kept, absorbed, actor_id: int, actor_name: str) -> None:
     profile is deleted. The refusals before this guarantee no two rows collide on a key.
     Nothing naming a driver by account is touched.
     """
+    await profiles_merged.call(db, kept["id"], absorbed["id"])
     for table in _PROFILE_COLUMNS:
         await db.execute(
             f"UPDATE {table} SET driver_profile_id = ? WHERE driver_profile_id = ?",
@@ -543,6 +547,8 @@ class DriverService:
         new_user_id: str,
         actor_id: int,
         actor_name: str,
+        *,
+        profiles_merged: AwaitedHook,
     ) -> ReassignOutcome:
         """Make *new_user_id* the current account of the driver *old_user_id* names.
 
@@ -631,7 +637,7 @@ class DriverService:
                         if owner["current_state"] in _HOLDS_THE_LIVE_SEASON
                         else (driver, owner)
                     )
-                    await _merge(db, kept, absorbed, actor_id, actor_name)
+                    await _merge(db, kept, absorbed, actor_id, actor_name, profiles_merged=profiles_merged)
                     merged_accounts = owner_accounts
                 elif owner is None:
                     await _refuse_a_shared_division(

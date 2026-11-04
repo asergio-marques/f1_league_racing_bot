@@ -155,7 +155,8 @@ class DriverCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         try:
             outcome = await self.bot.driver_service.reassign_user_id(
-                resolved_old_id, new_user_id, actor_id, actor_name
+                resolved_old_id, new_user_id, actor_id, actor_name,
+                profiles_merged=self.bot.profiles_merged,
             )
         except ValueError as exc:
             await refuse(interaction, f"⛔ {exc}", what=describe(interaction))

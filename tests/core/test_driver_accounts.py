@@ -30,12 +30,6 @@ from leaguebot.core.services.driver_service import (
 from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
-#: Why each test marked with it fails until the driver hooks are handed.
-NO_DRIVER_HOOK = (
-    "#283: the builder makes no profiles_deleted hook to hand a driver's delete, and the "
-    "delete takes none"
-)
-
 SERVER_ID = 2430
 A, B, C = "1111", "2222", "3333"
 
@@ -138,7 +132,6 @@ async def test_a_profile_cannot_take_another_drivers_past_account_as_current(tmp
         await _make_current(db_path, second, A)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_deleting_a_profile_frees_every_account_it_held(tmp_path):
     """E3: the driver pass deletes a profile, and its accounts go with it."""
     db_path = await _make_db(tmp_path)
@@ -151,7 +144,6 @@ async def test_deleting_a_profile_frees_every_account_it_held(tmp_path):
     await _profile(db_path, A)  # free again
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_deleting_profiles_returns_every_account_they_held(tmp_path):
     """Read before the cascade takes them: a portrait is keyed by account, and the driver
     pass discards the portraits of every account a deleted driver held (issue #235)."""
@@ -169,7 +161,6 @@ async def test_deleting_profiles_returns_every_account_they_held(tmp_path):
     assert await _listed(db_path) == [(kept, "4444")]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_deleting_no_profile_returns_no_account(tmp_path):
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:

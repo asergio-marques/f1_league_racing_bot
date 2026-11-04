@@ -1333,6 +1333,7 @@ def season_cancel_change(
     season_end_steps: Hook,
     test_mode_flushed: AwaitedHook,
     drivers_deleted: AwaitedHook,
+    profiles_deleted: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that cancels the season being raced; see the module.
@@ -1341,8 +1342,8 @@ def season_cancel_change(
     *seasons* service, the *scheduler*, the *placement* service (which takes back roles), the hooks
     the modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_steps*,
     *season_end_refused*, *season_end_closes*, *drivers_returned*, *driver_returned_jobs*,
-    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*) and the
-    queue's clock *now*.
+    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook each driver deleted calls
+    (*profiles_deleted*) and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1526,10 +1527,10 @@ def season_cancel_change(
 
         test_mode = await test_mode_on(db)
         await write_driver_history_entries_on(db, season_id, number, force_cancelled=True)
-        driver_pass = await run_driver_pass_on(db)
+        driver_pass = await run_driver_pass_on(db, profiles_deleted=profiles_deleted)
         await drivers_returned.call(db, driver_pass.drivers)
         if test_mode:
-            await switch_test_mode_off_on(db)
+            await switch_test_mode_off_on(db, profiles_deleted=profiles_deleted)
         # The season's row is the last thing written (Constitution, the Season Archive). The
         # saved test-mode state is kept: a season cancelled is one abandoned.
         await cancel_season_on(db, season_id)

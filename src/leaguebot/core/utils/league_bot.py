@@ -139,6 +139,12 @@ class LeagueBot(commands.Bot):
     rounds_deleted: AwaitedHook
     divisions_deleted: AwaitedHook
     season_deleted: AwaitedHook
+    #: A driver deleted, given the profile ids, and a driver merged into another, given the kept
+    #: profile's id and the absorbed one's: each module deletes or re-points its own rows on the
+    #: connection of the save that does it. The builder makes them and hands them to the deletes
+    #: and the merge. Image's `drivers_deleted` is another hook, called after the save.
+    profiles_deleted: AwaitedHook
+    profiles_merged: AwaitedHook
     #: Starts the retry cog's loop. The builder sets it, so that `setup_hook` reaches the loop
     #: without importing the cog, which nothing below the cogs may do.
     start_retry_loop: Callable[[], None]

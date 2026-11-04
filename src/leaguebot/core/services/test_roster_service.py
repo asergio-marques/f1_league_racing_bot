@@ -27,6 +27,7 @@ from leaguebot.core.services.team_service import (
     resolve_division_team,
     resolve_team_reference,
 )
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.input_validator import NAME, parse_nationality
 
 log = logging.getLogger(__name__)
@@ -559,6 +560,8 @@ async def list_test_drivers(
 async def clear_test_drivers(
     division_name: str,
     db_path: str,
+    *,
+    profiles_deleted: AwaitedHook,
 ) -> int | str:
     """Remove all fake drivers from *division_name* and return the count removed.
 
@@ -572,12 +575,16 @@ async def clear_test_drivers(
     if division_id is None:
         return f"Division '{division_name}' not found in the active season."
 
-    return await _delete_test_drivers_in_division(division_id, db_path)
+    return await _delete_test_drivers_in_division(
+        division_id, db_path, profiles_deleted=profiles_deleted
+    )
 
 
 async def remove_test_driver(
     discord_user_id: int,
     db_path: str,
+    *,
+    profiles_deleted: AwaitedHook,
 ) -> str | dict:
     """Remove a single fake driver by their synthetic Discord user ID, keeping their history.
 
@@ -612,13 +619,17 @@ async def remove_test_driver(
         display_name: str = row["test_display_name"] or f"Driver {profile_id}"
         team_name: str = row["team_name"] or "(unknown team)"
 
-        await delete_driver_profiles(db, [profile_id], keep_history=True)
+        await delete_driver_profiles(
+            db, [profile_id], keep_history=True, profiles_deleted=profiles_deleted
+        )
         await db.commit()
 
     return {"display_name": display_name, "team_name": team_name}
 
 
-async def clear_all_test_drivers_on(db: aiosqlite.Connection) -> int:
+async def clear_all_test_drivers_on(
+    db: aiosqlite.Connection, *, profiles_deleted: AwaitedHook
+) -> int:
     """Remove every driver created by test mode on the server, keeping their history, on *db*.
 
     Every one of them, seated or not and in whatever season — switching test mode off deletes
@@ -634,22 +645,26 @@ async def clear_all_test_drivers_on(db: aiosqlite.Connection) -> int:
         "SELECT id FROM driver_profiles WHERE is_test_driver = 1",
     )
     profile_ids = [r["id"] for r in await cursor.fetchall()]
-    await delete_driver_profiles(db, profile_ids, keep_history=True)
+    await delete_driver_profiles(
+        db, profile_ids, keep_history=True, profiles_deleted=profiles_deleted
+    )
     return len(profile_ids)
 
 
-async def clear_all_test_drivers(db_path: str) -> int:
+async def clear_all_test_drivers(db_path: str, *, profiles_deleted: AwaitedHook) -> int:
     """:func:`clear_all_test_drivers_on` on a save of its own, for `/test-mode toggle`.
 
     Returns the count removed.
     """
     async with get_connection(db_path) as db:
-        removed = await clear_all_test_drivers_on(db)
+        removed = await clear_all_test_drivers_on(db, profiles_deleted=profiles_deleted)
         await db.commit()
     return removed
 
 
-async def _delete_test_drivers_in_division(division_id: int, db_path: str) -> int:
+async def _delete_test_drivers_in_division(
+    division_id: int, db_path: str, *, profiles_deleted: AwaitedHook
+) -> int:
     """Delete every fake driver seated in *division_id*, keeping their history."""
     from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 
@@ -666,7 +681,9 @@ async def _delete_test_drivers_in_division(division_id: int, db_path: str) -> in
             (division_id,),
         )
         profile_ids = [r["profile_id"] for r in await cursor.fetchall()]
-        await delete_driver_profiles(db, profile_ids, keep_history=True)
+        await delete_driver_profiles(
+            db, profile_ids, keep_history=True, profiles_deleted=profiles_deleted
+        )
         await db.commit()
     return len(profile_ids)
 

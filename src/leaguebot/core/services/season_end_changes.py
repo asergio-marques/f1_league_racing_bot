@@ -503,6 +503,7 @@ def season_complete_change(
     season_end_steps: Hook,
     test_mode_flushed: AwaitedHook,
     drivers_deleted: AwaitedHook,
+    profiles_deleted: AwaitedHook,
 ) -> ChangeType:
     """The change that completes the confirmed season; see the module.
 
@@ -510,7 +511,8 @@ def season_complete_change(
     service (the season the check reads), the *scheduler* (whose season-end job `settle` removes),
     the *placement* service (which takes back roles), the hooks the modules sign up to
     (*season_end_refused*, *season_end_closes*, *drivers_returned*, *driver_returned_jobs*,
-    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*).
+    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*) and the hook each driver deleted
+    calls (*profiles_deleted*).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -619,10 +621,10 @@ def season_complete_change(
 
         test_mode = await test_mode_on(db)
         await write_driver_history_entries_on(db, season_id, number)
-        driver_pass = await run_driver_pass_on(db)
+        driver_pass = await run_driver_pass_on(db, profiles_deleted=profiles_deleted)
         await drivers_returned.call(db, driver_pass.drivers)
         if test_mode:
-            await switch_test_mode_off_on(db)
+            await switch_test_mode_off_on(db, profiles_deleted=profiles_deleted)
         # The archive is the last thing written (Constitution, the Season Archive).
         await complete_season_on(db, season_id)
 
@@ -824,6 +826,7 @@ def season_abort_change(
     rounds_deleted: AwaitedHook,
     divisions_deleted: AwaitedHook,
     season_deleted: AwaitedHook,
+    profiles_deleted: AwaitedHook,
     forget_setup: Callable[[], None],
 ) -> ChangeType:
     """The change that aborts the season being set up; see the module.
@@ -834,8 +837,8 @@ def season_abort_change(
     *placement* service (which takes back roles), the hooks the modules sign up to
     (*season_end_closes*, *drivers_returned*, *driver_returned_jobs*, *season_end_steps*,
     *test_mode_flushed*, *drivers_deleted*), the hooks the season's deletion calls
-    (*rounds_deleted*, *divisions_deleted*, *season_deleted*) and *forget_setup* (lets go of the
-    setup the season cog holds in memory).
+    (*rounds_deleted*, *divisions_deleted*, *season_deleted*), the hook each driver deleted calls
+    (*profiles_deleted*) and *forget_setup* (lets go of the setup the season cog holds in memory).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -872,10 +875,10 @@ def season_abort_change(
             return StepResult(result={"refused": ABORT_ONLY_BEFORE})
 
         test_mode = await test_mode_on(db)
-        driver_pass = await run_driver_pass_on(db)
+        driver_pass = await run_driver_pass_on(db, profiles_deleted=profiles_deleted)
         await drivers_returned.call(db, driver_pass.drivers)
         if test_mode:
-            await switch_test_mode_off_on(db)
+            await switch_test_mode_off_on(db, profiles_deleted=profiles_deleted)
         # The season's deletion is the last thing written. The saved test-mode state is kept: a
         # season aborted is one abandoned.
         await SeasonService.delete_season(
@@ -883,6 +886,7 @@ def season_abort_change(
             rounds_deleted=rounds_deleted,
             divisions_deleted=divisions_deleted,
             season_deleted=season_deleted,
+            profiles_deleted=profiles_deleted,
         )
 
         planned = list(

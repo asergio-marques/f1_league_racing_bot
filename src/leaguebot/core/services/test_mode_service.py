@@ -32,6 +32,7 @@ from leaguebot.core.models.change import (
     FORECAST_CLEAN_UP,
 )
 from leaguebot.core.models.round import ROUND_JOB_PHASES
+from leaguebot.core.utils.hooks import AwaitedHook
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
@@ -229,7 +230,7 @@ async def toggle_test_mode(db_path: str) -> bool:
     return bool(row["test_mode_active"])
 
 
-async def switch_test_mode_off_on(db: aiosqlite.Connection) -> int:
+async def switch_test_mode_off_on(db: aiosqlite.Connection, *, profiles_deleted: AwaitedHook) -> int:
     """Switch test mode off on *db*, committing nothing, deleting every driver it created.
 
     A season's end does it inside the save that records its end, just before the season itself
@@ -246,7 +247,7 @@ async def switch_test_mode_off_on(db: aiosqlite.Connection) -> int:
     row = await cursor.fetchone()
     if row is None or not row["test_mode_active"]:
         return 0
-    removed = await clear_all_test_drivers_on(db)
+    removed = await clear_all_test_drivers_on(db, profiles_deleted=profiles_deleted)
     await db.execute("UPDATE server_configs SET test_mode_active = 0")
     return removed
 

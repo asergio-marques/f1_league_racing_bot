@@ -177,7 +177,9 @@ class TestModeCog(commands.Cog):
                 origin=ChangeOrigin.BOT,
             )
             from leaguebot.core.services.test_roster_service import clear_all_test_drivers
-            removed = await clear_all_test_drivers(self.bot.db_path)
+            removed = await clear_all_test_drivers(
+                self.bot.db_path, profiles_deleted=self.bot.profiles_deleted
+            )
             if removed:
                 log.info(
                     "Test mode disabled: cleared %d fake driver(s)",
@@ -871,6 +873,7 @@ class TestModeCog(commands.Cog):
         result = await remove_test_driver(
             discord_user_id=discord_uid,
             db_path=self.bot.db_path,
+            profiles_deleted=self.bot.profiles_deleted,
         )
 
         if isinstance(result, str):
@@ -984,6 +987,7 @@ class TestModeCog(commands.Cog):
         result = await clear_test_drivers(
             division_name=division,
             db_path=self.bot.db_path,
+            profiles_deleted=self.bot.profiles_deleted,
         )
 
         if isinstance(result, str):

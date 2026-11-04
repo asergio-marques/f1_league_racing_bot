@@ -28,12 +28,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.driver_service import DriverService
 from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
 
-#: Why each test marked with it fails until the driver hooks are handed.
-NO_MERGE_HOOK = (
-    "#283: the builder makes no profiles_merged hook to hand a merge, and reassign_user_id "
-    "takes none"
-)
-
 SERVER_ID = 2437
 A, B, C, D = "6201", "6202", "6203", "6204"
 ACTOR = 77
@@ -93,7 +87,6 @@ async def _refused(db_path: str, old: str, new: str, match: str) -> None:
 # ── What goes through ──────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_new_account_becomes_current_and_the_old_one_is_kept(tmp_path):
     db_path = await _make_db(tmp_path)
     pid = await _profile(db_path, A)
@@ -107,7 +100,6 @@ async def test_a_new_account_becomes_current_and_the_old_one_is_kept(tmp_path):
     assert outcome.switched_back is False
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_driver_is_named_by_a_past_account(tmp_path):
     """E16: the driver moved A → B; naming them by A moves them on to C, replacing B."""
     db_path = await _make_db(tmp_path)
@@ -120,7 +112,6 @@ async def test_a_driver_is_named_by_a_past_account(tmp_path):
     assert outcome.accounts == [A, B, C]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_past_account_may_be_made_current_again(tmp_path):
     """E2: A → B → A. The list stays {A, B}."""
     db_path = await _make_db(tmp_path)
@@ -135,7 +126,6 @@ async def test_a_past_account_may_be_made_current_again(tmp_path):
     assert (await DriverService(db_path).get_profile(A)).id == outcome.profile.id
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_reassign_is_audited_with_the_account_replaced(tmp_path):
     db_path = await _make_db(tmp_path)
     await _profile(db_path, A)
@@ -155,14 +145,12 @@ async def test_a_reassign_is_audited_with_the_account_replaced(tmp_path):
 # ── What is refused ────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_an_account_no_driver_holds_is_refused(tmp_path):
     """E17."""
     db_path = await _make_db(tmp_path)
     await _refused(db_path, A, B, "No driver profile")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_the_current_account_is_refused_as_the_new_one(tmp_path):
     """E15."""
     db_path = await _make_db(tmp_path)
@@ -172,7 +160,6 @@ async def test_the_current_account_is_refused_as_the_new_one(tmp_path):
     await _refused(db_path, A, B, "already this driver's current account")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_another_drivers_past_account_is_refused(tmp_path):
     """E18: C's driver once held D; D belongs to them."""
     db_path = await _make_db(tmp_path)
@@ -183,7 +170,6 @@ async def test_another_drivers_past_account_is_refused(tmp_path):
     await _refused(db_path, A, D, "past account of another driver")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 @pytest.mark.parametrize("test_side", ["driver", "new account"])
 async def test_a_test_mode_driver_on_either_side_is_refused(tmp_path, test_side):
     """E19."""
@@ -200,7 +186,6 @@ async def test_a_test_mode_driver_on_either_side_is_refused(tmp_path, test_side)
     "AWAITING_CORRECTION_PARAMETER",
     "PENDING_DRIVER_CORRECTION",
 ])
-@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_signup_in_progress_on_the_driver_is_refused(tmp_path, state):
     """E20."""
     db_path = await _make_db(tmp_path)
@@ -209,7 +194,6 @@ async def test_a_signup_in_progress_on_the_driver_is_refused(tmp_path, state):
     await _refused(db_path, A, B, "This driver has a signup in progress")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_signup_in_progress_on_the_new_account_is_refused(tmp_path):
     """E20, and E35's first half: the usual case waits for the new account's signup."""
     db_path = await _make_db(tmp_path)
@@ -222,7 +206,6 @@ async def test_a_signup_in_progress_on_the_new_account_is_refused(tmp_path):
 # ── An open review ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MERGE_HOOK)
 async def test_a_reassign_expires_an_open_placements_review(tmp_path):
     """E41: the review names the driver by the account the reassign replaces."""
     from leaguebot.core.services.season_fingerprint_service import take_fingerprint

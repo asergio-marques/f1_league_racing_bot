@@ -26,12 +26,6 @@ from tests.core.test_driver_move import (
 )
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
-#: Why each test marked with it fails until the driver hooks are handed.
-NO_DRIVER_HOOK = (
-    "#283: the builder makes no profiles_deleted hook to hand a driver's delete, and the "
-    "delete takes none"
-)
-
 
 async def _memberships(db_path) -> list[tuple[int, int]]:
     async with get_connection(db_path) as db:
@@ -115,7 +109,6 @@ async def test_a_sacked_driver_keeps_the_history_of_the_divisions_they_raced_in(
     assert await _history(db_path) == ["Pro"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOK)
 async def test_a_driver_deleted_takes_their_memberships_with_them(db_path):
     """The driver pass deletes a driver who never raced; the archive keeps nothing of them."""
     from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles

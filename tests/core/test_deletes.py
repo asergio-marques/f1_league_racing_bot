@@ -53,12 +53,6 @@ from tests.support.delete_hooks import (
     delete_hooks,
 )
 
-#: Why a delete or a merge that deletes a driver fails until the driver's hooks are handed.
-NO_DRIVER_HOOKS = (
-    "#283: the builder makes no profiles_deleted or profiles_merged hook, and a driver's delete "
-    "and merge take none"
-)
-
 #: A column with no foreign key that names a core row all the same, by what it is called.
 REFERENCE_BY_NAME = {
     "season_id": "seasons",
@@ -324,13 +318,11 @@ _LET_GO = {
 
 
 @pytest.mark.parametrize("deleted", [
-    pytest.param("season", marks=pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOKS)),
+    "season",
     "division",
     "round",
-    pytest.param(_DRIVER_KEEPING_HISTORY,
-                 marks=pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOKS)),
-    pytest.param(_DRIVER_LOSING_HISTORY,
-                 marks=pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOKS)),
+    _DRIVER_KEEPING_HISTORY,
+    _DRIVER_LOSING_HISTORY,
 ])
 async def test_every_delete_leaves_no_orphan(tmp_path, deleted):
     """A row in every table under two seasons; the first season's own row of *deleted* (the
@@ -360,7 +352,6 @@ async def test_every_delete_leaves_no_orphan(tmp_path, deleted):
     assert left == {}, f"tables not as the delete should leave them: {sorted(left)}"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DRIVER_HOOKS)
 async def test_a_merge_leaves_nothing_naming_the_driver_absorbed(tmp_path):
     """A row in every table under two seasons, each season's rows naming its own driver. The
     first season's driver is given the second's account, as `/driver reassign` gives it, which
