@@ -610,31 +610,9 @@ class SeasonService:
             await divisions_deleted.call(db, division_ids)
         await season_deleted.call(db, season_id)
 
-        # ── Results module: round-level children ────────────────────────
         if round_ids:
             ph = ",".join("?" * len(round_ids))
-            await db.execute(f"DELETE FROM round_submission_channels WHERE round_id IN ({ph})", round_ids)
-            await db.execute(f"DELETE FROM driver_standings_snapshots WHERE round_id IN ({ph})", round_ids)
-            await db.execute(f"DELETE FROM team_standings_snapshots WHERE round_id IN ({ph})", round_ids)
-            # Race and qualifying results hang from session_results, not a round
-            cursor = await db.execute(
-                f"SELECT id FROM session_results WHERE round_id IN ({ph})", round_ids
-            )
-            session_result_ids = [r[0] for r in await cursor.fetchall()]
-            if session_result_ids:
-                sph = ",".join("?" * len(session_result_ids))
-                await db.execute(f"DELETE FROM race_session_results WHERE session_result_id IN ({sph})", session_result_ids)
-                await db.execute(f"DELETE FROM qualifying_session_results WHERE session_result_id IN ({sph})", session_result_ids)
-            await db.execute(f"DELETE FROM session_results WHERE round_id IN ({ph})", round_ids)
             await db.execute(f"DELETE FROM sessions WHERE round_id IN ({ph})", round_ids)
-
-        # ── Results module: season-level children ───────────────────────
-        await db.execute("DELETE FROM season_modification_fl WHERE season_id = ?", (season_id,))
-        await db.execute("DELETE FROM season_modification_entries WHERE season_id = ?", (season_id,))
-        await db.execute("DELETE FROM season_amendment_state WHERE season_id = ?", (season_id,))
-        await db.execute("DELETE FROM season_points_fl WHERE season_id = ?", (season_id,))
-        await db.execute("DELETE FROM season_points_entries WHERE season_id = ?", (season_id,))
-        await db.execute("DELETE FROM season_points_links WHERE season_id = ?", (season_id,))
 
         # ── Driver/team children ────────────────────────────────────────
         if division_ids:
@@ -659,7 +637,6 @@ class SeasonService:
             await delete_driver_profiles(db, test_profile_ids, keep_history=True)
 
             await db.execute(f"DELETE FROM driver_season_assignments WHERE division_id IN ({ph})", division_ids)
-            await db.execute(f"DELETE FROM division_results_config WHERE division_id IN ({ph})", division_ids)
 
             # team_seats → team_instances → divisions
             cursor = await db.execute(

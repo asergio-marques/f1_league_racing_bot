@@ -1918,7 +1918,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/services/module_service.py", "ModuleService.set_weather_enabled"): (1, PASS["core"]),
     ("core/services/pack_service.py", "pack"): (6, PASS["core"]),
     ("core/services/season_lifecycle_service.py", "delete_driver_profiles"): (2, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.delete_season"): (13, PASS["core"]),
     ("core/services/test_roster_service.py", "_ensure_single_config"): (4, PASS["core"]),
     ("results/services/result_submission_service.py", "recompute_former_drivers_for_round"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "_restore_from_snapshot_on"): (2, PASS["results"]),
@@ -2434,7 +2433,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/season_end_changes.py", "_last_rounds_with_results"): (1, PASS["core"]),
     ("core/services/season_end_service.py", "write_driver_history_entries_on"): (3, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "take_fingerprint"): (21, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.delete_season"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.get_divisions_with_results_config"):
         (1, PASS["core"]),
     ("core/services/test_mode_service.py", "build_review_summary"): (5, PASS["core"]),

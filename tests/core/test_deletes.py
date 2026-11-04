@@ -227,10 +227,6 @@ async def _delete(db_path: str, deleted: str, row_id: int) -> None:
 _TABLE_OF = {"season": "seasons", "division": "divisions", "round": "rounds"}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the deletes take no delete hooks, and the builder makes none to hand them",
-)
 @pytest.mark.parametrize("deleted", ["season", "division", "round"])
 async def test_every_delete_leaves_no_orphan(tmp_path, deleted):
     """A row in every table under two seasons; the first season's own row of *deleted* (the

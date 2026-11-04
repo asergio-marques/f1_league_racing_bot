@@ -312,6 +312,53 @@ async def take_down(bot: LeagueBot, item: dict[str, Any]) -> dict[str, Any]:
     return {"removed": True}
 
 
+async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> None:
+    """Delete results' rows of *round_ids* on *db*, committing nothing: the classifications of the
+    rounds' sessions with every verdict on them, the standings taken after each round, the
+    submission channels' records, an amendment's, a held resubmission's and the banners' records.
+
+    Core hands it the round ids as it deletes the rounds, in the delete's own save, so that the
+    module's rows go with the round or not at all (architecture.md, "The database"). The messages
+    and channels are not taken down here: the rows are all it deletes.
+
+    **Not `erase_season_on`'s erasure**, which keeps a verdict banner's record and a held
+    resubmission with their rounds: here the rounds themselves are going, and nothing is left to
+    hold them.
+    """
+    marks = ", ".join("?" for _ in round_ids)
+    await db.execute(
+        f"DELETE FROM round_amend_channels WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+    await db.execute(
+        f"DELETE FROM resubmission_drafts WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+    await db.execute(
+        f"DELETE FROM verdict_banner_messages WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+    await _delete_rows(db, round_ids)
+
+
+async def divisions_deleted_on(db: aiosqlite.Connection, division_ids: list[int]) -> None:
+    """Delete results' settings of *division_ids* on *db*, committing nothing: each division's
+    results, standings and verdicts channels."""
+    marks = ",".join("?" * len(division_ids))
+    await db.execute(
+        f"DELETE FROM division_results_config WHERE division_id IN ({marks})",  # noqa: S608
+        division_ids,
+    )
+
+
+async def season_deleted_on(db: aiosqlite.Connection, season_id: int) -> None:
+    """Delete results' rows of *season_id* on *db*, committing nothing: the season's own copy of
+    the points configuration, its amendment state and the modifications an amendment holds."""
+    await db.execute("DELETE FROM season_modification_fl WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM season_modification_entries WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM season_amendment_state WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM season_points_fl WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM season_points_entries WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM season_points_links WHERE season_id = ?", (season_id,))
+
+
 async def _delete_rows(db: aiosqlite.Connection, round_ids: list[int]) -> tuple[int, int]:
     """Delete the season's result rows in foreign-key order on *db*, committing nothing.
     Returns (sessions, standings).
