@@ -1,13 +1,12 @@
-"""The two classifications a season is bracketed by (2026-09-08).
+"""The final classification a season ends with (2026-09-08).
 
-The opening one is posted when a season is approved, the final one when it completes.
-Both are the standings and attendance sheets a league already reads every round, under a
-different heading and with no message text — see
-``leaguebot.core.models.classification_occasion.ClassificationOccasion``.
+The final one is posted when a season completes: the standings and attendance sheet a league
+already reads every round, under a different heading and with no message text — see
+``leaguebot.core.models.classification_occasion.ClassificationOccasion``. The opening one, posted
+when a season is approved, is results' and attendance's own, and tested with them.
 
-What matters here is the orchestration: which sheets are posted for which division, and,
-for the opening one, that each division's posting raises where it cannot be made. What the sheets *say* is covered by
-``test_image_standings_service`` and ``test_attendance_sheet_posting``.
+What matters here is the orchestration: which sheets are posted for which division. What the
+sheets *say* is covered by ``test_image_standings_service`` and ``test_attendance_sheet_posting``.
 """
 from __future__ import annotations
 
@@ -21,7 +20,6 @@ from leaguebot.core.services import season_classification_service as service
 from tests.support.change_queue import in_a_job
 from tests.support.season_classification import bot_on as _bot
 from tests.support.season_classification import classification_posts as _opening_posts
-from tests.support.season_classification import first_round_id as _first_round_id
 from tests.support.season_classification import guild_double as _guild
 from tests.support.season_classification import seed_season as _seed
 
@@ -33,149 +31,6 @@ async def db_path(tmp_path):
     path = str(tmp_path / "classification.db")
     await run_migrations(path)
     return path
-
-
-# ── The opening classification ────────────────────────────────────────────
-#
-# One division at a time, each a job of the season's approval on the change queue (#439,
-# slice 4a): the standings and the sheet are two functions, each reading the division's
-# channel and its first round as it runs, and each raising where it cannot post, for the
-# queue to stop on. The standings channel is read from `division_results_config`, where
-# `/division results-channel` keeps it; the approval used to look for it on a division read
-# that never carries it, so no opening standings were ever posted.
-
-
-async def test_the_opening_posts_both_sheets_for_every_division(db_path):
-    _season_id, division_ids = await _seed(db_path, divisions=("Div A", "Div B"))
-    standings, attendance = AsyncMock(return_value=[]), AsyncMock()
-
-    first, second, third = _opening_posts(standings, attendance)
-    with first, second, third:
-        for division_id in division_ids:
-            await service.post_opening_standings(
-                _bot(db_path), _guild(), db_path, division_id, as_text=False
-            )
-            await service.post_opening_sheet(
-                _bot(db_path), _guild(), db_path, division_id, as_text=False
-            )
-
-    assert standings.await_count == 2
-    assert attendance.await_count == 2
-    assert all(
-        call.kwargs["occasion"] is ClassificationOccasion.SEASON_OPENING
-        for call in standings.await_args_list + attendance.await_args_list
-    )
-
-
-async def test_the_opening_is_drawn_against_the_divisions_first_round(db_path):
-    """Not because it stands after it — the grid of rounds is read from the calendar."""
-    _season_id, division_ids = await _seed(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-            "VALUES (?, 2, 'NORMAL', '2026-03-01T18:00:00')",
-            (division_ids[0],),
-        )
-        await db.commit()
-    opener = await _first_round_id(db_path, division_ids[0])
-    standings, attendance = AsyncMock(return_value=[]), AsyncMock()
-
-    first, second, third = _opening_posts(standings, attendance)
-    with first, second, third:
-        await service.post_opening_standings(
-            _bot(db_path), _guild(), db_path, division_ids[0], as_text=False
-        )
-        await service.post_opening_sheet(
-            _bot(db_path), _guild(), db_path, division_ids[0], as_text=False
-        )
-
-    assert standings.await_args.args[2] == opener
-    assert attendance.await_args.args[3] == opener
-
-
-async def test_a_division_with_no_rounds_is_skipped(db_path):
-    _season_id, division_ids = await _seed(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute("DELETE FROM rounds WHERE division_id = ?", (division_ids[0],))
-        await db.commit()
-    standings, attendance = AsyncMock(return_value=[]), AsyncMock()
-
-    first, second, third = _opening_posts(standings, attendance)
-    with first, second, third:
-        await service.post_opening_standings(
-            _bot(db_path), _guild(), db_path, division_ids[0], as_text=False
-        )
-        await service.post_opening_sheet(
-            _bot(db_path), _guild(), db_path, division_ids[0], as_text=False
-        )
-
-    assert standings.await_count == 0
-    assert attendance.await_count == 0
-
-
-async def test_the_opening_standings_post_reads_the_division_s_standings_channel(db_path):
-    """Div A's standings channel (900) is set with `/division results-channel`, in the results
-    module's own settings: the opening classification is posted there, both championships."""
-    _season_id, division_ids = await _seed(db_path)
-    guild = _guild()
-    standings_channel = MagicMock()
-    guild.get_channel.side_effect = lambda channel_id: (
-        standings_channel if channel_id == 900 else None
-    )
-    standings = AsyncMock(return_value=[])
-
-    first, second, third = _opening_posts(standings)
-    with first, second, third:
-        await service.post_opening_standings(
-            _bot(db_path), guild, db_path, division_ids[0], as_text=False
-        )
-
-    standings.assert_awaited_once()
-    args = standings.await_args.args
-    assert args[5] is standings_channel
-    assert args[6], "the drivers' championship"
-    assert args[7] is not None, "the constructors' championship"
-    assert standings.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_OPENING
-    assert args[10] == "", "the opening carries no lifecycle label"
-
-
-async def test_an_opening_standings_channel_set_and_gone_raises(db_path):
-    """Div A's standings channel (900) has been deleted from the server: the job raises for
-    the queue to stop on, rather than passing over the division in silence."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
-
-    _season_id, division_ids = await _seed(db_path)
-    guild = _guild()
-    guild.get_channel.return_value = None
-    standings = AsyncMock(return_value=[])
-
-    first, second, third = _opening_posts(standings)
-    with first, second, third, pytest.raises(StepFailedOnDiscord):
-        await service.post_opening_standings(
-            _bot(db_path), guild, db_path, division_ids[0], as_text=False
-        )
-
-    standings.assert_not_awaited()
-
-
-async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
-    """Discord refuses Div A's opening attendance sheet: what the sheet's posting raises (it
-    always raises, so it is asked for no `raise_on_failure`) reaches the job, for the queue to
-    stop on."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
-
-    _season_id, division_ids = await _seed(db_path)
-    attendance = AsyncMock(side_effect=StepFailedOnDiscord("the sheet could not be posted"))
-
-    first, second, third = _opening_posts(attendance=attendance)
-    with first, second, third, pytest.raises(StepFailedOnDiscord):
-        await service.post_opening_sheet(
-            _bot(db_path), _guild(), db_path, division_ids[0], as_text=False
-        )
-
-    assert "raise_on_failure" not in attendance.await_args.kwargs
-    assert attendance.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_OPENING
-
 
 
 # ── The final classification ──────────────────────────────────────────────

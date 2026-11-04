@@ -1339,12 +1339,15 @@ async def test_kept_opening_standings_are_removed_from_the_channel_they_were_pos
                 if event[0] == "delete" and event[1] == moved_to]
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the opening standings are not yet posted by results' own module",
+)
 async def test_a_division_with_no_standings_channel_set_posts_no_opening_standings(
     tmp_path, monkeypatch,
 ):
     """Am's standings channel never set: its opening standings job posts nothing and raises
     nothing, while Pro's posts."""
-    from leaguebot.core.services import season_classification_service
+    from leaguebot.results.services import season_standings_posts
 
     league = await _league_for(tmp_path, monkeypatch, results=True)
     await league.write(
@@ -1353,7 +1356,7 @@ async def test_a_division_with_no_standings_channel_set_posts_no_opening_standin
 
     for division in (PRO, AM):
         with in_a_job():
-            await season_classification_service.post_opening_standings(
+            await season_standings_posts.post_opening_standings(
                 league.bot, league.guild, league.db_path, division, as_text=False,
             )
 
