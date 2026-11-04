@@ -261,19 +261,15 @@ class WindowClosed(Protocol):
 
 @dataclass(frozen=True)
 class SeasonEndHooks:
-    """What a season's end needs of other modules and of the cog, handed it by the builder (#439).
+    """What a season's end needs of signup's window and its close, handed it by the builder.
 
-    The wind-down, the completion, the cancellation and the abort share them. Through them core
-    imports no module and no cog for the season's end (architecture.md, "How modules and core fit
-    together": a season ending is a hook point). Each field is the function it stands for, bound
-    in ``__main__._season_end_hooks``:
+    The wind-down, the completion, the cancellation and the abort share them. Each field is the
+    function it stands for, bound in ``__main__._season_end_hooks``:
 
     - *close_signups*: signup's close nobody ran, holding no channel (the queue's jobs do), giving
       the drivers it returned; None where there was no window to close.
     - *window_open*: signup on and its window open.
     - *cancel_close_timer*: removes the signup close timer.
-    - *discard_backup*: deletes the saved test-mode state, raising where it cannot.
-    - *forget_setup*: lets go of the setup the season cog holds in memory.
     - *owed_closing_notices*: the accounts the window's close returned and owes their closing
       notice, read on a connection of its own, for a check before a step or a step with no save
       open.
@@ -288,8 +284,6 @@ class SeasonEndHooks:
     close_signups: Callable[[LeagueBot, str], Awaitable[WindowClosed | None]]
     window_open: Callable[[], Awaitable[bool]]
     cancel_close_timer: Callable[[], None]
-    discard_backup: Callable[[], object]
-    forget_setup: Callable[[], None]
     owed_closing_notices: Callable[[], Awaitable[list[str]]]
     clear_closing_notices_on: Callable[[aiosqlite.Connection, Sequence[str]], Awaitable[None]]
     window_jobs: Callable[[str, int], Awaitable[tuple[PlannedStep, ...]]]

@@ -18,7 +18,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from leaguebot.core.models.change import StepKind, StepResult
-from leaguebot.core.services import standing_posts
+from leaguebot.core.services import backup_service, standing_posts
 from leaguebot.core.services.change_queue import Step, StepContext
 from leaguebot.core.services.season_lifecycle_service import (
     SeasonEndHooks,
@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     import aiosqlite
     from leaguebot.core.utils.hooks import AwaitedHook, Hook
     from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.scheduler_service import SchedulerService
 
 log = logging.getLogger(__name__)
 
@@ -268,6 +269,7 @@ async def season_role_targets_on(db: aiosqlite.Connection, season_id: int) -> li
 
 def shared_steps(
     placement: "PlacementService",
+    scheduler: "SchedulerService",
     hooks: SeasonEndHooks,
     *,
     season_end_steps: "Hook",
@@ -286,8 +288,8 @@ def shared_steps(
       of its own and a refusal stops the queue there.
     - `discard_portraits`: the portraits of the drivers the driver pass deleted removed, by the
       modules signed up to *drivers_deleted*.
-    - `discard_backup`: the saved test-mode state deleted (a completion's alone).
-    - `forget_setup`: the setup held in memory let go of (an abort's alone).
+    - `discard_backup`: the saved test-mode state deleted, with the *scheduler*'s job store (a
+      completion's alone).
     - the jobs of one driver's Discord side (`close_signup_steps`), among them those the modules
       define for a season's end (*season_end_steps*).
 
@@ -347,19 +349,12 @@ def shared_steps(
     async def describe_portraits(_ctx: StepContext) -> str:
         return "discarding the portraits of the drivers deleted"
 
-    async def discard_backup(_ctx: StepContext) -> StepResult:
-        hooks.discard_backup()
+    async def discard_backup(ctx: StepContext) -> StepResult:
+        backup_service.discard(ctx.db_path, scheduler.jobstore_path, raise_on_failure=True)
         return StepResult()
 
     async def describe_backup(_ctx: StepContext) -> str:
         return "deleting the saved test-mode state"
-
-    async def forget_setup(_ctx: StepContext) -> StepResult:
-        hooks.forget_setup()
-        return StepResult()
-
-    async def describe_setup(_ctx: StepContext) -> str:
-        return "letting go of the setup the bot holds in memory"
 
     return {
         REVOKE_ROLES: Step(REVOKE_ROLES, StepKind.ACT, revoke_roles, describe=describe_revoke),
@@ -376,7 +371,6 @@ def shared_steps(
         DISCARD_BACKUP: Step(
             DISCARD_BACKUP, StepKind.ACT, discard_backup, describe=describe_backup
         ),
-        FORGET_SETUP: Step(FORGET_SETUP, StepKind.ACT, forget_setup, describe=describe_setup),
         # A forecast posted in parts has `delete_forecast` plan a delete for each earlier part.
         standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
         **close_signup_steps(placement, hooks, season_end_steps=season_end_steps),

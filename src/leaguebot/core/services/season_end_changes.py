@@ -53,7 +53,7 @@ held after the save.
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -841,7 +841,7 @@ def season_complete_change(
         **winding,
         TURN_DOWN_STEP: replace(turn_down, run=turn_down_then_settle),
         **shared_steps(
-            placement, hooks, season_end_steps=season_end_steps,
+            placement, scheduler, hooks, season_end_steps=season_end_steps,
             test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
         ),
     }
@@ -859,6 +859,7 @@ def season_complete_change(
 def season_abort_change(
     *,
     seasons: "SeasonService",
+    scheduler: "SchedulerService",
     placement: "PlacementService",
     drivers_returned: AwaitedHook,
     season_end_untold: AwaitedHook,
@@ -866,15 +867,18 @@ def season_abort_change(
     season_end_steps: Hook,
     test_mode_flushed: AwaitedHook,
     drivers_deleted: AwaitedHook,
+    forget_setup: Callable[[], None],
     hooks: SeasonEndHooks,
 ) -> ChangeType:
     """The change that aborts the season being set up; see the module.
 
     The payload is ``{"season_id"}``: a season set up has no number until its placements are
     confirmed. The builder hands in the *seasons* service (the season the check reads), the
+    *scheduler* (whose job store holds the saved test-mode state's scheduler half), the
     *placement* service (which takes back roles), the hooks the modules sign up to
     (*drivers_returned*, *season_end_untold*, *driver_returned_jobs*, *season_end_steps*,
-    *test_mode_flushed*, *drivers_deleted*) and the season end's *hooks*.
+    *test_mode_flushed*, *drivers_deleted*), *forget_setup* (lets go of the setup the season cog
+    holds in memory) and the season end's *hooks*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1010,14 +1014,24 @@ def season_abort_change(
             "set up until the bot restarts"
         )
 
+    async def forget_the_setup(_ctx: StepContext) -> StepResult:
+        forget_setup()
+        return StepResult()
+
+    async def describe_setup(_ctx: StepContext) -> str:
+        return "letting go of the setup the bot holds in memory"
+
     shared = shared_steps(
-        placement, hooks, season_end_steps=season_end_steps,
+        placement, scheduler, hooks, season_end_steps=season_end_steps,
         test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
     )
     steps: dict[str, Step] = {
         **shared,
-        # Only an abort holds a setup the bot must let go of, so the mark is not on the shared step.
-        FORGET_SETUP: replace(shared[FORGET_SETUP], undiscardable=keeps_the_setup),
+        # Only an abort holds a setup the bot must let go of.
+        FORGET_SETUP: Step(
+            FORGET_SETUP, StepKind.ACT, forget_the_setup, describe=describe_setup,
+            undiscardable=keeps_the_setup,
+        ),
         FLUSH_FORECASTS: replace(shared[FLUSH_FORECASTS], still_due=test_mode_still_on),
         CLOSE_WINDOW: replace(shared[CLOSE_WINDOW], describe=describe_window_close),
         END: Step(END, StepKind.SAVE, end, describe=describe_end),

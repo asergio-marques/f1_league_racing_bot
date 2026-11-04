@@ -142,12 +142,11 @@ def _cancel_wizard_timers(bot: LeagueBot) -> "Callable[[str], None]":
 
 
 def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
-    """What a season's end needs of signup, results, weather, image and the cog, handed it here so
-    that core imports none of them. Each is looked up as it is called, so that nothing is bound
-    before it is needed."""
+    """What a season's end needs of signup's window and its close, handed it here so that core
+    imports no module. Each is looked up as it is called, so that nothing is bound before it is
+    needed."""
     from leaguebot.signup.services.window_close import close_signups_unattended
     from leaguebot.core.models.change import PlannedStep
-    from leaguebot.core.services import backup_service
     from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
     from leaguebot.signup.services.closing_steps import window_close_jobs, window_close_steps
 
@@ -166,11 +165,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
             return False
         config = await bot.signup_module_service.get_config()
         return config is not None and config.signups_open
-
-    def discard_backup() -> object:
-        return backup_service.discard(
-            bot.db_path, bot.scheduler_service.jobstore_path, raise_on_failure=True
-        )
 
     async def owed_closing_notices() -> list[str]:
         return await bot.signup_module_service.owed_closing_notices()
@@ -197,8 +191,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
         window_open=window_open,
         # Read when it runs: a test replaces the scheduler's method after registering.
         cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
-        discard_backup=discard_backup,
-        forget_setup=lambda: _forget_setup(bot),
         owed_closing_notices=owed_closing_notices,
         clear_closing_notices_on=clear_closing_notices_on,
     )
@@ -844,6 +836,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         season_abort_change(
             seasons=bot.season_service,
+            scheduler=bot.scheduler_service,
             placement=bot.placement_service,
             drivers_returned=bot.drivers_returned,
             season_end_untold=bot.season_end_untold,
@@ -851,6 +844,7 @@ def register_change_types(bot: LeagueBot) -> None:
             season_end_steps=bot.season_end_steps,
             test_mode_flushed=bot.test_mode_flushed,
             drivers_deleted=bot.drivers_deleted,
+            forget_setup=lambda: _forget_setup(bot),
             hooks=hooks,
         )
     )

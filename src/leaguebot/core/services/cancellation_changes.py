@@ -1662,7 +1662,7 @@ def season_cancel_change(
             modules=modules, seasons=seasons, scope=notices.SCOPE_SEASON,
         ),
         **shared_steps(
-            placement, hooks, season_end_steps=season_end_steps,
+            placement, scheduler, hooks, season_end_steps=season_end_steps,
             test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
         ),
         **_steps_of_the_modules(cancellation_steps),
