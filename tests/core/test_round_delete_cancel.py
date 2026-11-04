@@ -450,7 +450,12 @@ async def test_a_round_cancelled_in_a_division_typed_in_another_case_names_it_as
 @pytest.mark.parametrize(
     "number, answered",
     [
-        pytest.param(5, "✅ Round **5** deleted from **Pro** and rounds renumbered.", id="deleted"),
+        pytest.param(
+            5, "✅ Round **5** deleted from **Pro** and rounds renumbered.", id="deleted",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#283: /round delete hands the delete no hook"
+            ),
+        ),
         pytest.param(9, "❌ Round 9 not found in division `Pro`.", id="round_not_found"),
     ],
 )
@@ -471,7 +476,9 @@ async def test_a_round_deleted_in_a_division_typed_in_any_case_names_it_as_it_is
     await _delete(cog, interaction, division=typed, number=number)
 
     if number == 5:
-        cog.bot.season_service.delete_round.assert_awaited_once_with(ROUND_ID)
+        cog.bot.season_service.delete_round.assert_awaited_once_with(
+            ROUND_ID, rounds_deleted=cog.bot.rounds_deleted
+        )
     else:
         cog.bot.season_service.delete_round.assert_not_awaited()
     replied = _replied(interaction)

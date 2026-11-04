@@ -658,10 +658,15 @@ async def test_uncommitted_placements_are_discarded_on_the_save_handed(tmp_path)
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: delete_season takes no delete hooks, and the builder makes none to hand it",
+)
 async def test_a_season_is_deleted_on_the_save_handed_and_nothing_committed(tmp_path) -> None:
-    """A season being set up, its division and its rounds, deleted on the save; rolled back,
-    every row of it is still there."""
+    """A season being set up, its division and its rounds, deleted on the save with the delete
+    hooks the builder makes; rolled back, every row of it is still there."""
     from leaguebot.core.services.season_service import SeasonService
+    from tests.support.delete_hooks import SEASON_HOOKS, delete_hooks
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _end_seed(
@@ -677,7 +682,7 @@ async def test_a_season_is_deleted_on_the_save_handed_and_nothing_committed(tmp_
         )
 
     async with get_connection(db_path) as db:
-        await SeasonService.delete_season(db, season_id)
+        await SeasonService.delete_season(db, season_id, **delete_hooks(*SEASON_HOOKS))
         assert [row[0] for row in await _left(db)] == [0, 0, 0]
         await db.rollback()
         assert [row[0] for row in await _left(db)] == [1, 1, len(round_ids)]

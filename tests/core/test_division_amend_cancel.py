@@ -289,6 +289,7 @@ async def test_an_unknown_division_is_refused_by_name(tmp_path, run):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#283: /division delete hands the delete no hooks")
 async def test_a_division_is_deleted(tmp_path):
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
@@ -296,7 +297,11 @@ async def test_a_division_is_deleted(tmp_path):
 
     await _delete(cog, interaction)
 
-    cog.bot.season_service.delete_division.assert_awaited_once_with(DIVISION_ID)
+    cog.bot.season_service.delete_division.assert_awaited_once_with(
+        DIVISION_ID,
+        rounds_deleted=cog.bot.rounds_deleted,
+        divisions_deleted=cog.bot.divisions_deleted,
+    )
     assert "deleted" in _replied(interaction)
 
 
@@ -1185,6 +1190,7 @@ async def test_a_division_cancelled_as_typed_in_another_case_is_named_as_it_is_n
 # the log line name it as it stands, never as the manager typed it.
 
 
+@pytest.mark.xfail(strict=True, reason="#283: /division delete hands the delete no hooks")
 async def test_a_division_deleted_as_typed_in_another_case_is_named_as_it_is_named(tmp_path):
     """A season in placements holds divisions Pro and Am. The manager (id 77) runs /division
     delete typing the division's name as 'pro'. Pro is deleted; the reply opens '✅ Division
@@ -1196,7 +1202,11 @@ async def test_a_division_deleted_as_typed_in_another_case_is_named_as_it_is_nam
 
     await _delete(cog, interaction, name="pro")
 
-    cog.bot.season_service.delete_division.assert_awaited_once_with(DIVISION_ID)
+    cog.bot.season_service.delete_division.assert_awaited_once_with(
+        DIVISION_ID,
+        rounds_deleted=cog.bot.rounds_deleted,
+        divisions_deleted=cog.bot.divisions_deleted,
+    )
     replied = _replied(interaction)
     assert replied.startswith("✅ Division **Pro** deleted."), replied
     assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}, replied

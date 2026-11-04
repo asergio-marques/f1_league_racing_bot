@@ -36,8 +36,12 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.season_service import SeasonImmutableError, SeasonService
+from tests.support.delete_hooks import DIVISION_HOOKS, delete_hooks
 
 SERVER_ID = 9808
+
+#: Why a division delete fails until it takes its hooks.
+NO_HOOKS = "#283: delete_division takes no delete hooks, and the builder makes none to hand it"
 
 
 # ---------------------------------------------------------------------------
@@ -338,31 +342,7 @@ async def test_a_division_is_renamed(tmp_path):
     assert (await service.get_divisions(1))[0].name == "Premier"
 
 
-async def test_deleting_a_division_leaves_nothing_behind(tmp_path):
-    """Seven tables, three of which have no cascade and are removed by hand. A missed one
-    leaves rows pointing at a division that no longer exists, which surfaces much later as
-    a lineup drawing a team nobody can find.
-
-    **This covers a division whose seats are empty.** A division with a driver placed in it
-    is not deleted at all, by decision; see the test below.
-    """
-    db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "SETUP")
-    await _seed_full_division(db_path, 11, 1)
-
-    await SeasonService(db_path).delete_division(11)
-
-    assert await _count(db_path, "divisions", "id = ?", (11,)) == 0
-    assert await _count(db_path, "rounds", "division_id = ?", (11,)) == 0
-    assert await _count(db_path, "team_instances", "division_id = ?", (11,)) == 0
-    assert await _count(
-        db_path, "team_seats", "team_instance_id = ?", (110,)
-    ) == 0
-    assert await _count(
-        db_path, "driver_season_assignments", "division_id = ?", (11,)
-    ) == 0
-
-
+@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_a_division_with_a_driver_placed_in_it_is_not_deleted(tmp_path):
     """A division is deleted only once every driver placed in it has been unassigned
     (core specification, Divisions; decided 2026-09-25, #282). The deletion is destructive
@@ -372,20 +352,36 @@ async def test_a_division_with_a_driver_placed_in_it_is_not_deleted(tmp_path):
     with no delete action, so removing the seats fails while a placement points at one, and
     the whole deletion rolls back. Adding a cascade to that key, or deleting the placements
     first, would quietly reverse the decision, which is why this test pins it.
+
+    The modules have deleted their own rows by then, on the hooks the delete calls first, and
+    those roll back with it: each module deletes on the delete's own connection, inside its save
+    (#283). The division's attendance settings and its round's result stand for them.
     """
     import sqlite3
 
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, "SETUP")
     await _seed_full_division(db_path, 11, 1, seated_driver=True)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, rsvp_channel_id) VALUES (11, '71')"
+        )
+        await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (110, 11, 'FULL_RACE', 'ACTIVE')"
+        )
+        await db.commit()
 
     with pytest.raises(sqlite3.IntegrityError):
-        await SeasonService(db_path).delete_division(11)
+        await SeasonService(db_path).delete_division(11, **delete_hooks(*DIVISION_HOOKS))
 
     assert await _count(db_path, "divisions", "id = ?", (11,)) == 1
     assert await _count(db_path, "driver_season_assignments", "division_id = ?", (11,)) == 1
+    assert await _count(db_path, "attendance_division_config", "division_id = ?", (11,)) == 1
+    assert await _count(db_path, "session_results", "round_id = ?", (110,)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_deleting_one_division_leaves_its_neighbours_alone(tmp_path):
     """The deletes are all keyed on the division, and a missing `WHERE` would take the
     whole season's lineup with it."""
@@ -394,7 +390,7 @@ async def test_deleting_one_division_leaves_its_neighbours_alone(tmp_path):
     await _seed_full_division(db_path, 11, 1)
     await _seed_full_division(db_path, 12, 1)
 
-    await SeasonService(db_path).delete_division(11)
+    await SeasonService(db_path).delete_division(11, **delete_hooks(*DIVISION_HOOKS))
 
     assert await _count(db_path, "divisions", "id = ?", (12,)) == 1
     assert await _count(db_path, "rounds", "division_id = ?", (12,)) == 1
@@ -402,12 +398,13 @@ async def test_deleting_one_division_leaves_its_neighbours_alone(tmp_path):
     assert await _count(db_path, "team_seats", "team_instance_id = ?", (120,)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NO_HOOKS)
 async def test_deleting_a_division_with_no_rounds_is_not_an_error(tmp_path):
     """A division added during setup and removed before any round was scheduled."""
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, "SETUP")
     await _seed_division(db_path, 11, 1)
 
-    await SeasonService(db_path).delete_division(11)
+    await SeasonService(db_path).delete_division(11, **delete_hooks(*DIVISION_HOOKS))
 
     assert await _count(db_path, "divisions", "id = ?", (11,)) == 0

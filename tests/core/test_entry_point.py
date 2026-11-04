@@ -164,6 +164,26 @@ _SEASON_END_PARTS = (
      "image's portraits discarded"),
 )
 
+#: Each module's part of a season, division or round deleted, as the module names it: the hook on
+#: the bot, the module, the subscriber, and what the test calls it, in the order the builder signs
+#: them up. Each deletes the module's own rows on the delete's connection.
+_DELETE_PARTS = (
+    ("rounds_deleted", "leaguebot.attendance.services.attendance_service", "rounds_deleted_on",
+     "attendance's rounds"),
+    ("rounds_deleted", "leaguebot.results.services.results_purge_service", "rounds_deleted_on",
+     "results' rounds"),
+    ("rounds_deleted", "leaguebot.weather.services.forecast_cleanup_service", "rounds_deleted_on",
+     "weather's rounds"),
+    ("divisions_deleted", "leaguebot.attendance.services.attendance_service",
+     "divisions_deleted_on", "attendance's divisions"),
+    ("divisions_deleted", "leaguebot.results.services.results_purge_service",
+     "divisions_deleted_on", "results' divisions"),
+    ("season_deleted", "leaguebot.results.services.results_purge_service", "season_deleted_on",
+     "results' season"),
+    ("season_deleted", "leaguebot.signup.services.signup_module_service", "season_deleted_on",
+     "signup's season"),
+)
+
 #: The steps of an amendment attendance defines, by name, as the amendment names them today.
 _ATTENDANCE_AMENDMENT_STEPS = [
     "announce", "clean_up_check_in", "close_without_call", "delete_message", "distribute",
@@ -171,6 +191,7 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the builder makes no delete hooks")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -192,7 +213,9 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     open, signup's close of its window; the steps each module defines for it, signup's notice and
     close, its window's close, the Sign Up button's deletion and the closed post, then weather's
     deletion of a forecast; the jobs that clear what test mode posted, weather's; and the drivers
-    deleted, image's discard of their portraits."""
+    deleted, image's discard of their portraits. A season, division or round deleted, each module
+    deleting its own rows: of the rounds, attendance's, results' then weather's; of the divisions,
+    attendance's then results'; of the season, results' then signup's."""
     import importlib
 
     import leaguebot.__main__ as entry_point
@@ -234,6 +257,11 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         async def season_end_spy(*_args, part=part, **_kwargs):
             called.append(part)
         monkeypatch.setattr(importlib.import_module(module_name), name, season_end_spy,
+                            raising=False)
+    for _hook, module_name, name, part in _DELETE_PARTS:
+        async def delete_spy(*_args, part=part, **_kwargs):
+            called.append(part)
+        monkeypatch.setattr(importlib.import_module(module_name), name, delete_spy,
                             raising=False)
     monkeypatch.setattr(importlib.import_module("leaguebot.signup.services.closing_steps"),
                         "driver_returned_jobs",
@@ -287,6 +315,10 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         ["delete_forecast"],
     ]
     assert not hasattr(bot, "season_end_untold")
+    for hook in dict.fromkeys(each[0] for each in _DELETE_PARTS):
+        called.clear()
+        await getattr(bot, hook).call(None, 0)
+        assert called == [part for each, _module, _name, part in _DELETE_PARTS if each == hook]
 
 
 #: The windows the league configures in the pair test: attendance's three lead times, and

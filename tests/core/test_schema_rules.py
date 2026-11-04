@@ -161,16 +161,28 @@ async def test_every_table_the_baseline_creates_is_named_in_src(db_path):
 # ── Cascades ──────────────────────────────────────────────────────────────────
 
 
-async def test_a_division_s_attendance_channels_go_with_the_division(db_path):
-    db = _connect(db_path)
-    db.execute(
-        "INSERT INTO attendance_division_config (division_id, rsvp_channel_id) VALUES (10, '71')"
-    )
-    db.execute("DELETE FROM divisions WHERE id = 10")
-    db.commit()
-    db.close()
-
-    assert _query(db_path, "SELECT * FROM attendance_division_config") == []
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: twenty keys from a module's table to a core table still cascade",
+)
+async def test_no_module_table_cascades_from_a_core_table(db_path):
+    """A module deletes its own rows when core deletes a season, division or round, on the hook
+    core calls (architecture.md, "The database"): a key from a module's table to a core table
+    takes no action of its own, neither deleting the module's row nor setting its column to NULL.
+    A cascade stays within one owner's tables. Each breach is named as ``table.column -> table``.
+    """
+    db = sqlite3.connect(db_path)
+    try:
+        acting = sorted(
+            f"{table}.{key[3]} -> {key[2]} ON DELETE {key[6]}"
+            for table in _built_tables(db)
+            if TABLE_OWNER[table] != "core"
+            for key in db.execute(f'PRAGMA foreign_key_list("{table}")').fetchall()
+            if TABLE_OWNER[key[2]] == "core" and key[6] != "NO ACTION"
+        )
+    finally:
+        db.close()
+    assert acting == []
 
 
 async def test_a_points_configuration_takes_its_points_with_it(db_path):
