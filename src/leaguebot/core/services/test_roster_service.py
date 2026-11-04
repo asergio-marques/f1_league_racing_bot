@@ -6,7 +6,6 @@ Provides helpers consumed by TestModeCog:
   - remove_test_driver:     remove one fake driver by their synthetic user ID
   - clear_test_drivers:     remove all fake drivers from a named division
   - clear_all_test_drivers: remove all fake drivers from every division (toggle-off)
-  - ensure_test_configs:    idempotently create "Standard" and "Half Points" season configs
 
 Synthetic user IDs are guaranteed to be outside real Discord snowflake space by
 using a base of 9_000_000_000_000_000_000, well above any real snowflake value
@@ -21,7 +20,6 @@ from typing import TypedDict
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id, sole_row
-from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.services.team_service import (
     division_team_references,
     resolve_division_team,
@@ -34,23 +32,6 @@ log = logging.getLogger(__name__)
 
 # Synthetic IDs start here — safely above all real Discord snowflakes.
 _SYNTHETIC_ID_BASE = 9_000_000_000_000_000_000
-
-# ─── Default test config definitions ────────────────────────────────────────
-
-_STANDARD_NAME = "Standard"
-_HALF_POINTS_NAME = "Half Points"
-
-# Points per position (1-indexed) per session type.
-_QUALIFYING_POINTS = {1: 3, 2: 2, 3: 1}
-
-_SPRINT_RACE_STANDARD = {1: 10, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1}
-_SPRINT_RACE_HALF = {1: 5, 2: 4, 3: 3, 4: 2, 5: 1}
-
-_FEATURE_RACE_STANDARD = {
-    1: 30, 2: 27, 3: 24, 4: 21, 5: 18, 6: 15, 7: 13, 8: 11,
-    9: 9, 10: 7, 11: 5, 12: 4, 13: 3, 14: 2, 15: 1,
-}
-_FEATURE_RACE_HALF = {1: 15, 2: 13, 3: 11, 4: 9, 5: 7, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1}
 
 
 # ─── Return types ────────────────────────────────────────────────────────────
@@ -686,133 +667,3 @@ async def _delete_test_drivers_in_division(
         )
         await db.commit()
     return len(profile_ids)
-
-
-# ─── Test config seeding ─────────────────────────────────────────────────────
-
-async def ensure_test_configs(
-    db: aiosqlite.Connection,
-    season_id: int,
-) -> list[str]:
-    """Idempotently create "Standard" and "Half Points" configs and attach to season, on *db*,
-    committing nothing.
-
-    Returns a list of config names that were newly created (empty if both already existed).
-    """
-    created: list[str] = []
-
-    configs: list[tuple[str, dict[SessionType, dict[int, int]], dict[SessionType, tuple[int, int]]]] = [
-        (
-            _STANDARD_NAME,
-            {
-                SessionType.SPRINT_QUALIFYING: _QUALIFYING_POINTS,
-                SessionType.SPRINT_RACE: _SPRINT_RACE_STANDARD,
-                SessionType.FEATURE_QUALIFYING: _QUALIFYING_POINTS,
-                SessionType.FEATURE_RACE: _FEATURE_RACE_STANDARD,
-            },
-            {SessionType.FEATURE_RACE: (2, 15)},
-        ),
-        (
-            _HALF_POINTS_NAME,
-            {
-                SessionType.SPRINT_QUALIFYING: _QUALIFYING_POINTS,
-                SessionType.SPRINT_RACE: _SPRINT_RACE_HALF,
-                SessionType.FEATURE_QUALIFYING: _QUALIFYING_POINTS,
-                SessionType.FEATURE_RACE: _FEATURE_RACE_HALF,
-            },
-            {SessionType.FEATURE_RACE: (1, 10)},
-        ),
-    ]
-
-    for config_name, session_entries, fl_configs in configs:
-        newly_created = await _ensure_single_config(
-            db,
-            season_id=season_id,
-            config_name=config_name,
-            session_entries=session_entries,
-            fl_configs=fl_configs,
-        )
-        if newly_created:
-            created.append(config_name)
-
-    return created
-
-
-async def _ensure_single_config(
-    db: aiosqlite.Connection,
-    season_id: int,
-    config_name: str,
-    session_entries: dict[SessionType, dict[int, int]],
-    fl_configs: dict[SessionType, tuple[int, int]],
-) -> bool:
-    """Create and attach *config_name* if it does not yet exist in the season, on *db*, committing
-    nothing.
-
-    *session_entries* maps each SessionType to its position→points dict.
-    *fl_configs* maps each SessionType that has an FL bonus to (fl_points, fl_position_limit).
-    Returns True if the config was newly created, False if it already existed.
-
-    **The config is written as an ordinary server-level one**, into
-    ``points_config_store``/``points_config_entries``/``points_config_fl`` — the same
-    three tables `/results config` writes — and then attached to the season through
-    ``season_points_links``. It is a real config of the server from that moment: it is
-    listed, viewed and edited exactly as a hand-built one, and the confirmation of placements copies
-    it into the season's own store through the ordinary snapshot.
-
-    This used to write the points straight into ``season_points_entries`` while leaving
-    only an empty name row in the server-level store. Everything scored correctly,
-    because scoring reads the season store — but `/results config view` reads the
-    server-level store while the season is in SETUP, so a manager checking the
-    configuration was told "no entries configured" over a config that was fully
-    populated. A seeded config is a config; it does not get its own private path
-    through the schema.
-    """
-    # Check if already in season_points_links
-    cursor = await db.execute(
-        "SELECT 1 FROM season_points_links WHERE season_id = ? AND config_name = ?",
-        (season_id, config_name),
-    )
-    already_linked = await cursor.fetchone() is not None
-
-    if already_linked:
-        return False
-
-    # Create the server-level config and take its id — the entries hang off it.
-    await db.execute(
-        "INSERT OR IGNORE INTO points_config_store (config_name) VALUES (?)",
-        (config_name,),
-    )
-    cursor = await db.execute(
-        "SELECT id FROM points_config_store WHERE config_name = ?",
-        (config_name,),
-    )
-    config_id = (await sole_row(cursor))["id"]
-
-    # Link to season
-    await db.execute(
-        "INSERT OR IGNORE INTO season_points_links (season_id, config_name) VALUES (?, ?)",
-        (season_id, config_name),
-    )
-
-    for session_type, pos_map in session_entries.items():
-        for pos, points in pos_map.items():
-            await db.execute(
-                "INSERT INTO points_config_entries "
-                "(config_id, session_type, position, points) VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(config_id, session_type, position) "
-                "DO UPDATE SET points = excluded.points",
-                (config_id, session_type.value, pos, points),
-            )
-
-    for session_type, (fl_pts, fl_pos_limit) in fl_configs.items():
-        await db.execute(
-            "INSERT INTO points_config_fl "
-            "(config_id, session_type, fl_points, fl_position_limit) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(config_id, session_type) DO UPDATE SET "
-            "fl_points = excluded.fl_points, "
-            "fl_position_limit = excluded.fl_position_limit",
-            (config_id, session_type.value, fl_pts, fl_pos_limit),
-        )
-
-    return True

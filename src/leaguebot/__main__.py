@@ -275,11 +275,12 @@ def _sign_up_to_test_mode_turned_on(bot: LeagueBot) -> None:
     """Make the hook test mode turned on declares, and sign each module's part up to it: what a
     module seeds for a season under test, on the connection of the save that turns test mode on,
     given the season's id (architecture.md, "How modules and core fit together"). The builder
-    hands it to `turn_test_mode_on`."""
-    from leaguebot.core.services import test_roster_service
+    hands it to `turn_test_mode_on`. Results' seeding runs whether or not the results module is
+    on, as the core specification's test mode section says without a condition."""
+    from leaguebot.results.services import points_config_service
 
     bot.test_mode_turned_on = AwaitedHook()
-    bot.test_mode_turned_on.subscribe(test_roster_service.ensure_test_configs)
+    bot.test_mode_turned_on.subscribe(points_config_service.seed_test_configs_on)
 
 
 def _sign_up_to_season_end(bot: LeagueBot) -> None:

@@ -1914,7 +1914,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/services/module_service.py", "ModuleService.set_images_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_signup_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_weather_enabled"): (1, PASS["core"]),
-    ("core/services/test_roster_service.py", "_ensure_single_config"): (4, PASS["core"]),
     ("results/services/result_submission_service.py", "_restore_from_snapshot_on"): (2, PASS["results"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
@@ -2430,7 +2429,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
         (1, PASS["core"]),
     ("core/services/test_mode_service.py", "build_review_summary"): (5, PASS["core"]),
     ("core/services/test_mode_service.py", "get_next_pending_phase"): (5, PASS["core"]),
-    ("core/services/test_roster_service.py", "_ensure_single_config"): (2, PASS["core"]),
     ("image/services/driver_portrait_service.py", "assigned_driver_ids"): (3, PASS["image"]),
     ("image/services/image_config_service.py", "ImageConfigService.season_division_names"):
         (2, PASS["image"]),

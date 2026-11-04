@@ -27,9 +27,6 @@ from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
 SERVER_ID = 9310
 
-#: Why each test fails until results seeds the configurations itself.
-_NOT_RESULTS_YET = "#283: results does not yet seed test mode's points configurations"
-
 
 async def _seed(db_path, season_id):
     """Results' part of test mode turned on, in a save of its own; the names it newly created."""
@@ -66,14 +63,12 @@ async def season_id(db_path):
         return cursor.lastrowid
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_both_configs_are_created(db_path, season_id):
     created = await _seed(db_path, season_id)
 
     assert sorted(created) == ["Half Points", "Standard"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 @pytest.mark.parametrize("config_name", ["Standard", "Half Points"])
 async def test_a_seeded_config_is_readable_as_a_server_config(
     db_path, season_id, config_name
@@ -89,7 +84,6 @@ async def test_a_seeded_config_is_readable_as_a_server_config(
     assert fl, f"{config_name} read back with no fastest-lap bonus"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_the_standard_ladder_is_the_one_seeded(db_path, season_id):
     await _seed(db_path, season_id)
 
@@ -108,7 +102,6 @@ async def test_the_standard_ladder_is_the_one_seeded(db_path, season_id):
     assert (fl_feature[0].fl_points, fl_feature[0].fl_position_limit) == (2, 15)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_every_session_type_of_a_race_weekend_is_covered(db_path, season_id):
     await _seed(db_path, season_id)
 
@@ -124,7 +117,6 @@ async def test_every_session_type_of_a_race_weekend_is_covered(db_path, season_i
     }
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_the_configs_are_attached_to_the_season(db_path, season_id):
     await _seed(db_path, season_id)
 
@@ -133,7 +125,6 @@ async def test_the_configs_are_attached_to_the_season(db_path, season_id):
     assert sorted(names) == ["Half Points", "Standard"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_seeding_twice_creates_nothing_and_changes_nothing(db_path, season_id):
     """`/test-mode toggle` can be run again; it must not duplicate or disturb a config."""
     await _seed(db_path, season_id)
@@ -151,7 +142,6 @@ async def test_seeding_twice_creates_nothing_and_changes_nothing(db_path, season
     assert len(after_fl) == len(before_fl)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_approve_carries_the_seeded_config_into_the_season_store(
     db_path, season_id
 ):
@@ -179,7 +169,6 @@ async def test_approve_carries_the_seeded_config_into_the_season_store(
     assert fl == [(2, 15)]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_the_seeded_config_passes_the_approval_gate(db_path, season_id):
     """The confirmation of placements refuses a non-monotonic ladder; a seeded one must not trip it."""
     await _seed(db_path, season_id)
@@ -188,7 +177,6 @@ async def test_the_seeded_config_passes_the_approval_gate(db_path, season_id):
     assert await season_points_service.validate_monotonic_ordering(db_path, season_id) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_half_points_really_is_the_lesser_ladder(db_path, season_id):
     """The two seeded configs must differ, or there is no point seeding both."""
     await _seed(db_path, season_id)
@@ -210,7 +198,6 @@ async def test_half_points_really_is_the_lesser_ladder(db_path, season_id):
     assert winner(half) < winner(standard)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RESULTS_YET)
 async def test_leaving_test_mode_keeps_the_seeded_configs(db_path, season_id):
     """Decided 2026-09-04: a mock driver is scaffolding, a points ladder is not.
 
