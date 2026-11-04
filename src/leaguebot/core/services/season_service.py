@@ -854,7 +854,6 @@ class SeasonService:
                 " VALUES (?, ?, ?, ?)",
                 (season_id, name, role_id, tier),
             )
-            await db.commit()
             new_div_id = inserted_id(cursor)
 
             delta = timedelta(days=day_offset, hours=hour_offset)
@@ -872,9 +871,8 @@ class SeasonService:
                         new_dt.isoformat(),
                     ),
                 )
+            await renumber_rounds_on(db, new_div_id)
             await db.commit()
-
-        await self.renumber_rounds(new_div_id)
 
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(

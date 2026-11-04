@@ -204,15 +204,9 @@ FAIL_RENUMBERING = (
 @pytest.mark.parametrize("fault", [
     pytest.param(
         FAIL_COPYING_ROUNDS, id="copying-the-rounds",
-        marks=pytest.mark.xfail(
-            strict=True, reason="#283: duplicate_division saves the division apart"
-        ),
     ),
     pytest.param(
         FAIL_RENUMBERING, id="renumbering",
-        marks=pytest.mark.xfail(
-            strict=True, reason="#283: duplicate_division saves the division apart"
-        ),
     ),
 ])
 async def test_a_duplicate_that_fails_part_way_leaves_nothing_behind(tmp_path, fault):
