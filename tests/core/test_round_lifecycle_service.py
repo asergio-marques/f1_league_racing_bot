@@ -203,10 +203,6 @@ async def test_deleting_a_round_that_does_not_exist_is_a_no_op(tmp_path):
     assert await _numbers(db_path) == [(1, 1)]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: delete_round saves the round's delete apart from the renumbering",
-)
 async def test_a_round_delete_that_fails_part_way_leaves_everything_as_it_was(tmp_path):
     """Rounds 1, 2 and 3; round 2 has a session and a drawn weather phase. Deleting round 2
     fails in the renumbering. It is one save, so nothing of it is kept: every round is there

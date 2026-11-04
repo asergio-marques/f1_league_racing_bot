@@ -936,9 +936,8 @@ class SeasonService:
             await rounds_deleted.call(db, [round_id])
             await db.execute("DELETE FROM sessions WHERE round_id = ?", (round_id,))
             await db.execute("DELETE FROM rounds WHERE id = ?", (round_id,))
+            await renumber_rounds_on(db, division_id)
             await db.commit()
-
-        await self.renumber_rounds(division_id)
 
     # ------------------------------------------------------------------
     # Session
