@@ -92,7 +92,7 @@ async def _seed(db_path: str, rounds: list[dict]) -> None:
 # turn_test_mode_off
 # ---------------------------------------------------------------------------
 
-async def test_toggle_enables_test_mode(tmp_path) -> None:
+async def test_turning_test_mode_off_clears_an_active_flag(tmp_path) -> None:
     """A server with test mode active: turning it off sets the flag absolutely to 0 and
     reports that it changed something."""
     db_path = str(tmp_path / "bot.db")
@@ -108,7 +108,7 @@ async def test_toggle_enables_test_mode(tmp_path) -> None:
     assert row["test_mode_active"] == 0
 
 
-async def test_toggle_disables_test_mode(tmp_path) -> None:
+async def test_turning_test_mode_off_leaves_an_inactive_flag_off(tmp_path) -> None:
     """A server with test mode already off: turning it off again is absolute, not relative —
     it must not flip the flag back on, and reports no change (#283)."""
     db_path = str(tmp_path / "bot.db")
@@ -121,7 +121,7 @@ async def test_toggle_disables_test_mode(tmp_path) -> None:
     assert row["test_mode_active"] == 0
 
 
-async def test_toggle_missing_config_returns_false(tmp_path) -> None:
+async def test_turning_test_mode_off_without_a_config_row_reports_no_change(tmp_path) -> None:
     """turn_test_mode_off returns False when there is no config row."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)  # no seed — no server_config row
