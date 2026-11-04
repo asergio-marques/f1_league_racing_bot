@@ -1342,10 +1342,9 @@ def season_cancel_change(
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *modules*, the
     *seasons* service, the *scheduler*, the *placement* service (which takes back roles), the hooks
     the modules sign up to (*cancellation_refused*, *rounds_called_off*, *rounds_made_final*,
-    *cancellation_steps*,
-    *season_end_refused*, *season_end_closes*, *drivers_returned*, *driver_returned_jobs*,
-    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook each driver deleted calls
-    (*profiles_deleted*) and the queue's clock *now*.
+    *cancellation_steps*, *season_end_refused*, *season_end_closes*, *drivers_returned*,
+    *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook
+    each driver deleted calls (*profiles_deleted*) and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
