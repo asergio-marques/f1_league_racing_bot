@@ -1138,18 +1138,27 @@ async def test_the_signup_window_is_closed_as_the_season_ends_before_the_driver_
     still filling in the wizard, is returned by the close. The window's close is audited once,
     by the system, and its one "🔒 Signups closed as the season ended" line written in that
     post's record: it names no member, and states the one driver returned beneath it (signup
-    :67). The rest of the queue completes the season."""
+    :67). Driver 106, awaiting a league manager's approval, is left as they are: the close
+    returns only drivers still filling in the wizard (signup spec, "signup close"), so 106 is
+    neither returned nor told nor locked by it, and the line counts the one driver. The rest of
+    the queue completes the season."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    await signing_up(league, SIGNING_UP_TOO, state="PENDING_ADMIN_APPROVAL")
     await _asked(league)
 
     await _run_through(league, "post_closed")
+    assert await driver_state(league, SIGNING_UP_TOO) == "PENDING_ADMIN_APPROVAL"
+    assert SIGNING_UP_TOO not in [user for user, _text in league.notices]
+    assert SIGNING_UP_TOO not in league.locked
     assert await _window_close_audits(league) == [
         ("SIGNUP_SEASON_END_CLOSE", "open", "closed", "system")
     ]
     [line] = await _closed_lines(league)
     assert "<@" not in line, line
-    assert any("returned" in text and "1" in text for text in line.splitlines()[1:]), line
+    assert [text for text in line.splitlines()[1:] if "returned" in text] == [
+        "  drivers_returned_to_not_signed_up: 1"
+    ], line
     assert not await window_open(league)
     assert await _history(league) == []
     assert await driver_state(league, MAX) == "ASSIGNED"
