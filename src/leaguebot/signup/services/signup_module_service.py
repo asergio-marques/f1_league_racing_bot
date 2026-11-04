@@ -907,3 +907,16 @@ class SignupModuleService:
                 for s in snapshot.slots
             ],
         }
+
+
+async def season_deleted_on(db: aiosqlite.Connection, season_id: int) -> None:
+    """Delete signup's rows of *season_id* on *db*, committing nothing: the season's sign-up
+    records, its windows and its configuration.
+
+    Core hands it the season id as it deletes the season, in the delete's own save, so that the
+    module's rows go with the season or not at all (architecture.md, "The database"). The records
+    go before the windows they point at.
+    """
+    await db.execute("DELETE FROM signup_records WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM signup_windows WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM season_signup_config WHERE season_id = ?", (season_id,))

@@ -220,12 +220,14 @@ def _sign_up_to_deletes(bot: LeagueBot) -> None:
     part up to them, in the order core calls them: each module deleting its own rows, on the
     delete's connection, inside its save (architecture.md, "The database")."""
     from leaguebot.attendance.services import attendance_service
+    from leaguebot.signup.services import signup_module_service
 
     bot.rounds_deleted = AwaitedHook()
     bot.rounds_deleted.subscribe(attendance_service.rounds_deleted_on)
     bot.divisions_deleted = AwaitedHook()
     bot.divisions_deleted.subscribe(attendance_service.divisions_deleted_on)
     bot.season_deleted = AwaitedHook()
+    bot.season_deleted.subscribe(signup_module_service.season_deleted_on)
 
 
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
