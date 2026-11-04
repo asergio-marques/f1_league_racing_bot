@@ -1,41 +1,21 @@
-"""Force-closing the signup window on the change queue, as a season's end and every division done
-do.
+"""The close nobody ran: the signup window closed at its set time by the timer, or at start-up by
+a restart past it.
 
-Issue #208, #439 slice 6b. `execute_forced_close` was once the shared sub-flow behind
-`/module disable signup`, the scheduled close and `/signup close`; those now ask the queue's own
-close (`signup.close`, `module.off:signup`, pinned in `tests/signup/test_window_changes.py`), and
-what is left here is the form a season's end closes the window with: it
-decides which drivers caught mid-signup are returned, and leaves telling them and closing their
-channels to the queue's jobs. Recording the window closed is left to signup's own `post_closed`
-job, whose record writes it (#439 slice 6b, C66), so these tests do not read it here.
-
-**Only a driver still filling in the wizard is turned away.** `PENDING_SIGNUP_COMPLETION` is the
-one state transitioned back to Not Signed Up. A driver waiting on a manager's approval, or
-correcting an answer a manager asked about, has finished signing up as far as they are
-concerned, and closing the window must not undo that (FR-002, FR-003).
-`test_a_driver_awaiting_approval_is_left_alone` is the one that holds it. The close returns how
-many it turned away, and which, counting only transitions that succeeded (issue #128).
-
-**A returned driver's jobs go with them**, in the save that returns them, so that a kill part-way
-never leaves a returned driver's inactivity job to tell them their session expired.
-
-**A failure raises for the queue.** A return that fails, other than the state machine's refusal,
-raises naming the drivers already returned, so the stop's next try still tells and closes each.
+Issue #208, #439 slice 6b, #283. Both ask the change queue's own close (`signup.close`, pinned in
+`tests/signup/test_window_changes.py`) through `close_signups_unattended` with their own cause.
+A season's end and every division done close the window through signup's own step on the
+season's end change, pinned in the core season end tests; they no longer come through here.
 """
 from __future__ import annotations
 
 import os
-from datetime import datetime
 from functools import partial
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import discord
 import pytest
 
-from leaguebot.signup.services.window_close import execute_forced_close
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.models.driver_profile import DriverState
 
 SERVER_ID = 13308
 SIGNUP_CHANNEL = 700
@@ -83,7 +63,7 @@ def _channel(*, fetch_error=None, send_error=None):
 _UNSET = object()
 
 
-def _bot(db_path, *, config=_UNSET, channel=None, guild=True, transition_error=None):
+def _bot(db_path, *, config=_UNSET, channel=None, guild=True):
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
@@ -96,10 +76,8 @@ def _bot(db_path, *, config=_UNSET, channel=None, guild=True, transition_error=N
         else config
     )
     bot.signup_module_service.set_window_closed = AsyncMock()
-    # The close clears, in its audit save, the marks of the drivers it reached.
-    bot.signup_module_service.clear_closing_notices_on = AsyncMock()
     bot.driver_service = MagicMock()
-    bot.driver_service.transition = AsyncMock(side_effect=transition_error)
+    bot.driver_service.transition = AsyncMock()
     bot.driver_service.ids_in_states = AsyncMock(side_effect=partial(_ids_in_states, db_path))
     bot.scheduler_service = MagicMock()
     bot.scheduler_service._scheduler = MagicMock()
@@ -123,19 +101,6 @@ async def _ids_in_states(db_path, states) -> list[str]:
         return [str(row["discord_user_id"]) for row in await cursor.fetchall()]
 
 
-async def _forced_close(bot, *, audit_action: str):
-    """The season's end's close, handed the bot's signup module and driver services and its own
-    canceller of a driver's signup timers."""
-    from leaguebot.__main__ import _cancel_wizard_timers
-
-    return await execute_forced_close(
-        signup_module_service=bot.signup_module_service,
-        driver_service=bot.driver_service,
-        audit_action=audit_action,
-        cancel_timers=_cancel_wizard_timers(bot),
-    )
-
-
 def _services_of(bot) -> dict:
     """The bot's services a close nobody ran is handed, by keyword."""
     return {
@@ -144,411 +109,6 @@ def _services_of(bot) -> dict:
         "signup_module_service": bot.signup_module_service,
         "driver_service": bot.driver_service,
     }
-
-
-def _driver_notices(bot) -> list:
-    """Every message the close posted other than the window's "signups are now closed" notice:
-    a driver's closing notice. The bot's guild hands this one channel for every channel id, a
-    driver's signup channel included, so a notice posted in any of them is counted. The queue's
-    form posts none: each driver's notice is a job of its own, signup's closing steps."""
-    return [
-        call
-        for call in bot._channel.send.await_args_list
-        if call.args != ("🔒 Signups are now closed.",)
-    ]
-
-
-async def _audit(db_path):
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT change_type, old_value, new_value, actor_name FROM audit_entries"
-        )
-        return [tuple(r) for r in await cursor.fetchall()]
-
-
-# ---------------------------------------------------------------------------
-# Drivers mid-signup
-# ---------------------------------------------------------------------------
-
-
-def _ends_recorded(bot) -> list:
-    """Each wizard the close marks over, recorded as the signup module service is handed it:
-    (the connection, the account, whether the driver is owed their closing notice by the queue)."""
-    ended: list = []
-
-    async def _end(db, discord_user_id, *, closing_notice_owed=False, **_rest) -> None:
-        ended.append((db, str(discord_user_id), closing_notice_owed))
-
-    bot.signup_module_service.end_wizard_on = AsyncMock(side_effect=_end)
-    return ended
-
-
-async def _handed_on(bot) -> object:
-    """Run what the close handed the transition to save with it, on a stand-in connection."""
-    db = object()
-    await bot.driver_service.transition.await_args.kwargs["also_on"](db)
-    return db
-
-
-@pytest.mark.parametrize(
-    "state",
-    [
-        DriverState.PENDING_ADMIN_APPROVAL,
-        DriverState.AWAITING_CORRECTION_PARAMETER,
-        DriverState.PENDING_DRIVER_CORRECTION,
-        DriverState.UNASSIGNED,
-    ],
-)
-async def test_a_driver_awaiting_approval_is_left_alone(tmp_path, state):
-    """FR-002/FR-003: driver 101 has finished signing up as far as they are concerned, and the
-    queue's close of the window (a season's end) must not undo that: they are not returned and
-    have none of their timers cancelled."""
-    db_path = await _make_db(tmp_path, name=f"fc_{state.value}", drivers=[("101", state)])
-    bot = _bot(db_path)
-
-    outcome = await _forced_close(bot, audit_action="SIGNUP_SEASON_END_CLOSE")
-
-    bot.driver_service.transition.assert_not_awaited()
-    bot.scheduler_service.cancel_job.assert_not_called()
-    assert list(outcome.returned_ids) == []
-
-
-async def test_a_job_already_gone_is_stepped_over(tmp_path):
-    """Driver 101 is part-way through the wizard, but the scheduler no longer holds their
-    inactivity or channel-delete job: the queue's close returns them all the same."""
-    from apscheduler.jobstores.base import JobLookupError
-
-    from leaguebot.core.services.scheduler_service import SchedulerService
-
-    # The real scheduler service, over an APScheduler that no longer holds the job.
-    scheduler = SchedulerService.__new__(SchedulerService)
-    scheduler._scheduler = MagicMock()
-    scheduler._scheduler.remove_job = MagicMock(side_effect=JobLookupError("no job"))
-
-    db_path = await _make_db(
-        tmp_path, name="fc_nojob", drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
-    )
-    bot = _bot(db_path)
-    bot.scheduler_service = scheduler
-
-    outcome = await _forced_close(bot, audit_action="X")
-
-    assert list(outcome.returned_ids) == ["101"]
-
-
-async def test_a_driver_already_moved_on_is_neither_counted_nor_a_failure(tmp_path):
-    """Driver 101's transition is refused as the state machine refuses a driver who has moved
-    on since the queue's close read them (`ValueError`): they are not counted as returned, none
-    of their timers is cancelled, and the close does not raise (#457)."""
-    db_path = await _make_db(
-        tmp_path, name="fc_movedon", drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
-    )
-    bot = _bot(db_path, transition_error=ValueError("not in PENDING_SIGNUP_COMPLETION"))
-
-    outcome = await _forced_close(bot, audit_action="X")
-
-    assert outcome.returned == 0
-    assert list(outcome.returned_ids) == []
-    bot.scheduler_service.cancel_job.assert_not_called()
-
-
-WIZARD_CHANNEL = 555
-
-
-async def test_a_close_asked_not_to_hold_gives_the_drivers_it_returned_and_holds_nothing(tmp_path):
-    """The season's end closes the window on the change queue, where each driver's notice and
-    lock are jobs of their own: asked not to hold, the close returns driver 101 (still filling
-    in the wizard) to Not Signed Up, marking their wizard over and owed its closing notice in
-    the same save, and gives their id, leaves 102 (awaiting approval) alone, and holds no
-    channel itself."""
-    db_path = await _make_db(
-        tmp_path,
-        name="fc_unheld",
-        drivers=[
-            ("101", DriverState.PENDING_SIGNUP_COMPLETION),
-            ("102", DriverState.PENDING_ADMIN_APPROVAL),
-        ],
-    )
-    bot = _bot(db_path)
-    ended = _ends_recorded(bot)
-
-    outcome = await _forced_close(bot, audit_action="X")
-
-    bot.driver_service.transition.assert_awaited_once()
-    assert bot.driver_service.transition.await_args.args == ("101", DriverState.NOT_SIGNED_UP)
-    db = await _handed_on(bot)
-    assert ended == [(db, "101", True)]
-    assert _driver_notices(bot) == []
-    assert outcome.returned == 1
-    assert [str(uid) for uid in outcome.returned_ids] == ["101"]
-
-
-async def _real_services(tmp_path, *, name, hours_since_activity=1.0):
-    """Driver 101 part-way through the wizard (Pending Signup Completion, the wizard collecting
-    their notes in channel 555), their last answer *hours_since_activity* hours ago, and the
-    window open on button 8800 in channel 700; the bot's signup module and driver services the
-    real ones on the migrated database. `recover_wizards` reads the host's clock, so the time is
-    computed from it."""
-    from datetime import timedelta, timezone
-
-    from leaguebot.core.services.driver_service import DriverService
-    from leaguebot.signup.services.signup_module_service import SignupModuleService
-
-    db_path = await _make_db(
-        tmp_path, name=name, drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
-    )
-    last = datetime.now(timezone.utc) - timedelta(hours=hours_since_activity)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO signup_module_config (id, signup_channel_id, signups_open, "
-            "signup_button_message_id) VALUES (1, ?, 1, ?)",
-            (SIGNUP_CHANNEL, BUTTON_MESSAGE),
-        )
-        await db.execute(
-            "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, "
-            "signup_channel_id, last_activity_at) VALUES ('101', 'COLLECTING_NOTES', ?, ?)",
-            (WIZARD_CHANNEL, last.isoformat()),
-        )
-        await db.commit()
-    bot = _bot(db_path)
-    bot.signup_module_service = SignupModuleService(db_path)
-    bot.driver_service = DriverService(db_path)
-    return bot
-
-
-async def _wizard_of(db_path, user_id: str) -> tuple[str, int]:
-    """The wizard's state and its signup channel."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT wizard_state, signup_channel_id FROM signup_wizard_records "
-            "WHERE discord_user_id = ?",
-            (user_id,),
-        )
-        row = await cursor.fetchone()
-    assert row is not None, user_id
-    return row[0], row[1]
-
-
-async def _owed_of(db_path, user_id: str) -> int:
-    """Whether the wizard's driver is owed their closing notice."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT closing_notice_owed FROM signup_wizard_records WHERE discord_user_id = ?",
-            (user_id,),
-        )
-        return (await cursor.fetchone())[0]
-
-
-async def _state_of(db_path, user_id: str) -> str:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", (user_id,)
-        )
-        return (await cursor.fetchone())[0]
-
-
-async def _window_still_open(db_path) -> bool:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT signups_open FROM signup_module_config WHERE id = 1")
-        return bool((await cursor.fetchone())[0])
-
-
-@pytest.mark.parametrize("case", ["on the queue", "the mark fails"])
-async def test_the_queue_s_close_marks_each_driver_it_returns_owed_in_the_same_save(tmp_path, case):
-    """Driver 101, part-way through the wizard, is returned to Not Signed Up by the window's
-    close, on the real services.
-
-    - On the queue: 101 is Not Signed Up, their wizard unengaged and
-      owed its closing notice, together, its channel kept for the queue's jobs.
-    - The mark cannot be written (the wizard's record refuses the update): 101's return is
-      rolled back with it, still Pending Signup Completion with the wizard as it was, and the
-      queue's close raises the failure, stopping before the window is recorded closed."""
-    bot = await _real_services(tmp_path, name="fc_mark")
-    if case == "the mark fails":
-        async with get_connection(bot.db_path) as db:
-            await db.execute(
-                "CREATE TRIGGER mark_fails BEFORE UPDATE ON signup_wizard_records "
-                "BEGIN SELECT RAISE(ABORT, 'the mark could not be written'); END"
-            )
-            await db.commit()
-
-    if case == "the mark fails":
-        with pytest.raises(Exception) as raised:
-            await _forced_close(bot, audit_action="X")
-        chain, error = [], raised.value
-        while error is not None:
-            chain.append(str(error))
-            error = error.__cause__ or error.__context__
-        assert any("the mark could not be written" in text for text in chain), chain
-        assert await _state_of(bot.db_path, "101") == "PENDING_SIGNUP_COMPLETION"
-        assert await _wizard_of(bot.db_path, "101") == ("COLLECTING_NOTES", WIZARD_CHANNEL)
-        assert await _owed_of(bot.db_path, "101") == 0
-        assert await _window_still_open(bot.db_path)
-        return
-
-    await _forced_close(bot, audit_action="X")
-
-    assert await _state_of(bot.db_path, "101") == "NOT_SIGNED_UP"
-    assert await _wizard_of(bot.db_path, "101") == ("UNENGAGED", WIZARD_CHANNEL)
-    assert await _owed_of(bot.db_path, "101") == 1
-
-
-class _Killed(BaseException):
-    """The bot's process killed: no handler of the bot's sees it, nothing more is saved."""
-
-
-async def test_a_kill_part_way_through_the_queue_s_close_leaves_no_returned_driver_s_timer_armed(
-    tmp_path,
-):
-    """Drivers 101 and 102 are both part-way through the wizard, each with an inactivity job
-    standing in the scheduler, when the change queue's close returns them, on the real driver
-    and signup module services. The process is killed in 102's return, after 101's return has
-    been saved. At that moment 101 is Not Signed Up and owed their closing notice, and their
-    inactivity and channel-delete jobs are already cancelled and their 24-hour timer disarmed:
-    none is left to tell them their session expired once the bot starts again. 102 is
-    untouched: still part-way through, owed nothing, their inactivity job standing."""
-    from datetime import timedelta, timezone
-
-    from leaguebot.signup.services.closing_steps import INACTIVITY_TIMER
-    from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
-
-    bot = await _real_services(tmp_path, name="fc_killed")
-    last = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-    async with get_connection(bot.db_path) as db:
-        await db.execute(
-            "INSERT INTO driver_profiles (discord_user_id, current_state) "
-            "VALUES ('102', 'PENDING_SIGNUP_COMPLETION')"
-        )
-        await db.execute(
-            "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, "
-            "signup_channel_id, last_activity_at) VALUES ('102', 'COLLECTING_NOTES', 556, ?)",
-            (last,),
-        )
-        await db.commit()
-
-    standing = {inactivity_job_id("101"), inactivity_job_id("102")}
-    cancelled: list[str] = []
-
-    def _cancel(job_id: str) -> None:
-        cancelled.append(job_id)
-        standing.discard(job_id)
-
-    bot.scheduler_service.cancel_job = MagicMock(side_effect=_cancel)
-    returning = bot.driver_service.transition
-    asked: list[str] = []
-
-    async def _transition(user_id, *args, **kwargs):
-        asked.append(str(user_id))
-        if str(user_id) == "102":
-            raise _Killed()
-        return await returning(user_id, *args, **kwargs)
-
-    bot.driver_service.transition = _transition
-
-    with pytest.raises(_Killed):
-        await _forced_close(bot, audit_action="X")
-
-    # What stands at the moment of the kill, before anything after the loop could run.
-    assert asked == ["101", "102"]
-    assert await _state_of(bot.db_path, "101") == "NOT_SIGNED_UP"
-    assert await _owed_of(bot.db_path, "101") == 1
-    assert inactivity_job_id("101") in cancelled
-    assert channel_delete_job_id("101") in cancelled
-    assert inactivity_job_id("101") not in standing
-    bot.scheduler_service.disarm.assert_any_call(INACTIVITY_TIMER, "101")
-    assert all(call.args[1] != "102" for call in bot.scheduler_service.disarm.call_args_list)
-    assert await _state_of(bot.db_path, "102") == "PENDING_SIGNUP_COMPLETION"
-    assert await _owed_of(bot.db_path, "102") == 0
-    assert not any(job_id.endswith("_102") for job_id in cancelled)
-    assert standing == {inactivity_job_id("102")}
-
-
-async def test_a_driver_whose_return_fails_keeps_their_timers_and_channel_and_is_named(tmp_path):
-    """A season's end closes the window on the change queue and finds drivers 101 and 102
-    part-way through the wizard. The first driver's return goes through; the second's fails with
-    an error other than the state machine's refusal. The close raises for the queue, naming the
-    first driver as already returned, so that the stop's next try tells and closes them. The
-    second is still signing up: none of their timers is cancelled. Nothing is closed."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
-
-    db_path = await _make_db(
-        tmp_path,
-        name="fc_return_fails",
-        drivers=[
-            ("101", DriverState.PENDING_SIGNUP_COMPLETION),
-            ("102", DriverState.PENDING_SIGNUP_COMPLETION),
-        ],
-    )
-    bot = _bot(db_path)
-    asked: list[str] = []
-
-    async def _transition(user_id, *_a, **_k):
-        asked.append(str(user_id))
-        if len(asked) == 2:
-            raise RuntimeError("db locked")
-
-    bot.driver_service.transition = AsyncMock(side_effect=_transition)
-
-    with pytest.raises(StepFailedOnDiscord) as raised:
-        await _forced_close(bot, audit_action="SIGNUP_SEASON_END_CLOSE")
-
-    first, second = asked
-    assert sorted(asked) == ["101", "102"]
-    assert raised.value.result == {"returned": [first]}
-    cancelled = {c.args[0] for c in bot.scheduler_service.cancel_job.call_args_list}
-    assert cancelled == {f"wizard_inactivity_{first}", f"wizard_channel_delete_{first}"}
-    assert _driver_notices(bot) == []
-    bot.signup_module_service.set_window_closed.assert_not_awaited()
-
-
-async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
-    """The queue's close (a season's end) gives how many drivers it returned and which (issue
-    #128): drivers 101 and 102, part-way through the wizard, are counted; 103, awaiting
-    approval, is not turned away, so is not counted."""
-    db_path = await _make_db(
-        tmp_path,
-        name="fc_count",
-        drivers=[
-            ("101", DriverState.PENDING_SIGNUP_COMPLETION),
-            ("102", DriverState.PENDING_SIGNUP_COMPLETION),
-            ("103", DriverState.PENDING_ADMIN_APPROVAL),
-        ],
-    )
-
-    outcome = await _forced_close(_bot(db_path), audit_action="X")
-
-    assert outcome.returned == 2
-    assert sorted(outcome.returned_ids) == ["101", "102"]
-
-
-# ---------------------------------------------------------------------------
-# The window itself
-# ---------------------------------------------------------------------------
-
-
-async def test_the_queue_s_close_writes_no_audit_of_the_window(tmp_path):
-    """The queue's close serves a season's end and every division done. It writes no audit of
-    the window's close: that record is written by the "Signups are now closed" post's own job,
-    with the window's close, so a discarded post leaves no record that signups closed."""
-    db_path = await _make_db(tmp_path, name="fc_audit")
-
-    await _forced_close(_bot(db_path), audit_action="SIGNUP_DIVISIONS_DONE_CLOSE")
-
-    assert await _audit(db_path) == []
-
-
-async def test_a_server_with_no_signup_configuration_does_nothing(tmp_path):
-    """No signup configuration exists: the close returns an outcome with nobody returned,
-    closes nothing and audits nothing."""
-    db_path = await _make_db(tmp_path, name="fc_noconfig")
-    bot = _bot(db_path, config=None)
-
-    outcome = await _forced_close(bot, audit_action="X")
-
-    assert outcome.returned == 0
-
-    bot.signup_module_service.set_window_closed.assert_not_awaited()
-    assert await _audit(db_path) == []
 
 
 def _window(*, signups_open=True, button=BUTTON_MESSAGE, close_at=None):
@@ -562,7 +122,7 @@ def _window(*, signups_open=True, button=BUTTON_MESSAGE, close_at=None):
 
 
 # ---------------------------------------------------------------------------
-# A close nobody ran: the timer, the restart sweep, a season's end, every division done
+# A close nobody ran: the timer and the restart sweep
 # ---------------------------------------------------------------------------
 
 #: The set time a timer closed at, already past.
@@ -578,45 +138,7 @@ def _unattended_bot(db_path, *, signups_open=True, enabled=True, channel=None):
     return bot
 
 
-# The causes a close nobody ran is given on the change queue. The timer and the restart sweep
-# ask the change queue's own close (`signup.close`), whose line that close writes; a season's end
-# and every division done close on the queue through this one.
-_CAUSES = ["season end", "divisions done"]
-
-
-@pytest.mark.parametrize("cause", _CAUSES)
-async def test_a_close_nobody_ran_on_the_queue_leaves_its_audit_and_line_to_the_closed_notice(
-    tmp_path, cause
-):
-    """Signups are open with drivers 101 and 102 still filling in the wizard, and the window
-    closes on the change queue with nobody at the keyboard: the season ended, or every division
-    finished. The close returns both drivers, but writes no audit and no "🔒 Signups closed"
-    line: the "Signups are now closed" post's own job writes both, with the window's close, so
-    a discarded post leaves no record that signups closed."""
-    from leaguebot.signup.services.window_close import close_signups_unattended
-
-    db_path = await _make_db(
-        tmp_path,
-        drivers=[
-            ("101", DriverState.PENDING_SIGNUP_COMPLETION),
-            ("102", DriverState.PENDING_SIGNUP_COMPLETION),
-        ],
-    )
-    from leaguebot.__main__ import _cancel_wizard_timers
-
-    bot = _unattended_bot(db_path)
-
-    outcome = await close_signups_unattended(
-        **_services_of(bot), cause=cause, cancel_timers=_cancel_wizard_timers(bot)
-    )
-
-    assert outcome is not None
-    assert sorted(outcome.returned_ids) == ["101", "102"]
-    assert await _audit(db_path) == []
-    bot.output_router.post_log.assert_not_awaited()
-
-
-@pytest.mark.parametrize("cause", ["timer", "restart", "season end", "divisions done"])
+@pytest.mark.parametrize("cause", ["timer", "restart"])
 @pytest.mark.parametrize(
     "signups_open, enabled",
     [pytest.param(False, True, id="no window open"), pytest.param(True, False, id="module off")],
@@ -706,33 +228,10 @@ def _restart_sweep():
 def test_the_close_timer_and_the_restart_sweep_call_the_close_nobody_ran(find, cause):
     """Signups close at their set time, or the bot restarts after it: the job that runs then
     closes them through `close_signups_unattended` with its own cause, so its one line naming
-    no member is written, and never through `execute_forced_close`, which writes none. Both
-    are defined in the entry point, among steps no test drives whole, so the wiring is read
+    no member is written. Both are defined in the entry point, among steps no test drives whole, so the wiring is read
     from the source."""
     function = find()
 
     closes = _calls_to(function, "close_signups_unattended")
     assert closes, f"{function.name} does not call close_signups_unattended"
     assert [_cause_of(call) for call in closes] == [cause] * len(closes)
-    assert _calls_to(function, "execute_forced_close") == []
-
-
-async def test_a_season_end_s_close_is_refused_without_its_timer_canceller(tmp_path):
-    """A season's end closes the window through `close_signups_unattended`, which returns drivers
-    and so must be handed what cancels their timers: without it, it raises before it returns
-    anyone, rather than leave a returned driver's 24-hour timer standing."""
-    from leaguebot.signup.services.window_close import close_signups_unattended
-
-    db_path = await _make_db(
-        tmp_path, name="fc_nocanceller", drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
-    )
-    bot = _bot(db_path, config=SimpleNamespace(
-        signups_open=True, signup_channel_id=SIGNUP_CHANNEL,
-        signup_button_message_id=BUTTON_MESSAGE,
-    ))
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
-
-    with pytest.raises(TypeError):
-        await close_signups_unattended(**_services_of(bot), cause="season end")
-
-    bot.driver_service.transition.assert_not_awaited()
