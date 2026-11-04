@@ -378,8 +378,10 @@ async def test_a_second_approval_from_another_review_is_refused_at_once_without_
 async def test_the_opening_standings_are_posted_in_each_division_s_standings_channel(
     tmp_path, monkeypatch,
 ):
-    """Results on, Pro's standings channel 602 and Am's 702 set in `division_results_config`:
-    each is sent the opening classification, the drivers' and the teams' championships."""
+    """Results on and attendance off, Pro's standings channel 602 and Am's 702 set in
+    `division_results_config`: each is sent the opening classification, the drivers' and the
+    teams' championships. Pro's and Am's attendance channels, set too, are sent no opening
+    sheet while attendance is off."""
     league = await _league_for(tmp_path, monkeypatch, results=True)
     await _pressed(league)
 
@@ -387,6 +389,8 @@ async def test_the_opening_standings_are_posted_in_each_division_s_standings_cha
 
     assert league.texts(PRO_CH.standings)
     assert league.texts(AM_CH.standings)
+    assert league.texts(PRO_CH.attendance) == []
+    assert league.texts(AM_CH.attendance) == []
     assert await _stopped_at(league) is None
 
 
@@ -626,6 +630,9 @@ async def test_each_round_gets_its_sessions_once_however_often_the_save_is_tried
 async def test_the_points_configurations_are_copied_onto_the_season_only_with_results_on(
     tmp_path, monkeypatch, results,
 ):
+    """Results on or off, Pro's and Am's standings channels set either way. Once the approval
+    has run, the season carries the points configurations, and each division's standings
+    channel has been sent its opening standings, only where results is on."""
     league = await _league_for(tmp_path, monkeypatch, results=results)
     await _pressed(league)
 
@@ -638,6 +645,8 @@ async def test_the_points_configurations_are_copied_onto_the_season_only_with_re
     expected = [{"config_name": "Standard", "position": 1, "points": 25},
                 {"config_name": "Standard", "position": 2, "points": 18}]
     assert copied == (expected if results else [])
+    for standings in (PRO_CH.standings, AM_CH.standings):
+        assert bool(league.texts(standings)) is results
     assert (await _approval(league))["state"] == "DONE"
 
 
