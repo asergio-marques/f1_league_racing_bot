@@ -137,8 +137,17 @@ class CalendarPosting:
 
     @property
     def fell_back(self) -> bool:
-        """True where a graphic was wanted, could not be made, and text stood in."""
-        return self.problem is not None and not self.posted_as_image
+        """True where a graphic was wanted, could not be made, and text stood in its place.
+
+        Not true for every problem: an unset calendar channel is also a `problem` with no
+        picture, but posts nothing at all (no `message_id`), so it is a fallback to nothing
+        rather than to text.
+        """
+        return (
+            self.problem is not None
+            and not self.posted_as_image
+            and self.message_id is not None
+        )
 
 
 async def image_calendar_wanted(bot: LeagueBot) -> bool:
@@ -539,9 +548,7 @@ def calendar_steps(seasons: "SeasonService") -> dict[str, Step]:
             commanded=bool(value_of(ctx, "commanded")),
             as_text=ctx.tries > 0,
         )
-        # `fell_back` is true only where text was actually posted in the graphic's place: the
-        # unset-channel "problem" posts nothing (no `message_id`), and is no fallback.
-        fell_back = posting.fell_back and posting.message_id is not None
+        fell_back = posting.fell_back
         lines = (
             (_fallen_back_to_text_line(ctx, division.name, str(posting.problem)),)
             if fell_back else ()
