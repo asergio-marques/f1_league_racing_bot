@@ -179,11 +179,6 @@ def test_the_settings_changes_are_registered():
         pytest.param(
             "images", "leaguebot.image.", {"image_config", "image_aspect_toggles"},
             {"image_config"}, id="images",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#283: images' switch is not yet image's own settings, signed up by the "
-                "builder",
-            ),
         ),
     ],
 )
