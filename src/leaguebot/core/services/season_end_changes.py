@@ -152,10 +152,11 @@ SEASON_CANCEL = "season.cancel"
 SEASON_ABORT = "season.abort"
 
 #: The job names this change adds to the shared ones, as the stop notice, the tests and
-#: ``StepView`` know them.
+#: ``StepView`` know them. The modules' own final posts (results' ``final_standings``,
+#: attendance's ``final_sheet``) are no longer named here: `season_complete_change` tells them
+#: apart from the shared jobs by which names `season_completed_steps` defined, not by a copy of
+#: their names.
 SETTLE = "settle"
-FINAL_STANDINGS = "final_standings"
-FINAL_SHEET = "final_sheet"
 END = "end"
 CLOSE = "close"
 
@@ -385,7 +386,9 @@ def not_done_reply(lines: Sequence[str], *, discarded: bool) -> str:
     return "\n\n" + "\n".join(lines)
 
 
-def shared_not_done(ctx: OutcomeContext, steps: Mapping[str, Step]) -> list[str]:
+def shared_not_done(
+    ctx: OutcomeContext, steps: Mapping[str, Step], *, classification: frozenset[str] = frozenset(),
+) -> list[str]:
     """What the jobs every end of a season shares left undone, one line for each job a league
     admin discarded, in the order of the jobs, the drivers whose roles were not taken back
     gathered into one line.
@@ -393,7 +396,9 @@ def shared_not_done(ctx: OutcomeContext, steps: Mapping[str, Step]) -> list[str]
     A signup channel whose notice was discarded but which was closed is named as closed without
     its notice; one that was not closed is named as not closed alone. A job whose step words its
     own discard (`Step.not_done` of one of the change's *steps*, signup's close of its window) is
-    named in those words.
+    named in those words. *classification* names the modules' own final-post steps, already
+    named first by `_classification_not_done`; completion passes it to skip them here, and
+    abort, which plans none, leaves it empty.
     """
     lines: list[str] = []
     roles: list[str] = []
@@ -409,7 +414,7 @@ def shared_not_done(ctx: OutcomeContext, steps: Mapping[str, Step]) -> list[str]
         if not discarded(view):
             continue
         each = view.payload
-        if view.name in (FINAL_STANDINGS, FINAL_SHEET):
+        if view.name in classification:
             # Named first, ahead of the shared jobs, by `_classification_not_done`.
             continue
         words = kept_line(steps, view)
@@ -457,12 +462,15 @@ def shared_not_done(ctx: OutcomeContext, steps: Mapping[str, Step]) -> list[str]
     return lines
 
 
-def _classification_not_done(ctx: OutcomeContext, steps: Mapping[str, Step]) -> list[str]:
+def _classification_not_done(
+    ctx: OutcomeContext, steps: Mapping[str, Step], classification: frozenset[str],
+) -> list[str]:
     """What a module's discarded final post leaves undone, in its own step's words
-    (`kept_line`), the classification lines kept ahead of the shared season-end ones."""
+    (`kept_line`), the classification lines kept ahead of the shared season-end ones.
+    *classification* names the steps `season_completed_steps` defined."""
     lines: list[str] = []
     for view in ctx.steps:
-        if not discarded(view) or view.name not in (FINAL_STANDINGS, FINAL_SHEET):
+        if not discarded(view) or view.name not in classification:
             continue
         words = kept_line(steps, view)
         if words is not None:
@@ -470,10 +478,15 @@ def _classification_not_done(ctx: OutcomeContext, steps: Mapping[str, Step]) -> 
     return lines
 
 
-def _not_done(ctx: OutcomeContext, steps: Mapping[str, Step]) -> list[str]:
+def _not_done(
+    ctx: OutcomeContext, steps: Mapping[str, Step], classification: frozenset[str],
+) -> list[str]:
     """What a league admin's Discards left undone, in the order of the jobs."""
     # The jobs run the classification first, then the shared ones, then the backup's deletion.
-    lines = [*_classification_not_done(ctx, steps), *shared_not_done(ctx, steps)]
+    lines = [
+        *_classification_not_done(ctx, steps, classification),
+        *shared_not_done(ctx, steps, classification=classification),
+    ]
     if discarded(view_of(ctx, DISCARD_BACKUP)):
         lines.append(BACKUP_KEPT)
     return lines
@@ -707,7 +720,7 @@ def season_complete_change(
             )
         if not _completed(ctx):
             return StepResult(result=result)
-        left = _not_done(ctx, steps)
+        left = _not_done(ctx, steps, classification_names)
         number = ctx.payload["season_number"]
         status = "Incomplete" if anything_discarded(ctx) else "Success"
         line = (
@@ -728,7 +741,7 @@ def season_complete_change(
         if not _completed(ctx):
             return END_DISCARDED.format(number=number)
         return COMPLETED + not_done_reply(
-            _not_done(ctx, steps), discarded=anything_discarded(ctx)
+            _not_done(ctx, steps, classification_names), discarded=anything_discarded(ctx)
         )
 
     # ── How each job is named, in the lines that say it stopped the queue ──────
@@ -759,13 +772,16 @@ def season_complete_change(
         result = await turn_down.run(db, ctx)
         return replace(result, then=(PlannedStep(SETTLE, {"again": True}), *result.then))
 
+    classification_steps = {
+        name: step
+        for defined in season_completed_steps.call()
+        for name, step in defined.items()
+    }
+    classification_names = frozenset(classification_steps)
+
     steps: dict[str, Step] = {
         SETTLE: Step(SETTLE, StepKind.SAVE, settle, describe=describe_settle),
-        **{
-            name: step
-            for defined in season_completed_steps.call()
-            for name, step in defined.items()
-        },
+        **classification_steps,
         END: Step(END, StepKind.SAVE, end, describe=describe_end),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
         **winding,
