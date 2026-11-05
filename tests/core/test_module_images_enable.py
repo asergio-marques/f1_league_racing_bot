@@ -47,6 +47,15 @@ ON_THE_QUEUE = "#283: /module enable images is not yet acknowledged as image's c
 #: The enable's reply where the host carries the rasteriser.
 ENABLED = "✅ Image module enabled. All output aspects start disabled — use `/images config toggle`."
 
+#: The notice a host without Inkscape adds to the enable's reply, in today's words.
+NO_RASTERISER = (
+    "⛔ **Inkscape is not installed on the machine running the bot.**\n"
+    "Image generation is disabled entirely until it is. No package dependency installs it — it "
+    "is a separate program the host must carry.\n"
+    "If it is installed somewhere unusual, set the `INKSCAPE` environment variable to the "
+    "executable's full path."
+)
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -144,7 +153,6 @@ async def test_the_module_is_enabled(tmp_path, rasteriser):
     league expects simply does not arrive, with nothing connecting that to a program nobody told
     them about; and with nothing to warn about, a notice every time would be noise on the common
     path."""
-    from leaguebot.image.services.image_render_service import converter_absent_message
     from tests.support.change_queue import acknowledgement
     from tests.support.settings_league import last_said, log_lines
 
@@ -155,7 +163,7 @@ async def test_the_module_is_enabled(tmp_path, rasteriser):
 
     assert acknowledgement(asked).startswith("⏳ Turning the image module on. ")
     assert await _images_flag(league.db_path) == 1
-    expected = ENABLED if rasteriser else f"{ENABLED}\n\n{converter_absent_message()}"
+    expected = ENABLED if rasteriser else f"{ENABLED}\n\n{NO_RASTERISER}"
     assert last_said(asked) == expected
     assert await log_lines(league) == [f"{NAMED} | /module enable images | Success"]
 

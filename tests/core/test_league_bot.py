@@ -206,7 +206,7 @@ def test_a_module_s_switch_is_its_own_settings_signed_up_by_the_builder(
     for kind, writes in ((module_on(module), on_writes), (module_off(module), off_writes)):
         [switch] = [change_type for change_type in registered if change_type.kind == kind]
         assert switch.check.__module__.startswith(package), kind
-        assert set(switch.writes) == writes, kind
+        assert sorted(switch.writes) == sorted(writes), kind
 
 
 def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
