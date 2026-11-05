@@ -49,6 +49,7 @@ from leaguebot.core.services.change_queue import (
     StepContext,
     StepView,
 )
+from leaguebot.core.services.season_end_changes import SEASON_CANCEL
 from leaguebot.core.services.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -449,6 +450,29 @@ POST_CALENDAR = "post_calendar"
 CLOSE = "close"
 _COMMAND = "`/division calendar-sync`"
 
+#: What puts a calendar fallen back to text right: correct the template, then run the sync
+#: command — unless the season was being cancelled as the posting ran, which no command repeats.
+_FIX_IT = "fix the calendar template, then run `/division calendar-sync`"
+_NOTHING_PUTS_IT_RIGHT = (
+    "nothing does; no command posts the picture again now the season is cancelled, and the "
+    "text calendar stands"
+)
+
+
+def _fallen_back_to_text_line(ctx: StepContext, division_name: str, problem: str) -> str:
+    """The `post_calendar` job's own log line where its calendar fell back to text, naming the
+    division, the problem, and what puts it right (Constitution XIV.4: recorded alongside the
+    source's own entry, the owner's decision on #283). A season being cancelled by the change
+    this job runs for is read from the change's own kind, there being no command left once the
+    season is cancelled that posts the picture again."""
+    put_right = _NOTHING_PUTS_IT_RIGHT if ctx.kind == SEASON_CANCEL else _FIX_IT
+    return (
+        " | Calendar posted as text\n"
+        f"  division: {division_name}\n"
+        f"  problem: {problem}\n"
+        f"  to put it right: {put_right}"
+    )
+
 
 def calendar_steps(seasons: "SeasonService") -> dict[str, Step]:
     """The jobs that post a division's calendar, for a change type's `steps`: `post_calendar`
@@ -514,11 +538,18 @@ def calendar_steps(seasons: "SeasonService") -> dict[str, Step]:
             commanded=bool(value_of(ctx, "commanded")),
             as_text=ctx.tries > 0,
         )
+        # `fell_back` is true only where text was actually posted in the graphic's place: the
+        # unset-channel "problem" posts nothing (no `message_id`), and is no fallback (#283).
+        fell_back = posting.fell_back and posting.message_id is not None
+        lines = (
+            (_fallen_back_to_text_line(ctx, division.name, str(posting.problem)),)
+            if fell_back else ()
+        )
         return StepResult(
             result={
                 "division": division.name,
                 "problem": posting.problem,
-                "fell_back": posting.fell_back,
+                "fell_back": fell_back,
                 "notices": list(posting.notices),
                 "rejected": posting.problem is not None and posting.message_id is None,
                 "posted_as_image": posting.posted_as_image,
@@ -526,6 +557,7 @@ def calendar_steps(seasons: "SeasonService") -> dict[str, Step]:
                 "old": division.calendar_message_id,
                 "channel_id": posting.channel_id,
             },
+            lines=lines,
             # A posting that put nothing up (a commanded render that failed) replaces nothing.
             then=standing_posts.replaced(
                 posting.channel_id, division.calendar_message_id, posting.message_id,
