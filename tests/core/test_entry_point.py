@@ -116,6 +116,37 @@ async def test_the_builder_hands_every_change_that_posts_a_calendar_the_image_mo
     }
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the review's calendar picture is drawn through "
+                                       "the bot, not the image module's drawing")
+async def test_the_review_s_calendar_picture_is_drawn_through_the_image_module_s_drawing(
+    tmp_path, monkeypatch,
+):
+    """The review asks for Pro's calendar picture of season 3: the builder's drawing of review
+    pictures draws it through the image module's drawing the builder attached to the bot, and
+    hands back the PNG drawn."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from leaguebot.__main__ import _draw_review_picture
+    from leaguebot.core.services import calendar_post_service
+    from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    png = tmp_path / "calendar.png"
+    png.write_bytes(b"\x89PNG")
+    drawing = draw_calendars_with(bot, monkeypatch, CalendarDrawingStub(picture=png))
+    monkeypatch.setattr(bot.season_service, "get_division",
+                        AsyncMock(return_value=SimpleNamespace(id=11, name="Pro", tier=1)))
+    monkeypatch.setattr(bot.season_service, "get_division_rounds", AsyncMock(return_value=[]))
+    monkeypatch.setattr(calendar_post_service, "tracks_by_name", AsyncMock(return_value={}))
+
+    drawn = await _draw_review_picture(
+        bot, {"kind": "calendar", "division_id": 11, "season_number": 3})
+
+    assert drawn == png
+    assert drawing.asked == [{"division": "Pro", "tracks": [], "season_number": 3}]
+
+
 #: The kinds of the scheduler's own jobs, each signed up with its handler by the builder.
 _SCHEDULER_KINDS = {
     "weather_p1", "weather_p2", "weather_p3", "cleanup", "results", "rsvp_notice",

@@ -300,3 +300,50 @@ async def test_the_calendar_post_notifies_nobody(tmp_path, as_graphic):
 
     assert posted == 555
     assert notified(channel.send.await_args.kwargs.get("allowed_mentions")) == NOBODY
+
+
+# ── The review's calendar picture, drawn as command output ────────────────
+
+
+#: The review's calendar picture through the drawing, case by case: what the drawing answers,
+#: then the outcome's action, its message and its notices, and whether the PNG is handed back.
+_COMMAND_CASES = {
+    "not wanted": (dict(wanted=False), cps.NOT_APPLICABLE, None, [], False),
+    "drawn": (dict(notices=("round 12 did not fit",)), cps.DREW, None,
+              ["round 12 did not fit"], True),
+    "a problem": (dict(problem="the template has no rows", notices=("round 12 did not fit",)),
+                  cps.REJECTED,
+                  "\u274c The calendar image could not be drawn \u2014 the template has no rows",
+                  ["round 12 did not fit"], False),
+    "no PNG": (dict(), cps.REJECTED, "\u274c The calendar image could not be drawn.", [], False),
+    "raised": (dict(fault=RuntimeError("Inkscape is not installed")), cps.REJECTED,
+               "\u274c Inkscape is not installed", [], False),
+}
+
+
+@pytest.mark.xfail(strict=True, reason="#283: the review's calendar picture is drawn through the "
+                                       "bot, not the drawing it is handed")
+@pytest.mark.parametrize("case", sorted(_COMMAND_CASES))
+async def test_the_review_s_calendar_picture_is_drawn_through_the_drawing(tmp_path, case):
+    """Elite's calendar of two rounds at Silverstone asked as the review's picture of season 3,
+    through a drawing answering as the case says: the league not drawing its calendar; a picture
+    drawn with a notice; a problem with a notice; no PNG; or the drawing raising. The drawing is
+    asked once whether the league draws its calendar, draws Elite only where it does, and the
+    outcome carries the action, the words and the notices the case expects, and the PNG where one
+    was drawn."""
+    answers, action, message, notices, drew = _COMMAND_CASES[case]
+    png = tmp_path / "calendar.png"
+    png.write_bytes(b"\x89PNG")
+    if drew:
+        answers = dict(answers, picture=png)
+    drawing = CalendarDrawingStub(**answers)
+
+    outcome = await cps.render_for_command(drawing, _division(), _rounds(), TRACKS,
+                                           season_number=3)
+
+    assert drawing.wanted_asked == 1
+    assert drawing.drawn == ([] if action == cps.NOT_APPLICABLE else ["Elite"])
+    assert outcome.action == action
+    assert outcome.message == message
+    assert list(outcome.notices) == notices
+    assert outcome.png_path == (png if drew else None)

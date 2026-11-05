@@ -1071,15 +1071,20 @@ async def test_a_posted_placements_review_writes_no_line_of_its_own_and_asks_the
 # ---------------------------------------------------------------------------
 
 
-def _pictures_wanted(monkeypatch) -> None:
-    """The league's calendar and lineup pictures are switched on."""
-    import leaguebot.core.services.calendar_post_service as calendar_post
+def _pictures_wanted(monkeypatch, cog) -> None:
+    """The league's calendar and lineup pictures are switched on: the calendar's answered by the
+    drawing the builder attached to *cog*'s bot."""
     import leaguebot.image.services.image_lineup_post as lineup_post
 
-    monkeypatch.setattr(calendar_post, "image_calendar_wanted", AsyncMock(return_value=True))
+    cog.bot.image_drawing.calendar_wanted = AsyncMock(return_value=True)
     monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
 
 
+#: Why a calendar the review shows as a picture fails before the build.
+GATE_NOT_ASKED = "#283: the review asks the bot's image services, not its drawing, for the calendar"
+
+
+@pytest.mark.xfail(strict=True, reason=GATE_NOT_ASKED)
 async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_of_their_text(
         db_path, monkeypatch):
     """Reverses 038 FR-027 (decided 2026-08-27): where an aspect is switched on, its picture
@@ -1087,8 +1092,8 @@ async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_
     Pro's calendar and lineup pictures switched on, the review asks the queue for Pro's calendar
     and then its lineup as pictures, each carrying the section's text it stands in for (posted
     only where Discord refuses the picture); the report itself carries neither text."""
-    _pictures_wanted(monkeypatch)
     cog = _cog(db_path, images=True)
+    _pictures_wanted(monkeypatch, cog)
 
     messages = await _review(cog, _interaction())
 
@@ -1122,7 +1127,6 @@ async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
     """A finding the picture cannot show is posted either way. Pro's team Ghost has no role and
     its lineup is a picture: the report the review asks of the queue still warns that Ghost has
     no role."""
-    _pictures_wanted(monkeypatch)
     cog = _cog(
         db_path,
         images=True,
@@ -1133,6 +1137,7 @@ async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
             {"name": "Reserves", "full_name": "Reserves", "role_id": 3009, "is_reserve": True},
         ],
     )
+    _pictures_wanted(monkeypatch, cog)
 
     messages = await _review(cog, _interaction())
 
@@ -1140,13 +1145,14 @@ async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
     assert 'No role assigned:** "Ghost"' in _public(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=GATE_NOT_ASKED)
 async def test_a_calendar_shown_as_a_picture_still_names_a_round_gone_by(db_path, monkeypatch):
     """#181: a calendar picture is drawn from the very rounds that are wrong and says nothing of
     which have gone by, so the finding is posted whichever form the calendar takes. Pro's round 1
     was three days ago and its calendar is a picture: the report the review asks of the queue
     still says round 1 has already run, and the question is not offered."""
-    _pictures_wanted(monkeypatch)
     cog = _cog(db_path, images=True, rounds=[_round(1, days_away=-3)])
+    _pictures_wanted(monkeypatch, cog)
 
     messages = await _review(cog, _interaction())
 

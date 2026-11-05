@@ -18,7 +18,8 @@ class CalendarDrawingStub:
     *wanted* is whether the league draws its calendar, or the error asking raises. A drawing
     raises *fault* where one is given; otherwise it hands back *picture* (a PNG's path, or None),
     *problem* (the words for why it could not be drawn, or None) and *notices* (their words).
-    `drawn` names each division drawn, in order; `asked` holds, for each drawing in turn, the
+    `wanted_asked` counts the times it was asked whether the league draws its calendar; `drawn`
+    names each division drawn, in order; `asked` holds, for each drawing in turn, the
     division's name, its rounds' track names and the season number it was handed; `discarded`
     holds each path handed back to release."""
 
@@ -30,11 +31,13 @@ class CalendarDrawingStub:
         self.problem = problem
         self.notices = tuple(notices)
         self.fault = fault
+        self.wanted_asked = 0
         self.drawn: list[str] = []
         self.asked: list[dict[str, Any]] = []
         self.discarded: list[Path | None] = []
 
     async def calendar_wanted(self) -> bool:
+        self.wanted_asked += 1
         if isinstance(self.wanted, Exception):
             raise self.wanted
         return self.wanted
