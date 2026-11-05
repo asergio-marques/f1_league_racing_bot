@@ -27,10 +27,16 @@ from leaguebot.image.services.image_attendance_post import (
     ATTENDANCE_ASPECT,
     ATTENDANCE_TEMPLATE_KEY,
 )
+from leaguebot.image.services.image_calendar_service import (
+    TEMPLATE_KEY as CALENDAR_TEMPLATE_KEY,
+    build_fill_spec,
+    resolve_drawing,
+)
 from leaguebot.image.services.image_config_service import ImageConfigService
 from leaguebot.image.services.image_lineup_post import LINEUP_TEMPLATE_KEY
 from leaguebot.image.services.image_render_service import (
     ImageRenderService,
+    discard_render,
     resolve_configured_directories,
     spec_builder_with_faults,
 )
@@ -50,9 +56,8 @@ _DECLARED_REMEDY = (
     "Enlarge that template, or disable the images module, before adding another driver."
 )
 
-#: The calendar's own aspect and template key.
+#: The calendar's own aspect.
 CALENDAR_ASPECT = "calendar"
-CALENDAR_TEMPLATE_KEY = "calendar_template"
 
 
 class ImageDrawing:
@@ -175,11 +180,6 @@ class ImageDrawing:
         already asked through `calendar_wanted`, the asset directories resolved absolutely, the
         file named, and the render. The notices are reported to the log channel in one message
         before this returns, so the caller never posts them there again."""
-        from leaguebot.image.services.image_calendar_service import (
-            build_fill_spec,
-            resolve_drawing,
-        )
-
         config = await self._config.get_config()
 
         drawing = resolve_drawing(
@@ -236,6 +236,4 @@ class ImageDrawing:
 
     def discard_picture(self, path: Path | None) -> None:
         """Release a drawn calendar's file, whichever way its posting ended."""
-        from leaguebot.image.services.image_render_service import discard_render
-
         discard_render(path)
