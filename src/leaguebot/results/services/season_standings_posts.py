@@ -220,15 +220,21 @@ async def final_round_on(db: Any, division_id: int) -> int | None:
     completion's save's connection, signed up to core's `final_round_read`.
 
     The final classification is drawn against that round, whose classification it *is*: results'
-    own read of its `session_results`, exactly as core's read used to be.
+    own read of its `session_results`, exactly as core's read used to be — except that the round
+    ids themselves come from core's `division_rounds_on`, read on this same connection, rather
+    than from a join of `rounds` into this query (architecture.md, "The database": a query that
+    would join another owner's table is split at that line, each half asked of its owner).
     """
-    cursor = await db.execute(
-        "SELECT r.id FROM rounds r JOIN session_results sr ON sr.round_id = r.id "
-        "WHERE r.division_id = ? AND sr.status = 'ACTIVE' ORDER BY r.round_number DESC LIMIT 1",
-        (division_id,),
-    )
-    row = await cursor.fetchone()
-    return int(row["id"]) if row is not None else None
+    from leaguebot.core.services.season_service import division_rounds_on
+
+    for round_id in await division_rounds_on(db, division_id):
+        cursor = await db.execute(
+            "SELECT 1 FROM session_results WHERE round_id = ? AND status = 'ACTIVE' LIMIT 1",
+            (round_id,),
+        )
+        if await cursor.fetchone() is not None:
+            return round_id
+    return None
 
 
 async def _final_round(db_path: str, division_id: int, round_id: int):

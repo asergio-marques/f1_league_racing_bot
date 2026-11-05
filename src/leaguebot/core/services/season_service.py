@@ -1511,6 +1511,23 @@ async def division_first_round(db_path: str, division_id: int) -> Round | None:
     return _row_to_round(row) if row else None
 
 
+async def division_rounds_on(db: aiosqlite.Connection, division_id: int) -> list[int]:
+    """*division_id*'s round ids, newest round number first, read on *db*.
+
+    For a hook subscriber handed the completion's own connection (architecture.md, "The
+    database"): a query joining another owner's table is split at the table line, each half
+    asked of its owner on the connection the asker was handed, so both halves read inside the
+    same save. Results' `final_round_on` takes this half — core's own `rounds` — and asks its
+    own `session_results` for the first of these ids that the division actually raced, rather
+    than joining the two tables in one query.
+    """
+    cursor = await db.execute(
+        "SELECT id FROM rounds WHERE division_id = ? ORDER BY round_number DESC",
+        (division_id,),
+    )
+    return [int(row["id"]) for row in await cursor.fetchall()]
+
+
 async def round_by_id(db_path: str, division_id: int, round_id: int) -> Round | None:
     """*round_id* of *division_id*, or None where it is not (any longer) that division's.
 
