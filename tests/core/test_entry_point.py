@@ -86,6 +86,36 @@ async def test_the_builder_hands_placement_the_image_module_s_drawing(tmp_path):
     assert bot.placement_service._drawing is bot.image_drawing
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the calendar job reaches the image module through the bot, not a handed drawing",
+)
+async def test_the_builder_hands_every_change_that_posts_a_calendar_the_image_module_s_drawing(
+    tmp_path,
+):
+    """Every change that posts a division's calendar (a season's approval, the three
+    cancellations, results' round ended not held, and `/division calendar-sync`) carries a
+    `post_calendar` job that draws through the image module's drawing the builder made, the one on
+    the bot, and no other change carries one."""
+    bot = await built_bot(tmp_path, now=_NOW)
+
+    handed = {}
+    for kind, change_type in bot.change_queue._types.items():
+        step = change_type.steps.get("post_calendar")
+        if step is not None:
+            held = [cell.cell_contents for cell in step.run.__closure__ or ()]
+            handed[kind] = any(each is bot.image_drawing for each in held)
+
+    assert handed == {
+        "season.approve": True,
+        "season.round.cancel": True,
+        "season.division.cancel": True,
+        "season.cancel": True,
+        "results.submission.all_cancelled": True,
+        "calendar.sync": True,
+    }
+
+
 #: The kinds of the scheduler's own jobs, each signed up with its handler by the builder.
 _SCHEDULER_KINDS = {
     "weather_p1", "weather_p2", "weather_p3", "cleanup", "results", "rsvp_notice",

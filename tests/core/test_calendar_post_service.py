@@ -10,19 +10,26 @@ Covers:
   5. Posting deletes nothing: the message a calendar replaces is deleted by a job after its
      post (#439, slice 6; `tests/core/test_calendar_steps.py`).
   6. Test mode does not suppress the replacement deletion (FR-017).
+
+The calendar is drawn through the drawing the builder hands core (`CalendarDrawingStub` stands in
+for it here); the image module's side of the drawing is tested against its implementation, in
+`tests/image/test_image_drawing_calendar.py`.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 import leaguebot.core.services.calendar_post_service as cps
+from tests.support.calendar_drawing import CalendarDrawingStub
 from tests.support.change_queue import in_a_job
 from tests.support.mentions import NOBODY, notified
+
+#: Why the tests of the posting fail before the build.
+HANDED_NO_DRAWING = "#283: the calendar's posting is handed the bot, not the drawing"
 
 TRACKS = {
     "Silverstone Circuit": NS(
@@ -51,22 +58,6 @@ def _division(**overrides):
     return NS(**values)
 
 
-def _bot(tmp_path, *, images_on=True, aspect_on=True):
-    bot = MagicMock()
-    bot.db_path = str(tmp_path / "db.sqlite")
-    bot.module_service.is_images_enabled = AsyncMock(return_value=images_on)
-    bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=aspect_on)
-    bot.image_config_service.get_config = AsyncMock(
-        return_value=NS(
-            date_format="DDD_DD_MON_YYYY",
-            time_format="24H",
-            time_zone="UTC",
-            track_image_directory="resources/defaults/tracks",
-        )
-    )
-    return bot
-
-
 def _channel(message_id=555):
     channel = MagicMock()
     channel.send = AsyncMock(return_value=NS(id=message_id))
@@ -90,17 +81,18 @@ def test_heading_is_the_textual_calendar_s_own():
 
 
 @pytest.mark.asyncio
-async def test_the_textual_calendar_keeps_its_heading(tmp_path, monkeypatch):
+async def test_the_textual_calendar_keeps_its_heading(monkeypatch):
     """Withdrawing the graphic's heading must not strip the text's, where it is the only
     thing naming the list of rounds."""
-    bot = _bot(tmp_path)
+    drawing = CalendarDrawingStub(wanted=False)
     channel, _ = _channel()
-    monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=False))
     monkeypatch.setattr(cps, "replace_calendar_message", AsyncMock(return_value=555))
 
     await cps.post_division_calendar(
-        bot, _guild(channel), _division(), _rounds(), TRACKS
+        drawing, _guild(channel), _division(), _rounds(), TRACKS
     )
+
+    assert drawing.drawn == []
 
     content = cps.replace_calendar_message.await_args.kwargs["content"]
     assert content.startswith(cps.calendar_heading("Elite"))
@@ -160,182 +152,39 @@ def test_a_mystery_round_reads_as_mystery_in_the_text():
     assert "Round 9: Mystery — " in cps.textual_calendar("Elite", rounds)
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "images_on,aspect_on,wanted",
-    [
-        (False, True, False),
-        (True, False, False),
-        (False, False, False),
-        (True, True, True),
-    ],
-    ids=["images_off", "aspect_off", "both_off", "both_open"],
-)
-async def test_the_graphic_is_wanted_only_with_both_gates_open(
-    tmp_path, images_on, aspect_on, wanted
-):
-    """Either gate closed posts the text; both open wants the graphic."""
-    bot = _bot(tmp_path, images_on=images_on, aspect_on=aspect_on)
-    assert await cps.image_calendar_wanted(bot) is wanted
-
-
-@pytest.mark.asyncio
-async def test_a_gate_that_raises_falls_to_the_text(tmp_path):
-    """A fault in the gate must never lose a league its calendar."""
-    bot = _bot(tmp_path)
-    bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError("db down"))
-    assert await cps.image_calendar_wanted(bot) is False
-
-
-# ── The two asset directories ─────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_the_asset_directories_are_absolute(tmp_path):
-    """Regression: the calendar resolved its own directories and produced relative paths.
-
-    A relative path passes `resolve_asset` — the bot's working directory is the project
-    root — and is written into the SVG as a relative href. The rasteriser reads that SVG
-    out of a temporary directory and resolves the href against *that*, so every circuit
-    map and country flag a league supplied was silently absent from the picture. Only the
-    packaged `mystery.svg`, which is resolved against the project root and is therefore
-    absolute, appeared.
-
-    Every other posting path goes through `resolve_configured_directories`. This pins the
-    calendar to it.
-    """
-    from leaguebot.image.utils.svg_document import load_svg
-
-    bot = _bot(tmp_path)
-    bot.image_config_service.get_config = AsyncMock(
-        return_value=NS(
-            date_format="DDD_DD_MON_YYYY",
-            time_format="24H",
-            time_zone="UTC",
-            track_image_directory="resources/defaults/tracks",
-            flag_directory="resources/defaults/flags",
-        )
-    )
-
-    captured = {}
-
-    async def _render(image_type, spec_builder, **kwargs):
-        captured["builder"] = spec_builder
-        return NS(problem=None, notices=[], png_paths=[])
-
-    bot.image_render_service.render = AsyncMock(side_effect=_render)
-
-    await cps.render_calendar_image(bot, _division(), _rounds(), TRACKS)
-
-    templates = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
-    spec = captured["builder"](load_svg(templates / "calendar_template.svg"))
-
-    assert set(spec.asset_directories) == {"track", "flag"}
-    for asset_class, directory in spec.asset_directories.items():
-        assert directory.is_absolute(), asset_class
-    assert spec.asset_directories["track"].name == "tracks"
-    assert spec.asset_directories["flag"].name == "flags"
-
-
-@pytest.mark.asyncio
-async def test_a_rejected_directory_is_carried_through_as_a_fault(tmp_path):
-    """The reason is the point: `not configured` and `rejected` are different faults.
-
-    The hand-rolled resolution reported neither — a directory that escaped the project
-    root simply became `None`, and the filler then said the class was never configured.
-    """
-    from leaguebot.image.utils.svg_document import load_svg
-
-    bot = _bot(tmp_path)
-    bot.image_config_service.get_config = AsyncMock(
-        return_value=NS(
-            date_format="DDD_DD_MON_YYYY",
-            time_format="24H",
-            time_zone="UTC",
-            track_image_directory="resources/defaults/tracks",
-            flag_directory="../../elsewhere",
-        )
-    )
-
-    captured = {}
-
-    async def _render(image_type, spec_builder, **kwargs):
-        captured["builder"] = spec_builder
-        return NS(problem=None, notices=[], png_paths=[])
-
-    bot.image_render_service.render = AsyncMock(side_effect=_render)
-
-    await cps.render_calendar_image(bot, _division(), _rounds(), TRACKS)
-
-    templates = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
-    spec = captured["builder"](load_svg(templates / "calendar_template.svg"))
-
-    assert "flag" not in spec.asset_directories
-    assert "flag" in spec.asset_directory_faults
-
-
-async def test_a_drawing_reports_its_notices_to_the_log_channel_in_one_message(tmp_path):
-    """Elite's calendar drawn with a notice: the drawing itself reports it to the log channel, in
-    one message naming what was drawn, so the notice reaches the log whichever change posted the
-    calendar (Constitution XIV.4, "reported in one message")."""
-    from leaguebot.image.models.image_module import RenderNotice
-
-    bot = _bot(tmp_path)
-    notice = RenderNotice(image_type="calendar", notice_kind="ASSET_FALLBACK_USED",
-                          detail="a fallback flag stood in for Monaco's")
-    bot.image_render_service.render = AsyncMock(
-        return_value=NS(problem=None, notices=[notice], png_paths=[])
-    )
-    bot.output_router.post_log = AsyncMock()
-
-    await cps.render_calendar_image(bot, _division(), _rounds(), TRACKS)
-
-    [call] = bot.output_router.post_log.await_args_list
-    assert call.args[0].startswith("Image render notices — calendar — Elite:\n"), call.args[0]
-    assert "a fallback flag stood in for Monaco's" in call.args[0]
-
-
 # ── 4. Fallback vs rejection ──────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 @pytest.mark.asyncio
-async def test_uncommanded_posting_falls_back_to_text_on_a_fatal_render(
-    tmp_path, monkeypatch
-):
-    bot = _bot(tmp_path)
+async def test_uncommanded_posting_falls_back_to_text_on_a_fatal_render(monkeypatch):
+    drawing = CalendarDrawingStub(problem="template is missing a field")
     channel, _ = _channel()
-    monkeypatch.setattr(
-        cps,
-        "render_calendar_image",
-        AsyncMock(return_value=NS(problem=NS(detail="template is missing a field"), notices=[], png_paths=[])),
-    )
     monkeypatch.setattr(cps, "replace_calendar_message", AsyncMock(return_value=555))
 
     result = await cps.post_division_calendar(
-        bot, _guild(channel), _division(), _rounds(), TRACKS
+        drawing, _guild(channel), _division(), _rounds(), TRACKS
     )
 
+    assert drawing.drawn == ["Elite"]
     assert result.fell_back is True
+    assert result.problem == "template is missing a field"
     assert result.posted_as_image is False
     posted_content = cps.replace_calendar_message.await_args.kwargs["content"]
     assert "Round 1:" in posted_content, "the textual calendar must stand in"
 
 
+@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 @pytest.mark.asyncio
-async def test_commanded_posting_is_rejected_and_posts_nothing(tmp_path, monkeypatch):
+async def test_commanded_posting_is_rejected_and_posts_nothing(monkeypatch):
     """XIV.7 — the one person able to fix the template is told, not fobbed off."""
-    bot = _bot(tmp_path)
+    drawing = CalendarDrawingStub(problem="bad template")
     channel, _ = _channel()
-    monkeypatch.setattr(
-        cps,
-        "render_calendar_image",
-        AsyncMock(return_value=NS(problem=NS(detail="bad template"), notices=[], png_paths=[])),
-    )
     replace = AsyncMock()
     monkeypatch.setattr(cps, "replace_calendar_message", replace)
 
     result = await cps.post_division_calendar(
-        bot, _guild(channel), _division(), _rounds(), TRACKS, commanded=True
+        drawing, _guild(channel), _division(), _rounds(), TRACKS, commanded=True
     )
 
     assert result.problem == "bad template"
@@ -399,7 +248,6 @@ async def test_a_raising_post_raises_and_queues_no_retry(tmp_path, monkeypatch, 
 
     enqueue = AsyncMock()
     monkeypatch.setattr(retry_service, "enqueue", enqueue)
-    monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=False))
     channel, partial = _channel()
     if fault == "channel gone":
         guild = _guild(None)
@@ -410,7 +258,8 @@ async def test_a_raising_post_raises_and_queues_no_retry(tmp_path, monkeypatch, 
     with pytest.raises(StepFailedOnDiscord):
         with in_a_job():
             await cps.post_division_calendar(
-                _bot(tmp_path), guild, _division(calendar_message_id=111), _rounds(), TRACKS,
+                CalendarDrawingStub(wanted=False), guild, _division(calendar_message_id=111),
+                _rounds(), TRACKS,
             )
 
     enqueue.assert_not_awaited()
@@ -418,19 +267,18 @@ async def test_a_raising_post_raises_and_queues_no_retry(tmp_path, monkeypatch, 
 
 
 @pytest.mark.asyncio
-async def test_a_post_as_text_draws_nothing(tmp_path, monkeypatch):
-    """A retried post goes as text (Constitution XIV rule 8): with the image module and the
-    calendar aspect both on, nothing is drawn and the textual calendar is posted."""
-    render = AsyncMock(return_value=NS(problem=None, notices=[], png_paths=[]))
-    monkeypatch.setattr(cps, "render_calendar_image", render)
+async def test_a_post_as_text_draws_nothing(monkeypatch):
+    """A retried post goes as text (Constitution XIV rule 8): with the league drawing its
+    calendar, nothing is drawn and the textual calendar is posted."""
+    drawing = CalendarDrawingStub(wanted=True)
     monkeypatch.setattr(cps, "replace_calendar_message", AsyncMock(return_value=555))
     channel, _ = _channel()
 
     result = await cps.post_division_calendar(
-        _bot(tmp_path), _guild(channel), _division(), _rounds(), TRACKS, as_text=True,
+        drawing, _guild(channel), _division(), _rounds(), TRACKS, as_text=True,
     )
 
-    render.assert_not_awaited()
+    assert drawing.drawn == []
     kwargs = cps.replace_calendar_message.await_args.kwargs
     assert kwargs["image_path"] is None
     assert kwargs["content"] == cps.textual_calendar("Elite", _rounds())
