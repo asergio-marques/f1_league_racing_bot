@@ -237,6 +237,24 @@ _PLACEMENTS_PARTS = (
      "attendance's opening sheet"),
 )
 
+#: Each module's part of a season completed, as the module names it: the module, the subscriber,
+#: and what the test calls it, in the order the builder signs them up. Each hands back the jobs it
+#: plans for one division's final classification, on the connection of the completion's save.
+_SEASON_COMPLETED_PARTS = (
+    ("leaguebot.results.services.season_standings_posts", "season_completed_on",
+     "results' final standings"),
+    ("leaguebot.attendance.services.sheet_posting", "season_completed_on",
+     "attendance's final sheet"),
+)
+
+#: Each module's part of a division's final round read, as the module names it: the module, the
+#: subscriber, and what the test calls it. Each hands back the round the division's final
+#: classification is drawn against, or None, on the connection of the completion's save.
+_FINAL_ROUND_PARTS = (
+    ("leaguebot.results.services.season_standings_posts", "final_round_on",
+     "results' last round with results"),
+)
+
 #: The steps of an amendment attendance defines, by name, as the amendment names them today.
 _ATTENDANCE_AMENDMENT_STEPS = [
     "announce", "clean_up_check_in", "close_without_call", "delete_message", "distribute",
@@ -244,6 +262,11 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the builder does not yet make the season completed and final round read hooks "
+    "or sign results and attendance up",
+)
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -277,7 +300,12 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     points configurations. Placements confirmed, handed the approval's save's connection and a
     division's id and name: the jobs results plans for its opening standings, then attendance's
     for its opening sheet; and the steps each defines, results' opening standings, then
-    attendance's opening sheet."""
+    attendance's opening sheet. A division's final round read, handed the completion's save's
+    connection and the division's id: results' reading of its last round with results. A season
+    completed, handed the completion's save's connection, a division's id and name and that
+    round's id: the jobs results plans for its final standings, then attendance's for its final
+    sheet; and the steps each defines, results' final standings, then attendance's final
+    sheet."""
     import importlib
 
     import leaguebot.__main__ as entry_point
@@ -327,6 +355,8 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         *_FINAL_PARTS,
         *_TEST_MODE_PARTS,
         *_PLACEMENTS_PARTS,
+        *_FINAL_ROUND_PARTS,
+        *_SEASON_COMPLETED_PARTS,
     ):
         async def delete_spy(*args, part=part, **_kwargs):
             called.append(part)
@@ -418,6 +448,21 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     assert handed == [(None, 0, "Pro")] * len(called)
     assert [sorted(steps) for steps in bot.placements_confirmed_steps.call()] == [
         ["opening_standings"], ["opening_sheet"]
+    ]
+    called.clear()
+    handed.clear()
+    await bot.final_round_read.call(None, 0)
+    assert called == [part for _module, _name, part in _FINAL_ROUND_PARTS]
+    # Each part is handed the save's connection, then the division's id.
+    assert handed == [(None, 0)] * len(called)
+    called.clear()
+    handed.clear()
+    await bot.season_completed.call(None, 0, "Pro", 1)
+    assert called == [part for _module, _name, part in _SEASON_COMPLETED_PARTS]
+    # Each part is handed the save's connection, then the division's id and name and the round's.
+    assert handed == [(None, 0, "Pro", 1)] * len(called)
+    assert [sorted(steps) for steps in bot.season_completed_steps.call()] == [
+        ["final_standings"], ["final_sheet"]
     ]
 
 

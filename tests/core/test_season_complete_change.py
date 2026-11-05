@@ -400,10 +400,21 @@ async def test_a_final_classification_discord_refuses_stops_the_queue_and_the_se
     assert len(_success_lines(league)) == 1
 
 
+#: How the log channel's notice that the queue stopped names each final post, as it always has.
+_FINAL_STOP_NAMES = {
+    "final_standings": "posting the final standings of **Pro**",
+    "final_sheet": "posting the final attendance sheet of **Pro**",
+}
+
+
 @pytest.mark.parametrize("which", ["standings", "attendance"])
 async def test_a_final_classification_whose_channel_was_deleted_stops_the_queue_and_goes_through_once_it_is_set_again(
     tmp_path, which,
 ):
+    """Results and attendance on; Pro's standings channel, or its attendance channel, deleted
+    from the server. The completion stops at Pro's final standings, or its final sheet, the
+    season still active, and the log channel's notice names the job as it always has; once the
+    channel is back and the job retried, the post goes out and the season is completed."""
     league = await pending_completion_league(tmp_path, attendance=True)
     cid, job = ((PRO_CH.standings, "final_standings") if which == "standings"
                 else (PRO_CH.attendance, "final_sheet"))
@@ -413,6 +424,8 @@ async def test_a_final_classification_whose_channel_was_deleted_stops_the_queue_
     await run_queue(league.bot)
     assert await _stopped_at(league) == (job, PRO)
     assert await _status(league) == "ACTIVE"
+    stops = [line for line in _log_lines(league) if "The queue is stopped at job #" in line]
+    assert f": {_FINAL_STOP_NAMES[job]} for " in stops[-1]
 
     league.restore_channel(cid)
     await retry_job(league.bot)
@@ -467,9 +480,72 @@ async def test_a_discarded_final_classification_is_named_as_never_posted_and_the
     assert f"  not done: {PRO_NOT_POSTED}" in line
     if part:
         assert standing
-        assert any(_names_for_deletion_by_hand(b, PRO_CH.standings, standing) for b in bullets)
-        assert any(_names_for_deletion_by_hand(each, PRO_CH.standings, standing)
-                   for each in line.split("\n  not done: ")[1:])
+        # The standings not posted and the table left standing are two lines of their own, in
+        # the reply's bullets and in the closing line's "not done:" entries alike: never run
+        # together.
+        for lines, shown in ((bullets, text), (line.split("\n  not done: ")[1:], line)):
+            assert PRO_NOT_POSTED in lines, shown
+            left = [each for each in lines
+                    if _names_for_deletion_by_hand(each, PRO_CH.standings, standing)]
+            assert len(left) == 1, shown
+            assert left[0].startswith(
+                "**Pro** — a part of its final classification was posted"
+            ), shown
+            assert "could not be posted" not in left[0], shown
+
+
+#: Each module's final post: the job, the module that defines its step, the channel whose post
+#: Discord refuses, and the words core has always given it when it is discarded.
+_FINAL_POSTS = [
+    pytest.param("final_standings", "leaguebot.results.services.season_standings_posts",
+                 PRO_CH.standings, PRO_NOT_POSTED, id="results' final standings"),
+    pytest.param("final_sheet", "leaguebot.attendance.services.sheet_posting",
+                 PRO_CH.attendance, PRO_SHEET_NOT_POSTED, id="attendance's final sheet"),
+]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the completion does not yet take a module's discarded final post from that "
+    "module's own step",
+)
+@pytest.mark.parametrize("job, owner, cid, today", _FINAL_POSTS)
+async def test_a_discarded_final_post_is_named_in_its_own_step_s_words(
+    tmp_path, monkeypatch, job, owner, cid, today,
+):
+    """Results and attendance on. The module that owns the job defines its step with words of its
+    own for a discard ("<job> of Pro, in its own words"); Discord refuses Pro's post, the queue
+    stops at it, and a league admin discards it. Those words, and not the ones core used to keep,
+    are what the reply's "Not everything could be done" and the closing line name."""
+    import dataclasses
+
+    module = importlib.import_module(owner)
+    defined = module.final_steps
+
+    def reworded(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {
+            name: dataclasses.replace(
+                step,
+                not_done=lambda view: f"{view.name} of {view.payload['division_name']}, in its "
+                "own words",
+            )
+            for name, step in defined(*args, **kwargs).items()
+        }
+
+    monkeypatch.setattr(module, "final_steps", reworded)
+    league = await pending_completion_league(tmp_path, attendance=True)
+    league.channel(cid).send_fails = _forbidden()
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == (job, PRO)
+    await discard_job(league.bot)
+
+    words = f"{job} of Pro, in its own words"
+    assert words in _not_done(reply(interaction))
+    assert today not in _not_done(reply(interaction))
+    [line] = _closing_lines(league)
+    assert f"\n  not done: {words}" in line
 
 
 async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
@@ -887,8 +963,30 @@ async def test_a_refusal_found_when_the_completion_runs_updates_the_reply_and_th
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the completion does not yet plan the modules' final posts through the season "
+    "completed hook",
+)
 async def test_the_jobs_run_in_order(tmp_path):
+    """Results, attendance and test mode on; Pro's last round with results is its round 2, Am's
+    its round 1. The jobs run in the core specification's order: the save, then for Pro and then
+    for Am its final standings and its final sheet, each real driver's roles, the forecasts
+    cleared, the end save, the drivers' jobs, the portraits, the backup and the closing line. The
+    modules' final posts are planned through the season completed hook, called inside the first
+    save, on its connection, once for each division in order and handed the division's id and
+    name and the round results names for it; a further subscriber signed up to it sees the season
+    already Pending completion on that connection, before it is committed."""
     league = await pending_completion_league(tmp_path, attendance=True, test_mode=True)
+    handed: list[tuple[Any, ...]] = []
+
+    async def watching(db: Any, division_id: int, division_name: str, round_: int) -> tuple[()]:
+        cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (SEASON_ID,))
+        stage = (await cursor.fetchone())["stage"]
+        handed.append((db.in_transaction, stage, division_id, division_name, round_))
+        return ()
+
+    league.bot.season_completed.subscribe(watching)
     await _asked(league)
 
     await run_queue(league.bot)
@@ -904,6 +1002,10 @@ async def test_the_jobs_run_in_order(tmp_path):
     between = names[names.index("end") + 1:names.index("discard_portraits")]
     assert set(between) <= {"signup_notice", "close_signup", "take_driver_role"}
     assert ("revoke_roles", TEST_DRIVER) not in jobs
+    assert handed == [
+        (True, "PENDING_COMPLETION", PRO, "Pro", round_id(PRO, 2)),
+        (True, "PENDING_COMPLETION", AM, "Am", round_id(AM, 1)),
+    ]
     assert await _status(league) == "COMPLETED"
 
 
@@ -1025,15 +1127,33 @@ async def test_a_division_that_ran_no_round_gets_no_final_classification(tmp_pat
     assert await _status(league) == "COMPLETED"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the completion does not yet ask the modules for each division's final round "
+    "through the final round read hook",
+)
 async def test_a_cancelled_division_gets_no_final_classification(tmp_path):
+    """Results and attendance on; Am cancelled, Charles a former driver. Am gets no final
+    standings and no final sheet, and nothing is posted in its channels, while Charles still
+    loses his roles, Am's history is written and the season is completed. The final round read
+    hook is asked for Pro's round alone: a cancelled division is left out before any module is
+    asked (decided 2026-10-09)."""
     league = await pending_completion_league(tmp_path, attendance=True)
     await league.write("UPDATE divisions SET status = 'CANCELLED' WHERE id = ?", AM)
     await league.write("UPDATE driver_profiles SET former_driver = 1 WHERE discord_user_id = ?",
                        str(CHARLES))
+    asked: list[int] = []
+
+    async def watching(_db: Any, division_id: int) -> None:
+        asked.append(division_id)
+        return None
+
+    league.bot.final_round_read.subscribe(watching)
     await _asked(league)
 
     await run_queue(league.bot)
 
+    assert asked == [PRO]
     names = await _names(league)
     assert ("final_standings", AM) not in names and ("final_sheet", AM) not in names
     assert league.texts(AM_CH.standings) == [] and league.texts(AM_CH.attendance) == []
