@@ -26,6 +26,10 @@ as weather's is.
 confirmed to its end, so a switch-on asked before that and run after it is refused, in the words
 the ask already gives (`configuration_fixed_refusal`), rather than switching signup on behind what
 the league was told.
+
+**Once it has changed something it asks the hub's panel to be refreshed, once, as an `After`
+step** (`hub_service.hub_refresh_after`): the panel offers what a module offers while it is on, so
+the switch asks for that itself rather than the command doing it after every press.
 """
 
 from __future__ import annotations
@@ -33,8 +37,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, Verdict, module_on
+from leaguebot.core.models.change import AuditRecord, PlannedStep, Verdict, module_on
 from leaguebot.core.services.change_queue import CheckContext
+from leaguebot.core.services.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.season_lifecycle_service import (
     configuration_fixed,
     configuration_fixed_refusal,
@@ -87,6 +92,7 @@ def module_on_signup(*, modules: "ModuleService", config: "ConfigService") -> Se
                 "base_role_set": server_cfg is not None and server_cfg.base_role_id is not None,
                 "driver_role_set": server_cfg is not None and server_cfg.driver_role_id is not None,
             },
+            then=(PlannedStep(REFRESH_HUB),),
         )
 
     def reply(_payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
@@ -107,6 +113,7 @@ def module_on_signup(*, modules: "ModuleService", config: "ConfigService") -> Se
         reply=reply,
         writes=("server_configs", "signup_module_config"),
         not_saved=_still_off,
+        after={REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND)},
     )
 
 

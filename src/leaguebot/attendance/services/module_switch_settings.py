@@ -34,6 +34,9 @@ than switching attendance on behind what the league was told.
 `results_off_change`'s already does: asked before the season reaches it, and run once a change
 waiting ahead of it on the lane has finished the last division, the save still finds the season
 Pending completion and refuses, rather than switching attendance off in it.
+
+**Each switch asks the hub's panel to be refreshed, once, as an `After` step**
+(`hub_service.hub_refresh_after`), rather than the command doing it after every press.
 """
 
 from __future__ import annotations
@@ -41,9 +44,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, Verdict, module_off, module_on
+from leaguebot.core.models.change import AuditRecord, PlannedStep, Verdict, module_off, module_on
 from leaguebot.core.models.module_dependencies import needs
 from leaguebot.core.services.change_queue import CheckContext
+from leaguebot.core.services.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
     PLACEMENTS_CONFIRMED_REFUSAL,
@@ -109,6 +113,7 @@ def module_on_attendance(*, modules: "ModuleService", seasons: "SeasonService") 
             audits=(
                 AuditRecord(change_type="ATTENDANCE_MODULE_ENABLED", old_value={}, new_value={}),
             ),
+            then=(PlannedStep(REFRESH_HUB),),
         )
 
     def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
@@ -123,6 +128,7 @@ def module_on_attendance(*, modules: "ModuleService", seasons: "SeasonService") 
         reply=reply,
         writes=("attendance_config",),
         not_saved=_still_off,
+        after={REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND)},
     )
 
 
@@ -145,6 +151,7 @@ def module_off_attendance(*, modules: "ModuleService", attendance: "AttendanceSe
             audits=(
                 AuditRecord(change_type="ATTENDANCE_MODULE_DISABLED", old_value={}, new_value={}),
             ),
+            then=(PlannedStep(REFRESH_HUB),),
         )
 
     def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
@@ -159,6 +166,7 @@ def module_off_attendance(*, modules: "ModuleService", attendance: "AttendanceSe
         reply=reply,
         writes=("attendance_config", "attendance_division_config"),
         not_saved=_nothing_saved,
+        after={REFRESH_HUB: hub_refresh_after(_DISABLE_COMMAND)},
     )
 
 

@@ -99,12 +99,6 @@ _ON_BEFORE = {
     ("signup", "enable"): (), ("signup", "disable"): ("signup",),
 }
 
-#: Why a toggle other than turning results off fails until the build: the command asks its own
-#: refresh as soon as it has asked the switch, whatever becomes of it, where the switch's `After`
-#: step is to ask it once the save has changed something.
-_REFRESHED_BY_THE_COMMAND = "#283: the command asks the refresh, not the switch's follow-on"
-
-
 def _module_cog(bot) -> ModuleCog:
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = bot
@@ -114,12 +108,7 @@ def _module_cog(bot) -> ModuleCog:
 @pytest.mark.parametrize(
     ("module", "command"),
     [
-        pytest.param(
-            module, command, id=f"{module}-{command}",
-            marks=() if (module, command) == ("results", "disable") else pytest.mark.xfail(
-                strict=True, reason=_REFRESHED_BY_THE_COMMAND
-            ),
-        )
+        pytest.param(module, command, id=f"{module}-{command}")
         for module in ("weather", "results", "attendance", "images", "signup")
         for command in ("enable", "disable")
     ],
@@ -165,10 +154,8 @@ async def _confirm_a_season(db_path: str) -> None:
     "refused",
     [
         pytest.param("by-the-stage", id="by-the-stage"),
-        pytest.param("already-on", id="already-on", marks=pytest.mark.xfail(
-            strict=True, reason=_REFRESHED_BY_THE_COMMAND)),
-        pytest.param("as-it-runs", id="as-it-runs", marks=pytest.mark.xfail(
-            strict=True, reason=_REFRESHED_BY_THE_COMMAND)),
+        pytest.param("already-on", id="already-on"),
+        pytest.param("as-it-runs", id="as-it-runs"),
     ],
 )
 async def test_a_refused_toggle_leaves_the_panel_alone(queued_bot, refused):

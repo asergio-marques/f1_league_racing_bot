@@ -23,6 +23,9 @@ toggle, which is the Principle X.6 exception for configuration that cannot go st
 image config value names a Discord channel, role or message, so none of those can become a stale
 binding while the module is off. It removes nothing else: the daily portrait job that `pfp_daily`
 arms stays armed while the module is off.
+
+**Each switch asks the hub's panel to be refreshed, once, as an `After` step**
+(`hub_service.hub_refresh_after`), rather than the command doing it after every press.
 """
 
 from __future__ import annotations
@@ -30,8 +33,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, Verdict, module_off, module_on
+from leaguebot.core.models.change import AuditRecord, PlannedStep, Verdict, module_off, module_on
 from leaguebot.core.services.change_queue import CheckContext
+from leaguebot.core.services.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
     PLACEMENTS_CONFIRMED_REFUSAL,
@@ -82,6 +86,7 @@ def module_on_images(*, modules: "ModuleService", seasons: "SeasonService") -> S
             audits=(
                 AuditRecord(change_type="IMAGE_MODULE_ENABLED", old_value={}, new_value={}),
             ),
+            then=(PlannedStep(REFRESH_HUB),),
         )
 
     def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
@@ -103,6 +108,7 @@ def module_on_images(*, modules: "ModuleService", seasons: "SeasonService") -> S
         reply=reply,
         writes=("image_config", "image_aspect_toggles"),
         not_saved=_still_off,
+        after={REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND)},
     )
 
 
@@ -130,6 +136,7 @@ def module_off_images(*, modules: "ModuleService") -> Setting:
             audits=(
                 AuditRecord(change_type="IMAGE_MODULE_DISABLED", old_value={}, new_value={}),
             ),
+            then=(PlannedStep(REFRESH_HUB),),
         )
 
     def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
@@ -146,6 +153,7 @@ def module_off_images(*, modules: "ModuleService") -> Setting:
         save=save,
         reply=reply,
         writes=("image_config",),
+        after={REFRESH_HUB: hub_refresh_after(_DISABLE_COMMAND)},
     )
 
 

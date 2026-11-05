@@ -4,21 +4,17 @@ Manages the league's modules.
 """
 from __future__ import annotations
 
-import logging
-
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.models.change import ChangeOrigin, module_off, module_on
+from leaguebot.core.models.change import module_off, module_on
 from leaguebot.core.models.module_dependencies import needs, taken_down_with
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_server import LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
-
-log = logging.getLogger(__name__)
 
 
 _MODULE_CHOICES = [
@@ -225,7 +221,6 @@ class ModuleCog(commands.Cog):
             await self._enable_images(interaction)
         else:
             await self._enable_signup(interaction)
-        await self._refresh_hub(interaction, describe(interaction))
 
     # ── /module disable ────────────────────────────────────────────────
 
@@ -254,34 +249,6 @@ class ModuleCog(commands.Cog):
             await self._disable_images(interaction)
         else:
             await self._disable_signup(interaction)
-        if module_name.value != "results":
-            # Turning results off asks the change queue, which refreshes the panel itself
-            # once the flag is down.
-            await self._refresh_hub(interaction, describe(interaction))
-
-    async def _refresh_hub(self, interaction: discord.Interaction, what: str) -> None:
-        """Ask the change queue to bring the hub's panel up to date: a module's options are
-        offered while it is on.
-
-        Run after every enable and disable, the confirmed results disable included, whether
-        or not the module offers anything — the hub asks each option, not each module. The refresh
-        is the bot's change, named for the member and *what* caused it: a panel Discord refuses
-        stops the queue at the refresh and never fails the toggle behind it. The caller names
-        it: a button's interaction carries no command, so `describe` could only say "an
-        interaction" for it.
-        """
-        from leaguebot.core.services.hub_service import HUB_REFRESH
-
-        try:
-            await self.bot.change_queue.ask(
-                HUB_REFRESH,
-                {"command": what},
-                actor=interaction.user,
-                what="refreshing the hub panel",
-                origin=ChangeOrigin.BOT,
-            )
-        except Exception:  # noqa: BLE001 — see the docstring
-            log.exception("module toggle: the hub panel could not be asked for")
 
     async def _refuse_module_change(
         self,

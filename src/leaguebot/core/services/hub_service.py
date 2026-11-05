@@ -54,6 +54,7 @@ import discord
 
 from leaguebot.core.models.change import (
     ChangeOrigin,
+    FollowOn,
     GuildUnavailable,
     PlannedStep,
     StepFailedOnDiscord,
@@ -70,6 +71,7 @@ from leaguebot.core.services.change_queue import (
     StepContext,
 )
 from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.services.setting_change import After
 from leaguebot.core.services.standing_post_handler import edit_standing, post_standing
 from leaguebot.core.services.standing_posts import delete_replaced_step, remove_kept
 from leaguebot.core.utils.in_a_job import posts_in_a_job
@@ -90,6 +92,7 @@ __all__ = [
     "refresh_panel",
     "set_hub_message_on",
     "hub_refresh_change",
+    "hub_refresh_after",
     "apply_hub_permissions",
     "reapply_hub_permissions",
     "recover_hub",
@@ -316,6 +319,30 @@ async def refresh_panel(
 HUB_REFRESH = "hub.refresh"
 _REFRESH_STEP = "refresh"
 DELETE_OLD = "delete_old"
+
+#: The name of the `After` step every module switch plans to ask for the hub's refresh.
+REFRESH_HUB = "refresh_hub"
+
+
+def hub_refresh_after(command: str) -> After:
+    """The `After` step a module switch plans once its save has changed something: it does no
+    work of its own and only asks `HUB_REFRESH` as its follow-on, naming *command*
+    ("`/module enable weather`"), so the panel is brought up to date once, after the switch has
+    run, rather than by the command whatever the switch becomes of it.
+
+    This step cannot fail — it asks for a change rather than making one — so its *fault_reply*
+    is never read.
+    """
+
+    async def run(ctx: StepContext) -> StepResult:
+        return StepResult(follow_ons=(
+            FollowOn(HUB_REFRESH, {"command": command}, f"Refreshing the hub panel after {ctx.what}"),
+        ))
+
+    def fault_reply(_payload: dict[str, Any], reply: str) -> str:
+        return reply
+
+    return After(step=Step(REFRESH_HUB, StepKind.ACT, run), fault_reply=fault_reply)
 
 
 def hub_refresh_change(queue: ChangeQueue, config_service: ConfigService) -> ChangeType:

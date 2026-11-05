@@ -19,6 +19,11 @@ specification, "A disabled module shall produce nothing … a scheduled job"; pi
 clean-up's own guards). A fault removing the jobs follows `setting_change`'s rule for a step after
 the save: the switch-off stands, and the reply says the jobs could not be removed and do nothing
 while the module is off.
+
+**Each switch asks the hub's panel to be refreshed, once, only where it changed something**: a
+further `After` step, `hub_service.hub_refresh_after`, that does no work of its own and only asks
+for the refresh as its follow-on. The panel offers what a module offers while it is on, so the
+switch asks for that itself rather than the command doing it after every press, refused or not.
 """
 
 from __future__ import annotations
@@ -36,6 +41,7 @@ from leaguebot.core.models.change import (
     module_on,
 )
 from leaguebot.core.services.change_queue import CheckContext, Step, StepContext
+from leaguebot.core.services.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
     PLACEMENTS_CONFIRMED_REFUSAL,
@@ -92,6 +98,7 @@ def module_on_weather(*, modules: "ModuleService", seasons: "SeasonService") -> 
                     change_type="MODULE_ENABLE", old_value={}, new_value={"module": "weather"}
                 ),
             ),
+            then=(PlannedStep(REFRESH_HUB),),
         )
 
     def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
@@ -106,6 +113,7 @@ def module_on_weather(*, modules: "ModuleService", seasons: "SeasonService") -> 
         reply=reply,
         writes=("server_configs",),
         not_saved=_still_off,
+        after={REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND)},
     )
 
 
@@ -155,7 +163,7 @@ def module_off_weather(*, modules: "ModuleService", scheduler: "SchedulerService
                     change_type="MODULE_DISABLE", old_value={"module": "weather"}, new_value={}
                 ),
             ),
-            then=(PlannedStep(REMOVE_JOBS),),
+            then=(PlannedStep(REMOVE_JOBS), PlannedStep(REFRESH_HUB)),
         )
 
     def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
@@ -169,7 +177,7 @@ def module_off_weather(*, modules: "ModuleService", scheduler: "SchedulerService
         save=save,
         reply=reply,
         writes=("server_configs",),
-        after={REMOVE_JOBS: _remove_jobs(scheduler)},
+        after={REMOVE_JOBS: _remove_jobs(scheduler), REFRESH_HUB: hub_refresh_after(_DISABLE_COMMAND)},
     )
 
 

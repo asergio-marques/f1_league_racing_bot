@@ -9,10 +9,13 @@ fit together", designs the gap this closes: weather's switch
 
 **The switch-on is one save: the flag and the audit entry.** A fault leaves the module off, so
 the member is told to run the command again rather than being left unsure whether it half-ran.
+Once it has changed something it asks the hub's panel to be refreshed, as an `After` step
+(`hub_service.hub_refresh_after`): the panel offers what a module offers while it is on, so the
+switch asks for that itself rather than the command doing it after every press.
 
 The switch-off is `results_off_change.py`'s: more than a flag flip, it closes the season's rounds
 and takes down its messages, so it is its own change on the queue (#439), built apart from the
-switch-on here.
+switch-on here, and asks the hub's refresh in its own save already.
 """
 
 from __future__ import annotations
@@ -20,8 +23,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import AuditRecord, Verdict, module_on
+from leaguebot.core.models.change import AuditRecord, PlannedStep, Verdict, module_on
 from leaguebot.core.services.change_queue import CheckContext
+from leaguebot.core.services.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.season_lifecycle_service import PLACEMENTS_CONFIRMED_REFUSAL
 from leaguebot.core.services.setting_change import Saved, Setting
 
@@ -66,6 +70,7 @@ def module_on_results(*, modules: "ModuleService", seasons: "SeasonService") -> 
                     change_type="MODULE_ENABLE", old_value={}, new_value={"module": "results"}
                 ),
             ),
+            then=(PlannedStep(REFRESH_HUB),),
         )
 
     def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
@@ -80,6 +85,7 @@ def module_on_results(*, modules: "ModuleService", seasons: "SeasonService") -> 
         reply=reply,
         writes=("results_module_config",),
         not_saved=_still_off,
+        after={REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND)},
     )
 
 

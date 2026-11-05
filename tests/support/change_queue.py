@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
+import sqlite3
 import threading
 import time
 from collections.abc import Collection, Iterator
@@ -461,6 +462,23 @@ def _stub_discord(bot: Any, *, real_config: bool = False) -> None:
     bot.add_view = MagicMock()
     if real_config:
         return
+    # The hub's channel is read from the database once, here, rather than fixed: a test that
+    # writes `hub_channel_id` before building the bot (as setting the hub up for a refresh does)
+    # is seen, and one that never sets one, or whose migrations have not run yet (some build the
+    # bot first), is correctly read as having none — a MagicMock attribute left to its default is
+    # truthy, and every module switch's hub-refresh follow-on (#283) would try a hub that is not
+    # there. A static `return_value`, as every other attribute keeps, so a test may still set one
+    # by hand afterwards (`.return_value.attr = …`).
+    hub_channel_id = None
+    try:
+        with sqlite3.connect(bot.db_path) as conn:
+            row = conn.execute(
+                "SELECT hub_channel_id FROM server_configs WHERE server_id IS NOT NULL"
+            ).fetchone()
+    except sqlite3.OperationalError:
+        row = None
+    if row is not None:
+        hub_channel_id = row[0]
     bot.config_service.get_server_config = AsyncMock(
         return_value=MagicMock(
             server_id=SERVER_ID,
@@ -468,6 +486,7 @@ def _stub_discord(bot: Any, *, real_config: bool = False) -> None:
             interaction_channel_id=INTERACTION_CHANNEL_ID,
             interaction_role_id=MANAGER_ROLE_ID,
             league_admin_role_id=ADMIN_ROLE_ID,
+            hub_channel_id=hub_channel_id,
         )
     )
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
