@@ -609,17 +609,13 @@ def season_approval_change(
                 )
             return StepResult(result={"closed": True})
         applied = (_view(ctx, APPLY) or _EMPTY).result or {}
-        lines: list[str] = []
-        report = _calendar_report(ctx)
-        if report:
-            lines.append(report)
-        lines.append(
+        line = (
             f"{ctx.named} | /season placements-review | Placements confirmed\n"
             f"  season: {applied.get('season_number', ctx.payload['season_number'])}\n"
             f"  season_id: {applied.get('season_id', ctx.payload['season_id'])}"
             + "".join(f"\n  not done: {line}" for line in _left(ctx, steps))
         )
-        return StepResult(result={"closed": True}, lines=tuple(lines))
+        return StepResult(result={"closed": True}, lines=(line,))
 
     # ── How each job is named, in the lines that say it stopped the queue ──────
 
@@ -719,10 +715,11 @@ def season_approval_change(
             f"(ID: {applied.get('season_id', ctx.payload['season_id'])})"
         )
         text += approval_checks.not_done_section(_left(ctx, steps, told=False))
-        report = _calendar_report(ctx)
-        if report:
-            head, *rest = report.splitlines()
-            text += f"\n\n⚠️ **Calendar images**\n{head}\n" + "\n".join(rest)
+        notices = _calendar_notices(ctx)
+        if notices:
+            text += "\n\n⚠️ **Calendar images**\n" + "\n".join(
+                f"  • {line}" for line in notices
+            )
         return text
 
     def doing(payload: dict[str, Any]) -> str:
@@ -887,25 +884,15 @@ def _left(ctx: OutcomeContext, steps: Mapping[str, Step], *, told: bool = True) 
     return lines
 
 
-def _calendar_report(ctx: OutcomeContext) -> str:
-    """The log line, and the reply's section, on what the calendar images met: a calendar that
-    fell back to text, and the notices a drawing carried; empty where none did."""
-    problems: list[str] = []
-    notices: list[str] = []
-    for view in ctx.steps:
-        if view.name != POST_CALENDAR or _discarded(view):
-            continue
-        result = view.result or {}
-        if result.get("problem"):
-            problems.append(f"{result['division']}: {result['problem']}")
-        notices.extend(f"{result['division']}: {detail}" for detail in result.get("notices") or [])
-    if not problems and not notices:
-        return ""
-    report = [f"{ctx.named} | /season placements-review | Calendar image generation"]
-    if problems:
-        report.append("  Fell back to the textual calendar:")
-        report += [f"    - {line}" for line in problems]
-    if notices:
-        report.append("  Notices:")
-        report += [f"    - {line}" for line in notices]
-    return "\n".join(report)
+def _calendar_notices(ctx: OutcomeContext) -> list[str]:
+    """The reply's "Calendar images" section: the notices a calendar's drawing carried, one per
+    division. A calendar fallen back to text is not reported here — that is its job's own log
+    line (Constitution XIV.4, the owner's decision on #283), and the notices themselves are the
+    drawing's own report to the log channel, not repeated by the approval (XIV.4, "reported in
+    one message")."""
+    return [
+        f"{(view.result or {})['division']}: {detail}"
+        for view in ctx.steps
+        if view.name == POST_CALENDAR and not _discarded(view)
+        for detail in (view.result or {}).get("notices") or []
+    ]
