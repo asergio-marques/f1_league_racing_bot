@@ -1572,6 +1572,49 @@ async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
     assert (await _approval(league))["state"] == "DONE"
 
 
+@pytest.mark.parametrize(
+    ("job", "division"),
+    [("opening_standings", "Pro"), ("opening_sheet", "Am")],
+    ids=["results' opening standings", "attendance's opening sheet"],
+)
+async def test_an_opening_post_stops_where_the_league_s_server_is_not_in_the_cache(
+    job: str, division: str, tmp_path: Any
+) -> None:
+    """The opening post's job, as the builder signs its module up (results' standings,
+    attendance's sheet), runs while the league's server is set up but not in the bot's cache. It
+    raises GuildUnavailable, a failure on Discord's side the queue stops on, rather than ending
+    as done with nothing posted."""
+    from leaguebot.__main__ import _sign_up_to_placements_confirmed
+    from leaguebot.core.models.change import GuildUnavailable
+    from leaguebot.core.services.change_queue import StepContext
+
+    bot = SimpleNamespace(
+        module_service=MagicMock(spec=ModuleService),
+        config_service=SimpleNamespace(get_league_server_id=AsyncMock(return_value=1)),
+        get_guild=lambda _server_id: None,
+    )
+    _sign_up_to_placements_confirmed(bot)
+    steps = {name: step for defined in bot.placements_confirmed_steps.call()
+             for name, step in defined.items()}
+    ctx = StepContext(
+        bot=bot, db_path=str(tmp_path / "bot.db"), change_id=1, kind="season.approve", payload={},
+        what="approving the season", actor_id=None, actor_name=None, named="Tester",
+        steps=(), step_name=job, step_payload={"division_id": 7, "division_name": division},
+    )
+
+    with pytest.raises(GuildUnavailable):
+        await steps[job].run(ctx)
+
+
+@pytest.mark.parametrize(
+    ("job", "owner", "fail"),
+    [
+        ("opening_standings", "leaguebot.results.services.season_standings_posts",
+         _fail_standings),
+        ("opening_sheet", "leaguebot.attendance.services.sheet_posting", _fail_sheet),
+    ],
+    ids=["results' opening standings", "attendance's opening sheet"],
+)
 async def test_a_discarded_module_job_is_named_in_its_own_step_s_words(
     tmp_path, monkeypatch, job, owner, fail,
 ):
