@@ -23,8 +23,6 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 TEMPLATES = ROOT / "resources" / "defaults" / "templates"
 
-NOT_YET = "#283: the image module's drawing does not answer the artwork signature yet"
-
 
 @pytest.fixture
 def folders(request):
@@ -69,7 +67,6 @@ def _identity(path: Path) -> list:
     return [path.name, stat.st_size, int(stat.st_mtime)]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_signature_names_each_template_then_each_asset_folder_by_name_size_and_time(
     folders,
 ):
@@ -98,7 +95,6 @@ async def test_the_signature_names_each_template_then_each_asset_folder_by_name_
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_league_with_no_image_configuration_signs_no_artwork():
     """Before the image module has a configuration, there is no artwork to sign: the answer is
     empty, as the fingerprint's own signature was."""
@@ -114,7 +110,6 @@ async def test_a_league_with_no_image_configuration_signs_no_artwork():
     assert await drawing.artwork_signature() == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_template_edited_on_disk_changes_the_signature(folders):
     """Takes the place of core's own test of the same name: no setting changed, only the file."""
     drawing = _drawing(
@@ -128,7 +123,6 @@ async def test_a_template_edited_on_disk_changes_the_signature(folders):
     assert await drawing.artwork_signature() != before
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_template_deleted_is_signed_by_its_name_alone(folders):
     """Takes the place of core's own test of the same case: a file that cannot be read is itself
     a state, its name kept with no size or time, so the signature differs from the one before."""
@@ -144,7 +138,6 @@ async def test_a_template_deleted_is_signed_by_its_name_alone(folders):
     assert after != before
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_artwork_added_to_an_asset_folder_changes_the_signature(folders):
     """Takes the place of core's own test of the same name: a flag dropped in between the review
     and the approval changes what a graphic draws."""
@@ -157,7 +150,6 @@ async def test_artwork_added_to_an_asset_folder_changes_the_signature(folders):
 
 
 @pytest.mark.parametrize("column", ["template_directory", "flag_directory"])
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_folder_that_cannot_be_read_is_signed_as_unresolvable_and_the_rest_still_signed(
     folders, column, caplog,
 ):

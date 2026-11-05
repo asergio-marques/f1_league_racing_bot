@@ -3228,10 +3228,6 @@ def test_a_catch_all_handler_sits_in_one_of_the_five_places():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: ImageDrawing.artwork_signature, the artwork signature's catch, is not yet written",
-)
 def test_every_catch_all_allowed_for_good_still_exists():
     """Each function named in `CATCH_ALLS_ALLOWED` still holds a catch-all, with its reason: a
     rename cannot leave the exception pointing at nothing."""

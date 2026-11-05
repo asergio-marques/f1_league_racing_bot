@@ -19,12 +19,17 @@ from typing import Any
 
 from leaguebot.core.services.image_drawing import CalendarPicture, CapacityProblem, LineupPicture
 from leaguebot.core.services.module_service import ModuleService
+from leaguebot.core.utils.paths import resolve_within_project_root
 from leaguebot.image.models.image_catalogues import (
     declared_capacities,
     reserve_capacity_problem,
     row_capacity_problem,
 )
-from leaguebot.image.models.image_constants import TEMPLATE_LABELS
+from leaguebot.image.models.image_constants import (
+    ASSET_DIRECTORIES,
+    TEMPLATE_COLUMNS,
+    TEMPLATE_LABELS,
+)
 from leaguebot.image.services.image_attendance_post import (
     ATTENDANCE_ASPECT,
     ATTENDANCE_TEMPLATE_KEY,
@@ -60,6 +65,37 @@ _DECLARED_REMEDY = (
 
 #: The calendar's own aspect.
 CALENDAR_ASPECT = "calendar"
+
+
+def _path_signature(path: Path) -> list:
+    """A file's identity for fingerprinting: its name, its size and when it changed.
+
+    Never its content. Hashing sixteen templates and every asset a league supplies would cost
+    more than the render this exists to replace, and size-and-mtime catches every edit that is
+    not a byte-identical rewrite inside the same second.
+    """
+    try:
+        stat = path.stat()
+        return [path.name, stat.st_size, int(stat.st_mtime)]
+    except OSError:
+        # A file that cannot be read is itself a state worth noticing: it may have been
+        # deleted since the review, which is exactly the change this must catch.
+        return [path.name, None, None]
+
+
+def _directory_signature(directory: Path) -> list:
+    """Every file directly in *directory*, sorted by name.
+
+    Sorted rather than in whatever order the filesystem yields, so two hosts holding the same
+    artwork agree. Not recursive: an asset class is a flat folder of files.
+    """
+    try:
+        entries = sorted(
+            (p for p in directory.iterdir() if p.is_file()), key=lambda p: p.name
+        )
+    except OSError:
+        return []
+    return [_path_signature(p) for p in entries]
 
 
 class ImageDrawing:
@@ -320,3 +356,54 @@ class ImageDrawing:
     def discard_picture(self, path: Path | None) -> None:
         """Release a drawn calendar's or lineup's file, whichever way its posting ended."""
         discard_render(path)
+
+    async def artwork_signature(self) -> list:
+        """What the league's artwork looks like now, for the season fingerprint's "artwork" area
+        (core/services/image_drawing.py).
+
+        A stated exception (architecture.md, "A catch-all error handler"): a part that cannot be
+        read is signed `[column, value, "unresolvable"]`, with a warning to the host's log, and
+        the rest is still signed.
+
+        *Rejected:* narrowing the catch to the errors it expects by name: a fault of any other
+        kind would then empty the whole fingerprint, and the review would read as changed in
+        every area, when the one part that cannot be read must not cost the rest their own
+        signature.
+        """
+        config = await self._config.get_config()
+        if config is None:
+            return []
+
+        signature: list = []
+
+        directory = getattr(config, "template_directory", None)
+        if directory:
+            try:
+                root = resolve_within_project_root(directory)
+                for column in sorted(TEMPLATE_COLUMNS):
+                    filename = getattr(config, column, None)
+                    if filename:
+                        signature.append([column, _path_signature(root / filename)])
+            except Exception:  # noqa: BLE001 — a stated exception, see the docstring
+                log.warning(
+                    "artwork signature: the template directory %s could not be read", directory,
+                    exc_info=True,
+                )
+                signature.append(["template_directory", directory, "unresolvable"])
+
+        for column in sorted(ASSET_DIRECTORIES):
+            value = getattr(config, column, None)
+            if not value:
+                continue
+            try:
+                signature.append(
+                    [column, _directory_signature(resolve_within_project_root(value))]
+                )
+            except Exception:  # noqa: BLE001 — a stated exception, see the docstring
+                log.warning(
+                    "artwork signature: the %s directory %s could not be read", column, value,
+                    exc_info=True,
+                )
+                signature.append([column, value, "unresolvable"])
+
+        return signature

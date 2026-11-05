@@ -111,3 +111,13 @@ class ImageDrawing(Protocol):
     def discard_picture(self, path: Path | None) -> None:
         """Release a path `draw_calendar` or `draw_lineup` handed back, whichever way its
         posting ended. A path of None is a no-op, covering a picture that was never drawn."""
+
+    async def artwork_signature(self) -> list:
+        """What the league's artwork looks like now: every configured template file, then every
+        configured asset folder, each by name, size and modification time, never by content. A
+        part that cannot be read is signed `[column, value, "unresolvable"]` and the rest are
+        still signed (architecture.md, "A catch-all error handler"). An unset column is left out,
+        and an empty list where the module has no configuration at all. The season fingerprint
+        digests this answer unchanged, so a review drawn before an edit still compares equal
+        after one that leaves it unchanged, and names the templates and artwork changing where it
+        does not."""
