@@ -2421,7 +2421,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/placement_service.py", "PlacementService.get_unassigned_drivers_seeded"):
         (1, PASS["core"]),
     ("core/services/season_classification_service.py", "post_final_standings"): (1, PASS["core"]),
-    ("core/services/season_end_changes.py", "_last_rounds_with_results"): (1, PASS["core"]),
+    ("core/services/season_end_changes.py", "final_round_read_on"): (1, PASS["core"]),
     ("core/services/season_end_service.py", "write_driver_history_entries_on"): (3, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "take_fingerprint"): (21, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.get_divisions_with_results_config"):

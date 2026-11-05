@@ -496,6 +496,9 @@ def season_complete_change(
     seasons: "SeasonService",
     scheduler: "SchedulerService",
     placement: "PlacementService",
+    final_round_read: AwaitedHook,
+    season_completed: AwaitedHook,
+    season_completed_steps: Hook,
     season_end_refused: AwaitedHook,
     season_end_closes: Hook,
     drivers_returned: AwaitedHook,
@@ -510,9 +513,10 @@ def season_complete_change(
     The builder hands in *modules* (which of results and attendance are on), the *seasons*
     service (the season the check reads), the *scheduler* (whose season-end job `settle` removes),
     the *placement* service (which takes back roles), the hooks the modules sign up to
-    (*season_end_refused*, *season_end_closes*, *drivers_returned*, *driver_returned_jobs*,
-    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*) and the hook each driver deleted
-    calls (*profiles_deleted*).
+    (*final_round_read*, *season_completed*, *season_completed_steps*, *season_end_refused*,
+    *season_end_closes*, *drivers_returned*, *driver_returned_jobs*, *season_end_steps*,
+    *test_mode_flushed*, *drivers_deleted*) and the hook each driver deleted calls
+    (*profiles_deleted*).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -587,9 +591,25 @@ def season_complete_change(
 
         number = int(season["season_number"])
         planned: list[PlannedStep] = []
-        for each in await _last_rounds_with_results(db, season_id):
-            planned.append(PlannedStep(FINAL_STANDINGS, each))
-            planned.append(PlannedStep(FINAL_SHEET, each))
+        cursor = await db.execute(
+            "SELECT id, name FROM divisions WHERE season_id = ? AND status != 'CANCELLED' "
+            "ORDER BY id",
+            (season_id,),
+        )
+        for division in await cursor.fetchall():
+            division_id = int(division["id"])
+            division_name = str(division["name"])
+            rounds = await final_round_read.call(db, division_id)
+            round_id = next((each for each in rounds if each is not None), None)
+            if round_id is None:
+                continue
+            planned.extend(
+                job
+                for jobs in await season_completed.call(
+                    db, division_id, division_name, int(round_id)
+                )
+                for job in jobs
+            )
         for target in await season_role_targets_on(db, season_id):
             planned.append(
                 PlannedStep(
@@ -659,32 +679,6 @@ def season_complete_change(
             audits=(audit,),
             then=tuple(planned),
         )
-
-    async def final_standings(ctx: StepContext) -> StepResult:
-        guild = await require_guild(ctx.bot)
-        each = ctx.step_payload
-        await season_classification_service.post_final_standings(
-            ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
-            as_text=ctx.tries > 0, kept=ctx.kept,
-        )
-        return StepResult()
-
-    async def standings_due(_ctx: StepContext) -> bool:
-        return await modules.is_results_enabled()
-
-    async def final_sheet(ctx: StepContext) -> StepResult:
-        guild = await require_guild(ctx.bot)
-        each = ctx.step_payload
-        result = await season_classification_service.post_final_sheet(
-            ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
-            as_text=ctx.tries > 0,
-        )
-        # The final sheet stands beside the last round's: nothing is saved for it and nothing
-        # deleted, so it plans no deletion and carries no record.
-        return StepResult(result=result)
-
-    async def sheet_due(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
 
     def _completed(ctx: OutcomeContext) -> bool:
         """Whether the season's end was saved: `end` is done, and neither refused nor discarded."""
@@ -761,12 +755,6 @@ def season_complete_change(
     async def describe_end(ctx: StepContext) -> str:
         return f"recording the end of season {ctx.payload['season_number']}"
 
-    async def describe_standings(ctx: StepContext) -> str:
-        return f"posting the final standings of **{ctx.step_payload['division_name']}**"
-
-    async def describe_sheet(ctx: StepContext) -> str:
-        return f"posting the final attendance sheet of **{ctx.step_payload['division_name']}**"
-
     async def describe_close(_ctx: StepContext) -> str:
         return "recording the completion of the season"
 
@@ -784,14 +772,11 @@ def season_complete_change(
 
     steps: dict[str, Step] = {
         SETTLE: Step(SETTLE, StepKind.SAVE, settle, describe=describe_settle),
-        FINAL_STANDINGS: Step(
-            FINAL_STANDINGS, StepKind.ACT, final_standings, still_due=standings_due,
-            describe=describe_standings,
-        ),
-        FINAL_SHEET: Step(
-            FINAL_SHEET, StepKind.ACT, final_sheet, still_due=sheet_due,
-            describe=describe_sheet,
-        ),
+        **{
+            name: step
+            for defined in season_completed_steps.call()
+            for name, step in defined.items()
+        },
         END: Step(END, StepKind.SAVE, end, describe=describe_end),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
         **winding,
@@ -1018,34 +1003,79 @@ async def test_mode_on(db: aiosqlite.Connection) -> bool:
     return row is not None and bool(row["test_mode_active"])
 
 
-async def _last_rounds_with_results(
-    db: aiosqlite.Connection, season_id: int
-) -> list[dict[str, Any]]:
-    """Each division of *season_id*, by id, with the last of its rounds that has results.
+async def final_round_read_on(db: aiosqlite.Connection, division_id: int) -> int | None:
+    """*division_id*'s last round with results, or None where it has none.
 
     The final classification is drawn against that round, whose classification it *is*. A
-    division that ran no round has none to publish and is left out, and so is a division
-    cancelled, which gets no final classification (decided 2026-10-09).
+    division that ran no round has none to publish and gets no final classification. This is
+    core's own temporary subscriber to `final_round_read`, read exactly as `settle` used to read
+    it directly; results' own read of its `session_results` takes its place (#283, S10e).
     """
     cursor = await db.execute(
-        """
-        SELECT d.id AS division_id, d.name AS division_name,
-               (SELECT r.id FROM rounds r
-                 JOIN session_results sr ON sr.round_id = r.id
-                WHERE r.division_id = d.id AND sr.status = 'ACTIVE'
-                ORDER BY r.round_number DESC LIMIT 1) AS round_id
-        FROM divisions d
-        WHERE d.season_id = ? AND d.status != 'CANCELLED'
-        ORDER BY d.id
-        """,
-        (season_id,),
+        "SELECT r.id FROM rounds r JOIN session_results sr ON sr.round_id = r.id "
+        "WHERE r.division_id = ? AND sr.status = 'ACTIVE' ORDER BY r.round_number DESC LIMIT 1",
+        (division_id,),
     )
-    return [
-        {
-            "division_id": int(row["division_id"]),
-            "division_name": str(row["division_name"]),
-            "round_id": int(row["round_id"]),
-        }
-        for row in await cursor.fetchall()
-        if row["round_id"] is not None
-    ]
+    row = await cursor.fetchone()
+    return int(row["id"]) if row is not None else None
+
+
+async def season_completed_on(
+    _db: aiosqlite.Connection, division_id: int, division_name: str, round_id: int
+) -> tuple[PlannedStep, ...]:
+    """Core's own temporary subscriber to `season_completed`: the final standings and final
+    sheet jobs for *division_id*, drawn against *round_id*. Results' and attendance's own jobs
+    take its place (#283, S10e)."""
+    target = {
+        "division_id": division_id, "division_name": division_name, "round_id": round_id,
+    }
+    return (PlannedStep(FINAL_STANDINGS, target), PlannedStep(FINAL_SHEET, target))
+
+
+def season_completed_steps_on(modules: "ModuleService") -> dict[str, Step]:
+    """Core's own temporary subscriber to `season_completed_steps`: the step definitions for the
+    final standings and final sheet. Results' and attendance's own steps take its place (#283,
+    S10e)."""
+
+    async def final_standings(ctx: StepContext) -> StepResult:
+        guild = await require_guild(ctx.bot)
+        each = ctx.step_payload
+        await season_classification_service.post_final_standings(
+            ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
+            as_text=ctx.tries > 0, kept=ctx.kept,
+        )
+        return StepResult()
+
+    async def standings_due(_ctx: StepContext) -> bool:
+        return await modules.is_results_enabled()
+
+    async def describe_standings(ctx: StepContext) -> str:
+        return f"posting the final standings of **{ctx.step_payload['division_name']}**"
+
+    async def final_sheet(ctx: StepContext) -> StepResult:
+        guild = await require_guild(ctx.bot)
+        each = ctx.step_payload
+        result = await season_classification_service.post_final_sheet(
+            ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
+            as_text=ctx.tries > 0,
+        )
+        # The final sheet stands beside the last round's: nothing is saved for it and nothing
+        # deleted, so it plans no deletion and carries no record.
+        return StepResult(result=result)
+
+    async def sheet_due(_ctx: StepContext) -> bool:
+        return await modules.is_attendance_enabled()
+
+    async def describe_sheet(ctx: StepContext) -> str:
+        return f"posting the final attendance sheet of **{ctx.step_payload['division_name']}**"
+
+    return {
+        FINAL_STANDINGS: Step(
+            FINAL_STANDINGS, StepKind.ACT, final_standings, still_due=standings_due,
+            describe=describe_standings,
+        ),
+        FINAL_SHEET: Step(
+            FINAL_SHEET, StepKind.ACT, final_sheet, still_due=sheet_due,
+            describe=describe_sheet,
+        ),
+    }

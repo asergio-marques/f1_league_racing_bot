@@ -133,6 +133,21 @@ class LeagueBot(commands.Bot):
     #: definitions each module hands back for its own job, by name.
     placements_confirmed: AwaitedHook
     placements_confirmed_steps: Hook
+    #: A division's final round read (the completion's first save), given the connection and the
+    #: division's id: each module signing up its own read, handing back the round its final
+    #: classification is drawn against, or None (results' last round with results). The builder
+    #: makes it and hands it to the completion, which asks it for each division the completion
+    #: still has after its own divisions still CANCELLED are left out.
+    final_round_read: AwaitedHook
+    #: A season completed (the completion's first save), given the connection and a division's id,
+    #: name and the round its final classification is drawn against: each module signing up its
+    #: own final post, handing back the jobs it plans for that division (results' final standings,
+    #: then attendance's final sheet). The builder makes it and hands it to the completion, which
+    #: plans the jobs it is handed for each division with a final round, in today's order, inside
+    #: its first save. `season_completed_steps` carries the step definitions each module hands
+    #: back for its own job, by name.
+    season_completed: AwaitedHook
+    season_completed_steps: Hook
     #: The moments of a season's end, each module signing up its part: what stands in the way of
     #: the completion and of the cancellation (each hands back a refusal or None); the jobs that
     #: close what a module holds open, given the cause and the season's number where it has one

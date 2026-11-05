@@ -303,6 +303,25 @@ def _sign_up_to_placements_confirmed(bot: LeagueBot) -> None:
     bot.placements_confirmed_steps.subscribe(partial(sheet_posting.opening_steps, bot.module_service))
 
 
+def _sign_up_to_season_completed(bot: LeagueBot) -> None:
+    """Make the hooks a division's final round read and a season completed declare, and sign
+    core's own final posting up to them for now: `final_round_read` to core's
+    `_final_round_read_on` (S10e's first commit; results' and attendance's reads and posts take
+    their place in slices after it), and `season_completed` to core's own planning of the final
+    standings and final sheet jobs. `season_completed_steps` is signed up the same way. The
+    builder hands them to `season_complete_change`."""
+    from leaguebot.core.services import season_end_changes
+
+    bot.final_round_read = AwaitedHook()
+    bot.final_round_read.subscribe(season_end_changes.final_round_read_on)
+    bot.season_completed = AwaitedHook()
+    bot.season_completed.subscribe(season_end_changes.season_completed_on)
+    bot.season_completed_steps = Hook()
+    bot.season_completed_steps.subscribe(
+        partial(season_end_changes.season_completed_steps_on, bot.module_service)
+    )
+
+
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
     """Make the hooks a season's end declares, and sign each module's part up to them, in the order
     core calls them: what stands in the way of the completion and of the cancellation (results'
@@ -843,6 +862,9 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
+            final_round_read=bot.final_round_read,
+            season_completed=bot.season_completed,
+            season_completed_steps=bot.season_completed_steps,
             season_end_refused=bot.season_end_refused,
             season_end_closes=bot.season_end_closes,
             drivers_returned=bot.drivers_returned,
@@ -1211,6 +1233,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_rounds_made_final(bot)
     _sign_up_to_test_mode_turned_on(bot)
     _sign_up_to_placements_confirmed(bot)
+    _sign_up_to_season_completed(bot)
     _sign_up_to_season_end(bot)
     _sign_up_to_deletes(bot)
     _sign_up_to_pack(bot)

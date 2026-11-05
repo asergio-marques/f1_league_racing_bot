@@ -963,11 +963,6 @@ async def test_a_refusal_found_when_the_completion_runs_updates_the_reply_and_th
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the completion does not yet plan the modules' final posts through the season "
-    "completed hook",
-)
 async def test_the_jobs_run_in_order(tmp_path):
     """Results, attendance and test mode on; Pro's last round with results is its round 2, Am's
     its round 1. The jobs run in the core specification's order: the save, then for Pro and then
@@ -1127,11 +1122,6 @@ async def test_a_division_that_ran_no_round_gets_no_final_classification(tmp_pat
     assert await _status(league) == "COMPLETED"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the completion does not yet ask the modules for each division's final round "
-    "through the final round read hook",
-)
 async def test_a_cancelled_division_gets_no_final_classification(tmp_path):
     """Results and attendance on; Am cancelled, Charles a former driver. Am gets no final
     standings and no final sheet, and nothing is posted in its channels, while Charles still
