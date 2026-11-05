@@ -74,6 +74,21 @@ async def test_build_returns_every_service_complete(tmp_path):
     assert not hasattr(bot.wizard_service, "set_bot")
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the builder does not yet hand PlacementService the image module's drawing"
+)
+async def test_the_builder_hands_placement_the_image_module_s_drawing(tmp_path):
+    """`build` makes the image module's answer to core's drawing protocol once, declares it on the
+    bot, and hands that same answer to `PlacementService`: without it, every capacity guard would
+    let every placement through."""
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    bot = await built_bot(tmp_path, now=_NOW)
+
+    assert isinstance(bot.image_drawing, ImageDrawing)
+    assert bot.placement_service._drawing is bot.image_drawing
+
+
 #: The kinds of the scheduler's own jobs, each signed up with its handler by the builder.
 _SCHEDULER_KINDS = {
     "weather_p1", "weather_p2", "weather_p3", "cleanup", "results", "rsvp_notice",
