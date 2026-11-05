@@ -460,14 +460,15 @@ _NOTHING_PUTS_IT_RIGHT = (
 
 
 def _fallen_back_to_text_line(ctx: StepContext, division_name: str, problem: str) -> str:
-    """The `post_calendar` job's own log line where its calendar fell back to text, naming the
-    division, the problem, and what puts it right (Constitution XIV.4: recorded alongside the
-    source's own entry). A season being cancelled by the change this job runs for is read from
-    the change's own kind, there being no command left once the season is cancelled that posts
-    the picture again."""
+    """The `post_calendar` job's own log line where its calendar fell back to text, opening with
+    the member and the change it ran for, as every other job line does (Constitution Principle
+    V), then naming the division, the problem, and what puts it right (Constitution XIV.4:
+    recorded alongside the source's own entry). A season being cancelled by the change this job
+    runs for is read from the change's own kind, there being no command left once the season is
+    cancelled that posts the picture again."""
     put_right = _NOTHING_PUTS_IT_RIGHT if ctx.kind == SEASON_CANCEL else _FIX_IT
     return (
-        " | Calendar posted as text\n"
+        f"{ctx.named} | {ctx.what} | Calendar posted as text\n"
         f"  division: {division_name}\n"
         f"  problem: {problem}\n"
         f"  to put it right: {put_right}"
