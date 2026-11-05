@@ -341,6 +341,25 @@ async def test_the_results_dependency_is_checked_before_the_season(tmp_path):
     assert "requires the Results & Standings module" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: /module enable does not read the dependency table yet")
+async def test_the_dependency_table_decides_whether_attendance_may_be_enabled(tmp_path, monkeypatch):
+    """The refusal reads the table in `core/models/` rather than a rule of its own: with the table
+    emptied, attendance is switched on while results is off."""
+    from leaguebot.core.models import module_dependencies
+
+    monkeypatch.setattr(module_dependencies, "NEEDS", {})
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path, results_enabled=False)
+    interaction = _interaction()
+
+    await cog._enable_attendance(interaction)
+
+    assert "requires the Results & Standings module" not in _replied(interaction)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT module_enabled FROM attendance_config")
+        assert (await cursor.fetchone())["module_enabled"] == 1
+
+
 async def test_enabling_attendance_twice_does_no_work(tmp_path):
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path, results_enabled=True, attendance_enabled=True)

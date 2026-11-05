@@ -403,3 +403,26 @@ async def test_no_warning_where_neither_attendance_nor_a_season_is_at_stake(tmp_
     assert results == 0
     assert attendance == 0
     assert updated_reply(interaction) == "✅ Results & Standings module disabled."
+
+
+@pytest.mark.xfail(strict=True, reason="#283: /module disable does not read the dependency table yet")
+async def test_the_dependency_table_decides_the_cascade_and_its_warning(tmp_path, monkeypatch):
+    """The cascade and its warning read the table in `core/models/` rather than a rule of their
+    own: with the table emptied, attendance on and no season running, results goes off at once,
+    with no warning, and attendance stays on with its channels."""
+    from leaguebot.core.models import module_dependencies
+
+    monkeypatch.setattr(module_dependencies, "NEEDS", {})
+    db_path = await _make_db(tmp_path, attendance_enabled=True)
+    cog = await _make_cog(db_path, attendance_enabled=True, queued=True)
+    interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
+
+    await cog._disable_results(interaction)
+
+    assert _acknowledges(acknowledgement(interaction))
+    assert "view" not in interaction.response.send_message.await_args.kwargs
+
+    await run_queue(cog.bot)
+
+    assert await _module_flags(db_path) == (0, 1, 1)
+    assert updated_reply(interaction) == "✅ Results & Standings module disabled."

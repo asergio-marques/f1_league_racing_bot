@@ -24,6 +24,7 @@ import configparser
 import re
 from pathlib import Path
 
+import pytest
 from importlinter import configuration
 from importlinter.application.use_cases import lint_imports
 
@@ -79,12 +80,19 @@ _MODULE_CONTRACT = re.compile(
 )
 
 
+@pytest.mark.xfail(strict=True, reason="#283: there is no dependency table in core/models/ yet")
 def test_every_module_is_under_the_rules_between_modules():
     """The rules between modules name each module by hand, so a module's folder the contracts do
     not name would be under none of them: core could use it, and it could use anything. Adding a
-    module adds it to `.importlinter`, and to the dependency table there. Each module's contract
-    says in its name which modules it may use, and forbids exactly the rest, so a module left
-    out of another's forbidden list is found here."""
+    module adds it to `.importlinter`. Each module's contract says in its name which modules it
+    may use, and forbids exactly the rest, so a module left out of another's forbidden list is
+    found here.
+
+    The modules a contract allows are the module's row of the dependency table in
+    `core/models/module_dependencies.py`, with the image module besides, which every module may
+    call without an entry, so the contracts and the table the switches read cannot drift apart."""
+    from leaguebot.core.models.module_dependencies import needs
+
     modules = _modules()
 
     assert _named("core-uses-no-module", "forbidden_modules") == modules
@@ -99,6 +107,10 @@ def test_every_module_is_under_the_rules_between_modules():
         assert _named(match[0], "forbidden_modules") == modules - {module} - allowed, match[0]
         rows[module] = allowed
     assert set(rows) == modules, "Every module has a contract saying which modules it may use."
+    assert rows["image"] == set()
+    assert {module: allowed - {"image"} for module, allowed in rows.items() if module != "image"} == {
+        module: set(needs(module)) for module in rows if module != "image"
+    }, "Each module's contract allows the modules the dependency table says it needs, and image."
 
 
 def test_every_folder_of_the_package_is_a_package():
