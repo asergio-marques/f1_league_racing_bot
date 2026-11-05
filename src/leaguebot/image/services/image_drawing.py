@@ -170,7 +170,7 @@ class ImageDrawing:
             if not await self._modules.is_images_enabled():
                 return False
             return await self._config.is_aspect_enabled(CALENDAR_ASPECT)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — a stated exception, see the docstring
             log.exception("calendar: could not read the image gates")
             return False
 
