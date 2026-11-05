@@ -3,19 +3,18 @@
 `/module enable signup` asks one change built from the `Setting` below by `setting_change`
 (`core/services/setting_change.py`, which holds what every settings change does with a value
 already held and with a fault): `module_on("signup")` (`core/models/change.py`), so core's cog
-names the change without importing signup. `docs/design/architecture.md`, "How modules and core
-fit together", designs the gap this closes: weather's switch
+names the change without importing signup, as `docs/design/architecture.md`, "How modules and
+core fit together", designs it: weather's switch
 (`weather/services/module_switch_settings.py`) is the model. Signup's switch-off is
-`signup_off_change.py`'s own change already; the switch-on here is its match.
+`signup_off_change.py`'s own change; the switch-on here is its match.
 
 **The switch-on is one save: the flag, a bare configuration row created only where none stands,
-and the audit entry.** Creating only what is missing, rather than replacing a
-standing row's values, keeps a configuration that survived a switch-off intact — the time slots
-and question settings already stand again there (issue #127), and a configuration row restored
-from a backup, or left by a disable that never clears it, is kept rather than blanked.
-Principle X.6's "re-enabling starts fresh" does not apply here: the signup specification already
-says what a disable keeps, and the bare row this creates where none exists is what the module
-needs to be usable, not a reset of what is there.
+and the audit entry.** Creating only what is missing, rather than replacing a standing row's
+values, keeps a configuration that survived a switch-off intact — the time slots and question
+settings already stand again there (issue #127), and a configuration row restored from a backup
+is kept rather than blanked. Principle X.6's "re-enabling starts fresh" does not apply here: the
+signup specification already says what a disable keeps, and the bare row this creates where none
+exists is what the module needs to be usable, not a reset of what is there.
 
 **The flag is signup's own column on core's table, `server_configs.signup_module_enabled`**
 (architecture.md, "The database"; `OWN_COLUMNS` in `tests/repository/test_architecture_rules.py`),
