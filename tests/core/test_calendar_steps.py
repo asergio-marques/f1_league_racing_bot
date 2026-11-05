@@ -16,7 +16,6 @@ database.
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -289,26 +288,27 @@ def _drawing_fails(league: Any, monkeypatch: Any) -> None:
                         AsyncMock(side_effect=RuntimeError(PROBLEM)))
 
 
-async def _approved(tmp_path: Any, monkeypatch: Any) -> Any:
-    """Season 3's placements approved by the admin: Pro's and Am's calendars are posted."""
+async def _approved(tmp_path: Any, monkeypatch: Any) -> tuple[Any, Any]:
+    """Season 3's placements approved by the admin: Pro's and Am's calendars are posted. Returns
+    the league and the press."""
     league = await season_league(tmp_path, monkeypatch=monkeypatch, images=True)
     _drawing_fails(league, monkeypatch)
-    await press_approve(league)
-    return league
+    return league, await press_approve(league)
 
 
-async def _round_cancelled(tmp_path: Any, monkeypatch: Any) -> Any:
-    """Pro's round 3 cancelled with `/round cancel`: Pro's calendar is posted again."""
+async def _round_cancelled(tmp_path: Any, monkeypatch: Any) -> tuple[Any, Any]:
+    """Pro's round 3 cancelled with `/round cancel`: Pro's calendar is posted again. Returns the
+    league and the command's interaction."""
     league = await ongoing_league(tmp_path, images=True)
     _drawing_fails(league, monkeypatch)
-    await _cancel(league)
-    return league
+    return league, await _cancel(league)
 
 
-async def _round_not_held(tmp_path: Any, monkeypatch: Any) -> Any:
+async def _round_not_held(tmp_path: Any, monkeypatch: Any) -> tuple[Any, None]:
     """Pro's round 3 awaiting results, its Feature Qualifying entered as cancelled; the admin types
     CANCELLED for its Feature Race, so the round ends not held and Pro's calendar is posted again
-    (results' `results.submission.all_cancelled`)."""
+    (results' `results.submission.all_cancelled`). Returns the league, and no reply, the ending
+    having none."""
     from leaguebot.results.cogs.results_cog import ResultsCog
 
     league = await ongoing_league(tmp_path, images=True)
@@ -324,7 +324,7 @@ async def _round_not_held(tmp_path: Any, monkeypatch: Any) -> Any:
     await ResultsCog(league.bot).on_message(typed_message(
         sub, league._member(ADMIN_ID), "CANCELLED", created_at=league.clock.now,
     ))
-    return league
+    return league, None
 
 
 @pytest.mark.xfail(strict=True, reason=FALLBACK_NOT_YET_ITS_JOB_S)
@@ -338,19 +338,28 @@ async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_p
 ):
     """Each change that posts a calendar, where the drawing fails and the text stands in: the log
     channel names the problem once for each calendar, in the `post_calendar` job's own line, and
-    in no line of the change's own (Constitution XIV.4, the data model's render problems)."""
-    league = await start(tmp_path, monkeypatch)
+    in no line of the change's own (Constitution XIV.4, the data model's render problems). No line
+    names a calendar as not notified, and the member's reply names neither the problem nor a
+    calendar posted as text: no "Not notified" for a cancellation, and no "Calendar images"
+    section for the approval, where the fallback was all it would have held."""
+    league, asked = await start(tmp_path, monkeypatch)
     assert not league.errors, league.errors
 
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
-    named = [line for line in league.bot.log_channel.sent if PROBLEM in line]
+    logged = list(league.bot.log_channel.sent)
+    named = [line for line in logged if PROBLEM in line]
     assert len(named) == len(divisions), named
     for division in divisions:
         assert sum(
             POSTED_AS_TEXT.format(division=division, problem=PROBLEM) in line for line in named
         ) == 1, named
+    assert not [line for line in logged if "not notified:" in line], logged
+    if asked is not None:
+        told = reply(asked)
+        for words in (PROBLEM, "posted as text", "Not notified", "Calendar images"):
+            assert words not in told, told
 
 
 @pytest.mark.xfail(strict=True, reason=(

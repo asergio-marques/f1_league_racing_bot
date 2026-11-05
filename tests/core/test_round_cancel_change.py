@@ -1176,34 +1176,6 @@ async def test_a_retried_calendar_is_posted_as_text(tmp_path, monkeypatch):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#283: the round's cancellation names a calendar posted as text as not notified"
-))
-async def test_a_calendar_fallen_back_to_text_is_not_named_as_not_notified(
-    tmp_path, monkeypatch,
-):
-    """Pro's round 3 is cancelled while Pro's calendar is drawn as a picture, and the drawing
-    fails, so the calendar is posted again as text. The calendar was posted, so neither the reply
-    nor the cancellation's line names it as not notified: its fallback is its job's own line."""
-    from leaguebot.core.services import calendar_post_service
-
-    league = await ongoing_league(tmp_path, images=True)
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda aspect: aspect == "calendar"
-    )
-    monkeypatch.setattr(calendar_post_service, "render_calendar_image",
-                        AsyncMock(side_effect=RuntimeError("the template has no rows")))
-    interaction = await _asked(league)
-
-    await _done(league)
-
-    assert len(league.texts(PRO_CH.calendar)) == 1
-    assert "Not notified" not in reply(interaction)
-    assert "posted as text" not in reply(interaction)
-    [line] = _success_lines(league)
-    assert "not notified:" not in line and "the template has no rows" not in line
-
-
 async def test_a_discarded_calendar_repost_names_calendar_sync_while_the_season_is_raced(tmp_path):
     """Discord refuses Pro's calendar repost after round 3 is cancelled, and a league admin
     discards it. The reply and the success line name it with the fix that works: run
