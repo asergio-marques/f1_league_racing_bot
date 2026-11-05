@@ -18,7 +18,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from lxml import etree
 
-_NOT_YET = "#283: the image module does not yet answer core's standings capacity question"
 
 SVG_NS = "http://www.w3.org/2000/svg"
 DRIVERS = "standings_drivers_template"
@@ -168,7 +167,6 @@ async def _assign(db_path, season_id, division_id, team, drawing):
 # ── The answer ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_drivers_past_the_rows_are_a_problem(tmp_path):
     template = _template_file(tmp_path, rows=2)
 
@@ -181,7 +179,6 @@ async def test_drivers_past_the_rows_are_a_problem(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("rows, drivers", [(5, 3), (3, 3)], ids=["within", "exactly"])
 async def test_drivers_the_rows_hold_are_no_problem(tmp_path, rows, drivers):
     template = _template_file(tmp_path, rows=rows)
@@ -189,7 +186,6 @@ async def test_drivers_the_rows_hold_are_no_problem(tmp_path, rows, drivers):
     assert await _drawing(template).standings_capacity_problem(drivers) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize(
     "toggle, images", [(False, True), (True, False)], ids=["aspect-off", "module-off"]
 )
@@ -205,7 +201,6 @@ async def test_no_standings_drawn_means_no_problem(tmp_path, toggle, images):
 # ── As a league meets it, through the choke point ─────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_race_placement_past_the_rows_is_refused_through_assign_driver(tmp_path):
     """The two seated reserves are not among the drivers counted: they hold no row."""
     db_path, season_id, division_id = await _seed(tmp_path, drivers=2, reserves=2)
@@ -221,7 +216,6 @@ async def test_a_race_placement_past_the_rows_is_refused_through_assign_driver(t
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_reserve_placement_survives_full_standings_through_assign_driver(tmp_path):
     """Seating a reserve grows no classification, so a full template cannot refuse it."""
     db_path, season_id, division_id = await _seed(tmp_path, drivers=2)

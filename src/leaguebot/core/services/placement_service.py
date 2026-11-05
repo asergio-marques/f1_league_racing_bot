@@ -826,55 +826,30 @@ class PlacementService:
         *adding* is how many classified drivers the change seats — one for a placement, more
         for a test roster seated whole (``guard_roster_capacity``).
 
-        Never raises for its own reasons: a fault in this check must not block a placement,
-        only a genuine over-capacity may.
+        Asks the image module's handed drawing (``_ask_drawing``): never raises for its own
+        reasons, only a genuine over-capacity the drawing reports may.
         """
-        bot = self._bot
-        if bot is None:
-            return
-        try:
-            from leaguebot.image.models.image_catalogues import row_capacity_problem
-            from leaguebot.image.services.image_standings_post import standings_enabled
-            from leaguebot.image.services.image_standings_service import DRIVERS_TEMPLATE_KEY
-            from leaguebot.image.utils.svg_document import load_svg, off_the_loop
-
-            # A reserve placement adds no entry to the classification, and no such team —
-            # `assign_driver` reports a team that does not exist in its own words.
-            if await self._is_reserve_team(division_id, team_name) is not False:
-                return
-
-            if not await standings_enabled(bot, DRIVERS_TEMPLATE_KEY):
-                return
-
-            reports = await bot.image_validity_service.template_reports()
-            report = reports.get(DRIVERS_TEMPLATE_KEY)
-            if report is None or not report.valid or report.resolved_path is None:
-                return
-
-            async with get_connection(self._db_path) as db:
-                row = await (
-                    await db.execute(
-                        "SELECT COUNT(*) AS seated FROM driver_season_assignments dsa "
-                        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
-                        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
-                        "WHERE dsa.division_id = ? AND ti.is_reserve = 0",
-                        (division_id,),
-                    )
-                ).fetchone()
-            seated = (row["seated"] if row else 0) or 0
-            # The template is parsed and measured off the event loop: both are pure.
-            path = report.resolved_path
-            problem = await off_the_loop(
-                lambda: row_capacity_problem(DRIVERS_TEMPLATE_KEY, load_svg(path), seated + adding)
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.error("standings capacity guard could not run: %s", exc, exc_info=True)
+        # A reserve placement adds no entry to the classification, and no such team —
+        # `assign_driver` reports a team that does not exist in its own words.
+        if await self._is_reserve_team(division_id, team_name) is not False:
             return
 
+        async with get_connection(self._db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT COUNT(*) AS seated FROM driver_season_assignments dsa "
+                    "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+                    "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+                    "WHERE dsa.division_id = ? AND ti.is_reserve = 0",
+                    (division_id,),
+                )
+            ).fetchone()
+        seated = (row["seated"] if row else 0) or 0
+
+        problem = await self._ask_drawing("standings_capacity_problem", seated + adding)
         if problem is not None:
             raise ValueError(
-                f"{problem}. The driver was **not** assigned. Enlarge the template, or "
-                f"the standings would silently drop a driver."
+                f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
             )
 
     async def _guard_test_mode(self, driver_profile_id: int) -> None:
