@@ -1,12 +1,14 @@
 """The image module's answers to core's drawing protocol.
 
 `ImageDrawing` implements `leaguebot.core.services.image_drawing.ImageDrawing`: the builder
-makes one, attaches it to the bot as `bot.image_drawing`, and hands it to `PlacementService` and
-its other callers, so that core never imports this module. Each method is a capacity question:
+makes one, attaches it to the bot as `bot.image_drawing`, and hands it to `PlacementService`, so
+that core never imports this module. Each method is a capacity question:
 is the aspect drawn at all, is the template valid, and does it hold that many? Answered off the
 event loop, since parsing and measuring a template takes real time.
 """
 from __future__ import annotations
+
+from pathlib import Path
 
 from leaguebot.core.services.image_drawing import CapacityProblem
 from leaguebot.core.services.module_service import ModuleService
@@ -21,18 +23,19 @@ from leaguebot.image.services.image_attendance_post import (
     ATTENDANCE_TEMPLATE_KEY,
 )
 from leaguebot.image.services.image_config_service import ImageConfigService
+from leaguebot.image.services.image_lineup_post import LINEUP_TEMPLATE_KEY
 from leaguebot.image.services.image_standings_post import DRIVERS_TEMPLATE_KEY
 from leaguebot.image.services.image_validity_service import ImageValidityService
 from leaguebot.image.utils.svg_document import off_the_loop
 
-#: The lineup's one template, named here as the other aspects name their own (image_lineup_post's
-#: LINEUP_TEMPLATE_KEY, image_attendance_post's ATTENDANCE_TEMPLATE_KEY).
-LINEUP_TEMPLATE_KEY = "lineup_template"
-
-_RESERVE_REMEDY = "Enlarge the template, or turn the `lineup` image aspect off with `/images config toggle`."
+_RESERVE_REMEDY = (
+    "Enlarge the template, or turn the `lineup` image aspect off with `/images config toggle`."
+)
 _SHEET_REMEDY = "Enlarge the template, or the sheet would silently drop a driver."
 _STANDINGS_REMEDY = "Enlarge the template, or the standings would silently drop a driver."
-_DECLARED_REMEDY = "Enlarge that template, or disable the images module, before adding another driver."
+_DECLARED_REMEDY = (
+    "Enlarge that template, or disable the images module, before adding another driver."
+)
 
 
 class ImageDrawing:
@@ -48,8 +51,8 @@ class ImageDrawing:
         self._config = config
         self._validity = validity
 
-    async def _valid_report(self, aspect: str, template_key: str):
-        """The template's report where *aspect* is drawn and the template is valid, else None."""
+    async def _drawn_template(self, aspect: str, template_key: str) -> Path | None:
+        """The template's path where *aspect* is drawn and the template is valid, else None."""
         if not await self._modules.is_images_enabled():
             return None
         toggles = await self._config.get_toggles()
@@ -57,15 +60,14 @@ class ImageDrawing:
             return None
         reports = await self._validity.template_reports()
         report = reports.get(template_key)
-        if report is None or not report.valid or report.resolved_path is None:
+        if report is None or not report.valid:
             return None
-        return report
+        return report.resolved_path
 
     async def reserve_capacity_problem(self, reserves: int) -> CapacityProblem | None:
-        report = await self._valid_report("lineup", LINEUP_TEMPLATE_KEY)
-        if report is None:
+        path = await self._drawn_template("lineup", LINEUP_TEMPLATE_KEY)
+        if path is None:
             return None
-        path = report.resolved_path
         # Imported here, not at module level, so a test's `monkeypatch.setattr` on
         # `svg_document.load_svg` is picked up: a name bound at import time would keep the
         # unpatched function (as `season_cog.py`'s own template reads do, for the same reason).
@@ -79,10 +81,9 @@ class ImageDrawing:
         return CapacityProblem(problem=problem, remedy=_RESERVE_REMEDY)
 
     async def sheet_capacity_problem(self, drivers: int) -> CapacityProblem | None:
-        report = await self._valid_report(ATTENDANCE_ASPECT, ATTENDANCE_TEMPLATE_KEY)
-        if report is None:
+        path = await self._drawn_template(ATTENDANCE_ASPECT, ATTENDANCE_TEMPLATE_KEY)
+        if path is None:
             return None
-        path = report.resolved_path
         from leaguebot.image.utils.svg_document import load_svg
 
         problem = await off_the_loop(
@@ -93,10 +94,9 @@ class ImageDrawing:
         return CapacityProblem(problem=problem, remedy=_SHEET_REMEDY)
 
     async def standings_capacity_problem(self, drivers: int) -> CapacityProblem | None:
-        report = await self._valid_report("standings", DRIVERS_TEMPLATE_KEY)
-        if report is None:
+        path = await self._drawn_template("standings", DRIVERS_TEMPLATE_KEY)
+        if path is None:
             return None
-        path = report.resolved_path
         from leaguebot.image.utils.svg_document import load_svg
 
         problem = await off_the_loop(
