@@ -42,7 +42,9 @@ as the signup specification requires.
 the driver role are core's, read from the server configuration, and survive the disable; only
 the base role's overwrite on the signup channel goes.
 
-The tests run the switch-off on `tests.support.season_league`'s league, its signup module on.
+The tests run the switch-off on `tests.support.season_league`'s league, its signup module on and
+its season in Configuration: `/module disable signup` is refused at every other stage of a live
+season, as it asks and again as it runs, so a switch-off runs only there or with no live season.
 """
 from __future__ import annotations
 
@@ -233,13 +235,14 @@ async def _audit(db_path) -> list[dict]:
 
 async def _league(tmp_path: Any, *drivers: int, open_window: bool = False,
                   configured: bool = True) -> SeasonLeague:
-    """`setup_league` with the signup module on. *open_window*: the window open in the signup
+    """`setup_league` in Configuration, the one stage of a live season at which `/module` switches
+    signup, with the signup module on. *open_window*: the window open in the signup
     channel (620), its Sign Up button standing; otherwise, where *configured*, the module's
     configuration names the signup channel with the window closed, and where not it holds no
     configuration at all. Each of *drivers* is part-way through signing up (Pending Signup
     Completion, their wizard at its notes question), their own signup channel standing."""
     os.makedirs(str(tmp_path), exist_ok=True)
-    league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=open_window)
+    league = await setup_league(tmp_path, stage="CONFIGURATION", signups_open=open_window)
     if not open_window:
         await league.switch("signup", True)
         if configured:
@@ -715,12 +718,13 @@ def _failed_steps(lines: list[str]) -> list[str]:
     return [step.split("\n")[0] for step in line.split("\n  failed_step: ")[1:]]
 
 
-async def test_a_discarded_closed_notice_is_named_and_the_season_is_moved_on(tmp_path):
-    """Kimi is still signing up, the window is open and the season is at its Signups stage. Manager
-    77 disables signup; Discord refuses "Signups are now closed" in the signup channel, and a league
-    admin discards that job. The module goes off, the season is moved on to Placements as the notice's
-    record would have moved it, and the reply and the line both say the closed notice could not be
-    posted. Kimi is still told his channel is closed."""
+async def test_a_discarded_closed_notice_is_named_and_the_season_stays_in_configuration(tmp_path):
+    """Kimi is still signing up, the window is open (left open by an earlier season's end whose
+    close was discarded) and the new season is in Configuration. Manager 77 disables signup;
+    Discord refuses "Signups are now closed" in the signup channel, and a league admin discards
+    that job. The module goes off, the season stays in Configuration, a window closed by the
+    switch-off belonging to no stage, and the reply and the line both say the closed notice could
+    not be posted."""
     from tests.support.change_queue import discard_job
 
     league = await _league(tmp_path, SIGNING_UP, open_window=True)
@@ -733,7 +737,7 @@ async def test_a_discarded_closed_notice_is_named_and_the_season_is_moved_on(tmp
     await discard_job(league.bot)
 
     assert not await league.bot.module_service.is_signup_enabled()
-    assert await _season_stage(league) == "PLACEMENTS"
+    assert await _season_stage(league) == "CONFIGURATION"
     assert "closed notice could not be posted" in updated_reply(interaction)
     assert "The module is off, but not every step succeeded" in updated_reply(interaction)
     assert _failed_steps(await _log_lines(league)) == [
@@ -744,8 +748,8 @@ async def test_a_discarded_closed_notice_is_named_and_the_season_is_moved_on(tmp
 async def test_a_discarded_return_of_the_drivers_says_the_button_was_left_standing(tmp_path, monkeypatch):
     """The first job of the close, returning the drivers still signing up, fails and is discarded.
     Nothing after it was planned, so the Sign Up button stands and no closed notice was posted:
-    the reply and the line say so, the module goes off and the season is moved on, and the window
-    is not said to be closed."""
+    the reply and the line say so, the module goes off, the season stays in Configuration, and the
+    window is not said to be closed."""
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from tests.support.change_queue import discard_job
 
@@ -759,7 +763,7 @@ async def test_a_discarded_return_of_the_drivers_says_the_button_was_left_standi
     await discard_job(league.bot)
 
     assert not await league.bot.module_service.is_signup_enabled()
-    assert await _season_stage(league) == "PLACEMENTS"
+    assert await _season_stage(league) == "CONFIGURATION"
     reply = updated_reply(interaction)
     assert "Sign Up button was left standing" in reply
     assert "The window is closed" not in reply
