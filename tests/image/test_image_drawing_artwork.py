@@ -5,7 +5,7 @@ deleted or added between the review and the button is named as "the templates an
 disk" changing. Core asks the image module what the league's artwork looks like now
 (`core/services/image_drawing.py`), and the image module answers in
 `image/services/image_drawing.py`: each configured template file, then each configured asset
-folder, by name, size and modification time, never by content. A part that cannot be read is
+folder, by name, size and modification time, never by content. A folder that cannot be resolved is
 recorded as such, with a warning in the host's log, and the rest is still signed. Core's digest of
 the answer is tested against a stand-in for this drawing, under `tests/core/`.
 """
@@ -150,10 +150,10 @@ async def test_artwork_added_to_an_asset_folder_changes_the_signature(folders):
 
 
 @pytest.mark.parametrize("column", ["template_directory", "flag_directory"])
-async def test_a_folder_that_cannot_be_read_is_signed_as_unresolvable_and_the_rest_still_signed(
+async def test_a_folder_that_cannot_be_resolved_is_signed_as_unresolvable_and_the_rest_still_signed(
     folders, column, caplog,
 ):
-    """A folder outside the project root cannot be read: it is recorded as the column, the value
+    """A folder outside the project root cannot be resolved: it is recorded as the column, the value
     configured and "unresolvable", with a warning naming it in the host's log, and the other
     parts are still signed. The answer never raises for it, so a review is still drawn and a later
     change between readable and unreadable is still a change."""
