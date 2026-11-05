@@ -457,7 +457,7 @@ async def _load_teams_and_drivers(bot: LeagueBot, context: PreviewContext, *, gu
     from leaguebot.image.services.driver_portrait_service import refresh_before_render
 
     await refresh_before_render(
-        bot,
+        bot.db_path,
         list(members.values()),
         directory=context.asset_directories.get("driver"),
     )

@@ -5,9 +5,10 @@ makes one, attaches it to the bot as `bot.image_drawing`, and hands it to `Place
 to every change that posts a division's calendar, so that core never imports this module. The
 capacity questions ask whether the aspect is drawn at all, whether the template is valid, and
 whether it holds that many — answered off the event loop, since parsing and measuring a
-template takes real time. ``calendar_wanted`` and ``draw_calendar`` answer in the same shape:
-the two gates, the asset directories resolved absolutely, the file named, the render, and the
-notices reported to the log channel in one message.
+template takes real time. ``calendar_wanted``/``draw_calendar`` and ``lineup_wanted``/
+``draw_lineup`` answer in the same shape: the two gates, the asset directories resolved
+absolutely, the file named, the render, and the notices reported to the log channel in one
+message.
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from leaguebot.core.services.image_drawing import CalendarPicture, CapacityProblem
+from leaguebot.core.services.image_drawing import CalendarPicture, CapacityProblem, LineupPicture
 from leaguebot.core.services.module_service import ModuleService
 from leaguebot.image.models.image_catalogues import (
     declared_capacities,
@@ -72,12 +73,17 @@ class ImageDrawing:
         *,
         renderer: ImageRenderService,
         post_log: Callable[[str], Awaitable[object]],
+        db_path: str | None = None,
     ) -> None:
         self._modules = modules
         self._config = config
         self._validity = validity
         self._renderer = renderer
         self._post_log = post_log
+        #: The database the lineup's drawing reads: the division, its committed seats, and
+        #: whether nationality is collected. None where the caller never draws a lineup (the
+        #: calendar and the capacity questions read none of it).
+        self._db_path = db_path
 
     async def _drawn_template(self, aspect: str, template_key: str) -> Path | None:
         """The template's path where *aspect* is drawn and the template is valid, else None."""
@@ -235,6 +241,83 @@ class ImageDrawing:
         path = outcome.png_paths[0] if outcome.png_paths else None
         return CalendarPicture(path=path, problem=problem, notices=notices)
 
+    # ── The lineup ───────────────────────────────────────────────────────────
+
+    async def lineup_wanted(self) -> bool:
+        """Whether this league conveys its lineup as a picture: both the module and the
+        `lineup` aspect must be on, and a valid template configured.
+
+        A stated exception (architecture.md, "A catch-all error handler"), worded as the
+        calendar gate's: a fault here must never lose a league its lineup, so it answers False,
+        falling to the text, and is recorded only in the host's log — never the log channel,
+        since nothing was drawn to report a notice about.
+
+        *Rejected:* treating a lineup gate that cannot be read as a picture that could not be
+        drawn: it would add a line to the log channel for a fault in reading a switch.
+        """
+        try:
+            path = await self._drawn_template("lineup", LINEUP_TEMPLATE_KEY)
+            return path is not None
+        except Exception:  # noqa: BLE001 — a stated exception, see the docstring
+            log.exception("lineup: could not read the image gates")
+            return False
+
+    async def draw_lineup(self, guild: Any, division_id: int) -> LineupPicture:
+        """Draw *division_id*'s lineup in *guild*: the gates already asked through
+        `lineup_wanted`, the division's committed seats read from the database, the portraits
+        refreshed at the league's own trigger, and the render. The notices are reported to the
+        log channel in one message before this returns, so the caller never posts them there
+        again."""
+        from leaguebot.image.services.driver_portrait_service import refresh_before_render
+        from leaguebot.image.services.image_lineup_post import build_drawing
+        from leaguebot.image.services.image_lineup_service import (
+            build_fill_spec as build_lineup_fill_spec,
+        )
+
+        assert self._db_path is not None  # true by construction: lineup_wanted gated this
+
+        _division, drawing, members = await build_drawing(self._db_path, guild, division_id)
+
+        config = await self._config.get_config()
+        directories, directory_faults = resolve_configured_directories(
+            config,
+            (
+                ("team", "team_image_directory"),
+                ("flag", "flag_directory"),
+                ("driver", "driver_image_directory"),
+            ),
+            image_type=LINEUP_TEMPLATE_KEY,
+        )
+
+        await refresh_before_render(
+            self._db_path,
+            members,
+            config=config,
+            directory=directories.get("driver"),
+            obtain_missing=False,
+        )
+
+        outcome = await self._renderer.render(
+            LINEUP_TEMPLATE_KEY,
+            spec_builder_with_faults(
+                build_lineup_fill_spec, drawing, directories, directory_faults
+            ),
+            filename_stem=stem_for_drawing(drawing, LINEUP_TEMPLATE_KEY),
+            division_name=drawing.division_name,
+        )
+
+        if outcome.notices:
+            await self._post_log(
+                ImageRenderService.format_notices(
+                    outcome.notices, subject=f"lineup — {_division['name']}"
+                )
+            )
+
+        problem = outcome.problem.detail if outcome.problem is not None else None
+        notices = tuple(each.detail for each in outcome.notices)
+        path = outcome.png_paths[0] if outcome.png_paths else None
+        return LineupPicture(path=path, problem=problem, notices=notices)
+
     def discard_picture(self, path: Path | None) -> None:
-        """Release a drawn calendar's file, whichever way its posting ended."""
+        """Release a drawn calendar's or lineup's file, whichever way its posting ended."""
         discard_render(path)

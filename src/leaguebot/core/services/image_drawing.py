@@ -6,12 +6,12 @@ implements them (`leaguebot.image.services.image_drawing.ImageDrawing`). It is a
 bot as `bot.image_drawing` and declared on `LeagueBot`, as results declares
 `AttendanceAfterReview` for attendance (architecture.md, "How modules and core fit together").
 
-It holds the four placement capacity questions and the calendar. Each capacity question answers
-a `CapacityProblem` — the problem as a sentence with no final stop, and the image module's own
-words for what to do about it — or `None` where nothing is wrong. Core joins the two into its
-own refusal, adding what is core's own to say. The calendar's `draw_calendar` answers a
-`CalendarPicture` instead, because core itself posts what it hands back rather than wording a
-refusal from it.
+It holds the four placement capacity questions, the calendar and the lineup. Each capacity
+question answers a `CapacityProblem` — the problem as a sentence with no final stop, and the
+image module's own words for what to do about it — or `None` where nothing is wrong. Core
+joins the two into its own refusal, adding what is core's own to say. The calendar's
+`draw_calendar` and the lineup's `draw_lineup` answer a `CalendarPicture` or `LineupPicture`
+instead, because core itself posts what it hands back rather than wording a refusal from it.
 """
 from __future__ import annotations
 
@@ -49,9 +49,24 @@ class CalendarPicture:
     notices: tuple[str, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
+class LineupPicture:
+    """What drawing one division's lineup produced.
+
+    *path* is the drawn PNG's path, or None where it could not be drawn. *problem* is the image
+    module's words for why, with no final stop, or None where it drew. *notices* are the
+    drawing's own words for what it survived; `draw_lineup` has already reported them to the
+    log channel, so the caller never posts them there a second time.
+    """
+
+    path: Path | None
+    problem: str | None
+    notices: tuple[str, ...] = field(default_factory=tuple)
+
+
 class ImageDrawing(Protocol):
     """The image module's answers to what core asks of it in order to place a driver and to
-    convey a division's calendar."""
+    convey a division's calendar and its lineup."""
 
     async def reserve_capacity_problem(self, reserves: int) -> CapacityProblem | None:
         """Whether *reserves* reserve drivers would outgrow the configured lineup template's
@@ -83,6 +98,16 @@ class ImageDrawing(Protocol):
         picture drawn, or the problem naming why it could not be, and the notices it survived —
         already reported to the log channel in one message."""
 
+    async def lineup_wanted(self) -> bool:
+        """Whether this league conveys its lineup as a picture: both the module and the
+        `lineup` aspect must be on. A gate that cannot be read answers False, so the text
+        lineup goes out and a league never loses its lineup to a fault reading a switch."""
+
+    async def draw_lineup(self, guild: Any, division_id: int) -> LineupPicture:
+        """Draw *division_id*'s lineup in *guild*. Hands back the picture drawn, or the problem
+        naming why it could not be, and the notices it survived — already reported to the log
+        channel in one message."""
+
     def discard_picture(self, path: Path | None) -> None:
-        """Release a path `draw_calendar` handed back, whichever way its posting ended. A path
-        of None is a no-op, covering a calendar that was never drawn."""
+        """Release a path `draw_calendar` or `draw_lineup` handed back, whichever way its
+        posting ended. A path of None is a no-op, covering a picture that was never drawn."""

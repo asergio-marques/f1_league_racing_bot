@@ -399,7 +399,7 @@ async def run_daily_refresh(bot: LeagueBot, *, now: datetime | None = None) -> i
 
 
 async def refresh_before_render(
-    bot: LeagueBot,
+    db_path: str,
     members,
     *,
     config=None,
@@ -410,11 +410,14 @@ async def refresh_before_render(
     """Refresh the portraits a graphic is about to draw, where the league asked for that.
 
     The gate for the pre-render trigger, in one place: both the posting path and the preview
-    path call this rather than each deciding for itself whether the feature is on.
+    path call this rather than each deciding for itself whether the feature is on. It is
+    handed the database's path rather than the bot (#283): it reads only the database, through
+    `refresh_portraits`, and every caller has already read and resolved *config* before it
+    draws.
 
     *config* and *directory* are accepted because the posting path has already read and
-    resolved both, and resolving twice per render would be waste; either may be omitted and
-    is then worked out here.
+    resolved both, and resolving twice per render would be waste. *config* missing reads as
+    off, the same answer a configuration object predating the feature gives.
 
     Passing ``directory=None`` is **not** the same as omitting it. None means the caller
     resolved the driver directory and it was rejected, and the gate shuts: obtaining
@@ -433,8 +436,6 @@ async def refresh_before_render(
     Returns the number of portraits written, and never raises.
     """
     try:
-        if config is None:
-            config = await bot.image_config_service.get_config()
         # `getattr` rather than attribute access: a configuration object predating migration
         # 047 carries neither field. Absent reads as off, which is the same answer the
         # defaults give.
@@ -478,7 +479,7 @@ async def refresh_before_render(
                 return 0
 
         return await refresh_portraits(
-            bot.db_path,
+            db_path,
             members,
             directory,
             aspect=await off_the_loop(portrait_aspect, config),

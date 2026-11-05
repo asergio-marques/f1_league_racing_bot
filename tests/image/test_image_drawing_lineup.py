@@ -22,7 +22,6 @@ from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     db_path,  # noqa: F401 — the fixture
 )
 
-NOT_YET = "#283: the image module's drawing does not yet answer for the lineup"
 TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
 #: The display names the server gives the fixture's three drivers: 1001 committed to Pro's Alpha,
 #: 1002 placed there mid-season and not yet confirmed, 1003 seated with no placement at all.
@@ -96,7 +95,6 @@ def _portraits_spied(monkeypatch):
     return spy
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize(
     "images_on,aspect_on,valid,wanted",
     [
@@ -114,7 +112,6 @@ async def test_the_lineup_is_drawn_only_with_every_gate_open(images_on, aspect_o
     assert await drawing.lineup_wanted() is wanted
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_lineup_gate_that_cannot_be_read_answers_text(caplog):
     """The images module's switch cannot be read (the database down): the drawing answers that the
     lineup is not drawn, so the text goes out and a league never loses its lineup; the error is in
@@ -127,7 +124,6 @@ async def test_a_lineup_gate_that_cannot_be_read_answers_text(caplog):
     post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_drawn_lineup_leaves_out_a_driver_not_yet_confirmed(db_path, monkeypatch):
     """Pro, in a season being raced, seats Zara (placement confirmed), Yuri (placed mid-season and
     not yet confirmed) and a third seat with no placement. Pro's lineup is drawn: Zara is drawn,
@@ -148,7 +144,6 @@ async def test_a_drawn_lineup_leaves_out_a_driver_not_yet_confirmed(db_path, mon
     assert "vexley" not in filled, spec.text
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_drawn_lineup_refreshes_portraits_only_at_the_league_s_trigger(
     db_path, monkeypatch,
 ):
@@ -166,7 +161,6 @@ async def test_a_drawn_lineup_refreshes_portraits_only_at_the_league_s_trigger(
     assert spy.await_args.kwargs["obtain_missing"] is False
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_drawn_lineup_reports_its_notices_to_the_log_channel_in_one_message(
     db_path, monkeypatch,
 ):
@@ -197,7 +191,6 @@ async def test_a_drawn_lineup_reports_its_notices_to_the_log_channel_in_one_mess
     channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize("drawn", ["a picture", "a problem"])
 async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_notices(
     db_path, monkeypatch, tmp_path, drawn,

@@ -1443,7 +1443,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
     ("image/services/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),
-    ("image/services/driver_portrait_service.py", "refresh_before_render"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "run_daily_refresh"): (1, PASS["image"]),
     ("image/services/image_attendance_post.py", "attendance_enabled"): (3, PASS["image"]),
     ("image/services/image_attendance_post.py", "render_sheet"): (2, PASS["image"]),
@@ -3231,10 +3230,6 @@ def test_a_catch_all_handler_sits_in_one_of_the_five_places():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: ImageDrawing.lineup_wanted, the lineup gate's one catch, is not yet written",
-)
 def test_every_catch_all_allowed_for_good_still_exists():
     """Each function named in `CATCH_ALLS_ALLOWED` still holds a catch-all, with its reason: a
     rename cannot leave the exception pointing at nothing."""

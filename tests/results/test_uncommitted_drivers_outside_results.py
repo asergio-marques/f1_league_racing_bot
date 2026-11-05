@@ -57,17 +57,11 @@ async def test_the_opening_standings_leave_out_an_uncommitted_driver(db_path):
     assert sorted(s.driver_user_id for s in snapshots) == [1001, 1003]
 
 
-#: Why the lineup's drawing tests fail until the build: it reads only the database, and is
-#: handed its path (#283).
-BUILT_FROM_THE_DATABASE = (
-    "#283: the lineup's build_drawing does not yet take the database path in place of the bot"
-)
 
 
 # ── Lineups ────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=BUILT_FROM_THE_DATABASE)
 async def test_the_lineup_graphic_does_not_draw_an_uncommitted_driver(db_path):
     from leaguebot.image.services.image_lineup_post import build_drawing
     from unittest.mock import patch
@@ -90,7 +84,6 @@ async def test_the_lineup_graphic_does_not_draw_an_uncommitted_driver(db_path):
     assert sorted(seated) == ["1001"]
 
 
-@pytest.mark.xfail(strict=True, reason=BUILT_FROM_THE_DATABASE)
 async def test_the_mid_season_review_draws_the_lineup_as_it_will_stand(db_path):
     """The review of mid-season placements draws what confirming will post, with the new
     drivers in it, so a lineup that will not draw withholds its button (#374). A seat with no

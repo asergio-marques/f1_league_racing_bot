@@ -103,8 +103,11 @@ def seated_members(guild, teams) -> dict[str, discord.Member]:
     return members
 
 
-async def build_drawing(bot: LeagueBot, guild, division_id: int, *, include_uncommitted: bool = False):
+async def build_drawing(db_path: str, guild, division_id: int, *, include_uncommitted: bool = False):
     """Resolve the division into a LineupDrawing, or raise LineupDataError.
+
+    It reads only the database, and is handed its path (#283): the lineup's drawing needs
+    nothing else of the bot to resolve what it draws.
 
     A placement made mid-season and not yet confirmed is left out (#220), for the lineup of
     record shows who races. *include_uncommitted* draws it in, for the one caller that must
@@ -114,7 +117,7 @@ async def build_drawing(bot: LeagueBot, guild, division_id: int, *, include_unco
     from leaguebot.image.services.image_lineup_service import resolve_drawing
     from leaguebot.image.services.image_results_post import SIGNUP_FOR_SEASON_SQL
 
-    async with get_connection(bot.db_path) as db:
+    async with get_connection(db_path) as db:
         division = await (
             await db.execute(
                 "SELECT d.id, d.name, d.tier, s.id AS season_id, s.season_number "
@@ -187,7 +190,7 @@ async def build_drawing(bot: LeagueBot, guild, division_id: int, *, include_unco
     # own, and its own read the wrong table.
     from leaguebot.image.services.image_results_post import _nationality_collected
 
-    collected = await _nationality_collected(bot.db_path)
+    collected = await _nationality_collected(db_path)
 
     # The first link of the name chain is the account's display name on the server *at the
     # moment of generation*, which only the guild can answer (research R9).
@@ -232,7 +235,7 @@ async def render_png(
     )
 
     _division, drawing, members = await build_drawing(
-        bot, guild, division_id, include_uncommitted=include_uncommitted
+        bot.db_path, guild, division_id, include_uncommitted=include_uncommitted
     )
 
     config = await bot.image_config_service.get_config()
@@ -253,7 +256,7 @@ async def render_png(
     from leaguebot.image.services.driver_portrait_service import refresh_before_render
 
     await refresh_before_render(
-        bot,
+        bot.db_path,
         members,
         config=config,
         directory=directories.get("driver"),
