@@ -18,10 +18,7 @@ from tests.support.cancellation_notice import (
 )
 from tests.support.mentions import NOBODY, notified
 
-NOT_YET = "#283: weather does not word and post its own cancellation note yet"
 
-
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_forecast_note_posts_only_to_the_forecast_channel(tmp_path):
     """Pro's note of round 3's cancellation, posted by weather, reaches Pro's forecast channel and
     no other."""
@@ -35,7 +32,6 @@ async def test_the_forecast_note_posts_only_to_the_forecast_channel(tmp_path):
             channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_forecast_note_notifies_nobody_and_is_silent(tmp_path):
     """Pro's forecast channel is told round 3 is called off: silently, and notifying nobody."""
     bot = notice_bot(await notice_db(tmp_path))
@@ -46,7 +42,6 @@ async def test_the_forecast_note_notifies_nobody_and_is_silent(tmp_path):
     assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize("scope", [SCOPE_ROUND, SCOPE_DIVISION, SCOPE_SEASON])
 async def test_every_scope_says_something_in_the_forecast_channel(tmp_path, scope):
     """A round's, a division's and a season's cancellation each post a note in Pro's forecast
@@ -57,7 +52,6 @@ async def test_every_scope_says_something_in_the_forecast_channel(tmp_path, scop
     channels[FORECAST].send.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_a_round_note_names_the_round_and_its_track():
     from leaguebot.weather.services.cancellation_notice import weather_note
 
@@ -66,7 +60,6 @@ def test_a_round_note_names_the_round_and_its_track():
     assert "No weather forecast" in note
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_raising_notice_raises_where_discord_refuses(tmp_path):
     """Discord refuses the forecast note in Pro's forecast channel (Forbidden). Posting it raises
     StepFailedOnDiscord, raised from Discord's refusal, which the stop notice names."""

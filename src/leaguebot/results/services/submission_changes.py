@@ -569,7 +569,7 @@ async def _submission_standing(ctx: CheckContext) -> Verdict:
 
 
 def submission_all_cancelled_change(
-    *, seasons: "SeasonService", record: dict[str, Step], notices: dict[str, Step],
+    *, seasons: "SeasonService", record: dict[str, Step],
     cancellation_notices: AwaitedHook, cancellation_steps: dict[str, Step],
     now: Callable[[], datetime],
 ) -> ChangeType:
@@ -580,12 +580,12 @@ def submission_all_cancelled_change(
     ``sessions``, each ``{"session_id", "session_type"}`` of the round's cancelled sessions in
     running order. A resubmission's adds ``resubmission`` and ``old_tables``, the ids of the
     earlier results tables the new sessions could not carry. *seasons* posts the calendar, *record*
-    holds the job core builds that reads the round's check-in, *notices* the jobs core builds that
-    tell the round's cancellation, *cancellation_notices* is the hook each module's own notice is
-    planned through, called inside the save on its connection, *cancellation_steps* holds the
-    modules' own notice step definitions (the same the three cancellations register, through core's
-    `cancellation_steps` hook) so this change carries the jobs *cancellation_notices* plans, and
-    *now* is the queue's clock, read when the round's ending is audited.
+    holds the job core builds that reads the round's check-in, *cancellation_notices* is the hook
+    each module's own notice is planned through, called inside the save on its connection,
+    *cancellation_steps* holds the modules' own notice step definitions (the same the three
+    cancellations register, through core's `cancellation_steps` hook) so this change carries the
+    jobs *cancellation_notices* plans, and *now* is the queue's clock, read when the round's
+    ending is audited.
 
     Its first job, ``end_round`` (a save, **never to be discarded**: without it the round would
     never finish and its season could never be completed), ends the round CANCELLED through core's
@@ -674,7 +674,7 @@ def submission_all_cancelled_change(
         by_notices = [
             step
             for planned in await cancellation_notices.call(db, SCOPE_ROUND, target)
-            for step in planned.steps
+            for step in (*planned.steps, *planned.after_with_division)
         ]
         return StepResult(
             result={"ended": True, "previous": previous, **target},
@@ -684,7 +684,6 @@ def submission_all_cancelled_change(
                 *deletions,
                 *reposts,
                 *by_notices,
-                *(PlannedStep(name, target) for name in notices),
                 PlannedStep(POST_CALENDAR, {**target, "round_ids": [round_id], "only_if_posted": True}),
             ),
             follow_ons=(FollowOn(WIND_DOWN, {}, f"Winding the season down after {ctx.what}"),),
@@ -757,7 +756,6 @@ def submission_all_cancelled_change(
             DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
             **calendar_steps(seasons),
             **record,
-            **notices,
             **cancellation_steps,
             ASK_CLOSE: Step(ASK_CLOSE, StepKind.SAVE, ask_close, describe=describe_ask_close),
         },

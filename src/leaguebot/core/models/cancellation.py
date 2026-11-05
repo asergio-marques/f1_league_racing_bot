@@ -56,7 +56,14 @@ class CalledOffSteps:
 @dataclass(frozen=True)
 class CancellationNotices:
     """The steps a module plans for its own notice of a division told, handed back inside the
-    save that calls `cancellation_notices` (today, none: each module still plans its notice as a
-    step `cancellation_changes` names)."""
+    save that calls `cancellation_notices`.
+
+    *steps* are planned before the rounds-called-off modules' `with_division` steps (today,
+    attendance's check-in notice, so that it precedes attendance's own take-down of the call);
+    *after_with_division* are planned after them (today, weather's forecast note and results'
+    results note). Kept apart so that core places each where today's order puts it without
+    naming which module's job either is.
+    """
 
     steps: tuple[PlannedStep, ...] = ()
+    after_with_division: tuple[PlannedStep, ...] = ()

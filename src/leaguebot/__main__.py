@@ -196,12 +196,14 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     in the order core calls them: what stands in the way (results' refusal of a round whose
     submission accepted results), the rounds called off (results closes their empty submissions,
     in the save, then attendance's take-down of their calls), the notices told of a division
-    (attendance's check-in notice, #283; weather's and results' still core's own, until each
-    words and posts its own too), and the steps a module plans (results' deletion of a submission
-    channel, attendance's take-down of a call, then attendance's check-in notice)."""
+    (attendance's check-in notice, then weather's forecast note, then results' results note,
+    #283), and the steps a module plans (results' deletion of a submission channel, attendance's
+    take-down of a call, then each module's own notice, attendance's, weather's, then results')."""
     from leaguebot.attendance.services import cancellation_notice as attendance_cancellation_notice
     from leaguebot.attendance.services import check_in_changes
+    from leaguebot.results.services import cancellation_notice as results_cancellation_notice
     from leaguebot.results.services import result_submission_service, review_posting
+    from leaguebot.weather.services import cancellation_notice as weather_cancellation_notice
 
     bot.cancellation_refused = AwaitedHook()
     bot.cancellation_refused.subscribe(result_submission_service.cancellation_refusal)
@@ -210,6 +212,8 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     bot.rounds_called_off.subscribe(check_in_changes.take_down_called_off_on)
     bot.cancellation_notices = AwaitedHook()
     bot.cancellation_notices.subscribe(attendance_cancellation_notice.notices_on)
+    bot.cancellation_notices.subscribe(weather_cancellation_notice.notices_on)
+    bot.cancellation_notices.subscribe(results_cancellation_notice.notices_on)
     bot.cancellation_steps = Hook()
     bot.cancellation_steps.subscribe(review_posting.cancellation_steps)
     bot.cancellation_steps.subscribe(partial(
@@ -220,6 +224,16 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     ))
     bot.cancellation_steps.subscribe(partial(
         attendance_cancellation_notice.notify_checkin_steps,
+        modules=bot.module_service,
+        seasons=bot.season_service,
+    ))
+    bot.cancellation_steps.subscribe(partial(
+        weather_cancellation_notice.notify_forecast_steps,
+        modules=bot.module_service,
+        seasons=bot.season_service,
+    ))
+    bot.cancellation_steps.subscribe(partial(
+        results_cancellation_notice.notify_results_steps,
         modules=bot.module_service,
         seasons=bot.season_service,
     ))
@@ -475,11 +489,9 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.cancellation_changes import (
         check_in_record_steps,
         division_cancel_change,
-        notice_steps,
         round_cancel_change,
         season_cancel_change,
     )
-    from leaguebot.core.services.cancellation_notice_service import SCOPE_ROUND
     from leaguebot.core.services.channel_tell_change import channel_tell_change
     from leaguebot.core.services.clean_change import clean_change
     from leaguebot.core.services.hub_service import hub_refresh_change
@@ -607,9 +619,6 @@ def register_change_types(bot: LeagueBot) -> None:
         submission_all_cancelled_change(
             seasons=bot.season_service,
             record=check_in_record_steps(modules=bot.module_service),
-            notices=notice_steps(
-                modules=bot.module_service, seasons=bot.season_service, scope=SCOPE_ROUND,
-            ),
             cancellation_notices=bot.cancellation_notices,
             cancellation_steps=steps_of_the_modules(bot.cancellation_steps),
             now=lambda: bot.change_queue.now(),

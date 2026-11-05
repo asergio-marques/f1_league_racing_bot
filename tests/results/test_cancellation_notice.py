@@ -19,10 +19,7 @@ from tests.support.cancellation_notice import (
 )
 from tests.support.mentions import NOBODY, notified
 
-NOT_YET = "#283: results does not word and post its own cancellation note yet"
 
-
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_results_note_posts_only_to_the_results_channel(tmp_path):
     """Pro's note of round 3's cancellation, posted by results, reaches Pro's results channel and
     no other."""
@@ -36,7 +33,6 @@ async def test_the_results_note_posts_only_to_the_results_channel(tmp_path):
             channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_results_note_notifies_nobody_and_is_silent(tmp_path):
     """Pro's results channel is told round 3 is called off: silently, and notifying nobody."""
     bot = notice_bot(await notice_db(tmp_path))
@@ -47,7 +43,6 @@ async def test_the_results_note_notifies_nobody_and_is_silent(tmp_path):
     assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize("scope", [SCOPE_ROUND, SCOPE_DIVISION, SCOPE_SEASON])
 async def test_every_scope_says_something_in_the_results_channel(tmp_path, scope):
     """A round's, a division's and a season's cancellation each post a note in Pro's results
@@ -58,14 +53,12 @@ async def test_every_scope_says_something_in_the_results_channel(tmp_path, scope
     channels[RESULTS].send.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_a_round_note_with_no_track_names_mystery():
     from leaguebot.results.services.cancellation_notice import results_note
 
     assert "Round 3 (Mystery)" in results_note(SCOPE_ROUND, "Pro", round_number=3)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_raising_notice_lets_a_fault_of_the_bot_s_own_through_unchanged(tmp_path):
     """Sending the results note fails with a ValueError, a fault of the bot's own rather than
     Discord's. It is raised as it is, not turned into StepFailedOnDiscord."""
@@ -79,7 +72,6 @@ async def test_a_raising_notice_lets_a_fault_of_the_bot_s_own_through_unchanged(
     assert not isinstance(caught.value, StepFailedOnDiscord)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_raising_notice_names_a_channel_never_set(tmp_path):
     """Pro has no results channel set. Posting the results note raises nothing, sends nothing
     and answers "no channel is set", which the cancellation names."""
