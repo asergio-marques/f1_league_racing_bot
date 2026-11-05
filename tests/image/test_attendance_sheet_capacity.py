@@ -15,7 +15,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from lxml import etree
 
-_NOT_YET = "#283: the image module does not yet answer core's sheet capacity question"
 
 SVG_NS = "http://www.w3.org/2000/svg"
 SHEET = "attendance_template"
@@ -141,7 +140,6 @@ def _drawing(template, *, toggle: bool = True, images: bool = True):
 # ── The answer ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_drivers_past_the_rows_are_a_problem(tmp_path):
     template = _template_file(tmp_path, rows=2)
 
@@ -154,7 +152,6 @@ async def test_drivers_past_the_rows_are_a_problem(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("rows, drivers", [(8, 3), (3, 3)], ids=["within", "exactly"])
 async def test_drivers_the_rows_hold_are_no_problem(tmp_path, rows, drivers):
     template = _template_file(tmp_path, rows=rows)
@@ -162,7 +159,6 @@ async def test_drivers_the_rows_hold_are_no_problem(tmp_path, rows, drivers):
     assert await _drawing(template).sheet_capacity_problem(drivers) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize(
     "toggle, images", [(False, True), (True, False)], ids=["aspect-off", "module-off"]
 )
@@ -177,7 +173,6 @@ async def test_no_sheet_drawn_means_no_problem(tmp_path, toggle, images):
 # ── As a league meets it, through the choke point ─────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_reserve_placement_past_the_rows_is_refused_through_assign_driver(tmp_path):
     """Deliberate, and unlike the standings: a seated reserve takes a row, and so would the
     reserve being placed."""

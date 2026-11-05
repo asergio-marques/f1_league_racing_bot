@@ -782,47 +782,23 @@ class PlacementService:
         *adding* is how many drivers the change seats, of either kind — one for a placement,
         more for a test roster seated whole (``guard_roster_capacity``).
 
-        Never raises for its own reasons: a fault in this check must not block a placement,
-        only a genuine over-capacity may.
+        Asks the image module's handed drawing (``_ask_drawing``): never raises for its own
+        reasons, only a genuine over-capacity the drawing reports may.
         """
-        bot = self._bot
-        if bot is None:
-            return
-        try:
-            from leaguebot.image.models.image_catalogues import row_capacity_problem
-            from leaguebot.image.services.image_attendance_post import attendance_enabled
-            from leaguebot.image.utils.svg_document import load_svg, off_the_loop
+        async with get_connection(self._db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT COUNT(*) AS seated FROM driver_season_assignments "
+                    "WHERE division_id = ?",
+                    (division_id,),
+                )
+            ).fetchone()
+        seated = (row["seated"] if row else 0) or 0
 
-            if not await attendance_enabled(bot):
-                return
-
-            reports = await bot.image_validity_service.template_reports()
-            report = reports.get("attendance_template")
-            if report is None or not report.valid or report.resolved_path is None:
-                return
-
-            async with get_connection(self._db_path) as db:
-                row = await (
-                    await db.execute(
-                        "SELECT COUNT(*) AS seated FROM driver_season_assignments "
-                        "WHERE division_id = ?",
-                        (division_id,),
-                    )
-                ).fetchone()
-            seated = (row["seated"] if row else 0) or 0
-            # The template is parsed and measured off the event loop: both are pure.
-            path = report.resolved_path
-            problem = await off_the_loop(
-                lambda: row_capacity_problem("attendance_template", load_svg(path), seated + adding)
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.error("attendance sheet capacity guard could not run: %s", exc, exc_info=True)
-            return
-
+        problem = await self._ask_drawing("sheet_capacity_problem", seated + adding)
         if problem is not None:
             raise ValueError(
-                f"{problem}. The driver was **not** assigned. Enlarge the template, or "
-                f"the sheet would silently drop a driver."
+                f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
             )
 
     async def _guard_standings_capacity(

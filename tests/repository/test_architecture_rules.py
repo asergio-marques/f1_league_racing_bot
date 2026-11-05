@@ -1443,7 +1443,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
     ("core/services/calendar_post_service.py", "image_calendar_wanted"): (2, PASS["core"]),
     ("core/services/calendar_post_service.py", "render_calendar_image"): (2, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService._guard_sheet_capacity"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_standings_capacity"): (1, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
     ("image/services/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),
@@ -2726,8 +2725,6 @@ KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
     ("core/services/calendar_post_service.py", "image_calendar_wanted"): (1, PASS["core"]),
     ("core/services/calendar_post_service.py", "render_calendar_image"): (2, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService._guard_sheet_capacity"):
-        (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_standings_capacity"):
         (1, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
@@ -3144,8 +3141,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/output_router.py", "OutputRouter._enqueue_if_configured"): (1, PASS["core"]),
     ("core/services/output_router.py", "OutputRouter.strip_view"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_image_capacity"):
-        (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService._guard_sheet_capacity"):
         (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_standings_capacity"):
         (1, PASS["core"]),
