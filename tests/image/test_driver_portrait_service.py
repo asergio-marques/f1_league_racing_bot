@@ -502,8 +502,6 @@ async def test_the_budget_returns_without_raising_and_writes_no_row(db_path, dir
 # ── The pre-render gate ───────────────────────────────────────────────────
 
 
-
-
 def _config(**overrides):
     values = {
         "use_pfp": True,
@@ -537,6 +535,37 @@ async def test_the_gate_refreshes_when_the_league_asked_for_it(monkeypatch, dire
 
     assert written == 1
     assert calls and calls[0][1] == directory
+
+
+@pytest.mark.parametrize(("prerender", "refreshed"), [(1, True), (0, False)])
+async def test_the_gate_reads_the_stored_config_where_none_is_handed(
+    tmp_path, monkeypatch, directory, prerender, refreshed
+):
+    """A preview hands no configuration: the gate reads the league's own, so a league that asked
+    for portraits before every render has them brought up to date before its preview is drawn,
+    and one that did not has none fetched."""
+    from leaguebot.image.services import driver_portrait_service as m
+
+    db_path = str(tmp_path / "portraits.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO image_config (id, use_pfp, pfp_prerender) VALUES (1, 1, ?)",
+            (prerender,),
+        )
+        await db.commit()
+    calls = []
+
+    async def _fake(db_path, members, directory, **kwargs):
+        calls.append(list(members))
+        return len(list(members))
+
+    monkeypatch.setattr(m, "refresh_portraits", _fake)
+    member = _member(1)
+
+    written = await m.refresh_before_render(db_path, [member], directory=directory)
+
+    assert (written, calls) == ((1, [[member]]) if refreshed else (0, []))
 
 
 async def test_the_gate_is_shut_while_portraits_are_disabled(monkeypatch, directory):
