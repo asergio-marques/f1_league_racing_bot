@@ -443,9 +443,11 @@ async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
 async def test_a_window_opened_or_closed_since_the_ask_refuses_the_switch_off(tmp_path, opened):
     """`/module disable signup` is asked with the window closed (or open), and before it runs the
     window is opened on a Sign Up button (or closed): the jobs the change was asked with no longer
-    fit, so it is refused as it starts, the module stays on, nothing is audited as disabled, and
-    the member is told the window changed and to run the command again, word for word."""
+    fit, so it is refused as it starts, the module stays on, nothing is audited as disabled, the
+    signup channel keeps the overwrites it needs while the module is on, and the member is told the
+    window changed and to run the command again, word for word."""
     league = await _league(tmp_path, open_window=not opened)
+    channel = _signup_channel(league)
 
     interaction = await _switch_off(league)
     if opened:
@@ -459,6 +461,7 @@ async def test_a_window_opened_or_closed_since_the_ask_refuses_the_switch_off(tm
 
     assert await league.bot.module_service.is_signup_enabled()
     assert await _disables(league) == []
+    assert channel.set_permissions.await_count == 0
     assert updated_reply(interaction) == (
         "⛔ The signup window changed since this was asked. Nothing was changed. "
         "Run `/module disable signup` again."
@@ -612,23 +615,6 @@ async def test_a_server_with_no_configuration_row_reverts_the_rest(tmp_path):
 
     assert set(_cleared(channel)) == {league.guild.default_role, league.guild.me}
     assert not await league.bot.module_service.is_signup_enabled()
-
-
-async def test_a_switch_off_refused_when_it_runs_leaves_the_overwrites_standing(tmp_path):
-    """The module is switched off with the window closed, and the window is opened before the
-    queue reaches it: the switch-off is refused when it runs, nothing is changed, the module is
-    still on and the signup channel keeps the overwrites it needs while the module is on."""
-    league = await _league(tmp_path)
-    channel = _signup_channel(league)
-    interaction = await _switch_off(league)
-    await league.write("UPDATE signup_module_config SET signups_open = 1, "
-                       "signup_button_message_id = 6201")
-
-    await run_queue(league.bot)
-
-    assert "Nothing was changed" in updated_reply(interaction)
-    assert await league.bot.module_service.is_signup_enabled()
-    assert channel.set_permissions.await_count == 0
 
 
 async def test_a_discarded_switch_off_leaves_the_overwrites_standing(tmp_path, monkeypatch):
