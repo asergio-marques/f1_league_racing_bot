@@ -14,8 +14,8 @@ switch-off, so that a switch-off discarded after the close's jobs ran still leav
 what they did.
 
 With the window closed the change has the one job, `switch_off`. Which of the two the change has is
-decided when it is asked, from the window the command read, and judged again as it comes up to
-run: a window opened or closed since, or reopened on another button, refuses the switch-off and
+decided when it is asked, from the window standing then (`fill`), and judged again as it comes up
+to run: a window opened or closed since, or reopened on another button, refuses the switch-off and
 nothing is changed, since the jobs the change planned would no longer be the ones that fit.
 
 The permission overwrites the bot applied to the signup channel are cleared by a job of this
@@ -134,14 +134,21 @@ def signup_off_change(
 ) -> ChangeType:
     """The `module.off:signup` change type, for the builder to register.
 
-    The payload is ``window``: the Sign Up button message of the open window the command read, or
-    None where the window was closed. *signup_module_service* is a getter, so that the service is
-    the one the bot holds when the job runs. *returned_by_close* are the driver states the close
-    turns away, *cancel_timers* removes one driver's inactivity and deletion timers,
-    *cancel_close_timer* the window's close timer, *server_config* reads the league's roles for the
-    overwrites to clear, and *now* and *arm_once* are the queue's clock and the scheduler
-    service's one-off timer.
+    The payload starts empty: ``window``, the Sign Up button message of the window open when the
+    command was asked, or None where it was closed, is filled by *fill* (`ChangeType.fill`,
+    `change_queue`'s docstring) as the change is asked, so core's cog imports nothing of signup's
+    to read it. *signup_module_service* is a getter, so that the service is the one the bot holds
+    when the job runs. *returned_by_close* are the driver states the close turns away,
+    *cancel_timers* removes one driver's inactivity and deletion timers, *cancel_close_timer* the
+    window's close timer, *server_config* reads the league's roles for the overwrites to clear,
+    and *now* and *arm_once* are the queue's clock and the scheduler service's one-off timer.
     """
+
+    async def fill(ctx: CheckContext) -> None:
+        cfg = await signup_module_service().get_config()
+        ctx.payload["window"] = (
+            cfg.signup_button_message_id if cfg is not None and cfg.signups_open else None
+        )
 
     async def check(ctx: CheckContext) -> Verdict:
         if not await modules.is_signup_enabled():
@@ -287,6 +294,7 @@ def signup_off_change(
         plan=plan,
         steps=steps,
         check=check,
+        fill=fill,
         key=lambda payload: KIND,
         doing=lambda payload: "Turning the signup module off",
         outcome=outcome,

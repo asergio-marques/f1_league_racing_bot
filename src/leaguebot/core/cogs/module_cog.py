@@ -46,8 +46,6 @@ _MODULE_LABEL = {
 
 #: How the change that turns results off names itself in its lines.
 _RESULTS_OFF = "`/module disable results`"
-#: How the change that turns signup off names itself in the acknowledgement.
-_SIGNUP_OFF = "`/module disable signup`"
 
 
 # ---------------------------------------------------------------------------
@@ -570,26 +568,14 @@ class ModuleCog(commands.Cog):
     async def _disable_signup(
         self, interaction: discord.Interaction
     ) -> None:
-        if not await self.bot.module_service.is_signup_enabled():
-            await refuse(
-                interaction, "⚠️ Signup module is already disabled.", what=describe(interaction)
-            )
-            return
-
-        # The switch-off is a change on the queue: where the window is open it closes it first, as
-        # jobs, and its switch-off turns the module off, forgets the channel and audits it, then
-        # clears the channel's overwrites in a job of its own, so that they go only with the module.
-        # The command acknowledges it at once and does nothing else.
-        signup_cfg = await self.bot.signup_module_service.get_config()
-        window = (
-            signup_cfg.signup_button_message_id if signup_cfg and signup_cfg.signups_open else None
-        )
-        asked = await self.bot.change_queue.ask(
+        # The switch-off is signup's own change on the queue, whose check refuses "already
+        # disabled" and fills its own payload with the window standing now: where it is open it
+        # closes it first, as jobs, and its switch-off turns the module off, forgets the channel
+        # and audits it, then clears the channel's overwrites in a job of its own, so that they go
+        # only with the module. This asks for it and does nothing else.
+        await self.bot.change_queue.ask(
             module_off("signup"),
-            {"window": window},
+            {},
             interaction=interaction,
-            what=_SIGNUP_OFF,
-            refusal_what=describe(interaction),
+            what=describe(interaction),
         )
-        if asked is None:
-            return

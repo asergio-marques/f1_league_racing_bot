@@ -511,6 +511,12 @@ class ChangeType:
     change instead of stopping the lane: it is handed the change's `what`, its payload and the error, and returns
     the reply the acknowledgement is updated with, and the queue records the failure line. It
     applies to a member's change only: a bot's change whose check raises still stops its lane.
+
+    *fill*, where set, lets a change type fill its own payload with a value read from the state
+    standing at the ask (`signup_off_change`'s window), before `check` is run and the request
+    saved: `ask` and `ask_after` call it on the payload once, only where the change is not yet
+    saved, so the value saved with the request is the one that stood then, and the check made
+    again as the change starts can judge whether the two still agree. None fills nothing.
     """
 
     kind: str
@@ -521,6 +527,7 @@ class ChangeType:
     doing: Callable[[dict[str, Any]], str]
     outcome: Callable[[OutcomeContext], str]
     repeatable: bool = False
+    fill: Callable[[CheckContext], Awaitable[None]] | None = None
     on_refused: Callable[[RefusedContext], tuple[FollowOn, ...]] | None = None
     on_discarded: Callable[[DiscardedContext], tuple[FollowOn, ...]] | None = None
     lane: Callable[[dict[str, Any]], str] = league_lane
@@ -672,10 +679,16 @@ class ChangeQueue:
     async def check(
         self, kind: str, payload: dict[str, Any], *, origin: ChangeOrigin = ChangeOrigin.MEMBER
     ) -> Verdict:
-        """What *kind*'s check finds of a request carrying *payload* now."""
-        return await self._type(kind).check(
-            CheckContext(payload, self._bot, self._db_path, origin)
-        )
+        """What *kind*'s check finds of a request carrying *payload* now.
+
+        Always the ask: `change_id` is None, so *kind*'s `fill`, where it has one, is run on
+        *payload* first.
+        """
+        change_type = self._type(kind)
+        ctx = CheckContext(payload, self._bot, self._db_path, origin)
+        if change_type.fill is not None:
+            await change_type.fill(ctx)
+        return await change_type.check(ctx)
 
     async def ask(
         self,
