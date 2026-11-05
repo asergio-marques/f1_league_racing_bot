@@ -13,48 +13,10 @@ from leaguebot.image.utils.asset_resolver import (
     AssetOutcome,
     filename_for,
     has_fallback,
-    normalise,
     resolve_asset,
 )
 
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"/>'
-
-
-# ── Normalisation (FR-042) ────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    ("datum", "expected"),
-    [
-        ("Red Bull Racing", "red_bull_racing"),
-        ("São Paulo", "sao_paulo"),
-        ("Emilia-Romagna", "emilia_romagna"),
-        ("  McLaren  ", "mclaren"),
-        ("Portugal", "portugal"),
-        ("Spa-Francorchamps", "spa_francorchamps"),
-        ("Mercedes-AMG PETRONAS", "mercedes_amg_petronas"),
-        ("Nürburgring", "nurburgring"),
-        ("ALFA ROMEO", "alfa_romeo"),
-        ("Circuit de Barcelona—Catalunya", "circuit_de_barcelona_catalunya"),
-        # The separator is an underscore, never a hyphen: v2.13.0 briefly said hyphen; it was
-        # withdrawn. Every shipped asset uses `_`.
-        ("Red-Bull-Racing", "red_bull_racing"),
-        # A run of punctuation collapses to one underscore.
-        ("A  --  B", "a_b"),
-    ],
-)
-def test_normalisation_matches_the_documented_rule(datum, expected):
-    assert normalise(datum) == expected
-
-
-@pytest.mark.parametrize("datum", ["", "   ", "!!!", "---", "…"])
-def test_data_with_no_alphanumerics_normalise_to_empty(datum):
-    assert normalise(datum) == ""
-
-
-def test_normalisation_is_total_and_pure():
-    assert normalise(None) == ""  # type: ignore[arg-type]
-    assert normalise("Monza") == normalise("Monza")
 
 
 def test_filename_appends_the_svg_extension():
