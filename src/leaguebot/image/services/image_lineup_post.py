@@ -2,7 +2,7 @@
 
 The lineup of record is drawn and posted through core's drawing protocol
 (`leaguebot.core.services.image_drawing.ImageDrawing`, implemented by
-`leaguebot.image.services.image_drawing.ImageDrawing`, #283): this module holds what that
+`leaguebot.image.services.image_drawing.ImageDrawing`): this module holds what that
 drawing, and a command's own output, both need — resolving the division into a
 `LineupDrawing` (`build_drawing`) and rendering it (`render_png`) — plus `render_for_command`,
 which produces the PNG as a command's output and posts nothing, for `/team lineup` and the
@@ -95,7 +95,7 @@ def seated_members(guild, teams) -> dict[str, discord.Member]:
 async def build_drawing(db_path: str, guild, division_id: int, *, include_uncommitted: bool = False):
     """Resolve the division into a LineupDrawing, or raise LineupDataError.
 
-    It reads only the database, and is handed its path (#283): the lineup's drawing needs
+    It reads only the database, and is handed its path: the lineup's drawing needs
     nothing else of the bot to resolve what it draws.
 
     A placement made mid-season and not yet confirmed is left out (#220), for the lineup of
@@ -284,7 +284,7 @@ async def render_for_command(
     function writes no ``lineup_message_id``, deletes nothing from the lineup channel, and
     records no audit entry. That separation is why *include_uncommitted*, which draws a
     lineup as it will stand once mid-season placements are confirmed, is offered here and not
-    on the drawing of record (`ImageDrawing.draw_lineup`, #283).
+    on the drawing of record (`ImageDrawing.draw_lineup`).
 
     *obtain_missing_portraits* is set by `/season placements-review` alone. It obtains the
     portrait of each seated driver who has none, whichever update trigger the league chose,

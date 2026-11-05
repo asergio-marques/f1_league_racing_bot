@@ -65,7 +65,7 @@ def posted_result(posted: "LineupPosted | None") -> dict[str, Any]:
 
 #: What puts a lineup fallen back to text right: correct the template, and the picture is
 #: posted with the next change to the division's drivers, there being no command that posts a
-#: lineup again on its own (owner's decision on #283).
+#: lineup again on its own.
 _FIX_IT = (
     "fix the lineup template; the picture is posted with the next change to the division's "
     "drivers"
@@ -73,9 +73,9 @@ _FIX_IT = (
 
 
 def fallen_back_to_text_line(ctx: StepContext, result: Mapping[str, Any]) -> tuple[str, ...]:
-    """The lineup posting job's own line where it fell back to text, as the calendar's does
-    (owner's decision on #283): the member and the change it ran for, the division, the
-    problem, and what puts it right. Empty where nothing went wrong."""
+    """The lineup posting job's own line where it fell back to text, as the calendar's does:
+    the member and the change it ran for, the division, the problem, and what puts it right.
+    Empty where nothing went wrong."""
     problem = result.get("problem")
     if problem is None:
         return ()

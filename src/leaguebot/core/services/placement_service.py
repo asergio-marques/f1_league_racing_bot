@@ -2094,7 +2094,7 @@ class PlacementService:
         division posts nothing, since configuring one is optional.
 
         **The picture is asked of the drawing in front of an untouched body.** Where the drawing
-        the builder hands this service (core's drawing protocol, #283) answers that the league
+        the builder hands this service (core's drawing protocol) answers that the league
         draws its lineup, it draws the division's picture and this method posts it through the
         standing-post handler with no mentions, then releases the file. A picture that cannot be
         drawn — the drawing raises, or hands back a problem — falls through to the text embed

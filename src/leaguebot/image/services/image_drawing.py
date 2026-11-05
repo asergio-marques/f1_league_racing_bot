@@ -83,7 +83,7 @@ class ImageDrawing:
         #: The database the lineup's drawing reads: the division, its committed seats, and
         #: whether nationality is collected. Required like `renderer` and `post_log`, even
         #: though the calendar and the capacity questions read none of it, so that a drawing
-        #: is never built unable to do what `draw_lineup` needs (#283).
+        #: is never built unable to do what `draw_lineup` needs.
         self._db_path = db_path
 
     async def _drawn_template(self, aspect: str, template_key: str) -> Path | None:
