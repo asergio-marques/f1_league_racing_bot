@@ -1,14 +1,16 @@
 """The image module's answers to core's drawing protocol.
 
 `ImageDrawing` implements `leaguebot.core.services.image_drawing.ImageDrawing`: the builder
-makes one, attaches it to the bot as `bot.image_drawing`, and hands it to `PlacementService` and
-to every change that posts a division's calendar, so that core never imports this module. The
-capacity questions ask whether the aspect is drawn at all, whether the template is valid, and
-whether it holds that many — answered off the event loop, since parsing and measuring a
-template takes real time. ``calendar_wanted``/``draw_calendar`` and ``lineup_wanted``/
-``draw_lineup`` answer in the same shape: the two gates, the asset directories resolved
-absolutely, the file named, the render, and the notices reported to the log channel in one
-message.
+makes one, attaches it to the bot as `bot.image_drawing`, and hands it to `PlacementService`, to
+every change that posts a division's calendar and to the season fingerprint's callers — the
+season approval and the mid-season confirmation — which hand it on to `take_fingerprint`, so
+that core never imports this module. The capacity questions ask whether the aspect is drawn at
+all, whether the template is valid, and whether it holds that many — answered off the event
+loop, since parsing and measuring a template takes real time. ``calendar_wanted``/
+``draw_calendar`` and ``lineup_wanted``/``draw_lineup`` answer in the same shape: the two gates,
+the asset directories resolved absolutely, the file named, the render, and the notices reported
+to the log channel in one message. ``artwork_signature`` answers what the league's artwork
+looks like now, for the fingerprint to digest.
 """
 from __future__ import annotations
 
@@ -361,13 +363,13 @@ class ImageDrawing:
         """What the league's artwork looks like now, for the season fingerprint's "artwork" area
         (core/services/image_drawing.py).
 
-        A stated exception (architecture.md, "A catch-all error handler"): a part that cannot be
-        read is signed `[column, value, "unresolvable"]`, with a warning to the host's log, and
-        the rest is still signed.
+        A stated exception (architecture.md, "A catch-all error handler"): a configured directory
+        that cannot be resolved is signed `[column, value, "unresolvable"]`, with a warning to
+        the host's log, and the rest is still signed.
 
         *Rejected:* narrowing the catch to the errors it expects by name: a fault of any other
         kind would then empty the whole fingerprint, and the review would read as changed in
-        every area, when the one part that cannot be read must not cost the rest their own
+        every area, when the one part that cannot be resolved must not cost the rest their own
         signature.
         """
         config = await self._config.get_config()

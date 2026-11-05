@@ -1,17 +1,20 @@
 """What core asks of the image module.
 
-`ImageDrawing` is the protocol the builder hands `PlacementService` and the calendar's posting,
-so that core imports nothing of the image module: core calls these methods and the image module
-implements them (`leaguebot.image.services.image_drawing.ImageDrawing`). It is attached to the
-bot as `bot.image_drawing` and declared on `LeagueBot`, as results declares
-`AttendanceAfterReview` for attendance (architecture.md, "How modules and core fit together").
+`ImageDrawing` is the protocol the builder hands `PlacementService`, the calendar's posting and
+the season fingerprint (`take_fingerprint`, asked for and its callers — the season approval and
+the mid-season confirmation — handing on its own), so that core imports nothing of the image
+module: core calls these methods and the image module implements them
+(`leaguebot.image.services.image_drawing.ImageDrawing`). It is attached to the bot as
+`bot.image_drawing` and declared on `LeagueBot`, as results declares `AttendanceAfterReview` for
+attendance (architecture.md, "How modules and core fit together").
 
-It holds the four placement capacity questions, the calendar and the lineup. Each capacity
-question answers a `CapacityProblem` — the problem as a sentence with no final stop, and the
-image module's own words for what to do about it — or `None` where nothing is wrong. Core
-joins the two into its own refusal, adding what is core's own to say. The calendar's
-`draw_calendar` and the lineup's `draw_lineup` answer a `CalendarPicture` or `LineupPicture`
-instead, because core itself posts what it hands back rather than wording a refusal from it.
+It holds the four placement capacity questions, the calendar, the lineup and the artwork
+signature. Each capacity question answers a `CapacityProblem` — the problem as a sentence with
+no final stop, and the image module's own words for what to do about it — or `None` where
+nothing is wrong. Core joins the two into its own refusal, adding what is core's own to say.
+The calendar's `draw_calendar` and the lineup's `draw_lineup` answer a `CalendarPicture` or
+`LineupPicture` instead, because core itself posts what it hands back rather than wording a
+refusal from it.
 """
 from __future__ import annotations
 
@@ -115,8 +118,9 @@ class ImageDrawing(Protocol):
     async def artwork_signature(self) -> list:
         """What the league's artwork looks like now: every configured template file, then every
         configured asset folder, each by name, size and modification time, never by content. A
-        part that cannot be read is signed `[column, value, "unresolvable"]` and the rest are
-        still signed (architecture.md, "A catch-all error handler"). An unset column is left out,
+        configured directory that cannot be resolved is signed `[column, value, "unresolvable"]`
+        and the rest are still signed (architecture.md, "A catch-all error handler"). An unset
+        column is left out,
         and an empty list where the module has no configuration at all. The season fingerprint
         digests this answer unchanged, so a review drawn before an edit still compares equal
         after one that leaves it unchanged, and names the templates and artwork changing where it
