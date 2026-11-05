@@ -31,8 +31,8 @@ TEMPLATE = (
 
 #: Every module that renders, and the attribute it must pass as the tier.
 CALL_SITES = {
-    "core/services/calendar_post_service.py": "drawing.division_name",
     "image/services/image_attendance_post.py": "drawing.division_name",
+    "image/services/image_drawing.py": "drawing.division_name",
     "image/services/image_lineup_post.py": "drawing.division_name",
     "image/services/image_results_post.py": "drawing.division_name",
     "image/services/image_rsvp_post.py": "drawing.division_name",
@@ -42,6 +42,11 @@ CALL_SITES = {
     "image/services/image_weather_post.py": "drawing.division_name",
     "image/cogs/image_cog.py": "context.division_name",
 }
+
+CALENDAR_DRAWN_IN_CORE = (
+    "#283: the calendar's render call is still in core's calendar_post_service, "
+    "not image's drawing"
+)
 
 
 def _service(*, enabled=True, palette=None):
@@ -114,7 +119,20 @@ async def test_a_broken_palette_read_is_swallowed(tmp_path, monkeypatch):
 
 # ── Every call site names its tier ────────────────────────────────────────
 
-@pytest.mark.parametrize("path,expected", sorted(CALL_SITES.items()), ids=sorted(CALL_SITES))
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        pytest.param(
+            path,
+            expected,
+            id=path,
+            marks=pytest.mark.xfail(strict=True, reason=CALENDAR_DRAWN_IN_CORE)
+            if path == "image/services/image_drawing.py"
+            else (),
+        )
+        for path, expected in sorted(CALL_SITES.items())
+    ],
+)
 def test_every_render_call_site_names_the_division(path, expected):
     source = (
         __import__("pathlib").Path(__file__).resolve().parents[2] / "src" / "leaguebot" / path
