@@ -651,8 +651,7 @@ def calendar_sync_change(seasons: "SeasonService") -> ChangeType:
             lines=(
                 f"{ctx.named} | /division calendar-sync | Success\n"
                 f"  division: {ctx.payload['division_name']}\n"
-                f"  posted as: {drawn}\n"
-                + "".join(f"  notice: {each}\n" for each in result.get("notices", [])),
+                f"  posted as: {drawn}",
             ),
         )
 

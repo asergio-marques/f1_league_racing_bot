@@ -241,9 +241,6 @@ async def test_a_refused_render_posts_nothing_and_says_the_old_calendar_stands(t
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#283: calendar sync's close line repeats the notices the render has already reported"
-))
 async def test_render_notices_are_shown_in_the_reply_and_not_repeated_in_the_close_line(tmp_path):
     """A calendar synced, drawn with a notice. The reply names the notice (Constitution XIV.4,
     alongside a command's output); the command's line in the log channel does not repeat it,
