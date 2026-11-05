@@ -34,7 +34,11 @@ from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.change_queue import Step, StepContext
 from leaguebot.core.services.module_service import ModuleService
 from leaguebot.core.services.season_lifecycle_service import require_guild
-from leaguebot.core.services.season_service import division_first_round
+from leaguebot.core.services.season_service import (
+    division_first_round,
+    division_rounds_on,
+    round_by_id,
+)
 from leaguebot.core.utils.league_bot import LeagueBot
 
 OPENING_STANDINGS = "opening_standings"
@@ -225,8 +229,6 @@ async def final_round_on(db: Any, division_id: int) -> int | None:
     than from a join of `rounds` into this query (architecture.md, "The database": a query that
     would join another owner's table is split at that line, each half asked of its owner).
     """
-    from leaguebot.core.services.season_service import division_rounds_on
-
     for round_id in await division_rounds_on(db, division_id):
         cursor = await db.execute(
             "SELECT 1 FROM session_results WHERE round_id = ? AND status = 'ACTIVE' LIMIT 1",
@@ -241,8 +243,6 @@ async def _final_round(db_path: str, division_id: int, round_id: int):
     """The round the final classification is drawn against, read through core's `round_by_id`
     (never `rounds` itself, architecture.md, "A module reads core's tables only through core's
     services") as the posting runs."""
-    from leaguebot.core.services.season_service import round_by_id
-
     return await round_by_id(db_path, division_id, round_id)
 
 
