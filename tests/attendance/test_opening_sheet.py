@@ -28,8 +28,6 @@ from tests.support.season_classification import (
     seed_season,
 )
 
-_NOT_ATTENDANCE_YET = "#283: the opening sheet is not yet posted by attendance's own module"
-
 
 @pytest.fixture
 async def db_path(tmp_path):
@@ -38,7 +36,6 @@ async def db_path(tmp_path):
     return path
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ATTENDANCE_YET)
 async def test_the_opening_sheet_is_posted_for_every_division(db_path):
     """Div A and Div B, one round and one seated driver each: each division's opening
     attendance sheet is posted once, under the opening's heading."""
@@ -61,7 +58,6 @@ async def test_the_opening_sheet_is_posted_for_every_division(db_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ATTENDANCE_YET)
 async def test_the_opening_sheet_is_drawn_against_the_division_s_first_round(db_path):
     """Not because it stands after it — the grid of rounds is read from the calendar."""
     from leaguebot.attendance.services import sheet_posting as service
@@ -86,7 +82,6 @@ async def test_the_opening_sheet_is_drawn_against_the_division_s_first_round(db_
     assert attendance.await_args.args[3] == opener
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ATTENDANCE_YET)
 async def test_a_division_with_no_rounds_posts_no_opening_sheet(db_path):
     """Div A's only round deleted: its opening sheet posts nothing."""
     from leaguebot.attendance.services import sheet_posting as service
@@ -106,7 +101,6 @@ async def test_a_division_with_no_rounds_posts_no_opening_sheet(db_path):
     assert attendance.await_count == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ATTENDANCE_YET)
 async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
     """Discord refuses Div A's opening attendance sheet: what the sheet's posting raises (it
     always raises, so it is asked for no `raise_on_failure`) reaches the job, for the queue to

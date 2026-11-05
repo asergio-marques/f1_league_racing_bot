@@ -60,7 +60,7 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.round_moments import read_round_windows
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
-from leaguebot.core.services import approval_checks, season_classification_service
+from leaguebot.core.services import approval_checks
 from leaguebot.core.services import lineup_posting, standing_posts
 from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
 from leaguebot.core.services.change_queue import (
@@ -127,7 +127,6 @@ ARM = "arm"
 GRANT_ROLES = "grant_roles"
 POST_BATCH_NOTICE = "post_batch_notice"
 REFRESH_LINEUP = "refresh_lineup"
-OPENING_SHEET = "opening_sheet"
 DELETE_BATCH_NOTICE = "delete_batch_notice"
 TELL_REVIEW_CHANNEL = "tell_review_channel"
 CLOSE = "close"
@@ -270,63 +269,6 @@ def driver_roles_step(placement: Any, name: str = GRANT_ROLES) -> Step:
         return f"granting <@{each['user_id']}> the roles of **{each['division_name']}**{team}"
 
     return Step(name, StepKind.ACT, grant_roles, describe=describe_grant)
-
-
-async def core_opening_posts_on(
-    db: aiosqlite.Connection, division_id: int, division_name: str
-) -> tuple[PlannedStep, ...]:
-    """Core's own opening sheet job for *division_id*, signed up to *placements_confirmed*
-    after results' own opening standings (#283: attendance's own module takes this over in a
-    later commit). Whether it runs is decided as it runs, by attendance's switch
-    (`core_opening_posts_steps`)."""
-    return (PlannedStep(OPENING_SHEET, {"division_id": division_id, "division_name": division_name}),)
-
-
-def core_opening_posts_steps(modules: "ModuleService") -> dict[str, Step]:
-    """Core's own step definition for the opening sheet, signed up to
-    *placements_confirmed_steps* beside results' `season_standings_posts.opening_steps` (#283:
-    attendance's own module takes this over in a later commit; results' opening standings has
-    already moved to `season_standings_posts`, which plans and defines its own step)."""
-
-    def describing(template: str) -> Callable[[StepContext], Awaitable[str]]:
-        async def describe(ctx: StepContext) -> str:
-            return template.format(name=ctx.step_payload["division_name"])
-
-        return describe
-
-    async def opening_sheet(ctx: StepContext) -> StepResult:
-        await standing_posts.remove_kept(ctx.bot, ctx.kept)
-        guild = await _guild(ctx.bot)
-        result = await season_classification_service.post_opening_sheet(
-            ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
-            as_text=ctx.tries > 0,
-        )
-        then: tuple[PlannedStep, ...] = ()
-        if result.get("takes_slot"):
-            then = standing_posts.replaced(
-                result.get("channel_id"), result.get("old"), result.get("new"),
-                what="attendance sheet",
-                division_name=str(ctx.step_payload.get("division_name", "the division")),
-            )
-        return StepResult(result=result, then=then)
-
-    async def record_opening_sheet(
-        db: aiosqlite.Connection, ctx: StepContext, result: StepResult
-    ) -> None:
-        await season_classification_service.record_sheet_on(
-            db, int(ctx.step_payload["division_id"]), result.result
-        )
-
-    async def sheet_due(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
-
-    return {
-        OPENING_SHEET: Step(
-            OPENING_SHEET, StepKind.ACT, opening_sheet, still_due=sheet_due,
-            describe=describing("posting the opening attendance sheet of **{name}**"),
-            record=record_opening_sheet,
-        ),
-    }
 
 
 def season_approval_change(
@@ -931,12 +873,6 @@ def _left(ctx: OutcomeContext, steps: Mapping[str, Step], *, told: bool = True) 
             )
         elif view.name == standing_posts.DELETE_REPLACED:
             lines.append(standing_posts.not_deleted(view) or "")
-        elif view.name == OPENING_SHEET:
-            lines.append(
-                f"**{each['division_name']}** — its opening attendance sheet could not be "
-                f"posted. No command posts it again; the first round's attendance posts the "
-                f"sheet as usual."
-            )
         elif view.name == DELETE_BATCH_NOTICE:
             link = (view.result or {}).get("link")
             lines.append(

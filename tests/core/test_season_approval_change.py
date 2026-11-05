@@ -1564,11 +1564,6 @@ async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
     assert (await _approval(league))["state"] == "DONE"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the approval does not yet take a module's discarded opening post from that "
-    "module's own step",
-)
 @pytest.mark.parametrize(
     ("job", "owner", "fail"),
     [

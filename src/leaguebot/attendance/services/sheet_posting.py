@@ -6,6 +6,16 @@ the sanctions it enforces) asks the queue, as the bot's and repeatably, to post 
 Discord refuses stops the queue at the `post_sheet` job, to be tried again as text (Constitution
 XIV, rule 8) or discarded, instead of being put on the old retry queue. A division with no
 attendance channel set stops it too, naming the command that sets one.
+
+**The opening sheet, posted when a season is approved (#283),** is a second occasion this module
+posts, under the same rules: the attendance sheet a league already reads after every round, under
+the opening's heading and with no message text (see
+:class:`leaguebot.core.models.classification_occasion.ClassificationOccasion`). Attendance posts
+its own, one division at a time, each a job of the season's approval on the change queue, signed
+up to the hook core declares for placements confirmed, after results' own opening standings
+(architecture.md, "How modules and core fit together"). It reads the division's first round
+through core's `SeasonService`, never the table itself, and raises where it cannot post, for the
+queue to stop on.
 """
 
 from __future__ import annotations
@@ -25,6 +35,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
+from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
     ChangeType,
@@ -38,6 +49,7 @@ from leaguebot.core.utils.league_server import league_guild
 
 POST_SHEET = "post_sheet"
 SHEET_POST = "attendance.sheet.post"
+OPENING_SHEET = "opening_sheet"
 
 
 def sheet_step() -> Step:
@@ -167,3 +179,103 @@ async def ask_sheet_post(
         SHEET_POST, payload, what=f"posting the attendance sheet of **{name}**",
         origin=ChangeOrigin.BOT,
     )
+
+
+async def _opening_round(db_path: str, division_id: int):
+    """The division's first round, read through core's `SeasonService`, or None where it has
+    none.
+
+    The sheet is drawn against it: not because it stands after it, it stands after nothing, but
+    because the grid of rounds down its side is read from the season's calendar and the heading
+    context the posting resolves is keyed by a round. Every cell in that grid is empty, which is
+    exactly what an opening sheet should show. Approval refuses a division with no rounds, so
+    None cannot normally happen.
+    """
+    from leaguebot.core.services.season_service import SeasonService
+
+    rounds = await SeasonService(db_path).get_division_rounds(division_id)
+    return rounds[0] if rounds else None
+
+
+async def post_opening_sheet(
+    bot: Any, guild: Any, db_path: str, division_id: int, *, as_text: bool = False
+) -> dict[str, Any]:
+    """Post one division's opening attendance sheet, raising where it cannot be posted, and
+    give the job its result (`attendance_service.sheet_result`).
+
+    This always raises and saves nothing: a division with no attendance channel stops the queue,
+    its failure naming `/attendance channel attendance`, and so does one given a channel the
+    guild no longer holds. The opening sheet takes the division's live slot, which the job saves
+    with its mark (`attendance_service.record_sheet_on`) and replaces by a job of its own.
+    *as_text* leaves the graphic out, which is how a job retries.
+    """
+    opener = await _opening_round(db_path, division_id)
+    if opener is None:
+        return attendance_service.sheet_result(None)
+    return attendance_service.sheet_result(await attendance_service.post_attendance_sheet(
+        bot,
+        guild,
+        db_path,
+        opener.id,
+        division_id,
+        occasion=ClassificationOccasion.SEASON_OPENING,
+        as_text=as_text,
+    ))
+
+
+async def placements_confirmed_on(
+    db: Any, division_id: int, division_name: str
+) -> tuple[PlannedStep, ...]:
+    """Attendance's own job of placements confirmed (the season's approval): its opening sheet
+    for *division_id*, planned whatever attendance's switch says — :func:`opening_steps`'
+    `still_due` drops it as it runs where attendance is off."""
+    return (
+        PlannedStep(OPENING_SHEET, {"division_id": division_id, "division_name": division_name}),
+    )
+
+
+def opening_steps() -> dict[str, Step]:
+    """Attendance's step definition for the opening sheet, signed up to
+    *placements_confirmed_steps* beside results' `season_standings_posts.opening_steps`."""
+
+    async def run(ctx: StepContext) -> StepResult:
+        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        guild = await league_guild(ctx.bot)
+        if guild is None:
+            raise GuildUnavailable("the league's server is not in the cache")
+        result = await post_opening_sheet(
+            ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
+            as_text=ctx.tries > 0,
+        )
+        then: tuple[PlannedStep, ...] = ()
+        if result.get("takes_slot"):
+            then = standing_posts.replaced(
+                result.get("channel_id"), result.get("old"), result.get("new"),
+                what="attendance sheet",
+                division_name=str(ctx.step_payload.get("division_name", "the division")),
+            )
+        return StepResult(result=result, then=then)
+
+    async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        await attendance_service.record_sheet_on(db, int(ctx.step_payload["division_id"]),
+                                                  result.result)
+
+    async def still_due(ctx: StepContext) -> bool:
+        return await ctx.bot.module_service.is_attendance_enabled()
+
+    async def describe(ctx: StepContext) -> str:
+        return f"posting the opening attendance sheet of **{ctx.step_payload['division_name']}**"
+
+    def not_done(view: Any) -> str:
+        return (
+            f"**{view.payload['division_name']}** — its opening attendance sheet could not be "
+            f"posted. No command posts it again; the first round's attendance posts the sheet "
+            f"as usual."
+        )
+
+    return {
+        OPENING_SHEET: Step(
+            OPENING_SHEET, StepKind.ACT, run, still_due=still_due, describe=describe,
+            record=record, not_done=not_done,
+        ),
+    }
