@@ -287,10 +287,6 @@ POSTED_AS_TEXT_IN_A_CANCELLED_SEASON = (
     "  to put it right: nothing does; no command posts the picture again now the season is "
     "cancelled, and the text calendar stands"
 )
-FALLBACK_NOT_YET_ITS_JOB_S = (
-    "#283: the post_calendar job writes no line where its calendar fell back to text; each "
-    "change words the fallback itself"
-)
 
 
 def _drawing_fails(league: Any, monkeypatch: Any) -> None:
@@ -351,7 +347,6 @@ async def _round_not_held(tmp_path: Any, monkeypatch: Any) -> tuple[Any, None]:
     return league, None
 
 
-@pytest.mark.xfail(strict=True, reason=FALLBACK_NOT_YET_ITS_JOB_S)
 @pytest.mark.parametrize(("start", "divisions", "posted"), [
     pytest.param(_approved, ("Pro", "Am"), POSTED_AS_TEXT, id="the approval"),
     pytest.param(_round_cancelled, ("Pro",), POSTED_AS_TEXT, id="a round's cancellation"),

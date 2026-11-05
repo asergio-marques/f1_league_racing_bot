@@ -1474,9 +1474,6 @@ async def test_a_module_turned_off_before_its_notice_drops_the_notice(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#283: the season's cancellation names a calendar posted as text as not notified"
-))
 async def test_a_channel_never_set_is_named_and_a_calendar_posted_as_text_is_not(
     tmp_path, monkeypatch,
 ):

@@ -619,11 +619,9 @@ def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
                     name, "calendar",
                     _DISCARDED_CALENDAR_CANCELLED if cancelled else _DISCARDED_CALENDAR,
                 ))
-            elif result.get("fell_back"):
-                failures.append(notices.NoticeFailure(
-                    name, "calendar",
-                    f"posted as text, as the picture could not be drawn ({result['problem']})",
-                ))
+            # A calendar posted as text is not notified of nothing: it was posted, and its
+            # fallback is the job's own log line (Constitution XIV.4, the owner's decision on
+            # #283), not a thing the cancellation names here.
     return failures
 
 
