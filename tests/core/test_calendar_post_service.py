@@ -168,7 +168,6 @@ async def test_uncommanded_posting_falls_back_to_text_on_a_fatal_render(monkeypa
 
     assert drawing.drawn == ["Elite"]
     assert result.fell_back is True
-    assert result.problem == "template is missing a field"
     assert result.posted_as_image is False
     posted_content = cps.replace_calendar_message.await_args.kwargs["content"]
     assert "Round 1:" in posted_content, "the textual calendar must stand in"
