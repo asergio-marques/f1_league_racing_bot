@@ -1888,6 +1888,41 @@ async def test_a_completion_whose_wind_down_close_is_discarded_closes_the_window
     assert WINDOW_OPEN not in line, line
 
 
+async def test_a_discarded_final_post_is_named_before_a_wind_down_job_discarded_before_it(
+    tmp_path,
+):
+    """The season Ongoing with signups open and every division done, and admin 77 completes it:
+    the completion winds the season down first. Discord refuses to delete the Sign Up button, so
+    the wind-down's deletion of it stops the queue, and the admin discards it; the season is
+    turned down and settled, and Discord then refuses Pro's final standings, which the admin
+    discards too. Though the button's job ran first, the reply's "Not everything could be done"
+    names Pro's final classification first and the button after it, and so do the closing line's
+    "not done:" entries, word for word, as today."""
+    from tests.support.season_league import SIGNUP_BUTTON, SIGNUP_CHANNEL
+
+    league = await pending_completion_league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
+    league.channel(SIGNUP_CHANNEL).messages[SIGNUP_BUTTON].delete = AsyncMock(
+        side_effect=_forbidden()
+    )
+    league.channel(PRO_CH.standings).send_fails = _forbidden()
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == ("delete_button", None)
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == ("final_standings", PRO)
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert await _status(league) == "COMPLETED"
+    assert _not_done(reply(interaction)) == [PRO_NOT_POSTED, BUTTON_KEPT]
+    [line] = _closing_lines(league)
+    assert line.startswith(INCOMPLETE), line
+    assert [each.split("  not done: ", 1)[1] for each in line.splitlines()
+            if each.startswith("  not done: ")] == [PRO_NOT_POSTED, BUTTON_KEPT]
+
+
 async def _league_ending(tmp_path: Any, end: str) -> Any:
     """The league whose season *end* closes: being set up for the abort, ongoing for the
     cancellation, ongoing with signups and every division done for the wind-down, pending
