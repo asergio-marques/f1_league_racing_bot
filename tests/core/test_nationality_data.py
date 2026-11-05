@@ -1,10 +1,10 @@
-"""Unit tests for leaguebot.image.utils.nationality_data.NATIONALITY_LOOKUP — T002."""
+"""Unit tests for leaguebot.core.utils.nationality_data.NATIONALITY_LOOKUP — T002."""
 
 from __future__ import annotations
 
 import pytest
 
-from leaguebot.image.utils.nationality_data import NATIONALITY_LOOKUP
+from leaguebot.core.utils.nationality_data import NATIONALITY_LOOKUP
 
 
 class TestNationalityLookup:

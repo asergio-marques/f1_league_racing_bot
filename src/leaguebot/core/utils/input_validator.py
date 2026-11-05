@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 
-from leaguebot.image.utils.nationality_data import NATIONALITY_LOOKUP
+from leaguebot.core.utils.nationality_data import NATIONALITY_LOOKUP
 
 
 class Rule(Enum):
