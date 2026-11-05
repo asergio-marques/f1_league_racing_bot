@@ -79,7 +79,7 @@ class LeagueBot(commands.Bot):
     #: Attendance's share of a round's review, handed to results' change types (#439).
     attendance_after_review: AttendanceAfterReview
     #: Core's drawing protocol, the image module's own implementation, handed to
-    #: `placement_service` and its other callers.
+    #: `placement_service`.
     image_drawing: ImageDrawing
     image_config_service: ImageConfigService
     image_validity_service: ImageValidityService
