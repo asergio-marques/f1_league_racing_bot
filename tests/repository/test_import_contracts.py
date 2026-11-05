@@ -108,8 +108,8 @@ def test_every_module_is_under_the_rules_between_modules():
         rows[module] = allowed
     assert set(rows) == modules, "Every module has a contract saying which modules it may use."
     assert rows["image"] == set()
-    assert {module: allowed - {"image"} for module, allowed in rows.items() if module != "image"} == {
-        module: set(needs(module)) for module in rows if module != "image"
+    assert {module: allowed for module, allowed in rows.items() if module != "image"} == {
+        module: set(needs(module)) | {"image"} for module in rows if module != "image"
     }, "Each module's contract allows the modules the dependency table says it needs, and image."
 
 
