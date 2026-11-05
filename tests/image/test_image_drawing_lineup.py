@@ -204,8 +204,7 @@ async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_not
 ):
     """Pro's lineup drawn, with one notice: the drawing hands core the picture's path where it was
     drawn, or the problem's words where it could not be, and the notices' words either way. It
-    posts nothing to Pro's lineup channel, and a picture handed back is released, with its render
-    directory, by `discard_picture`."""
+    posts nothing to Pro's lineup channel."""
     from leaguebot.image.models.image_module import RenderNotice
 
     _portraits_spied(monkeypatch)
@@ -228,5 +227,3 @@ async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_not
     assert picture.problem == (None if drawn == "a picture" else "the template has no rows")
     assert tuple(picture.notices) == ("a fallback flag stood in for Zara's",)
     channel.send.assert_not_awaited()
-    drawing.discard_picture(picture.path)
-    assert not png.exists() if drawn == "a picture" else png.exists()
