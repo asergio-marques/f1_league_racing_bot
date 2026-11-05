@@ -62,7 +62,10 @@ def _drawing(template, *, toggle: bool = True, images: bool = True):
             DRIVERS: MagicMock(valid=True, resolved_path=str(template), template_key=DRIVERS)
         }
     )
-    return ImageDrawing(modules=modules, config=config, validity=validity)
+    return ImageDrawing(
+        modules=modules, config=config, validity=validity,
+        renderer=MagicMock(), post_log=AsyncMock(),
+    )
 
 
 async def _seed(tmp_path, *, drivers: int, reserves: int = 0):

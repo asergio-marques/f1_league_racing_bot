@@ -156,7 +156,10 @@ def _drawing(reports, *, toggle: bool = True, images: bool = True):
     config.get_toggles = AsyncMock(return_value={"lineup": toggle})
     validity = MagicMock()
     validity.template_reports = AsyncMock(return_value=reports)
-    return ImageDrawing(modules=modules, config=config, validity=validity)
+    return ImageDrawing(
+        modules=modules, config=config, validity=validity,
+        renderer=MagicMock(), post_log=AsyncMock(),
+    )
 
 
 def _report(path):

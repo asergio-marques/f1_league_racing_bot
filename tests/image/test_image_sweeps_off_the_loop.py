@@ -383,7 +383,10 @@ def _drawing(aspect: str) -> Any:
             for path in sorted(SHIPPED.glob("*.svg"))
         }
     )
-    return ImageDrawing(modules=modules, config=config, validity=validity)
+    return ImageDrawing(
+        modules=modules, config=config, validity=validity,
+        renderer=MagicMock(), post_log=AsyncMock(),
+    )
 
 
 #: Each capacity question a placement asks, the output it is asked for, and how it is asked:

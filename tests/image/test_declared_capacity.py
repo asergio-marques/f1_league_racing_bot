@@ -47,7 +47,10 @@ def _drawing(*, images: bool = True):
     config.get_toggles = AsyncMock(return_value={})
     validity = MagicMock()
     validity.template_reports = AsyncMock(return_value={})
-    return ImageDrawing(modules=modules, config=config, validity=validity)
+    return ImageDrawing(
+        modules=modules, config=config, validity=validity,
+        renderer=MagicMock(), post_log=AsyncMock(),
+    )
 
 
 # ── The answer ────────────────────────────────────────────────────────────

@@ -116,7 +116,10 @@ def _drawing(templates: dict[str, str]):
             for key, path in templates.items()
         }
     )
-    return ImageDrawing(modules=modules, config=config, validity=validity)
+    return ImageDrawing(
+        modules=modules, config=config, validity=validity,
+        renderer=MagicMock(), post_log=AsyncMock(),
+    )
 
 
 def _service(db_path: str, templates: dict[str, str]):

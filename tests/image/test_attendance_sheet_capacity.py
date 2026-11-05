@@ -134,7 +134,10 @@ def _drawing(template, *, toggle: bool = True, images: bool = True):
             SHEET: MagicMock(valid=True, resolved_path=str(template), template_key=SHEET)
         }
     )
-    return ImageDrawing(modules=modules, config=config, validity=validity)
+    return ImageDrawing(
+        modules=modules, config=config, validity=validity,
+        renderer=MagicMock(), post_log=AsyncMock(),
+    )
 
 
 # ── The answer ────────────────────────────────────────────────────────────

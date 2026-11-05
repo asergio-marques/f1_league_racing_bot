@@ -12,6 +12,7 @@ notices reported to the log channel in one message.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -69,8 +70,8 @@ class ImageDrawing:
         config: ImageConfigService,
         validity: ImageValidityService,
         *,
-        renderer: Any = None,
-        post_log: Any = None,
+        renderer: ImageRenderService,
+        post_log: Callable[[str], Awaitable[object]],
     ) -> None:
         self._modules = modules
         self._config = config
