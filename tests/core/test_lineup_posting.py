@@ -315,6 +315,7 @@ async def test_the_text_lineup_is_posted_before_the_old_one_is_deleted(tmp_path)
     names = [job["name"] for job in await _lineup_jobs(league)]
     assert names == ["post_lineup", "delete_replaced"]
     assert await _lineup_id(league) == new
+    assert "Lineup posted as text" not in await _said(league), "the text is no fallback here"
 
 
 async def test_a_refused_text_lineup_leaves_the_old_lineup_standing(tmp_path):
@@ -394,6 +395,130 @@ async def test_a_refused_lineup_picture_is_posted_as_text_and_stops_nothing(
     assert [(bool(job["done_at"]), job["tries"]) for job in post] == [(True, 0)]
     assert "Lineup posted as text" not in await _said(league)
     assert drawing.discarded == [png]
+
+
+#: Why Pro's lineup could not be drawn, where its drawing fails.
+PROBLEM = "the template has no rows"
+#: The posting job's own line where the lineup it posted fell back to text, after the member and
+#: the change it ran for: the division, the problem, and what puts it right (the owner's decision
+#: on #283).
+POSTED_AS_TEXT = (
+    "{change} | Lineup posted as text\n"
+    "  division: Pro\n"
+    "  problem: {problem}\n"
+    "  to put it right: fix the lineup template; the picture is posted with the next change to "
+    "the division's drivers"
+)
+
+
+async def _lineup_asked(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tuple[Any, None]:
+    """Pro's lineup asked of the queue, as a driver command asks it, with *drawing* the one the
+    builder handed placement. Returns the league, and no reply, the bot's change having none."""
+    from tests.support.lineup_drawing import draw_lineups_with
+
+    league = await ongoing_league(tmp_path)
+    draw_lineups_with(league.bot, monkeypatch, drawing)
+    await _ask(league, PRO)
+    return league, None
+
+
+async def _review_approved(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tuple[Any, Any]:
+    """Round 3's penalty review in Pro, attendance on with its real hook and the real placement
+    service handed *drawing* (roles granted and revoked by doubles), Pro's lineup channel and
+    attendance channel set. Pro sets an autoreserve threshold of one point and has a Reserve team
+    with a free seat; Lewis, raced round 4 without an RSVP, is on the threshold. Alex approves
+    round 3's reports with a penalty for Lewis: he is moved to the Reserve team, and the review's
+    own job posts Pro's lineup. Returns the league and Alex's interaction."""
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services.placement_service import PlacementService
+    from tests.results.test_report_approval_change import _approve, _lewis_owed_an_autoreserve
+    from tests.support.change_queue import set_user
+    from tests.support.review_league import DIVISION_ID, LEWIS, channel, penalty, review_league
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    # The drawing placement is handed: the capacity guards finding room, and the lineup *drawing*'s.
+    handed = SimpleNamespace(
+        reserve_capacity_problem=AsyncMock(return_value=None),
+        sheet_capacity_problem=AsyncMock(return_value=None),
+        standings_capacity_problem=AsyncMock(return_value=None),
+        declared_capacity_problem=AsyncMock(return_value=None),
+        lineup_wanted=drawing.lineup_wanted,
+        draw_lineup=drawing.draw_lineup,
+        discard_picture=drawing.discard_picture,
+    )
+
+    def _hook(bot: Any, db_path: str) -> Any:
+        placement = PlacementService(db_path, drawing=handed)
+        placement._grant_roles = AsyncMock()
+        placement._revoke_roles = AsyncMock()
+        placement.grant_roles = AsyncMock()
+        placement.revoke_roles = AsyncMock()
+        return AttendanceAfterReview(bot, placement)
+
+    league = await review_league(tmp_path, attendance=True, attendance_hook=_hook)
+    await _lewis_owed_an_autoreserve(league)
+    for channel_id in (REVIEW_ATTENDANCE, REVIEW_LINEUP):
+        league.channels[channel_id] = channel(channel_id, league.events)
+        league.channels[channel_id].guild = league.guild
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (DIVISION_ID, str(REVIEW_ATTENDANCE)),
+        )
+        await db.execute(
+            "UPDATE divisions SET lineup_channel_id = ? WHERE id = ?", (REVIEW_LINEUP, DIVISION_ID)
+        )
+        await db.commit()
+    set_user(league.bot, MagicMock(id=9000))
+    league.bot.user.__str__.return_value = "LeagueBot"
+    return league, await _approve(league, staged=[penalty(LEWIS)])
+
+
+#: Pro's attendance and lineup channels in the review's league.
+REVIEW_ATTENDANCE, REVIEW_LINEUP = 707, 708
+
+
+@pytest.mark.parametrize(("start", "change"), [
+    pytest.param(_lineup_asked, "posting the lineup of **Pro**", id="a lineup asked"),
+    pytest.param(_review_approved, "✅ Approve on round 3's penalty review",
+                 id="a review's sanction"),
+])
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: a lineup posted as text because it could not be drawn is not yet recorded by "
+    "its job's own line",
+)
+async def test_a_lineup_fallen_back_to_text_is_recorded_by_every_change_that_posts_it(
+    tmp_path, monkeypatch, start, change,
+):
+    """Each change that posts a lineup, where the drawing the builder handed hands back the
+    problem "the template has no rows" and the text stands in: Pro's lineup is posted as text,
+    the queue does not stop, and the log channel names the problem once, in the posting job's own
+    "Lineup posted as text" line, opening with the change it ran for, naming Pro and saying what
+    puts it right. No reply names the problem or a lineup posted as text."""
+    from tests.support.lineup_drawing import LineupDrawingStub
+
+    drawing = LineupDrawingStub(problem=PROBLEM)
+    league, asked = await start(tmp_path, monkeypatch, drawing)
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(drawing.drawn) == 1, drawing.drawn
+    logged = list(league.bot.log_channel.sent)
+    named = [line for line in logged if PROBLEM in line]
+    line = POSTED_AS_TEXT.format(change=change, problem=PROBLEM)
+    assert len(named) == 1 and line in named[0], named
+    assert named[0].endswith(line), named[0]
+    if asked is not None:
+        from tests.support.season_league import reply
+
+        told = reply(asked)
+        for words in (PROBLEM, "posted as text"):
+            assert words not in told, told
 
 
 @pytest.mark.parametrize("form", ["text", "image"])
