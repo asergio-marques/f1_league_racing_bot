@@ -387,7 +387,7 @@ def _drawing(aspect: str) -> Any:
     )
     return ImageDrawing(
         modules=modules, config=config, validity=validity,
-        renderer=MagicMock(), post_log=AsyncMock(),
+        renderer=MagicMock(), post_log=AsyncMock(), db_path="",
     )
 
 

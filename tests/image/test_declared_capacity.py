@@ -49,7 +49,7 @@ def _drawing(*, images: bool = True):
     validity.template_reports = AsyncMock(return_value={})
     return ImageDrawing(
         modules=modules, config=config, validity=validity,
-        renderer=MagicMock(), post_log=AsyncMock(),
+        renderer=MagicMock(), post_log=AsyncMock(), db_path="",
     )
 
 

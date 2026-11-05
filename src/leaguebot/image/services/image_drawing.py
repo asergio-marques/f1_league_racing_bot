@@ -73,7 +73,7 @@ class ImageDrawing:
         *,
         renderer: ImageRenderService,
         post_log: Callable[[str], Awaitable[object]],
-        db_path: str | None = None,
+        db_path: str,
     ) -> None:
         self._modules = modules
         self._config = config
@@ -81,8 +81,9 @@ class ImageDrawing:
         self._renderer = renderer
         self._post_log = post_log
         #: The database the lineup's drawing reads: the division, its committed seats, and
-        #: whether nationality is collected. None where the caller never draws a lineup (the
-        #: calendar and the capacity questions read none of it).
+        #: whether nationality is collected. Required like `renderer` and `post_log`, even
+        #: though the calendar and the capacity questions read none of it, so that a drawing
+        #: is never built unable to do what `draw_lineup` needs (#283).
         self._db_path = db_path
 
     async def _drawn_template(self, aspect: str, template_key: str) -> Path | None:
@@ -273,8 +274,6 @@ class ImageDrawing:
         from leaguebot.image.services.image_lineup_service import (
             build_fill_spec as build_lineup_fill_spec,
         )
-
-        assert self._db_path is not None  # true by construction: lineup_wanted gated this
 
         _division, drawing, members = await build_drawing(self._db_path, guild, division_id)
 

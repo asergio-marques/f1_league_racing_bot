@@ -70,7 +70,9 @@ def _drawing(*, images_on=True, aspect_on=True, flag_directory="resources/defaul
     renderer = MagicMock()
     renderer.render = AsyncMock(side_effect=_render)
     post_log = AsyncMock()
-    drawing = ImageDrawing(modules, config, MagicMock(), renderer=renderer, post_log=post_log)
+    drawing = ImageDrawing(
+        modules, config, MagicMock(), renderer=renderer, post_log=post_log, db_path="",
+    )
     return drawing, captured, post_log, modules
 
 

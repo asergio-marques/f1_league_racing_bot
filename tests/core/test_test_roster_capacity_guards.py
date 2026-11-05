@@ -98,7 +98,7 @@ def _standings(tmp_path, *, rows: int) -> str:
     )
 
 
-def _drawing(templates: dict[str, str]):
+def _drawing(db_path: str, templates: dict[str, str]):
     """The image module's implementation of core's protocol, every image aspect on and
     *templates* the only ones configured."""
     from leaguebot.image.services.image_drawing import ImageDrawing
@@ -118,14 +118,14 @@ def _drawing(templates: dict[str, str]):
     )
     return ImageDrawing(
         modules=modules, config=config, validity=validity,
-        renderer=MagicMock(), post_log=AsyncMock(),
+        renderer=MagicMock(), post_log=AsyncMock(), db_path=db_path,
     )
 
 
 def _service(db_path: str, templates: dict[str, str]):
     from leaguebot.core.services.placement_service import PlacementService
 
-    return PlacementService(db_path, drawing=_drawing(templates))
+    return PlacementService(db_path, drawing=_drawing(db_path, templates))
 
 
 # ── The season ────────────────────────────────────────────────────────────
