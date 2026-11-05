@@ -103,8 +103,8 @@ async def take_fingerprint(
     db_path: str, season_id: int, *, drawing: ImageDrawing
 ) -> SeasonFingerprint:
     """Fingerprint everything `/season placements-review` reports for *season_id*, read from
-    *db_path*. *drawing* is the image module's own drawing (`bot.image_drawing`, #283), asked
-    for the league's artwork signature — the one area a database read cannot see.
+    *db_path*. *drawing* is the image module's own drawing (`bot.image_drawing`), asked for the
+    league's artwork signature — the one area a database read cannot see.
 
     One connection for the lot. Never raises: a fingerprint that could not be taken is an
     empty one, and an empty fingerprint differs from every other, so a fault here refuses

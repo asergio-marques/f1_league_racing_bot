@@ -194,7 +194,7 @@ def mid_season_confirm_change(
     """The change that confirms a season's placements mid-season; see the module.
 
     The builder hands in *modules* (which modules are on), the *placement* service (a driver's
-    roles, a division's lineup), the image module's own drawing (*drawing*, #283) and
+    roles, a division's lineup), the image module's own drawing (*drawing*) and
     *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing is).
     """
 
