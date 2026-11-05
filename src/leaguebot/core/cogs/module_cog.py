@@ -410,16 +410,7 @@ class ModuleCog(commands.Cog):
     async def _enable_results(
         self, interaction: discord.Interaction
     ) -> None:
-        # 1. Guard already-enabled
-        if await self.bot.module_service.is_results_enabled():
-            await refuse(
-                interaction,
-                "⚠️ Results & Standings module is already enabled.",
-                what=describe(interaction),
-            )
-            return
-
-        # 2. Block if ACTIVE season exists (FR-003)
+        # Block if ACTIVE season exists (FR-003)
         active_season = await self.bot.season_service.get_confirmed_season()
         if active_season is not None:
             await refuse(
@@ -429,8 +420,8 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        # The switch is results' own change on the queue: this asks for it and does nothing
-        # else.
+        # The switch is results' own change on the queue, whose check refuses "already enabled":
+        # this asks for it and does nothing else.
         await self.bot.change_queue.ask(
             module_on("results"),
             {},
@@ -492,11 +483,11 @@ class ModuleCog(commands.Cog):
     async def _enable_attendance(
         self, interaction: discord.Interaction
     ) -> None:
-        # 1. Guard: the dependency table's needs must be enabled first
+        # Guard: the dependency table's needs must be enabled first
         if await self._refuse_missing_dependency(interaction, "attendance"):
             return
 
-        # 2. Guard: no ACTIVE season
+        # Guard: no ACTIVE season
         active_season = await self.bot.season_service.get_confirmed_season()
         if active_season is not None:
             await refuse(
@@ -506,15 +497,8 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        # 3. Guard: already enabled
-        if await self.bot.module_service.is_attendance_enabled():
-            await refuse(
-                interaction, "⚠️ Attendance module is already enabled.", what=describe(interaction)
-            )
-            return
-
-        # The switch is attendance's own change on the queue: this asks for it and does
-        # nothing else.
+        # The switch is attendance's own change on the queue, whose check refuses "already
+        # enabled": this asks for it and does nothing else.
         await self.bot.change_queue.ask(
             module_on("attendance"),
             {},
@@ -554,15 +538,9 @@ class ModuleCog(commands.Cog):
     # ── Attendance disable ─────────────────────────────────────────────
 
     async def _disable_attendance(self, interaction: discord.Interaction) -> None:
-        if not await self.bot.module_service.is_attendance_enabled():
-            await refuse(
-                interaction, "⚠️ Attendance module is already disabled.", what=describe(interaction)
-            )
-            return
-
-        # The switch-off is attendance's own change on the queue: it calls
-        # `AttendanceService.switch_off_on` and writes its audit entry in one save. This asks
-        # for it and does nothing else.
+        # The switch-off is attendance's own change on the queue, whose check refuses "already
+        # disabled": it calls `AttendanceService.switch_off_on` and writes its audit entry in
+        # one save. This asks for it and does nothing else.
         await self.bot.change_queue.ask(
             module_off("attendance"),
             {},
