@@ -179,9 +179,10 @@ def _asked(league, verb: str):
 async def test_weather_is_enabled(tmp_path):
     """Between seasons, with no season running: there are no divisions to check, and a league
     setting the bot up before its first season must not be blocked. The member is acknowledged
-    at once, and once the change has run the module is on and the reply says so."""
+    at once, and once the change has run the module is on, and the reply and the Success line
+    keep today's words."""
     from tests.support.change_queue import acknowledgement, run_queue
-    from tests.support.settings_league import last_said
+    from tests.support.settings_league import last_said, log_lines
 
     league, cog = await _weather_league(tmp_path, on=False)
     asked = _asked(league, "enable")
@@ -191,7 +192,8 @@ async def test_weather_is_enabled(tmp_path):
     await run_queue(league.bot)
 
     assert await _weather_flag(league.db_path) == 1
-    assert "enabled" in last_said(asked)
+    assert last_said(asked) == "✅ Weather module enabled."
+    assert await log_lines(league) == [f"{NAMED} | /module enable weather | Success"]
 
 
 async def test_enabling_weather_twice_does_no_work(tmp_path):
