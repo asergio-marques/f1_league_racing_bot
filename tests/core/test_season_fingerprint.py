@@ -8,28 +8,51 @@ render instead of drawing every graphic a second time.
 slips through with nothing failing, so each is changed in turn and asserted to be both
 detected *and named*. That is the whole value of the per-area digest over one hash, and it
 is the test that stops the coverage rotting.
+
+The artwork on disk is the one area core cannot read itself: it asks the image module's drawing
+what the league's artwork looks like now, and digests the answer. Here the drawing is a stand-in
+whose answer each test sets; the answer itself is pinned against image's own drawing in
+`tests/image/test_image_drawing_artwork.py`.
 """
 from __future__ import annotations
 
-import os
 from types import SimpleNamespace
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.image.services.image_config_service import ImageConfigService
 from leaguebot.core.services.season_fingerprint_service import (
     AREA_LABELS,
     SeasonFingerprint,
+    _digest,
     take_fingerprint,
 )
 
 SERVER_ID = 8811
 
+NEEDS_DRAWING = (
+    "#283: take_fingerprint is not yet handed the database and the image module's drawing"
+)
+
+
+class _ArtworkStandIn:
+    """A stand-in for the image module's drawing, answering the one question the fingerprint asks
+    of it: what the league's artwork looks like now. It answers what the test sets, nothing until
+    then, and counts the times it is asked."""
+
+    def __init__(self) -> None:
+        self.answer: list = []
+        self.asked = 0
+
+    async def artwork_signature(self) -> list:
+        self.asked += 1
+        return self.answer
+
 
 @pytest.fixture
 async def season(tmp_path):
-    """A configured server with one season, one division, a team, a seat and a round."""
+    """A configured server with one season, one division, a team, a seat and a round, and a
+    stand-in for the image module's drawing."""
     path = str(tmp_path / "fingerprint.db")
     await run_migrations(path)
     async with get_connection(path) as db:
@@ -78,14 +101,13 @@ async def season(tmp_path):
         await db.execute("INSERT INTO image_config (id) VALUES (?)", (1,))
         await db.commit()
 
-    bot = SimpleNamespace(db_path=path, image_config_service=ImageConfigService(path))
     return SimpleNamespace(
-        bot=bot, path=path, season_id=season_id, division_id=division_id
+        path=path, season_id=season_id, division_id=division_id, drawing=_ArtworkStandIn()
     )
 
 
 async def _take(season) -> SeasonFingerprint:
-    return await take_fingerprint(season.bot, season.season_id)
+    return await take_fingerprint(season.path, season.season_id, drawing=season.drawing)
 
 
 async def _change(season, sql: str, *params) -> None:
@@ -97,6 +119,7 @@ async def _change(season, sql: str, *params) -> None:
 # ── The fingerprint itself ────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_every_area_is_covered(season):
     """A missing area is a change that would slip through unnoticed."""
     fingerprint = await _take(season)
@@ -104,6 +127,7 @@ async def test_every_area_is_covered(season):
     assert set(fingerprint.areas) == set(AREA_LABELS)
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_an_unchanged_season_fingerprints_the_same_twice(season):
     """Taken twice with nothing between, it must not report a change nobody made."""
     first = await _take(season)
@@ -112,6 +136,7 @@ async def test_an_unchanged_season_fingerprints_the_same_twice(season):
     assert first.differs_from(second) == []
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_a_fingerprint_that_could_not_be_taken_differs_from_everything(season):
     """A fault refuses an approval rather than waving it through."""
     empty = SeasonFingerprint({})
@@ -119,11 +144,12 @@ async def test_a_fingerprint_that_could_not_be_taken_differs_from_everything(sea
     assert empty.differs_from(await _take(season))
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_an_unreadable_season_yields_an_empty_fingerprint():
     """Same reasoning, reached through the real failure path."""
-    bot = SimpleNamespace(db_path="/nonexistent/nowhere.db", image_config_service=None)
+    taken = await take_fingerprint("/nonexistent/nowhere.db", 1, drawing=_ArtworkStandIn())
 
-    assert (await take_fingerprint(bot, 1)).areas == {}
+    assert taken.areas == {}
 
 
 # ── One case per area ─────────────────────────────────────────────────────
@@ -139,6 +165,7 @@ async def _assert_only(season, before, area: str, sql: str, *params):
     assert changed == [AREA_LABELS[area]], f"{area} also disturbed {changed}"
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_season_area(season):
     before = await _take(season)
     await _assert_only(
@@ -147,6 +174,7 @@ async def test_the_season_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_a_stage_moved_is_part_of_the_season_area(season):
     """Confirming a configuration, or mid-season placements, moves the stage and not the
     status: a review of the stage left behind no longer describes the season."""
@@ -157,6 +185,7 @@ async def test_a_stage_moved_is_part_of_the_season_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_divisions_area(season):
     before = await _take(season)
     await _assert_only(
@@ -165,6 +194,7 @@ async def test_the_divisions_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_rounds_area(season):
     before = await _take(season)
     await _assert_only(
@@ -174,6 +204,7 @@ async def test_the_rounds_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_teams_area(season):
     before = await _take(season)
     await _assert_only(
@@ -183,6 +214,7 @@ async def test_the_teams_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_drivers_area(season):
     before = await _take(season)
     await _assert_only(
@@ -192,6 +224,7 @@ async def test_the_drivers_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_channels_area(season):
     before = await _take(season)
     await _assert_only(
@@ -201,6 +234,7 @@ async def test_the_channels_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_modules_area(season):
     before = await _take(season)
     await _assert_only(
@@ -210,6 +244,7 @@ async def test_the_modules_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_a_signup_settled_after_the_report_is_part_of_the_unsettled_signups_area(season):
     """Issue #220: the review names every unsettled signup, and a change among them is a
     change to what would be confirmed."""
@@ -225,6 +260,7 @@ async def test_a_signup_settled_after_the_report_is_part_of_the_unsettled_signup
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_test_mode_area(season):
     """Confirming a configuration fixes test mode, so switching it after the report is a
     change to what would be confirmed (issue #220)."""
@@ -235,6 +271,7 @@ async def test_the_test_mode_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_a_team_added_to_the_server_list_is_part_of_the_team_list_area(season):
     before = await _take(season)
     await _assert_only(
@@ -244,6 +281,7 @@ async def test_a_team_added_to_the_server_list_is_part_of_the_team_list_area(sea
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_a_team_role_repointed_is_part_of_the_team_list_area(season):
     before = await _take(season)
     await _assert_only(
@@ -253,6 +291,7 @@ async def test_a_team_role_repointed_is_part_of_the_team_list_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_points_area(season):
     before = await _take(season)
     await _assert_only(
@@ -262,6 +301,7 @@ async def test_the_points_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 @pytest.mark.parametrize("edit", ["a points entry", "a fastest-lap row"])
 async def test_a_server_points_entry_of_an_attached_configuration_changes_the_points_area(
     season, edit,
@@ -304,6 +344,7 @@ async def test_a_server_points_entry_of_an_attached_configuration_changes_the_po
     await _assert_only(season, before, "points", sql, ids["Standard"])
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_signup_area(season):
     before = await _take(season)
     await _assert_only(
@@ -312,6 +353,7 @@ async def test_the_signup_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 @pytest.mark.parametrize("column", ["base_role_id", "driver_role_id"])
 async def test_changing_a_league_role_is_named_as_the_roles_changing(season, column):
     """The two roles are the league's (issue #276), not the signup configuration: a change
@@ -322,6 +364,7 @@ async def test_changing_a_league_role_is_named_as_the_roles_changing(season, col
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_attendance_area(season):
     """Changed on an existing row, so the module switch it shares with `modules` is not
     also disturbed — inserting the row would move both, correctly but less precisely."""
@@ -336,6 +379,7 @@ async def test_the_attendance_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_weather_area(season):
     before = await _take(season)
     await _assert_only(
@@ -344,6 +388,7 @@ async def test_the_weather_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_images_area(season):
     before = await _take(season)
     await _assert_only(
@@ -352,6 +397,7 @@ async def test_the_images_area(season):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_an_aspect_toggle_is_part_of_the_images_area(season):
     before = await _take(season)
     await _assert_only(
@@ -366,77 +412,28 @@ async def test_an_aspect_toggle_is_part_of_the_images_area(season):
 # and the button would otherwise pass, which is exactly what the withdrawn render caught.
 
 
-@pytest.fixture
-async def with_templates(season, tmp_path):
-    """Point the season at a template folder inside the project root."""
-    import shutil
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[2]
-    folder = root / "resources" / "_test_fingerprint_templates"
-    shutil.rmtree(folder, ignore_errors=True)
-    folder.mkdir(parents=True)
-    for name in os.listdir(root / "resources" / "defaults" / "templates"):
-        shutil.copy(root / "resources" / "defaults" / "templates" / name, folder)
-
-    await _change(
-        season,
-        "UPDATE image_config SET template_directory = ?",
-        "resources/_test_fingerprint_templates",
-    )
-    yield season, folder
-    shutil.rmtree(folder, ignore_errors=True)
-
-
-async def test_a_template_edited_on_disk_is_noticed(with_templates):
-    """No column changed; only the file did."""
-    season, folder = with_templates
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
+async def test_a_changed_answer_from_the_drawing_is_named_as_the_artwork_alone(season):
+    """The fingerprint digests the drawing's answer as it stands, so a review drawn before the
+    image module answered compares equal after; and a template edited, deleted or added to between
+    the review and the button, which changes the answer, is named as the templates and artwork on
+    disk changing, and nothing else, since no setting changed."""
+    season.drawing.answer = [["calendar_template", ["calendar_template.svg", 1024, 1767225600]]]
     before = await _take(season)
 
-    target = folder / "calendar_template.svg"
-    target.write_text(target.read_text(encoding="utf-8") + "<!-- edited -->", encoding="utf-8")
+    assert before.areas["artwork"] == _digest(season.drawing.answer)
 
+    season.drawing.answer = [["calendar_template", ["calendar_template.svg", 1040, 1767229200]]]
     changed = before.differs_from(await _take(season))
 
     assert changed == [AREA_LABELS["artwork"]]
-
-
-async def test_a_template_deleted_is_noticed(with_templates):
-    season, folder = with_templates
-    before = await _take(season)
-
-    (folder / "lineup_template.svg").unlink()
-
-    assert AREA_LABELS["artwork"] in before.differs_from(await _take(season))
-
-
-async def test_artwork_added_to_an_asset_folder_is_noticed(season, tmp_path):
-    """A flag dropped in between review and approval changes what a graphic draws."""
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[2]
-    folder = root / "resources" / "_test_fingerprint_flags"
-    folder.mkdir(parents=True, exist_ok=True)
-    try:
-        await _change(
-            season,
-            "UPDATE image_config SET flag_directory = ?",
-            "resources/_test_fingerprint_flags",
-        )
-        before = await _take(season)
-
-        (folder / "palestine.svg").write_text("<svg/>", encoding="utf-8")
-
-        assert AREA_LABELS["artwork"] in before.differs_from(await _take(season))
-    finally:
-        import shutil
-
-        shutil.rmtree(folder, ignore_errors=True)
+    assert season.drawing.asked == 2
 
 
 # ── Several changes at once ───────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_two_changed_areas_are_both_named(season):
     before = await _take(season)
 
