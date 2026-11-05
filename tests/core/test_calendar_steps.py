@@ -42,6 +42,7 @@ from tests.support.season_league import (
     SUBMISSION_CHANNEL,
     accept_session,
     cancel_round,
+    cancel_season,
     ongoing_league,
     open_submission,
     press_approve,
@@ -277,6 +278,15 @@ POSTED_AS_TEXT = (
     "  problem: {problem}\n"
     "  to put it right: fix the calendar template, then run `/division calendar-sync`"
 )
+#: The same line where a season's cancellation posted the calendar: no command posts it again
+#: once the season is cancelled, so nothing puts it right (the owner's decision on #283).
+POSTED_AS_TEXT_IN_A_CANCELLED_SEASON = (
+    " | Calendar posted as text\n"
+    "  division: {division}\n"
+    "  problem: {problem}\n"
+    "  to put it right: nothing does; no command posts the picture again now the season is "
+    "cancelled, and the text calendar stands"
+)
 FALLBACK_NOT_YET_ITS_JOB_S = (
     "#283: the post_calendar job writes no line where its calendar fell back to text; each "
     "change words the fallback itself"
@@ -310,6 +320,14 @@ async def _round_cancelled(tmp_path: Any, monkeypatch: Any) -> tuple[Any, Any]:
     return league, await _cancel(league)
 
 
+async def _season_cancelled(tmp_path: Any, monkeypatch: Any) -> tuple[Any, Any]:
+    """Season 3 cancelled with `/season cancel`: Pro's calendar is posted again. Returns the
+    league and the command's interaction."""
+    league = await ongoing_league(tmp_path, images=True)
+    _drawing_fails(league, monkeypatch)
+    return league, await cancel_season(league)
+
+
 async def _round_not_held(tmp_path: Any, monkeypatch: Any) -> tuple[Any, None]:
     """Pro's round 3 awaiting results, its Feature Qualifying entered as cancelled; the admin types
     CANCELLED for its Feature Race, so the round ends not held and Pro's calendar is posted again
@@ -334,20 +352,24 @@ async def _round_not_held(tmp_path: Any, monkeypatch: Any) -> tuple[Any, None]:
 
 
 @pytest.mark.xfail(strict=True, reason=FALLBACK_NOT_YET_ITS_JOB_S)
-@pytest.mark.parametrize(("start", "divisions"), [
-    pytest.param(_approved, ("Pro", "Am"), id="the approval"),
-    pytest.param(_round_cancelled, ("Pro",), id="a round's cancellation"),
-    pytest.param(_round_not_held, ("Pro",), id="results' round not held"),
+@pytest.mark.parametrize(("start", "divisions", "posted"), [
+    pytest.param(_approved, ("Pro", "Am"), POSTED_AS_TEXT, id="the approval"),
+    pytest.param(_round_cancelled, ("Pro",), POSTED_AS_TEXT, id="a round's cancellation"),
+    pytest.param(_round_not_held, ("Pro",), POSTED_AS_TEXT, id="results' round not held"),
+    pytest.param(_season_cancelled, ("Pro",), POSTED_AS_TEXT_IN_A_CANCELLED_SEASON,
+                 id="a season's cancellation"),
 ])
 async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_posts_it(
-    tmp_path, monkeypatch, start, divisions,
+    tmp_path, monkeypatch, start, divisions, posted,
 ):
     """Each change that posts a calendar, where the drawing fails and the text stands in: the log
     channel names the problem once for each calendar, in the `post_calendar` job's own line, and
     in no line of the change's own (Constitution XIV.4, the data model's render problems). No line
     names a calendar as not notified, and the member's reply names neither the problem nor a
     calendar posted as text: no "Not notified" for a cancellation, and no "Calendar images"
-    section for the approval, where the fallback was all it would have held."""
+    section for the approval, where the fallback was all it would have held. Where the season is
+    being cancelled, the line says nothing puts it right, as no command posts the calendar
+    again."""
     league, asked = await start(tmp_path, monkeypatch)
     assert not league.errors, league.errors
 
@@ -359,7 +381,7 @@ async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_p
     assert len(named) == len(divisions), named
     for division in divisions:
         assert sum(
-            POSTED_AS_TEXT.format(division=division, problem=PROBLEM) in line for line in named
+            posted.format(division=division, problem=PROBLEM) in line for line in named
         ) == 1, named
     assert not [line for line in logged if "not notified:" in line], logged
     if asked is not None:
