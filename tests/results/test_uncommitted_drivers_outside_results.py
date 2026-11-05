@@ -57,8 +57,6 @@ async def test_the_opening_standings_leave_out_an_uncommitted_driver(db_path):
     assert sorted(s.driver_user_id for s in snapshots) == [1001, 1003]
 
 
-
-
 # ── Lineups ────────────────────────────────────────────────────────────────────────
 
 

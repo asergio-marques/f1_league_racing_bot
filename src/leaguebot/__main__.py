@@ -1297,7 +1297,7 @@ async def build(settings: Settings) -> LeagueBot:
     # bot so that core reaches it without importing this module (architecture.md, "How
     # modules and core fit together"), as results reaches attendance through its own hook.
     # The renderer draws the calendar's and the lineup's pictures; the log writer is where
-    # their notices are reported, in one message, whichever change posts one (#283). The
+    # their notices are reported, in one message, whichever change posts one. The
     # database path is what the lineup's drawing reads beyond the image module's own
     # services: the division, its committed seats, and whether nationality is collected.
     bot.image_drawing = ImageDrawing(
@@ -1308,7 +1308,7 @@ async def build(settings: Settings) -> LeagueBot:
 
     from leaguebot.core.services.placement_service import PlacementService
     # The drawing is handed so the capacity guards and the lineup refresh can ask image's
-    # answer without a bot of their own (#283): PlacementService posts through the guild it is
+    # answer without a bot of their own: PlacementService posts through the guild it is
     # given, and reaches the image module only through this drawing.
     bot.placement_service = PlacementService(settings.db_path, drawing=bot.image_drawing)
 

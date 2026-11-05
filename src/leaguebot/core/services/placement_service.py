@@ -2099,7 +2099,7 @@ class PlacementService:
         standing-post handler with no mentions, then releases the file. A picture that cannot be
         drawn — the drawing raises, or hands back a problem — falls through to the text embed
         below, carrying what went wrong for the job's own line. Where the league does not draw
-        its lineup at all, the embed runs exactly as it did before the image module existed.
+        its lineup at all, the text embed is the lineup.
 
         Either way the lineup is posted before the message it replaces is deleted, by a job after
         it (Constitution XIV rule 8; image spec :706): this method deletes nothing and saves

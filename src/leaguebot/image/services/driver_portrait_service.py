@@ -411,13 +411,13 @@ async def refresh_before_render(
 
     The gate for the pre-render trigger, in one place: both the posting path and the preview
     path call this rather than each deciding for itself whether the feature is on. It is
-    handed the database's path rather than the bot: it reads only the database, through
-    `refresh_portraits` and, where *config* is omitted, its own read of `image_config`.
+    handed the database's path: it reads only the database, through `refresh_portraits` and,
+    where *config* is omitted, its own read of `image_config`.
 
     *config* and *directory* are accepted because the posting path has already read and
     resolved both, and resolving twice per render would be waste; either may be omitted and
-    is then worked out here. *config* missing reads as off, the same answer a configuration
-    object predating the feature gives.
+    is then worked out here. Where no configuration is stored yet, the gate reads as off, as it
+    does for a configuration object predating the feature.
 
     Passing ``directory=None`` is **not** the same as omitting it. None means the caller
     resolved the driver directory and it was rejected, and the gate shuts: obtaining
