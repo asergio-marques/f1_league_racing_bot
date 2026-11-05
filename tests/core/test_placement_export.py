@@ -10,7 +10,6 @@ local copy of the production logic here.
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -73,7 +72,7 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
 def _service(db_path):
     from leaguebot.core.services.placement_service import PlacementService
 
-    return PlacementService(db_path, bot=MagicMock())
+    return PlacementService(db_path)
 
 
 def _signup_service(db_path):
@@ -282,7 +281,7 @@ async def test_a_signup_still_in_review_follows_the_seeded_drivers_unseeded(tmp_
             {"discord_user_id": "1002", "total_lap_ms": 90_000},
         ],
     )
-    service = PlacementService(db_path, bot=MagicMock())
+    service = PlacementService(db_path)
 
     for rows in (
         await service.get_unassigned_drivers_seeded(),
@@ -304,4 +303,4 @@ async def test_a_placed_or_departed_driver_is_not_listed(tmp_path):
         ],
     )
 
-    assert await PlacementService(db_path, bot=MagicMock()).get_unassigned_drivers_seeded() == []
+    assert await PlacementService(db_path).get_unassigned_drivers_seeded() == []

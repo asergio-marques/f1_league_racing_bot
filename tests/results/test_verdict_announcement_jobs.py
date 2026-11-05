@@ -704,7 +704,7 @@ async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_comm
     from leaguebot.core.services.placement_service import PlacementService
 
     def _hook(bot: Any, db_path: str) -> Any:
-        placement = PlacementService(db_path, bot)
+        placement = PlacementService(db_path)
         placement._grant_roles = AsyncMock()
         placement._revoke_roles = AsyncMock()
         placement.grant_roles = AsyncMock()
@@ -772,7 +772,7 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
     league = await review_league(
         tmp_path, attendance=True,
         attendance_hook=lambda bot, db_path: AttendanceAfterReview(
-            bot, PlacementService(db_path, bot)),
+            bot, PlacementService(db_path)),
     )
     await _no_reserve_team(league)
     async with get_connection(league.db_path) as db:

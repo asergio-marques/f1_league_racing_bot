@@ -74,16 +74,25 @@ async def test_build_returns_every_service_complete(tmp_path):
     assert not hasattr(bot.wizard_service, "set_bot")
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the builder still hands PlacementService the bot, and ImageDrawing no database "
+    "path",
+)
 async def test_the_builder_hands_placement_the_image_module_s_drawing(tmp_path):
     """`build` makes the image module's answer to core's drawing protocol once, declares it on the
     bot, and hands that same answer to `PlacementService`: without it, every capacity guard would
-    let every placement through."""
+    let every placement through, and no lineup would be drawn. The drawing is handed the bot's
+    database, which is all a lineup's drawing reads beyond the image module's own services, and
+    `PlacementService` is handed no bot, since it posts through the guild it is given."""
     from leaguebot.image.services.image_drawing import ImageDrawing
 
     bot = await built_bot(tmp_path, now=_NOW)
 
     assert isinstance(bot.image_drawing, ImageDrawing)
     assert bot.placement_service._drawing is bot.image_drawing
+    assert bot.image_drawing._db_path == bot.db_path
+    assert not hasattr(bot.placement_service, "_bot")
 
 
 async def test_the_builder_hands_every_change_that_posts_a_calendar_the_image_module_s_drawing(

@@ -1550,7 +1550,7 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     placements: list[Any] = []
 
     def _hook(bot: Any, db_path: str) -> Any:
-        placement = PlacementService(db_path, bot)
+        placement = PlacementService(db_path)
         placements.append(placement)
         placement._grant_roles = AsyncMock()
         placement._revoke_roles = AsyncMock()
