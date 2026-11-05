@@ -1070,7 +1070,11 @@ to it would switch off the one failure path for every command.
    job an amendment's lapse and its cancel share (`amend_end_changes._names_step`) is a stated
    exception as well: its catch-all puts the error in the host's log and completes the job with no
    names, so the revert goes ahead with a full tie ordered by user id, because a tie so ordered is
-   the lesser fault than a round not put back (its docstring says so);
+   the lesser fault than a round not put back (its docstring says so); and the one catch a
+   placement's capacity guards ask (`PlacementService._ask_drawing`) is a stated exception
+   likewise: its catch-all puts the error in the host's log in full and lets the placement through
+   as if the image module answered nothing, because a capacity check that cannot run must not
+   block a placement;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
