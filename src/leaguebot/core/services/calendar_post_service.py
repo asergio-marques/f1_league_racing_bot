@@ -552,16 +552,14 @@ def calendar_steps(seasons: "SeasonService") -> dict[str, Step]:
             commanded=bool(value_of(ctx, "commanded")),
             as_text=ctx.tries > 0,
         )
-        fell_back = posting.fell_back
         lines = (
             (_fallen_back_to_text_line(ctx, division.name, str(posting.problem)),)
-            if fell_back else ()
+            if posting.fell_back else ()
         )
         return StepResult(
             result={
                 "division": division.name,
                 "problem": posting.problem,
-                "fell_back": fell_back,
                 "notices": list(posting.notices),
                 "rejected": posting.problem is not None and posting.message_id is None,
                 "posted_as_image": posting.posted_as_image,
