@@ -278,3 +278,26 @@ async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_not
     assert picture.problem == problem
     assert tuple(picture.notices) == ("a fallback flag stood in for Zara's",)
     channel.send.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_COMMANDED_DRAW)
+async def test_a_lineup_that_cannot_be_read_raises_out_of_the_commanded_draw(
+    monkeypatch, tmp_path,
+):
+    """Pro's lineup drawn as `/team lineup`'s output, where the division cannot be read (the
+    database will not open): the drawing lets the error out, for the command's failure path to
+    tell the member and the log channel, and never turns it into refusal words naming the error
+    (core spec, "When a command fails": the reply "shall not name the exception"). Nothing is said
+    in the log channel or Pro's lineup channel by the drawing itself."""
+    import sqlite3
+
+    _portraits_spied(monkeypatch)
+    guild, channel, _ = _guild()
+    drawing, captured, post_log, _ = _drawing(str(tmp_path))
+
+    with pytest.raises(sqlite3.OperationalError):
+        await drawing.draw_lineup_for_command(guild, DIVISION_ID)
+
+    assert "builder" not in captured
+    post_log.assert_not_awaited()
+    channel.send.assert_not_awaited()
