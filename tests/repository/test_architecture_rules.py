@@ -2317,6 +2317,10 @@ READS_OF_OWN_COLUMNS: dict[tuple[str, str], tuple[str, str]] = {
         "divisions",
         "reads `divisions.forecast_channel_id`, the weather module's own column",
     ),
+    ("weather/services/cancellation_notice.py", "_forecast_channel"): (
+        "divisions",
+        "reads `divisions.forecast_channel_id`, the weather module's own column",
+    ),
 }
 
 
@@ -2409,7 +2413,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/amendment_service.py", "validate_modification_ordering"): (1, PASS["core"]),
     ("core/services/approval_checks.py", "division_channel_faults"): (2, PASS["core"]),
     ("core/services/approval_checks.py", "unsettled_signups"): (1, PASS["core"]),
-    ("core/services/cancellation_notice_service.py", "_module_channels"): (2, PASS["core"]),
     ("core/services/cancellation_notice_service.py", "checkin_record"): (1, PASS["core"]),
     ("core/services/driver_service.py", "<module>"): (1, PASS["core"]),
     ("core/services/driver_service.py", "divisions_taken_part_in"): (5, PASS["core"]),

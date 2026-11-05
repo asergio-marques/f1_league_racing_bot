@@ -110,10 +110,16 @@ async def notices_on(
     """Results' part of `cancellation_notices`: the results note planned for the division
     *target* names (`division_id`, `division_name`, `season_id`, and a round's `round_number`,
     `track_name`), so that core registers the job without naming results. The job's own payload
-    carries *scope* beside *target*, read back by `notify_results_steps`. Planned after the
-    rounds-called-off modules' `with_division` steps, as the results note is today."""
+    carries *scope* beside *target*'s fields, and `notice_target` ("results channel"), the words
+    core's `not_notified` names this job by without naming the module, read back by
+    `notify_results_steps`. Planned after the rounds-called-off modules' `with_division` steps,
+    as the results note is today."""
     return CancellationNotices(
-        after_with_division=(PlannedStep(NOTIFY_RESULTS, {**target, "scope": scope}),)
+        after_with_division=(
+            PlannedStep(
+                NOTIFY_RESULTS, {**target, "scope": scope, "notice_target": "results channel"}
+            ),
+        )
     )
 
 

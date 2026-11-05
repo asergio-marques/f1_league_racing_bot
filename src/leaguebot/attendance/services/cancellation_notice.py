@@ -117,8 +117,16 @@ async def notices_on(
     """Attendance's part of `cancellation_notices`: the check-in notice planned for the division
     *target* names (`division_id`, `division_name`, `season_id`, and a round's `round_number`,
     `track_name`), so that core registers the job without naming attendance. The job's own
-    payload carries *scope* beside *target*, read back by `notify_checkin_steps`."""
-    return CancellationNotices(steps=(PlannedStep(NOTIFY_CHECKIN, {**target, "scope": scope}),))
+    payload carries *scope* beside *target*'s fields, and `notice_target` ("check-in channel"),
+    the words core's `not_notified` names this job by without naming the module, read back by
+    `notify_checkin_steps`."""
+    return CancellationNotices(
+        steps=(
+            PlannedStep(
+                NOTIFY_CHECKIN, {**target, "scope": scope, "notice_target": "check-in channel"}
+            ),
+        )
+    )
 
 
 def notify_checkin_steps(*, modules: "ModuleService", seasons: SeasonService) -> dict[str, Step]:

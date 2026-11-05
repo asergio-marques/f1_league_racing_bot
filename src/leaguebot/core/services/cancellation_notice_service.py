@@ -1,42 +1,30 @@
-"""What each module says when a round, a division or a season is called off (#175).
+"""Core's own part of a round, a division or a season called off (#175, #283).
 
-Core announces nothing of its own. Telling the drivers a race is off is the league's to do;
-what the bot owes them is that no module goes on talking about a round that will not be run,
-and that the calendar stops showing it as though it would be. So a cancellation:
+Core announces nothing of its own: telling the drivers a race is off is each enabled module's
+own notice, in its own words, found and posted through its own subscriber to the
+`cancellation_notices` hook (`cancellation_changes`, "Cancellation notices";
+`attendance.services.cancellation_notice`, `weather.services.cancellation_notice`,
+`results.services.cancellation_notice`). A round's cancellation, a division's, a season's, and a
+round ended because every session was entered as not held (results' `submission_changes`) all
+call the hook, inside the save, for every division it tells; the calendar, owned by core, is
+refreshed whatever the modules, through its own step.
 
-- **attendance** — posts the one real notification, to the division's check-in channel,
-  mentioning the division role as the check-in call does. The check-in channel is where
-  drivers answer whether they are racing, so it is where they learn they need not. The call
-  standing for a round called off is then taken down, its answers kept;
-- **weather** — posts a note to the forecast channel that no forecast is coming;
-- **results** — posts a note to the results channel that no results are coming;
-- **the calendar** — is posted again with the round struck through, or veiled in the
-  graphic.
+What stays core's own:
 
-The weather and results notes are sent as Discord **silent** messages: they sit in the
-channel for anyone reading it and ping nobody, the attendance notification being the one a
-driver is told by. Each module speaks only while it is enabled — a disabled module produces
-nothing, whatever the path arrives at it (core specification) — and the calendar, owned by
-core, is refreshed whatever the modules.
+- `NoticeFailure`, `failure_lines` and `failure_log_lines` — the one shape every failure to
+  notify is reported in, whichever module or job it came from;
+- `checkin_record` — a round's check-in, for the log channel, read on the connection core hands
+  the job that reads it; see the module's own docstring.
 
-**Every send is a job of its own.** A season's, a division's and a round's cancellation all run
-on the change queue (`cancellation_changes`), where each notice (`post_module_notice`) is a job:
-one Discord refuses stops the queue until it is retried or discarded, and is named only once
-discarded. So each raises, turning only a failure Discord caused into `StepFailedOnDiscord` and
-letting a fault of the bot's own through unchanged.
+A module's own notice is a job of its own on the change queue (`cancellation_changes`): one
+Discord refuses stops the queue until it is retried or discarded, and is named only once
+discarded, through `notice_target` on the job's own payload (`cancellation_changes.not_notified`).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-import discord
-
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.cancellation import SCOPE_DIVISION, SCOPE_ROUND, SCOPE_SEASON
-from leaguebot.core.models.change import StepFailedOnDiscord
-from leaguebot.core.services.notice_handler import send_notice
-from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.utils.league_bot import LeagueBot
 
 
 @dataclass(frozen=True)
@@ -52,164 +40,8 @@ class NoticeFailure:
         return f"**{self.division_name}** — {self.target}: {self.reason}"
 
 
-# ── The wording ───────────────────────────────────────────────────────────
-
-
 def _round_label(round_number: int, track_name: str | None) -> str:
     return f"Round {round_number} ({track_name or 'Mystery'})"
-
-
-def weather_note(scope: str, division_name: str, round_number=None, track_name=None) -> str:
-    if scope == SCOPE_ROUND:
-        return (
-            f"\U0001f4e2 **Round {round_number} Cancelled: {division_name}**\n"
-            f"{_round_label(round_number, track_name)} has been cancelled. "
-            "No weather forecast will be posted for it."
-        )
-    if scope == SCOPE_DIVISION:
-        return (
-            f"\U0001f4e2 **Division Cancelled: {division_name}**\n"
-            "No further weather forecasts will be posted for this division."
-        )
-    return (
-        "\U0001f4e2 **Season Cancelled**\n"
-        "No further weather forecasts will be posted this season."
-    )
-
-
-def results_note(scope: str, division_name: str, round_number=None, track_name=None) -> str:
-    if scope == SCOPE_ROUND:
-        return (
-            f"\U0001f4e2 **Round {round_number} Cancelled: {division_name}**\n"
-            f"{_round_label(round_number, track_name)} has been cancelled. "
-            "No results will be posted for it."
-        )
-    if scope == SCOPE_DIVISION:
-        return (
-            f"\U0001f4e2 **Division Cancelled: {division_name}**\n"
-            "No further results will be posted for this division."
-        )
-    return (
-        "\U0001f4e2 **Season Cancelled**\n"
-        "No further results will be posted this season."
-    )
-
-
-def attendance_notice(scope: str, division_name: str, round_number=None, track_name=None) -> str:
-    if scope == SCOPE_ROUND:
-        return (
-            f"\U0001f4e2 **Round {round_number} Cancelled: {division_name}**\n"
-            f"{_round_label(round_number, track_name)} has been cancelled. "
-            "There is no check-in to answer for it, and nobody is charged for it."
-        )
-    if scope == SCOPE_DIVISION:
-        return (
-            f"\U0001f4e2 **Division Cancelled: {division_name}**\n"
-            "This division has been cancelled. There are no further check-ins to answer."
-        )
-    return (
-        "\U0001f4e2 **Season Cancelled**\n"
-        "The season has been cancelled. There are no further check-ins to answer."
-    )
-
-
-# ── The posts and take-downs, each a job ───────────────────────────────────────────────────
-
-
-async def _module_channels(bot: LeagueBot, division_id: int) -> dict[str, int | None]:
-    """The division's forecast, results and check-in channels, whatever table holds each."""
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT d.forecast_channel_id,
-                   drc.results_channel_id,
-                   adc.rsvp_channel_id
-              FROM divisions d
-              LEFT JOIN division_results_config drc ON drc.division_id = d.id
-              LEFT JOIN attendance_division_config adc ON adc.division_id = d.id
-             WHERE d.id = ?
-            """,
-            (division_id,),
-        )
-        row = await cursor.fetchone()
-    if row is None:
-        return {"weather": None, "results": None, "attendance": None}
-    return {
-        "weather": row["forecast_channel_id"],
-        "results": row["results_channel_id"],
-        "attendance": row["rsvp_channel_id"],
-    }
-
-
-@posts_in_a_job
-async def _send(
-    guild, channel_id, content: str, *, mentions: discord.AllowedMentions, **kwargs
-) -> str | None:
-    """Send *content* to *channel_id* through the notice handler, as a job on the change queue,
-    notifying only whom *mentions* names. Returns what went wrong, or None.
-
-    A channel never set is returned as "no channel is set": there is nothing to retry. A channel
-    that is set and no longer on the server raises `StepFailedOnDiscord` (no cause), and a send
-    Discord refuses raises it `from` the `discord.HTTPException`; any other exception is a fault
-    of the bot's own and propagates unchanged.
-    """
-    if not channel_id:
-        return "no channel is set"
-    channel = guild.get_channel(int(channel_id)) if guild is not None else None
-    if channel is None:
-        raise StepFailedOnDiscord(f"the channel <#{channel_id}> is no longer on the server")
-    try:
-        await send_notice(channel, content, mentions=mentions, **kwargs)
-    except discord.HTTPException as exc:
-        raise StepFailedOnDiscord(
-            f"the message could not be posted to <#{channel_id}>: {exc}"
-        ) from exc
-    return None
-
-
-async def post_module_notice(
-    bot: LeagueBot,
-    guild,
-    division,
-    module: str,
-    *,
-    scope: str,
-    round_number: int | None = None,
-    track_name: str | None = None,
-) -> str | None:
-    """Post *module*'s ("attendance", "weather" or "results") notice of a cancellation to
-    *division*'s channel for it, in the cancellation's words, and raise on a
-    failure Discord caused (`_send`). Returns "no channel is set" where the division has none.
-
-    The caller has decided that the module is on; this does not look.
-    """
-    channels = await _module_channels(bot, division.id)
-    words = dict(round_number=round_number, track_name=track_name)
-    if module == "attendance":
-        role_id = getattr(division, "mention_role_id", None)
-        ping = f"<@&{role_id}>\n" if role_id else ""
-        mentions = (
-            discord.AllowedMentions(
-                roles=[discord.Object(id=int(role_id))], users=False, everyone=False
-            )
-            if role_id
-            else discord.AllowedMentions.none()
-        )
-        return await _send(
-            guild,
-            channels["attendance"],
-            ping + attendance_notice(scope, division.name, **words),
-            mentions=mentions,
-        )
-    if module == "weather":
-        note = weather_note(scope, division.name, **words)
-    elif module == "results":
-        note = results_note(scope, division.name, **words)
-    else:
-        raise ValueError(f"no cancellation notice for module {module!r}")
-    return await _send(
-        guild, channels[module], note, mentions=discord.AllowedMentions.none(), silent=True
-    )
 
 
 #: The order the audit lists the answers in, and the words it lists them under.

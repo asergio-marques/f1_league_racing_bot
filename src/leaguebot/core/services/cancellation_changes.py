@@ -392,10 +392,7 @@ async def _notices_planned_by_the_modules(
 #: The job names, as the stop notice, the tests and `StepView` know them.
 UNARM = "unarm"
 APPLY = "apply"
-NOTIFY_CHECKIN = "notify_checkin"
 TAKE_DOWN_CALL = "take_down_call"
-NOTIFY_FORECAST = "notify_forecast"
-NOTIFY_RESULTS = "notify_results"
 #: A round that ends cancelled reads its check-in for the log (`check_in_record_steps`).
 READ_CHECK_IN = "read_check_in"
 CLOSE = "close"
@@ -567,15 +564,16 @@ def _saved_number(ctx: OutcomeContext) -> Any:
 
 def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
     """Every place the cancellation could not reach, one for each job that found none to tell or
-    was discarded, in the order of the jobs, and the calendar posted as text."""
+    was discarded, in the order of the jobs, and the calendar posted as text.
+
+    A module's own notice job is named by `notice_target`, its own word for what it is
+    ("check-in channel", "forecast channel", "results channel") carried on the job's own payload
+    (`cancellation_notice.notices_on`, each module), so that core names it without naming the
+    module or its job. The reasons stay core's text."""
     failures: list[notices.NoticeFailure] = []
     for view in ctx.steps:
         result = view.result or {}
-        target = {
-            NOTIFY_CHECKIN: "check-in channel",
-            NOTIFY_FORECAST: "forecast channel",
-            NOTIFY_RESULTS: "results channel",
-        }.get(view.name)
+        target = view.payload.get("notice_target")
         name = str(view.payload.get("division_name", ""))
         if target is not None:
             if _discarded(view):
