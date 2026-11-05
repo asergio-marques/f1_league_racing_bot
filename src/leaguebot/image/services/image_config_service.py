@@ -3,7 +3,9 @@
 Configuration retention (FR-004a): disabling the module clears only ``module_enabled``.
 Nothing in this service deletes a configuration row or resets a toggle, which is the
 Principle X.6 exception for configuration that cannot go stale — no value here names a
-Discord channel, role, message or scheduled job.
+Discord channel, role or message. ``pfp_daily`` does name a scheduled job (the daily
+portrait job); that job staying armed while the module is off is a defect already carried
+forward, and not this service's exception to claim.
 """
 from __future__ import annotations
 

@@ -19,9 +19,10 @@ waiting for Inkscape to be installed, which is exactly the case the notice exist
 
 **The switch-off is one save: the flag and the audit entry.** It deletes nothing and resets no
 toggle, which is the Principle X.6 exception for configuration that cannot go stale (FR-004a) — no
-image config value names a Discord channel, role, message or scheduled job, so none can become a
-stale binding while the module is off. It removes nothing else: the daily portrait job staying
-armed while the module is off is a defect already carried forward, and not this change's to fix.
+image config value names a Discord channel, role or message, so none of those can become a stale
+binding while the module is off. It removes nothing else: `pfp_daily` arms the daily portrait job,
+and that job staying armed while the module is off is a defect already carried forward, and not
+this change's to fix.
 """
 
 from __future__ import annotations

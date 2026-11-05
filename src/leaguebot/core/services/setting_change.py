@@ -15,9 +15,7 @@ never refused.
 
 **The check at the start is the last judgement of the state against queued writers.** Settings are
 written only on the league lane, one change at a time, and conversation lanes may not write these
-tables; but the off-queue writers (`/module enable|disable` of images, and
-`ImageConfigService.create_with_defaults`) can still land between the check and the save, until
-they move onto the queue. The save judges only held or not.
+tables. The save judges only held or not.
 
 **The line is formed here and nowhere else:** `{member} | {command} | {outcome}`, the values
 beneath it, saved in the same save as the value and its audit entry. A save is handed only the
