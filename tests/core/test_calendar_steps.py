@@ -347,19 +347,23 @@ async def _round_not_held(tmp_path: Any, monkeypatch: Any) -> tuple[Any, None]:
     return league, None
 
 
-@pytest.mark.parametrize(("start", "divisions", "posted"), [
-    pytest.param(_approved, ("Pro", "Am"), POSTED_AS_TEXT, id="the approval"),
-    pytest.param(_round_cancelled, ("Pro",), POSTED_AS_TEXT, id="a round's cancellation"),
-    pytest.param(_round_not_held, ("Pro",), POSTED_AS_TEXT, id="results' round not held"),
-    pytest.param(_season_cancelled, ("Pro",), POSTED_AS_TEXT_IN_A_CANCELLED_SEASON,
-                 id="a season's cancellation"),
+@pytest.mark.parametrize(("start", "change", "divisions", "posted"), [
+    pytest.param(_approved, "the ✅ Approve button of `/season placements-review`",
+                 ("Pro", "Am"), POSTED_AS_TEXT, id="the approval"),
+    pytest.param(_round_cancelled, "`/round cancel`", ("Pro",), POSTED_AS_TEXT,
+                 id="a round's cancellation"),
+    pytest.param(_round_not_held, "posting round 3's cancelled sessions", ("Pro",),
+                 POSTED_AS_TEXT, id="results' round not held"),
+    pytest.param(_season_cancelled, "`/season cancel`", ("Pro",),
+                 POSTED_AS_TEXT_IN_A_CANCELLED_SEASON, id="a season's cancellation"),
 ])
 async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_posts_it(
-    tmp_path, monkeypatch, start, divisions, posted,
+    tmp_path, monkeypatch, start, change, divisions, posted,
 ):
     """Each change that posts a calendar, where the drawing fails and the text stands in: the log
-    channel names the problem once for each calendar, in the `post_calendar` job's own line, and
-    in no line of the change's own (Constitution XIV.4, the data model's render problems). No line
+    channel names the problem once for each calendar, in the `post_calendar` job's own line,
+    opening with the member and the change it ran for as every line does, and in no line of the
+    change's own (Constitution XIV.4, the data model's render problems). No line
     names a calendar as not notified, and the member's reply names neither the problem nor a
     calendar posted as text: no "Not notified" for a cancellation, and no "Calendar images"
     section for the approval, where the fallback was all it would have held. Where the season is
@@ -374,10 +378,10 @@ async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_p
     logged = list(league.bot.log_channel.sent)
     named = [line for line in logged if PROBLEM in line]
     assert len(named) == len(divisions), named
+    opening = f"Admin (`<@{ADMIN_ID}>`) | {change}"
     for division in divisions:
-        assert sum(
-            posted.format(division=division, problem=PROBLEM) in line for line in named
-        ) == 1, named
+        line = opening + posted.format(division=division, problem=PROBLEM)
+        assert sum(each.startswith(line) for each in named) == 1, named
     assert not [line for line in logged if "not notified:" in line], logged
     if asked is not None:
         told = reply(asked)
