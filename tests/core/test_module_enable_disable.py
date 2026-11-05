@@ -80,7 +80,6 @@ def _make_cog(
     bot.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
     bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
-    bot.module_service.set_weather_enabled = AsyncMock(return_value=None)
 
     bot.season_service = MagicMock()
     bot.season_service.get_confirmed_season = AsyncMock(return_value=season)

@@ -384,7 +384,7 @@ class SeasonLeague:
 
     async def switch(self, module: str, on: bool) -> None:
         """Turn *module* (weather, results, attendance, images or signup) on or off."""
-        await set_module_flag(self.db_path, self.bot.module_service, module, on)
+        await set_module_flag(self.db_path, module, on)
         if module == "images":
             self.images_on = on
 
@@ -545,12 +545,9 @@ async def season_league(
             image_render_service, "converter_available",
             lambda *, use_cache=True: holder["league"].rasteriser_on,
         )
-    from leaguebot.core.services.module_service import ModuleService
-
-    modules = ModuleService(db_path)
     for name, on in (("weather", weather), ("results", results), ("attendance", attendance),
                      ("images", images)):
-        await set_module_flag(db_path, modules, name, on)
+        await set_module_flag(db_path, name, on)
     league = SeasonLeague(db_path, now, images=images)
     holder["league"] = league
     await league.build()
@@ -649,22 +646,25 @@ async def approval_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
-async def set_module_flag(db_path: str, modules: Any, name: str, on: bool) -> None:
-    """Turn module *name* on or off as `/module enable|disable` leaves its flag. Results' and
-    attendance's flags are written here, their change's own save being what writes them in the
-    bot (the module service holds no setter for either); weather's, images' and signup's through
-    *modules*, the module service."""
-    if name not in ("results", "attendance"):
-        await getattr(modules, f"set_{name}_enabled")(on)
-        return
+async def set_module_flag(db_path: str, name: str, on: bool) -> None:
+    """Turn module *name* on or off as `/module enable|disable` leaves its flag, written here on
+    the league's database: each module's switch is its own change in the bot, whose save is what
+    writes the flag, and the module service only reads them (#283). Weather's and signup's flags
+    are their columns on `server_configs`; results', attendance's and images' are their own
+    tables' rows, written where none stands."""
     async with get_connection(db_path) as db:
-        if name == "results":
+        if name in ("weather", "signup"):
             await db.execute(
-                "INSERT OR REPLACE INTO results_module_config (id, module_enabled) "
-                "VALUES (1, ?)", (int(on),),
+                f"UPDATE server_configs SET {name}_module_enabled = ?", (int(on),)
             )
         else:
-            await db.execute("UPDATE attendance_config SET module_enabled = ?", (int(on),))
+            table = {"results": "results_module_config", "attendance": "attendance_config",
+                     "images": "image_config"}[name]
+            await db.execute(
+                f"INSERT INTO {table} (id, module_enabled) VALUES (1, ?) "
+                "ON CONFLICT(id) DO UPDATE SET module_enabled = excluded.module_enabled",
+                (int(on),),
+            )
         await db.commit()
 
 

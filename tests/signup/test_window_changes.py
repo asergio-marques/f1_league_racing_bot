@@ -51,6 +51,7 @@ from tests.support.season_league import (
     SIGNUP_BUTTON,
     SIGNUP_CHANNEL_BASE,
     SeasonLeague,
+    set_module_flag,
     setup_league,
     signing_up,
 )
@@ -151,7 +152,7 @@ async def _league(tmp_path: Any, *, closed_notice: bool = False,
     signup.guild = guild
 
     bot = await league_bot(db_path, real_config=True)
-    await bot.module_service.set_signup_enabled(True)
+    await set_module_flag(db_path, "signup", True)
     bot.get_guild = MagicMock(return_value=guild)
     known = {SIGNUP_CHANNEL: signup, bot.log_channel.id: bot.log_channel,
              bot.interaction_channel.id: bot.interaction_channel}

@@ -55,8 +55,10 @@ def module_service(db_path):
 async def _enable(module_service, config_service):
     """The module switched on with its default configuration, as `/module enable images`
     leaves it: the set-up of the tests whose subject is not the switch itself."""
+    from tests.support.season_league import set_module_flag
+
     await config_service.create_with_defaults()
-    await module_service.set_images_enabled(True)
+    await set_module_flag(config_service._db_path, "images", True)
 
 
 async def _switched(tmp_path):

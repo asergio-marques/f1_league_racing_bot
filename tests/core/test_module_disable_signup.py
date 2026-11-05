@@ -167,7 +167,6 @@ async def _make_cog(
     these tests read is the command's own work."""
     bot = await league_bot(db_path)
     bot.module_service.is_signup_enabled = AsyncMock(return_value=enabled)
-    bot.module_service.set_signup_enabled = AsyncMock(return_value=None)
     bot.signup_module_service.get_config = AsyncMock(
         return_value=_config() if config is _UNSET else config
     )
