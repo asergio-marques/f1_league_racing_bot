@@ -6,8 +6,17 @@ which judges the request when it is asked and again when it comes up to run, in 
 command used, so that a round whose results were entered, or whose submission accepted a session,
 while the cancellation waited is refused with the same reply. It imports nothing from a module and
 no cog: what the modules take part in (what stands in a cancellation's way, the rounds called off,
-the steps a module plans) reaches it as hooks the builder signs them up to, and it reads the season
-through the service it is handed.
+the notices a division told is owed, and the steps a module plans) reaches it as hooks the
+builder signs them up to, and it reads the season through the service it is handed.
+
+**Cancellation notices.** Each division told is also told by `cancellation_notices`, called
+inside the save, after the modules' `rounds_called_off` steps are planned for it: every
+subscriber hands back a `CancellationNotices`, whose `steps` are placed before the
+rounds-called-off modules' `with_division` steps for that division and whose
+`after_with_division` are placed after them, so that today's order survives without this module
+naming which job is whose. A job the hook plans says in its own payload or result which target
+it is (`notice_target`, "check-in channel" and so on), so that `not_notified` can name it
+without naming the module.
 
 **A round whose submission stands open is cancelled only while it has accepted nothing** (owner,
 2026-10-08, amending Constitution XII): any `session_results` row, of either status, is data the
