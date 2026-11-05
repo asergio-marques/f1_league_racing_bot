@@ -1900,9 +1900,6 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 
 
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/module_service.py", "ModuleService.set_images_enabled"): (1, PASS["core"]),
-    ("core/services/module_service.py", "ModuleService.set_signup_enabled"): (1, PASS["core"]),
-    ("core/services/module_service.py", "ModuleService.set_weather_enabled"): (1, PASS["core"]),
     ("results/services/result_submission_service.py", "_restore_from_snapshot_on"): (2, PASS["results"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
@@ -2058,9 +2055,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.transition"): (1, PASS["core"]),
-    ("core/services/module_service.py", "ModuleService.set_images_enabled"): (1, PASS["core"]),
-    ("core/services/module_service.py", "ModuleService.set_signup_enabled"): (1, PASS["core"]),
-    ("core/services/module_service.py", "ModuleService.set_weather_enabled"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.assign_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.delete_team_role_config"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.move_driver"): (1, PASS["core"]),

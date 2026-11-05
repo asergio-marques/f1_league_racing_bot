@@ -1,5 +1,6 @@
-"""ModuleService — reads and writes the on/off flag of each optional module: weather, signup,
-results, attendance and images."""
+"""ModuleService — reads the on/off flag of each optional module: weather, signup, results,
+attendance and images. Each flag is written by that module's own switch, a `Setting` on the
+change queue (`<module>/services/module_switch_settings.py`), never by this service (#283)."""
 from __future__ import annotations
 
 import logging
@@ -33,22 +34,6 @@ class ModuleService:
             return False
         return bool(row["signup_module_enabled"])
 
-    async def set_weather_enabled(self, value: bool) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE server_configs SET weather_module_enabled = ?",
-                (int(value),),
-            )
-            await db.commit()
-
-    async def set_signup_enabled(self, value: bool) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE server_configs SET signup_module_enabled = ?",
-                (int(value),),
-            )
-            await db.commit()
-
     async def is_results_enabled(self) -> bool:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -76,18 +61,3 @@ class ModuleService:
         if row is None:
             return False
         return bool(row[0])
-
-    async def set_images_enabled(self, value: bool) -> None:
-        """Set the flag, creating the row if absent.
-
-        An UPDATE alone silently no-ops when no row exists, so the first enable would
-        appear to succeed and leave the module off. Disabling touches nothing else:
-        the whole image configuration survives (FR-004a, Principle X.6 exception).
-        """
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "INSERT INTO image_config (id, module_enabled) VALUES (1, ?) "
-                "ON CONFLICT(id) DO UPDATE SET module_enabled = excluded.module_enabled",
-                (int(value),),
-            )
-            await db.commit()
