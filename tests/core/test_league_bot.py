@@ -183,19 +183,9 @@ def test_the_settings_changes_are_registered():
         pytest.param(
             "attendance", "leaguebot.attendance.", {"attendance_config"},
             {"attendance_config", "attendance_division_config"}, id="attendance",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#283: attendance's switch is not yet attendance's own settings, signed up "
-                "by the builder",
-            ),
         ),
         pytest.param(
             "results", "leaguebot.results.", {"results_module_config"}, None, id="results",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#283: results' switch-on is not yet results' own setting, signed up by "
-                "the builder",
-            ),
         ),
     ],
 )

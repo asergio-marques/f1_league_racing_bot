@@ -490,6 +490,10 @@ def register_change_types(bot: LeagueBot) -> None:
         check_in_deadline_change,
         check_in_last_notice_change,
     )
+    from leaguebot.attendance.services.module_switch_settings import (
+        module_off_attendance,
+        module_on_attendance,
+    )
     from leaguebot.attendance.services.sanctions_announce_change import (
         sanctions_announce_change,
     )
@@ -534,6 +538,7 @@ def register_change_types(bot: LeagueBot) -> None:
         module_on_images,
     )
     from leaguebot.results.services.amendment_settings import amendment_settings
+    from leaguebot.results.services.module_switch_settings import module_on_results
     from leaguebot.results.services.points_settings import points_settings
     from leaguebot.weather.services.weather_settings import deadline_setting
     from leaguebot.weather.services.module_switch_settings import (
@@ -1014,6 +1019,17 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         setting_change(module_off_images(modules=bot.module_service))
+    )
+    bot.change_queue.register(
+        setting_change(module_on_attendance(modules=bot.module_service))
+    )
+    bot.change_queue.register(
+        setting_change(
+            module_off_attendance(modules=bot.module_service, attendance=bot.attendance_service)
+        )
+    )
+    bot.change_queue.register(
+        setting_change(module_on_results(modules=bot.module_service))
     )
     for setting in (
         *points_settings(modules=bot.module_service, seasons=bot.season_service),
