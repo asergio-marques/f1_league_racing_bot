@@ -13,6 +13,8 @@ cascade and its warning.
 """
 from __future__ import annotations
 
+import pytest
+
 from leaguebot.core.cogs.module_cog import _MODULE_CHOICES
 from leaguebot.core.models.change import module_off
 
