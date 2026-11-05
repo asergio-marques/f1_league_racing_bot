@@ -421,6 +421,57 @@ async def test_a_call_message_discord_will_not_delete_stops_the_queue_keeping_th
     assert CHECKIN_LOGGED in _success_lines(league)[0]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the notice jobs do not yet stop where the league's server is not in the cache",
+)
+@pytest.mark.parametrize(
+    ("module", "steps_of", "job"),
+    [
+        ("attendance", "notify_checkin_steps", "notify_checkin"),
+        ("weather", "notify_forecast_steps", "notify_forecast"),
+        ("results", "notify_results_steps", "notify_results"),
+    ],
+    ids=["check-in notice", "forecast note", "results note"],
+)
+async def test_a_notice_stops_where_the_league_s_server_is_not_in_the_cache(
+    module: str, steps_of: str, job: str, tmp_path: Any
+) -> None:
+    """Round 3 (Monza) of Pro is cancelled, and each module's notice job runs while the league's
+    server is set up but not in the bot's cache, as just after a restart. The job raises
+    GuildUnavailable, so the queue stops on the server and Retry runs it again: it never reports a
+    channel that is still there as gone, nor ends as "no channel is set" without having looked."""
+    from leaguebot.core.models.change import GuildUnavailable
+    from leaguebot.core.services.change_queue import StepContext
+    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.season_service import SeasonService
+    from tests.support.cancellation_notice import (
+        DIVISION_ID, SEASON_ID, notice_bot, notice_db, pro,
+    )
+    from tests.support.change_queue import in_a_job
+
+    db_path = await notice_db(tmp_path)
+    notices = importlib.import_module(f"leaguebot.{module}.services.cancellation_notice")
+    seasons = MagicMock(spec=SeasonService)
+    seasons.get_divisions = AsyncMock(return_value=[pro()])
+    steps = getattr(notices, steps_of)(modules=MagicMock(spec=ModuleService), seasons=seasons)
+    bot = notice_bot(db_path)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
+    bot.get_guild = MagicMock(return_value=None)
+    ctx = StepContext(
+        bot=bot, db_path=db_path, change_id=1, kind="round.cancel", payload={},
+        what="cancelling round 3", actor_id=None, actor_name=None, named="Tester", steps=(),
+        step_name=job,
+        step_payload={
+            "division_id": DIVISION_ID, "division_name": "Pro", "season_id": SEASON_ID,
+            "round_number": 3, "track_name": "Monza", "scope": "round",
+        },
+    )
+
+    with in_a_job(), pytest.raises(GuildUnavailable):
+        await steps[job].run(ctx)
+
+
 async def test_a_discarded_check_in_notice_still_has_the_call_taken_down(tmp_path):
     """Discord refuses the check-in notice for Pro's round 3, so the queue stops at it, and a
     league admin discards it. The log channel's stop line names it as "posting the check-in notice
