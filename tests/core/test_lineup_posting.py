@@ -356,6 +356,46 @@ async def test_a_lineup_picture_is_posted_before_the_old_lineup_is_deleted_by_a_
     ]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: core does not yet post the handed drawing's picture, nor fall to text when "
+    "Discord refuses it",
+)
+async def test_a_refused_lineup_picture_is_posted_as_text_and_stops_nothing(
+    tmp_path, monkeypatch,
+):
+    """Pro's lineup stands as 6100, and the drawing the builder handed draws Pro's lineup as a
+    PNG; Pro's lineup channel refuses every send carrying a picture and takes the text. The
+    lineup asked for is posted as text in the same try: the post job is done at its first try,
+    the queue does not stop, no picture stands in the channel, the old lineup is deleted by the
+    job after it, nothing records the refusal in the log channel, and the PNG is released."""
+    from tests.support.lineup_drawing import LineupDrawingStub, draw_lineups_with
+    from tests.support.season_league import refuses_pictures
+
+    league = await ongoing_league(tmp_path)
+    await _old_lineup_standing(league)
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    drawing = draw_lineups_with(league.bot, monkeypatch, LineupDrawingStub(picture=png))
+    channel = league.channel(LINEUP[PRO])
+    channel.fail_when = refuses_pictures
+
+    await _ask(league, PRO)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert any(call.kwargs.get("file") for call in channel.send.await_args_list), \
+        "no picture was sent to be refused"
+    assert all(not files for files in channel.files), "a picture was posted"
+    [(sent, new)] = [event for event in _lineup_events(league) if event[0] == "send"]
+    assert ("delete", OLD_LINEUP) in _lineup_events(league)
+    assert await _lineup_id(league) == new
+    post = [job for job in await _lineup_jobs(league) if job["name"] == "post_lineup"]
+    assert [(bool(job["done_at"]), job["tries"]) for job in post] == [(True, 0)]
+    assert "Lineup posted as text" not in await _said(league)
+    assert drawing.discarded == [png]
+
+
 @pytest.mark.parametrize("form", ["text", "image"])
 async def test_the_lineup_s_id_and_audit_are_saved_with_its_post(tmp_path, monkeypatch, form):
     """Once the post job is done, and before the deletion after it runs, the division records

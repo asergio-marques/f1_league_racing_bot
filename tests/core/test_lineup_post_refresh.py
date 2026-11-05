@@ -279,6 +279,74 @@ async def test_a_failing_graphic_falls_through_to_the_text(tmp_path, answer):
     assert posted.problem == "the template has no rows"
 
 
+def _refusing_pictures(*, text_too: bool = False):
+    """Pro's lineup channel, refusing every send that carries a file, and the text too where
+    *text_too*."""
+    channel = _channel()
+    accepted = channel.send.return_value
+
+    async def _send(*_args, **kwargs):
+        if kwargs.get("file") is not None or text_too:
+            raise discord.HTTPException(MagicMock(status=500), "no")
+        return accepted
+
+    channel.send = AsyncMock(side_effect=_send)
+    return channel
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: core does not yet post the handed drawing's picture, nor fall to text when "
+    "Discord refuses it",
+)
+async def test_a_refused_lineup_picture_is_posted_as_text_in_the_same_try(tmp_path):
+    """Pro's lineup, one driver at Red, its old lineup message 8800; the drawing draws Pro's
+    lineup as a PNG, and Discord refuses the send that carries it but takes the text. The text
+    embed is posted in the same call, so nothing stops: no refusal is raised, what was posted is
+    the text replacing 8800 with nothing for the job's line (the picture was drawn), and the PNG
+    is handed back to the drawing to release."""
+    db_path = await _make_db(tmp_path, name="lineup_refused", drivers=ONE_DRIVER)
+    channel = _refusing_pictures()
+    png = tmp_path / "lineup_template.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    drawing = LineupDrawingStub(picture=png)
+
+    posted = await _refresh(db_path, _guild(channel=channel), drawing=drawing)
+
+    assert channel.send.await_count == 2
+    assert channel.send.await_args_list[0].kwargs["file"].filename == "lineup_template.png"
+    assert "<@4242>" in _embed(channel).description
+    assert notified(channel.send.await_args.kwargs.get("allowed_mentions")) == NOBODY
+    assert (posted.message_id, posted.previous, posted.form) == (
+        NEW_MESSAGE_ID, OLD_MESSAGE_ID, "text",
+    )
+    assert posted.problem is None
+    assert drawing.discarded == [png]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: core does not yet post the handed drawing's picture, nor fall to text when "
+    "Discord refuses it",
+)
+async def test_a_refused_lineup_picture_and_text_stop_the_lane(tmp_path):
+    """As above, but Discord refuses the text as well: the post raises for the change queue to
+    stop on, saying "the lineup could not be posted: …", Pro still records 8800, and the PNG is
+    released all the same, since no picture is kept for a later try."""
+    db_path = await _make_db(tmp_path, name="lineup_refused_all", drivers=ONE_DRIVER)
+    channel = _refusing_pictures(text_too=True)
+    png = tmp_path / "lineup_template.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    drawing = LineupDrawingStub(picture=png)
+
+    with pytest.raises(StepFailedOnDiscord, match="^the lineup could not be posted: "):
+        await _refresh(db_path, _guild(channel=channel), drawing=drawing)
+
+    assert channel.send.await_count == 2
+    assert await _stored_message_id(db_path) == OLD_MESSAGE_ID
+    assert drawing.discarded == [png]
+
+
 # ---------------------------------------------------------------------------
 # The text lineup
 # ---------------------------------------------------------------------------
