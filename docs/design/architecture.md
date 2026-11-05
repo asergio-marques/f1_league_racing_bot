@@ -1074,11 +1074,15 @@ to it would switch off the one failure path for every command.
    placement's capacity guards count the seats and ask the image module
    (`PlacementService._ask_drawing`) is a stated exception too: its catch-all puts the error in the
    host's log in full, and the guard lets the placement through as if no problem were found,
-   because a capacity check that cannot run must not block a placement (its docstring says so); and
-   the image module's calendar gate (`ImageDrawing.calendar_wanted`) is a stated exception likewise:
+   because a capacity check that cannot run must not block a placement (its docstring says so); the
+   image module's calendar gate (`ImageDrawing.calendar_wanted`) is a stated exception likewise:
    its catch-all puts the error in the host's log alone, with no line to the log channel, and
    answers that the league does not draw its calendar, so the text calendar goes out, because a
-   gate that cannot be read must not lose a league its calendar (its docstring says so);
+   gate that cannot be read must not lose a league its calendar (its docstring says so); and the
+   image module's lineup gate (`ImageDrawing.lineup_wanted`) is a stated exception beside it: its
+   catch-all puts the error in the host's log alone, with no line to the log channel, and answers
+   that the league does not draw its lineup, so the text lineup goes out, because a gate that
+   cannot be read must not lose a league its lineup (its docstring says so);
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
@@ -1102,6 +1106,9 @@ other kind would then block a placement, when a check that cannot run must not.
 *Rejected:* treating a calendar gate that cannot be read as a picture that could not be drawn: it
 would add a line to the log channel and refuse `/division calendar-sync` for a fault in reading a
 switch.
+
+*Rejected:* treating a lineup gate that cannot be read as a picture that could not be drawn: it
+would add a line to the log channel for a fault in reading a switch.
 
 ---
 
