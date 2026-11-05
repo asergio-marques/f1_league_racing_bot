@@ -110,3 +110,34 @@ async def first_round_id(path: str, division_id: int) -> int:
             "SELECT id FROM rounds WHERE division_id = ? AND round_number = 1", (division_id,)
         )
         return (await cursor.fetchone())["id"]
+
+
+async def second_round_with_results(path: str, division_id: int, *, message_id=None) -> int:
+    """Round 2 of the division, with an accepted session and Lewis (500) leading its standings,
+    the standings message *message_id* recorded against it: the round a division's final
+    classification is drawn against."""
+    async with get_connection(path) as db:
+        cur = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
+            "VALUES (?, 2, 'NORMAL', '2026-03-01T18:00:00')",
+            (division_id,),
+        )
+        round_id = cur.lastrowid
+        await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
+            (round_id, division_id),
+        )
+        await db.execute(
+            "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
+            "standing_position, total_points, standings_message_id, standings_message_ids) "
+            "VALUES (?, ?, 500, 1, 25, ?, ?)",
+            (
+                round_id,
+                division_id,
+                message_id,
+                None if message_id is None else f"[{message_id}]",
+            ),
+        )
+        await db.commit()
+    return round_id

@@ -21,6 +21,9 @@ from tests.support.change_queue import in_a_job
 from tests.support.season_classification import bot_on as _bot
 from tests.support.season_classification import classification_posts as _opening_posts
 from tests.support.season_classification import guild_double as _guild
+from tests.support.season_classification import (
+    second_round_with_results as _second_round_with_results,
+)
 from tests.support.season_classification import seed_season as _seed
 
 pytestmark = pytest.mark.asyncio
@@ -69,36 +72,6 @@ async def test_the_final_is_drawn_against_the_last_round_with_results(db_path):
 # change queue, each raising where it cannot post, as the opening's are. The final standings
 # are posted beside the last round's (results spec :561, image spec :1025: "Neither posting
 # replaces a standings message nor has its ID recorded").
-
-
-async def _second_round_with_results(path, division_id: int, *, message_id=None) -> int:
-    """Round 2 of the division, with an accepted session and Lewis (500) leading its standings,
-    the standings message *message_id* recorded against it."""
-    async with get_connection(path) as db:
-        cur = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-            "VALUES (?, 2, 'NORMAL', '2026-03-01T18:00:00')",
-            (division_id,),
-        )
-        round_id = cur.lastrowid
-        await db.execute(
-            "INSERT INTO session_results (round_id, division_id, session_type, status) "
-            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
-            (round_id, division_id),
-        )
-        await db.execute(
-            "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-            "standing_position, total_points, standings_message_id, standings_message_ids) "
-            "VALUES (?, ?, 500, 1, 25, ?, ?)",
-            (
-                round_id,
-                division_id,
-                message_id,
-                None if message_id is None else f"[{message_id}]",
-            ),
-        )
-        await db.commit()
-    return round_id
 
 
 async def _recorded_standings_ids(path, round_id: int) -> list:
