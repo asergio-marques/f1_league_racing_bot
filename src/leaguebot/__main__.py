@@ -901,7 +901,6 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         season_cancel_change(
-            modules=bot.module_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
@@ -1031,7 +1030,6 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         round_cancel_change(
-            modules=bot.module_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             cancellation_refused=bot.cancellation_refused,
@@ -1044,7 +1042,6 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         division_cancel_change(
-            modules=bot.module_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             cancellation_refused=bot.cancellation_refused,

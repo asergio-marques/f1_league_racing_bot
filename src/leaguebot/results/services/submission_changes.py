@@ -582,10 +582,11 @@ def submission_all_cancelled_change(
     earlier results tables the new sessions could not carry. *seasons* posts the calendar, *record*
     holds the job core builds that reads the round's check-in, *cancellation_notices* is the hook
     each module's own notice is planned through, called inside the save on its connection,
-    *cancellation_steps* holds the modules' own notice step definitions (the same the three
-    cancellations register, through core's `cancellation_steps` hook) so this change carries the
-    jobs *cancellation_notices* plans, and *now* is the queue's clock, read when the round's
-    ending is audited.
+    *cancellation_steps* holds every step definition the modules hand back to core's
+    `cancellation_steps` hook (the same the three cancellations register: the modules' own
+    notices among them, and also review posting's and attendance's take-down of the call) so
+    this change carries the jobs *cancellation_notices* plans, and *now* is the queue's clock,
+    read when the round's ending is audited.
 
     Its first job, ``end_round`` (a save, **never to be discarded**: without it the round would
     never finish and its season could never be completed), ends the round CANCELLED through core's

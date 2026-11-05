@@ -2,12 +2,14 @@
 
 A round's, a division's or a season's cancellation declares four moments the modules take part
 in (architecture.md, "A hook core declares is a list of subscribers"): what stands in its way,
-the rounds called off, the notices told of a division, and the steps a module plans. The first
-three are handed the connection core holds open (the save's), the *scope* (`SCOPE_ROUND`,
-`SCOPE_DIVISION` or `SCOPE_SEASON`) and what each is about: the rounds called off, each a
-`CancellationRound`, for the second, and the division told for the third; the fourth is handed
-nothing, and is called as each cancellation's change type is made, so that core registers the
-steps it does not name.
+the rounds called off, the notices told of a division, and the steps a module plans. The second
+and third are handed the connection core holds open in the save; the first, what stands in its
+way, is called there too but also at ask, on a connection of its own, so that a refusal reaches
+the command before anything is saved. All three the save calls are handed the *scope*
+(`SCOPE_ROUND`, `SCOPE_DIVISION` or `SCOPE_SEASON`) and what each is about: the rounds called
+off, each a `CancellationRound`, for the second, and the division told for the third; the fourth
+is handed nothing, and is called as each cancellation's change type is made, so that core
+registers the steps it does not name.
 """
 
 from __future__ import annotations

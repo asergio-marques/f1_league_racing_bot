@@ -726,7 +726,6 @@ def _follow_steps(*, seasons: SeasonService) -> dict[str, Step]:
 
 def round_cancel_change(
     *,
-    modules: "ModuleService",
     seasons: SeasonService,
     scheduler: "SchedulerService",
     cancellation_refused: AwaitedHook,
@@ -741,11 +740,10 @@ def round_cancel_change(
     The payload is ``{"round_id", "round_number", "track_name", "division_id", "division_name",
     "season_number"}``. It names no season: a payload that does is read as holding every division
     of that season (`review_changes.division_job_in_hand`); the season a job needs travels on the
-    jobs' own payloads. The builder hands in the *modules* (each notice's `still_due`), the
-    *seasons* service, the *scheduler*, the hooks the modules sign up to (*cancellation_refused*,
-    *rounds_called_off*, *cancellation_notices* and *cancellation_steps*, whose steps are
-    registered), *amendment_in_hand* (the job a `/round amend` of a round of a division waits on,
-    or None) and the queue's clock *now*.
+    jobs' own payloads. The builder hands in the *seasons* service, the *scheduler*, the hooks
+    the modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_notices*
+    and *cancellation_steps*, whose steps are registered), *amendment_in_hand* (the job a `/round
+    amend` of a round of a division waits on, or None) and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1011,7 +1009,6 @@ def round_cancel_change(
 
 def division_cancel_change(
     *,
-    modules: "ModuleService",
     seasons: SeasonService,
     scheduler: "SchedulerService",
     cancellation_refused: AwaitedHook,
@@ -1249,7 +1246,6 @@ def division_cancel_change(
 
 def season_cancel_change(
     *,
-    modules: "ModuleService",
     seasons: SeasonService,
     scheduler: "SchedulerService",
     placement: "PlacementService",
@@ -1270,9 +1266,9 @@ def season_cancel_change(
 ) -> ChangeType:
     """The change that cancels the season being raced; see the module.
 
-    The payload is ``{"season_id", "season_number"}``. The builder hands in the *modules*, the
-    *seasons* service, the *scheduler*, the *placement* service (which takes back roles), the hooks
-    the modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_notices*,
+    The payload is ``{"season_id", "season_number"}``. The builder hands in the *seasons*
+    service, the *scheduler*, the *placement* service (which takes back roles), the hooks the
+    modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_notices*,
     *rounds_made_final*, *cancellation_steps*, *season_end_refused*, *season_end_closes*,
     *drivers_returned*, *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*,
     *drivers_deleted*), the hook each driver deleted calls (*profiles_deleted*) and the queue's
