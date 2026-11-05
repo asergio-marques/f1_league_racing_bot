@@ -596,7 +596,8 @@ async def _stage(db_path: str, stage: str, status: str) -> None:
 #: verb, the module, how the cog is set up, the stage the season stands in, and a fragment of
 #: the reply. A case whose verb is None calls the enable handler directly, the command's own
 #: stage check standing in front of it otherwise. Weather's "already enabled", refused by its
-#: change on the queue, is pinned by `test_enabling_weather_twice_does_no_work`.
+#: change on the queue, is pinned by `test_enabling_weather_twice_does_no_work`; images' the same
+#: way, by `test_enabling_twice_does_no_work`.
 MODULE_REFUSALS = [
     pytest.param("enable", "results", {"results_enabled": True}, None, "already enabled",
                  id="results-already-enabled"),
@@ -609,8 +610,6 @@ MODULE_REFUSALS = [
     pytest.param("enable", "attendance",
                  {"results_enabled": True, "attendance_enabled": True}, None,
                  "already enabled", id="attendance-already-enabled"),
-    pytest.param("enable", "images", {"images_enabled": True}, None, "already enabled",
-                 id="images-already-enabled"),
     pytest.param("enable", "signup", {"signup_enabled": True}, None, "already enabled",
                  id="signup-already-enabled"),
     pytest.param("enable", "weather", {"season": "confirmed"}, None, "cannot be enabled once",
