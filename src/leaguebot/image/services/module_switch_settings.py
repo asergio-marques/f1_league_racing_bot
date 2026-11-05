@@ -1,4 +1,4 @@
-"""Images' own switch, on and off, as two settings on the change queue (#283, S11c).
+"""Images' own switch, on and off, as two settings on the change queue.
 
 `/module enable images` and `/module disable images` each ask one change built from a
 `Setting` below by `setting_change` (`core/services/setting_change.py`, which holds what every
