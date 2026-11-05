@@ -1340,7 +1340,9 @@ async def test_the_portraits_of_the_drivers_deleted_are_discarded_after_the_save
     calls: list[tuple[str, str]] = []
     holder: dict[str, str] = {}
 
-    async def _discard(_bot: Any, accounts: Any) -> None:
+    async def _discard(*args: Any) -> None:
+        # The accounts come last, whatever the discard is handed before them.
+        accounts = args[-1]
         with sqlite3.connect(holder["db"]) as db:
             status = db.execute("SELECT status FROM seasons WHERE id = ?",
                                 (SEASON_ID,)).fetchone()[0]

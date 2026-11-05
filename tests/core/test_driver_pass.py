@@ -325,6 +325,13 @@ async def test_the_pass_is_recorded_in_the_audit_trail(db_path):
 # the league's own, so these resolve one under `tmp_path` instead.
 
 
+#: Why the portrait discard's tests fail until the build.
+_DISCARD_SIGNATURE = (
+    "#283: discard_portraits takes the database path and the image configuration service, "
+    "not the bot"
+)
+
+
 @pytest.fixture
 def portraits(tmp_path, monkeypatch):
     from leaguebot.image.services import image_render_service
@@ -381,10 +388,12 @@ async def _pass_and_discard(db_path, directory):
     from leaguebot.image.services.driver_portrait_service import discard_portraits
 
     result = await _pass(db_path)
-    await discard_portraits(_bot_for(db_path, directory), result.accounts)
+    bot = _bot_for(db_path, directory)
+    await discard_portraits(bot.db_path, bot.image_config_service, result.accounts)
     return result
 
 
+@pytest.mark.xfail(strict=True, reason=_DISCARD_SIGNATURE)
 async def test_a_deleted_driver_s_portrait_is_discarded_with_them(db_path, portraits):
     await _obtained(db_path, portraits, "1001", "1002", "1005")
 
@@ -394,6 +403,7 @@ async def test_a_deleted_driver_s_portrait_is_discarded_with_them(db_path, portr
     assert _files(portraits) == ["1001.svg"]
 
 
+@pytest.mark.xfail(strict=True, reason=_DISCARD_SIGNATURE)
 async def test_a_past_account_s_leftover_portrait_goes_too(db_path, portraits):
     """A reassign that could not resolve the directory leaves the replaced account's portrait
     behind. The driver's deletion is the last chance to discard it."""
@@ -410,6 +420,7 @@ async def test_a_past_account_s_leftover_portrait_goes_too(db_path, portraits):
     assert _files(portraits) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_DISCARD_SIGNATURE)
 async def test_a_deleted_driver_s_own_artwork_is_left(db_path, portraits):
     """A file with no row was placed by the league, and is never the bot's to delete."""
     (portraits / "1003.svg").write_text("<svg>the league's own</svg>")
@@ -419,6 +430,7 @@ async def test_a_deleted_driver_s_own_artwork_is_left(db_path, portraits):
     assert (portraits / "1003.svg").read_text() == "<svg>the league's own</svg>"
 
 
+@pytest.mark.xfail(strict=True, reason=_DISCARD_SIGNATURE)
 async def test_no_portrait_is_touched_where_the_directory_does_not_resolve(
     db_path, portraits, monkeypatch
 ):
@@ -439,6 +451,7 @@ async def test_no_portrait_is_touched_where_the_directory_does_not_resolve(
     assert _files(portraits) == ["1002.svg"]
 
 
+@pytest.mark.xfail(strict=True, reason=_DISCARD_SIGNATURE)
 async def test_a_portrait_that_cannot_be_removed_does_not_undo_the_pass(
     db_path, portraits, monkeypatch
 ):

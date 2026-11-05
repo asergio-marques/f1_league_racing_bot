@@ -67,6 +67,18 @@ def _season(status: str = "ACTIVE", stage: str = "PLACEMENTS") -> SimpleNamespac
     )
 
 
+class _Portraits:
+    """The portrait part of core's drawing protocol: keeps each list of accounts it is asked to
+    discard the portraits of, and answers that it removed none."""
+
+    def __init__(self) -> None:
+        self.asked: list[list[str]] = []
+
+    async def discard_portraits(self, user_ids) -> int:
+        self.asked.append([str(u) for u in user_ids])
+        return 0
+
+
 def _make_cog(
     *,
     season: object | None = None,
@@ -128,6 +140,7 @@ def _make_cog(
 
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.image_drawing = _Portraits()
     return DriverCog(bot)
 
 
@@ -269,101 +282,25 @@ async def test_a_refused_reassignment_is_reported_not_raised(tmp_path):
 # ---------------------------------------------------------------------------
 #
 # A portrait is a cache of one account's own profile picture, so nothing of it is carried by a
-# re-key — the new account has a picture of its own. The old file is removed instead, and the
-# directory is the league's own, so these tests build one under `tmp_path` and never resolve
-# the configured `resources/league/` tree.
+# re-key — the new account has a picture of its own. The old one is discarded through the image
+# module's drawing, the one the builder hands the bot. What the discard removes, and that it
+# never raises, is the image module's, tested under `tests/image/test_driver_portrait_service.py`.
 
 
-def _with_portraits(cog, directory, monkeypatch, *, remover=None):
-    """Point *cog* at a configured driver directory and return the remover it will call."""
-    from leaguebot.image.services import driver_portrait_service, image_render_service
-
-    cog.bot.db_path = "db.sqlite"
-    cog.bot.image_config_service = MagicMock()
-    cog.bot.image_config_service.get_config = AsyncMock(
-        return_value=SimpleNamespace(driver_image_directory=str(directory))
-    )
-    monkeypatch.setattr(
-        image_render_service,
-        "resolve_configured_directories",
-        lambda *a, **k: ({"driver": directory}, {}),
-    )
-    remover = remover or AsyncMock(return_value=True)
-    monkeypatch.setattr(driver_portrait_service, "remove_portrait", remover)
-    return remover
-
-
-async def test_reassign_removes_the_portrait_of_the_account_left_behind(
-    tmp_path, monkeypatch
-):
-    directory = tmp_path / "drivers"
-    directory.mkdir()
+@pytest.mark.xfail(strict=True, reason="#283: /driver reassign discards the portrait through the image module, not the drawing it is handed")
+async def test_reassign_removes_the_portrait_of_the_account_left_behind():
+    """Account 4242 is replaced by the new account 2 in a season whose drivers are being placed.
+    The command asks the image module's drawing to discard 4242's portrait, once and for 4242
+    alone, tells the manager the driver was given a new account, and posts its success line to
+    the log channel."""
     cog = _make_cog(season=_season())
-    remover = _with_portraits(cog, directory, monkeypatch)
     interaction = _interaction()
 
     await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
 
-    remover.assert_awaited_once_with("db.sqlite", "4242", directory)
+    assert cog.bot.image_drawing.asked == [["4242"]]
     assert "given a new account" in _replied(interaction)
-
-
-async def test_reassign_leaves_the_portrait_where_no_directory_resolves(
-    tmp_path, monkeypatch
-):
-    """A row taken without its file would disown a portrait the bot wrote, after which the
-    bot would never overwrite its own leftover. Both are left alone instead."""
-    from leaguebot.image.services import image_render_service
-
-    directory = tmp_path / "drivers"
-    directory.mkdir()
-    cog = _make_cog(season=_season())
-    remover = _with_portraits(cog, directory, monkeypatch)
-    monkeypatch.setattr(
-        image_render_service,
-        "resolve_configured_directories",
-        lambda *a, **k: ({}, {"driver": "outside the project root"}),
-    )
-    interaction = _interaction()
-
-    await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
-
-    remover.assert_not_awaited()
-    assert "given a new account" in _replied(interaction)
-
-
-async def test_reassign_leaves_the_portrait_where_the_league_has_no_image_config(
-    tmp_path, monkeypatch
-):
-    directory = tmp_path / "drivers"
-    directory.mkdir()
-    cog = _make_cog()
-    remover = _with_portraits(cog, directory, monkeypatch)
-    cog.bot.image_config_service.get_config = AsyncMock(return_value=None)
-    interaction = _interaction()
-
-    await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
-
-    remover.assert_not_awaited()
-
-
-async def test_a_portrait_that_cannot_be_removed_does_not_fail_the_re_key(
-    tmp_path, monkeypatch
-):
-    """The re-key is committed by the time the portrait is touched, so a read-only directory
-    must not turn a successful command into a reported failure."""
-    directory = tmp_path / "drivers"
-    directory.mkdir()
-    cog = _make_cog(season=_season())
-    _with_portraits(
-        cog, directory, monkeypatch, remover=AsyncMock(side_effect=OSError("read-only"))
-    )
-    interaction = _interaction()
-
-    await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
-
-    assert "given a new account" in _replied(interaction)
-    cog.bot.output_router.post_log.assert_awaited()
+    assert "/driver reassign | Success" in cog.bot.output_router.post_log.await_args.args[0]
 
 
 # ---------------------------------------------------------------------------

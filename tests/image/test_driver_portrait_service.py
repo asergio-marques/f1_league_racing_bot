@@ -326,6 +326,13 @@ async def test_a_missing_file_is_refetched_even_where_the_hash_matches(db_path, 
 # configured directory is the league's own, so these resolve one under `tmp_path` instead.
 
 
+#: Why the discard's tests fail until the build.
+_DISCARD_SIGNATURE = (
+    "#283: discard_portraits takes the database path and the image configuration service, "
+    "not the bot"
+)
+
+
 def _bot_with_portraits(db_path, directory, monkeypatch, *, config=True):
     from leaguebot.image.services import image_render_service
 
@@ -342,6 +349,7 @@ def _bot_with_portraits(db_path, directory, monkeypatch, *, config=True):
     return bot
 
 
+@pytest.mark.xfail(strict=True, reason=_DISCARD_SIGNATURE)
 async def test_discarding_takes_the_portrait_of_every_account_named(
     db_path, directory, monkeypatch
 ):
@@ -352,22 +360,24 @@ async def test_discarding_takes_the_portrait_of_every_account_named(
     )
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
 
-    assert await discard_portraits(bot, ["7", "8"]) == 2
+    assert await discard_portraits(bot.db_path, bot.image_config_service, ["7", "8"]) == 2
 
     assert sorted(await _rows(db_path)) == ["9"]
     assert sorted(p.name for p in directory.iterdir()) == ["9.svg"]
 
 
+@pytest.mark.xfail(strict=True, reason=_DISCARD_SIGNATURE)
 async def test_discarding_leaves_the_league_s_own_artwork_alone(db_path, directory, monkeypatch):
     from leaguebot.image.services.driver_portrait_service import discard_portraits
 
     (directory / "7.svg").write_text("<svg>the league's own</svg>")
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
 
-    assert await discard_portraits(bot, ["7"]) == 0
+    assert await discard_portraits(bot.db_path, bot.image_config_service, ["7"]) == 0
     assert (directory / "7.svg").read_text() == "<svg>the league's own</svg>"
 
 
+@pytest.mark.xfail(strict=True, reason=_DISCARD_SIGNATURE)
 async def test_discarding_removes_nothing_where_no_directory_resolves(
     db_path, directory, monkeypatch
 ):
@@ -384,11 +394,12 @@ async def test_discarding_removes_nothing_where_no_directory_resolves(
         lambda *a, **k: ({}, {"driver": "outside the project root"}),
     )
 
-    assert await discard_portraits(bot, ["7"]) == 0
+    assert await discard_portraits(bot.db_path, bot.image_config_service, ["7"]) == 0
     assert sorted(await _rows(db_path)) == ["7"]
     assert (directory / "7.svg").is_file()
 
 
+@pytest.mark.xfail(strict=True, reason=_DISCARD_SIGNATURE)
 async def test_discarding_removes_nothing_where_the_league_has_no_image_config(
     db_path, directory, monkeypatch
 ):
@@ -397,21 +408,23 @@ async def test_discarding_removes_nothing_where_the_league_has_no_image_config(
     await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
     bot = _bot_with_portraits(db_path, directory, monkeypatch, config=False)
 
-    assert await discard_portraits(bot, ["7"]) == 0
+    assert await discard_portraits(bot.db_path, bot.image_config_service, ["7"]) == 0
     assert sorted(await _rows(db_path)) == ["7"]
     assert (directory / "7.svg").is_file()
 
 
+@pytest.mark.xfail(strict=True, reason=_DISCARD_SIGNATURE)
 async def test_discarding_no_account_reads_no_configuration(db_path, directory, monkeypatch):
     """The driver pass calls this every season, most often with nobody deleted."""
     from leaguebot.image.services.driver_portrait_service import discard_portraits
 
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
 
-    assert await discard_portraits(bot, []) == 0
+    assert await discard_portraits(bot.db_path, bot.image_config_service, []) == 0
     bot.image_config_service.get_config.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_DISCARD_SIGNATURE)
 async def test_a_configuration_that_cannot_be_read_discards_nothing_and_raises_nothing(
     db_path, directory, monkeypatch
 ):
@@ -421,10 +434,11 @@ async def test_a_configuration_that_cannot_be_read_discards_nothing_and_raises_n
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
     bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("unreadable"))
 
-    assert await discard_portraits(bot, ["7"]) == 0
+    assert await discard_portraits(bot.db_path, bot.image_config_service, ["7"]) == 0
     assert sorted(await _rows(db_path)) == ["7"]
 
 
+@pytest.mark.xfail(strict=True, reason=_DISCARD_SIGNATURE)
 async def test_one_portrait_that_cannot_be_removed_does_not_keep_the_rest(
     db_path, directory, monkeypatch
 ):
@@ -435,7 +449,7 @@ async def test_one_portrait_that_cannot_be_removed_does_not_keep_the_rest(
     remover = AsyncMock(side_effect=[PermissionError("read-only"), True])
     monkeypatch.setattr(driver_portrait_service, "remove_portrait", remover)
 
-    assert await discard_portraits(bot, ["7", "8"]) == 1
+    assert await discard_portraits(bot.db_path, bot.image_config_service, ["7", "8"]) == 1
     assert [c.args[1] for c in remover.await_args_list] == ["7", "8"]
 
 
@@ -1174,3 +1188,29 @@ async def test_a_rejected_directory_still_shuts_the_gate_for_the_review(
     )
 
     assert (written, calls) == (0, [])
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: the image module's drawing does not discard portraits yet"
+)
+async def test_the_image_drawing_discards_the_portraits_of_the_accounts_named(
+    db_path, directory, monkeypatch
+):
+    """Accounts 7, 8 and 9 each have a portrait the bot obtained. Core asks the image module's
+    drawing, the one the builder hands it, to discard 7's and 8's: the drawing answers that it
+    removed two, and only 9's file and row are left."""
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    await refresh_portraits(
+        db_path, [_member(7, "abc"), _member(8, "def"), _member(9, "ghi")], directory, now=NOW
+    )
+    bot = _bot_with_portraits(db_path, directory, monkeypatch)
+    drawing = ImageDrawing(
+        MagicMock(), bot.image_config_service, MagicMock(),
+        renderer=MagicMock(), post_log=AsyncMock(), db_path=db_path,
+    )
+
+    assert await drawing.discard_portraits(["7", "8"]) == 2
+
+    assert sorted(await _rows(db_path)) == ["9"]
+    assert sorted(p.name for p in directory.iterdir()) == ["9.svg"]

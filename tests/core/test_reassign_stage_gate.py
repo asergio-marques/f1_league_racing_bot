@@ -59,8 +59,8 @@ def _bot(stage: SeasonStage | None) -> MagicMock:
     bot.placement_service.move_driver_roles = AsyncMock(return_value=[])
     bot.wizard_service = MagicMock()
     bot.wizard_service.move_held_channel = AsyncMock(return_value=[])
-    bot.image_config_service = MagicMock()
-    bot.image_config_service.get_config = AsyncMock(return_value=None)
+    # The replaced account's portrait is discarded through the image module's drawing.
+    bot.image_drawing.discard_portraits = AsyncMock(return_value=0)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
     return bot
