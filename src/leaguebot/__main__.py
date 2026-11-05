@@ -195,7 +195,9 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     """Make the hooks a cancellation of rounds declares, and sign each module's part up to them,
     in the order core calls them: what stands in the way (results' refusal of a round whose
     submission accepted results), the rounds called off (results closes their empty submissions,
-    in the save, then attendance's take-down of their calls), and the steps a module plans
+    in the save, then attendance's take-down of their calls), the notices told of a division
+    (today, none: each module's notice still plans itself as a step `cancellation_changes`
+    names, until each module words and posts its own, #283), and the steps a module plans
     (results' deletion of a submission channel, then attendance's take-down of a call)."""
     from leaguebot.attendance.services import check_in_changes
     from leaguebot.results.services import result_submission_service, review_posting
@@ -205,6 +207,7 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     bot.rounds_called_off = AwaitedHook()
     bot.rounds_called_off.subscribe(result_submission_service.close_called_off_on)
     bot.rounds_called_off.subscribe(check_in_changes.take_down_called_off_on)
+    bot.cancellation_notices = AwaitedHook()
     bot.cancellation_steps = Hook()
     bot.cancellation_steps.subscribe(review_posting.cancellation_steps)
     bot.cancellation_steps.subscribe(partial(
@@ -599,6 +602,7 @@ def register_change_types(bot: LeagueBot) -> None:
             notices=notice_steps(
                 modules=bot.module_service, seasons=bot.season_service, scope=SCOPE_ROUND,
             ),
+            cancellation_notices=bot.cancellation_notices,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -885,6 +889,7 @@ def register_change_types(bot: LeagueBot) -> None:
             placement=bot.placement_service,
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
+            cancellation_notices=bot.cancellation_notices,
             rounds_made_final=bot.rounds_made_final,
             cancellation_steps=bot.cancellation_steps,
             season_end_refused=bot.season_end_refused,
@@ -1013,6 +1018,7 @@ def register_change_types(bot: LeagueBot) -> None:
             scheduler=bot.scheduler_service,
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
+            cancellation_notices=bot.cancellation_notices,
             cancellation_steps=bot.cancellation_steps,
             amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),
@@ -1025,6 +1031,7 @@ def register_change_types(bot: LeagueBot) -> None:
             scheduler=bot.scheduler_service,
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
+            cancellation_notices=bot.cancellation_notices,
             cancellation_steps=bot.cancellation_steps,
             amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),

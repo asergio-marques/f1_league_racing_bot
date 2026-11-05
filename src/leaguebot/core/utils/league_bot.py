@@ -109,12 +109,14 @@ class LeagueBot(commands.Bot):
     in_memory_state_cleared: Hook
     #: The moments of a cancellation of rounds (a round's, a division's or a season's), each module
     #: signing up its part: what stands in the way (each hands back a refusal or None), the rounds
-    #: called off, inside the save (each hands back the steps it plans), and the steps a module
-    #: plans (each hands back its step definitions by name). The builder makes them and hands them
-    #: to the three cancellations (architecture.md, "A hook core declares is a list of
-    #: subscribers").
+    #: called off, inside the save (each hands back the steps it plans), the notices told of a
+    #: division, inside the save for each division told (each hands back the steps it plans for
+    #: its own notice), and the steps a module plans (each hands back its step definitions by
+    #: name). The builder makes them and hands them to the three cancellations and results' not-
+    #: held round end (architecture.md, "A hook core declares is a list of subscribers").
     cancellation_refused: AwaitedHook
     rounds_called_off: AwaitedHook
+    cancellation_notices: AwaitedHook
     cancellation_steps: Hook
     #: The rounds a closer made FINAL (results turned off, a season cancelled), given the closing's
     #: connection and the rounds' ids: each module signing up its part inside the save (results

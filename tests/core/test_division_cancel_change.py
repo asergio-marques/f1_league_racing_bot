@@ -578,9 +578,6 @@ async def test_a_subscriber_s_planned_steps_are_planned_in_the_save_in_order(tmp
     assert [json.loads(job["payload"])["round_id"] for job in jobs[4:6]] == [R3, R4]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the notices are not yet planned through the modules' hook"
-)
 async def test_the_save_hands_the_division_to_the_notices_hook(tmp_path):
     """Pro is cancelled. Inside the save, on the save's own connection, the hook the modules'
     notices are planned through is called once, handed the division scope and Pro: its id, name

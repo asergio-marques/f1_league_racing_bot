@@ -374,6 +374,22 @@ async def _planned_by_the_modules(
     )
 
 
+async def _notices_planned_by_the_modules(
+    hook: AwaitedHook, db: aiosqlite.Connection, scope: str, target: dict[str, Any]
+) -> tuple[PlannedStep, ...]:
+    """Each module's own steps for *target*'s notice, told inside the save on *db*
+    (`cancellation_notices`), together in the order the modules signed up.
+
+    Today no module has moved its notice onto the hook, so it hands back nothing: each
+    cancellation still plans the check-in, forecast and results notices itself, through
+    `notice_steps` (#283).
+    """
+    steps: list[PlannedStep] = []
+    for planned in await hook.call(db, scope, target):
+        steps += planned.steps
+    return tuple(steps)
+
+
 #: The job names, as the stop notice, the tests and `StepView` know them.
 UNARM = "unarm"
 APPLY = "apply"
@@ -803,6 +819,7 @@ def round_cancel_change(
     scheduler: "SchedulerService",
     cancellation_refused: AwaitedHook,
     rounds_called_off: AwaitedHook,
+    cancellation_notices: AwaitedHook,
     cancellation_steps: Hook,
     amendment_in_hand: Callable[[int], Awaitable[int | None]],
     now: Callable[[], datetime],
@@ -814,9 +831,9 @@ def round_cancel_change(
     of that season (`review_changes.division_job_in_hand`); the season a job needs travels on the
     jobs' own payloads. The builder hands in the *modules* (each notice's `still_due`), the
     *seasons* service, the *scheduler*, the hooks the modules sign up to (*cancellation_refused*,
-    *rounds_called_off*, and *cancellation_steps*, whose steps are registered),
-    *amendment_in_hand* (the job a `/round amend` of a round of a division waits on, or None) and
-    the queue's clock *now*.
+    *rounds_called_off*, *cancellation_notices* and *cancellation_steps*, whose steps are
+    registered), *amendment_in_hand* (the job a `/round amend` of a round of a division waits on,
+    or None) and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -973,12 +990,16 @@ def round_cancel_change(
         # An open submission with nothing accepted is closed in this save, and its channel
         # deleted first of all after it, since that is where a manager pastes.
         by_modules = await _planned_by_the_modules(rounds_called_off, db, SCOPE_ROUND, this_round)
+        by_notices = await _notices_planned_by_the_modules(
+            cancellation_notices, db, SCOPE_ROUND, target
+        )
         planned = list(by_modules.first)
         planned.append(PlannedStep(NOTIFY_CHECKIN, target))
         planned += by_modules.with_division.get(target["division_id"], ())
         planned += [
             PlannedStep(NOTIFY_FORECAST, target),
             PlannedStep(NOTIFY_RESULTS, target),
+            *by_notices,
             PlannedStep(POST_CALENDAR, {**target, "round_ids": [round_id], "only_if_posted": True}),
         ]
         return StepResult(
@@ -1087,6 +1108,7 @@ def division_cancel_change(
     scheduler: "SchedulerService",
     cancellation_refused: AwaitedHook,
     rounds_called_off: AwaitedHook,
+    cancellation_notices: AwaitedHook,
     cancellation_steps: Hook,
     amendment_in_hand: Callable[[int], Awaitable[int | None]],
     now: Callable[[], datetime],
@@ -1244,12 +1266,16 @@ def division_cancel_change(
             "division_name": str(payload["division_name"]),
             "season_id": int(division["season_id"]),
         }
+        by_notices = await _notices_planned_by_the_modules(
+            cancellation_notices, db, SCOPE_DIVISION, target
+        )
         planned = list(after.first)
         planned.append(PlannedStep(NOTIFY_CHECKIN, target))
         planned += after.with_division.get(division_id, ())
         planned += [
             PlannedStep(NOTIFY_FORECAST, target),
             PlannedStep(NOTIFY_RESULTS, target),
+            *by_notices,
             PlannedStep(POST_CALENDAR, {**target, "round_ids": called_off, "only_if_posted": True}),
         ]
         return StepResult(
@@ -1325,6 +1351,7 @@ def season_cancel_change(
     placement: "PlacementService",
     cancellation_refused: AwaitedHook,
     rounds_called_off: AwaitedHook,
+    cancellation_notices: AwaitedHook,
     rounds_made_final: AwaitedHook,
     cancellation_steps: Hook,
     season_end_refused: AwaitedHook,
@@ -1341,10 +1368,11 @@ def season_cancel_change(
 
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *modules*, the
     *seasons* service, the *scheduler*, the *placement* service (which takes back roles), the hooks
-    the modules sign up to (*cancellation_refused*, *rounds_called_off*, *rounds_made_final*,
-    *cancellation_steps*, *season_end_refused*, *season_end_closes*, *drivers_returned*,
-    *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook
-    each driver deleted calls (*profiles_deleted*) and the queue's clock *now*.
+    the modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_notices*,
+    *rounds_made_final*, *cancellation_steps*, *season_end_refused*, *season_end_closes*,
+    *drivers_returned*, *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*,
+    *drivers_deleted*), the hook each driver deleted calls (*profiles_deleted*) and the queue's
+    clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1494,12 +1522,16 @@ def season_cancel_change(
                 "division_name": division_name,
                 "season_id": season_id,
             }
+            by_notices = await _notices_planned_by_the_modules(
+                cancellation_notices, db, SCOPE_SEASON, target
+            )
             planned.append(PlannedStep(NOTIFY_CHECKIN, target))
             rounds = called_off.get(division_id, [])
             planned += after.with_division.get(division_id, ())
             planned += [
                 PlannedStep(NOTIFY_FORECAST, target),
                 PlannedStep(NOTIFY_RESULTS, target),
+                *by_notices,
                 PlannedStep(POST_CALENDAR, {**target, "round_ids": rounds, "only_if_posted": True}),
             ]
         # The roles are taken after the notices: the check-in notice mentions the division role.

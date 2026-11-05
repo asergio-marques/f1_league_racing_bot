@@ -535,9 +535,6 @@ async def test_a_round_ending_cancelled_posts_the_round_cancelled_notices_in_che
     assert not checkin.kwargs.get("silent")
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the notices are not yet planned through the modules' hook"
-)
 async def test_a_round_ending_cancelled_hands_its_division_to_the_notices_hook(tmp_path):
     """Round 3 ends cancelled when the admin types CANCELLED for its race. Inside the save that
     ends it, on that save's own connection, the hook the modules' notices are planned through is

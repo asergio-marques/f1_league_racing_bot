@@ -949,9 +949,6 @@ async def test_each_enabled_module_says_its_piece_in_its_own_channel_as_a_job_of
     assert sent == told
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the notices are not yet planned through the modules' hook"
-)
 async def test_the_save_hands_the_round_s_division_to_the_notices_hook(tmp_path):
     """Round 3 (Silverstone) in Pro is cancelled. Inside the save, on the save's own connection,
     the hook the modules' notices are planned through is called once, handed the round scope and

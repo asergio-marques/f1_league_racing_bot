@@ -58,6 +58,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.cancellation import SCOPE_ROUND
 from leaguebot.core.models.change import (
     ChangeOrigin,
     FollowOn,
@@ -87,6 +88,7 @@ from leaguebot.core.services.cancellation_changes import (
 from leaguebot.core.services.cancellation_notice_service import failure_log_lines
 from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
 from leaguebot.core.services.season_service import set_round_status_on
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.results.services import review_posting
 from leaguebot.results.services.review_posting import (
@@ -568,7 +570,7 @@ async def _submission_standing(ctx: CheckContext) -> Verdict:
 
 def submission_all_cancelled_change(
     *, seasons: "SeasonService", record: dict[str, Step], notices: dict[str, Step],
-    now: Callable[[], datetime],
+    cancellation_notices: AwaitedHook, now: Callable[[], datetime],
 ) -> ChangeType:
     """The `results.submission.all_cancelled` change type, for the builder to register, on the
     league lane.
@@ -578,8 +580,9 @@ def submission_all_cancelled_change(
     running order. A resubmission's adds ``resubmission`` and ``old_tables``, the ids of the
     earlier results tables the new sessions could not carry. *seasons* posts the calendar, *record*
     holds the job core builds that reads the round's check-in, *notices* the jobs core builds that
-    tell the round's cancellation, and *now* is the queue's clock, read when the round's ending is
-    audited.
+    tell the round's cancellation, *cancellation_notices* is the hook each module's own notice is
+    planned through, called inside the save on its connection, and *now* is the queue's clock, read
+    when the round's ending is audited.
 
     Its first job, ``end_round`` (a save, **never to be discarded**: without it the round would
     never finish and its season could never be completed), ends the round CANCELLED through core's
@@ -665,6 +668,11 @@ def submission_all_cancelled_change(
             await review_posting.plan_posts(db, round_id, label="", later_rounds=True)
             if held else []
         )
+        by_notices = [
+            step
+            for planned in await cancellation_notices.call(db, SCOPE_ROUND, target)
+            for step in planned.steps
+        ]
         return StepResult(
             result={"ended": True, "previous": previous, **target},
             then=(
@@ -673,6 +681,7 @@ def submission_all_cancelled_change(
                 *deletions,
                 *reposts,
                 *(PlannedStep(name, target) for name in notices),
+                *by_notices,
                 PlannedStep(POST_CALENDAR, {**target, "round_ids": [round_id], "only_if_posted": True}),
             ),
             follow_ons=(FollowOn(WIND_DOWN, {}, f"Winding the season down after {ctx.what}"),),

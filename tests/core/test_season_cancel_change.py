@@ -1011,9 +1011,6 @@ async def test_the_jobs_run_in_order(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the notices are not yet planned through the modules' hook"
-)
 async def test_the_save_hands_each_running_division_to_the_notices_hook(tmp_path):
     """The season is cancelled while Pro and Am are both still running. Inside the save, on the
     save's own connection, the hook the modules' notices are planned through is called once for
