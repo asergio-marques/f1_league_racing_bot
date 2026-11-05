@@ -411,13 +411,13 @@ async def refresh_before_render(
 
     The gate for the pre-render trigger, in one place: both the posting path and the preview
     path call this rather than each deciding for itself whether the feature is on. It is
-    handed the database's path rather than the bot (#283): it reads only the database, through
-    `refresh_portraits`, and every caller has already read and resolved *config* before it
-    draws.
+    handed the database's path rather than the bot: it reads only the database, through
+    `refresh_portraits` and, where *config* is omitted, its own read of `image_config`.
 
     *config* and *directory* are accepted because the posting path has already read and
-    resolved both, and resolving twice per render would be waste. *config* missing reads as
-    off, the same answer a configuration object predating the feature gives.
+    resolved both, and resolving twice per render would be waste; either may be omitted and
+    is then worked out here. *config* missing reads as off, the same answer a configuration
+    object predating the feature gives.
 
     Passing ``directory=None`` is **not** the same as omitting it. None means the caller
     resolved the driver directory and it was rejected, and the gate shuts: obtaining
@@ -436,6 +436,11 @@ async def refresh_before_render(
     Returns the number of portraits written, and never raises.
     """
     try:
+        if config is None:
+            from leaguebot.image.services.image_config_service import read_config_on
+
+            async with get_connection(db_path) as db:
+                config = await read_config_on(db)
         # `getattr` rather than attribute access: a configuration object predating migration
         # 047 carries neither field. Absent reads as off, which is the same answer the
         # defaults give.
