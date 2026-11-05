@@ -265,3 +265,34 @@ async def test_a_take_down_discord_refuses_raises_keeping_the_audit_and_the_ids(
         str(CALL_MSG), str(LAST_MSG), str(DIST_MSG)
     ]
     assert caught.value.__cause__ is refusal
+
+
+# ── The record a round's cancellation writes, read for a league's round ──
+
+#: Why a test of attendance's own check-in record fails until the record moves out of core.
+_NOT_YET_ATTENDANCE_S = "#283: the check-in record is still core's, read in core's notice service"
+
+#: Round 3's check-in in Pro, as `/round cancel` writes it beneath its line: Lewis accepted, and
+#: Max gave no answer.
+CHECKIN_AUDIT = (
+    "\n  check-in, Pro, Round 3 (Silverstone):"
+    "\n    accepted: <@101>"
+    "\n    tentative: none"
+    "\n    declined: none"
+    "\n    no answer: <@102>"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_ATTENDANCE_S)
+async def test_checkin_record_gives_what_round_cancel_writes(tmp_path):
+    """Round 3's check-in recorded Lewis as accepted and Max as giving no answer. Attendance's
+    `checkin_record`, read for Pro's round 3, gives the record `/round cancel` writes beneath its
+    line, which a round ending with every session not held writes too (attendance :130)."""
+    from leaguebot.attendance.services.check_in_record import checkin_record
+    from tests.support.season_league import PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, attendance=True)
+
+    record = await checkin_record(league.db_path, NS(id=PRO, name="Pro"), round_id(PRO, 3))
+
+    assert record == CHECKIN_AUDIT

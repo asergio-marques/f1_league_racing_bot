@@ -62,7 +62,9 @@ from tests.support.season_league import (
     notices_handed,
     ongoing_league,
     open_submission,
+    RENAMED_JOB,
     removed_jobs,
+    rename_module_job,
     reply,
     round_id,
     seed_season_end,
@@ -101,6 +103,16 @@ CALENDAR_DISCARDED = (
 ALL_JOBS = ["unarm", "apply", "notify_checkin", "take_down_call", "notify_forecast",
             "notify_results", "post_calendar", "delete_replaced", "close"]
 WIND_DOWN = "season.wind_down"
+#: Why a job renamed by the test goes unnamed in a cancellation's outcome until core stops naming
+#: the modules' jobs.
+_CORE_NAMES_THE_JOB = (
+    "#283: core reads the take-down and the submission channel's deletion by their names"
+)
+#: The case of a job discarded under a name of the test's own (`rename_module_job`).
+_RENAMED = pytest.param(
+    "discarded under another name",
+    marks=pytest.mark.xfail(strict=True, reason=_CORE_NAMES_THE_JOB),
+)
 #: Every channel a cancellation in Pro posts in: its check-in, forecast, results and calendar.
 _PRO_POSTS = (PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar)
 
@@ -394,16 +406,32 @@ async def test_a_notice_channel_deleted_stops_the_queue_and_goes_through_once_it
     assert "not notified" not in _success_lines(league)[0]
 
 
-@pytest.mark.parametrize("cleared", ["retried", "discarded"])
+@pytest.mark.parametrize("cleared", ["retried", "discarded", _RENAMED])
 async def test_a_call_message_discord_will_not_delete_stops_the_queue_keeping_the_call_s_record(
-    tmp_path, cleared,
+    tmp_path, monkeypatch, cleared,
 ):
+    """Attendance on, and Discord refuses to delete round 3's check-in call (message 7002) as the
+    cancellation takes it down: the queue stops at the take-down, the call's record kept.
+    Retried once Discord allows it, the call comes down and nothing is named; discarded, the
+    reply's Not notified section and the success line name the message to delete by hand. Either
+    way the success line carries round 3's check-in. Discarded under a name of the test's own,
+    which core does not know, it is named, and the check-in written, in the same words: core
+    reads them from the job's own result, never by its name."""
+    job = "take_down_call"
+    if cleared == "discarded under another name":
+        from leaguebot.attendance.services import check_in_changes
+
+        rename_module_job(
+            monkeypatch, steps=(check_in_changes, "take_down_steps"),
+            planner=(check_in_changes, "take_down_called_off_on"), old=job,
+        )
+        job = RENAMED_JOB
     league = await ongoing_league(tmp_path, attendance=True)
     league.undeletable.add(CALL_MESSAGES[1])
     interaction = await _asked(league)
 
     await run_queue(league.bot)
-    assert await _stopped_at(league) == "take_down_call"
+    assert await _stopped_at(league) == job
     assert len(await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3)) == 1
 
     if cleared == "retried":
@@ -1069,19 +1097,6 @@ async def test_the_check_in_is_written_beneath_the_success_line(tmp_path):
     assert entry == SUCCESS + "\n  division: Pro\n  round: 3" + CHECKIN_LOGGED
 
 
-async def test_checkin_record_gives_what_round_cancel_writes(tmp_path):
-    """Round 3's check-in recorded Lewis as accepted and Max as giving no answer. Core's public
-    `checkin_record`, read for Pro's round 3, gives the record `/round cancel` writes beneath its
-    line, which a round ending with every session not held writes too (attendance :130)."""
-    from leaguebot.core.services.cancellation_notice_service import checkin_record
-
-    league = await ongoing_league(tmp_path, attendance=True)
-
-    record = await checkin_record(league.db_path, SimpleNamespace(id=PRO, name="Pro"), R3)
-
-    assert record == CHECKIN_AUDIT
-
-
 async def test_a_calendar_never_posted_is_left_alone(tmp_path):
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE divisions SET calendar_message_id = NULL WHERE id = ?", PRO)
@@ -1454,14 +1469,25 @@ async def test_a_round_whose_submission_has_accepted_a_session_is_refused(
     assert not _channel_deleted(league)
 
 
-@pytest.mark.parametrize("cleared", ["retried", "discarded"])
+@pytest.mark.parametrize("cleared", ["retried", "discarded", _RENAMED])
 async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
-    tmp_path, cleared,
+    tmp_path, monkeypatch, cleared,
 ):
     """Round 3's open, empty submission is closed with the round, but Discord refuses to delete
     its channel: the queue stops at that job, the round already cancelled. Retried once Discord
     allows it, the channel is deleted and nothing is named; discarded, the reply's Not notified
-    section and the success line name the channel to delete by hand."""
+    section and the success line name the channel to delete by hand. Discarded under a name of
+    the test's own, which core does not know, it is named in the same words: core reads them from
+    the job itself, never by its name."""
+    job = "delete_channel"
+    if cleared == "discarded under another name":
+        from leaguebot.results.services import result_submission_service, review_posting
+
+        rename_module_job(
+            monkeypatch, steps=(review_posting, "cancellation_steps"),
+            planner=(result_submission_service, "close_called_off_on"), old=job,
+        )
+        job = RENAMED_JOB
     league = await ongoing_league(tmp_path)
     await _empty_submission(league)
     league.channel(SUBMISSION_CHANNEL).delete_fails = http_error(
@@ -1470,7 +1496,7 @@ async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_
     interaction = await _asked(league)
 
     await run_queue(league.bot)
-    assert await _stopped_at(league) == "delete_channel"
+    assert await _stopped_at(league) == job
     assert await _status(league) == "CANCELLED"
     assert await _submission_closed(league) == 1
 

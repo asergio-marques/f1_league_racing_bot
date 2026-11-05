@@ -49,6 +49,7 @@ from tests.support.change_queue import (
 from tests.support.season_league import (
     ADMIN_ID,
     AM,
+    RENAMED_JOB,
     CALL_MESSAGES,
     DIVISIONS,
     PRO,
@@ -61,6 +62,7 @@ from tests.support.season_league import (
     notices_handed,
     ongoing_league,
     open_submission,
+    rename_module_job,
     reply,
     round_id,
 )
@@ -607,15 +609,44 @@ async def test_a_discarded_notice_is_named_in_the_round_s_log_line(tmp_path):
 #: The heading of round 3's check-in record in the log channel.
 RECORD_HEADING = "\n  check-in, Pro, Round 3 (Silverstone):"
 
+#: The job that reads round 3's check-in, as attendance names it.
+READ_CHECK_IN = "read_check_in"
+#: Why the job reading the check-in, renamed by the test, goes unwritten until it is attendance's
+#: own, planned through the hook a round ending not held calls, and read without its name.
+_NOT_YET_ATTENDANCE_S = (
+    "#283: the check-in record's job is core's, handed to results by name, not attendance's"
+)
+#: The case of attendance's job reading the check-in run under a name of the test's own.
+_RENAMED = pytest.param(True, id="under another name",
+                        marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_ATTENDANCE_S))
 
-async def test_a_round_ending_cancelled_writes_its_check_in_record_beneath_its_line(tmp_path):
+
+def _read_check_in_renamed(monkeypatch: Any) -> str:
+    """Attendance's job reading a round's check-in runs under a name of the test's own
+    (`rename_module_job`), which neither results nor core knows; give that name."""
+    check_in_record = importlib.import_module("leaguebot.attendance.services.check_in_record")
+    rename_module_job(
+        monkeypatch, steps=(check_in_record, "read_check_in_steps"),
+        planner=(check_in_record, "read_check_in_on"), old=READ_CHECK_IN,
+    )
+    return RENAMED_JOB
+
+
+@pytest.mark.parametrize("renamed", [pytest.param(False, id="as attendance names it"), _RENAMED])
+async def test_a_round_ending_cancelled_writes_its_check_in_record_beneath_its_line(
+    tmp_path, monkeypatch, renamed,
+):
     """Attendance is on. Round 3's check-in recorded Lewis as accepted and Max as giving no
     answer, and the reserves were distributed, Lewis sent to Scuderia Ferrari. Round 3 ends
     cancelled when the admin types CANCELLED for its race: beneath its `ROUND_CANCELLED` line,
     after the reason, the log channel shows the round's check-in, every driver grouped by their
-    answer and Lewis to Scuderia Ferrari, as `/round cancel` writes it (attendance :130-131)."""
+    answer and Lewis to Scuderia Ferrari, as `/round cancel` writes it (attendance :130-131). It
+    does so word for word with attendance's job reading it run under a name of the test's own:
+    the line reads the record from the job's own result, never by its name."""
     from tests.support.season_league import FERRARI, LEWIS, profile_id
 
+    if renamed:
+        _read_check_in_renamed(monkeypatch)
     league = await _league(tmp_path, attendance=True)
     await league.write(
         "UPDATE driver_round_attendance SET assigned_team_id = ? "
@@ -644,11 +675,14 @@ CHECK_IN_DISCARDED = "the check-in record of round 3 in **Pro** was not written"
 
 
 def _check_in_read_failing() -> ExitStack:
-    """Core's `checkin_record` raises, as a fault of the database would: in its own module, and
-    in each module that holds its own reference to it."""
+    """The check-in record's `checkin_record` raises, as a fault of the database would: in
+    attendance's own module, and in each module that holds its own reference to it, core's among
+    them for as long as the record is read there."""
     stack = ExitStack()
     failing = AsyncMock(side_effect=RuntimeError("disk I/O error"))
-    for module_name in ("leaguebot.core.services.cancellation_notice_service",
+    for module_name in ("leaguebot.attendance.services.check_in_record",
+                        "leaguebot.attendance.services.check_in_changes",
+                        "leaguebot.core.services.cancellation_notice_service",
                         "leaguebot.core.services.cancellation_changes",
                         "leaguebot.results.services.submission_changes"):
         try:
@@ -660,19 +694,25 @@ def _check_in_read_failing() -> ExitStack:
     return stack
 
 
-async def test_a_discarded_check_in_record_is_named_and_the_round_still_ends_cancelled(tmp_path):
+@pytest.mark.parametrize("renamed", [pytest.param(False, id="as attendance names it"), _RENAMED])
+async def test_a_discarded_check_in_record_is_named_and_the_round_still_ends_cancelled(
+    tmp_path, monkeypatch, renamed,
+):
     """Attendance is on and round 3's check-in call was posted. Round 3 ends cancelled when the
     admin types CANCELLED for its race, but reading its check-in fails on a fault of the
     database, and the queue stops at `read_check_in`. A league admin discards it. Round 3 is
     CANCELLED, the queue runs on with nothing left stopped, and the round's one
     `ROUND_CANCELLED` line carries no check-in record and names the record, under what was not
-    done, as not written (attendance :130; owner, check 2, "Write the record")."""
+    done, as not written (attendance :130; owner, check 2, "Write the record"). It does so word
+    for word with the job run under a name of the test's own: the line takes the job's own words
+    for its discard, never naming it."""
+    job = _read_check_in_renamed(monkeypatch) if renamed else READ_CHECK_IN
     league = await _league(tmp_path, attendance=True)
 
     with _check_in_read_failing():
         await _cancel_the_race(league)
         await run_queue(league.bot)
-        assert await _stopped_at(league) == "read_check_in"
+        assert await _stopped_at(league) == job
         await discard_job(league.bot)
 
     assert await stopped_job(league.db_path) is None

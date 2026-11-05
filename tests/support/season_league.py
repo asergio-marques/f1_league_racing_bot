@@ -1468,6 +1468,51 @@ def refuses_pictures(content: Any, kwargs: dict[str, Any]) -> bool:
     return bool(kwargs.get("file") or kwargs.get("files"))
 
 
+#: The name `rename_module_job` gives a module's job: one no other module, and not core, knows.
+RENAMED_JOB = "a_module_job"
+
+
+def rename_module_job(
+    monkeypatch: Any, *, steps: tuple[Any, str], planner: tuple[Any, str], old: str,
+) -> None:
+    """Have a module's job *old* run under `RENAMED_JOB`, a name nothing else knows, so that a
+    test can show the change carrying it writes what the job hands back without naming the job.
+
+    *steps* is the module and the name of its function that defines the job's step: it hands the
+    step under its own name, as before, and also under the new one. *planner* is the module and
+    the name of its subscriber that plans the job inside a save: what it hands back (a
+    `CalledOffSteps`, or a tuple of `PlannedStep`) plans the job under the new name, its payload
+    unchanged. Patched before the league is built, since the builder signs both up as it builds."""
+    import dataclasses
+
+    from leaguebot.core.models.cancellation import CalledOffSteps
+
+    steps_module, steps_name = steps
+    planner_module, planner_name = planner
+    defined = getattr(steps_module, steps_name)
+    planned = getattr(planner_module, planner_name)
+
+    def renamed(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        found = defined(*args, **kwargs)
+        return {**found, RENAMED_JOB: dataclasses.replace(found[old], name=RENAMED_JOB)}
+
+    def rename(step: Any) -> Any:
+        return dataclasses.replace(step, name=RENAMED_JOB) if step.name == old else step
+
+    async def planning(*args: Any, **kwargs: Any) -> Any:
+        handed = await planned(*args, **kwargs)
+        if isinstance(handed, CalledOffSteps):
+            return CalledOffSteps(
+                tuple(rename(step) for step in handed.first),
+                {division_id: tuple(rename(step) for step in each)
+                 for division_id, each in handed.with_division.items()},
+            )
+        return tuple(rename(step) for step in handed)
+
+    monkeypatch.setattr(steps_module, steps_name, renamed)
+    monkeypatch.setattr(planner_module, planner_name, planning)
+
+
 def notices_handed(league: SeasonLeague) -> list[tuple[str, dict[str, Any], bool]]:
     """Sign a subscriber of the test's own up to the hook the modules' cancellation notices are
     planned through (`cancellation_notices`), after the modules', planning nothing. The list it
