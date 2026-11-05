@@ -99,10 +99,13 @@ def _remove_jobs(scheduler: "SchedulerService") -> After:
         await scheduler.cancel_all_weather()
         return StepResult()
 
-    return After(
-        step=Step(REMOVE_JOBS, StepKind.ACT, run),
-        fault_reply=lambda _payload, reply: f"{reply}\n{_JOBS_NOT_REMOVED}",
-    )
+    def fault_reply(_payload: dict[str, Any], reply: str) -> str:
+        # The base reply claims every job was cancelled; a fault here means it was not, so that
+        # claim is dropped rather than left standing beside the warning.
+        disabled = reply.split(".", 1)[0] + "."
+        return f"{disabled}\n{_JOBS_NOT_REMOVED}"
+
+    return After(step=Step(REMOVE_JOBS, StepKind.ACT, run), fault_reply=fault_reply)
 
 
 def module_off_weather(*, modules: "ModuleService", scheduler: "SchedulerService") -> Setting:

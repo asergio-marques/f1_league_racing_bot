@@ -13,7 +13,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import ChangeOrigin, module_off
+from leaguebot.core.models.change import ChangeOrigin, module_off, module_on
 from leaguebot.core.models.module_dependencies import needs, taken_down_with
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -333,85 +333,36 @@ class ModuleCog(commands.Cog):
             return await _refused(FROZEN_FOR_COMPLETION_REFUSAL)
         return False
 
-    # ── Weather enable (T011) ──────────────────────────────────────────
+    # ── Weather enable ──────────────────────────────────────────────────
 
     async def _enable_weather(
         self, interaction: discord.Interaction
     ) -> None:
-        # 1. Guard already-enabled
-        if await self.bot.module_service.is_weather_enabled():
-            await refuse(
-                interaction, "⚠️ Weather module is already enabled.", what=describe(interaction)
-            )
-            return
-
         # A season whose placements are confirmed refuses the enable before this handler is
         # reached (issue #220), so there is never a running season to catch up on: its
         # forecast channels are checked, and its phases armed, when placements are confirmed.
-
-        await interaction.response.defer(ephemeral=True)
-
-        # 3. Atomically set flag + audit. The two are one write, so a fault leaves the
-        # module off, and the command says so itself (see `report_failure`).
-        now = datetime.now(timezone.utc).isoformat()
-        try:
-            async with get_connection(self.bot.db_path) as db:
-                await db.execute(
-                    "UPDATE server_configs SET weather_module_enabled = 1",
-                )
-                await db.execute(
-                    "INSERT INTO audit_entries "
-                    "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                    "VALUES (?, ?, NULL, 'MODULE_ENABLE', '', ?, ?)",
-                    (interaction.user.id, str(interaction.user),
-                     json.dumps({"module": "weather"}), now),
-                )
-                await db.commit()
-        except Exception as exc:  # noqa: BLE001 — reported here, to say the module is still off
-            await report_failure(
-                interaction, exc, what=describe(interaction), outcome=_still_off("weather")
-            )
-            return
-
-        # 5. Post log channel confirmation
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable weather | Success",
+        # The switch is weather's own change on the queue (#283, S11b): this asks for it and
+        # does nothing else.
+        await self.bot.change_queue.ask(
+            module_on("weather"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
-        await interaction.followup.send("✅ Weather module enabled.", ephemeral=True)
 
-    # ── Weather disable (T012) ─────────────────────────────────────────
+    # ── Weather disable ─────────────────────────────────────────────────
 
     async def _disable_weather(
         self, interaction: discord.Interaction
     ) -> None:
-        if not await self.bot.module_service.is_weather_enabled():
-            await refuse(
-                interaction, "⚠️ Weather module is already disabled.", what=describe(interaction)
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        await self.bot.scheduler_service.cancel_all_weather()
-        await self.bot.module_service.set_weather_enabled(False)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'MODULE_DISABLE', ?, '', ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"module": "weather"}), now),
-            )
-            await db.commit()
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable weather | Success",
-        )
-        await interaction.followup.send(
-            "✅ Weather module disabled. All scheduled weather jobs have been cancelled.",
-            ephemeral=True,
+        # The switch-off is weather's own change on the queue (#283, S11b): it lowers the flag
+        # and writes its audit entry in one save, then removes the season's weather jobs in a
+        # step of its own. This asks for it and does nothing else.
+        await self.bot.change_queue.ask(
+            module_off("weather"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ── Results & Standings enable ─────────────────────────────────────

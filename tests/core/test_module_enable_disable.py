@@ -155,8 +155,6 @@ def _season():
 
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
-#: Why each weather test that runs through the queue fails before the switch moves onto it.
-ON_THE_QUEUE = "#283: /module enable|disable weather is not yet weather's change on the queue"
 
 
 async def _weather_league(tmp_path, *, on: bool):
@@ -175,7 +173,6 @@ def _asked(league, verb: str):
     return interaction(league.bot, f"module {verb}")
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_weather_is_enabled(tmp_path):
     """Between seasons, with no season running: there are no divisions to check, and a league
     setting the bot up before its first season must not be blocked. The member is acknowledged
@@ -227,7 +224,6 @@ async def test_enabling_weather_is_audited(tmp_path):
     assert json.loads(entry["new_value"])["module"] == "weather"
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_disabling_weather_cancels_every_scheduled_job(tmp_path):
     """Leaving them armed would post forecasts for a switched-off module. The switch-off lowers
     the flag and writes its audit entry in one save, and only then removes the season's weather
@@ -282,11 +278,6 @@ async def test_disabling_weather_is_audited(tmp_path):
     assert json.loads(entry["old_value"])["module"] == "weather"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: a fault removing the weather jobs stops /module disable weather before the "
-    "module is switched off",
-)
 async def test_a_weather_disable_whose_jobs_cannot_be_removed_leaves_weather_off_and_says_so(
     tmp_path,
 ):
