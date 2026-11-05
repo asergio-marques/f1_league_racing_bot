@@ -16,7 +16,10 @@ what they did.
 With the window closed the change has the one job, `switch_off`. Which of the two the change has is
 decided when it is asked, from the window standing then (`fill`), and judged again as it comes up
 to run: a window opened or closed since, or reopened on another button, refuses the switch-off and
-nothing is changed, since the jobs the change planned would no longer be the ones that fit.
+nothing is changed, since the jobs the change planned would no longer be the ones that fit. The
+season's stage is read again too: the signup module is fixed from a season's configuration being
+confirmed to its end, so a switch-off asked before that and run after it is refused, in the words
+the ask already gives (`configuration_fixed_refusal`).
 
 The permission overwrites the bot applied to the signup channel are cleared by a job of this
 change, `clear_overwrites`, planned by the switch-off once it has turned the module off. They go
@@ -57,7 +60,11 @@ from leaguebot.core.services.change_queue import (
     StepContext,
 )
 from leaguebot.core.services.hub_service import HUB_REFRESH
-from leaguebot.core.services.season_lifecycle_service import advance_on_window_close_on
+from leaguebot.core.services.season_lifecycle_service import (
+    advance_on_window_close_on,
+    configuration_fixed,
+    configuration_fixed_refusal,
+)
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.signup.services.closing_steps import POST_CLOSED, closing_steps, window_close_steps
 from leaguebot.signup.services.window_changes import (
@@ -153,6 +160,9 @@ def signup_off_change(
     async def check(ctx: CheckContext) -> Verdict:
         if not await modules.is_signup_enabled():
             return Verdict.refuse(ALREADY_DISABLED)
+        season_number = await configuration_fixed(ctx.db_path)
+        if season_number is not None:
+            return Verdict.refuse(configuration_fixed_refusal(season_number, "disable"))
         cfg = await signup_module_service().get_config()
         window = cfg.signup_button_message_id if cfg is not None and cfg.signups_open else None
         if window != ctx.payload["window"]:
