@@ -1704,9 +1704,10 @@ async def test_only_wired_aspects_read_their_toggle(
     """A toggle may be read only by the image module, or by an aspect actually wired up.
 
     035 delivered the configuration surface with every toggle inert, and this assertion
-    guarded that. 037 wires the **calendar**: `calendar_post_service` reads the toggle to
-    decide whether the calendar is conveyed as a graphic or in the traditional textual
-    manner, which is the whole point of the aspect.
+    guarded that. 037 wires the **calendar**: the image module's drawing
+    (`image/services/image_drawing.py`) reads the toggle to tell core whether the calendar
+    is conveyed as a graphic or in the traditional textual manner, which is the whole point
+    of the aspect.
 
     The assertion therefore narrows rather than disappears — it still catches a source
     module branching on a toggle whose aspect nobody has built.
@@ -1725,8 +1726,8 @@ async def test_only_wired_aspects_read_their_toggle(
     #: branch on a toggle whose behaviour was never specified.
     #:
     #: `season_cog.py` and `calendar_post_service.py` are deliberately absent: 037 wired
-    #: the calendar, and reading the toggle to choose between the graphic and the textual
-    #: calendar is precisely what that wiring is.
+    #: the calendar, whose posting chooses between the graphic and the textual calendar on
+    #: the toggle, read for it by the image module's drawing.
     unwired_posting_paths = [
         "results_post_service.py",
         "rsvp_service.py",

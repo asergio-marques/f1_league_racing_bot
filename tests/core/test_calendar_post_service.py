@@ -1,8 +1,8 @@
 """Unit tests for calendar posting — T025 / T032.
 
 Covers:
-  1. The enabled/disabled branch: a graphic where the module and aspect are both on,
-     the traditional textual posting otherwise.
+  1. The text where the handed drawing says the league does not draw its calendar, and the
+     picture where it draws one.
   2. Byte-identical textual output when the module is off (SC-006).
   3. The heading both forms share.
   4. Fallback to text on a fatal render for an *uncommanded* posting; rejection with
