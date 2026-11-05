@@ -627,10 +627,10 @@ def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
     return failures
 
 
-def checkin_audit(ctx: OutcomeContext) -> str:
+def _audit_lines(ctx: OutcomeContext) -> str:
     """The check-in of each round called off, read before its call came down and kept on the
-    job whether it went through or was discarded: every job's own result carrying `audit`
-    (attendance's take-down, `take_down_call`), read without naming the job."""
+    job whether it went through or was discarded: every job's own result carrying `audit`,
+    read without naming the job that set it."""
     return "".join(
         str(view.result["audit"])
         for view in ctx.steps
@@ -910,7 +910,7 @@ def round_cancel_change(
             f"{ctx.named} | /round cancel | Success\n"
             f"  division: {payload['division_name']}\n"
             f"  round: {_saved_number(ctx)}"
-            + checkin_audit(ctx)
+            + _audit_lines(ctx)
             + notices.failure_log_lines(not_notified(ctx))
         )
         return StepResult(result={"closed": True}, lines=(line,))
@@ -1160,7 +1160,7 @@ def division_cancel_change(
         line = (
             f"{ctx.named} | /division cancel | Success\n"
             f"  division: {ctx.payload['division_name']}"
-            + checkin_audit(ctx)
+            + _audit_lines(ctx)
             + notices.failure_log_lines(not_notified(ctx))
         )
         return StepResult(result={"closed": True}, lines=(line,))
@@ -1489,7 +1489,7 @@ def season_cancel_change(
             )
         line = (
             f"{ctx.named} | /season cancel | Success"
-            + checkin_audit(ctx)
+            + _audit_lines(ctx)
             + notices.failure_log_lines(not_notified(ctx))
             + "".join(f"\n  not done: {each}" for each in shared_not_done(ctx, steps))
         )
