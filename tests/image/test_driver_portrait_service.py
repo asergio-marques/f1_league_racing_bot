@@ -502,6 +502,13 @@ async def test_the_budget_returns_without_raising_and_writes_no_row(db_path, dir
 # ── The pre-render gate ───────────────────────────────────────────────────
 
 
+#: Why a test of the refresh before a render fails until the build: it reads only the
+#: database, and is handed its path (#283).
+HANDED_THE_DATABASE = (
+    "#283: refresh_before_render does not yet take the database path in place of the bot"
+)
+
+
 def _config(**overrides):
     values = {
         "use_pfp": True,
@@ -523,15 +530,14 @@ async def _gate(monkeypatch, config, directory, members=None, *, obtain_missing=
         return len(list(members))
 
     monkeypatch.setattr(m, "refresh_portraits", _fake)
-    bot = MagicMock()
-    bot.db_path = ":memory:"
     written = await m.refresh_before_render(
-        bot, members if members is not None else [_member(1)],
+        ":memory:", members if members is not None else [_member(1)],
         config=config, directory=directory, obtain_missing=obtain_missing,
     )
     return written, calls
 
 
+@pytest.mark.xfail(strict=True, reason=HANDED_THE_DATABASE)
 async def test_the_gate_refreshes_when_the_league_asked_for_it(monkeypatch, directory):
     written, calls = await _gate(monkeypatch, _config(), directory)
 
@@ -578,11 +584,8 @@ async def test_a_failure_beneath_the_gate_never_reaches_the_render(monkeypatch, 
     monkeypatch.setattr(
         m, "refresh_portraits", AsyncMock(side_effect=OSError("disk gone"))
     )
-    bot = MagicMock()
-    bot.db_path = ":memory:"
-
     written = await m.refresh_before_render(
-        bot,
+        ":memory:",
         [_member(1)],
         config=_config(pfp_prerender=False, pfp_daily=True),
         directory=directory,
@@ -1040,17 +1043,16 @@ def test_a_wrapped_portrait_survives_the_whole_fill_and_render_path(tmp_path):
 # is left to the trigger (image specification, decided 2026-09-23).
 
 
+@pytest.mark.xfail(strict=True, reason=HANDED_THE_DATABASE)
 async def test_the_review_obtains_a_missing_portrait_where_only_daily_updates_are_asked_for(
     db_path, directory
 ):
     from leaguebot.image.services import driver_portrait_service as m
 
-    bot = MagicMock()
-    bot.db_path = db_path
     member = _member(7, "abc")
 
     written = await m.refresh_before_render(
-        bot,
+        db_path,
         [member],
         config=_config(pfp_prerender=False, pfp_daily=True),
         directory=directory,
@@ -1063,6 +1065,7 @@ async def test_the_review_obtains_a_missing_portrait_where_only_daily_updates_ar
     assert await _rows(db_path) == {"7": (portrait_key("abc", 1.0), NOW.isoformat())}
 
 
+@pytest.mark.xfail(strict=True, reason=HANDED_THE_DATABASE)
 async def test_the_review_does_not_obtain_again_a_portrait_the_driver_already_has(
     monkeypatch, directory
 ):
@@ -1098,6 +1101,7 @@ async def test_the_review_obtains_nothing_where_every_driver_has_a_portrait(
     assert (written, calls) == (0, [])
 
 
+@pytest.mark.xfail(strict=True, reason=HANDED_THE_DATABASE)
 async def test_where_every_render_updates_the_review_updates_every_portrait(
     monkeypatch, directory
 ):

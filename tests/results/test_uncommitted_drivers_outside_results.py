@@ -57,9 +57,17 @@ async def test_the_opening_standings_leave_out_an_uncommitted_driver(db_path):
     assert sorted(s.driver_user_id for s in snapshots) == [1001, 1003]
 
 
+#: Why the lineup's drawing tests fail until the build: it reads only the database, and is
+#: handed its path (#283).
+BUILT_FROM_THE_DATABASE = (
+    "#283: the lineup's build_drawing does not yet take the database path in place of the bot"
+)
+
+
 # ── Lineups ────────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=BUILT_FROM_THE_DATABASE)
 async def test_the_lineup_graphic_does_not_draw_an_uncommitted_driver(db_path):
     from leaguebot.image.services.image_lineup_post import build_drawing
     from unittest.mock import patch
@@ -70,9 +78,8 @@ async def test_the_lineup_graphic_does_not_draw_an_uncommitted_driver(db_path):
         captured.update(kwargs)
         return "drawing"
 
-    bot = SimpleNamespace(db_path=db_path)
     with patch("leaguebot.image.services.image_lineup_service.resolve_drawing", side_effect=_resolve):
-        await build_drawing(bot, None, DIVISION_ID)
+        await build_drawing(db_path, None, DIVISION_ID)
 
     seated = [
         seat.discord_user_id
@@ -83,6 +90,7 @@ async def test_the_lineup_graphic_does_not_draw_an_uncommitted_driver(db_path):
     assert sorted(seated) == ["1001"]
 
 
+@pytest.mark.xfail(strict=True, reason=BUILT_FROM_THE_DATABASE)
 async def test_the_mid_season_review_draws_the_lineup_as_it_will_stand(db_path):
     """The review of mid-season placements draws what confirming will post, with the new
     drivers in it, so a lineup that will not draw withholds its button (#374). A seat with no
@@ -96,9 +104,8 @@ async def test_the_mid_season_review_draws_the_lineup_as_it_will_stand(db_path):
         captured.update(kwargs)
         return "drawing"
 
-    bot = SimpleNamespace(db_path=db_path)
     with patch("leaguebot.image.services.image_lineup_service.resolve_drawing", side_effect=_resolve):
-        await build_drawing(bot, None, DIVISION_ID, include_uncommitted=True)
+        await build_drawing(db_path, None, DIVISION_ID, include_uncommitted=True)
 
     seated = [
         seat.discord_user_id
@@ -119,7 +126,7 @@ async def test_the_command_render_hands_the_request_down_to_the_drawing(monkeypa
 
     seen = {}
 
-    async def _build(bot, guild, division_id, *, include_uncommitted=False):
+    async def _build(db_path, guild, division_id, *, include_uncommitted=False):
         seen["include_uncommitted"] = include_uncommitted
         raise RuntimeError("drawn far enough")
 
@@ -127,7 +134,7 @@ async def test_the_command_render_hands_the_request_down_to_the_drawing(monkeypa
     monkeypatch.setattr(post, "build_drawing", _build)
 
     outcome = await post.render_for_command(
-        SimpleNamespace(), object(), DIVISION_ID, include_uncommitted=asked
+        SimpleNamespace(db_path="league.db"), object(), DIVISION_ID, include_uncommitted=asked
     )
 
     assert seen == {"include_uncommitted": asked}

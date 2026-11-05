@@ -133,6 +133,13 @@ async def test_the_template_check_leaves_the_loop_answering(monkeypatch):
     assert held.calls == [(proposed, "calendar_template")]
 
 
+#: Why a test of the refresh before a render fails until the build: it is handed the database's
+#: path, not the bot (#283).
+HANDED_THE_DATABASE = (
+    "#283: refresh_before_render does not yet take the database path in place of the bot"
+)
+
+
 def _refreshed(monkeypatch) -> tuple[Held, AsyncMock]:
     """The portrait shape read through a `Held` parse, and the refresh it is handed to."""
     held = answering(0.75)
@@ -142,6 +149,7 @@ def _refreshed(monkeypatch) -> tuple[Held, AsyncMock]:
     return held, refresh
 
 
+@pytest.mark.xfail(strict=True, reason=HANDED_THE_DATABASE)
 async def test_the_portrait_refresh_before_a_render_reads_the_shape_off_the_loop(
     monkeypatch, tmp_path
 ):
@@ -151,7 +159,7 @@ async def test_the_portrait_refresh_before_a_render_reads_the_shape_off_the_loop
     config = SimpleNamespace(use_pfp=True, pfp_prerender=True)
 
     written = await answered_while(held, lambda: driver_portrait_service.refresh_before_render(
-        MagicMock(), [MagicMock()], config=config, directory=tmp_path,
+        str(tmp_path / "league.db"), [MagicMock()], config=config, directory=tmp_path,
     ))
 
     assert written == 3
@@ -247,7 +255,7 @@ def _render_refresh_fails(monkeypatch, held, tmp_path):
     monkeypatch.setattr(driver_portrait_service, "portrait_aspect", held)
     config = SimpleNamespace(use_pfp=True, pfp_prerender=True)
     return lambda: driver_portrait_service.refresh_before_render(
-        MagicMock(), [MagicMock()], config=config, directory=tmp_path,
+        str(tmp_path / "league.db"), [MagicMock()], config=config, directory=tmp_path,
     )
 
 
@@ -269,7 +277,15 @@ FAILING = [
 ]
 
 
-@pytest.mark.parametrize("install,expected", [c[1:] for c in FAILING], ids=[c[0] for c in FAILING])
+#: The entries of FAILING that fail until the build, and why.
+NOT_YET_FAILING = {
+    "refresh-before-render": pytest.mark.xfail(strict=True, reason=HANDED_THE_DATABASE),
+}
+
+
+@pytest.mark.parametrize("install,expected", [
+    pytest.param(*c[1:], id=c[0], marks=NOT_YET_FAILING.get(c[0], ())) for c in FAILING
+])
 async def test_a_fault_in_the_thread_crosses_back_with_nothing_it_parsed(
     monkeypatch, tmp_path, install, expected
 ):
