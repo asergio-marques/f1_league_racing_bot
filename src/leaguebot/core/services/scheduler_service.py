@@ -649,10 +649,11 @@ class SchedulerService:
         switching weather off silently stopped results collection and check-ins for the
         rest of the season while reporting that only weather jobs had been cancelled.
 
-        Disabling the weather module (`ModuleCog._disable_weather`) is the caller. Leaving the
-        ``results`` job in place is deliberate: removing it would destroy the round-arrival
-        transition of a league whose results module is on, which is the defect above by
-        another route.
+        Weather's switch-off is the caller: the ``REMOVE_JOBS`` ``After`` step of
+        ``module_off_weather`` (`weather/services/module_switch_settings.py`), run once the flag's
+        save has gone through. Leaving the ``results`` job in place is deliberate: removing it
+        would destroy the round-arrival transition of a league whose results module is on, which
+        is the defect above by another route.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
