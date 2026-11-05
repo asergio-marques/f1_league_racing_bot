@@ -48,9 +48,11 @@ def test_the_dependency_table_answers_what_a_switch_needs_and_takes_down():
 
 
 @pytest.mark.xfail(strict=True, reason="#283: there is no module_on beside module_off yet")
-@pytest.mark.parametrize("module", OFFERED)
-def test_a_module_is_switched_on_and_off_by_kinds_naming_it(module):
+def test_a_module_is_switched_on_and_off_by_kinds_naming_it():
+    """Every module /module offers is switched on by `module.on:<name>` and off by
+    `module.off:<name>`."""
     from leaguebot.core.models.change import module_on
 
-    assert module_on(module) == f"module.on:{module}"
-    assert module_off(module) == f"module.off:{module}"
+    assert {module: (module_on(module), module_off(module)) for module in OFFERED} == {
+        module: (f"module.on:{module}", f"module.off:{module}") for module in OFFERED
+    }
