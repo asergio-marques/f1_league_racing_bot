@@ -600,10 +600,6 @@ async def test_an_attendance_enable_run_after_results_went_off_is_refused(tmp_pa
     assert _refused_line(NEEDS_RESULTS.removeprefix("❌ ")) in await log_lines(league)
 
 
-#: Why a results switch-off is not yet refused where attendance came on behind it.
-_CASCADE_AT_RUN = (
-    "#283: results' switch-off does not yet read again, as it starts, which modules go with it"
-)
 #: The stage refusal of `/module enable` once a season's placements are confirmed, word for word.
 PLACEMENTS_CONFIRMED = (
     "❌ A module cannot be enabled once the season's placements have been confirmed. Enable it "
@@ -682,7 +678,6 @@ CASCADE_CHANGED = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=_CASCADE_AT_RUN)
 async def test_a_results_switch_off_is_refused_where_attendance_came_on_behind_it(tmp_path):
     """Results on, attendance off, no season. `/module enable attendance` is asked and waits on
     the lane; `/module disable results` is then asked, and with attendance still off it asks the
@@ -705,7 +700,10 @@ async def test_a_results_switch_off_is_refused_where_attendance_came_on_behind_i
     assert await league.bot.module_service.is_attendance_enabled() is True
     assert await league.bot.module_service.is_results_enabled() is True
     assert last_said(disable) == CASCADE_CHANGED
-    refused = f"⛔ `/module disable` refused for {NAMED} — {CASCADE_CHANGED.removeprefix('⛔ ')}"
+    refused = (
+        f"⛔ `/module disable results` refused for {NAMED} — "
+        f"{CASCADE_CHANGED.removeprefix('⛔ ')}"
+    )
     assert refused in await log_lines(league)
 
 

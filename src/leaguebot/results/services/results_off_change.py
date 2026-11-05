@@ -51,6 +51,7 @@ from leaguebot.core.models.change import (
     Verdict,
     module_off,
 )
+from leaguebot.core.models.module_dependencies import taken_down_with
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -88,6 +89,12 @@ _CASCADE_REPLY = (
     "✅ Attendance module disabled with it. Its per-division check-in and attendance channels "
     "have been cleared; its timings, penalties and thresholds are kept."
 )
+#: The refusal where the dependency table would now take a module with results that the league
+#: was not warned of, read again as the change starts.
+CASCADE_CHANGED = (
+    "⛔ The attendance module was switched on since this was asked. Nothing was changed. Run "
+    "`/module disable results` again."
+)
 
 _SWITCH_OFF = "switch_off"
 _TAKE_DOWN = "take_down"
@@ -97,14 +104,17 @@ _CLOSE = "close"
 def results_off_change(
     *,
     attendance_off_on: Callable[[aiosqlite.Connection], Awaitable[bool]],
+    attendance_enabled: Callable[[], Awaitable[bool]],
     rounds_made_final: AwaitedHook,
 ) -> ChangeType:
     """The change that turns Results & Standings off, with attendance where the payload asks.
 
     *attendance_off_on* switches attendance off on the connection it is handed, committing
-    nothing, and says whether attendance was on. *rounds_made_final* is the hook the closing of the
-    rounds waiting on results calls with the rounds it made FINAL. The payload is
-    ``{"cascade_attendance": bool}``.
+    nothing, and says whether attendance was on. *attendance_enabled* says whether attendance is
+    on now, read the same way the cog reads it at the ask (`ModuleService.is_attendance_enabled`,
+    handed rather than read from attendance's own table directly, so this module still imports
+    none of attendance's). *rounds_made_final* is the hook the closing of the rounds waiting on
+    results calls with the rounds it made FINAL. The payload is ``{"cascade_attendance": bool}``.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -115,6 +125,18 @@ def results_off_change(
             return Verdict.refuse(ALREADY_DISABLED)
         if await modules_frozen_for_completion(ctx.db_path):
             return Verdict.refuse(FROZEN_FOR_COMPLETION_REFUSAL)
+        # Whether attendance now goes with results is decided again here as the change starts
+        # (`change_id` set), not at the ask: asked while attendance is off, and run once a
+        # switch-on waiting ahead of it on the lane has turned it on, the league was never warned
+        # that attendance would go with results, which would otherwise leave it on with results
+        # off — the state the dependency table forbids. Refuse rather than carry that out. The
+        # other way round costs the league nothing (`attendance_off_on` on a module already off
+        # does nothing), so it is left to run, as the switch-off's save already allows for. The
+        # ask itself is left to the cog's own reading of the dependency table, as before.
+        if ctx.change_id is not None and not ctx.payload.get("cascade_attendance"):
+            enabled_now = frozenset({"attendance"}) if await attendance_enabled() else frozenset()
+            if "attendance" in taken_down_with("results", enabled_now):
+                return Verdict.refuse(CASCADE_CHANGED)
         return Verdict.go()
 
     async def switch_off(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:

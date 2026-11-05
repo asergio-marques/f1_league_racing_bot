@@ -631,6 +631,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         results_off_change(
             attendance_off_on=bot.attendance_service.switch_off_on,
+            attendance_enabled=bot.module_service.is_attendance_enabled,
             rounds_made_final=bot.rounds_made_final,
         )
     )
