@@ -23,9 +23,9 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.cancellation import SCOPE_DIVISION, SCOPE_ROUND, CancellationNotices
-from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, StepKind, StepResult
+from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
 from leaguebot.core.services.change_queue import Step, StepContext
-from leaguebot.core.services.notice_handler import send_notice
+from leaguebot.core.services.notice_handler import post_cancellation_notice, require_division
 from leaguebot.core.services.season_lifecycle_service import require_guild
 from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.utils.in_a_job import posts_in_a_job
@@ -87,11 +87,6 @@ async def post_notice(
     bot's own and propagates unchanged.
     """
     channel_id = await _rsvp_channel(bot.db_path, division.id)
-    if not channel_id:
-        return "no channel is set"
-    channel = guild.get_channel(int(channel_id)) if guild is not None else None
-    if channel is None:
-        raise StepFailedOnDiscord(f"the channel <#{channel_id}> is no longer on the server")
     role_id = getattr(division, "mention_role_id", None)
     ping = f"<@&{role_id}>\n" if role_id else ""
     mentions = (
@@ -102,13 +97,7 @@ async def post_notice(
     content = ping + attendance_notice(
         scope, division.name, round_number=round_number, track_name=track_name
     )
-    try:
-        await send_notice(channel, content, mentions=mentions)
-    except discord.HTTPException as exc:
-        raise StepFailedOnDiscord(
-            f"the message could not be posted to <#{channel_id}>: {exc}"
-        ) from exc
-    return None
+    return await post_cancellation_notice(guild, channel_id, content, mentions=mentions)
 
 
 async def notices_on(
@@ -139,16 +128,7 @@ def notify_checkin_steps(*, modules: "ModuleService", seasons: SeasonService) ->
     async def notify_checkin(ctx: StepContext) -> StepResult:
         payload = ctx.step_payload
         guild = await require_guild(ctx.bot)
-        division = next(
-            (
-                each
-                for each in await seasons.get_divisions(int(payload["season_id"]))
-                if each.id == int(payload["division_id"])
-            ),
-            None,
-        )
-        if division is None:
-            raise LookupError(f"division {payload['division_id']} is no longer there")
+        division = await require_division(seasons, payload["season_id"], payload["division_id"])
         problem = await post_notice(
             ctx.bot, guild, division,
             scope=payload.get("scope", ctx.payload.get("scope", SCOPE_ROUND)),
