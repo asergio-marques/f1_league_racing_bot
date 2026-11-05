@@ -531,8 +531,9 @@ class TestTeamLineupDiscardsItsPictures:
 
     @pytest.mark.xfail(strict=True, reason=_LINEUP_THROUGH_THE_DRAWING)
     async def test_the_pictures_are_gone_once_the_batch_has_posted(self, tmp_path):
-        """Two divisions, both drawn: the two pictures go out in one message, and each is
-        handed back to the drawing to release once it has been sent."""
+        """Two divisions, both drawn: the two pictures go out in one message, which names each
+        division in bold on a line of its own, and each picture is handed back to the drawing to
+        release once it has been sent."""
         from tests.support.lineup_drawing import LineupDrawingStub
 
         divisions = [self._division(1, 1), self._division(2, 2)]
@@ -546,5 +547,6 @@ class TestTeamLineupDiscardsItsPictures:
         await _unwrap(cog.team_lineup)(cog, interaction, division=None, public=False)
 
         interaction.followup.send.assert_awaited_once()
+        assert interaction.followup.send.await_args.args[0] == "**Division 1**\n**Division 2**"
         assert len(interaction.followup.send.await_args.kwargs["files"]) == 2
         assert drawing.discarded == pngs

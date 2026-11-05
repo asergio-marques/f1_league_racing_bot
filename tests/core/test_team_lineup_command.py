@@ -297,8 +297,8 @@ async def test_a_rejected_graphic_refuses_rather_than_falling_back(tmp_path):
 @pytest.mark.xfail(strict=True, reason=_THROUGH_THE_DRAWING)
 async def test_a_drawn_lineup_is_sent_as_files(tmp_path, public):
     """The league draws its lineup, and Division 1's lineup is drawn, with a notice. The manager
-    is sent the picture in place of the text, seen by them alone unless they asked for it
-    publicly; the picture is handed back to the drawing to release once sent; and the command
+    is sent the picture in place of the text, under the division's name in bold, seen by them
+    alone unless they asked for it publicly; the picture is handed back to the drawing to release once sent; and the command
     itself posts nothing to the log channel, because the drawing has already reported the
     notice there."""
     png = tmp_path / "lineup.png"
@@ -310,6 +310,7 @@ async def test_a_drawn_lineup_is_sent_as_files(tmp_path, public):
     await _lineup(cog, interaction, public=public)
 
     [call] = interaction.followup.send.await_args_list
+    assert call.args[0] == "**Division 1**"
     assert [each.filename for each in call.kwargs["files"]] == ["lineup.png"]
     assert call.kwargs["ephemeral"] is (not public)
     assert "Seat 1" not in _sent(interaction)
