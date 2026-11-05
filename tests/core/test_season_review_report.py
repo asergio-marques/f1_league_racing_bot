@@ -1080,11 +1080,6 @@ def _pictures_wanted(monkeypatch, cog) -> None:
     monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
 
 
-#: Why a calendar the review shows as a picture fails before the build.
-GATE_NOT_ASKED = "#283: the review asks the bot's image services, not its drawing, for the calendar"
-
-
-@pytest.mark.xfail(strict=True, reason=GATE_NOT_ASKED)
 async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_of_their_text(
         db_path, monkeypatch):
     """Reverses 038 FR-027 (decided 2026-08-27): where an aspect is switched on, its picture
@@ -1145,7 +1140,6 @@ async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
     assert 'No role assigned:** "Ghost"' in _public(messages)
 
 
-@pytest.mark.xfail(strict=True, reason=GATE_NOT_ASKED)
 async def test_a_calendar_shown_as_a_picture_still_names_a_round_gone_by(db_path, monkeypatch):
     """#181: a calendar picture is drawn from the very rounds that are wrong and says nothing of
     which have gone by, so the finding is posted whichever form the calendar takes. Pro's round 1

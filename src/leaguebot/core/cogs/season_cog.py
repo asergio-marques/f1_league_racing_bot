@@ -799,11 +799,10 @@ class SeasonCog(commands.Cog):
         """Whether the league conveys its calendar, and its lineup, as pictures: the gates the
         review draws by, read once for the whole review. A fault in either shows the text, as
         the gates themselves do."""
-        from leaguebot.core.services.calendar_post_service import image_calendar_wanted
         from leaguebot.image.services.image_lineup_post import lineup_enabled
 
         try:
-            return await image_calendar_wanted(self.bot), await lineup_enabled(self.bot)
+            return await self.bot.image_drawing.calendar_wanted(), await lineup_enabled(self.bot)
         except Exception as exc:  # noqa: BLE001 — never break a review on this
             log.error("season review: could not read the image gates: %s", exc, exc_info=True)
             return False, False

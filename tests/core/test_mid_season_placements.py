@@ -63,6 +63,9 @@ def _cog(db_path, stage: SeasonStage) -> SeasonCog:
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
     cog.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    # The calendar's own gate, asked through the drawing rather than the bot's services
+    # directly (#283); defaults to the same "not drawn" answer the module being off gave.
+    cog.bot.image_drawing.calendar_wanted = AsyncMock(return_value=False)
     return cog
 
 

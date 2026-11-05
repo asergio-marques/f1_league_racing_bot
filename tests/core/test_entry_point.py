@@ -112,8 +112,6 @@ async def test_the_builder_hands_every_change_that_posts_a_calendar_the_image_mo
     }
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the review's calendar picture is drawn through "
-                                       "the bot, not the image module's drawing")
 async def test_the_review_s_calendar_picture_is_drawn_through_the_image_module_s_drawing(
     tmp_path, monkeypatch,
 ):

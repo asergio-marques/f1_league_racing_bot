@@ -66,10 +66,6 @@ log = logging.getLogger(__name__)
 #: A round's status once it is called off; read from the round model rather than restated.
 CANCELLED_STATUS = RoundStatus.CANCELLED.value
 
-#: The calendar's own aspect and template key, as `calendar_post_service` used them.
-CALENDAR_ASPECT = "calendar"
-TEMPLATE_KEY = "calendar_template"
-
 
 async def tracks_by_name(db_path: str) -> dict:
     """The track registry keyed by name.
@@ -179,97 +175,8 @@ class CalendarCommandOutcome:
         return self.action == DREW
 
 
-async def image_calendar_wanted(bot: LeagueBot) -> bool:
-    """Whether this server conveys its calendar as a graphic.
-
-    Both gates must be open: the module enabled, and the `calendar` aspect toggled on.
-    Either closed means the textual calendar, unchanged, exactly as before this feature.
-    """
-    try:
-        if not await bot.module_service.is_images_enabled():
-            return False
-        return await bot.image_config_service.is_aspect_enabled(CALENDAR_ASPECT)
-    except Exception:  # noqa: BLE001
-        # A fault in the gate must never lose a league its calendar: fall to the text.
-        log.exception("calendar: could not read the image gates")
-        return False
-
-
-async def render_calendar_image(
-    bot: LeagueBot,
-    division,
-    rounds,
-    tracks,
-    *,
-    season_number=None,
-    output_dir: Path | None = None,
-):
-    """Render one division's calendar. Returns a RenderOutcome."""
-    from leaguebot.image.services.image_calendar_service import build_fill_spec, resolve_drawing
-    from leaguebot.image.services.image_render_service import (
-        resolve_configured_directories,
-        spec_builder_with_faults,
-    )
-
-    config = await bot.image_config_service.get_config()
-
-    drawing = resolve_drawing(
-        division_name=division.name,
-        division_tier=getattr(division, "tier", None),
-        season_number=season_number,
-        rounds=rounds,
-        tracks=tracks,
-        date_format=getattr(config, "date_format", None),
-        time_format=getattr(config, "time_format", None),
-        time_zone=getattr(config, "time_zone", None),
-    )
-
-    # The calendar draws both imagery classes, so it needs both directories (044). They
-    # are resolved by the helper every other posting path uses, which anchors them to the
-    # project root and keeps the reason any rejection was made. Resolving them here by
-    # hand produced *relative* paths, which resolve against the temporary directory the
-    # rasteriser reads the SVG from rather than against the project — so every circuit map
-    # and every country flag a league supplied was silently absent from the drawing, while
-    # the packaged `mystery.svg`, resolved absolutely, appeared beside them.
-    directories, directory_faults = resolve_configured_directories(
-        config,
-        (("track", "track_image_directory"), ("flag", "flag_directory")),
-        image_type=TEMPLATE_KEY,
-    )
-
-    from leaguebot.image.utils.image_naming import stem_for_drawing
-
-    outcome = await bot.image_render_service.render(
-        TEMPLATE_KEY,
-        spec_builder_with_faults(
-            build_fill_spec, drawing, directories, directory_faults
-        ),
-        output_dir=output_dir,
-        filename_stem=stem_for_drawing(drawing, TEMPLATE_KEY),
-        division_name=drawing.division_name,
-    )
-
-    # Every other posting path reaches the log channel through `render_for_posting`, which
-    # this one cannot use: its two callers differ in origin — the calendar of record is
-    # scheduled and falls back to text, `/season placements-review`'s copy is commanded and rejects —
-    # and both read a `RenderOutcome` rather than a `PostingDecision`. So the report is
-    # made here instead, because a notice that is not reported reaches nobody at all — the
-    # log channel and a commanding command's output are the only places one is seen, and
-    # since 046 they are the only places one goes. That is why an entire league's circuit
-    # maps could go missing from a calendar with not one word said about it anywhere a
-    # manager looks.
-    if outcome.notices:
-        from leaguebot.image.services.image_render_service import ImageRenderService
-
-        await ImageRenderService.report_notices(
-            bot, outcome.notices, subject=f"calendar — {division.name}"
-        )
-
-    return outcome
-
-
 async def render_for_command(
-    bot: LeagueBot,
+    drawing: ImageDrawing,
     division,
     rounds,
     tracks,
@@ -285,36 +192,34 @@ async def render_for_command(
     :func:`post_division_calendar` necessarily does, and is why a flag on it would not
     serve.
 
-    The caller owns the returned path and must ``discard_render`` it.
+    The caller owns the returned path and must hand it to *drawing*'s ``discard_picture``.
     """
-    if not await image_calendar_wanted(bot):
+    if not await drawing.calendar_wanted():
         return CalendarCommandOutcome()
 
     try:
-        outcome = await render_calendar_image(
-            bot, division, rounds, tracks, season_number=season_number
+        picture = await drawing.draw_calendar(
+            division, rounds, tracks, season_number=season_number
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
         log.exception("calendar: command render raised for division %s", division.id)
         return CalendarCommandOutcome(action=REJECTED, message=f"\u274c {exc}")
 
-    notices = [n.detail for n in (outcome.notices or [])]
-    if outcome.problem is not None:
+    notices = list(picture.notices)
+    if picture.problem is not None:
         return CalendarCommandOutcome(
             action=REJECTED,
-            message=f"\u274c The calendar image could not be drawn \u2014 {outcome.problem.detail}",
+            message=f"\u274c The calendar image could not be drawn \u2014 {picture.problem}",
             notices=notices,
         )
-    if not outcome.png_paths:
+    if picture.path is None:
         return CalendarCommandOutcome(
             action=REJECTED,
             message="\u274c The calendar image could not be drawn.",
             notices=notices,
         )
 
-    return CalendarCommandOutcome(
-        action=DREW, notices=notices, png_path=outcome.png_paths[0]
-    )
+    return CalendarCommandOutcome(action=DREW, notices=notices, png_path=picture.path)
 
 
 @posts_in_a_job

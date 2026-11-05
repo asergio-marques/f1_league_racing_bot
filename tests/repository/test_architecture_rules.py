@@ -1441,8 +1441,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (1, PASS["attendance"]),
     ("attendance/services/sheet_posting.py", "sheet_step.still_due"): (1, PASS["attendance"]),
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
-    ("core/services/calendar_post_service.py", "image_calendar_wanted"): (2, PASS["core"]),
-    ("core/services/calendar_post_service.py", "render_calendar_image"): (2, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
     ("image/services/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "refresh_before_render"): (1, PASS["image"]),
@@ -2722,8 +2720,6 @@ KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog._portrait_review_lines"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._signup_review_lines"): (3, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
-    ("core/services/calendar_post_service.py", "image_calendar_wanted"): (1, PASS["core"]),
-    ("core/services/calendar_post_service.py", "render_calendar_image"): (2, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
 }
 
@@ -3126,7 +3122,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/test_mode_cog.py", "TestModeCog.toggle"): (1, PASS["core"]),
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
     ("core/services/approval_checks.py", "channel_on_server"): (1, PASS["core"]),
-    ("core/services/calendar_post_service.py", "image_calendar_wanted"): (1, PASS["core"]),
     ("core/services/change_queue.py", "ChangeQueue._acknowledge"): (1, PASS["core"]),
     ("core/services/change_queue.py", "ChangeQueue._acknowledge_saved"): (2, PASS["core"]),
     ("core/services/change_queue.py", "ChangeQueue._end_on_check_fault"): (1, PASS["core"]),

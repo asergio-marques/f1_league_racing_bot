@@ -430,7 +430,7 @@ async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "P
 
         division = await bot.season_service.get_division(division_id)
         outcome = await calendar_post_service.render_for_command(
-            bot, division, await bot.season_service.get_division_rounds(division_id),
+            bot.image_drawing, division, await bot.season_service.get_division_rounds(division_id),
             await calendar_post_service.tracks_by_name(bot.db_path),
             season_number=picture.get("season_number"),
         )
