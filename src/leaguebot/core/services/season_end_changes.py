@@ -20,8 +20,12 @@ fails:
    brought up to date with its rounds, and the season, now in Pending completion, planned its jobs.
    A season still in one of the ongoing stages whose every division is done is wound down first
    (its `turn_down`, as the wind-down change does it) and settled again.
-2. Each division's `final_standings`, then its `final_sheet`, drawn against its last round with
-   results while the season is still active.
+2. Each division's final classification: `settle` leaves a cancelled division out by its own
+   `divisions.status`, asks `final_round_read` which round each remaining division's
+   classification is drawn against (results' own read of its `session_results`), then plans
+   `season_completed` for that division and round — results' final standings, then attendance's
+   final sheet, the modules' own steps (`season_completed_steps`), defined beside their opening
+   posts in `season_standings_posts` and `sheet_posting`.
 3. A `revoke_roles` for each real driver, then `close_window`, then `flush_forecasts` where test
    mode is on.
 4. `end` (one save): the history, the driver pass, test mode switched off and the season marked
