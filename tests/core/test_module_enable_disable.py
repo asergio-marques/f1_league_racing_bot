@@ -600,6 +600,121 @@ async def test_an_attendance_enable_run_after_results_went_off_is_refused(tmp_pa
     assert _refused_line(NEEDS_RESULTS.removeprefix("❌ ")) in await log_lines(league)
 
 
+#: Why a switch asked before the season's stage forbade it is not yet refused when it runs.
+_STAGE_AT_RUN = (
+    "#283: a module's switch does not yet read the season's stage again as its change starts"
+)
+#: Why a results switch-off is not yet refused where attendance came on behind it.
+_CASCADE_AT_RUN = (
+    "#283: results' switch-off does not yet read again, as it starts, which modules go with it"
+)
+#: The stage refusal of `/module enable` once a season's placements are confirmed, word for word.
+PLACEMENTS_CONFIRMED = (
+    "❌ A module cannot be enabled once the season's placements have been confirmed. Enable it "
+    "before then, or once the season has ended."
+)
+#: The refusal of `/module disable` in Pending completion, word for word.
+PENDING_COMPLETION = (
+    "❌ No module can be disabled while the season is pending completion. Complete it with "
+    "`/season complete` first."
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_STAGE_AT_RUN)
+@pytest.mark.parametrize(
+    ("module", "already_on"),
+    [("weather", ()), ("results", ()), ("attendance", ("results",)), ("images", ())],
+)
+async def test_a_switch_on_asked_before_placements_are_confirmed_and_run_after_is_refused(
+    tmp_path, module, already_on
+):
+    """No season's placements are confirmed when `/module enable <module>` is asked, so the ask is
+    acknowledged; a season's placements are confirmed before the change runs, as an approval
+    waiting ahead of it on the lane would. The change's own check reads the stage again as it
+    starts: the module stays off, nothing is audited, and the member's reply becomes the stage
+    refusal the command gives at the ask, word for word, which reaches the log channel."""
+    from tests.support.change_queue import acknowledgement, run_queue
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog = await _league(tmp_path, *already_on)
+    asked = _asked(league, "enable")
+
+    await getattr(cog, f"_enable_{module}")(asked)
+    assert acknowledgement(asked).startswith("⏳ ")
+    await _confirm_a_season(league.db_path)
+    await run_queue(league.bot)
+
+    assert await getattr(league.bot.module_service, f"is_{module}_enabled")() is False
+    assert await _audit(league.db_path) == []
+    assert last_said(asked) == PLACEMENTS_CONFIRMED
+    assert _refused_line(PLACEMENTS_CONFIRMED.removeprefix("❌ ")) in await log_lines(league)
+
+
+@pytest.mark.xfail(strict=True, reason=_STAGE_AT_RUN)
+@pytest.mark.parametrize(
+    ("module", "on"),
+    [("weather", ("weather",)), ("attendance", ("results", "attendance")), ("images", ("images",))],
+)
+async def test_a_switch_off_asked_before_pending_completion_and_run_in_it_is_refused(
+    tmp_path, module, on
+):
+    """No season stands in Pending completion when `/module disable <module>` is asked, so the ask
+    is acknowledged; the season reaches Pending completion before the change runs. The change's
+    own check reads the stage again as it starts, as results' switch-off already does: the module
+    stays on, nothing is audited, and the member's reply becomes the Pending completion refusal,
+    word for word, which reaches the log channel."""
+    from tests.support.change_queue import acknowledgement, run_queue
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog = await _league(tmp_path, *on)
+    asked = _asked(league, "disable")
+
+    await getattr(cog, f"_disable_{module}")(asked)
+    assert acknowledgement(asked).startswith("⏳ ")
+    await _stage(league.db_path, "PENDING_COMPLETION", "ACTIVE")
+    await run_queue(league.bot)
+
+    assert await getattr(league.bot.module_service, f"is_{module}_enabled")() is True
+    assert await _audit(league.db_path) == []
+    assert last_said(asked) == PENDING_COMPLETION
+    refused = f"⛔ `/module disable` refused for {NAMED} — {PENDING_COMPLETION.removeprefix('❌ ')}"
+    assert refused in await log_lines(league)
+
+
+#: The refusal of a results switch-off that would now take a module the league was not warned of.
+CASCADE_CHANGED = (
+    "⛔ The attendance module was switched on since this was asked. Nothing was changed. Run "
+    "`/module disable results` again."
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_CASCADE_AT_RUN)
+async def test_a_results_switch_off_is_refused_where_attendance_came_on_behind_it(tmp_path):
+    """Results on, attendance off, no season. `/module enable attendance` is asked and waits on
+    the lane; `/module disable results` is then asked, and with attendance still off it asks the
+    switch-off at once, with no cascade and no warning. When the lane runs, attendance goes on
+    first. Results' switch-off then reads again, as it starts, which modules go with it: attendance
+    now would, and the league was never warned of it, so it is refused rather than carried out
+    either way. Results and attendance both stay on, and the member who asked is told to run the
+    command again, which then shows the warning."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog = await _league(tmp_path, "results")
+    enable = _asked(league, "enable")
+    disable = _asked(league, "disable")
+
+    await cog._enable_attendance(enable)
+    await cog._disable_results(disable)
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_attendance_enabled() is True
+    assert await league.bot.module_service.is_results_enabled() is True
+    assert last_said(disable) == CASCADE_CHANGED
+    refused = f"⛔ `/module disable` refused for {NAMED} — {CASCADE_CHANGED.removeprefix('⛔ ')}"
+    assert refused in await log_lines(league)
+
+
 async def test_enabling_attendance_twice_does_no_work(tmp_path):
     """Refused at once: nothing is queued and nothing audited, and the refusal reaches the log
     channel as one line in the standard form."""
