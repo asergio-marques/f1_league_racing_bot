@@ -1,14 +1,13 @@
-"""What each module says when a round, a division or a season is called off (#175).
+"""What core keeps of a round's, a division's or a season's cancellation (#175, #283).
 
-Before this, a cancellation posted one notice, to the forecast channel, whether or not the
-weather module was on — so a league without weather heard nothing, and a league with it
-switched off heard from a module that should have produced nothing. These tests pin each
-module to its own channel and its own enabled state, and the calendar to being refreshed.
+Each module words, finds its channel for and posts its own notice of a cancellation, and its tests
+pin that (`tests/<module>/test_cancellation_notice.py`). Core keeps its own: the failures a
+cancellation names in its reply and its log line, and the check-in record a round called off writes
+in the log.
 
-A round's, a division's and a season's cancellation are on the change queue (#439): each
-module's notice is a job of its own (`post_module_notice`), as is each round's call taken down
-(`take_down_call`). The job is planned only while its module is on, so the notice itself does
-not look.
+A round's, a division's and a season's cancellation are on the change queue (#439): each module's
+notice is a job of its own, as is each round's call taken down (`take_down_call`). The notice is
+planned whatever the modules, and drops itself as it runs where its module is off.
 
 The take-down is attendance's own job (`check_in_changes.take_down_call`, #283), which deletes the
 call's messages through attendance's own delete steps (`check_in_deletes`); it stays one job,
@@ -25,8 +24,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services import cancellation_notice_service as cns
-from tests.support.change_queue import in_a_job
-from tests.support.mentions import NOBODY, notified
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -73,115 +70,10 @@ def _bot(db_path, *, weather=True, results=True, attendance=True):
     return bot
 
 
-def _guild(missing=()):
-    channels = {cid: NS(id=cid, send=AsyncMock()) for cid in (FORECAST, RESULTS, RSVP)}
-    guild = MagicMock()
-    guild.get_channel = MagicMock(
-        side_effect=lambda cid: None if cid in missing else channels.get(cid)
-    )
-    return guild, channels
-
-
 def _division(message_id=None):
     return NS(
         id=DIVISION_ID, name="Pro", mention_role_id=ROLE_ID, calendar_message_id=message_id
     )
-
-
-# ── Each module in its own channel ─────────────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    "module, channel_id",
-    [("weather", FORECAST), ("results", RESULTS), ("attendance", RSVP)],
-)
-async def test_each_module_posts_only_to_its_own_channel(tmp_path, module, channel_id):
-    """Pro's notice of round 3's cancellation, posted for *module* alone, reaches that module's
-    channel and no other."""
-    bot = _bot(await _make_db(tmp_path))
-    guild, channels = _guild()
-    await _post_notice(bot, guild, module)
-    for cid, channel in channels.items():
-        if cid == channel_id:
-            channel.send.assert_awaited_once()
-        else:
-            channel.send.assert_not_awaited()
-
-
-async def test_the_check_in_channel_carries_the_notification(tmp_path):
-    """Not silent, and it mentions the division role as the check-in call does."""
-    bot = _bot(await _make_db(tmp_path))
-    guild, channels = _guild()
-    await _post_notice(bot, guild, "attendance")
-    call = channels[RSVP].send.await_args
-    assert not call.kwargs.get("silent")
-    assert call.args[0].startswith(f"<@&{ROLE_ID}>")
-    assert "Round 3 Cancelled: Pro" in call.args[0]
-    assert "no check-in to answer" in call.args[0]
-
-
-async def test_the_attendance_notice_may_notify_the_division_role_and_nobody_else(tmp_path):
-    """Pro, whose role is 555, has round 3 at Monza called off. The check-in channel's notice
-    mentions the role, and may notify it alone: no member it might name, and not @everyone."""
-    bot = _bot(await _make_db(tmp_path))
-    guild, channels = _guild()
-    await _post_notice(bot, guild, "attendance")
-    call = channels[RSVP].send.await_args
-    assert notified(call.kwargs.get("allowed_mentions")) == {
-        "everyone": False, "users": set(), "roles": {ROLE_ID}
-    }
-
-
-async def test_the_attendance_notice_of_a_division_with_no_role_notifies_nobody(tmp_path):
-    """Pro has no role set. Its check-in channel's notice of round 3's cancellation mentions no
-    role, and notifies nobody."""
-    bot = _bot(await _make_db(tmp_path))
-    guild, channels = _guild()
-    division = NS(id=DIVISION_ID, name="Pro", mention_role_id=None, calendar_message_id=None)
-    with in_a_job():
-        await cns.post_module_notice(
-            bot, guild, division, "attendance", scope=cns.SCOPE_ROUND, round_number=3,
-            track_name="Monza",
-        )
-    call = channels[RSVP].send.await_args
-    assert not call.args[0].startswith("<@&")
-    assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
-
-
-@pytest.mark.parametrize(
-    "module, channel_id",
-    [pytest.param("results", RESULTS, id="results"), pytest.param("weather", FORECAST, id="weather")],
-)
-async def test_the_weather_and_results_notes_notify_nobody_and_are_silent(
-    tmp_path, module, channel_id
-):
-    """Pro's results channel, and its forecast channel, are told round 3 is called off:
-    silently, and notifying nobody."""
-    bot = _bot(await _make_db(tmp_path))
-    guild, channels = _guild()
-    await _post_notice(bot, guild, module)
-    call = channels[channel_id].send.await_args
-    assert call.kwargs.get("silent") is True
-    assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
-
-
-@pytest.mark.parametrize("scope", [cns.SCOPE_ROUND, cns.SCOPE_DIVISION, cns.SCOPE_SEASON])
-async def test_every_scope_says_something_in_every_enabled_module(tmp_path, scope):
-    """A round's, a division's and a season's cancellation each post a notice in every
-    module's channel, none of them answering that no channel is set."""
-    bot = _bot(await _make_db(tmp_path))
-    guild, channels = _guild()
-    for module in ("weather", "results", "attendance"):
-        assert await _post_notice(bot, guild, module, scope) is None
-    for channel in channels.values():
-        channel.send.assert_awaited_once()
-
-
-def test_a_round_note_names_the_round_and_its_track():
-    note = cns.weather_note(cns.SCOPE_ROUND, "Pro", round_number=3, track_name="Monza")
-    assert "Round 3 (Monza)" in note
-    assert "No weather forecast" in note
-    assert "Round 3 (Mystery)" in cns.results_note(cns.SCOPE_ROUND, "Pro", round_number=3)
 
 
 # ── What could not be notified is named ────────────────────────────────────
@@ -349,10 +241,10 @@ async def test_a_round_whose_call_never_went_out_is_not_audited(tmp_path):
     assert report.audit == ""
 
 
-# ── The notices and take-downs, as jobs on the queue (#439, slices 4b and 5) ──
+# ── The take-downs, as jobs on the queue (#439, slices 4b and 5) ──
 #
-# A round's, a division's or a season's cancellation posts each notice and takes each call down
-# as a job of the change queue, which stops on a failure Discord caused; so each raises here.
+# A round's, a division's or a season's cancellation takes each call down as a job of the change
+# queue, which stops on a failure Discord caused; so each raises here.
 
 AUDIT_OF_ROUND_3 = (
     "\n  check-in, Pro, Round 3 (Monza):"
@@ -361,69 +253,6 @@ AUDIT_OF_ROUND_3 = (
     "\n    declined: <@102>"
     "\n    no answer: none"
 )
-
-
-async def _post_notice(bot, guild, module, scope=cns.SCOPE_ROUND):
-    with in_a_job():
-        return await cns.post_module_notice(
-            bot, guild, _division(), module, scope=scope, round_number=3,
-            track_name="Monza",
-        )
-
-
-async def test_a_raising_notice_raises_where_its_channel_is_gone(tmp_path):
-    """Pro's check-in channel is set but no longer on the server. Posting attendance's notice
-    raises StepFailedOnDiscord, caused by nothing else, so the queue stops until the channel is
-    set again and Retry is pressed."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
-
-    bot = _bot(await _make_db(tmp_path))
-    guild, _ = _guild(missing=(RSVP,))
-    with pytest.raises(StepFailedOnDiscord) as caught:
-        await _post_notice(bot, guild, "attendance")
-    assert caught.value.__cause__ is None
-
-
-async def test_a_raising_notice_raises_where_discord_refuses(tmp_path):
-    """Discord refuses the forecast note in Pro's forecast channel (Forbidden). Posting it raises
-    StepFailedOnDiscord, raised from Discord's refusal, which the stop notice names."""
-    import discord
-
-    from leaguebot.core.models.change import StepFailedOnDiscord
-
-    bot = _bot(await _make_db(tmp_path))
-    guild, channels = _guild()
-    refusal = discord.Forbidden(MagicMock(status=403), "Missing Access")
-    channels[FORECAST].send.side_effect = refusal
-    with pytest.raises(StepFailedOnDiscord) as caught:
-        await _post_notice(bot, guild, "weather")
-    assert caught.value.__cause__ is refusal
-
-
-async def test_a_raising_notice_lets_a_fault_of_the_bot_s_own_through_unchanged(tmp_path):
-    """Sending the results note fails with a ValueError, a fault of the bot's own rather than
-    Discord's. It is raised as it is, not turned into StepFailedOnDiscord."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
-
-    bot = _bot(await _make_db(tmp_path))
-    guild, channels = _guild()
-    channels[RESULTS].send.side_effect = ValueError("bad content")
-    with pytest.raises(ValueError, match="bad content") as caught:
-        await _post_notice(bot, guild, "results")
-    assert not isinstance(caught.value, StepFailedOnDiscord)
-
-
-async def test_a_raising_notice_names_a_channel_never_set(tmp_path):
-    """Pro has no results channel set. Posting the results note raises nothing, sends nothing
-    and answers "no channel is set", which the cancellation names; a channel posted to answers
-    None."""
-    bot = _bot(await _make_db(tmp_path, results=False))
-    guild, channels = _guild()
-    assert await _post_notice(bot, guild, "results") == "no channel is set"
-    for channel in channels.values():
-        channel.send.assert_not_awaited()
-    assert await _post_notice(bot, guild, "weather") is None
-    channels[FORECAST].send.assert_awaited_once()
 
 
 async def test_the_take_down_reads_the_check_in_before_the_call_comes_down(tmp_path):
