@@ -18,8 +18,9 @@ class CalendarDrawingStub:
     *wanted* is whether the league draws its calendar, or the error asking raises. A drawing
     raises *fault* where one is given; otherwise it hands back *picture* (a PNG's path, or None),
     *problem* (the words for why it could not be drawn, or None) and *notices* (their words).
-    `drawn` names each division drawn, in order; `discarded` holds each path handed back to
-    release."""
+    `drawn` names each division drawn, in order; `asked` holds, for each drawing in turn, the
+    division's name, its rounds' track names and the season number it was handed; `discarded`
+    holds each path handed back to release."""
 
     def __init__(self, *, wanted: bool | Exception = True, picture: Path | None = None,
                  problem: str | None = None, notices: tuple[str, ...] = (),
@@ -30,6 +31,7 @@ class CalendarDrawingStub:
         self.notices = tuple(notices)
         self.fault = fault
         self.drawn: list[str] = []
+        self.asked: list[dict[str, Any]] = []
         self.discarded: list[Path | None] = []
 
     async def calendar_wanted(self) -> bool:
@@ -42,6 +44,9 @@ class CalendarDrawingStub:
         from leaguebot.core.services.image_drawing import CalendarPicture
 
         self.drawn.append(division.name)
+        self.asked.append({"division": division.name,
+                           "tracks": [each.track_name for each in rounds],
+                           "season_number": season_number})
         if self.fault is not None:
             raise self.fault
         return CalendarPicture(path=self.picture, problem=self.problem, notices=self.notices)

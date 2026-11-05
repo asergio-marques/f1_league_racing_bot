@@ -28,6 +28,7 @@ import pytest
 
 from leaguebot.core.services.module_service import ModuleService
 from leaguebot.core.services.season_service import SeasonService
+from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
     change_rows,
     discard_job,
@@ -64,6 +65,9 @@ from tests.support.season_league import (
 )
 from tests.support.mentions import NOBODY, notified
 from tests.support.undecorate import undecorate
+
+#: Why a calendar the approval draws fails before the build.
+HANDED_NO_DRAWING = "#283: the calendar job draws through the bot, not the drawing it is handed"
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 APPROVED = "✅ **Season approved and activated!**\nSeason #3 (ID: 7)"
@@ -970,25 +974,15 @@ async def test_a_round_amended_while_the_posts_wait_is_amended_on_the_ongoing_se
     )
 
 
+@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_the_calendar_is_posted_with_the_season_number_and_its_rounds_as_they_stand_when_it_runs(
     tmp_path, monkeypatch,
 ):
     """Images on with the calendar aspect: the drawing is handed season 3, and the rounds read
     when the calendar job runs, Pro's round 2 moved to Monza after the save."""
-    from leaguebot.core.services import calendar_post_service
-
     league = await _league_for(tmp_path, monkeypatch, images=True)
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda aspect: aspect == "calendar"
-    )
-    drawn: list[dict[str, Any]] = []
+    drawn = draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub()).asked
 
-    async def _draw(_bot: Any, division: Any, rounds: Any, _tracks: Any, **kwargs: Any) -> Any:
-        drawn.append({"division": division.name, "tracks": [r.track_name for r in rounds],
-                      **kwargs})
-        return SimpleNamespace(problem=None, notices=[], png_paths=[])
-
-    monkeypatch.setattr(calendar_post_service, "render_calendar_image", _draw)
     await _pressed(league)
     await _run_through(league, "apply")
     await _edit_round(league)
@@ -1001,26 +995,16 @@ async def test_the_calendar_is_posted_with_the_season_number_and_its_rounds_as_t
     assert "Monza" in league.texts(PRO_CH.calendar)[-1]
 
 
+@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monkeypatch, caplog):
     """A season number of 0 is a malformed row, `seasons.season_number` counting from one. The
     calendar is drawn with 0, never hidden, and the bot logs that it will draw "SEASON 0" (#213).
     The number is 0 both in the setup the press reads and in the database, so the test holds
-    wherever the approval takes it from; it passes today and guards the rule through the build.
+    wherever the approval takes it from.
     It replaces the deleted
     `test_do_approve_posting.py::test_a_season_with_no_number_still_draws_and_is_logged`."""
-    from leaguebot.core.services import calendar_post_service
-
     league = await _league_for(tmp_path, monkeypatch, images=True)
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda aspect: aspect == "calendar"
-    )
-    drawn: list[dict[str, Any]] = []
-
-    async def _draw(_bot: Any, division: Any, rounds: Any, _tracks: Any, **kwargs: Any) -> Any:
-        drawn.append({"division": division.name, **kwargs})
-        return SimpleNamespace(problem=None, notices=[], png_paths=[])
-
-    monkeypatch.setattr(calendar_post_service, "render_calendar_image", _draw)
+    drawn = draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub()).asked
     await league.write("UPDATE seasons SET season_number = 0 WHERE id = ?", SEASON_ID)
     league.cog._pending[ADMIN_ID].season_number = 0
 
@@ -1033,6 +1017,7 @@ async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monk
     assert "SEASON 0" in caplog.text
 
 
+@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallback(
     tmp_path, monkeypatch,
 ):
@@ -1040,22 +1025,18 @@ async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallb
     with a notice. The reply ends in a "Calendar images" section naming Am's notice alone, and not
     Pro's fallback, which is its job's own line (Constitution XIV.4). No line of the approval's
     own in the log channel names the notice or the fallback: the drawing reports its notices
-    itself (`test_calendar_post_service.py`), and the job its fallback."""
-    from leaguebot.core.services import calendar_post_service
-
+    itself (`tests/image/test_image_drawing_calendar.py`), and the job its fallback."""
     league = await _league_for(tmp_path, monkeypatch, images=True)
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda aspect: aspect == "calendar"
-    )
     notice = "a fallback flag stood in for Monaco's"
 
-    async def _draw(_bot: Any, division: Any, *_args: Any, **_kwargs: Any) -> Any:
-        if division.name == "Pro":
-            raise RuntimeError("the template has no rows")
-        return SimpleNamespace(problem=None, notices=[SimpleNamespace(detail=notice)],
-                               png_paths=[])
+    class _ProFails(CalendarDrawingStub):
+        """Pro's drawing raises; Am's draws with the notice."""
 
-    monkeypatch.setattr(calendar_post_service, "render_calendar_image", _draw)
+        async def draw_calendar(self, division: Any, *args: Any, **kwargs: Any) -> Any:
+            self.fault = RuntimeError("the template has no rows") if division.name == "Pro" else None
+            return await super().draw_calendar(division, *args, **kwargs)
+
+    draw_calendars_with(league.bot, monkeypatch, _ProFails(notices=(notice,)))
     press = await _pressed(league)
 
     await run_queue(league.bot)
@@ -1069,7 +1050,8 @@ async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallb
 
 #: Each post retried: its job, its channel, the modules it needs, and where it reaches for its
 #: picture, stubbed to stand aside so that the text follows on every host, whether or not it
-#: carries the rasteriser: the module, the function, and what the stub returns.
+#: carries the rasteriser: the module (for the calendar, the drawing the builder handed the
+#: league's bot, read from the league), the function, and what the stub returns.
 _RETRIED_POSTS = {
     "the lineup": (
         "refresh_lineup", lambda chans: chans.lineup, {},
@@ -1078,8 +1060,8 @@ _RETRIED_POSTS = {
     ),
     "the calendar": (
         "post_calendar", lambda chans: chans.calendar, {},
-        ("leaguebot.core.services.calendar_post_service", "render_calendar_image",
-         SimpleNamespace(problem=None, notices=[], png_paths=[])),
+        (lambda league: league.bot.image_drawing, "draw_calendar",
+         SimpleNamespace(path=None, problem=None, notices=())),
     ),
     "the opening standings": (
         "opening_standings", lambda chans: chans.standings, {"results": True},
@@ -1093,7 +1075,11 @@ _RETRIED_POSTS = {
 }
 
 
-@pytest.mark.parametrize("post", sorted(_RETRIED_POSTS))
+@pytest.mark.parametrize("post", [
+    pytest.param(each, marks=pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING))
+    if each == "the calendar" else each
+    for each in sorted(_RETRIED_POSTS)
+])
 async def test_a_retried_post_is_posted_as_text(tmp_path, monkeypatch, post):
     """Images on, every aspect on: Pro's channel refuses the first send. The first try reaches
     for the picture, Pro's retry does not and posts the text, and Am's post, a first try of its
@@ -1107,7 +1093,8 @@ async def test_a_retried_post_is_posted_as_text(tmp_path, monkeypatch, post):
     league.channel(cid).send_fails = http_error(status=503, text="Service Unavailable")
     await _pressed(league)
     draw = AsyncMock(return_value=returned)
-    monkeypatch.setattr(importlib.import_module(module), name, draw)
+    target = importlib.import_module(module) if isinstance(module, str) else module(league)
+    monkeypatch.setattr(target, name, draw)
 
     await run_queue(league.bot)
     assert await _stopped_at(league) == job

@@ -20,7 +20,6 @@ import json
 import sqlite3
 from contextlib import ExitStack
 from datetime import datetime, timedelta
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,6 +28,7 @@ import pytest
 
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.season_service import SeasonImmutableError
+from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,
@@ -1150,27 +1150,25 @@ async def test_the_calendar_is_posted_again_with_the_round_shown_cancelled(tmp_p
     assert held[0]["calendar_message_id"] != str(CALENDAR_MESSAGE)
 
 
+@pytest.mark.xfail(strict=True,
+                   reason="#283: the calendar job draws through the bot, not the drawing it is handed")
 async def test_a_retried_calendar_is_posted_as_text(tmp_path, monkeypatch):
-    from leaguebot.core.services import calendar_post_service
-
     league = await ongoing_league(tmp_path, images=True)
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
     league.channel(PRO_CH.calendar).send_fails = http_error(status=503,
                                                             text="Service Unavailable")
-    draw = AsyncMock(return_value=SimpleNamespace(problem=None, notices=[], png_paths=[]))
-    monkeypatch.setattr(calendar_post_service, "render_calendar_image", draw)
+    drawing = draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub())
     await _asked(league)
 
     await run_queue(league.bot)
     assert await _stopped_at(league) == "post_calendar"
-    assert draw.await_count == 1
+    assert drawing.drawn == ["Pro"]
 
     league.channel(PRO_CH.calendar).send_fails = None
     await retry_job(league.bot)
 
     assert len(league.texts(PRO_CH.calendar)) == 1
     assert league.channel(PRO_CH.calendar).files[-1] is None
-    assert draw.await_count == 1, "the retry reached for the picture"
+    assert drawing.drawn == ["Pro"], "the retry reached for the picture"
     assert not any("posted as text" in line for line in _log_lines(league)), (
         "a retry posted as text is no fallback (Constitution XIV, rule 8)"
     )
