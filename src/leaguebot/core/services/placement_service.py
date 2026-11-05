@@ -15,6 +15,7 @@ from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverProfile, DriverState
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
+from leaguebot.core.services.image_drawing import CapacityProblem, ImageDrawing
 from leaguebot.core.services.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.signup.models.signup_module import AvailabilitySlot
@@ -121,14 +122,26 @@ async def uncommitted_placements_on(db: aiosqlite.Connection, season_id: int) ->
 
 
 class PlacementService:
-    def __init__(self, db_path: str, bot: LeagueBot | None = None) -> None:
+    def __init__(
+        self,
+        db_path: str,
+        bot: LeagueBot | None = None,
+        *,
+        drawing: ImageDrawing | None = None,
+    ) -> None:
         self._db_path = db_path
-        #: The bot, where one is available. Needed only by the lineup **image** path, which
-        #: reads the module toggles and the render service through it. None in every unit
-        #: test that exercises placement alone, and the textual lineup is unaffected by its
-        #: absence — which is the point: without a bot this service behaves exactly as it
-        #: did before 038.
+        #: The bot, where one is available. Needed only by the lineup **image** path
+        #: (``_refresh_lineup_post``), which reads the module toggles and the render service
+        #: through it. None in every unit test that exercises placement alone, and the
+        #: textual lineup is unaffected by its absence — which is the point: without a bot
+        #: this service behaves exactly as it did before 038.
         self._bot = bot
+        #: Core's answer to its own drawing question (`image_drawing.ImageDrawing`), the
+        #: builder's implementation handed in, as results is handed attendance's. The four
+        #: capacity guards ask it rather than reach image's services through the bot. None in
+        #: every unit test that exercises placement alone: no guard asks anything, and a test
+        #: roster of any size is accepted, as it was before 283.
+        self._drawing = drawing
 
     # ------------------------------------------------------------------
     # Internal role helpers
@@ -683,6 +696,23 @@ class PlacementService:
             ).fetchone()
         return None if row is None else bool(row["is_reserve"])
 
+    async def _ask_drawing(self, method: str, count: int) -> CapacityProblem | None:
+        """Ask the image module's handed drawing *method* of *count*, and hand back what it
+        says, or None where nothing is handed or it could not answer.
+
+        **The capacity guards' one catch:** a drawing that raises must not block a placement,
+        only a genuine over-capacity may, so the fault goes to the host's log in full and the
+        guard that asked answers as if told nothing was wrong (architecture.md, "A catch-all
+        error handler", a stated exception beside ``amend_end_changes._names_step``).
+        """
+        if self._drawing is None:
+            return None
+        try:
+            return await getattr(self._drawing, method)(count)
+        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
+            log.error("%s could not run: %s", method, exc, exc_info=True)
+            return None
+
     async def _guard_reserve_capacity(
         self, division_id: int, team_name: str, *, adding: int = 1
     ) -> None:
@@ -703,54 +733,30 @@ class PlacementService:
         *adding* is how many reserves the change seats — one for a placement, more for a test
         roster seated whole (``guard_roster_capacity``).
 
-        Never raises for its own reasons: a fault in this check must not block a
-        placement, only a genuine over-capacity may.
+        Asks the image module's handed drawing (``_ask_drawing``): never raises for its own
+        reasons, only a genuine over-capacity the drawing reports may.
         """
-        bot = self._bot
-        if bot is None:
-            return
-        try:
-            from leaguebot.image.models.image_catalogues import reserve_capacity_problem
-            from leaguebot.image.services.image_lineup_post import lineup_enabled
-            from leaguebot.image.utils.svg_document import load_svg, off_the_loop
-
-            # Not a reserve placement, or no such team — `assign_driver` reports a team
-            # that does not exist in its own words, and this guard stays quiet.
-            if not await self._is_reserve_team(division_id, team_name):
-                return
-
-            if not await lineup_enabled(bot):
-                return
-
-            reports = await bot.image_validity_service.template_reports()
-            report = reports.get("lineup_template")
-            if report is None or not report.valid or report.resolved_path is None:
-                return
-
-            async with get_connection(self._db_path) as db:
-                row = await (
-                    await db.execute(
-                        "SELECT COUNT(*) AS seated FROM driver_season_assignments dsa "
-                        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
-                        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
-                        "WHERE dsa.division_id = ? AND ti.is_reserve = 1",
-                        (division_id,),
-                    )
-                ).fetchone()
-            seated = (row["seated"] if row else 0) or 0
-            # The template is parsed and measured off the event loop: both are pure.
-            path = report.resolved_path
-            problem = await off_the_loop(
-                lambda: reserve_capacity_problem(load_svg(path), seated + adding)
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.error("reserve capacity guard could not run: %s", exc, exc_info=True)
+        # Not a reserve placement, or no such team — `assign_driver` reports a team that
+        # does not exist in its own words, and this guard stays quiet.
+        if not await self._is_reserve_team(division_id, team_name):
             return
 
+        async with get_connection(self._db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT COUNT(*) AS seated FROM driver_season_assignments dsa "
+                    "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+                    "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+                    "WHERE dsa.division_id = ? AND ti.is_reserve = 1",
+                    (division_id,),
+                )
+            ).fetchone()
+        seated = (row["seated"] if row else 0) or 0
+
+        problem = await self._ask_drawing("reserve_capacity_problem", seated + adding)
         if problem is not None:
             raise ValueError(
-                f"{problem}. The driver was **not** assigned. Enlarge the template, or "
-                f"turn the `lineup` image aspect off with `/images config toggle`."
+                f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
             )
 
     async def _guard_sheet_capacity(self, division_id: int, *, adding: int = 1) -> None:

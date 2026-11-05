@@ -1443,7 +1443,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
     ("core/services/calendar_post_service.py", "image_calendar_wanted"): (2, PASS["core"]),
     ("core/services/calendar_post_service.py", "render_calendar_image"): (2, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService._guard_reserve_capacity"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_sheet_capacity"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_standings_capacity"): (1, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
@@ -2727,8 +2726,6 @@ KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
     ("core/services/calendar_post_service.py", "image_calendar_wanted"): (1, PASS["core"]),
     ("core/services/calendar_post_service.py", "render_calendar_image"): (2, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService._guard_reserve_capacity"):
-        (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_sheet_capacity"):
         (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_standings_capacity"):
@@ -3148,8 +3145,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/output_router.py", "OutputRouter.strip_view"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_image_capacity"):
         (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService._guard_reserve_capacity"):
-        (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_sheet_capacity"):
         (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._guard_standings_capacity"):
@@ -3247,10 +3242,6 @@ def test_a_catch_all_handler_sits_in_one_of_the_five_places():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: PlacementService._ask_drawing, the capacity guards' one catch, is not yet written",
-)
 def test_every_catch_all_allowed_for_good_still_exists():
     """Each function named in `CATCH_ALLS_ALLOWED` still holds a catch-all, with its reason: a
     rename cannot leave the exception pointing at nothing."""

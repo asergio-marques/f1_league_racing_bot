@@ -17,7 +17,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from lxml import etree
 
-_NOT_YET = "#283: the image module does not yet answer core's reserve capacity question"
 
 SVG_NS = "http://www.w3.org/2000/svg"
 LINEUP = "lineup_template"
@@ -185,7 +184,6 @@ async def _assign(db_path, season_id, division_id, team, drawing):
 # ── The answer ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize(
     "slots, reserves, problem",
     [
@@ -212,7 +210,6 @@ async def test_reserves_past_the_slots_are_a_problem(tmp_path, slots, reserves, 
     assert (answer.problem, answer.remedy) == (problem, REMEDY)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize(
     "slots, reserves",
     [(5, 4), (3, 3), (0, 9)],
@@ -227,7 +224,6 @@ async def test_reserves_the_block_holds_are_no_problem(tmp_path, slots, reserves
     assert answer is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize(
     "toggle, images", [(False, True), (True, False)], ids=["aspect-off", "module-off"]
 )
@@ -242,7 +238,6 @@ async def test_no_lineup_drawn_means_no_problem(tmp_path, toggle, images):
 # ── As a league meets it, through the choke point ─────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_reserve_overflow_reaches_the_caller_through_assign_driver(tmp_path):
     db_path, season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=3)
@@ -259,7 +254,6 @@ async def test_a_reserve_overflow_reaches_the_caller_through_assign_driver(tmp_p
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_an_ordinary_placement_survives_a_full_reserve_block_through_assign_driver(
     tmp_path,
 ):

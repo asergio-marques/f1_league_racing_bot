@@ -1268,18 +1268,37 @@ async def build(settings: Settings) -> LeagueBot:
     bot.driver_service = DriverService(settings.db_path)
     bot.team_service = TeamService(settings.db_path)
 
+    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.image.services.image_config_service import ImageConfigService
+    from leaguebot.image.services.image_validity_service import ImageValidityService
+
+    bot.module_service = ModuleService(settings.db_path)
+    bot.image_config_service = ImageConfigService(settings.db_path)
+    bot.image_validity_service = ImageValidityService(
+        bot.image_config_service,
+        bot.module_service,
+    )
+
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    # Core's drawing protocol, image's own implementation, made once and declared on the
+    # bot so that core reaches it without importing this module (architecture.md, "How
+    # modules and core fit together"), as results reaches attendance through its own hook.
+    bot.image_drawing = ImageDrawing(
+        bot.module_service, bot.image_config_service, bot.image_validity_service
+    )
+
     from leaguebot.core.services.placement_service import PlacementService
     # The bot is handed over so the lineup refresh can reach the image module (038). The
-    # textual lineup does not use it.
-    bot.placement_service = PlacementService(settings.db_path, bot)
+    # textual lineup does not use it. The drawing is handed so the capacity guards can ask
+    # image's answer without reaching the bot for it (#283).
+    bot.placement_service = PlacementService(settings.db_path, bot, drawing=bot.image_drawing)
 
-    from leaguebot.core.services.module_service import ModuleService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.signup.services.wizard_service import WizardService
     from leaguebot.attendance.services.attendance_service import AttendanceService
     from leaguebot.core.services.output_router import OutputRouter as _OutputRouter  # already imported above
 
-    bot.module_service = ModuleService(settings.db_path)
     bot.signup_module_service = SignupModuleService(settings.db_path)
     bot.wizard_service = WizardService(
         settings.db_path,
@@ -1297,15 +1316,6 @@ async def build(settings: Settings) -> LeagueBot:
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
     _sign_up_to_round_windows(bot)
     _sign_up_to_amendments(bot)
-
-    from leaguebot.image.services.image_config_service import ImageConfigService
-    from leaguebot.image.services.image_validity_service import ImageValidityService
-
-    bot.image_config_service = ImageConfigService(settings.db_path)
-    bot.image_validity_service = ImageValidityService(
-        bot.image_config_service,
-        bot.module_service,
-    )
 
     from leaguebot.image.services.image_render_service import ImageRenderService
 

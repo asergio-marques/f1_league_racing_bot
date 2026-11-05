@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.team_service import TeamService
     from leaguebot.signup.services.wizard_service import WizardService
     from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.image_drawing import ImageDrawing
     from leaguebot.results.services.attendance_hook import AttendanceAfterReview
     from leaguebot.core.services.output_router import OutputRouter
     from leaguebot.core.utils.hooks import AwaitedHook, Hook
@@ -77,6 +78,9 @@ class LeagueBot(commands.Bot):
     attendance_service: AttendanceService
     #: Attendance's share of a round's review, handed to results' change types (#439).
     attendance_after_review: AttendanceAfterReview
+    #: Core's drawing protocol, the image module's own implementation, handed to
+    #: `placement_service` and the later callers S12 brings to it (#283).
+    image_drawing: ImageDrawing
     image_config_service: ImageConfigService
     image_validity_service: ImageValidityService
     image_render_service: ImageRenderService
