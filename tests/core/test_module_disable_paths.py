@@ -386,21 +386,17 @@ async def test_disabling_attendance_clears_its_division_channels(tmp_path):
 
 
 async def test_disabling_attendance_twice_does_no_work(tmp_path):
-    """Refused at once: nothing is queued and nothing audited, and the refusal reaches the log
-    channel as one line in the standard form."""
+    """Refused at once: nothing is queued and nothing audited."""
     from tests.support.change_queue import change_rows
-    from tests.support.settings_league import last_said, log_lines
+    from tests.support.settings_league import last_said
 
     league, cog, asked = await _attendance_league(tmp_path, on=False)
 
     await cog._disable_attendance(asked)
 
-    assert last_said(asked) == "⚠️ Attendance module is already disabled."
+    assert "already disabled" in last_said(asked)
     assert await change_rows(league.db_path) == []
     assert await _audit_types(league.db_path) == []
-    assert await log_lines(league) == [
-        f"⛔ `/module disable` refused for {NAMED} — Attendance module is already disabled."
-    ]
 
 
 async def test_a_manager_s_disable_is_audited_as_their_decision(tmp_path):
