@@ -242,8 +242,8 @@ async def test_the_command_refuses_it_in_placements(tmp_path):
 
     Nothing about the stage is stubbed: the season is in Placements, the roster change is
     allowed there, and it is the template that refuses it — with the bot's own placement
-    service, handed the image module's drawing, as the builder wires it. The refusal is logged, as every refusal of a
-    command that changes something is.
+    service, handed the image module's drawing, as the builder wires it. The refusal is logged,
+    as every refusal of a command that changes something is.
     """
     from types import SimpleNamespace
 

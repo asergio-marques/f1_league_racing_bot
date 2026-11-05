@@ -58,8 +58,8 @@ def _template_file(tmp_path, *, reserve_slots: int, blocks: int = 2, seats: int 
     return path
 
 
-async def _seed(tmp_path, *, reserves: int, regulars: int = 0, teams: int = 2):
-    """A division carrying *reserves* reserve drivers and *regulars* on ordinary teams."""
+async def _seed(tmp_path, *, reserves: int):
+    """A division carrying *reserves* reserve drivers, and two ordinary teams with empty seats."""
     from leaguebot.core.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "reserve_capacity.db")
@@ -90,8 +90,7 @@ async def _seed(tmp_path, *, reserves: int, regulars: int = 0, teams: int = 2):
         reserve_instance = cursor.lastrowid
         # Each ordinary team carries its two seats, empty until a driver is seated in one —
         # `assign_driver` needs a free seat to place into, as a real division would have.
-        ordinary_seats: list[int] = []
-        for index in range(1, teams + 1):
+        for index in (1, 2):
             cursor = await db.execute(
                 "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
                 "VALUES (?, ?, ?, 2, 0)",
@@ -99,12 +98,11 @@ async def _seed(tmp_path, *, reserves: int, regulars: int = 0, teams: int = 2):
             )
             instance_id = cursor.lastrowid
             for seat_number in (1, 2):
-                cursor = await db.execute(
+                await db.execute(
                     "INSERT INTO team_seats (team_instance_id, seat_number, "
                     "driver_profile_id) VALUES (?, ?, NULL)",
                     (instance_id, seat_number),
                 )
-                ordinary_seats.append(cursor.lastrowid)
 
         next_user_id = 1000
 
@@ -134,8 +132,6 @@ async def _seed(tmp_path, *, reserves: int, regulars: int = 0, teams: int = 2):
                 (reserve_instance, index + 1),
             )
             await occupy(cursor.lastrowid)
-        for seat_id in ordinary_seats[:regulars]:
-            await occupy(seat_id)
 
         # The driver every test then tries to place.
         await db.execute(

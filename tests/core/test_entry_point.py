@@ -75,7 +75,8 @@ async def test_build_returns_every_service_complete(tmp_path):
 
 
 @pytest.mark.xfail(
-    strict=True, reason="#283: the builder does not yet hand PlacementService the image module's drawing"
+    strict=True,
+    reason="#283: the builder does not yet hand PlacementService the image module's drawing",
 )
 async def test_the_builder_hands_placement_the_image_module_s_drawing(tmp_path):
     """`build` makes the image module's answer to core's drawing protocol once, declares it on the

@@ -184,8 +184,8 @@ async def test_placement_capacity_guards_run_with_a_stub_drawing(
     tmp_path, caplog, guard, team, refusal
 ):
     """Each guard refuses in its words where the drawing reports a problem, and lets the placement
-    through where it reports none, where it raises (the error kept whole in the host's log), and
-    where no drawing was handed at all."""
+    through where it reports none, and where it raises (the error kept whole in the host's
+    log)."""
     from leaguebot.core.services.image_drawing import CapacityProblem
     from leaguebot.core.services.placement_service import PlacementService
 
