@@ -36,8 +36,6 @@ import os
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -312,14 +310,6 @@ async def test_disabling_images_is_audited(tmp_path):
 # queue carries it out. Each test drives the command's handler on the bot the entry point builds,
 # with the real queue and "now" pinned, and runs the queue.
 
-#: Why a test of attendance's switch-off fails before it moves onto the queue.
-ATTENDANCE_OFF_ON_THE_QUEUE = (
-    "#283: /module disable attendance is not yet acknowledged as attendance's change on the queue"
-)
-#: Why a fault in attendance's switch-off is not yet answered as one that saved nothing.
-ATTENDANCE_OFF_FAULT = (
-    "#283: a fault in /module disable attendance is not yet answered as one that saved nothing"
-)
 #: Admin as the league's log lines name them.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 
@@ -354,7 +344,6 @@ async def _attendance_league(tmp_path, *, on: bool = True, divisions: int = 0):
     return league, ModuleCog(league.bot), interaction(league.bot, "module disable")
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_OFF_ON_THE_QUEUE)
 async def test_disabling_attendance_clears_the_flag(tmp_path):
     """The member is acknowledged at once, and once the change has run the module is off, and
     the reply and the Success line keep today's words."""
@@ -408,7 +397,6 @@ async def test_a_manager_s_disable_is_audited_as_their_decision(tmp_path):
     assert await _audit_types(league.db_path) == ["ATTENDANCE_MODULE_DISABLED"]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_OFF_FAULT)
 async def test_an_attendance_disable_that_cannot_be_written_leaves_the_module_on(tmp_path):
     """The switch-off and its audit entry are one save, so a fault at the audit leaves the module
     on and its division channels bound. The member gets the standard failure reply, saying

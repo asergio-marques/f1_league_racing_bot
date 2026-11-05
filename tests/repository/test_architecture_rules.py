@@ -181,9 +181,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (1, PASS["attendance"]),
     ("core/cogs/bot_cog.py", "BotCog.handle_pack"): (1, PASS["core"]),
     ("core/cogs/bot_cog.py", "_audit"): (2, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (2, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (3, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (3, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_signup"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._attendance_capacity_warning"): (4, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._calendar_capacity_warning"): (2, PASS["core"]),
@@ -1904,8 +1901,6 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 
 
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_images_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_signup_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_weather_enabled"): (1, PASS["core"]),
@@ -2054,9 +2049,6 @@ def _saves_outside_a_change() -> Counter[tuple[str, str]]:
 KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Core's pass
     ("core/cogs/bot_cog.py", "_audit"): (1, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (1, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_signup"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_amend"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_calendar_channel"): (1, PASS["core"]),
@@ -2726,7 +2718,6 @@ KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/bot_cog.py", "BotCog._set_league_role"): (1, PASS["core"]),
     ("core/cogs/driver_cog.py", "DriverCog.reassign"): (1, PASS["core"]),
     ("core/cogs/driver_cog.py", "DriverCog.reject"): (1, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_signup"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_signup"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._attendance_capacity_warning"): (4, PASS["core"]),

@@ -318,16 +318,6 @@ async def test_a_weather_disable_whose_jobs_cannot_be_removed_leaves_weather_off
 # once, and the queue carries it out. Each test drives the command's handler on the bot the entry
 # point builds, with the real queue and "now" pinned, and runs the queue.
 
-#: Why a test of results' switch-on fails before it moves onto the queue.
-RESULTS_ON_THE_QUEUE = (
-    "#283: /module enable results is not yet acknowledged as results' change on the queue"
-)
-#: Why a test of attendance's switch fails before it moves onto the queue.
-ATTENDANCE_ON_THE_QUEUE = (
-    "#283: /module enable attendance is not yet acknowledged as attendance's change on the queue"
-)
-
-
 async def _league(tmp_path, *modules: str):
     """A league whose settings run on the queue, with *modules* on and every other module off,
     and the module cog over its bot."""
@@ -367,7 +357,6 @@ NEEDS_RESULTS = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=RESULTS_ON_THE_QUEUE)
 async def test_results_is_enabled(tmp_path):
     """The member is acknowledged at once, and once the change has run the module is on and
     audited, and the reply and the Success line keep today's words."""
@@ -428,11 +417,6 @@ async def test_enabling_results_twice_does_no_work(tmp_path):
     ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: a failed /module enable results is not caught and answered 'The module is "
-    "still off'",
-)
 async def test_a_results_enable_that_cannot_be_written_says_the_module_is_still_off(tmp_path):
     """The flag and its audit entry are one save, so a fault at the audit leaves the module off.
     The member gets the standard failure reply, saying the module is still off and what to do
@@ -486,7 +470,6 @@ async def test_attendance_requires_results_first(tmp_path):
     assert await log_lines(league) == [_refused_line(NEEDS_RESULTS.removeprefix("❌ "))]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_ON_THE_QUEUE)
 async def test_attendance_is_enabled_once_results_is(tmp_path):
     """The member is acknowledged at once, and once the change has run the module is on, and
     the reply and the Success line keep today's words."""

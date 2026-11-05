@@ -17,16 +17,11 @@ from leaguebot.core.models.change import ChangeOrigin, module_off, module_on
 from leaguebot.core.models.module_dependencies import needs, taken_down_with
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.interaction_errors import describe, report_failure
+from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_server import LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 
 log = logging.getLogger(__name__)
-
-
-def _still_off(module: str) -> str:
-    """What a failed `/module enable` tells the member: the enable undid itself, and the next step."""
-    return f"The module is still off. Run `/module enable {module}` again once the fault is cleared."
 
 
 _MODULE_CHOICES = [
@@ -389,27 +384,14 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        await interaction.response.defer(ephemeral=True)
-
-        # 3. Atomically set flag + audit
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 1)"
-            )
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'MODULE_ENABLE', '', ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"module": "results"}), now),
-            )
-            await db.commit()
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable results | Success",
+        # The switch is results' own change on the queue: this asks for it and does nothing
+        # else.
+        await self.bot.change_queue.ask(
+            module_on("results"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
-        await interaction.followup.send("✅ Results & Standings module enabled.", ephemeral=True)
 
     # ── Results & Standings disable ────────────────────────────────────
 
@@ -492,37 +474,14 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        await interaction.response.defer(ephemeral=True)
-
-        # 4. Atomically insert config row with defaults + audit entry. One write, so a fault
-        # leaves the module off, and the command says so itself (see `report_failure`).
-        now = datetime.now(timezone.utc).isoformat()
-        try:
-            async with get_connection(self.bot.db_path) as db:
-                await db.execute(
-                    "INSERT OR REPLACE INTO attendance_config "
-                    "(id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-                    "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
-                    "autoreserve_threshold, autosack_threshold) "
-                    "VALUES (1, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)"
-                )
-                await db.execute(
-                    "INSERT INTO audit_entries "
-                    "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                    "VALUES (?, ?, NULL, 'ATTENDANCE_MODULE_ENABLED', '', '', ?)",
-                    (interaction.user.id, str(interaction.user), now),
-                )
-                await db.commit()
-        except Exception as exc:  # noqa: BLE001 — reported here, to say the module is still off
-            await report_failure(
-                interaction, exc, what=describe(interaction), outcome=_still_off("attendance")
-            )
-            return
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable attendance | Success",
+        # The switch is attendance's own change on the queue: this asks for it and does
+        # nothing else.
+        await self.bot.change_queue.ask(
+            module_on("attendance"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
-        await interaction.followup.send("✅ Attendance module enabled.", ephemeral=True)
 
     # ── Images enable ────────────────────────────────────────────────
 
@@ -561,23 +520,16 @@ class ModuleCog(commands.Cog):
                 interaction, "⚠️ Attendance module is already disabled.", what=describe(interaction)
             )
             return
-        await interaction.response.defer(ephemeral=True)
 
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await self.bot.attendance_service.switch_off_on(db)
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'ATTENDANCE_MODULE_DISABLED', '', '', ?)",
-                (interaction.user.id, str(interaction.user), now),
-            )
-            await db.commit()
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable attendance | Success",
+        # The switch-off is attendance's own change on the queue: it calls
+        # `AttendanceService.switch_off_on` and writes its audit entry in one save. This asks
+        # for it and does nothing else.
+        await self.bot.change_queue.ask(
+            module_off("attendance"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
-        await interaction.followup.send("✅ Attendance module disabled.", ephemeral=True)
 
     # ── Signup enable (T010) ───────────────────────────────────────────
 
