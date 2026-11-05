@@ -274,6 +274,27 @@ async def test_a_rejected_directory_is_carried_through_as_a_fault(tmp_path):
     assert "flag" in spec.asset_directory_faults
 
 
+async def test_a_drawing_reports_its_notices_to_the_log_channel_in_one_message(tmp_path):
+    """Elite's calendar drawn with a notice: the drawing itself reports it to the log channel, in
+    one message naming what was drawn, so the notice reaches the log whichever change posted the
+    calendar (Constitution XIV.4, "reported in one message")."""
+    from leaguebot.image.models.image_module import RenderNotice
+
+    bot = _bot(tmp_path)
+    notice = RenderNotice(image_type="calendar", notice_kind="ASSET_FALLBACK_USED",
+                          detail="a fallback flag stood in for Monaco's")
+    bot.image_render_service.render = AsyncMock(
+        return_value=NS(problem=None, notices=[notice], png_paths=[])
+    )
+    bot.output_router.post_log = AsyncMock()
+
+    await cps.render_calendar_image(bot, _division(), _rounds(), TRACKS)
+
+    [call] = bot.output_router.post_log.await_args_list
+    assert call.args[0].startswith("Image render notices — calendar — Elite:\n"), call.args[0]
+    assert "a fallback flag stood in for Monaco's" in call.args[0]
+
+
 # ── 4. Fallback vs rejection ──────────────────────────────────────────────
 
 
