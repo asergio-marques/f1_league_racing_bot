@@ -441,6 +441,33 @@ async def test_a_call_message_discord_will_not_delete_stops_the_queue_keeping_th
     assert CHECKIN_LOGGED in _success_lines(league)[0]
 
 
+async def test_a_take_down_stopped_by_a_fault_not_discord_s_still_names_the_call_once_discarded(
+    tmp_path, monkeypatch,
+):
+    """Attendance on, and round 3's take-down of its check-in call stops on a fault of the bot's
+    own, not Discord's, before it deletes anything, so its job keeps no list of messages left
+    standing. A league admin discards it: the call still stands, so the reply's Not notified
+    section and the success line still name the check-in call, word for word as a take-down
+    discarded with nothing recorded is named."""
+    from leaguebot.attendance.services import check_in_changes
+
+    async def broken(*_args, **_kwargs):
+        raise RuntimeError("the check-in could not be read")
+
+    monkeypatch.setattr(check_in_changes, "checkin_record", broken)
+    league = await ongoing_league(tmp_path, attendance=True)
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "take_down_call"
+    await discard_job(league.bot)
+
+    named = ("**Pro** — check-in call: 0 message(s) could not be deleted and must be removed "
+             "by hand (ids )")
+    assert named in _not_notified(reply(interaction))
+    assert f"\n  not notified: {named}" in _success_lines(league)[0]
+
+
 @pytest.mark.parametrize(
     ("module", "steps_of", "job"),
     [
