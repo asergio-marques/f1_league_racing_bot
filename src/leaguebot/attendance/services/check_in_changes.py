@@ -505,6 +505,11 @@ async def take_down_called_off_on(
 
     A call is taken down for a round in round order, planned for its division straight after the
     division's check-in notice (`take_down_steps` runs each).
+
+    The job's own payload carries `call_target` ("check-in call"), attendance's own word for what
+    a discard of it leaves undeleted, so that core's `not_notified` can name it without naming the
+    job — whether or not the discarded result carries `undeleted` (a fault that is not Discord's,
+    such as the division going missing, raises with no partial result to keep).
     """
     called_off = sorted(
         (each for each in rounds if each.called_off), key=lambda each: each.round_number
@@ -526,6 +531,7 @@ async def take_down_called_off_on(
                 "season_id": each.season_id,
                 "round_id": each.round_id,
                 "round_number": each.round_number,
+                "call_target": "check-in call",
             }))
     return CalledOffSteps(
         with_division={division_id: tuple(steps) for division_id, steps in with_division.items()}

@@ -17,8 +17,8 @@ rounds-called-off modules' `with_division` steps for that division and whose
 naming which job is whose. A job the hook plans says in its own payload or result which target
 it is (`notice_target`, "check-in channel" and so on), so that `not_notified` can name it
 without naming the module; a channel a job could not delete (`channel_target`) and a call
-Discord would not delete (its result's own `undeleted`) are named the same way, without naming
-the job that plans either (#283).
+Discord would not delete (`call_target`) are named the same way, from the job's own payload
+rather than its result, without naming the job that plans either (#283).
 
 **A round whose submission stands open is cancelled only while it has accepted nothing** (owner,
 2026-10-08, amending Constitution XII): any `session_results` row, of either status, is data the
@@ -572,13 +572,16 @@ def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
     (`cancellation_notice.notices_on`, each module), so that core names it without naming the
     module or its job. A channel a job could not delete is named the same way, by its own
     `channel_target` (results' `close_called_off_on`); a call Discord would not delete is named
-    by its own result carrying `undeleted` (attendance's `take_down_call`), read without naming
-    either job. The reasons stay core's text."""
+    by its own `call_target` (attendance's `take_down_called_off_on`), read without naming either
+    job. Both a channel's and a call's discard are named from the job's own payload rather than
+    its result, so a fault that is not Discord's — one that leaves no partial result to keep, such
+    as the division going missing — is still named. The reasons stay core's text."""
     failures: list[notices.NoticeFailure] = []
     for view in ctx.steps:
         result = view.result or {}
         target = view.payload.get("notice_target")
         channel_target = view.payload.get("channel_target")
+        call_target = view.payload.get("call_target")
         name = str(view.payload.get("division_name", ""))
         if target is not None:
             if _discarded(view):
@@ -591,14 +594,15 @@ def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
                     name, channel_target,
                     _DISCARDED_CHANNEL.format(channel_id=view.payload["channel_id"]),
                 ))
-        elif "undeleted" in result and _discarded(view):
-            ids = [str(each) for each in result.get("undeleted", [])]
-            failures.append(notices.NoticeFailure(
-                name,
-                "check-in call",
-                f"{len(ids)} message(s) could not be deleted and must be removed by hand "
-                f"(ids {', '.join(ids)})",
-            ))
+        elif call_target is not None:
+            if _discarded(view):
+                ids = [str(each) for each in result.get("undeleted", [])]
+                failures.append(notices.NoticeFailure(
+                    name,
+                    call_target,
+                    f"{len(ids)} message(s) could not be deleted and must be removed by hand "
+                    f"(ids {', '.join(ids)})",
+                ))
         elif view.name == standing_posts.DELETE_REPLACED:
             if _discarded(view):
                 link = result.get("link") or f"in <#{view.payload['channel_id']}>"
