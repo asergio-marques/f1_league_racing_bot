@@ -33,6 +33,7 @@ import pytest
 
 from leaguebot.core.cogs.module_cog import ModuleCog
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.change_queue import MEMBER_ID
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 9608
@@ -133,11 +134,9 @@ async def _audit(db_path: str) -> list[dict]:
 
 
 async def _weather_flag(db_path: str) -> int:
+    """The weather module's switch, as the league's one server holds it."""
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT weather_module_enabled FROM server_configs WHERE server_id = ?",
-            (SERVER_ID,),
-        )
+        cursor = await db.execute("SELECT weather_module_enabled FROM server_configs")
         return (await cursor.fetchone())["weather_module_enabled"]
 
 
@@ -148,79 +147,173 @@ def _season():
 # ---------------------------------------------------------------------------
 # Weather
 # ---------------------------------------------------------------------------
+#
+# Weather's switch is weather's own change on the change queue (#283, S11b): `/module enable
+# weather` and `/module disable weather` are acknowledged at once and carried out by the queue.
+# Each test drives the command's handler on the bot the entry point builds, with the real queue
+# and "now" pinned, and runs the queue.
+
+#: The member as a saved log line names them, the mention wrapped so it notifies nobody.
+NAMED = f"Admin (`<@{MEMBER_ID}>`)"
+#: Why each weather test that runs through the queue fails before the switch moves onto it.
+ON_THE_QUEUE = "#283: /module enable|disable weather is not yet weather's change on the queue"
 
 
+async def _weather_league(tmp_path, *, on: bool):
+    """A league whose settings run on the queue, the weather module *on* or off, and the
+    module cog over its bot."""
+    from tests.support.settings_league import settings_league
+
+    league = await settings_league(tmp_path, modules=("weather",) if on else ())
+    return league, ModuleCog(league.bot)
+
+
+def _asked(league, verb: str):
+    """`/module <verb>` as Admin, the member the league's lines name."""
+    from tests.support.settings_league import interaction
+
+    return interaction(league.bot, f"module {verb}")
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_weather_is_enabled(tmp_path):
-    """Between seasons, as the cog is made with no active season: there are no divisions to
-    check, and a league setting the bot up before its first season must not be blocked."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    """Between seasons, with no season running: there are no divisions to check, and a league
+    setting the bot up before its first season must not be blocked. The member is acknowledged
+    at once, and once the change has run the module is on and the reply says so."""
+    from tests.support.change_queue import acknowledgement, run_queue
+    from tests.support.settings_league import last_said
 
-    await cog._enable_weather(interaction)
+    league, cog = await _weather_league(tmp_path, on=False)
+    asked = _asked(league, "enable")
 
-    assert await _weather_flag(db_path) == 1
-    assert "enabled" in _replied(interaction)
+    await cog._enable_weather(asked)
+    assert acknowledgement(asked).startswith("⏳")
+    await run_queue(league.bot)
+
+    assert await _weather_flag(league.db_path) == 1
+    assert "enabled" in last_said(asked)
 
 
 async def test_enabling_weather_twice_does_no_work(tmp_path):
     """A manager running the command again must not get a second audit entry or a second
-    set of scheduled jobs."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, weather_enabled=True)
-    interaction = _interaction()
+    set of scheduled jobs. The refusal reaches the log channel as one line in the standard
+    form."""
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._enable_weather(interaction)
+    league, cog = await _weather_league(tmp_path, on=True)
+    asked = _asked(league, "enable")
 
-    assert "already enabled" in _replied(interaction)
-    assert await _audit(db_path) == []
+    await cog._enable_weather(asked)
+
+    assert last_said(asked) == "⚠️ Weather module is already enabled."
+    assert await _audit(league.db_path) == []
+    assert await log_lines(league) == [
+        f"⛔ `/module enable` refused for {NAMED} — Weather module is already enabled."
+    ]
 
 
 async def test_enabling_weather_is_audited(tmp_path):
-    db_path = await _make_db(tmp_path)
+    from tests.support.change_queue import run_queue
 
-    await _make_cog(db_path)._enable_weather(_interaction())
+    league, cog = await _weather_league(tmp_path, on=False)
 
-    entry = (await _audit(db_path))[0]
+    await cog._enable_weather(_asked(league, "enable"))
+    await run_queue(league.bot)
+
+    entry = (await _audit(league.db_path))[0]
     assert entry["change_type"] == "MODULE_ENABLE"
     assert json.loads(entry["new_value"])["module"] == "weather"
 
 
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_disabling_weather_cancels_every_scheduled_job(tmp_path):
-    """Leaving them armed would post forecasts for a switched-off module."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, weather_enabled=True)
-    interaction = _interaction()
+    """Leaving them armed would post forecasts for a switched-off module. The switch-off lowers
+    the flag and writes its audit entry in one save, and only then removes the season's weather
+    jobs, in a step of its own: once the save has run the module is off and audited and no job
+    has been touched yet; once the change has run, the jobs are removed once, the reply says so,
+    and the Success line is written."""
+    from tests.support.change_queue import acknowledgement, run_queue
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._disable_weather(interaction)
+    league, cog = await _weather_league(tmp_path, on=True)
+    asked = _asked(league, "disable")
 
-    cog.bot.scheduler_service.cancel_all_weather.assert_awaited_once()
-    cog.bot.module_service.set_weather_enabled.assert_awaited_once_with(False)
-    assert "cancelled" in _replied(interaction)
+    await cog._disable_weather(asked)
+    assert acknowledgement(asked).startswith("⏳")
+
+    await run_queue(league.bot, steps=1)
+    assert await _weather_flag(league.db_path) == 0
+    assert [entry["change_type"] for entry in await _audit(league.db_path)] == ["MODULE_DISABLE"]
+    league.scheduler.cancel_all_weather.assert_not_awaited()
+
+    await run_queue(league.bot)
+    league.scheduler.cancel_all_weather.assert_awaited_once_with()
+    assert last_said(asked) == (
+        "✅ Weather module disabled. All scheduled weather jobs have been cancelled."
+    )
+    assert await log_lines(league) == [f"{NAMED} | /module disable weather | Success"]
 
 
 async def test_disabling_weather_twice_does_no_work(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, weather_enabled=False)
-    interaction = _interaction()
+    from tests.support.settings_league import last_said
 
-    await cog._disable_weather(interaction)
+    league, cog = await _weather_league(tmp_path, on=False)
+    asked = _asked(league, "disable")
 
-    assert "already disabled" in _replied(interaction)
-    cog.bot.scheduler_service.cancel_all_weather.assert_not_awaited()
-    assert await _audit(db_path) == []
+    await cog._disable_weather(asked)
+
+    assert "already disabled" in last_said(asked)
+    league.scheduler.cancel_all_weather.assert_not_awaited()
+    assert await _audit(league.db_path) == []
 
 
 async def test_disabling_weather_is_audited(tmp_path):
-    db_path = await _make_db(tmp_path)
+    from tests.support.change_queue import run_queue
 
-    await _make_cog(db_path, weather_enabled=True)._disable_weather(
-        _interaction()
-    )
+    league, cog = await _weather_league(tmp_path, on=True)
 
-    entry = (await _audit(db_path))[0]
+    await cog._disable_weather(_asked(league, "disable"))
+    await run_queue(league.bot)
+
+    entry = (await _audit(league.db_path))[0]
     assert entry["change_type"] == "MODULE_DISABLE"
     assert json.loads(entry["old_value"])["module"] == "weather"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: a fault removing the weather jobs stops /module disable weather before the "
+    "module is switched off",
+)
+async def test_a_weather_disable_whose_jobs_cannot_be_removed_leaves_weather_off_and_says_so(
+    tmp_path,
+):
+    """The scheduler refuses to remove the season's weather jobs: the module stays off with its
+    audit entry, the reply says it is off but its jobs could not be removed and do nothing while
+    it is off, never that they were cancelled, the Success line and one failure line are written,
+    and no job is left stopped on the queue."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog = await _weather_league(tmp_path, on=True)
+    league.scheduler.cancel_all_weather.side_effect = RuntimeError("the job store refused")
+    asked = _asked(league, "disable")
+
+    await cog._disable_weather(asked)
+    await run_queue(league.bot)
+
+    assert await _weather_flag(league.db_path) == 0
+    assert [entry["change_type"] for entry in await _audit(league.db_path)] == ["MODULE_DISABLE"]
+    assert last_said(asked) == (
+        "✅ Weather module disabled.\n⚠️ The module is off, but its scheduled jobs could not be "
+        "removed; they do nothing while the module is off."
+    )
+    lines = await log_lines(league)
+    assert lines.count(f"{NAMED} | /module disable weather | Success") == 1
+    assert [line for line in lines if line.startswith("❌ ")] == [
+        f"❌ `/module disable` failed for {NAMED} — RuntimeError. The details are in the host's log."
+    ]
+    assert await stopped_job(league.db_path) is None
 
 
 # ---------------------------------------------------------------------------
@@ -470,26 +563,29 @@ async def test_a_weather_enable_that_cannot_be_written_says_the_module_is_still_
     """The flag and its audit entry are one write, so the module stays off. The member gets
     the standard failure reply, saying the module is still off and what to do next, with no
     error text; the log channel gets the one failure line, and no success."""
-    db_path = await _make_db(tmp_path)
-    await _refuse_the_audit(db_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "module enable"
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._enable_weather(interaction)
+    league, cog = await _weather_league(tmp_path, on=False)
+    await _refuse_the_audit(league.db_path)
+    asked = _asked(league, "enable")
 
-    assert await _weather_flag(db_path) == 0
-    replied = _replied(interaction)
-    assert "stopped on a fault in the bot, not on anything you entered" in replied
-    assert "The module is still off." in replied
-    assert "again once the fault is cleared" in replied
+    await cog._enable_weather(asked)
+    await run_queue(league.bot)
+
+    assert await _weather_flag(league.db_path) == 0
+    replied = last_said(asked)
+    assert replied == (
+        "❌ `/module enable` stopped on a fault in the bot, not on anything you entered, and did "
+        "not finish. The module is still off. Run `/module enable weather` again once the fault "
+        "is cleared. The fault is recorded in the log channel."
+    )
     assert "disk I/O error" not in replied
     assert "Module remains disabled" not in replied
-    [line] = _lines(cog)
-    assert "/module enable" in line
-    assert f"failed for Admin (<@{ACTOR_ID}>)" in line
-    assert "IntegrityError" in line
+    [line] = await log_lines(league)
+    assert line == (
+        f"❌ `/module enable` failed for {NAMED} — IntegrityError. The details are in the host's log."
+    )
     assert "disk I/O error" not in line
 
 
@@ -506,10 +602,9 @@ async def _stage(db_path: str, stage: str, status: str) -> None:
 #: Every refusal `/module enable` makes, and the one it shares with `/module disable`: the
 #: verb, the module, how the cog is set up, the stage the season stands in, and a fragment of
 #: the reply. A case whose verb is None calls the enable handler directly, the command's own
-#: stage check standing in front of it otherwise.
+#: stage check standing in front of it otherwise. Weather's "already enabled", refused by its
+#: change on the queue, is pinned by `test_enabling_weather_twice_does_no_work`.
 MODULE_REFUSALS = [
-    pytest.param("enable", "weather", {"weather_enabled": True}, None, "already enabled",
-                 id="weather-already-enabled"),
     pytest.param("enable", "results", {"results_enabled": True}, None, "already enabled",
                  id="results-already-enabled"),
     pytest.param(None, "results", {"season": "confirmed"}, None,

@@ -4,10 +4,10 @@
 gives it `league_bot`'s bot: the one the entry point's `build` makes, with the services the
 settings of results, weather and images are handed by the builder: a real `ModuleService`,
 `SeasonService`, `ImageConfigService`, `ImageValidityService` and `ImageRenderService`. Its scheduler is a double whose
-`schedule_portrait_refresh` and `cancel_portrait_refresh` record their calls. The modules named in
-*modules* are on (results, weather and images by default), the image module holding its default
-configuration where it is on, and the real queue is attached with "now" pinned, every change type
-the builder registers registered.
+`schedule_portrait_refresh`, `cancel_portrait_refresh` and `cancel_all_weather` record their
+calls. The modules named in *modules* are on (results, weather and images by default), the image
+module holding its default configuration where it is on, and the real queue is attached with "now"
+pinned, every change type the builder registers registered.
 
 `interaction(bot, command)` is a member's interaction for `/<command>`, as `member_interaction`
 gives one, whose follow-up returns a message that records its edits, so that `said` reads every
@@ -50,11 +50,14 @@ class SettingsLeague:
 
 
 def scheduler_double(*, fails: bool = False) -> MagicMock:
-    """A scheduler service whose portrait job calls are recorded; with *fails*, each raises."""
+    """A scheduler service whose portrait job calls are recorded; with *fails*, each raises.
+    Its removal of every weather job (`cancel_all_weather`) is recorded too, and never raises
+    unless a test sets it to."""
     double = MagicMock()
     error = RuntimeError("scheduler unavailable") if fails else None
     double.schedule_portrait_refresh = MagicMock(side_effect=error)
     double.cancel_portrait_refresh = MagicMock(side_effect=error)
+    double.cancel_all_weather = AsyncMock(return_value=None)
     return double
 
 

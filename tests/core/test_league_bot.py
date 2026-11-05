@@ -171,6 +171,27 @@ def test_the_settings_changes_are_registered():
     assert len(SETTING_KINDS) == 24
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: weather's switch is not yet weather's own settings, signed up by the builder",
+)
+def test_weather_s_switch_is_weather_s_own_settings_signed_up_by_the_builder():
+    """The builder registers weather's switch-on and switch-off, "module.on:weather" and
+    "module.off:weather", once each (#283, S11b): each is weather's own (its check is weather's
+    code) and may write only `server_configs`, the core table holding weather's own column."""
+    from leaguebot.__main__ import register_change_types
+    from leaguebot.core.models.change import module_off, module_on
+
+    bot = MagicMock()
+    register_change_types(bot)
+
+    registered = [call.args[0] for call in bot.change_queue.register.call_args_list]
+    for kind in (module_on("weather"), module_off("weather")):
+        [switch] = [change_type for change_type in registered if change_type.kind == kind]
+        assert switch.check.__module__.startswith("leaguebot.weather."), kind
+        assert tuple(switch.writes) == ("server_configs",), kind
+
+
 def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     """Over every change type the builder registers, the jobs marked as never to be discarded are
     exactly those whose loss could stop a season from being started or completed, or would leave
