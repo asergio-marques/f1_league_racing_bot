@@ -246,8 +246,7 @@ def opening_steps(modules: ModuleService) -> dict[str, Step]:
         """The lines a discarded opening standings job leaves for doing by hand, joined by a
         plain newline: `kept_line`'s caller (`_left`, architecture.md, "How modules and core fit
         together") splits them apart again, so that a table left standing in part gets its own
-        "not done:" line in the approval's log and its own bullet in the reply, as it did before
-        this job became results' own (#283)."""
+        "not done:" line in the approval's log and its own bullet in the reply."""
         line = (
             f"**{view.payload['division_name']}** — its opening standings could not be "
             f"posted. No command posts them again; the first round's results post the "
