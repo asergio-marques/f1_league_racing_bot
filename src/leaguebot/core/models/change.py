@@ -172,6 +172,12 @@ class GuildUnavailable(Exception):
     """The league's server is not in the bot's cache: a failure on Discord's side, as any other."""
 
 
+def module_on(module: str) -> str:
+    """The kind of the change that turns *module* on, so core's cog names it without importing
+    the module."""
+    return f"module.on:{module}"
+
+
 def module_off(module: str) -> str:
     """The kind of the change that turns *module* off, so core's cog names it without importing
     the module."""

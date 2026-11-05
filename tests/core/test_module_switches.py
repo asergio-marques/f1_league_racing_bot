@@ -13,8 +13,6 @@ cascade and its warning.
 """
 from __future__ import annotations
 
-import pytest
-
 from leaguebot.core.cogs.module_cog import _MODULE_CHOICES
 from leaguebot.core.models.change import module_off
 
@@ -22,7 +20,6 @@ from leaguebot.core.models.change import module_off
 OFFERED = tuple(choice.value for choice in _MODULE_CHOICES)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: there is no dependency table in core/models/ yet")
 def test_the_dependency_table_answers_what_a_switch_needs_and_takes_down():
     """Attendance needs results and no other module needs another, images included. A switch-off
     of results takes attendance down with it where attendance is on and not where it is off, and
@@ -47,7 +44,6 @@ def test_the_dependency_table_answers_what_a_switch_needs_and_takes_down():
     assert set(taken_down_with("results", everything_on - {"attendance"})) == set()
 
 
-@pytest.mark.xfail(strict=True, reason="#283: there is no module_on beside module_off yet")
 def test_a_module_is_switched_on_and_off_by_kinds_naming_it():
     """Every module /module offers is switched on by `module.on:<name>` and off by
     `module.off:<name>`."""

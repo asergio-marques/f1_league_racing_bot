@@ -80,7 +80,6 @@ _MODULE_CONTRACT = re.compile(
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#283: there is no dependency table in core/models/ yet")
 def test_every_module_is_under_the_rules_between_modules():
     """The rules between modules name each module by hand, so a module's folder the contracts do
     not name would be under none of them: core could use it, and it could use anything. Adding a
