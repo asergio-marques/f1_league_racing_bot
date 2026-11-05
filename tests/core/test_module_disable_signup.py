@@ -328,7 +328,7 @@ async def test_disabling_twice_does_no_work(tmp_path):
 
     await _disable(cog, interaction)
 
-    assert "already disabled" in _replied(interaction)
+    assert _replied(interaction) == "⚠️ Signup module is already disabled."
     assert await _audit(db_path) == []
     assert [row for row in await change_rows(db_path)
             if row["kind"] == MODULE_OFF_KIND and row["state"] == "DONE"] == []

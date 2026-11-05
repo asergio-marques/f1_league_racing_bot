@@ -606,17 +606,3 @@ async def test_a_signup_enable_that_cannot_be_written_says_the_module_is_still_o
         f"❌ `/module enable` failed for {NAMED} — IntegrityError. "
         "The details are in the host's log."
     ]
-
-
-async def test_disabling_signup_twice_does_no_work(tmp_path):
-    """Refused at once: nothing is queued and nothing audited."""
-    from tests.support.change_queue import change_rows
-    from tests.support.settings_league import last_said
-
-    league, cog, asked = await _signup_league(tmp_path, "disable")
-
-    await cog._disable_signup(asked)
-
-    assert last_said(asked) == "⚠️ Signup module is already disabled."
-    assert await change_rows(league.db_path) == []
-    assert await _audit_types(league.db_path) == []
