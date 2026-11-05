@@ -1,6 +1,6 @@
 """Resolve and render a division's lineup (038).
 
-The lineup of record is drawn and posted through core's drawing protocol
+The lineup of record is drawn through core's drawing protocol, and posted by core
 (`leaguebot.core.services.image_drawing.ImageDrawing`, implemented by
 `leaguebot.image.services.image_drawing.ImageDrawing`): this module holds what that
 drawing, and a command's own output, both need — resolving the division into a
@@ -43,8 +43,6 @@ class LineupPostOutcome:
     message: str | None = None
     notices: list = field(default_factory=list)
     png_path: Path | None = None
-    #: The message the graphic was posted as, where it was; the caller's job saves it.
-    message_id: int | None = None
 
     @property
     def applicable(self) -> bool:
