@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock
 import discord
 import pytest
 
+from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     change_rows,
@@ -290,15 +291,15 @@ POSTED_AS_TEXT_IN_A_CANCELLED_SEASON = (
 )
 
 
-def _drawing_fails(league: Any, monkeypatch: Any) -> None:
-    """The league conveys its calendar as a picture, and every drawing of one raises."""
-    from leaguebot.core.services import calendar_post_service
+#: Why a calendar job that draws fails before the build.
+HANDED_NO_DRAWING = "#283: the calendar job draws through the bot, not the drawing it is handed"
 
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda aspect: aspect == "calendar"
-    )
-    monkeypatch.setattr(calendar_post_service, "render_calendar_image",
-                        AsyncMock(side_effect=RuntimeError(PROBLEM)))
+
+def _drawing_fails(league: Any, monkeypatch: Any) -> CalendarDrawingStub:
+    """The league conveys its calendar as a picture, and every drawing of one, through the drawing
+    the builder handed the calendar job, raises; gives the drawing."""
+    return draw_calendars_with(league.bot, monkeypatch,
+                               CalendarDrawingStub(fault=RuntimeError(PROBLEM)))
 
 
 async def _approved(tmp_path: Any, monkeypatch: Any) -> tuple[Any, Any]:
@@ -348,15 +349,19 @@ async def _round_not_held(tmp_path: Any, monkeypatch: Any) -> tuple[Any, None]:
     return league, None
 
 
+_NOT_YET = pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
+
+
 @pytest.mark.parametrize(("start", "change", "divisions", "posted"), [
     pytest.param(_approved, "the ✅ Approve button of `/season placements-review`",
-                 ("Pro", "Am"), POSTED_AS_TEXT, id="the approval"),
+                 ("Pro", "Am"), POSTED_AS_TEXT, id="the approval", marks=_NOT_YET),
     pytest.param(_round_cancelled, "`/round cancel`", ("Pro",), POSTED_AS_TEXT,
-                 id="a round's cancellation"),
+                 id="a round's cancellation", marks=_NOT_YET),
     pytest.param(_round_not_held, "posting round 3's cancelled sessions", ("Pro",),
-                 POSTED_AS_TEXT, id="results' round not held"),
+                 POSTED_AS_TEXT, id="results' round not held", marks=_NOT_YET),
     pytest.param(_season_cancelled, "`/season cancel`", ("Pro",),
-                 POSTED_AS_TEXT_IN_A_CANCELLED_SEASON, id="a season's cancellation"),
+                 POSTED_AS_TEXT_IN_A_CANCELLED_SEASON, id="a season's cancellation",
+                 marks=_NOT_YET),
 ])
 async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_posts_it(
     tmp_path, monkeypatch, start, change, divisions, posted,
@@ -390,6 +395,7 @@ async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_p
             assert words not in told, told
 
 
+@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_a_calendar_job_that_finds_no_calendar_channel_claims_no_text_posted(
     tmp_path, monkeypatch,
 ):
@@ -405,5 +411,29 @@ async def test_a_calendar_job_that_finds_no_calendar_channel_claims_no_text_post
 
     assert await stopped_job(league.db_path) is None
     assert league.texts(PRO_CALENDAR) == []
+    assert "posted as text" not in reply(interaction)
+    assert not any("posted as text" in line for line in league.bot.log_channel.sent)
+
+
+@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
+async def test_a_calendar_the_league_does_not_draw_is_posted_as_text_with_no_line(
+    tmp_path, monkeypatch,
+):
+    """Season 3 being raced with the images module on, the drawing answering that the league does
+    not draw its calendar; Pro's round 3 is cancelled. The calendar job draws nothing and posts
+    Pro's textual calendar, and neither the reply nor the log channel says a calendar was posted
+    as text: the text is what the league asked for, not a fallback."""
+    from leaguebot.core.services.calendar_post_service import calendar_heading
+
+    league = await ongoing_league(tmp_path, images=True)
+    drawing = draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub(wanted=False))
+    interaction = await _cancel(league)
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert drawing.drawn == []
+    [posted] = league.texts(PRO_CALENDAR)
+    assert posted.startswith(calendar_heading("Pro")), posted
     assert "posted as text" not in reply(interaction)
     assert not any("posted as text" in line for line in league.bot.log_channel.sent)
