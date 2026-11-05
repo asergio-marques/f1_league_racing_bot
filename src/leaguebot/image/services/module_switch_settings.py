@@ -43,15 +43,6 @@ if TYPE_CHECKING:
 _ENABLE_COMMAND = "/module enable images"
 _DISABLE_COMMAND = "/module disable images"
 
-#: The reply where the host carries no rasteriser, in today's words.
-_NO_RASTERISER = (
-    "⛔ **Inkscape is not installed on the machine running the bot.**\n"
-    "Image generation is disabled entirely until it is. No package dependency installs it — it "
-    "is a separate program the host must carry.\n"
-    "If it is installed somewhere unusual, set the `INKSCAPE` environment variable to the "
-    "executable's full path."
-)
-
 _ENABLED = "✅ Image module enabled. All output aspects start disabled — use `/images config toggle`."
 
 
@@ -83,11 +74,14 @@ def module_on_images(*, modules: "ModuleService") -> Setting:
         )
 
     def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
-        from leaguebot.image.services.image_render_service import converter_available
+        from leaguebot.image.services.image_render_service import (
+            converter_absent_message,
+            converter_available,
+        )
 
         if converter_available(use_cache=False):
             return _ENABLED
-        return f"{_ENABLED}\n\n{_NO_RASTERISER}"
+        return f"{_ENABLED}\n\n{converter_absent_message()}"
 
     return Setting(
         kind=module_on("images"),
