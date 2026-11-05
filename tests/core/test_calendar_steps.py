@@ -269,8 +269,14 @@ async def test_a_first_calendar_plans_no_delete(tmp_path, monkeypatch):
 #: What the drawing of every calendar meets in the tests below.
 PROBLEM = "the template has no rows"
 #: The `post_calendar` job's own line where its calendar fell back to text, after the member and
-#: the change it ran for (Constitution XIV.4: recorded alongside the source's own entry).
-POSTED_AS_TEXT = " | Calendar posted as text\n  division: {division}\n  problem: {problem}"
+#: the change it ran for (Constitution XIV.4: recorded alongside the source's own entry): the
+#: division, the problem, and what puts it right (the owner's decision on #283).
+POSTED_AS_TEXT = (
+    " | Calendar posted as text\n"
+    "  division: {division}\n"
+    "  problem: {problem}\n"
+    "  to put it right: fix the calendar template, then run `/division calendar-sync`"
+)
 FALLBACK_NOT_YET_ITS_JOB_S = (
     "#283: the post_calendar job writes no line where its calendar fell back to text; each "
     "change words the fallback itself"
