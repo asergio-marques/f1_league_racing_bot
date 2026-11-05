@@ -260,12 +260,21 @@ async def test_a_stop_after_the_round_is_cancelled_still_tells_the_modules_takes
     await league.restart()
     await run_queue(league.bot)
 
-    checkin = league.texts(PRO_CH.checkin)
-    assert len(checkin) == 1 and checkin[0].startswith("<@&801>\n📢 **Round 3 Cancelled: Pro**")
+    assert league.texts(PRO_CH.checkin) == [
+        "<@&801>\n📢 **Round 3 Cancelled: Pro**\nRound 3 (Silverstone) has been cancelled. There "
+        "is no check-in to answer for it, and nobody is charged for it."
+    ]
     assert not set(CALL_MESSAGES) & set(league.channel(PRO_CH.checkin).messages)
     assert await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3) == []
+    assert league.texts(PRO_CH.forecast) == [
+        "📢 **Round 3 Cancelled: Pro**\nRound 3 (Silverstone) has been cancelled. No weather "
+        "forecast will be posted for it."
+    ]
+    assert league.texts(PRO_CH.results) == [
+        "📢 **Round 3 Cancelled: Pro**\nRound 3 (Silverstone) has been cancelled. No results will "
+        "be posted for it."
+    ]
     for cid in (PRO_CH.forecast, PRO_CH.results):
-        assert len(league.texts(cid)) == 1
         assert league.channel(cid).send.await_args.kwargs.get("silent") is True
     calendar = league.texts(PRO_CH.calendar)
     assert len(calendar) == 1 and calendar[0].count("— Cancelled") == 1

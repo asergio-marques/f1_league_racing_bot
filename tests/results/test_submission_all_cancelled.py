@@ -90,8 +90,6 @@ FORECAST = DIVISIONS[PRO][3].forecast
 CHECKIN_NOTICE = "There is no check-in to answer for it, and nobody is charged for it."
 FORECAST_NOTE = "No weather forecast will be posted for it."
 RESULTS_NOTE = "No results will be posted for it."
-#: The heading every one of round 3's notices opens with.
-NOTICE_HEADING = "**Round 3 Cancelled: Pro**"
 
 QUALIFYING, RACE = (
     results_formatter.format_session_label(session, is_sprint=False)
@@ -501,10 +499,11 @@ def _sends(league: SeasonLeague, channel_id: int, phrase: str) -> list[Any]:
 async def test_a_round_ending_cancelled_posts_the_round_cancelled_notices_in_check_in_forecast_and_results(
     tmp_path, weather, attendance,
 ):
-    """Round 3 ends cancelled when the admin types CANCELLED for its race. Each module that is on
-    posts its "round cancelled" notice once, in `/round cancel`'s words: Pro's check-in channel a
-    notice opening with Pro's role and pinging it, Pro's forecast and results channels a silent
-    note. A module that is off posts nothing (owner, check 1, "Post the notices"; Q-E5)."""
+    """Round 3 (Silverstone) ends cancelled when the admin types CANCELLED for its race. Each
+    module that is on posts its "round cancelled" notice once, in `/round cancel`'s words, word
+    for word: Pro's check-in channel a notice opening with Pro's role and pinging it, Pro's
+    forecast and results channels a silent note, each naming the round and its track. A module
+    that is off posts nothing (owner, check 1, "Post the notices"; Q-E5)."""
     league = await _league(tmp_path, weather=weather, attendance=attendance)
 
     await _cancel_the_race(league)
@@ -512,17 +511,27 @@ async def test_a_round_ending_cancelled_posts_the_round_cancelled_notices_in_che
 
     assert await stopped_job(league.db_path) is None
     [results] = _sends(league, RESULTS, RESULTS_NOTE)
-    assert NOTICE_HEADING in str(results.args[0]) and results.kwargs.get("silent") is True
+    assert str(results.args[0]) == (
+        "📢 **Round 3 Cancelled: Pro**\nRound 3 (Silverstone) has been cancelled. No results will "
+        "be posted for it."
+    )
+    assert results.kwargs.get("silent") is True
     forecasts = _sends(league, FORECAST, FORECAST_NOTE)
     checkins = _sends(league, CHECKIN, CHECKIN_NOTICE)
     if not weather:
         assert forecasts == [] and checkins == []
         return
     [forecast] = forecasts
-    assert NOTICE_HEADING in str(forecast.args[0]) and forecast.kwargs.get("silent") is True
+    assert str(forecast.args[0]) == (
+        "📢 **Round 3 Cancelled: Pro**\nRound 3 (Silverstone) has been cancelled. No weather "
+        "forecast will be posted for it."
+    )
+    assert forecast.kwargs.get("silent") is True
     [checkin] = checkins
-    assert str(checkin.args[0]).startswith(f"<@&{PRO_ROLE}>")
-    assert NOTICE_HEADING in str(checkin.args[0])
+    assert str(checkin.args[0]) == (
+        f"<@&{PRO_ROLE}>\n📢 **Round 3 Cancelled: Pro**\nRound 3 (Silverstone) has been cancelled. "
+        "There is no check-in to answer for it, and nobody is charged for it."
+    )
     assert not checkin.kwargs.get("silent")
 
 
