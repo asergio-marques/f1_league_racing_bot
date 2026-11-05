@@ -63,8 +63,10 @@ class _Drawing:
 
 
 async def _seed(tmp_path, name: str = "capacity_guards"):
-    """A fresh database named *name* under *tmp_path*: a division with a reserve team and two race teams of two free seats each, one reserve and
-    one race driver seated, and driver 9999 waiting to be placed."""
+    """A fresh database named *name* under *tmp_path*: a division with a reserve team and two race
+    teams of two seats each, one reserve and two race drivers seated (one in each race team, so
+    that each count below tells the reserves and the race drivers apart), and driver 9999 waiting
+    to be placed."""
     db_path = str(tmp_path / f"{name}.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -117,7 +119,7 @@ async def _seed(tmp_path, name: str = "capacity_guards"):
                 (reserve,),
             )
         ).lastrowid
-        for user_id, seat_id in (("1000", reserve_seat), ("1001", seats[0])):
+        for user_id, seat_id in (("1000", reserve_seat), ("1001", seats[0]), ("1002", seats[2])):
             profile = (
                 await db.execute(
                     "INSERT INTO driver_profiles (discord_user_id, current_state) "
@@ -219,18 +221,113 @@ async def test_placement_capacity_guards_run_with_a_stub_drawing(
     assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
 
 
-@pytest.mark.parametrize("team", [RESERVE, ORDINARY])
-async def test_no_drawing_handed_means_no_guard(tmp_path, team):
-    """A service built alone, as a test that exercises placement builds it, asks nothing and
-    refuses nothing, for a placement or for a test roster however large: the four
-    `test_no_bot_means_no_guard` tests, merged."""
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
+@pytest.mark.parametrize(
+    "team, asked",
+    [
+        (
+            RESERVE,
+            [
+                ("reserve_capacity_problem", 2),
+                ("sheet_capacity_problem", 4),
+                ("declared_capacity_problem", 4),
+            ],
+        ),
+        (
+            ORDINARY,
+            [
+                ("sheet_capacity_problem", 4),
+                ("standings_capacity_problem", 3),
+                ("declared_capacity_problem", 4),
+            ],
+        ),
+    ],
+    ids=["reserve", "ordinary"],
+)
+async def test_a_placement_asks_each_guard_its_own_count(tmp_path, team, asked):
+    """Core counts, and the drawing is asked of the count alone: the reserve block counts the
+    reserves, the sheet every driver of the division, the standings the race drivers, the
+    declared capacity every driver of the season's division. A reserve joins no classification,
+    so a reserve placement never asks the standings; only a reserve fills the reserve block, so
+    an ordinary placement never asks it (#140)."""
     from leaguebot.core.services.placement_service import PlacementService
 
     db_path, season_id, division_id = await _seed(tmp_path)
-    service = PlacementService(db_path)
+    drawing = _Drawing({})
 
-    await service.guard_roster_capacity(division_id, {team: 99})
-    result = await _place(service, season_id, division_id, team)
+    await _place(PlacementService(db_path, drawing=drawing), season_id, division_id, team)
 
-    assert result["team_name"] == team
-    assert await _placed(db_path)
+    assert drawing.asked == asked
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
+async def test_an_unknown_team_asks_neither_the_reserve_block_nor_the_standings(tmp_path):
+    """Whether a team is the reserve cannot be known of a team the division does not hold, so
+    the two guards that ask it are left out, and `assign_driver` refuses the team in its own
+    words."""
+    from leaguebot.core.services.placement_service import PlacementService
+
+    db_path, season_id, division_id = await _seed(tmp_path)
+    drawing = _Drawing({})
+
+    with pytest.raises(ValueError) as refused:
+        await _place(
+            PlacementService(db_path, drawing=drawing), season_id, division_id, "No Such Team"
+        )
+
+    assert str(refused.value) == "Team **No Such Team** not found in this division."
+    asked = [name for name, _count in drawing.asked]
+    assert "reserve_capacity_problem" not in asked
+    assert "standings_capacity_problem" not in asked
+    assert not await _placed(db_path)
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
+@pytest.mark.parametrize(
+    "added, asked",
+    [
+        (
+            {RESERVE: 2, ORDINARY: 1, "Team 2": 2, "No Such Team": 5},
+            [
+                ("reserve_capacity_problem", 3),
+                ("sheet_capacity_problem", 8),
+                ("standings_capacity_problem", 5),
+            ],
+        ),
+        (
+            {ORDINARY: 2},
+            [("sheet_capacity_problem", 5), ("standings_capacity_problem", 4)],
+        ),
+        (
+            {RESERVE: 2},
+            [("reserve_capacity_problem", 3), ("sheet_capacity_problem", 5)],
+        ),
+    ],
+    ids=["mixed", "race-only", "reserves-only"],
+)
+async def test_a_roster_asks_each_guard_once_summed_across_its_teams(tmp_path, added, asked):
+    """A test roster is measured whole, per division (#150): each guard is asked once, of the
+    drivers already seated and every driver the roster adds across its teams; a team the
+    division does not hold adds nothing, the roster refusing it in its own words; and the
+    declared capacity is never asked, since every catalogue declares none."""
+    from leaguebot.core.services.placement_service import PlacementService
+
+    db_path, _season_id, division_id = await _seed(tmp_path)
+    drawing = _Drawing({})
+
+    await PlacementService(db_path, drawing=drawing).guard_roster_capacity(division_id, added)
+
+    assert drawing.asked == asked
+
+
+async def test_no_drawing_handed_means_no_guard(tmp_path):
+    """A service built alone, as a test that exercises placement builds it, refuses no test
+    roster however large: the four `test_no_bot_means_no_guard` tests, merged. That such a service
+    places a driver is `test_placement_assign.py`'s."""
+    from leaguebot.core.services.placement_service import PlacementService
+
+    db_path, _season_id, division_id = await _seed(tmp_path)
+
+    await PlacementService(db_path).guard_roster_capacity(
+        division_id, {RESERVE: 99, ORDINARY: 99}
+    )
