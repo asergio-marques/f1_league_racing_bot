@@ -1044,39 +1044,47 @@ async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallb
 
 #: Each post retried: its job, its channel, the modules it needs, and where it reaches for its
 #: picture, stubbed to stand aside so that the text follows on every host, whether or not it
-#: carries the rasteriser: the module (for the calendar, the drawing the builder handed the
-#: league's bot, read from the league), the function, and what the stub returns.
+#: carries the rasteriser: the module (for the lineup and the calendar, the drawing the builder
+#: handed the league's bot, read from the league), the function, what the stub returns, and the
+#: gates on the same target answered as given, so that the first try reaches for the picture.
 _RETRIED_POSTS = {
     "the lineup": (
         "refresh_lineup", lambda chans: chans.lineup, {},
-        ("leaguebot.image.services.image_lineup_post", "try_post",
-         MagicMock(applicable=False)),
+        (lambda league: league.bot.image_drawing, "draw_lineup",
+         SimpleNamespace(path=None, problem=None, notices=()), {"lineup_wanted": True}),
     ),
     "the calendar": (
         "post_calendar", lambda chans: chans.calendar, {},
         (lambda league: league.bot.image_drawing, "draw_calendar",
-         SimpleNamespace(path=None, problem=None, notices=())),
+         SimpleNamespace(path=None, problem=None, notices=()), {}),
     ),
     "the opening standings": (
         "opening_standings", lambda chans: chans.standings, {"results": True},
         ("leaguebot.image.services.image_standings_post", "try_post",
-         MagicMock(rejects=False, applicable=False)),
+         MagicMock(rejects=False, applicable=False), {}),
     ),
     "the opening sheet": (
         "opening_sheet", lambda chans: chans.attendance, {"attendance": True},
-        ("leaguebot.image.services.image_attendance_post", "attendance_enabled", False),
+        ("leaguebot.image.services.image_attendance_post", "attendance_enabled", False, {}),
     ),
 }
 
 
-@pytest.mark.parametrize("post", sorted(_RETRIED_POSTS))
+@pytest.mark.parametrize("post", [
+    pytest.param("the calendar"),
+    pytest.param("the lineup", marks=pytest.mark.xfail(
+        strict=True, reason="#283: core does not yet ask the handed drawing for the lineup",
+    )),
+    pytest.param("the opening sheet"),
+    pytest.param("the opening standings"),
+])
 async def test_a_retried_post_is_posted_as_text(tmp_path, monkeypatch, post):
     """Images on, every aspect on: Pro's channel refuses the first send. The first try reaches
     for the picture, Pro's retry does not and posts the text, and Am's post, a first try of its
     own, reaches for it again."""
     import importlib
 
-    job, which, modules, (module, name, returned) = _RETRIED_POSTS[post]
+    job, which, modules, (module, name, returned, gates) = _RETRIED_POSTS[post]
     league = await _league_for(tmp_path, monkeypatch, images=True, **modules)
     league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
     cid = which(PRO_CH)
@@ -1084,7 +1092,10 @@ async def test_a_retried_post_is_posted_as_text(tmp_path, monkeypatch, post):
     await _pressed(league)
     draw = AsyncMock(return_value=returned)
     target = importlib.import_module(module) if isinstance(module, str) else module(league)
-    monkeypatch.setattr(target, name, draw)
+    # The drawing gains the lineup with the build, so its part is set where it is not there yet.
+    monkeypatch.setattr(target, name, draw, raising=isinstance(module, str))
+    for gate, answer in gates.items():
+        monkeypatch.setattr(target, gate, AsyncMock(return_value=answer), raising=False)
 
     await run_queue(league.bot)
     assert await _stopped_at(league) == job

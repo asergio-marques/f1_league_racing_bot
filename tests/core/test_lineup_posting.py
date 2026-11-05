@@ -281,20 +281,18 @@ async def _lineup_audits(league: Any) -> list[dict[str, Any]]:
     )
 
 
-def _pictures_on(monkeypatch: Any, tmp_path: Any) -> None:
-    """The lineup is drawn as a picture: the image module's lineup aspect on, and its render
-    giving a PNG."""
-    from types import SimpleNamespace
+def _pictures_on(league: Any, monkeypatch: Any, tmp_path: Any) -> Any:
+    """The lineup is drawn as a picture: the drawing the builder handed placement answers that the
+    league draws its lineup, and draws it as a PNG. Gives the stand-in drawing."""
+    from tests.support.lineup_drawing import LineupDrawingStub, draw_lineups_with
 
     png = tmp_path / "lineup.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    monkeypatch.setattr("leaguebot.image.services.image_lineup_post.lineup_enabled",
-                        AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        "leaguebot.image.services.image_lineup_post.render_png",
-        AsyncMock(return_value=SimpleNamespace(rejects=False, posts_image=True,
-                                               png_paths=[png], notices=[], problem=None)),
-    )
+    return draw_lineups_with(league.bot, monkeypatch, LineupDrawingStub(picture=png))
+
+
+#: Why a test of a lineup posted as a picture fails until the build.
+NOT_DRAWN_YET = "#283: core does not yet ask the handed drawing for the lineup, nor post its picture"
 
 
 async def test_the_text_lineup_is_posted_before_the_old_one_is_deleted(tmp_path):
@@ -334,12 +332,13 @@ async def test_a_refused_text_lineup_leaves_the_old_lineup_standing(tmp_path):
     assert await _lineup_id(league) == OLD_LINEUP
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_DRAWN_YET)
 async def test_a_lineup_picture_is_posted_before_the_old_lineup_is_deleted_by_a_job(
     tmp_path, monkeypatch,
 ):
     league = await ongoing_league(tmp_path)
     await _old_lineup_standing(league)
-    _pictures_on(monkeypatch, tmp_path)
+    _pictures_on(league, monkeypatch, tmp_path)
 
     await _ask(league, PRO)
     await _run_lineup_through(league, "post_lineup")
@@ -521,7 +520,9 @@ async def test_a_lineup_fallen_back_to_text_is_recorded_by_every_change_that_pos
             assert words not in told, told
 
 
-@pytest.mark.parametrize("form", ["text", "image"])
+@pytest.mark.parametrize("form", [
+    "text", pytest.param("image", marks=pytest.mark.xfail(strict=True, reason=NOT_DRAWN_YET)),
+])
 async def test_the_lineup_s_id_and_audit_are_saved_with_its_post(tmp_path, monkeypatch, form):
     """Once the post job is done, and before the deletion after it runs, the division records
     the new lineup and one `SIGNUP_LINEUP_POSTED` audit stands, written by the system, saying
@@ -529,7 +530,7 @@ async def test_the_lineup_s_id_and_audit_are_saved_with_its_post(tmp_path, monke
     league = await ongoing_league(tmp_path)
     await _old_lineup_standing(league)
     if form == "image":
-        _pictures_on(monkeypatch, tmp_path)
+        _pictures_on(league, monkeypatch, tmp_path)
 
     await _ask(league, PRO)
     await _run_lineup_through(league, "post_lineup")

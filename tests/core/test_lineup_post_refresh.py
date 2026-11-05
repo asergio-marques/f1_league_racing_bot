@@ -166,7 +166,7 @@ async def _refresh(db_path, guild, *, drawing=None):
 
 
 async def _post(db_path, guild):
-    """The text lineup posted with no bot, so no image path: gives what
+    """The text lineup posted with no drawing handed, so no picture asked for: gives what
     `_refresh_lineup_post` returns."""
     with in_a_job():
         return await PlacementService(db_path)._refresh_lineup_post(guild, DIVISION_ID)
@@ -209,7 +209,9 @@ async def test_a_configured_graphic_replaces_the_text_lineup(tmp_path):
     """Pro's lineup, one driver at Red, its old lineup message 8800; the drawing answers that the
     league draws its lineup, and draws Pro's as a PNG. Core posts the picture, and no embed, in
     Pro's lineup channel through the standing-post handler, notifying nobody, and then hands the
-    file back to the drawing to release. What it posted is a picture replacing 8800."""
+    file back to the drawing to release. What it posted is a picture replacing 8800, which it
+    neither fetches nor deletes, and the division still records 8800: the job after it deletes
+    the old lineup, and the post job's own save records the new one."""
     db_path = await _make_db(tmp_path, name="lineup_image", drivers=ONE_DRIVER)
     channel = _channel()
     png = tmp_path / "lineup_template.png"
@@ -229,6 +231,8 @@ async def test_a_configured_graphic_replaces_the_text_lineup(tmp_path):
         NEW_MESSAGE_ID, OLD_MESSAGE_ID, "image",
     )
     assert posted.problem is None
+    channel.fetch_message.assert_not_awaited()
+    assert await _stored_message_id(db_path) == OLD_MESSAGE_ID
 
 
 @pytest.mark.xfail(
