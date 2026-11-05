@@ -1171,9 +1171,20 @@ async def test_a_retried_calendar_is_posted_as_text(tmp_path, monkeypatch):
     assert len(league.texts(PRO_CH.calendar)) == 1
     assert league.channel(PRO_CH.calendar).files[-1] is None
     assert draw.await_count == 1, "the retry reached for the picture"
+    assert not any("posted as text" in line for line in _log_lines(league)), (
+        "a retry posted as text is no fallback (Constitution XIV, rule 8)"
+    )
 
 
-async def test_a_calendar_that_falls_back_to_text_is_named(tmp_path, monkeypatch):
+@pytest.mark.xfail(strict=True, reason=(
+    "#283: the round's cancellation names a calendar posted as text as not notified"
+))
+async def test_a_calendar_fallen_back_to_text_is_not_named_as_not_notified(
+    tmp_path, monkeypatch,
+):
+    """Pro's round 3 is cancelled while Pro's calendar is drawn as a picture, and the drawing
+    fails, so the calendar is posted again as text. The calendar was posted, so neither the reply
+    nor the cancellation's line names it as not notified: its fallback is its job's own line."""
     from leaguebot.core.services import calendar_post_service
 
     league = await ongoing_league(tmp_path, images=True)
@@ -1186,12 +1197,11 @@ async def test_a_calendar_that_falls_back_to_text_is_named(tmp_path, monkeypatch
 
     await _done(league)
 
-    named = ("**Pro** — calendar: posted as text, as the picture could not be drawn (the "
-             "template has no rows)")
-    assert named in _not_notified(reply(interaction))
-    assert f"\n  not notified: {named}" in _success_lines(league)[0]
-    result = (await _job(league, "post_calendar"))["result"]
-    assert result["fell_back"] and result["problem"] == "the template has no rows"
+    assert len(league.texts(PRO_CH.calendar)) == 1
+    assert "Not notified" not in reply(interaction)
+    assert "posted as text" not in reply(interaction)
+    [line] = _success_lines(league)
+    assert "not notified:" not in line and "the template has no rows" not in line
 
 
 async def test_a_discarded_calendar_repost_names_calendar_sync_while_the_season_is_raced(tmp_path):

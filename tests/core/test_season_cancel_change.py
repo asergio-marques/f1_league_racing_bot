@@ -1474,9 +1474,16 @@ async def test_a_module_turned_off_before_its_notice_drops_the_notice(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
-async def test_a_channel_never_set_and_a_calendar_posted_as_text_are_named_per_division(
+@pytest.mark.xfail(strict=True, reason=(
+    "#283: the season's cancellation names a calendar posted as text as not notified"
+))
+async def test_a_channel_never_set_is_named_and_a_calendar_posted_as_text_is_not(
     tmp_path, monkeypatch,
 ):
+    """Season 3 is cancelled: Pro has no forecast channel set, and Am's calendar, drawn as a
+    picture, fails to draw and is posted again as text. The reply and the cancellation's line
+    name Pro's forecast channel as not notified, and not Am's calendar, which was posted: its
+    fallback is its job's own line."""
     from leaguebot.core.services import calendar_post_service
 
     league = await ongoing_league(tmp_path, weather=True, attendance=True, images=True)
@@ -1495,13 +1502,12 @@ async def test_a_channel_never_set_and_a_calendar_posted_as_text_are_named_per_d
     assert await stopped_job(league.db_path) is None
     assert all(job["done_at"] for job in await _jobs(league))
     unset = "**Pro** — forecast channel: no channel is set"
-    fell_back = ("**Am** — calendar: posted as text, as the picture could not be drawn (the "
-                 "template has no rows)")
     bullets = _not_notified(reply(interaction))
-    assert unset in bullets and fell_back in bullets
+    assert unset in bullets
+    assert not [bullet for bullet in bullets if "calendar" in bullet]
     [line] = _success_lines(league)
     assert f"\n  not notified: {unset}" in line
-    assert f"\n  not notified: {fell_back}" in line
+    assert "calendar: posted as text" not in line and "the template has no rows" not in line
     assert await _status(league) == "CANCELLED"
 
 

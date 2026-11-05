@@ -16,6 +16,7 @@ database.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -23,6 +24,7 @@ import discord
 import pytest
 
 from tests.support.change_queue import (
+    MANAGER_ROLE_ID,
     change_rows,
     discard_job,
     http_error,
@@ -30,16 +32,22 @@ from tests.support.change_queue import (
     run_queue,
     step_rows,
     stopped_job,
+    typed_message,
 )
 from tests.support.season_league import (
+    ADMIN_ID,
     CALENDAR_MESSAGE,
     DIVISIONS,
     PRO,
     ROUND_CANCEL_KIND,
+    SUBMISSION_CHANNEL,
+    accept_session,
     cancel_round,
     ongoing_league,
+    open_submission,
     press_approve,
     reply,
+    round_id,
     season_league,
 )
 
@@ -255,3 +263,113 @@ async def test_a_first_calendar_plans_no_delete(tmp_path, monkeypatch):
     [new] = list(league.channel(PRO_CALENDAR).messages)
     assert await _calendar_id(league) == str(new)
 
+
+
+# ── A calendar fallen back to text, recorded by its own job (#283, S12) ──────────────────────
+
+#: What the drawing of every calendar meets in the tests below.
+PROBLEM = "the template has no rows"
+#: The `post_calendar` job's own line where its calendar fell back to text, after the member and
+#: the change it ran for (Constitution XIV.4: recorded alongside the source's own entry).
+POSTED_AS_TEXT = " | Calendar posted as text\n  division: {division}\n  problem: {problem}"
+FALLBACK_NOT_YET_ITS_JOB_S = (
+    "#283: the post_calendar job writes no line where its calendar fell back to text; each "
+    "change words the fallback itself"
+)
+
+
+def _drawing_fails(league: Any, monkeypatch: Any) -> None:
+    """The league conveys its calendar as a picture, and every drawing of one raises."""
+    from leaguebot.core.services import calendar_post_service
+
+    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
+        side_effect=lambda aspect: aspect == "calendar"
+    )
+    monkeypatch.setattr(calendar_post_service, "render_calendar_image",
+                        AsyncMock(side_effect=RuntimeError(PROBLEM)))
+
+
+async def _approved(tmp_path: Any, monkeypatch: Any) -> Any:
+    """Season 3's placements approved by the admin: Pro's and Am's calendars are posted."""
+    league = await season_league(tmp_path, monkeypatch=monkeypatch, images=True)
+    _drawing_fails(league, monkeypatch)
+    await press_approve(league)
+    return league
+
+
+async def _round_cancelled(tmp_path: Any, monkeypatch: Any) -> Any:
+    """Pro's round 3 cancelled with `/round cancel`: Pro's calendar is posted again."""
+    league = await ongoing_league(tmp_path, images=True)
+    _drawing_fails(league, monkeypatch)
+    await _cancel(league)
+    return league
+
+
+async def _round_not_held(tmp_path: Any, monkeypatch: Any) -> Any:
+    """Pro's round 3 awaiting results, its Feature Qualifying entered as cancelled; the admin types
+    CANCELLED for its Feature Race, so the round ends not held and Pro's calendar is posted again
+    (results' `results.submission.all_cancelled`)."""
+    from leaguebot.results.cogs.results_cog import ResultsCog
+
+    league = await ongoing_league(tmp_path, images=True)
+    _drawing_fails(league, monkeypatch)
+    league.roles_held[ADMIN_ID] = {MANAGER_ROLE_ID}
+    round_3 = round_id(PRO, 3)
+    await league.write("UPDATE rounds SET status = 'AWAITING_RESULTS' WHERE id = ?", round_3)
+    await open_submission(league, round_3)
+    sub = league.channel(SUBMISSION_CHANNEL)
+    if not isinstance(getattr(sub, "posted", None), list):
+        sub.posted = []
+    await accept_session(league, round_3, session="FEATURE_QUALIFYING", status="CANCELLED")
+    await ResultsCog(league.bot).on_message(typed_message(
+        sub, league._member(ADMIN_ID), "CANCELLED", created_at=league.clock.now,
+    ))
+    return league
+
+
+@pytest.mark.xfail(strict=True, reason=FALLBACK_NOT_YET_ITS_JOB_S)
+@pytest.mark.parametrize(("start", "divisions"), [
+    pytest.param(_approved, ("Pro", "Am"), id="the approval"),
+    pytest.param(_round_cancelled, ("Pro",), id="a round's cancellation"),
+    pytest.param(_round_not_held, ("Pro",), id="results' round not held"),
+])
+async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_posts_it(
+    tmp_path, monkeypatch, start, divisions,
+):
+    """Each change that posts a calendar, where the drawing fails and the text stands in: the log
+    channel names the problem once for each calendar, in the `post_calendar` job's own line, and
+    in no line of the change's own (Constitution XIV.4, the data model's render problems)."""
+    league = await start(tmp_path, monkeypatch)
+    assert not league.errors, league.errors
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    named = [line for line in league.bot.log_channel.sent if PROBLEM in line]
+    assert len(named) == len(divisions), named
+    for division in divisions:
+        assert sum(
+            POSTED_AS_TEXT.format(division=division, problem=PROBLEM) in line for line in named
+        ) == 1, named
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#283: the round's cancellation names a calendar whose channel is not set as posted as text"
+))
+async def test_a_calendar_job_that_finds_no_calendar_channel_claims_no_text_posted(
+    tmp_path, monkeypatch,
+):
+    """Pro's calendar stands as posted, but Pro has no calendar channel set, a state no command
+    leaves; Pro's round 3 is cancelled. The calendar job posts nothing, and neither the reply nor
+    the log channel says a calendar was posted as text."""
+    league = await ongoing_league(tmp_path, images=True)
+    _drawing_fails(league, monkeypatch)
+    await league.write("UPDATE divisions SET calendar_channel_id = NULL WHERE id = ?", PRO)
+    interaction = await _cancel(league)
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.texts(PRO_CALENDAR) == []
+    assert "posted as text" not in reply(interaction)
+    assert not any("posted as text" in line for line in league.bot.log_channel.sent)

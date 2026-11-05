@@ -241,7 +241,13 @@ async def test_a_refused_render_posts_nothing_and_says_the_old_calendar_stands(t
     ]
 
 
-async def test_render_notices_are_shown_and_logged(tmp_path):
+@pytest.mark.xfail(strict=True, reason=(
+    "#283: calendar sync's close line repeats the notices the render has already reported"
+))
+async def test_render_notices_are_shown_in_the_reply_and_not_repeated_in_the_close_line(tmp_path):
+    """A calendar synced, drawn with a notice. The reply names the notice (Constitution XIV.4,
+    alongside a command's output); the command's line in the log channel does not repeat it,
+    the render having reported it there itself, in one message."""
     cog = await _make_cog()
     interaction = _interaction()
 
@@ -249,7 +255,8 @@ async def test_render_notices_are_shown_and_logged(tmp_path):
 
     assert "round 12 did not fit" in _replied(interaction)
     logged = _logged(cog)[-1]
-    assert "notice: round 12 did not fit" in logged
+    assert "| /division calendar-sync | Success" in logged
+    assert "round 12 did not fit" not in logged
 
 
 async def test_a_server_with_no_season_is_refused(tmp_path):

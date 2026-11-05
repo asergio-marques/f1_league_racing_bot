@@ -229,7 +229,10 @@ class SeasonLeague:
         known = {bot.log_channel.id: bot.log_channel,
                  bot.interaction_channel.id: bot.interaction_channel}
 
-        def _get(cid: int) -> Any:
+        def _get(cid: int | None) -> Any:
+            # No id finds no channel, as `Guild.get_channel(None)` gives None.
+            if cid is None:
+                return None
             return self.channels.get(int(cid)) or known.get(int(cid))
 
         async def _fetch(cid: int) -> Any:

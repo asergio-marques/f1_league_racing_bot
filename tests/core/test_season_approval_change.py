@@ -1033,30 +1033,43 @@ async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monk
     assert "SEASON 0" in caplog.text
 
 
-async def test_a_calendar_that_falls_back_to_text_is_reported_in_the_reply_and_the_log(
+@pytest.mark.xfail(strict=True, reason=(
+    "#283: the approval words a calendar's fallback in its reply and repeats a calendar's notices "
+    "in its log"
+))
+async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallback(
     tmp_path, monkeypatch,
 ):
+    """Season 3 approved with its calendars drawn as pictures: Pro's drawing fails, and Am's draws
+    with a notice. The reply's "Calendar images" section names Am's notice and not Pro's
+    fallback, which is its job's own line (Constitution XIV.4); no line of the approval's own
+    repeats either, the render reporting its notices itself."""
     from leaguebot.core.services import calendar_post_service
 
     league = await _league_for(tmp_path, monkeypatch, images=True)
     league.bot.image_config_service.is_aspect_enabled = AsyncMock(
         side_effect=lambda aspect: aspect == "calendar"
     )
-    monkeypatch.setattr(
-        calendar_post_service, "render_calendar_image",
-        AsyncMock(side_effect=RuntimeError("the template has no rows")),
-    )
+    notice = "a fallback flag stood in for Monaco's"
+
+    async def _draw(_bot: Any, division: Any, *_args: Any, **_kwargs: Any) -> Any:
+        if division.name == "Pro":
+            raise RuntimeError("the template has no rows")
+        return SimpleNamespace(problem=None, notices=[SimpleNamespace(detail=notice)],
+                               png_paths=[])
+
+    monkeypatch.setattr(calendar_post_service, "render_calendar_image", _draw)
     press = await _pressed(league)
 
     await run_queue(league.bot)
 
     assert "⚠️ **Calendar images**" in reply(press)
-    assert "the template has no rows" in reply(press)
-    calendar_lines = [line for line in _log_lines(league)
-                      if "| /season placements-review | Calendar image generation" in line]
-    assert len(calendar_lines) == 1
-    assert "Fell back to the textual calendar" in calendar_lines[0]
-    assert "Pro: the template has no rows" in calendar_lines[0]
+    assert f"Am: {notice}" in reply(press)
+    assert "the template has no rows" not in reply(press)
+    assert "Fell back" not in reply(press)
+    assert not [line for line in _log_lines(league) if notice in line]
+    assert not [line for line in _log_lines(league)
+                if "| /season placements-review |" in line and "the template has no rows" in line]
 
 
 #: Each post retried: its job, its channel, the modules it needs, and where it reaches for its
