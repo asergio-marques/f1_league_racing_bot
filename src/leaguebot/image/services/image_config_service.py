@@ -90,11 +90,7 @@ class ImageConfigService:
         makes re-enabling after a disable lossless (FR-004a).
         """
         async with get_connection(self._db_path) as db:
-            await db.execute("INSERT OR IGNORE INTO image_config (id) VALUES (1)")
-            await db.executemany(
-                "INSERT OR IGNORE INTO image_aspect_toggles (aspect, enabled) VALUES (?, 0)",
-                [(aspect,) for aspect in ASPECTS],
-            )
+            await create_defaults_on(db)
             await db.commit()
 
             cursor = await db.execute("SELECT * FROM image_config")
@@ -214,6 +210,19 @@ class ImageConfigService:
 # queue hands a step, never committing: the value and its audit entry stand or fall together.
 # Each judges "held" on the connection that writes (a change ahead may have moved the value),
 # keeps its own allow-list, and returns what `Saved` carries.
+
+
+async def create_defaults_on(db: aiosqlite.Connection) -> None:
+    """Create the config row and all nine toggle rows on *db*, where missing. Commits
+    nothing, so a caller folds this into a save of its own (`module_switch_settings.py`'s
+    switch-on) alongside `create_with_defaults`, which commits for its own callers; a change
+    to the defaults is then made once.
+    """
+    await db.execute("INSERT OR IGNORE INTO image_config (id) VALUES (1)")
+    await db.executemany(
+        "INSERT OR IGNORE INTO image_aspect_toggles (aspect, enabled) VALUES (?, 0)",
+        [(aspect,) for aspect in ASPECTS],
+    )
 
 
 async def read_config_on(db: aiosqlite.Connection) -> ImageConfig | None:

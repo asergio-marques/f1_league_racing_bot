@@ -8,9 +8,10 @@ importing image. `docs/design/architecture.md`, "How modules and core fit togeth
 gap this closes: weather's switch (`weather/services/module_switch_settings.py`) is the model.
 
 **The switch-on is one save.** The configuration row and every aspect toggle are created where
-missing (`ImageConfigService.create_with_defaults`'s `INSERT OR IGNORE`s, run on the save's own
-connection rather than through the service, which opens a connection of its own), the flag is
-raised and the audit entry written, so a fault anywhere in the save leaves none of it: no
+missing (`create_defaults_on`, the same `INSERT OR IGNORE`s `ImageConfigService.create_with_defaults`
+commits for its own callers, run here on the save's own connection and left uncommitted so the
+module stays off until everything below has been written too); the flag is raised and the audit
+entry written, so a fault anywhere in the save leaves none of it: no
 configuration, no flag, no audit row — never the module on with nothing configured, and never a
 part-made configuration a later enable would build on. The module enables even without the host's
 rasteriser (FR-007, FR-008), so the reply adds the notice where one is missing, read here rather
@@ -33,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 from leaguebot.core.models.change import AuditRecord, Verdict, module_off, module_on
 from leaguebot.core.services.change_queue import CheckContext
 from leaguebot.core.services.setting_change import Saved, Setting
-from leaguebot.image.models.image_constants import ASPECTS
+from leaguebot.image.services.image_config_service import create_defaults_on
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -60,11 +61,7 @@ def module_on_images(*, modules: "ModuleService") -> Setting:
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
-        await db.execute("INSERT OR IGNORE INTO image_config (id) VALUES (1)")
-        await db.executemany(
-            "INSERT OR IGNORE INTO image_aspect_toggles (aspect, enabled) VALUES (?, 0)",
-            [(aspect,) for aspect in ASPECTS],
-        )
+        await create_defaults_on(db)
         await db.execute("UPDATE image_config SET module_enabled = 1")
         return Saved(
             changed=True,
