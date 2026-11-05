@@ -95,9 +95,6 @@ ignore_imports =
     # #283: core reaches a module directly where it is to offer a hook the module signs up to
     # (architecture.md, "How modules and core fit together"). Attendance:
     leaguebot.core.services.season_classification_service -> leaguebot.attendance.services.attendance_service
-    # #283: core's final posts share the earlier-try bookkeeping results' opening standings use,
-    # imported from there rather than kept twice. S10e removes it with the final posts themselves.
-    leaguebot.core.services.season_classification_service -> leaguebot.results.services.season_standings_posts
     # #283: image, which core is to ask for its graphics through the protocol it declares
     # (architecture.md, "How modules and core fit together"):
     leaguebot.core.cogs.driver_cog -> leaguebot.image.services.driver_portrait_service
@@ -131,8 +128,6 @@ ignore_imports =
     leaguebot.core.utils.input_validator -> leaguebot.image.utils.nationality_data
     # #283: results:
     leaguebot.core.cogs.season_cog -> leaguebot.results.services.season_points_service
-    leaguebot.core.services.season_classification_service -> leaguebot.results.services.results_post_service
-    leaguebot.core.services.season_classification_service -> leaguebot.results.services.standings_service
     # #283: signup:
     leaguebot.core.cogs.module_cog -> leaguebot.signup.models.signup_module
     leaguebot.core.services.placement_service -> leaguebot.signup.models.signup_module

@@ -1511,6 +1511,25 @@ async def division_first_round(db_path: str, division_id: int) -> Round | None:
     return _row_to_round(row) if row else None
 
 
+async def round_by_id(db_path: str, division_id: int, round_id: int) -> Round | None:
+    """*round_id* of *division_id*, or None where it is not (any longer) that division's.
+
+    For a module reading core's tables only through core's services (architecture.md, "How
+    modules and core fit together"): results' and attendance's final posts are drawn against the
+    round their own read of the final round hands back, and read it here rather than `rounds`
+    itself.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
+            "phase1_done, phase2_done, phase3_done, status FROM rounds "
+            "WHERE id = ? AND division_id = ?",
+            (round_id, division_id),
+        )
+        row = await cursor.fetchone()
+    return _row_to_round(row) if row else None
+
+
 async def round_called(db_path: str, round_id: int) -> str:
     """How a league reads *round_id*: "round 3 in **Pro**", or "a round no longer there".
 

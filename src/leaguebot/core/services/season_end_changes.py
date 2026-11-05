@@ -409,6 +409,9 @@ def shared_not_done(ctx: OutcomeContext, steps: Mapping[str, Step]) -> list[str]
         if not discarded(view):
             continue
         each = view.payload
+        if view.name in (FINAL_STANDINGS, FINAL_SHEET):
+            # Named first, ahead of the shared jobs, by `_classification_not_done`.
+            continue
         words = kept_line(steps, view)
         if words is not None:
             lines.append(words)
@@ -454,37 +457,23 @@ def shared_not_done(ctx: OutcomeContext, steps: Mapping[str, Step]) -> list[str]
     return lines
 
 
-def _classification_not_done(ctx: OutcomeContext) -> list[str]:
+def _classification_not_done(ctx: OutcomeContext, steps: Mapping[str, Step]) -> list[str]:
+    """What a module's discarded final post leaves undone, in its own step's words
+    (`kept_line`), the classification lines kept ahead of the shared season-end ones."""
     lines: list[str] = []
     for view in ctx.steps:
         if not discarded(view) or view.name not in (FINAL_STANDINGS, FINAL_SHEET):
             continue
-        name = view.payload["division_name"]
-        if view.name == FINAL_SHEET:
-            lines.append(
-                f"**{name}** — its final classification (attendance sheet) could not be "
-                "posted. No command posts it again."
-            )
-            continue
-        lines.append(
-            f"**{name}** — its final classification could not be posted. No command posts it "
-            "again."
-        )
-        stranded = (view.result or {}).get("new")
-        if stranded:
-            ids = ", ".join(str(each) for each in stranded)
-            lines.append(
-                f"**{name}** — a part of its final classification was posted before the job "
-                f"stopped and stands in <#{(view.result or {}).get('channel_id')}> (message "
-                f"{ids}): delete it by hand."
-            )
+        words = kept_line(steps, view)
+        if words is not None:
+            lines.extend(words.split("\n"))
     return lines
 
 
 def _not_done(ctx: OutcomeContext, steps: Mapping[str, Step]) -> list[str]:
     """What a league admin's Discards left undone, in the order of the jobs."""
     # The jobs run the classification first, then the shared ones, then the backup's deletion.
-    lines = [*_classification_not_done(ctx), *shared_not_done(ctx, steps)]
+    lines = [*_classification_not_done(ctx, steps), *shared_not_done(ctx, steps)]
     if discarded(view_of(ctx, DISCARD_BACKUP)):
         lines.append(BACKUP_KEPT)
     return lines
@@ -1003,54 +992,22 @@ async def test_mode_on(db: aiosqlite.Connection) -> bool:
     return row is not None and bool(row["test_mode_active"])
 
 
-async def final_round_read_on(db: aiosqlite.Connection, division_id: int) -> int | None:
-    """*division_id*'s last round with results, or None where it has none.
-
-    The final classification is drawn against that round, whose classification it *is*. A
-    division that ran no round has none to publish and gets no final classification. This is
-    core's own temporary subscriber to `final_round_read`, read exactly as `settle` used to read
-    it directly; results' own read of its `session_results` takes its place (#283, S10e).
-    """
-    cursor = await db.execute(
-        "SELECT r.id FROM rounds r JOIN session_results sr ON sr.round_id = r.id "
-        "WHERE r.division_id = ? AND sr.status = 'ACTIVE' ORDER BY r.round_number DESC LIMIT 1",
-        (division_id,),
-    )
-    row = await cursor.fetchone()
-    return int(row["id"]) if row is not None else None
-
-
-async def season_completed_on(
+async def sheet_completed_on(
     _db: aiosqlite.Connection, division_id: int, division_name: str, round_id: int
 ) -> tuple[PlannedStep, ...]:
-    """Core's own temporary subscriber to `season_completed`: the final standings and final
-    sheet jobs for *division_id*, drawn against *round_id*. Results' and attendance's own jobs
-    take its place (#283, S10e)."""
-    target = {
-        "division_id": division_id, "division_name": division_name, "round_id": round_id,
-    }
-    return (PlannedStep(FINAL_STANDINGS, target), PlannedStep(FINAL_SHEET, target))
+    """Core's own temporary subscriber to `season_completed`: the final sheet job for
+    *division_id*, drawn against *round_id*. Attendance's own job takes its place (#283, S10e)."""
+    return (
+        PlannedStep(
+            FINAL_SHEET,
+            {"division_id": division_id, "division_name": division_name, "round_id": round_id},
+        ),
+    )
 
 
-def season_completed_steps_on(modules: "ModuleService") -> dict[str, Step]:
-    """Core's own temporary subscriber to `season_completed_steps`: the step definitions for the
-    final standings and final sheet. Results' and attendance's own steps take its place (#283,
-    S10e)."""
-
-    async def final_standings(ctx: StepContext) -> StepResult:
-        guild = await require_guild(ctx.bot)
-        each = ctx.step_payload
-        await season_classification_service.post_final_standings(
-            ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
-            as_text=ctx.tries > 0, kept=ctx.kept,
-        )
-        return StepResult()
-
-    async def standings_due(_ctx: StepContext) -> bool:
-        return await modules.is_results_enabled()
-
-    async def describe_standings(ctx: StepContext) -> str:
-        return f"posting the final standings of **{ctx.step_payload['division_name']}**"
+def sheet_completed_steps_on(modules: "ModuleService") -> dict[str, Step]:
+    """Core's own temporary subscriber to `season_completed_steps`: the step definition for the
+    final sheet. Attendance's own step takes its place (#283, S10e)."""
 
     async def final_sheet(ctx: StepContext) -> StepResult:
         guild = await require_guild(ctx.bot)
@@ -1069,13 +1026,16 @@ def season_completed_steps_on(modules: "ModuleService") -> dict[str, Step]:
     async def describe_sheet(ctx: StepContext) -> str:
         return f"posting the final attendance sheet of **{ctx.step_payload['division_name']}**"
 
+    def not_done(view: Any) -> str:
+        name = view.payload["division_name"]
+        return (
+            f"**{name}** — its final classification (attendance sheet) could not be posted. "
+            "No command posts it again."
+        )
+
     return {
-        FINAL_STANDINGS: Step(
-            FINAL_STANDINGS, StepKind.ACT, final_standings, still_due=standings_due,
-            describe=describe_standings,
-        ),
         FINAL_SHEET: Step(
             FINAL_SHEET, StepKind.ACT, final_sheet, still_due=sheet_due,
-            describe=describe_sheet,
+            describe=describe_sheet, not_done=not_done,
         ),
     }
