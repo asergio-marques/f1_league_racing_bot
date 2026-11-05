@@ -887,7 +887,6 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "post_attendance_sheet"): (2, PASS["attendance"]),
-    ("image/services/image_lineup_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
@@ -2401,7 +2400,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_config_service.py", "ImageConfigService.season_division_names"):
         (2, PASS["image"]),
     ("image/services/image_lineup_post.py", "build_drawing"): (8, PASS["image"]),
-    ("image/services/image_lineup_post.py", "try_post"): (2, PASS["image"]),
     ("image/services/image_preview_service.py", "_load_teams_and_drivers"): (6, PASS["image"]),
     ("image/services/image_results_post.py", "<module>"): (2, PASS["image"]),
     ("image/services/image_results_post.py", "_driver_names"): (2, PASS["image"]),
@@ -3157,10 +3155,8 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/driver_portrait_service.py", "run_daily_refresh"): (1, BACKGROUND_FAILURES),
     ("image/services/image_attendance_post.py", "attendance_enabled"): (1, PASS["image"]),
     ("image/services/image_attendance_post.py", "render_sheet"): (1, PASS["image"]),
-    ("image/services/image_lineup_post.py", "_report"): (1, PASS["image"]),
     ("image/services/image_lineup_post.py", "lineup_enabled"): (1, PASS["image"]),
     ("image/services/image_lineup_post.py", "render_for_command"): (1, PASS["image"]),
-    ("image/services/image_lineup_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_preview_service.py", "build_rsvp_preview"): (1, PASS["image"]),
     ("image/services/image_render_service.py", "ImageRenderService.render"): (3, PASS["image"]),
     ("image/services/image_render_service.py", "ImageRenderService.report_notices"):
