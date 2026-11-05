@@ -1,12 +1,14 @@
-"""Attendance's opening sheet, posted when a season is approved (2026-09-08).
+"""Attendance's opening and final sheets, posted when a season is approved and when it
+completes (2026-09-08).
 
-The opening classification brackets a season's start: the attendance sheet a league already
-reads after every round, under the opening's heading and with no message text (see
+The opening and final classifications bracket a season: the attendance sheet a league already
+reads after every round, under the occasion's heading and with no message text (see
 ``leaguebot.core.models.classification_occasion.ClassificationOccasion``). Attendance posts its
-own, one division at a time, each a job of the season's approval on the change queue, signed up
-to the hook core declares for placements confirmed (architecture.md, "How modules and core fit
-together"). Each posting reads the division's first round as it runs, and raises where it
-cannot post, for the queue to stop on.
+own, one division at a time, each a job of the season's approval or of its completion on the
+change queue, signed up to the hooks core declares for placements confirmed and for a season
+ending (architecture.md, "How modules and core fit together"). Each posting reads the division's
+round as it runs, the first round for the opening and the round results names for the final,
+and raises where it cannot post, for the queue to stop on.
 
 What matters here is which sheet is posted for which division, against which round, and that a
 posting raises where it cannot be made; what the sheet *says* is covered by
@@ -14,7 +16,7 @@ posting raises where it cannot be made; what the sheet *says* is covered by
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -25,8 +27,11 @@ from tests.support.season_classification import (
     classification_posts,
     first_round_id,
     guild_double,
+    second_round_with_results,
     seed_season,
 )
+
+_NOT_ATTENDANCE_FINAL_YET = "#283: the final sheet is not yet posted by attendance's own module"
 
 
 @pytest.fixture
@@ -119,3 +124,29 @@ async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
 
     assert "raise_on_failure" not in attendance.await_args.kwargs
     assert attendance.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_OPENING
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_ATTENDANCE_FINAL_YET)
+async def test_the_final_sheet_is_asked_to_raise_and_posted_as_the_final_one(db_path):
+    """Div A's final attendance sheet, drawn against its round 2 and retried as text: attendance's
+    posting, which always raises, is asked for it as the final classification, and as text."""
+    from leaguebot.attendance.services import sheet_posting as service
+
+    _season_id, division_ids = await seed_season(db_path)
+    division_id = division_ids[0]
+    round_id = await second_round_with_results(db_path, division_id)
+    attendance = AsyncMock(return_value=None)
+
+    with patch(
+        "leaguebot.attendance.services.attendance_service.post_attendance_sheet", attendance
+    ):
+        await service.post_final_sheet(
+            bot_on(db_path), guild_double(), db_path, division_id, round_id, as_text=True
+        )
+
+    attendance.assert_awaited_once()
+    assert attendance.await_args.args[3] == round_id
+    assert attendance.await_args.args[4] == division_id
+    assert "raise_on_failure" not in attendance.await_args.kwargs
+    assert attendance.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_FINAL
+    assert attendance.await_args.kwargs["as_text"] is True
