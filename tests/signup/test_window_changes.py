@@ -394,12 +394,12 @@ DRIVER_NOTICE = "🔒 Signups have closed."
 DELETE_TIMER = "signup_channel_delete"
 
 
-async def _close_league(tmp_path: Any, *drivers: int) -> SeasonLeague:
-    """`setup_league` at Signups with the window open; each of *drivers* still filling in the
-    wizard (Pending Signup Completion), their signup channel standing and recording what it is
-    sent and its permission edits."""
+async def _close_league(tmp_path: Any, *drivers: int, stage: str = "SIGNUPS") -> SeasonLeague:
+    """`setup_league` at *stage* (Signups unless told) with the window open; each of *drivers*
+    still filling in the wizard (Pending Signup Completion), their signup channel standing and
+    recording what it is sent and its permission edits."""
     os.makedirs(str(tmp_path), exist_ok=True)
-    league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
+    league = await setup_league(tmp_path, stage=stage, signups_open=True)
     for user_id in drivers:
         await signing_up(league, user_id, state="PENDING_SIGNUP_COMPLETION")
         cid = SIGNUP_CHANNEL_BASE + user_id
@@ -997,7 +997,9 @@ async def test_a_wind_down_its_check_will_drop_holds_no_close_back(tmp_path, ask
 
 
 async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as_jobs(tmp_path):
-    """Kimi is still filling in the wizard. Manager 77 runs `/module disable signup`. Until the
+    """Kimi is still filling in the wizard, the window left open by a season's end whose close was
+    discarded, and the new season is in Configuration, the stage at which the signup module may
+    be switched. Manager 77 runs `/module disable signup`. Until the
     queue runs, the module is still on and the window open. When it runs, the
     `module.off:signup` change closes the window as its jobs — Kimi returned, the button
     deleted, the closed notice posted, Kimi told — and its last job, `switch_off`, turns the
@@ -1005,7 +1007,7 @@ async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as
     and the one line is written."""
     from leaguebot.core.cogs.module_cog import ModuleCog
 
-    league = await _close_league(tmp_path, SIGNING_UP)
+    league = await _close_league(tmp_path, SIGNING_UP, stage="CONFIGURATION")
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = league.bot
     interaction = _manager(league)
