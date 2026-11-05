@@ -316,7 +316,7 @@ def season_approval_change(
 
         # The report read is the report approved: the press compares the review's fingerprint,
         # and so does the run, since the season may have changed while it waited.
-        current = await take_fingerprint(ctx.bot, season_id)
+        current = await take_fingerprint(ctx.db_path, season_id, drawing=drawing)
         changed = SeasonFingerprint(areas=dict(ctx.payload["fingerprint"])).differs_from(current)
         if changed:
             bullets = "\n".join(f"• {area}" for area in changed)

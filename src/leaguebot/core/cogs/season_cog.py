@@ -835,7 +835,11 @@ class SeasonCog(commands.Cog):
 
         evidence = None
         if offered:
-            evidence = (await take_fingerprint(self.bot, season_id)).areas
+            evidence = (
+                await take_fingerprint(
+                    self.bot.db_path, season_id, drawing=self.bot.image_drawing
+                )
+            ).areas
             if question is None:
                 question = (
                     f"\U0001f4cb **Do you accept this season configuration?**\n"
@@ -2256,7 +2260,11 @@ class SeasonCog(commands.Cog):
         if fingerprint is None:
             from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
-            fingerprint = (await take_fingerprint(self.bot, season.id)).areas
+            fingerprint = (
+                await take_fingerprint(
+                    self.bot.db_path, season.id, drawing=self.bot.image_drawing
+                )
+            ).areas
         # The review comes down ahead of the confirmation's own jobs, but only for a request
         # the queue accepts: one it refuses at once leaves the review standing.
         confirmation = {
@@ -5076,7 +5084,11 @@ class SeasonCog(commands.Cog):
         if fingerprint is None:
             from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
-            fingerprint = (await take_fingerprint(self.bot, cfg.season_id)).areas
+            fingerprint = (
+                await take_fingerprint(
+                    self.bot.db_path, cfg.season_id, drawing=self.bot.image_drawing
+                )
+            ).areas
         # The review comes down ahead of the approval's own jobs, but only for an approval the
         # queue accepts: a request it refuses at once leaves the review standing (core
         # "Confirming placements"). So the two are asked in one save, the take-down first, and a
@@ -5404,7 +5416,9 @@ class _ApproveView(LeagueView):
             take_fingerprint,
         )
 
-        current = await take_fingerprint(self._cog.bot, review.season_id)
+        current = await take_fingerprint(
+            self._cog.bot.db_path, review.season_id, drawing=self._cog.bot.image_drawing
+        )
         return SeasonFingerprint(review.evidence).differs_from(current)
 
     async def _may_approve(self, interaction: discord.Interaction) -> bool:

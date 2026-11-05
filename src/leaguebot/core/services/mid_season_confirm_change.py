@@ -36,7 +36,7 @@ completed.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
@@ -76,6 +76,9 @@ from leaguebot.core.services.season_lifecycle_service import confirm_placements_
 from leaguebot.core.services.placement_service import uncommitted_placements_on
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.image_drawing import ImageDrawing
 
 __all__ = [
     "ALREADY_BEING_CONFIRMED",
@@ -185,13 +188,14 @@ def mid_season_confirm_change(
     *,
     modules: Any,
     placement: Any,
+    drawing: "ImageDrawing",
     rasteriser_fault: Callable[[], str | None],
 ) -> ChangeType:
     """The change that confirms a season's placements mid-season; see the module.
 
     The builder hands in *modules* (which modules are on), the *placement* service (a driver's
-    roles, a division's lineup) and *rasteriser_fault* (what is wrong with the host's drawing
-    program, None where nothing is).
+    roles, a division's lineup), the image module's own drawing (*drawing*, #283) and
+    *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing is).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -210,7 +214,7 @@ def mid_season_confirm_change(
 
         # The report read is the report confirmed: the press compares the review's fingerprint,
         # and so does the run, since the season may have changed while it waited.
-        current = await take_fingerprint(ctx.bot, season_id)
+        current = await take_fingerprint(ctx.db_path, season_id, drawing=drawing)
         changed = SeasonFingerprint(areas=dict(ctx.payload["fingerprint"])).differs_from(current)
         if changed:
             bullets = "\n".join(f"• {area}" for area in changed)

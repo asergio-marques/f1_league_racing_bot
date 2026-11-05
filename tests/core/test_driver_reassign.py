@@ -28,9 +28,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.driver_service import DriverService
 from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
 
-FINGERPRINT_NOT_YET = (
-    "#283: take_fingerprint is not yet handed the database and the image module's drawing"
-)
 
 SERVER_ID = 2437
 A, B, C, D = "6201", "6202", "6203", "6204"
@@ -210,7 +207,6 @@ async def test_a_signup_in_progress_on_the_new_account_is_refused(tmp_path):
 # ── An open review ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=FINGERPRINT_NOT_YET)
 async def test_a_reassign_expires_an_open_placements_review(tmp_path):
     """E41: the review names the driver by the account the reassign replaces."""
     from leaguebot.core.services.season_fingerprint_service import take_fingerprint

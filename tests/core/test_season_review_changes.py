@@ -66,9 +66,6 @@ from tests.support.change_queue import (
 )
 from tests.support.review_prompts import store_review_prompt
 
-FINGERPRINT_NOT_YET = (
-    "#283: take_fingerprint is not yet handed the database and the image module's drawing"
-)
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 REVIEW_CHANNEL = 700
@@ -925,7 +922,6 @@ async def test_the_private_faults_stay_a_reply(standing):
     assert await change_rows(standing.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=FINGERPRINT_NOT_YET)
 async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_review_is_gone_before_its_first_job(
         tmp_path, monkeypatch):
     """Season 3 is in placements, ready to approve, and the league admin's placements review of it
@@ -1066,7 +1062,6 @@ async def test_approve_refuses_where_the_season_changed_while_the_review_waited(
 # ---------------------------------------------------------------------------
 # An expired review's button (C97a)
 # ---------------------------------------------------------------------------
-
 
 
 def _refused_as_expired(env: Any, interaction: Any) -> None:

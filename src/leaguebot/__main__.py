@@ -993,6 +993,7 @@ def register_change_types(bot: LeagueBot) -> None:
         mid_season_confirm_change(
             modules=bot.module_service,
             placement=bot.placement_service,
+            drawing=bot.image_drawing,
             rasteriser_fault=rasteriser_fault,
         )
     )

@@ -1440,7 +1440,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (1, PASS["attendance"]),
     ("attendance/services/sheet_posting.py", "sheet_step.still_due"): (1, PASS["attendance"]),
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
-    ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
     ("image/services/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "run_daily_refresh"): (1, PASS["image"]),
     ("image/services/image_attendance_post.py", "attendance_enabled"): (3, PASS["image"]),
@@ -2717,7 +2716,6 @@ KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog._portrait_review_lines"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._signup_review_lines"): (3, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
-    ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
 }
 
 
@@ -3143,7 +3141,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
     ("core/services/scheduler_service.py", "SchedulerService._remove_job"): (1, PASS["core"]),
     ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
-    ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "take_fingerprint"): (1, PASS["core"]),
     ("core/services/season_review_changes.py", "recover_expired_review_prompts"): (1, PASS["core"]),
     ("core/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"): (1, PASS["core"]),

@@ -30,10 +30,6 @@ from leaguebot.core.services.season_fingerprint_service import (
 
 SERVER_ID = 8811
 
-NEEDS_DRAWING = (
-    "#283: take_fingerprint is not yet handed the database and the image module's drawing"
-)
-
 
 class _ArtworkStandIn:
     """A stand-in for the image module's drawing, answering the one question the fingerprint asks
@@ -119,7 +115,6 @@ async def _change(season, sql: str, *params) -> None:
 # ── The fingerprint itself ────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_every_area_is_covered(season):
     """A missing area is a change that would slip through unnoticed."""
     fingerprint = await _take(season)
@@ -127,7 +122,6 @@ async def test_every_area_is_covered(season):
     assert set(fingerprint.areas) == set(AREA_LABELS)
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_an_unchanged_season_fingerprints_the_same_twice(season):
     """Taken twice with nothing between, it must not report a change nobody made."""
     first = await _take(season)
@@ -136,7 +130,6 @@ async def test_an_unchanged_season_fingerprints_the_same_twice(season):
     assert first.differs_from(second) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_a_fingerprint_that_could_not_be_taken_differs_from_everything(season):
     """A fault refuses an approval rather than waving it through."""
     empty = SeasonFingerprint({})
@@ -144,7 +137,6 @@ async def test_a_fingerprint_that_could_not_be_taken_differs_from_everything(sea
     assert empty.differs_from(await _take(season))
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_an_unreadable_season_yields_an_empty_fingerprint():
     """Same reasoning, reached through the real failure path."""
     taken = await take_fingerprint("/nonexistent/nowhere.db", 1, drawing=_ArtworkStandIn())
@@ -165,7 +157,6 @@ async def _assert_only(season, before, area: str, sql: str, *params):
     assert changed == [AREA_LABELS[area]], f"{area} also disturbed {changed}"
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_season_area(season):
     before = await _take(season)
     await _assert_only(
@@ -174,7 +165,6 @@ async def test_the_season_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_a_stage_moved_is_part_of_the_season_area(season):
     """Confirming a configuration, or mid-season placements, moves the stage and not the
     status: a review of the stage left behind no longer describes the season."""
@@ -185,7 +175,6 @@ async def test_a_stage_moved_is_part_of_the_season_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_divisions_area(season):
     before = await _take(season)
     await _assert_only(
@@ -194,7 +183,6 @@ async def test_the_divisions_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_rounds_area(season):
     before = await _take(season)
     await _assert_only(
@@ -204,7 +192,6 @@ async def test_the_rounds_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_teams_area(season):
     before = await _take(season)
     await _assert_only(
@@ -214,7 +201,6 @@ async def test_the_teams_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_drivers_area(season):
     before = await _take(season)
     await _assert_only(
@@ -224,7 +210,6 @@ async def test_the_drivers_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_channels_area(season):
     before = await _take(season)
     await _assert_only(
@@ -234,7 +219,6 @@ async def test_the_channels_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_modules_area(season):
     before = await _take(season)
     await _assert_only(
@@ -244,7 +228,6 @@ async def test_the_modules_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_a_signup_settled_after_the_report_is_part_of_the_unsettled_signups_area(season):
     """Issue #220: the review names every unsettled signup, and a change among them is a
     change to what would be confirmed."""
@@ -260,7 +243,6 @@ async def test_a_signup_settled_after_the_report_is_part_of_the_unsettled_signup
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_test_mode_area(season):
     """Confirming a configuration fixes test mode, so switching it after the report is a
     change to what would be confirmed (issue #220)."""
@@ -271,7 +253,6 @@ async def test_the_test_mode_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_a_team_added_to_the_server_list_is_part_of_the_team_list_area(season):
     before = await _take(season)
     await _assert_only(
@@ -281,7 +262,6 @@ async def test_a_team_added_to_the_server_list_is_part_of_the_team_list_area(sea
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_a_team_role_repointed_is_part_of_the_team_list_area(season):
     before = await _take(season)
     await _assert_only(
@@ -291,7 +271,6 @@ async def test_a_team_role_repointed_is_part_of_the_team_list_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_points_area(season):
     before = await _take(season)
     await _assert_only(
@@ -301,7 +280,6 @@ async def test_the_points_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 @pytest.mark.parametrize("edit", ["a points entry", "a fastest-lap row"])
 async def test_a_server_points_entry_of_an_attached_configuration_changes_the_points_area(
     season, edit,
@@ -344,7 +322,6 @@ async def test_a_server_points_entry_of_an_attached_configuration_changes_the_po
     await _assert_only(season, before, "points", sql, ids["Standard"])
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_signup_area(season):
     before = await _take(season)
     await _assert_only(
@@ -353,7 +330,6 @@ async def test_the_signup_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 @pytest.mark.parametrize("column", ["base_role_id", "driver_role_id"])
 async def test_changing_a_league_role_is_named_as_the_roles_changing(season, column):
     """The two roles are the league's (issue #276), not the signup configuration: a change
@@ -364,7 +340,6 @@ async def test_changing_a_league_role_is_named_as_the_roles_changing(season, col
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_attendance_area(season):
     """Changed on an existing row, so the module switch it shares with `modules` is not
     also disturbed — inserting the row would move both, correctly but less precisely."""
@@ -379,7 +354,6 @@ async def test_the_attendance_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_weather_area(season):
     before = await _take(season)
     await _assert_only(
@@ -388,7 +362,6 @@ async def test_the_weather_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_the_images_area(season):
     before = await _take(season)
     await _assert_only(
@@ -397,7 +370,6 @@ async def test_the_images_area(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_an_aspect_toggle_is_part_of_the_images_area(season):
     before = await _take(season)
     await _assert_only(
@@ -412,7 +384,6 @@ async def test_an_aspect_toggle_is_part_of_the_images_area(season):
 # and the button would otherwise pass, which is exactly what the withdrawn render caught.
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_a_changed_answer_from_the_drawing_is_named_as_the_artwork_alone(season):
     """The fingerprint digests the drawing's answer as it stands, so a review drawn before the
     image module answered compares equal after; and a template edited, deleted or added to between
@@ -433,7 +404,6 @@ async def test_a_changed_answer_from_the_drawing_is_named_as_the_artwork_alone(s
 # ── Several changes at once ───────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NEEDS_DRAWING)
 async def test_two_changed_areas_are_both_named(season):
     before = await _take(season)
 

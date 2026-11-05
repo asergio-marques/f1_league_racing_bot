@@ -30,10 +30,6 @@ from tests.support.change_queue import (
 )
 from tests.support.season_league import AM, DIVISIONS, PRO, ongoing_league
 
-FINGERPRINT_NOT_YET = (
-    "#283: take_fingerprint is not yet handed the database and the image module's drawing"
-)
-
 
 KIND = "lineup.post"
 LINEUP = {PRO: DIVISIONS[PRO][3].lineup, AM: DIVISIONS[AM][3].lineup}
@@ -510,12 +506,10 @@ async def _placements_confirmed(tmp_path: Any, monkeypatch: Any, drawing: Any) -
                  "✅ Approve on round 3's penalty review", ("Pro",), id="a review's sanction"),
     pytest.param(_placements_approved, "Admin (`<@{admin_id}>`)",
                  "the ✅ Approve button of `/season placements-review`", ("Pro", "Am"),
-                 id="the placements approved",
-                 marks=pytest.mark.xfail(strict=True, reason=FINGERPRINT_NOT_YET)),
+                 id="the placements approved"),
     pytest.param(_placements_confirmed, "Admin (`<@{admin_id}>`)",
                  "the ✅ Confirm placements button of `/season placements-review`",
-                 ("Pro", "Am"), id="the placements confirmed mid-season",
-                 marks=pytest.mark.xfail(strict=True, reason=FINGERPRINT_NOT_YET)),
+                 ("Pro", "Am"), id="the placements confirmed mid-season"),
 ])
 async def test_a_lineup_fallen_back_to_text_is_recorded_by_every_change_that_posts_it(
     tmp_path, monkeypatch, start, member, change, divisions,

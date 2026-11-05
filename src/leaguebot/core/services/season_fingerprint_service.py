@@ -30,10 +30,9 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.services.image_drawing import ImageDrawing
 
 log = logging.getLogger(__name__)
 
@@ -100,39 +99,12 @@ async def _rows(db, sql: str, *params) -> list[tuple]:
     return [tuple(row) for row in await cursor.fetchall()]
 
 
-def _path_signature(path: Path) -> list:
-    """A file's identity for fingerprinting: its name, its size and when it changed.
-
-    Never its content. Hashing sixteen templates and every asset a league supplies would
-    cost more than the render this exists to replace, and size-and-mtime catches every
-    edit that is not a byte-identical rewrite inside the same second.
-    """
-    try:
-        stat = path.stat()
-        return [path.name, stat.st_size, int(stat.st_mtime)]
-    except OSError:
-        # A file that cannot be read is itself a state worth noticing: it may have been
-        # deleted since the review, which is exactly the change this must catch.
-        return [path.name, None, None]
-
-
-def _directory_signature(directory: Path) -> list:
-    """Every file directly in *directory*, sorted by name.
-
-    Sorted rather than in whatever order the filesystem yields, so two hosts holding the
-    same artwork agree. Not recursive: an asset class is a flat folder of files.
-    """
-    try:
-        entries = sorted(
-            (p for p in directory.iterdir() if p.is_file()), key=lambda p: p.name
-        )
-    except OSError:
-        return []
-    return [_path_signature(p) for p in entries]
-
-
-async def take_fingerprint(bot: LeagueBot, season_id: int) -> SeasonFingerprint:
-    """Fingerprint everything `/season placements-review` reports for *season_id*.
+async def take_fingerprint(
+    db_path: str, season_id: int, *, drawing: ImageDrawing
+) -> SeasonFingerprint:
+    """Fingerprint everything `/season placements-review` reports for *season_id*, read from
+    *db_path*. *drawing* is the image module's own drawing (`bot.image_drawing`, #283), asked
+    for the league's artwork signature — the one area a database read cannot see.
 
     One connection for the lot. Never raises: a fingerprint that could not be taken is an
     empty one, and an empty fingerprint differs from every other, so a fault here refuses
@@ -140,7 +112,7 @@ async def take_fingerprint(bot: LeagueBot, season_id: int) -> SeasonFingerprint:
     """
     areas: dict[str, str] = {}
     try:
-        async with get_connection(bot.db_path) as db:
+        async with get_connection(db_path) as db:
             # The stage as well as the status: confirming a configuration, or mid-season
             # placements, moves the stage alone, and a review of the stage left behind no
             # longer describes the season (#439). An approval's own review, check and
@@ -408,7 +380,7 @@ async def take_fingerprint(bot: LeagueBot, season_id: int) -> SeasonFingerprint:
                 ]
             )
 
-        areas["artwork"] = _digest(await _artwork_signature(bot))
+        areas["artwork"] = _digest(await drawing.artwork_signature())
     except Exception as exc:  # noqa: BLE001 — an unreadable season is a changed one
         log.error("season fingerprint: could not be taken: %s", exc, exc_info=True)
         return SeasonFingerprint({})
@@ -422,50 +394,3 @@ async def take_fingerprint(bot: LeagueBot, season_id: int) -> SeasonFingerprint:
         return SeasonFingerprint({})
 
     return SeasonFingerprint(areas)
-
-
-async def _artwork_signature(bot: LeagueBot) -> list:
-    """The template files and asset folders, by size and modification time.
-
-    The one thing a database read cannot see. A template edited or deleted between the
-    review and the button would otherwise pass unnoticed, and that is precisely the change
-    the render this replaced used to catch.
-    """
-    from leaguebot.image.models.image_constants import ASSET_DIRECTORIES, TEMPLATE_COLUMNS
-    from leaguebot.core.utils.paths import resolve_within_project_root
-
-    config = await bot.image_config_service.get_config()
-    if config is None:
-        return []
-
-    signature: list = []
-
-    directory = getattr(config, "template_directory", None)
-    if directory:
-        try:
-            root = resolve_within_project_root(directory)
-            for column in sorted(TEMPLATE_COLUMNS):
-                filename = getattr(config, column, None)
-                if filename:
-                    signature.append([column, _path_signature(root / filename)])
-        except Exception:  # noqa: BLE001 — an unresolvable directory is itself a state
-            log.warning(
-                "season fingerprint: the template directory %s could not be read", directory,
-                exc_info=True,
-            )
-            signature.append(["template_directory", directory, "unresolvable"])
-
-    for column in sorted(ASSET_DIRECTORIES):
-        value = getattr(config, column, None)
-        if not value:
-            continue
-        try:
-            signature.append([column, _directory_signature(resolve_within_project_root(value))])
-        except Exception:  # noqa: BLE001 — an unresolvable directory is itself a state
-            log.warning(
-                "season fingerprint: the %s directory %s could not be read", column, value,
-                exc_info=True,
-            )
-            signature.append([column, value, "unresolvable"])
-
-    return signature
