@@ -343,7 +343,6 @@ async def test_the_results_dependency_is_checked_before_the_season(tmp_path):
     assert "requires the Results & Standings module" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /module enable does not read the dependency table yet")
 async def test_the_dependency_table_decides_whether_attendance_may_be_enabled(tmp_path, monkeypatch):
     """The refusal reads the table in `core/models/` rather than a rule of its own: with the table
     emptied, attendance is switched on while results is off."""

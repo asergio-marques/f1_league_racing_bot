@@ -14,6 +14,7 @@ from discord.ext import commands
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin, module_off
+from leaguebot.core.models.module_dependencies import needs
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.interaction_errors import describe, report_failure
@@ -512,8 +513,8 @@ class ModuleCog(commands.Cog):
     async def _enable_attendance(
         self, interaction: discord.Interaction
     ) -> None:
-        # 1. Guard: R&S must be enabled first
-        if not await self.bot.module_service.is_results_enabled():
+        # 1. Guard: the dependency table's needs must be enabled first
+        if "results" in needs("attendance") and not await self.bot.module_service.is_results_enabled():
             await refuse(
                 interaction,
                 "❌ The Attendance module requires the Results & Standings module to be enabled first.",
