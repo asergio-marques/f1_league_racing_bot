@@ -670,6 +670,42 @@ async def test_a_switch_off_asked_before_pending_completion_and_run_in_it_is_ref
     assert refused in await log_lines(league)
 
 
+#: The reason in the stage refusal of a signup switch asked of a league whose Season 5 has had its
+#: configuration confirmed since, for *verb* ("enable" or "disable"), word for word.
+SIGNUP_FIXED = (
+    "The signup module is fixed for Season 5 now that its configuration has been confirmed. It "
+    "can be {verb}d again once the season has ended, or while a new season is in configuration."
+)
+
+
+@pytest.mark.xfail(strict=True, reason="#283: signup's switches do not read the stage at the run")
+@pytest.mark.parametrize(("verb", "on"), [("enable", ()), ("disable", ("signup",))])
+async def test_a_signup_switch_asked_before_the_configuration_is_confirmed_and_run_after_is_refused(
+    tmp_path, verb, on
+):
+    """No season stands when `/module <verb> signup` is asked, so the ask is acknowledged; Season
+    5's configuration is confirmed (it is in Setup, waiting) before the change runs, as an approval
+    waiting ahead of it on the lane would. The change's own check reads the stage again as it
+    starts: the module is left as it was, nothing is audited, and the member's reply becomes the
+    stage refusal the command gives at the ask, word for word, which reaches the log channel."""
+    from tests.support.change_queue import acknowledgement, run_queue
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog = await _league(tmp_path, *on)
+    asked = _asked(league, verb)
+
+    await getattr(cog, f"_{verb}_signup")(asked)
+    assert acknowledgement(asked).startswith("⏳ ")
+    await _stage(league.db_path, "WAITING", "SETUP")
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_signup_enabled() is bool(on)
+    assert await _audit(league.db_path) == []
+    reason = SIGNUP_FIXED.format(verb=verb)
+    assert last_said(asked) == f"❌ {reason}"
+    assert f"⛔ `/module {verb}` refused for {NAMED} — {reason}" in await log_lines(league)
+
+
 #: The refusal of a results switch-off that would now take a module the league was not warned of.
 CASCADE_CHANGED = (
     "⛔ The attendance module was switched on since this was asked. Nothing was changed. Run "
@@ -860,12 +896,11 @@ async def _stage(db_path: str, stage: str, status: str) -> None:
 #: the reply. A case whose verb is None calls the enable handler directly, the command's own
 #: stage check standing in front of it otherwise. Weather's "already enabled", refused by its
 #: change on the queue, is pinned by `test_enabling_weather_twice_does_no_work`; images' the same
-#: way, by `test_enabling_twice_does_no_work`. Results' and attendance's refusals (the dependency,
+#: way, by `test_enabling_twice_does_no_work`; signup's by
+#: `test_module_disable_paths.py::test_enabling_signup_twice_does_no_work`. Results' and attendance's refusals (the dependency,
 #: the season and "already enabled") are each pinned on the league's bot, with the real queue, by
 #: their own tests above.
 MODULE_REFUSALS = [
-    pytest.param("enable", "signup", {"signup_enabled": True}, None, "already enabled",
-                 id="signup-already-enabled"),
     pytest.param("enable", "weather", {"season": "confirmed"}, None, "cannot be enabled once",
                  id="enable-once-placements-are-confirmed"),
     pytest.param("enable", "signup", {}, ("WAITING", "SETUP"), "fixed for Season 5",

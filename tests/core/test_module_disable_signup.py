@@ -409,9 +409,8 @@ async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
     tables no key joins to the configuration row, so nothing but the rule keeps them: a
     disable that cleared them too would pass every other test here. Every setting is away from
     its default and two slots are saved; the module is switched off through the queue (still on
-    until it runs) and then
-    enabled again: the settings and slots are as they were, the configuration naming no
-    channel."""
+    until it runs) and then enabled again through the queue: the settings and slots are as they
+    were, the configuration naming no channel."""
     from leaguebot.signup.models.signup_module import SignupModuleSettings
 
     league = await _league(tmp_path)
@@ -431,12 +430,39 @@ async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = league.bot
     await cog._enable_signup(_manager(league))
+    await run_queue(league.bot)
 
     assert await league.bot.module_service.is_signup_enabled()
     assert await signup.get_settings() == settings
     assert await signup.get_slots() == slots
     config = await signup.get_config()
     assert config is not None and config.signup_channel_id is None
+
+
+@pytest.mark.parametrize("opened", [True, False], ids=["opened-since", "closed-since"])
+async def test_a_window_opened_or_closed_since_the_ask_refuses_the_switch_off(tmp_path, opened):
+    """`/module disable signup` is asked with the window closed (or open), and before it runs the
+    window is opened on a Sign Up button (or closed): the jobs the change was asked with no longer
+    fit, so it is refused as it starts, the module stays on, nothing is audited as disabled, and
+    the member is told the window changed and to run the command again, word for word."""
+    league = await _league(tmp_path, open_window=not opened)
+
+    interaction = await _switch_off(league)
+    if opened:
+        await league.write(
+            "UPDATE signup_module_config SET signups_open = 1, signup_button_message_id = ?",
+            9180,
+        )
+    else:
+        await league.write("UPDATE signup_module_config SET signups_open = 0")
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_signup_enabled()
+    assert await _disables(league) == []
+    assert updated_reply(interaction) == (
+        "⛔ The signup window changed since this was asked. Nothing was changed. "
+        "Run `/module disable signup` again."
+    )
 
 
 # ---------------------------------------------------------------------------

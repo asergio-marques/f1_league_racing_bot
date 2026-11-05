@@ -187,6 +187,13 @@ def test_the_settings_changes_are_registered():
         pytest.param(
             "results", "leaguebot.results.", {"results_module_config"}, None, id="results",
         ),
+        pytest.param(
+            "signup", "leaguebot.signup.", {"server_configs", "signup_module_config"}, None,
+            id="signup",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#283: signup's switch-on is not a setting the builder registers"
+            ),
+        ),
     ],
 )
 def test_a_module_s_switch_is_its_own_settings_signed_up_by_the_builder(
@@ -200,7 +207,10 @@ def test_a_module_s_switch_is_its_own_settings_signed_up_by_the_builder(
     own `image_config`; attendance's is `attendance_config`, its switch-off clearing the
     division channels in `attendance_division_config` too (#283, S11d). Results' switch-on is
     `results_module_config`; its switch-off is its own change already (`results_off_change`),
-    whose tables are not declared, so only its owner is checked (*off_writes* None)."""
+    whose tables are not declared, so only its owner is checked (*off_writes* None). Signup's
+    switch-on is signup's column on `server_configs` and the configuration row it creates where
+    none stands; its switch-off is its own change already (`signup_off_change`), its tables not
+    declared (#283, S11e)."""
     from leaguebot.__main__ import register_change_types
     from leaguebot.core.models.change import module_off, module_on
 

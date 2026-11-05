@@ -26,15 +26,18 @@ attendance's own change on the change queue (#283), saved with its audit, and th
 of turning Results & Standings off, saved with the switch-off on the change queue (#439), where it
 has no interaction of its own to answer.
 
-**Enabling signup writes a bare configuration row and then names the three commands that fill
-it in.** A module enabled with nothing configured does nothing at all, and the next steps are
-the difference between a league proceeding and a league wondering what happened.
+**Enabling signup writes a bare configuration row where none stands and then names the commands
+that fill it in:** `/signup channel`, and whichever of `/bot base-role` and `/bot driver-role` the
+league has not yet set. A module enabled with nothing configured does nothing at all, and the next
+steps are the difference between a league proceeding and a league wondering what happened.
 """
 from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
+
+import pytest
 
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
@@ -91,57 +94,6 @@ async def _make_db(tmp_path, *, attendance_divisions: int = 0) -> str:
                 )
         await db.commit()
     return db_path
-
-
-def _make_cog(
-    db_path: str,
-    *,
-    images_enabled: bool = True,
-    attendance_enabled: bool = True,
-    signup_enabled: bool = True,
-) -> ModuleCog:
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.config_service = ConfigService(db_path)
-    bot.module_service = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=images_enabled)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=signup_enabled)
-    bot.module_service.set_images_enabled = AsyncMock(return_value=None)
-    bot.module_service.set_signup_enabled = AsyncMock(return_value=None)
-    bot.signup_module_service = MagicMock()
-    bot.signup_module_service.save_config = AsyncMock(return_value=None)
-    bot.attendance_service = AttendanceService(db_path)
-    bot.output_router = MagicMock()
-    bot.output_router.post_log = AsyncMock(return_value=None)
-
-    cog = ModuleCog.__new__(ModuleCog)
-    cog.bot = bot
-    return cog
-
-
-def _interaction():
-    interaction = MagicMock()
-    interaction.guild_id = SERVER_ID
-    interaction.user = MagicMock()
-    interaction.user.id = ACTOR_ID
-    interaction.user.display_name = "Admin"
-    interaction.user.__str__ = lambda self: "Admin#0001"  # type: ignore[assignment]
-    interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
-
-
-def _replied(interaction) -> str:
-    return "\n".join(
-        str(call.args[0])
-        for call in interaction.response.send_message.await_args_list
-        + interaction.followup.send.await_args_list
-        if call.args
-    )
 
 
 async def _audit_types(db_path: str) -> list[str]:
@@ -491,71 +443,180 @@ async def test_a_cascade_is_still_logged_to_the_league(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+# Signup's switch-on is signup's own change on the change queue (#283, S11e): `/module enable
+# signup` asks `module.on:signup`, the member is acknowledged at once, and the queue carries it out;
+# its switch-off is `module.off:signup` already. Each test drives the command's handler on the bot
+# the entry point builds, with the real queue and "now" pinned, and runs the queue.
+
+#: The fault reply of a signup switch-on that could not be saved, word for word.
+SIGNUP_STILL_OFF = (
+    "❌ `/module enable` stopped on a fault in the bot, not on anything you entered, and did not "
+    "finish. The module is still off. Run `/module enable signup` again once the fault is "
+    "cleared. The fault is recorded in the log channel."
+)
+
+
+async def _signup_league(tmp_path, verb: str = "enable", *, on: bool = False):
+    """A league whose settings run on the queue, the signup module *on* or off with no
+    configuration row, core's server configuration read from the database (no base role or
+    driver role set), the module cog over its bot, and `/module <verb>` as Admin."""
+    from tests.support.settings_league import interaction, settings_league
+
+    league = await settings_league(tmp_path, modules=("signup",) if on else ())
+    league.bot.config_service.get_server_config = ConfigService(league.db_path).get_server_config
+    return league, ModuleCog(league.bot), interaction(league.bot, f"module {verb}")
+
+
+async def _signup_config(db_path: str) -> dict | None:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT * FROM signup_module_config")
+        row = await cursor.fetchone()
+    return None if row is None else dict(row)
+
+
+@pytest.mark.xfail(strict=True, reason="#283: signup's switch-on is not its own change on the queue")
 async def test_enabling_signup_writes_a_bare_configuration(tmp_path):
-    """So the `/signup …` commands have a row to update. Without it every one of them
-    would be a silent no-op against nothing."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, signup_enabled=False)
+    """So the `/signup …` commands have a row to update. Without it every one of them would be a
+    silent no-op against nothing. The member is acknowledged at once; once the change has run the
+    module is on, its configuration names no channel and holds the window closed, and the log
+    channel has the one Success line."""
+    from tests.support.change_queue import acknowledgement
+    from tests.support.settings_league import log_lines
 
-    await cog._enable_signup(_interaction())
+    league, cog, asked = await _signup_league(tmp_path)
 
-    cog.bot.signup_module_service.save_config.assert_awaited_once()
-    saved = cog.bot.signup_module_service.save_config.await_args.args[0]
-    assert saved.signup_channel_id is None
-    assert saved.signups_open is False
+    await cog._enable_signup(asked)
+    assert acknowledgement(asked).startswith("⏳ Turning the signup module on. ")
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_signup_enabled() is True
+    config = await _signup_config(league.db_path)
+    assert config is not None
+    assert config["signup_channel_id"] is None
+    assert not config["signups_open"]
+    assert config["signup_button_message_id"] is None
+    assert await _audit_types(league.db_path) == ["MODULE_ENABLE"]
+    assert await log_lines(league) == [f"{NAMED} | /module enable signup | Success"]
+
+
+@pytest.mark.xfail(strict=True, reason="#283: signup's switch-on replaces a standing configuration row")
+async def test_re_enabling_signup_keeps_a_standing_row(tmp_path):
+    """A configuration row standing while the module is off (a restored database could hold one)
+    is kept, not replaced by a bare one: the switch-on creates only what is missing. The signup
+    channel it names is still named once the module is on again."""
+    league, cog, asked = await _signup_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_module_config (id, signup_channel_id, signups_open) "
+            "VALUES (1, 620, 0)"
+        )
+        await db.commit()
+
+    await cog._enable_signup(asked)
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_signup_enabled() is True
+    config = await _signup_config(league.db_path)
+    assert config is not None and str(config["signup_channel_id"]) == "620"
 
 
 async def test_enabling_signup_names_the_three_commands_that_follow(tmp_path):
     """A module enabled with nothing configured does nothing at all, and these are the
-    difference between a league proceeding and a league wondering what happened."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, signup_enabled=False)
-    interaction = _interaction()
+    difference between a league proceeding and a league wondering what happened. With neither
+    role set, the reply names all three, word for word."""
+    from tests.support.settings_league import last_said
 
-    await cog._enable_signup(interaction)
+    league, cog, asked = await _signup_league(tmp_path)
 
-    replied = _replied(interaction)
-    for command in ("/signup channel", "/bot base-role", "/bot driver-role"):
-        assert command in replied
+    await cog._enable_signup(asked)
+    await run_queue(league.bot)
+
+    assert last_said(asked) == (
+        "✅ Signup module enabled.\n"
+        "Next steps — configure with:\n"
+        "  • `/signup channel <channel>`\n"
+        "  • `/bot base-role <role>`\n"
+        "  • `/bot driver-role <role>`"
+    )
 
 
 async def test_enabling_signup_does_not_ask_for_roles_the_league_already_set(tmp_path):
     """The two roles are the league's (issue #276) and outlive the module, so a league
     re-enabling signup has them already; naming them would send it to redo work."""
-    db_path = await _make_db(tmp_path)
-    async with get_connection(db_path) as db:
+    from tests.support.settings_league import last_said
+
+    league, cog, asked = await _signup_league(tmp_path)
+    async with get_connection(league.db_path) as db:
         await db.execute("UPDATE server_configs SET base_role_id = 1, driver_role_id = 2")
         await db.commit()
-    cog = _make_cog(db_path, signup_enabled=False)
-    interaction = _interaction()
 
-    await cog._enable_signup(interaction)
+    await cog._enable_signup(asked)
+    await run_queue(league.bot)
 
-    replied = _replied(interaction)
-    assert "/signup channel" in replied
-    assert "/bot base-role" not in replied
-    assert "/bot driver-role" not in replied
+    assert last_said(asked) == (
+        "✅ Signup module enabled.\n"
+        "Next steps — configure with:\n"
+        "  • `/signup channel <channel>`"
+    )
 
 
 async def test_enabling_signup_twice_does_no_work(tmp_path):
-    """A second enable would overwrite the configuration with a bare one, losing the
-    channel and roles the league had already set."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, signup_enabled=True)
-    interaction = _interaction()
+    """A second enable would do the switch-on's work again: a second audit entry for a module
+    already on. Refused at once: nothing is queued, nothing audited, the configuration is left as
+    it stands, and the refusal reaches the log channel."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._enable_signup(interaction)
+    league, cog, asked = await _signup_league(tmp_path, on=True)
 
-    assert "already enabled" in _replied(interaction)
-    cog.bot.signup_module_service.save_config.assert_not_awaited()
-    assert await _audit_types(db_path) == []
+    await cog._enable_signup(asked)
+
+    assert last_said(asked) == "⚠️ Signup module is already enabled."
+    assert await change_rows(league.db_path) == []
+    assert await _audit_types(league.db_path) == []
+    assert await _signup_config(league.db_path) is None
+    assert await log_lines(league) == [
+        f"⛔ `/module enable` refused for {NAMED} — Signup module is already enabled."
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason="#283: signup's switch-on is three saves off the queue")
+async def test_a_signup_enable_that_cannot_be_written_says_the_module_is_still_off(tmp_path):
+    """The flag, the configuration row and the audit entry are one save, so a fault at the audit
+    leaves the module off with no row created. The member gets the standard failure reply, saying
+    the module is still off and what to run again, in place of today's 'It may have been partly
+    done'; the log channel gets the one failure line, and never a success."""
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog, asked = await _signup_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER refuse_the_audit BEFORE INSERT ON audit_entries "
+            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+        )
+        await db.commit()
+
+    await cog._enable_signup(asked)
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_signup_enabled() is False
+    assert await _signup_config(league.db_path) is None
+    assert last_said(asked) == SIGNUP_STILL_OFF
+    assert await log_lines(league) == [
+        f"❌ `/module enable` failed for {NAMED} — IntegrityError. "
+        "The details are in the host's log."
+    ]
 
 
 async def test_disabling_signup_twice_does_no_work(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, signup_enabled=False)
-    interaction = _interaction()
+    """Refused at once: nothing is queued and nothing audited."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said
 
-    await cog._disable_signup(interaction)
+    league, cog, asked = await _signup_league(tmp_path, "disable")
 
-    assert "already disabled" in _replied(interaction)
+    await cog._disable_signup(asked)
+
+    assert last_said(asked) == "⚠️ Signup module is already disabled."
+    assert await change_rows(league.db_path) == []
+    assert await _audit_types(league.db_path) == []
