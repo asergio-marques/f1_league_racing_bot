@@ -341,8 +341,8 @@ class ModuleCog(commands.Cog):
         # A season whose placements are confirmed refuses the enable before this handler is
         # reached (issue #220), so there is never a running season to catch up on: its
         # forecast channels are checked, and its phases armed, when placements are confirmed.
-        # The switch is weather's own change on the queue (#283, S11b): this asks for it and
-        # does nothing else.
+        # The switch is weather's own change on the queue: this asks for it and does nothing
+        # else.
         await self.bot.change_queue.ask(
             module_on("weather"),
             {},
@@ -355,7 +355,7 @@ class ModuleCog(commands.Cog):
     async def _disable_weather(
         self, interaction: discord.Interaction
     ) -> None:
-        # The switch-off is weather's own change on the queue (#283, S11b): it lowers the flag
+        # The switch-off is weather's own change on the queue: it lowers the flag
         # and writes its audit entry in one save, then removes the season's weather jobs in a
         # step of its own. This asks for it and does nothing else.
         await self.bot.change_queue.ask(

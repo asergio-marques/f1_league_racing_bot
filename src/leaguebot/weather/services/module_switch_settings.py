@@ -1,4 +1,4 @@
-"""Weather's own switch, on and off, as two settings on the change queue (#283, S11b).
+"""Weather's own switch, on and off, as two settings on the change queue.
 
 `/module enable weather` and `/module disable weather` each ask one change built from a
 `Setting` below by `setting_change` (`core/services/setting_change.py`, which holds what every
@@ -8,15 +8,17 @@ importing weather. Each save writes only `server_configs.weather_module_enabled`
 column on core's table (architecture.md, "The database"; `OWN_COLUMNS` in
 `tests/repository/test_architecture_rules.py`).
 
-**The switch-off removes the season's weather jobs after the save, not before** (A16,
-`docs/design/architecture.md`): the flag going down and its audit entry share one save, and only
-once that has run does an `After` step call `SchedulerService.cancel_all_weather`. Doing the
-jobs' removal after the flag rather than before is safe only because every weather job reads the
-flag first and does nothing while it is off (core specification, "A disabled module shall
-produce nothing … a scheduled job"; pinned by `tests/core/test_weather_disable_scope.py` and the
-draws, posts and clean-up's own guards). A fault removing the jobs follows `setting_change`'s
-rule for a step after the save: the switch-off stands, and the reply says the jobs could not be
-removed and do nothing while the module is off.
+**The switch-off removes the season's weather jobs after the save, not before**
+(`docs/design/architecture.md`, "How modules and core fit together"): the flag going down and its
+audit entry share one save, and only once that has run does an `After` step call
+`SchedulerService.cancel_all_weather`. Doing the jobs' removal after the flag rather than before is
+safe only because every weather job reads the flag first and does nothing while it is off (core
+specification, "A disabled module shall produce nothing … a scheduled job"; pinned by
+`tests/weather/test_weather_module_gate.py`,
+`test_phase_runner_produces_nothing_while_weather_is_disabled` among them, and the draws, posts and
+clean-up's own guards). A fault removing the jobs follows `setting_change`'s rule for a step after
+the save: the switch-off stands, and the reply says the jobs could not be removed and do nothing
+while the module is off.
 """
 
 from __future__ import annotations
@@ -70,7 +72,11 @@ def module_on_weather(*, modules: "ModuleService") -> Setting:
         await db.execute("UPDATE server_configs SET weather_module_enabled = 1")
         return Saved(
             changed=True,
-            audits=(AuditRecord(change_type="MODULE_ENABLE", old_value={}, new_value={"module": "weather"}),),
+            audits=(
+                AuditRecord(
+                    change_type="MODULE_ENABLE", old_value={}, new_value={"module": "weather"}
+                ),
+            ),
         )
 
     def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
@@ -121,7 +127,11 @@ def module_off_weather(*, modules: "ModuleService", scheduler: "SchedulerService
         await db.execute("UPDATE server_configs SET weather_module_enabled = 0")
         return Saved(
             changed=True,
-            audits=(AuditRecord(change_type="MODULE_DISABLE", old_value={"module": "weather"}, new_value={}),),
+            audits=(
+                AuditRecord(
+                    change_type="MODULE_DISABLE", old_value={"module": "weather"}, new_value={}
+                ),
+            ),
             then=(PlannedStep(REMOVE_JOBS),),
         )
 
