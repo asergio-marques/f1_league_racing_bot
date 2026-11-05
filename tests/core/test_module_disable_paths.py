@@ -42,6 +42,7 @@ from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.config_service import ConfigService
 from tests.support.change_queue import (
+    MEMBER_ID,
     league_bot,
     league_queue,
     member,
@@ -196,60 +197,85 @@ async def _attendance_flag(db_path: str) -> int:
 # ---------------------------------------------------------------------------
 
 
+#
+# Images' switch is image's own change on the change queue (#283, S11c): `/module disable images`
+# asks `module.off:images`, the member is acknowledged at once, and the queue carries it out.
+# Each test drives the command's handler on the bot the entry point builds, with the real queue
+# and "now" pinned, and runs the queue.
+
+#: Why a test of the queue's acknowledgement fails before the switch moves onto the queue.
+IMAGES_ON_THE_QUEUE = (
+    "#283: /module disable images is not yet acknowledged as image's change on the queue"
+)
+
+
+async def _images_league(tmp_path, *, on: bool = True):
+    """A league whose settings run on the queue, the image module *on* (with its default
+    configuration) or off, the module cog over its bot, and `/module disable` as Admin."""
+    from tests.support.settings_league import interaction, settings_league
+
+    league = await settings_league(tmp_path, modules=("images",) if on else ())
+    return league, ModuleCog(league.bot), interaction(league.bot, "module disable")
+
+
+@pytest.mark.xfail(strict=True, reason=IMAGES_ON_THE_QUEUE)
 async def test_disabling_images_clears_the_flag(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    """The member is acknowledged at once, and once the change has run the module is off."""
+    from tests.support.change_queue import acknowledgement
 
-    await cog._disable_images(interaction)
+    league, cog, asked = await _images_league(tmp_path)
 
-    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(False)
+    await cog._disable_images(asked)
+    assert acknowledgement(asked).startswith("⏳ Turning the image module off. ")
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_images_enabled() is False
 
 
 async def test_disabling_images_keeps_the_configuration(tmp_path):
     """The Principle X.6 exception, and the reason no `--preserve-config` flag exists. No
     image config value names a channel, role, message or job, so none can go stale — a
     reader making the three disables uniform would clear a league's whole image setup for
-    no reason."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    no reason. The reply says the configuration is kept and that every aspect reverts to text,
+    which is what a league will actually notice, and it and the Success line keep today's
+    words; `tests/image/test_image_module_flow.py` pins the configuration surviving."""
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._disable_images(interaction)
+    league, cog, asked = await _images_league(tmp_path)
 
-    replied = _replied(interaction)
-    assert "configuration is kept" in replied
-    assert "re-enabling restores it exactly" in replied
+    await cog._disable_images(asked)
+    await run_queue(league.bot)
 
-
-async def test_disabling_images_says_what_happens_to_the_output(tmp_path):
-    """Every aspect reverts to text, which is what a league will actually notice."""
-    db_path = await _make_db(tmp_path)
-    interaction = _interaction()
-
-    await _make_cog(db_path)._disable_images(interaction)
-
-    assert "reverts to text output" in _replied(interaction)
+    assert last_said(asked) == (
+        "✅ Image module disabled. Every aspect reverts to text output.\n"
+        "Your configuration is kept — re-enabling restores it exactly."
+    )
+    assert await log_lines(league) == [
+        f"Admin (`<@{MEMBER_ID}>`) | /module disable images | Success"
+    ]
 
 
 async def test_disabling_images_twice_does_no_work(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, images_enabled=False)
-    interaction = _interaction()
+    """Refused at once: nothing is queued and nothing audited."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said
 
-    await cog._disable_images(interaction)
+    league, cog, asked = await _images_league(tmp_path, on=False)
 
-    assert "already disabled" in _replied(interaction)
-    cog.bot.module_service.set_images_enabled.assert_not_awaited()
-    assert await _audit_types(db_path) == []
+    await cog._disable_images(asked)
+
+    assert "already disabled" in last_said(asked)
+    assert await change_rows(league.db_path) == []
+    assert await _audit_types(league.db_path) == []
 
 
 async def test_disabling_images_is_audited(tmp_path):
-    db_path = await _make_db(tmp_path)
+    league, cog, asked = await _images_league(tmp_path)
 
-    await _make_cog(db_path)._disable_images(_interaction())
+    await cog._disable_images(asked)
+    await run_queue(league.bot)
 
-    assert await _audit_types(db_path) == ["IMAGE_MODULE_DISABLED"]
+    assert await _audit_types(league.db_path) == ["IMAGE_MODULE_DISABLED"]
 
 
 # ---------------------------------------------------------------------------

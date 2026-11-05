@@ -171,10 +171,31 @@ def test_the_settings_changes_are_registered():
     assert len(SETTING_KINDS) == 24
 
 
-def test_weather_s_switch_is_weather_s_own_settings_signed_up_by_the_builder():
-    """The builder registers weather's switch-on and switch-off, "module.on:weather" and
-    "module.off:weather", once each (#283, S11b): each is weather's own (its check is weather's
-    code) and may write only `server_configs`, the core table holding weather's own column."""
+@pytest.mark.parametrize(
+    ("module", "package", "on_writes", "off_writes"),
+    [
+        pytest.param("weather", "leaguebot.weather.", {"server_configs"}, {"server_configs"},
+                     id="weather"),
+        pytest.param(
+            "images", "leaguebot.image.", {"image_config", "image_aspect_toggles"},
+            {"image_config"}, id="images",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#283: images' switch is not yet image's own settings, signed up by the "
+                "builder",
+            ),
+        ),
+    ],
+)
+def test_a_module_s_switch_is_its_own_settings_signed_up_by_the_builder(
+    module, package, on_writes, off_writes
+):
+    """The builder registers each module's switch-on and switch-off, "module.on:<name>" and
+    "module.off:<name>" under the name `/module` offers, once each (#283, S11b and S11c): each is
+    the module's own (its check is the module's code) and may write only the tables holding the
+    module's switch and, for images' switch-on, the configuration it creates where missing.
+    Weather's switch is weather's column on the core table `server_configs`; images' is image's
+    own `image_config`."""
     from leaguebot.__main__ import register_change_types
     from leaguebot.core.models.change import module_off, module_on
 
@@ -182,10 +203,10 @@ def test_weather_s_switch_is_weather_s_own_settings_signed_up_by_the_builder():
     register_change_types(bot)
 
     registered = [call.args[0] for call in bot.change_queue.register.call_args_list]
-    for kind in (module_on("weather"), module_off("weather")):
+    for kind, writes in ((module_on(module), on_writes), (module_off(module), off_writes)):
         [switch] = [change_type for change_type in registered if change_type.kind == kind]
-        assert switch.check.__module__.startswith("leaguebot.weather."), kind
-        assert tuple(switch.writes) == ("server_configs",), kind
+        assert switch.check.__module__.startswith(package), kind
+        assert set(switch.writes) == writes, kind
 
 
 def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():

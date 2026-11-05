@@ -53,20 +53,49 @@ def module_service(db_path):
 
 
 async def _enable(module_service, config_service):
-    """The service-layer half of `_enable_images`."""
+    """The module switched on with its default configuration, as `/module enable images`
+    leaves it: the set-up of the tests whose subject is not the switch itself."""
     await config_service.create_with_defaults()
     await module_service.set_images_enabled(True)
+
+
+async def _switched(tmp_path):
+    """A league whose settings run on the queue, the image module off with no configuration,
+    the module cog over its bot, and its image configuration service."""
+    from leaguebot.core.cogs.module_cog import ModuleCog
+    from tests.support.settings_league import settings_league
+
+    league = await settings_league(tmp_path, modules=())
+    return league, ModuleCog(league.bot), league.bot.image_config_service
+
+
+async def _switch(league, cog, *, on: bool) -> None:
+    """Run `/module enable images` (*on*) or `/module disable images` as Admin, and the queue
+    behind it, on a host the rasteriser check finds carrying Inkscape."""
+    from unittest.mock import MagicMock, patch
+
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import interaction
+
+    verb = "enable" if on else "disable"
+    with patch(
+        "leaguebot.image.services.image_render_service.converter_available",
+        new=MagicMock(return_value=True),
+    ):
+        await getattr(cog, f"_{verb}_images")(interaction(league.bot, f"module {verb}"))
+        await run_queue(league.bot)
 
 
 # ── T011 ──────────────────────────────────────────────────────────────────
 
 
-async def test_enable_creates_defaults(module_service, config_service):
-    assert await module_service.is_images_enabled() is False
+async def test_enable_creates_defaults(tmp_path):
+    league, cog, config_service = await _switched(tmp_path)
+    assert await league.bot.module_service.is_images_enabled() is False
 
-    await _enable(module_service, config_service)
+    await _switch(league, cog, on=True)
 
-    assert await module_service.is_images_enabled() is True
+    assert await league.bot.module_service.is_images_enabled() is True
 
     cfg = await config_service.get_config()
     assert cfg is not None
@@ -79,20 +108,13 @@ async def test_enable_creates_defaults(module_service, config_service):
     assert not any(toggles.values())
 
 
-async def test_enable_is_idempotent_across_repeat_calls(module_service, config_service):
-    await _enable(module_service, config_service)
-    await saves.set_field(config_service, "template_directory", "resources/mine")
-    await _enable(module_service, config_service)
-
-    cfg = await config_service.get_config()
-    assert cfg.template_directory == "resources/mine"
-
-
 # ── T012 — the gate for the X.6 exception ─────────────────────────────────
 
 
-async def test_disable_retains_configuration(module_service, config_service):
-    await _enable(module_service, config_service)
+async def test_disable_retains_configuration(tmp_path):
+    league, cog, config_service = await _switched(tmp_path)
+    module_service = league.bot.module_service
+    await _switch(league, cog, on=True)
 
     # Customise something from every group of settable values.
     await saves.set_field(config_service, "template_directory", "resources/my_templates")
@@ -105,7 +127,7 @@ async def test_disable_retains_configuration(module_service, config_service):
     before = await config_service.get_config()
     toggles_before = await config_service.get_toggles()
 
-    await module_service.set_images_enabled(False)
+    await _switch(league, cog, on=False)
     assert await module_service.is_images_enabled() is False
 
     # Nothing may be cleared by the disable itself.
@@ -113,7 +135,7 @@ async def test_disable_retains_configuration(module_service, config_service):
     assert during.template_directory == "resources/my_templates"
     assert await config_service.get_toggles() == toggles_before
 
-    await _enable(module_service, config_service)
+    await _switch(league, cog, on=True)
 
     after = await config_service.get_config()
     assert after == before, "re-enabling must restore the exact prior configuration"
@@ -121,8 +143,9 @@ async def test_disable_retains_configuration(module_service, config_service):
     assert toggles_before["standings"] is True
 
 
-async def test_disable_preserves_every_settable_column(module_service, config_service):
-    await _enable(module_service, config_service)
+async def test_disable_preserves_every_settable_column(tmp_path):
+    league, cog, config_service = await _switched(tmp_path)
+    await _switch(league, cog, on=True)
 
     probes = {}
     for column in ("template_directory", *TEMPLATE_COLUMNS, *ASSET_DIRECTORIES):
@@ -131,8 +154,8 @@ async def test_disable_preserves_every_settable_column(module_service, config_se
     for aspect in ASPECTS:
         await saves.set_aspect(config_service, aspect, True)
 
-    await module_service.set_images_enabled(False)
-    await _enable(module_service, config_service)
+    await _switch(league, cog, on=False)
+    await _switch(league, cog, on=True)
 
     cfg = await config_service.get_config()
     for column, expected in probes.items():
@@ -150,13 +173,14 @@ async def test_commands_gated_when_disabled(module_service, config_service):
     assert not any((await config_service.get_toggles()).values())
 
 
-async def test_gate_reads_flag_not_row_presence(module_service, config_service):
+async def test_gate_reads_flag_not_row_presence(tmp_path):
     """After a disable the row still exists, so the gate must read the flag."""
-    await _enable(module_service, config_service)
-    await module_service.set_images_enabled(False)
+    league, cog, config_service = await _switched(tmp_path)
+    await _switch(league, cog, on=True)
+    await _switch(league, cog, on=False)
 
     assert await config_service.get_config() is not None
-    assert await module_service.is_images_enabled() is False
+    assert await league.bot.module_service.is_images_enabled() is False
 
 
 # ── T028 — templates relocate independently (SC-002) ──────────────────────

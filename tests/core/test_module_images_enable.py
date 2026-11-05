@@ -3,23 +3,27 @@
 Issue #208. Enabling images is the one module toggle that depends on a program outside the bot,
 and the way it handles that absence is the point of the file.
 
+Images' switch is image's own change on the change queue (#283, S11c): `/module enable images`
+asks `module.on:images`, the member is acknowledged at once, and the queue carries it out. Each
+test drives the command's handler on the bot the entry point builds, with the real queue and
+"now" pinned, and runs the queue.
+
 **The module enables even without the rasteriser** (FR-007, FR-008), so an administrator can
 finish configuring while waiting for Inkscape to be installed. It says so rather than refusing —
 refusing would leave a league unable to set up the module they are trying to install the
 rasteriser *for*.
 
-**Re-enabling is lossless.** `create_with_defaults` is idempotent, so an existing configuration
-is left exactly as it was (FR-004a) — which is the other half of the disable clearing nothing.
-Between them a league can switch the module off and on again and find every aspect, template and
-toggle as they left it.
+**Re-enabling is lossless.** The configuration is created only where it is missing, so an
+existing configuration is left exactly as it was (FR-004a) — which is the other half of the
+disable clearing nothing; `tests/image/test_image_module_flow.py` pins both halves.
 
 **Every aspect starts disabled.** A league enabling the module does not thereby start posting
 graphics; each output aspect is opted into separately, so enabling cannot surprise a division
 with a picture where it expected text.
 
-**A failed enable puts the flag back down.** The configuration write and the flag are separate
-calls, so a failure between them would leave the module reading as on with nothing configured —
-on-but-broken, which is the state the rollback exists to prevent.
+**A failed enable leaves nothing.** The configuration, the flag and the audit entry are one
+save, so a fault anywhere in it leaves the module off with no configuration behind it — never
+on-but-broken, and never a half-made configuration.
 
 `converter_available` is **monkeypatched rather than marked**. `CLAUDE.md`: a test that merely
 passes through the rasteriser check on its way to something else is not a rasteriser test, and
@@ -28,16 +32,20 @@ at all.
 """
 from __future__ import annotations
 
-import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from leaguebot.core.cogs.module_cog import ModuleCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.db.database import get_connection
+from tests.support.change_queue import MEMBER_ID
 
-SERVER_ID = 13008
-ACTOR_ID = 77
+#: The member as a saved log line names them, the mention wrapped so it notifies nobody.
+NAMED = f"Admin (`<@{MEMBER_ID}>`)"
+#: Why a test of the queue's acknowledgement fails before the switch moves onto the queue.
+ON_THE_QUEUE = "#283: /module enable images is not yet acknowledged as image's change on the queue"
+#: The enable's reply where the host carries the rasteriser.
+ENABLED = "✅ Image module enabled. All output aspects start disabled — use `/images config toggle`."
 
 
 # ---------------------------------------------------------------------------
@@ -45,70 +53,20 @@ ACTOR_ID = 77
 # ---------------------------------------------------------------------------
 
 
-async def _make_db(tmp_path) -> str:
-    db_path = os.path.join(str(tmp_path), "images_enable.db")
-    await run_migrations(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-            (SERVER_ID,),
-        )
-        await db.commit()
-    return db_path
+async def _league(tmp_path, *, on: bool = False):
+    """A league whose settings run on the queue, the image module *on* (with its default
+    configuration) or off (with none), and the module cog over its bot."""
+    from tests.support.settings_league import settings_league
+
+    league = await settings_league(tmp_path, modules=("images",) if on else ())
+    return league, ModuleCog(league.bot)
 
 
-def _make_cog(
-    db_path: str,
-    *,
-    images_enabled: bool = False,
-    create_error: Exception | None = None,
-) -> ModuleCog:
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=images_enabled)
-    bot.module_service.set_images_enabled = AsyncMock(return_value=None)
-    bot.image_config_service = MagicMock()
-    bot.image_config_service.create_with_defaults = AsyncMock(side_effect=create_error)
-    bot.output_router = MagicMock()
-    bot.output_router.post_log = AsyncMock(return_value=None)
+def _asked(league):
+    """`/module enable` as Admin, the member the league's lines name."""
+    from tests.support.settings_league import interaction
 
-    cog = ModuleCog.__new__(ModuleCog)
-    cog.bot = bot
-    return cog
-
-
-def _interaction():
-    interaction = MagicMock()
-    interaction.guild_id = SERVER_ID
-    interaction.user = MagicMock()
-    interaction.user.id = ACTOR_ID
-    interaction.user.display_name = "Admin"
-    interaction.user.__str__ = lambda self: "Admin#0001"  # type: ignore[assignment]
-    interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
-
-
-def _replied(interaction) -> str:
-    return "\n".join(
-        str(call.args[0])
-        for call in interaction.response.send_message.await_args_list
-        + interaction.followup.send.await_args_list
-        if call.args
-    )
-
-
-async def _audit_types(db_path: str) -> list[str]:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT change_type FROM audit_entries"
-        )
-        return [r["change_type"] for r in await cursor.fetchall()]
+    return interaction(league.bot, "module enable")
 
 
 def _rasteriser(present: bool):
@@ -124,9 +82,47 @@ def _rasteriser(present: bool):
     )
 
 
-async def _enable(cog, interaction, *, rasteriser: bool = True):
+async def _enable(league, cog, asked, *, rasteriser: bool = True) -> None:
+    """Run `/module enable images` and the queue behind it, the rasteriser *present* or not."""
+    from tests.support.change_queue import run_queue
+
     with _rasteriser(rasteriser):
-        await cog._enable_images(interaction)
+        await cog._enable_images(asked)
+        await run_queue(league.bot)
+
+
+async def _audit_types(db_path: str) -> list[str]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT change_type FROM audit_entries ORDER BY id")
+        return [r["change_type"] for r in await cursor.fetchall()]
+
+
+async def _images_flag(db_path: str) -> int | None:
+    """The image module's switch, None where no configuration row holds it."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT module_enabled FROM image_config")
+        row = await cursor.fetchone()
+    return None if row is None else row["module_enabled"]
+
+
+async def _configuration_rows(db_path: str) -> dict[str, int]:
+    """How many rows the image configuration and its aspect toggles hold."""
+    async with get_connection(db_path) as db:
+        counts = {}
+        for table in ("image_config", "image_aspect_toggles"):
+            cursor = await db.execute(f"SELECT COUNT(*) AS n FROM {table}")
+            counts[table] = (await cursor.fetchone())["n"]
+    return counts
+
+
+async def _refuse_the_audit(db_path: str) -> None:
+    """Make the audit entry, the last write of the enable's save, fail as a full disk would."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER refuse_the_audit BEFORE INSERT ON audit_entries "
+            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+        )
+        await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -134,63 +130,62 @@ async def _enable(cog, interaction, *, rasteriser: bool = True):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize("rasteriser", [True, False], ids=["with a rasteriser", "without"])
 async def test_the_module_is_enabled(tmp_path, rasteriser):
     """With or without a rasteriser (FR-007 / FR-008). Refusing would leave a league unable to
-    set up the module they are installing the rasteriser for."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    set up the module they are installing the rasteriser for. The member is acknowledged at
+    once, and once the change has run the module is on, and the reply and the Success line keep
+    today's words.
 
-    await _enable(cog, interaction, rasteriser=rasteriser)
+    The reply says every output aspect starts disabled: enabling the module does not thereby
+    start posting graphics, so a division is not surprised by a picture where it expected text.
+    A missing rasteriser is said, and a present one adds nothing: otherwise the first graphic a
+    league expects simply does not arrive, with nothing connecting that to a program nobody told
+    them about; and with nothing to warn about, a notice every time would be noise on the common
+    path."""
+    from leaguebot.image.services.image_render_service import converter_absent_message
+    from tests.support.change_queue import acknowledgement
+    from tests.support.settings_league import last_said, log_lines
 
-    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(True)
-    assert "enabled" in _replied(interaction)
+    league, cog = await _league(tmp_path)
+    asked = _asked(league)
 
+    await _enable(league, cog, asked, rasteriser=rasteriser)
 
-async def test_the_configuration_is_created_with_defaults(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-
-    await _enable(cog, _interaction())
-
-    cog.bot.image_config_service.create_with_defaults.assert_awaited_once_with()
-
-
-async def test_every_output_aspect_starts_disabled(tmp_path):
-    """Enabling the module does not thereby start posting graphics — each aspect is opted
-    into separately, so a division is not surprised by a picture where it expected text."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _enable(cog, interaction)
-
-    replied = _replied(interaction)
-    assert "aspects start disabled" in replied
-    assert "/images config toggle" in replied
+    assert acknowledgement(asked).startswith("⏳ Turning the image module on. ")
+    assert await _images_flag(league.db_path) == 1
+    expected = ENABLED if rasteriser else f"{ENABLED}\n\n{converter_absent_message()}"
+    assert last_said(asked) == expected
+    assert await log_lines(league) == [f"{NAMED} | /module enable images | Success"]
 
 
 async def test_enabling_is_audited(tmp_path):
-    db_path = await _make_db(tmp_path)
+    league, cog = await _league(tmp_path)
 
-    await _enable(_make_cog(db_path), _interaction())
+    await _enable(league, cog, _asked(league))
 
-    assert await _audit_types(db_path) == ["IMAGE_MODULE_ENABLED"]
+    assert await _audit_types(league.db_path) == ["IMAGE_MODULE_ENABLED"]
 
 
 async def test_enabling_twice_does_no_work(tmp_path):
     """The second call would re-run the defaults write for no reason, and the audit would
-    record an event that did not happen."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, images_enabled=True)
-    interaction = _interaction()
+    record an event that did not happen. The member is refused at once, nothing is queued, and
+    the refusal reaches the log channel as one line in the standard form."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said, log_lines
 
-    await _enable(cog, interaction)
+    league, cog = await _league(tmp_path, on=True)
+    asked = _asked(league)
 
-    assert "already enabled" in _replied(interaction)
-    cog.bot.image_config_service.create_with_defaults.assert_not_awaited()
-    assert await _audit_types(db_path) == []
+    await _enable(league, cog, asked)
+
+    assert last_said(asked) == "⚠️ Image module is already enabled."
+    assert await change_rows(league.db_path) == []
+    assert await _audit_types(league.db_path) == []
+    assert await log_lines(league) == [
+        f"⛔ `/module enable` refused for {NAMED} — Image module is already enabled."
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -198,33 +193,19 @@ async def test_enabling_twice_does_no_work(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_present_rasteriser_adds_no_notice(tmp_path):
-    """A missing rasteriser is said, and a present one adds nothing. Otherwise the first graphic
-    a league expects simply does not arrive, with nothing connecting that to a program nobody
-    told them about; and with nothing to warn about, a notice every time would be noise on the
-    common path."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    with_rasteriser = _interaction()
-    without = _interaction()
-
-    await _enable(_make_cog(db_path), with_rasteriser, rasteriser=True)
-    await _enable(cog, without, rasteriser=False)
-
-    assert len(_replied(with_rasteriser)) < len(_replied(without))
-
-
 async def test_the_rasteriser_check_is_not_cached(tmp_path):
     """An administrator installing Inkscape and re-running the command must see the new
     answer, not one cached from before they installed it."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+    from tests.support.change_queue import run_queue
+
+    league, cog = await _league(tmp_path)
 
     with patch(
         "leaguebot.image.services.image_render_service.converter_available",
         new=MagicMock(return_value=True),
     ) as available:
-        await cog._enable_images(_interaction())
+        await cog._enable_images(_asked(league))
+        await run_queue(league.bot)
 
     assert available.call_args.kwargs.get("use_cache") is False
 
@@ -234,91 +215,45 @@ async def test_the_rasteriser_check_is_not_cached(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_failed_enable_leaves_the_module_off(tmp_path):
-    """The configuration write and the flag are separate calls, so a failure between them
-    would leave the module reading as on with nothing configured. The flag goes back down, and
-    the standard failure reply says the module is still off, without the error's text."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, create_error=RuntimeError("disk full"))
-    interaction = _interaction()
-
-    await _enable(cog, interaction)
-
-    cog.bot.module_service.set_images_enabled.assert_awaited_with(False)
-    replied = _replied(interaction)
-    assert "The module is still off." in replied
-    assert "disk full" not in replied
-
-
-async def test_a_failed_enable_is_not_logged_as_a_success(tmp_path):
-    """It is logged as the failure it is, once, and never as a success."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, create_error=RuntimeError("disk full"))
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "module enable"
-
-    await _enable(cog, interaction)
-
-    lines = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
-    assert not any("Success" in line for line in lines)
-    [line] = lines
-    assert "/module enable" in line
-    assert f"failed for Admin (<@{ACTOR_ID}>)" in line
-    assert "RuntimeError" in line
-    assert "disk full" not in line
-
-
-@pytest.mark.parametrize(
-    "switch_off_fails",
-    [
-        pytest.param(False, id="the-write-fails"),
-        pytest.param(True, id="the-switch-off-also-fails"),
-    ],
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: a failed /module enable images leaves the configuration rows it created",
 )
-async def test_an_image_enable_that_cannot_be_written_is_switched_back_off_and_says_so(
-    tmp_path, switch_off_fails
-):
-    """The audit write fails after the flag went up. The flag is put back down, and the
-    member told in the standard failure reply that the module is still off — with one failure
-    line in the log channel and no error text anywhere a league reads.
+async def test_a_failed_enable_leaves_the_module_off(tmp_path):
+    """The configuration, the flag and the audit entry are one save, so a fault at its last
+    write leaves the module off with no configuration behind it: never on with nothing
+    configured, and never a half-made configuration a later enable would build on."""
+    league, cog = await _league(tmp_path)
+    await _refuse_the_audit(league.db_path)
 
-    Where putting the flag back down fails as well, the bot cannot say the module is off: that
-    error goes to the command's own failure path, and no reply says the module is still off."""
-    db_path = await _make_db(tmp_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "CREATE TRIGGER refuse_the_audit BEFORE INSERT ON audit_entries "
-            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
-        )
-        await db.commit()
-    cog = _make_cog(db_path)
-    switch_off_error = RuntimeError("the flag will not go down")
-    if switch_off_fails:
-        cog.bot.module_service.set_images_enabled = AsyncMock(
-            side_effect=[None, switch_off_error]
-        )
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "module enable"
+    await _enable(league, cog, _asked(league))
 
-    if switch_off_fails:
-        with pytest.raises(RuntimeError) as raised:
-            await _enable(cog, interaction)
-        assert raised.value is switch_off_error
-        assert "The module is still off" not in _replied(interaction)
-        return
+    assert await _images_flag(league.db_path) in (None, 0)
+    assert await _configuration_rows(league.db_path) == {
+        "image_config": 0,
+        "image_aspect_toggles": 0,
+    }
 
-    await _enable(cog, interaction)
 
-    cog.bot.module_service.set_images_enabled.assert_awaited_with(False)
-    replied = _replied(interaction)
-    assert "stopped on a fault in the bot" in replied
-    assert "The module is still off." in replied
-    assert "again once the fault is cleared" in replied
+async def test_an_image_enable_that_cannot_be_written_says_the_module_is_still_off(tmp_path):
+    """The audit write fails inside the enable's one save. The member gets the standard
+    failure reply, saying the module is still off and what to do next, with no error text; the
+    log channel gets the one failure line, and never a success."""
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog = await _league(tmp_path)
+    await _refuse_the_audit(league.db_path)
+    asked = _asked(league)
+
+    await _enable(league, cog, asked)
+
+    replied = last_said(asked)
+    assert replied == (
+        "❌ `/module enable` stopped on a fault in the bot, not on anything you entered, and did "
+        "not finish. The module is still off. Run `/module enable images` again once the fault "
+        "is cleared. The fault is recorded in the log channel."
+    )
     assert "disk I/O error" not in replied
-    [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
-    assert "/module enable" in line
-    assert f"failed for Admin (<@{ACTOR_ID}>)" in line
-    assert "IntegrityError" in line
-    assert "disk I/O error" not in line
+    assert await log_lines(league) == [
+        f"❌ `/module enable` failed for {NAMED} — IntegrityError. The details are in the host's log."
+    ]
