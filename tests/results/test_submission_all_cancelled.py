@@ -533,7 +533,7 @@ async def test_a_round_ending_cancelled_hands_its_division_to_the_notices_hook(t
     """Round 3 ends cancelled when the admin types CANCELLED for its race. Inside the save that
     ends it, on that save's own connection, the hook the modules' notices are planned through is
     called once, handed the round scope and Pro's round 3: Pro's id, name and season, and the
-    round's number."""
+    round's number and track."""
     league = await _league(tmp_path)
     handed = notices_handed(league)
 
@@ -542,10 +542,10 @@ async def test_a_round_ending_cancelled_hands_its_division_to_the_notices_hook(t
 
     assert [
         (scope, {key: target[key] for key in ("division_id", "division_name", "season_id",
-                                               "round_number")}, in_save)
+                                               "round_number", "track_name")}, in_save)
         for scope, target, in_save in handed
     ] == [("round", {"division_id": PRO, "division_name": "Pro", "season_id": SEASON_ID,
-                     "round_number": 3}, True)]
+                     "round_number": 3, "track_name": "Silverstone"}, True)]
 
 
 async def test_a_round_ending_cancelled_leaves_its_call_and_forecast_until_the_day_after(
