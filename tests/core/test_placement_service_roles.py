@@ -124,13 +124,12 @@ async def _lineup_db(tmp_path) -> str:
     return db_path
 
 
-async def test_a_lineup_refreshed_as_text_draws_nothing(tmp_path, monkeypatch):
-    """Pro's lineup tried again after a failure, the bot able to draw it: the picture is not
-    attempted, and the textual lineup is posted in channel 600."""
-    import leaguebot.image.services.image_lineup_post as image_lineup_post
+async def test_a_lineup_refreshed_as_text_draws_nothing(tmp_path):
+    """Pro's lineup tried again after a failure, the placement handed a drawing that would draw
+    it: the drawing is not asked at all, and the textual lineup is posted in channel 600."""
+    from tests.support.lineup_drawing import LineupDrawingStub
 
-    try_post = AsyncMock(return_value=MagicMock(applicable=True))
-    monkeypatch.setattr(image_lineup_post, "try_post", try_post)
+    drawing = LineupDrawingStub(picture=tmp_path / "lineup_template.png")
     db_path = await _lineup_db(tmp_path)
     channel = MagicMock(spec=discord.TextChannel)
     channel.send = AsyncMock(return_value=MagicMock(id=700))
@@ -138,10 +137,10 @@ async def test_a_lineup_refreshed_as_text_draws_nothing(tmp_path, monkeypatch):
     guild.get_channel = MagicMock(return_value=channel)
 
     with in_a_job():
-        await PlacementService(db_path, bot=MagicMock()).refresh_lineup(
+        await PlacementService(db_path, drawing=drawing).refresh_lineup(
             guild, DIVISION_ID, as_text=True
         )
 
-    try_post.assert_not_awaited()
+    assert (drawing.wanted_asked, drawing.drawn) == (0, [])
     channel.send.assert_awaited_once()
     assert "Pro Lineup" in channel.send.await_args.kwargs["embed"].title

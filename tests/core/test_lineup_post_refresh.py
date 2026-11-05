@@ -4,16 +4,19 @@ Issue #208. `PlacementService._refresh_lineup_post` and `resolve_division` were 
 The lineup is what a division reads to know who is racing, and it is reposted after every
 placement change — a seat filled, a driver sacked, a team rearranged.
 
-**The image path is a guard clause in front of an untouched body.** Where the image module is
-on, the `lineup` aspect is enabled and a template is configured, `image_lineup_post.try_post`
-produces the graphic and this method returns. Where any of those is not true — and only then —
-the text embed below runs. Either way the lineup is posted before the message it replaces is
-deleted, and that deletion is a job of the change queue after it (#439; Constitution XIV, rule 8),
-so this method deletes nothing and saves nothing: it returns what it posted.
+**The picture is asked of the drawing in front of an untouched body.** Where the drawing the
+builder hands `PlacementService` (core's drawing protocol, #283) answers that the league draws its
+lineup, it draws the division's picture, and core posts it through the standing-post handler and
+releases its file. Where the league does not draw it — and only then — the text embed below runs.
+Either way the lineup is posted before the message it replaces is deleted, and that deletion is a
+job of the change queue after it (#439; Constitution XIV, rule 8), so this method deletes nothing
+and saves nothing: it returns what it posted. The drawing here is a stand-in
+(`tests/support/lineup_drawing.py`); the image module's own is tested under `tests/image/`.
 
-**A failure in the image path falls through to the text.** A placement must never be blocked by
+**A picture that cannot be drawn falls through to the text.** A placement must never be blocked by
 a graphic that would not render — the seat is already assigned by the time this runs, and a
-division with no lineup post at all is worse than one with a text lineup.
+division with no lineup post at all is worse than one with a text lineup. What went wrong is
+handed back with what was posted, for the job's own line.
 
 **Test drivers are labelled with the name the rehearsal gave them.** A mention of a user id
 nobody holds renders as a raw id; the display name beside it is what makes a rehearsal's lineup
@@ -35,8 +38,7 @@ is real and a reader will assume otherwise.
 from __future__ import annotations
 
 import os
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -45,6 +47,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.services.placement_service import PlacementService
 from tests.support.change_queue import in_a_job
+from tests.support.lineup_drawing import LineupDrawingStub
 from tests.support.mentions import NOBODY, notified
 
 SERVER_ID = 12308
@@ -153,17 +156,13 @@ def _guild(*, channel=None, cache_miss: bool = False, fetch_fails: bool = False)
     return guild
 
 
-async def _refresh(db_path, guild, *, image_applicable: bool = False, image_error=None):
-    service = PlacementService(db_path, bot=MagicMock())
-    outcome = SimpleNamespace(applicable=image_applicable,
-                              message_id=NEW_MESSAGE_ID if image_applicable else None)
-    with patch(
-        "leaguebot.image.services.image_lineup_post.try_post",
-        new=AsyncMock(return_value=outcome, side_effect=image_error),
-    ) as try_post:
-        with in_a_job():
-            await service._refresh_lineup_post(guild, DIVISION_ID)
-    return try_post
+async def _refresh(db_path, guild, *, drawing=None):
+    """Pro's lineup posted, the placement handed *drawing* (none by default, so the text): gives
+    what `_refresh_lineup_post` returns."""
+    with in_a_job():
+        return await PlacementService(db_path, drawing=drawing)._refresh_lineup_post(
+            guild, DIVISION_ID
+        )
 
 
 async def _post(db_path, guild):
@@ -202,40 +201,82 @@ ONE_DRIVER = (("Red", False, 4242, False, None),)
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: core does not yet ask the handed drawing for the lineup, nor post its picture",
+)
 async def test_a_configured_graphic_replaces_the_text_lineup(tmp_path):
-    """The image path produces the PNG before deleting the message it replaces (FR-025),
-    and returns — the text body below is not reached at all."""
+    """Pro's lineup, one driver at Red, its old lineup message 8800; the drawing answers that the
+    league draws its lineup, and draws Pro's as a PNG. Core posts the picture, and no embed, in
+    Pro's lineup channel through the standing-post handler, notifying nobody, and then hands the
+    file back to the drawing to release. What it posted is a picture replacing 8800."""
     db_path = await _make_db(tmp_path, name="lineup_image", drivers=ONE_DRIVER)
     channel = _channel()
+    png = tmp_path / "lineup_template.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    drawing = LineupDrawingStub(picture=png)
 
-    try_post = await _refresh(db_path, _guild(channel=channel), image_applicable=True)
+    posted = await _refresh(db_path, _guild(channel=channel), drawing=drawing)
 
-    try_post.assert_awaited_once()
-    channel.send.assert_not_awaited()
+    assert drawing.drawn == [DIVISION_ID]
+    channel.send.assert_awaited_once()
+    sent = channel.send.await_args.kwargs
+    assert sent.get("embed") is None
+    assert sent["file"].filename == "lineup_template.png"
+    assert notified(sent.get("allowed_mentions")) == NOBODY
+    assert drawing.discarded == [png]
+    assert (posted.message_id, posted.previous, posted.form) == (
+        NEW_MESSAGE_ID, OLD_MESSAGE_ID, "image",
+    )
+    assert posted.problem is None
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: core does not yet ask the handed drawing whether the league draws its lineup",
+)
 async def test_an_inapplicable_graphic_falls_through_to_the_text(tmp_path):
-    """The module off, the aspect off, or no template — the embed runs exactly as it did
-    before the image module existed."""
+    """The drawing answers that the league does not draw its lineup (the module off, the aspect
+    off, or no template): nothing is drawn, the embed runs exactly as it did before the image
+    module existed, and nothing went wrong to record."""
     db_path = await _make_db(tmp_path, name="lineup_fallthrough", drivers=ONE_DRIVER)
     channel = _channel()
+    drawing = LineupDrawingStub(wanted=False)
 
-    await _refresh(db_path, _guild(channel=channel), image_applicable=False)
+    posted = await _refresh(db_path, _guild(channel=channel), drawing=drawing)
 
+    assert drawing.wanted_asked == 1
+    assert drawing.drawn == []
     channel.send.assert_awaited_once()
+    assert "Pro" in _embed(channel).title
+    assert posted.form == "text"
+    assert posted.problem is None
 
 
-async def test_a_failing_graphic_falls_through_to_the_text(tmp_path):
+@pytest.mark.parametrize("answer", [
+    pytest.param({"problem": "the template has no rows"}, id="a problem"),
+    pytest.param({"fault": RuntimeError("the template has no rows")}, id="a fault"),
+])
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: core does not yet ask the handed drawing, nor hand back why it fell to text",
+)
+async def test_a_failing_graphic_falls_through_to_the_text(tmp_path, answer):
     """A placement must never be blocked by a graphic that would not render: the seat is
-    already assigned by the time this runs, and no lineup at all is worse than a text one."""
+    already assigned by the time this runs, and no lineup at all is worse than a text one. Pro's
+    drawing hands back the problem "the template has no rows", or raises it: the text embed is
+    posted in Pro's lineup channel, and what was posted carries the problem, for the job's line."""
     db_path = await _make_db(tmp_path, name="lineup_imgfail", drivers=ONE_DRIVER)
     channel = _channel()
+    drawing = LineupDrawingStub(**answer)
 
-    await _refresh(
-        db_path, _guild(channel=channel), image_error=RuntimeError("no rasteriser")
-    )
+    posted = await _refresh(db_path, _guild(channel=channel), drawing=drawing)
 
+    assert drawing.drawn == [DIVISION_ID]
     channel.send.assert_awaited_once()
+    assert "<@4242>" in _embed(channel).description
+    assert posted.form == "text"
+    assert posted.problem == "the template has no rows"
 
 
 # ---------------------------------------------------------------------------
