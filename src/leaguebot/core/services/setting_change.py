@@ -15,7 +15,7 @@ never refused.
 
 **The check at the start is the last judgement of the state against queued writers.** Settings are
 written only on the league lane, one change at a time, and conversation lanes may not write these
-tables; but the off-queue writers (`/module enable|disable` of weather and images, and
+tables; but the off-queue writers (`/module enable|disable` of images, and
 `ImageConfigService.create_with_defaults`) can still land between the check and the save, until
 they move onto the queue. The save judges only held or not.
 
