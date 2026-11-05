@@ -928,7 +928,6 @@ async def test_every_module_enable_and_disable_refusal_reaches_the_log_channel(
     signup_enabled = setup.pop("signup_enabled", False)
     cog = _make_cog(db_path, season=season, **setup)
     cog.bot.module_service.is_signup_enabled = AsyncMock(return_value=signup_enabled)
-    cog._refresh_hub = AsyncMock()
     interaction = _interaction()
     interaction.client = cog.bot
     interaction.command.qualified_name = f"module {verb or 'enable'}"

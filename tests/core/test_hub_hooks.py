@@ -1,10 +1,10 @@
 """What keeps the hub's panel and its permissions current (issue #279).
 
 **The panel follows the modules.** A module's options are offered while it is enabled, so every
-enable and disable asks the change queue to refresh the panel, as the bot's change (#439,
-slice 6b): the toggle refreshes nothing itself. Turning results off is the exception in form, not
-in effect: it is carried out on the change queue, whose switch-off asks the refresh in its own
-save once the flag is down, so the command leaves it alone. A refresh the hub refuses is the
+switch that changed something asks the change queue to refresh the panel, as the bot's change
+(#439, slice 6b): each module's switch asks it as a follow-on once it has run (#283, S11e), as
+turning results off always has, and the command refreshes nothing itself. A toggle refused, at the
+ask or as it runs, changed nothing and leaves the panel alone. A refresh the hub refuses is the
 queue's to stop on (`test_hub_service.py`), never a line the toggle writes.
 
 **The permissions follow the roles.** The hub is seen by the base role (or everyone, where none
@@ -51,22 +51,14 @@ def _interaction():
 HUB = 7930
 
 
-def _module_cog(bot, *, refused: bool = False) -> ModuleCog:
-    cog = ModuleCog.__new__(ModuleCog)
-    cog.bot = bot
-    cog._refuse_module_change = AsyncMock(return_value=refused)
-    for name in ("weather", "results", "attendance", "images", "signup"):
-        setattr(cog, f"_enable_{name}", AsyncMock())
-        setattr(cog, f"_disable_{name}", AsyncMock())
-    return cog
-
-
 @pytest.fixture
 async def queued_bot(tmp_path):
-    """The league's bot (`league_bot`) with a real change queue, its hub set to channel 7930."""
+    """The league's bot (`league_bot`) with a real change queue, its hub set to channel 7930, every
+    module off and no season, its scheduler recording the removal of weather's jobs."""
     from datetime import datetime, timezone
 
     from tests.support.change_queue import league_bot, league_queue, seed_server
+    from tests.support.settings_league import scheduler_double
 
     db_path = str(tmp_path / "hub_toggle.db")
     await run_migrations(db_path)
@@ -74,7 +66,7 @@ async def queued_bot(tmp_path):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE server_configs SET hub_channel_id = ?", (HUB,))
         await db.commit()
-    bot = await league_bot(db_path)
+    bot = await league_bot(db_path, scheduler=scheduler_double())
     league_queue(bot, db_path, now=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc))
     return bot
 
@@ -92,53 +84,114 @@ async def _refreshes_asked(bot) -> list[dict]:
 # ── The panel follows the modules ─────────────────────────────────────────
 
 
+#: Each module's switch asked by the command, and the modules on beforehand so that it changes
+#: something: attendance needs results on to come on, and results is turned off with attendance off
+#: and no season, so that it is asked at once without a warning.
+_ON_BEFORE = {
+    ("weather", "enable"): (), ("weather", "disable"): ("weather",),
+    ("results", "enable"): (), ("results", "disable"): ("results",),
+    ("attendance", "enable"): ("results",), ("attendance", "disable"): ("results", "attendance"),
+    ("images", "enable"): (), ("images", "disable"): ("images",),
+    ("signup", "enable"): (), ("signup", "disable"): ("signup",),
+}
+
+#: Why a toggle other than turning results off fails until the build: the command asks its own
+#: refresh as soon as it has asked the switch, whatever becomes of it.
+_REFRESHED_BY_THE_COMMAND = "#283: the command asks the refresh, not the switch's follow-on"
+
+
+def _module_cog(bot) -> ModuleCog:
+    cog = ModuleCog.__new__(ModuleCog)
+    cog.bot = bot
+    return cog
+
+
 @pytest.mark.parametrize(
     ("module", "command"),
     [
-        pytest.param(module, command, id=f"{module}-{command}")
+        pytest.param(
+            module, command, id=f"{module}-{command}",
+            marks=() if (module, command) == ("results", "disable") else pytest.mark.xfail(
+                strict=True, reason=_REFRESHED_BY_THE_COMMAND
+            ),
+        )
         for module in ("weather", "results", "attendance", "images", "signup")
         for command in ("enable", "disable")
-        if (module, command) != ("results", "disable")
     ],
 )
 async def test_every_toggle_asks_the_queue_to_refresh_the_panel(
     monkeypatch, queued_bot, command, module,
 ):
-    """Every toggle but turning results off, whose switch-off asks the refresh in its own save.
-    The hub is set; the manager runs `/module <command> <module>`: one refresh is asked of the
-    queue, naming the command, and the panel is not refreshed by the toggle itself."""
+    """Every switch, turning results off included. The hub is set and the module stands so that
+    the switch changes something; the manager runs `/module <command> <module>`: no refresh is
+    asked while the switch waits on the queue, and the panel is not refreshed by the command; once
+    the queue has run the switch, one refresh has been asked of the queue, naming the command."""
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import set_module_flag
+    from tests.support.settings_league import interaction
+
+    for on in _ON_BEFORE[(module, command)]:
+        await set_module_flag(queued_bot.db_path, on, True)
     refresh = AsyncMock(return_value=None)
     monkeypatch.setattr(hub_service, "refresh_panel", refresh, raising=False)
     cog = _module_cog(queued_bot)
-    interaction = _interaction()
-    interaction.command.qualified_name = f"module {command}"
 
-    await undecorate(getattr(ModuleCog, command))(cog, interaction, _choice(module))
+    await undecorate(getattr(ModuleCog, command))(
+        cog, interaction(queued_bot, f"module {command}"), _choice(module)
+    )
+    assert await _refreshes_asked(queued_bot) == []
+    refresh.assert_not_awaited()
+    await run_queue(queued_bot)
 
-    getattr(cog, f"_{command}_{module}").assert_awaited_once()
     [asked] = await _refreshes_asked(queued_bot)
     assert f"/module {command}" in asked["command"]
-    refresh.assert_not_awaited()
 
 
-async def test_turning_results_off_by_the_command_asks_no_refresh_of_its_own(queued_bot):
-    """`/module disable results` only asks for its confirmation: the queue's switch-off asks
-    the refresh, so the command asks none."""
+async def _confirm_a_season(db_path: str) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-09-17', 'ACTIVE', 5)"
+        )
+        await db.commit()
+
+
+@pytest.mark.parametrize(
+    "refused",
+    [
+        pytest.param("by-the-stage", id="by-the-stage"),
+        pytest.param("already-on", id="already-on", marks=pytest.mark.xfail(
+            strict=True, reason=_REFRESHED_BY_THE_COMMAND)),
+        pytest.param("as-it-runs", id="as-it-runs", marks=pytest.mark.xfail(
+            strict=True, reason=_REFRESHED_BY_THE_COMMAND)),
+    ],
+)
+async def test_a_refused_toggle_leaves_the_panel_alone(queued_bot, refused):
+    """The manager runs `/module enable weather`, and it is refused: by the stage check, a season's
+    placements being confirmed (*by-the-stage*); by the switch's own check at the ask, weather
+    being on already (*already-on*); or by the switch's check as it starts, a season's placements
+    confirmed while it waited on the queue (*as-it-runs*). It changed nothing, so no refresh is
+    asked of the queue, before the queue runs or after."""
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import set_module_flag
+    from tests.support.settings_league import interaction
+
+    if refused == "by-the-stage":
+        await _confirm_a_season(queued_bot.db_path)
+    if refused == "already-on":
+        await set_module_flag(queued_bot.db_path, "weather", True)
     cog = _module_cog(queued_bot)
 
-    await undecorate(ModuleCog.disable)(cog, _interaction(), _choice("results"))
-
-    cog._disable_results.assert_awaited_once()
+    await undecorate(ModuleCog.enable)(
+        cog, interaction(queued_bot, "module enable"), _choice("weather")
+    )
     assert await _refreshes_asked(queued_bot) == []
-
-
-async def test_a_refused_toggle_leaves_the_panel_alone(queued_bot):
-    """The toggle is refused: no refresh is asked of the queue."""
-    cog = _module_cog(queued_bot, refused=True)
-
-    await undecorate(ModuleCog.enable)(cog, _interaction(), _choice("weather"))
+    if refused == "as-it-runs":
+        await _confirm_a_season(queued_bot.db_path)
+    await run_queue(queued_bot)
 
     assert await _refreshes_asked(queued_bot) == []
+    assert await queued_bot.module_service.is_weather_enabled() is (refused == "already-on")
 
 
 async def _queued_results_off(tmp_path) -> tuple[ModuleCog, MagicMock]:
