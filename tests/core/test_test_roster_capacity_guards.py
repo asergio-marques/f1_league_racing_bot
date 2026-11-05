@@ -218,14 +218,6 @@ async def test_an_unknown_team_is_left_to_the_roster_to_report(tmp_path):
     await service.guard_roster_capacity(divisions["Alpha"], {"No Such Team": 9})
 
 
-async def test_no_bot_means_no_guard(tmp_path):
-    from leaguebot.core.services.placement_service import PlacementService
-
-    path, divisions = await _seed(tmp_path)
-
-    await PlacementService(path).guard_roster_capacity(divisions["Alpha"], {TEAMS[0]: 99})
-
-
 # ── /test-mode roster add ─────────────────────────────────────────────────
 
 

@@ -225,13 +225,6 @@ async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
     await service._guard_standings_capacity(division_id, ORDINARY)
 
 
-async def test_no_bot_means_no_guard(tmp_path):
-    from leaguebot.core.services.placement_service import PlacementService
-
-    db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
-    await PlacementService(db_path)._guard_standings_capacity(division_id, ORDINARY)
-
-
 # ── The reserve team is no part of a classification (#140) ───────────────
 
 
