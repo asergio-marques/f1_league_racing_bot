@@ -40,7 +40,7 @@ async def _seed(tmp_path, *, test_mode: bool, drivers: dict[int, bool] | None = 
 def _service(db_path):
     from leaguebot.core.services.placement_service import PlacementService
 
-    return PlacementService(db_path, bot=MagicMock())
+    return PlacementService(db_path)  # handed no drawing, it asks no capacity guard
 
 
 async def test_a_real_driver_is_refused_under_test_mode(tmp_path):
@@ -76,7 +76,6 @@ async def test_the_guard_runs_before_a_placement(tmp_path):
     """The refusal reaches the caller through assign_driver, not only in isolation."""
     db_path = await _seed(tmp_path, test_mode=True, drivers={1: False})
     service = _service(db_path)
-    service._guard_image_capacity = _noop
 
     with pytest.raises(ValueError) as excinfo:
         await service.assign_driver(
@@ -92,6 +91,3 @@ async def test_the_guard_runs_before_a_placement(tmp_path):
 
     assert "Test mode is active" in str(excinfo.value)
 
-
-async def _noop(*args, **kwargs):
-    return None

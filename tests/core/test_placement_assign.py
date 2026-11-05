@@ -106,10 +106,7 @@ async def _make_db(
 
 
 def _service(db_path: str) -> PlacementService:
-    service = PlacementService.__new__(PlacementService)
-    service._db_path = db_path
-    service._bot = None  # the capacity guards return early without a bot
-    return service
+    return PlacementService(db_path)  # handed no drawing, it asks no capacity guard
 
 
 async def _assign(service, *, team: str = "Alpha", profile_id: int = PROFILE_ID) -> dict:

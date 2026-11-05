@@ -104,9 +104,7 @@ async def _where(db_path, profile_id=PROFILE_ID):
 
 
 def _service(db_path) -> PlacementService:
-    service = PlacementService.__new__(PlacementService)
-    service._db_path = db_path
-    service._bot = None
+    service = PlacementService(db_path)
     service._refresh_lineup_post = AsyncMock()
     service._grant_roles = AsyncMock()
     service._revoke_roles = AsyncMock()

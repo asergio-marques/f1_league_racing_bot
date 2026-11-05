@@ -29,9 +29,7 @@ from tests.attendance.test_uncommitted_drivers_outside_attendance import (
 
 
 def _service(db_path) -> PlacementService:
-    service = PlacementService.__new__(PlacementService)
-    service._db_path = db_path
-    service._bot = None
+    service = PlacementService(db_path)
     service._refresh_lineup_post = AsyncMock()
     service._grant_roles = AsyncMock()
     service.get_team_role_config = AsyncMock(return_value=SimpleNamespace(role_id=777))

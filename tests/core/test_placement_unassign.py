@@ -113,9 +113,7 @@ async def _map_role(db_path: str, team_name: str, role_id: int = ROLE_ID) -> Non
 
 
 def _service(db_path: str) -> PlacementService:
-    service = PlacementService.__new__(PlacementService)
-    service._db_path = db_path
-    service._bot = None
+    service = PlacementService(db_path)
     service._refresh_lineup_post = AsyncMock(return_value=None)
     service._revoke_roles = AsyncMock(return_value=None)
     return service
