@@ -16,9 +16,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-#: Why every test here fails before the build.
-NOT_YET = "#283: the image module's drawing does not yet draw the calendar"
-
 TRACKS = {
     "Silverstone Circuit": NS(
         name="Silverstone Circuit", gp_name="British Grand Prix", country="United Kingdom"
@@ -77,7 +74,6 @@ def _drawing(*, images_on=True, aspect_on=True, flag_directory="resources/defaul
     return drawing, captured, post_log, modules
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize(
     "images_on,aspect_on,wanted",
     [
@@ -95,7 +91,6 @@ async def test_the_calendar_is_drawn_only_with_both_gates_open(images_on, aspect
     assert await drawing.calendar_wanted() is wanted
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_gate_that_cannot_be_read_answers_text(caplog):
     """The images module's switch cannot be read (the database down): the drawing answers that the
     calendar is not drawn, so the text goes out and a league never loses its calendar, and the
@@ -107,7 +102,6 @@ async def test_a_gate_that_cannot_be_read_answers_text(caplog):
     assert "db down" in caplog.text
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_asset_directories_are_absolute():
     """Regression: the calendar resolved its own directories and produced relative paths.
 
@@ -134,7 +128,6 @@ async def test_the_asset_directories_are_absolute():
     assert spec.asset_directories["flag"].name == "flags"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_rejected_directory_is_carried_through_as_a_fault():
     """The reason is the point: `not configured` and `rejected` are different faults.
 
@@ -152,7 +145,6 @@ async def test_a_rejected_directory_is_carried_through_as_a_fault():
     assert "flag" in spec.asset_directory_faults
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_drawing_reports_its_notices_to_the_log_channel_in_one_message():
     """Elite's calendar drawn with a notice: the drawing itself reports it to the log channel, in
     one message naming what was drawn, so the notice reaches the log whichever change posted the
@@ -172,7 +164,6 @@ async def test_a_drawing_reports_its_notices_to_the_log_channel_in_one_message()
     assert "a fallback flag stood in for Monaco's" in call.args[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize("drawn", ["a picture", "a problem"])
 async def test_the_drawing_hands_back_the_picture_the_problem_and_the_notices(tmp_path, drawn):
     """Elite's calendar drawn, with one notice: the drawing hands core the picture's path where it

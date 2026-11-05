@@ -28,9 +28,6 @@ from tests.support.calendar_drawing import CalendarDrawingStub
 from tests.support.change_queue import in_a_job
 from tests.support.mentions import NOBODY, notified
 
-#: Why the tests of the posting fail before the build.
-HANDED_NO_DRAWING = "#283: the calendar's posting is handed the bot, not the drawing"
-
 TRACKS = {
     "Silverstone Circuit": NS(
         name="Silverstone Circuit", gp_name="British Grand Prix", country="United Kingdom"
@@ -155,7 +152,6 @@ def test_a_mystery_round_reads_as_mystery_in_the_text():
 # ── 4. Fallback vs rejection ──────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 @pytest.mark.asyncio
 async def test_uncommanded_posting_falls_back_to_text_on_a_fatal_render(monkeypatch):
     drawing = CalendarDrawingStub(problem="template is missing a field")
@@ -173,7 +169,6 @@ async def test_uncommanded_posting_falls_back_to_text_on_a_fatal_render(monkeypa
     assert "Round 1:" in posted_content, "the textual calendar must stand in"
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 @pytest.mark.asyncio
 async def test_commanded_posting_is_rejected_and_posts_nothing(monkeypatch):
     """XIV.7 — the one person able to fix the template is told, not fobbed off."""

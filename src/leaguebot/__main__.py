@@ -641,6 +641,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         submission_all_cancelled_change(
             seasons=bot.season_service,
+            drawing=bot.image_drawing,
             round_ended_not_held=bot.round_ended_not_held,
             cancellation_notices=bot.cancellation_notices,
             cancellation_steps=steps_of_the_modules(bot.cancellation_steps),
@@ -871,7 +872,7 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(hub_refresh_change(bot.change_queue, bot.config_service))
-    bot.change_queue.register(calendar_sync_change(bot.season_service))
+    bot.change_queue.register(calendar_sync_change(bot.season_service, bot.image_drawing))
     bot.change_queue.register(lineup_post_change(bot.placement_service))
     bot.change_queue.register(sheet_post_change())
     bot.change_queue.register(rounds_sync_change(bot.season_service, bot.module_service))
@@ -927,6 +928,7 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
+            drawing=bot.image_drawing,
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
             cancellation_notices=bot.cancellation_notices,
@@ -974,6 +976,7 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
+            drawing=bot.image_drawing,
             round_windows_read=bot.round_windows_read,
             placements_confirmed=bot.placements_confirmed,
             placements_confirmed_steps=bot.placements_confirmed_steps,
@@ -1093,6 +1096,7 @@ def register_change_types(bot: LeagueBot) -> None:
         round_cancel_change(
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
+            drawing=bot.image_drawing,
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
             cancellation_notices=bot.cancellation_notices,
@@ -1105,6 +1109,7 @@ def register_change_types(bot: LeagueBot) -> None:
         division_cancel_change(
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
+            drawing=bot.image_drawing,
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
             cancellation_notices=bot.cancellation_notices,
@@ -1279,13 +1284,23 @@ async def build(settings: Settings) -> LeagueBot:
         bot.module_service,
     )
 
+    from leaguebot.image.services.image_render_service import ImageRenderService
+
+    bot.image_render_service = ImageRenderService(
+        bot.image_config_service,
+        bot.image_validity_service,
+    )
+
     from leaguebot.image.services.image_drawing import ImageDrawing
 
     # Core's drawing protocol, image's own implementation, made once and declared on the
     # bot so that core reaches it without importing this module (architecture.md, "How
     # modules and core fit together"), as results reaches attendance through its own hook.
+    # The renderer draws the calendar's picture; the log writer is where its notices are
+    # reported, in one message, whichever change posts the calendar (#283).
     bot.image_drawing = ImageDrawing(
-        bot.module_service, bot.image_config_service, bot.image_validity_service
+        bot.module_service, bot.image_config_service, bot.image_validity_service,
+        renderer=bot.image_render_service, post_log=bot.output_router.post_log,
     )
 
     from leaguebot.core.services.placement_service import PlacementService
@@ -1316,13 +1331,6 @@ async def build(settings: Settings) -> LeagueBot:
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
     _sign_up_to_round_windows(bot)
     _sign_up_to_amendments(bot)
-
-    from leaguebot.image.services.image_render_service import ImageRenderService
-
-    bot.image_render_service = ImageRenderService(
-        bot.image_config_service,
-        bot.image_validity_service,
-    )
 
     _sign_up_to_cancellations(bot)
     _sign_up_to_rounds_made_final(bot)

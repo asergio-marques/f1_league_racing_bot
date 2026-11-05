@@ -43,11 +43,6 @@ CALL_SITES = {
     "image/cogs/image_cog.py": "context.division_name",
 }
 
-CALENDAR_DRAWN_IN_CORE = (
-    "#283: the calendar's render call is still in core's calendar_post_service, "
-    "not image's drawing"
-)
-
 
 def _service(*, enabled=True, palette=None):
     config_service = MagicMock()
@@ -121,17 +116,7 @@ async def test_a_broken_palette_read_is_swallowed(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize(
     "path,expected",
-    [
-        pytest.param(
-            path,
-            expected,
-            id=path,
-            marks=pytest.mark.xfail(strict=True, reason=CALENDAR_DRAWN_IN_CORE)
-            if path == "image/services/image_drawing.py"
-            else (),
-        )
-        for path, expected in sorted(CALL_SITES.items())
-    ],
+    [pytest.param(path, expected, id=path) for path, expected in sorted(CALL_SITES.items())],
 )
 def test_every_render_call_site_names_the_division(path, expected):
     source = (

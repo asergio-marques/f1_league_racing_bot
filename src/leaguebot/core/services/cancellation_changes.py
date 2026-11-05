@@ -138,6 +138,7 @@ from leaguebot.core.services.change_queue import (
     StepView,
     in_hand,
 )
+from leaguebot.core.services.image_drawing import ImageDrawing
 from leaguebot.core.services.season_end_changes import (
     END,
     SEASON_CANCEL,
@@ -669,20 +670,24 @@ def _named(
     return describe
 
 
-def _follow_steps(*, seasons: SeasonService) -> dict[str, Step]:
+def _follow_steps(*, seasons: SeasonService, drawing: ImageDrawing) -> dict[str, Step]:
     """The jobs core carries out after the save: the calendar's repost. Every notice of the
     cancellation is now its own module's step, planned through `cancellation_notices` and
     registered on `cancellation_steps` (`attendance.services.cancellation_notice`,
     `weather.services.cancellation_notice`, `results.services.cancellation_notice`, #283). A job
     reads its division from its own payload (`division_id`, `division_name`, `season_id`).
+
+    *drawing* is the image module's own answer to core's drawing protocol, handed on to
+    `calendar_steps` (#283).
     """
-    return {**calendar_steps(seasons)}
+    return {**calendar_steps(seasons, drawing)}
 
 
 def round_cancel_change(
     *,
     seasons: SeasonService,
     scheduler: "SchedulerService",
+    drawing: ImageDrawing,
     cancellation_refused: AwaitedHook,
     rounds_called_off: AwaitedHook,
     cancellation_notices: AwaitedHook,
@@ -695,10 +700,11 @@ def round_cancel_change(
     The payload is ``{"round_id", "round_number", "track_name", "division_id", "division_name",
     "season_number"}``. It names no season: a payload that does is read as holding every division
     of that season (`review_changes.division_job_in_hand`); the season a job needs travels on the
-    jobs' own payloads. The builder hands in the *seasons* service, the *scheduler*, the hooks
-    the modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_notices*
-    and *cancellation_steps*, whose steps are registered), *amendment_in_hand* (the job a `/round
-    amend` of a round of a division waits on, or None) and the queue's clock *now*.
+    jobs' own payloads. The builder hands in the *seasons* service, the *scheduler*, the image
+    module's drawing (*drawing*, #283), the hooks the modules sign up to (*cancellation_refused*,
+    *rounds_called_off*, *cancellation_notices* and *cancellation_steps*, whose steps are
+    registered), *amendment_in_hand* (the job a `/round amend` of a round of a division waits on,
+    or None) and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -927,7 +933,7 @@ def round_cancel_change(
         )
 
     steps: dict[str, Step] = {
-        **_follow_steps(seasons=seasons),
+        **_follow_steps(seasons=seasons, drawing=drawing),
         **steps_of_the_modules(cancellation_steps),
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
@@ -966,6 +972,7 @@ def division_cancel_change(
     *,
     seasons: SeasonService,
     scheduler: "SchedulerService",
+    drawing: ImageDrawing,
     cancellation_refused: AwaitedHook,
     rounds_called_off: AwaitedHook,
     cancellation_notices: AwaitedHook,
@@ -1172,7 +1179,7 @@ def division_cancel_change(
         return f"✅ Division **{name}** cancelled." + notices.failure_lines(not_notified(ctx))
 
     steps: dict[str, Step] = {
-        **_follow_steps(seasons=seasons),
+        **_follow_steps(seasons=seasons, drawing=drawing),
         **steps_of_the_modules(cancellation_steps),
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
@@ -1204,6 +1211,7 @@ def season_cancel_change(
     seasons: SeasonService,
     scheduler: "SchedulerService",
     placement: "PlacementService",
+    drawing: ImageDrawing,
     cancellation_refused: AwaitedHook,
     rounds_called_off: AwaitedHook,
     cancellation_notices: AwaitedHook,
@@ -1222,12 +1230,12 @@ def season_cancel_change(
     """The change that cancels the season being raced; see the module.
 
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *seasons*
-    service, the *scheduler*, the *placement* service (which takes back roles), the hooks the
-    modules sign up to (*cancellation_refused*, *rounds_called_off*, *cancellation_notices*,
-    *rounds_made_final*, *cancellation_steps*, *season_end_refused*, *season_end_closes*,
-    *drivers_returned*, *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*,
-    *drivers_deleted*), the hook each driver deleted calls (*profiles_deleted*) and the queue's
-    clock *now*.
+    service, the *scheduler*, the *placement* service (which takes back roles), the image
+    module's drawing (*drawing*, #283), the hooks the modules sign up to (*cancellation_refused*,
+    *rounds_called_off*, *cancellation_notices*, *rounds_made_final*, *cancellation_steps*,
+    *season_end_refused*, *season_end_closes*, *drivers_returned*, *driver_returned_jobs*,
+    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook each driver deleted
+    calls (*profiles_deleted*) and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1518,7 +1526,7 @@ def season_cancel_change(
         return describe
 
     steps: dict[str, Step] = {
-        **_follow_steps(seasons=seasons),
+        **_follow_steps(seasons=seasons, drawing=drawing),
         **shared_steps(
             placement, scheduler, season_end_steps=season_end_steps,
             test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,

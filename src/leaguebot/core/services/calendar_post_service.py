@@ -49,6 +49,7 @@ from leaguebot.core.services.change_queue import (
     StepContext,
     StepView,
 )
+from leaguebot.core.services.image_drawing import CalendarPicture, ImageDrawing
 from leaguebot.core.services.season_end_changes import SEASON_CANCEL
 from leaguebot.core.services.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
@@ -62,9 +63,11 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-CALENDAR_ASPECT = "calendar"
 #: A round's status once it is called off; read from the round model rather than restated.
 CANCELLED_STATUS = RoundStatus.CANCELLED.value
+
+#: The calendar's own aspect and template key, as `calendar_post_service` used them.
+CALENDAR_ASPECT = "calendar"
 TEMPLATE_KEY = "calendar_template"
 
 
@@ -148,6 +151,32 @@ class CalendarPosting:
             and not self.posted_as_image
             and self.message_id is not None
         )
+
+
+#: The calendar's command-output states, mirroring ``image_lineup_post``'s. Named here
+#: rather than imported so the calendar's own branch keeps its vocabulary in one file.
+#:
+#: The league does not convey its calendar as a graphic — the caller posts its text.
+NOT_APPLICABLE = "NOT_APPLICABLE"
+#: A graphic was drawn and is the caller's to send and discard.
+DREW = "DREW"
+#: A graphic was wanted and could not be made. Constitution XIV.7 makes a **commanded**
+#: posting reject rather than substitute text, so the message says what is at fault.
+REJECTED = "REJECTED"
+
+
+@dataclass
+class CalendarCommandOutcome:
+    """What a command-output calendar render produced."""
+
+    action: str = NOT_APPLICABLE
+    message: str | None = None
+    notices: list = field(default_factory=list)
+    png_path: Path | None = None
+
+    @property
+    def drew(self) -> bool:
+        return self.action == DREW
 
 
 async def image_calendar_wanted(bot: LeagueBot) -> bool:
@@ -239,32 +268,6 @@ async def render_calendar_image(
     return outcome
 
 
-#: The calendar's command-output states, mirroring ``image_lineup_post``'s. Named here
-#: rather than imported so the calendar's own branch keeps its vocabulary in one file.
-#:
-#: The league does not convey its calendar as a graphic — the caller posts its text.
-NOT_APPLICABLE = "NOT_APPLICABLE"
-#: A graphic was drawn and is the caller's to send and discard.
-DREW = "DREW"
-#: A graphic was wanted and could not be made. Constitution XIV.7 makes a **commanded**
-#: posting reject rather than substitute text, so the message says what is at fault.
-REJECTED = "REJECTED"
-
-
-@dataclass
-class CalendarCommandOutcome:
-    """What a command-output calendar render produced."""
-
-    action: str = NOT_APPLICABLE
-    message: str | None = None
-    notices: list = field(default_factory=list)
-    png_path: Path | None = None
-
-    @property
-    def drew(self) -> bool:
-        return self.action == DREW
-
-
 async def render_for_command(
     bot: LeagueBot,
     division,
@@ -353,7 +356,7 @@ async def replace_calendar_message(
 
 
 async def post_division_calendar(
-    bot: LeagueBot,
+    drawing: ImageDrawing,
     guild,
     division,
     rounds,
@@ -397,8 +400,6 @@ async def post_division_calendar(
         result.problem = "no calendar channel is configured for this division"
         return result
 
-    from leaguebot.image.services.image_render_service import discard_render
-
     # A graphic carries no heading. The picture draws the division's own name and says
     # what it is, so a line of message text above it repeats the picture rather than
     # introducing it — the lineup graphic has never carried one either. The textual
@@ -407,24 +408,25 @@ async def post_division_calendar(
     image_path: Path | None = None
 
     # Everything from the render to the post sits inside one `finally`, so the picture is
-    # removed whichever way this ends — posted, refused to a commanded caller, or lost to
+    # released whichever way this ends — posted, refused to a commanded caller, or lost to
     # a Discord fault that stops the change queue at the posting.
     try:
-        if not as_text and await image_calendar_wanted(bot):
+        if not as_text and await drawing.calendar_wanted():
+            picture: CalendarPicture | None
             try:
-                outcome = await render_calendar_image(
-                    bot, division, rounds, tracks, season_number=season_number
+                picture = await drawing.draw_calendar(
+                    division, rounds, tracks, season_number=season_number
                 )
             except Exception as exc:  # noqa: BLE001
                 log.exception("calendar: render raised for division %s", division.id)
-                outcome = None
+                picture = None
                 result.problem = str(exc)
-            else:
-                result.notices = [n.detail for n in (outcome.notices or [])]
-                if outcome.problem is not None:
-                    result.problem = outcome.problem.detail
-                elif outcome.png_paths:
-                    image_path = outcome.png_paths[0]
+            if picture is not None:
+                result.notices = list(picture.notices)
+                if picture.problem is not None:
+                    result.problem = picture.problem
+                elif picture.path is not None:
+                    image_path = picture.path
 
             if result.problem is not None and commanded:
                 # Commanded: reject, post nothing, delete nothing.
@@ -448,7 +450,7 @@ async def post_division_calendar(
         result.posted_as_image = image_path is not None
         return result
     finally:
-        discard_render(image_path)
+        drawing.discard_picture(image_path)
 
 
 # ── /division calendar-sync, on the change queue ─────────────────────────────
@@ -488,7 +490,7 @@ def _fallen_back_to_text_line(ctx: StepContext, division_name: str, problem: str
     )
 
 
-def calendar_steps(seasons: "SeasonService") -> dict[str, Step]:
+def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str, Step]:
     """The jobs that post a division's calendar, for a change type's `steps`: `post_calendar`
     and the `delete_replaced` it plans (`standing_posts`).
 
@@ -499,6 +501,11 @@ def calendar_steps(seasons: "SeasonService") -> dict[str, Step]:
     The division, its rounds and the calendar it replaces are read as the job runs, a retry
     posts the text (rule 8), and the new id is saved with the job's mark. A try after a save that
     failed removes the copy it sent first.
+
+    *drawing* is the image module's answer to core's drawing protocol, the one the builder
+    attaches to the bot and hands to every change that plans this job (#283): `post_calendar`
+    draws through it rather than reaching into the bot, so a stand-in can answer for a test
+    without a template or a rasteriser.
     """
 
     def value_of(ctx: StepContext, key: str) -> Any:
@@ -543,7 +550,7 @@ def calendar_steps(seasons: "SeasonService") -> dict[str, Step]:
                 for each in rounds
             ]
         posting = await post_division_calendar(
-            ctx.bot,
+            drawing,
             guild,
             division,
             rounds,
@@ -595,7 +602,7 @@ def calendar_steps(seasons: "SeasonService") -> dict[str, Step]:
     }
 
 
-def calendar_sync_change(seasons: "SeasonService") -> ChangeType:
+def calendar_sync_change(seasons: "SeasonService", drawing: ImageDrawing) -> ChangeType:
     """`/division calendar-sync` carried out on the change queue, whole: it only posts.
 
     A member's change, acknowledged at once and the acknowledgement updated with the outcome.
@@ -603,6 +610,9 @@ def calendar_sync_change(seasons: "SeasonService") -> ChangeType:
     change is carried out"): the season's stage, the division still of the season and its
     calendar channel. Repeatable, a repost reading what it posts when it runs. A commanded
     posting: a render that fails posts nothing and the closing job writes the refusal.
+
+    *drawing* is the image module's own answer to core's drawing protocol, handed by the
+    builder and passed straight on to `calendar_steps` (#283).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -700,7 +710,7 @@ def calendar_sync_change(seasons: "SeasonService") -> ChangeType:
             PlannedStep(CLOSE),
         ),
         steps={
-            **calendar_steps(seasons),
+            **calendar_steps(seasons, drawing),
             CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
         },
         check=check,

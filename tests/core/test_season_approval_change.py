@@ -66,9 +66,6 @@ from tests.support.season_league import (
 from tests.support.mentions import NOBODY, notified
 from tests.support.undecorate import undecorate
 
-#: Why a calendar the approval draws fails before the build.
-HANDED_NO_DRAWING = "#283: the calendar job draws through the bot, not the drawing it is handed"
-
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 APPROVED = "✅ **Season approved and activated!**\nSeason #3 (ID: 7)"
 NOT_EVERYTHING = "⚠️ **Not everything could be done**"
@@ -974,7 +971,6 @@ async def test_a_round_amended_while_the_posts_wait_is_amended_on_the_ongoing_se
     )
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_the_calendar_is_posted_with_the_season_number_and_its_rounds_as_they_stand_when_it_runs(
     tmp_path, monkeypatch,
 ):
@@ -995,7 +991,6 @@ async def test_the_calendar_is_posted_with_the_season_number_and_its_rounds_as_t
     assert "Monza" in league.texts(PRO_CH.calendar)[-1]
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monkeypatch, caplog):
     """A season number of 0 is a malformed row, `seasons.season_number` counting from one. The
     calendar is drawn with 0, never hidden, and the bot logs that it will draw "SEASON 0" (#213).
@@ -1017,7 +1012,6 @@ async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monk
     assert "SEASON 0" in caplog.text
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallback(
     tmp_path, monkeypatch,
 ):
@@ -1075,11 +1069,7 @@ _RETRIED_POSTS = {
 }
 
 
-@pytest.mark.parametrize("post", [
-    pytest.param(each, marks=pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING))
-    if each == "the calendar" else each
-    for each in sorted(_RETRIED_POSTS)
-])
+@pytest.mark.parametrize("post", sorted(_RETRIED_POSTS))
 async def test_a_retried_post_is_posted_as_text(tmp_path, monkeypatch, post):
     """Images on, every aspect on: Pro's channel refuses the first send. The first try reaches
     for the picture, Pro's retry does not and posts the text, and Am's post, a first try of its

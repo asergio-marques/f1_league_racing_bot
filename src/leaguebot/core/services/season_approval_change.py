@@ -89,6 +89,7 @@ from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.image_drawing import ImageDrawing
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.scheduler_service import SchedulerService
@@ -278,6 +279,7 @@ def season_approval_change(
     seasons: SeasonService,
     scheduler: "SchedulerService",
     placement: "PlacementService",
+    drawing: "ImageDrawing",
     round_windows_read: AwaitedHook,
     placements_confirmed: AwaitedHook,
     placements_confirmed_steps: Hook,
@@ -290,14 +292,15 @@ def season_approval_change(
 
     The builder hands in *modules* and *config* (which modules are on, and test mode), the
     *seasons* service (the divisions and rounds the check, the arming and the calendar read), the
-    *scheduler* and the *placement* service, *round_windows_read* (the hook the enabled
-    modules' windows are read through), *placements_confirmed* (the hook each module's opening
-    post is planned through, called inside the save for each division in turn, on the save's
-    connection) and *placements_confirmed_steps* (each module's step definitions for its own
-    opening post, by name), *rasteriser_fault* (what is wrong with the host's drawing program,
-    None where nothing is), results' *snapshot_points_on* (the points snapshot on a handed save,
-    which reads results' own switch), *forget_setup* (lets go of the setup the season cog holds
-    in memory) and *now* (the queue's clock).
+    *scheduler* and the *placement* service, the image module's own drawing (*drawing*, #283),
+    *round_windows_read* (the hook the enabled modules' windows are read through),
+    *placements_confirmed* (the hook each module's opening post is planned through, called
+    inside the save for each division in turn, on the save's connection) and
+    *placements_confirmed_steps* (each module's step definitions for its own opening post, by
+    name), *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing
+    is), results' *snapshot_points_on* (the points snapshot on a handed save, which reads
+    results' own switch), *forget_setup* (lets go of the setup the season cog holds in memory)
+    and *now* (the queue's clock).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -740,7 +743,7 @@ def season_approval_change(
             POST_BATCH_NOTICE, StepKind.ACT, post_batch_notice, describe=describe_notice_post
         ),
         REFRESH_LINEUP: lineup_posting.lineup_step(placement, name=REFRESH_LINEUP),
-        **calendar_steps(seasons),
+        **calendar_steps(seasons, drawing),
         **{
             name: step
             for defined in placements_confirmed_steps.call()

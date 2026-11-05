@@ -122,6 +122,7 @@ from leaguebot.results.services.submission_steps import (
 from leaguebot.results.utils import results_formatter
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.image_drawing import ImageDrawing
     from leaguebot.core.services.season_service import SeasonService
 
 KIND = "results.submission.open"
@@ -565,7 +566,7 @@ async def _submission_standing(ctx: CheckContext) -> Verdict:
 
 
 def submission_all_cancelled_change(
-    *, seasons: "SeasonService", round_ended_not_held: AwaitedHook,
+    *, seasons: "SeasonService", drawing: "ImageDrawing", round_ended_not_held: AwaitedHook,
     cancellation_notices: AwaitedHook, cancellation_steps: dict[str, Step],
     now: Callable[[], datetime],
 ) -> ChangeType:
@@ -575,7 +576,8 @@ def submission_all_cancelled_change(
     The payload is the last turn's: ``round_id``, ``channel_id``, ``round_number`` and
     ``sessions``, each ``{"session_id", "session_type"}`` of the round's cancelled sessions in
     running order. A resubmission's adds ``resubmission`` and ``old_tables``, the ids of the
-    earlier results tables the new sessions could not carry. *seasons* posts the calendar,
+    earlier results tables the new sessions could not carry. *seasons* posts the calendar, drawn
+    through *drawing*, the image module's own answer to core's drawing protocol (#283),
     *round_ended_not_held* is the hook attendance's reading of the round's check-in is planned
     through, called inside the save on its connection, *cancellation_notices* is the hook each
     module's own notice is planned through, called inside the same save, *cancellation_steps*
@@ -733,7 +735,7 @@ def submission_all_cancelled_change(
         POST_SESSION_RESULTS: posting_steps()[POST_SESSION_RESULTS],
         POST_STANDINGS: posting_steps()[POST_STANDINGS],
         DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
-        **calendar_steps(seasons),
+        **calendar_steps(seasons, drawing),
         **cancellation_steps,
         ASK_CLOSE: Step(ASK_CLOSE, StepKind.SAVE, ask_close, describe=describe_ask_close),
     }

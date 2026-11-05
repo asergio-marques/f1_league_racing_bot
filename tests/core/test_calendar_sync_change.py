@@ -129,10 +129,6 @@ def _pictures_on(league: Any, monkeypatch: Any, tmp_path: Any) -> list[str]:
     return draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub(picture=png)).drawn
 
 
-#: Why a calendar sync that draws fails before the build.
-HANDED_NO_DRAWING = "#283: the calendar job draws through the bot, not the drawing it is handed"
-
-
 async def test_a_calendar_sync_is_acknowledged_and_updated_with_its_outcome(tmp_path):
     """End to end: the new calendar is posted, then the old one deleted by the job after it,
     leaving one calendar in the channel, the new one, with its id saved."""
@@ -188,7 +184,6 @@ async def test_a_calendar_sync_that_cannot_post_stops_the_queue_and_queues_nothi
     assert await _retried_posts(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
     """Images on: Discord refuses the picture, and the queue stops; Retry posts the textual
     calendar, drawing nothing again."""
@@ -210,7 +205,6 @@ async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
     assert _outcome(interaction) == "✅ Calendar for **Pro** reposted as text."
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_a_calendar_sync_whose_render_fails_posts_nothing_and_says_the_old_calendar_stands(
     tmp_path, monkeypatch,
 ):

@@ -56,9 +56,6 @@ CALENDAR_CHANNEL = 700
 OLD_MESSAGE_ID = 8800
 NEW_MESSAGE_ID = 9900
 
-#: Why a posting that draws fails before the build.
-HANDED_NO_DRAWING = "#283: the calendar's posting is handed the bot, not the drawing"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -199,7 +196,6 @@ async def test_a_league_without_the_graphic_gets_the_text(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_a_rendered_calendar_is_posted_as_an_attachment(tmp_path):
     """The graphic carries no message text: the picture draws the division's own name and
     says what it is, so a line above it repeats the picture rather than introducing it. A
@@ -227,7 +223,6 @@ async def test_a_rendered_calendar_is_posted_as_an_attachment(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_an_uncommanded_posting_falls_back_to_the_text(tmp_path):
     """Approval or a schedule reached this, and a division with no calendar at all is the
     worse outcome — the calendar is not the thing being commanded (XIV.7)."""
@@ -242,7 +237,6 @@ async def test_an_uncommanded_posting_falls_back_to_the_text(tmp_path):
     assert "Pro" in _sent_text(channel)
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_a_commanded_posting_refuses_and_posts_nothing(tmp_path):
     """A manager asked for a calendar; they are told what is wrong and given the chance to
     fix it, rather than handed a text calendar they did not ask for.
@@ -266,7 +260,6 @@ async def test_a_commanded_posting_refuses_and_posts_nothing(tmp_path):
     assert len(drawing.discarded) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_a_render_that_raises_is_reported_rather_than_propagated(tmp_path):
     """A render fault reaching the approval would fail a season over a picture."""
     db_path = await _make_db(tmp_path, name="cal_render_raises")
@@ -307,7 +300,6 @@ async def test_a_division_with_no_calendar_channel_is_reported(tmp_path, channel
     sent_to.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NO_DRAWING)
 async def test_a_drawn_calendar_discord_refuses_is_still_released(tmp_path):
     """Pro's calendar drawn, and Discord refusing the post: the posting raises for the change
     queue to stop on, and the drawn file is still handed back to the drawing to release, once."""

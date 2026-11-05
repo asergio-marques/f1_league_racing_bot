@@ -1150,8 +1150,6 @@ async def test_the_calendar_is_posted_again_with_the_round_shown_cancelled(tmp_p
     assert held[0]["calendar_message_id"] != str(CALENDAR_MESSAGE)
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="#283: the calendar job draws through the bot, not the drawing it is handed")
 async def test_a_retried_calendar_is_posted_as_text(tmp_path, monkeypatch):
     league = await ongoing_league(tmp_path, images=True)
     league.channel(PRO_CH.calendar).send_fails = http_error(status=503,

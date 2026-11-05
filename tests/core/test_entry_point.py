@@ -86,10 +86,6 @@ async def test_the_builder_hands_placement_the_image_module_s_drawing(tmp_path):
     assert bot.placement_service._drawing is bot.image_drawing
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the calendar job reaches the image module through the bot, not a handed drawing",
-)
 async def test_the_builder_hands_every_change_that_posts_a_calendar_the_image_module_s_drawing(
     tmp_path,
 ):
