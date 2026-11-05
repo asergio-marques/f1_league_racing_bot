@@ -1252,13 +1252,21 @@ async def test_a_discarded_part_posted_opening_standings_names_the_table_left_st
 
     assert sorted(league.channel(PRO_CH.standings).messages) == standing
     assert APPROVED in reply(press)
-    assert any(_names_for_deletion_by_hand(bullet, PRO_CH.standings, standing)
-               for bullet in _not_done(reply(press))), reply(press)
+    # The standings not posted and the table left standing are two lines of their own, in the
+    # reply's bullets and in the log line's "not done:" entries alike: never run together.
+    not_posted = _DISCARDED["opening_standings"][1]
     confirmed = _confirmed_lines(league)
     assert len(confirmed) == 1
-    not_done = confirmed[0].split("\n  not done: ")[1:]
-    assert any(_names_for_deletion_by_hand(line, PRO_CH.standings, standing)
-               for line in not_done), confirmed[0]
+    for lines, shown in (
+        (_not_done(reply(press)), reply(press)),
+        (confirmed[0].split("\n  not done: ")[1:], confirmed[0]),
+    ):
+        assert not_posted in lines, shown
+        left = [line for line in lines
+                if _names_for_deletion_by_hand(line, PRO_CH.standings, standing)]
+        assert len(left) == 1, shown
+        assert left[0].startswith("**Pro** — a part of its opening standings was posted"), shown
+        assert "could not be posted" not in left[0], shown
 
 
 async def test_a_discard_after_the_kept_table_was_removed_names_nothing_for_deletion_by_hand(
@@ -1564,15 +1572,6 @@ async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
     assert (await _approval(league))["state"] == "DONE"
 
 
-@pytest.mark.parametrize(
-    ("job", "owner", "fail"),
-    [
-        ("opening_standings", "leaguebot.results.services.season_standings_posts",
-         _fail_standings),
-        ("opening_sheet", "leaguebot.attendance.services.sheet_posting", _fail_sheet),
-    ],
-    ids=["results' opening standings", "attendance's opening sheet"],
-)
 async def test_a_discarded_module_job_is_named_in_its_own_step_s_words(
     tmp_path, monkeypatch, job, owner, fail,
 ):
