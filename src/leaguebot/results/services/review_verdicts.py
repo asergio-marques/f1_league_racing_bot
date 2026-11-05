@@ -914,7 +914,9 @@ async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> Step
         _deletes(int(result["channel_id"]), [int(old)], "lineup")
         if old is not None and int(old) != int(result["new"]) else ()
     )
-    return StepResult(result=result, then=then)
+    return StepResult(
+        result=result, lines=lineup_posting.fallen_back_to_text_line(ctx, result), then=then,
+    )
 
 
 __all__ = [

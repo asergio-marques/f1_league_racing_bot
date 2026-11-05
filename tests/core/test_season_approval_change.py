@@ -1072,9 +1072,7 @@ _RETRIED_POSTS = {
 
 @pytest.mark.parametrize("post", [
     pytest.param("the calendar"),
-    pytest.param("the lineup", marks=pytest.mark.xfail(
-        strict=True, reason="#283: core does not yet ask the handed drawing for the lineup",
-    )),
+    pytest.param("the lineup"),
     pytest.param("the opening sheet"),
     pytest.param("the opening standings"),
 ])

@@ -291,10 +291,6 @@ def _pictures_on(league: Any, monkeypatch: Any, tmp_path: Any) -> Any:
     return draw_lineups_with(league.bot, monkeypatch, LineupDrawingStub(picture=png))
 
 
-#: Why a test of a lineup posted as a picture fails until the build.
-NOT_DRAWN_YET = "#283: core does not yet ask the handed drawing for the lineup, nor post its picture"
-
-
 async def test_the_text_lineup_is_posted_before_the_old_one_is_deleted(tmp_path):
     league = await ongoing_league(tmp_path)
     await _old_lineup_standing(league)
@@ -332,7 +328,6 @@ async def test_a_refused_text_lineup_leaves_the_old_lineup_standing(tmp_path):
     assert await _lineup_id(league) == OLD_LINEUP
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_DRAWN_YET)
 async def test_a_lineup_picture_is_posted_before_the_old_lineup_is_deleted_by_a_job(
     tmp_path, monkeypatch,
 ):
@@ -356,11 +351,6 @@ async def test_a_lineup_picture_is_posted_before_the_old_lineup_is_deleted_by_a_
     ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: core does not yet post the handed drawing's picture, nor fall to text when "
-    "Discord refuses it",
-)
 async def test_a_refused_lineup_picture_is_posted_as_text_and_stops_nothing(
     tmp_path, monkeypatch,
 ):
@@ -521,11 +511,6 @@ async def _placements_confirmed(tmp_path: Any, monkeypatch: Any, drawing: Any) -
                  "the ✅ Confirm placements button of `/season placements-review`",
                  ("Pro", "Am"), id="the placements confirmed mid-season"),
 ])
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: a lineup posted as text because it could not be drawn is not yet recorded by "
-    "its job's own line",
-)
 async def test_a_lineup_fallen_back_to_text_is_recorded_by_every_change_that_posts_it(
     tmp_path, monkeypatch, start, member, change, divisions,
 ):
@@ -562,9 +547,7 @@ async def test_a_lineup_fallen_back_to_text_is_recorded_by_every_change_that_pos
             assert words not in told, told
 
 
-@pytest.mark.parametrize("form", [
-    "text", pytest.param("image", marks=pytest.mark.xfail(strict=True, reason=NOT_DRAWN_YET)),
-])
+@pytest.mark.parametrize("form", ["text", "image"])
 async def test_the_lineup_s_id_and_audit_are_saved_with_its_post(tmp_path, monkeypatch, form):
     """Once the post job is done, and before the deletion after it runs, the division records
     the new lineup and one `SIGNUP_LINEUP_POSTED` audit stands, written by the system, saying

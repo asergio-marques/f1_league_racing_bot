@@ -59,8 +59,32 @@ def posted_result(posted: "LineupPosted | None") -> dict[str, Any]:
         return {}
     return {
         "new": posted.message_id, "old": posted.previous, "channel_id": posted.channel_id,
-        "division_name": posted.division_name, "form": posted.form,
+        "division_name": posted.division_name, "form": posted.form, "problem": posted.problem,
     }
+
+
+#: What puts a lineup fallen back to text right: correct the template, and the picture is
+#: posted with the next change to the division's drivers, there being no command that posts a
+#: lineup again on its own (owner's decision on #283).
+_FIX_IT = (
+    "fix the lineup template; the picture is posted with the next change to the division's "
+    "drivers"
+)
+
+
+def fallen_back_to_text_line(ctx: StepContext, result: Mapping[str, Any]) -> tuple[str, ...]:
+    """The lineup posting job's own line where it fell back to text, as the calendar's does
+    (owner's decision on #283): the member and the change it ran for, the division, the
+    problem, and what puts it right. Empty where nothing went wrong."""
+    problem = result.get("problem")
+    if problem is None:
+        return ()
+    return (
+        f"{ctx.named} | {ctx.what} | Lineup posted as text\n"
+        f"  division: {result.get('division_name')}\n"
+        f"  problem: {problem}\n"
+        f"  to put it right: {_FIX_IT}",
+    )
 
 
 def _then(result: Mapping[str, Any] | None) -> tuple[PlannedStep, ...]:
@@ -125,7 +149,9 @@ def lineup_step(
             guild, int(value_of(ctx, "division_id")), as_text=ctx.tries > 0
         )
         result = posted_result(posted)
-        return StepResult(result=result, then=_then(result))
+        return StepResult(
+            result=result, lines=fallen_back_to_text_line(ctx, result), then=_then(result),
+        )
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the lineup of **{value_of(ctx, 'division_name', 'the division')}**"

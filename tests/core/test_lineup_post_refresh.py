@@ -201,10 +201,6 @@ ONE_DRIVER = (("Red", False, 4242, False, None),)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: core does not yet ask the handed drawing for the lineup, nor post its picture",
-)
 async def test_a_configured_graphic_replaces_the_text_lineup(tmp_path):
     """Pro's lineup, one driver at Red, its old lineup message 8800; the drawing answers that the
     league draws its lineup, and draws Pro's as a PNG. Core posts the picture, and no embed, in
@@ -235,10 +231,6 @@ async def test_a_configured_graphic_replaces_the_text_lineup(tmp_path):
     assert await _stored_message_id(db_path) == OLD_MESSAGE_ID
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: core does not yet ask the handed drawing whether the league draws its lineup",
-)
 async def test_an_inapplicable_graphic_falls_through_to_the_text(tmp_path):
     """The drawing answers that the league does not draw its lineup (the module off, the aspect
     off, or no template): nothing is drawn, the embed runs exactly as it did before the image
@@ -261,10 +253,6 @@ async def test_an_inapplicable_graphic_falls_through_to_the_text(tmp_path):
     pytest.param({"problem": "the template has no rows"}, id="a problem"),
     pytest.param({"fault": RuntimeError("the template has no rows")}, id="a fault"),
 ])
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: core does not yet ask the handed drawing, nor hand back why it fell to text",
-)
 async def test_a_failing_graphic_falls_through_to_the_text(tmp_path, answer):
     """A placement must never be blocked by a graphic that would not render: the seat is
     already assigned by the time this runs, and no lineup at all is worse than a text one. Pro's
@@ -298,11 +286,6 @@ def _refusing_pictures(*, text_too: bool = False):
     return channel
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: core does not yet post the handed drawing's picture, nor fall to text when "
-    "Discord refuses it",
-)
 async def test_a_refused_lineup_picture_is_posted_as_text_in_the_same_try(tmp_path):
     """Pro's lineup, one driver at Red, its old lineup message 8800; the drawing draws Pro's
     lineup as a PNG, and Discord refuses the send that carries it but takes the text. The text
@@ -328,11 +311,6 @@ async def test_a_refused_lineup_picture_is_posted_as_text_in_the_same_try(tmp_pa
     assert drawing.discarded == [png]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: core does not yet post the handed drawing's picture, nor fall to text when "
-    "Discord refuses it",
-)
 async def test_a_refused_lineup_picture_and_text_stop_the_lane(tmp_path):
     """As above, but Discord refuses the text as well: the post raises for the change queue to
     stop on, saying "the lineup could not be posted: …", Pro still records 8800, and the PNG is
