@@ -22,10 +22,7 @@ from tests.support.cancellation_notice import (
 )
 from tests.support.mentions import NOBODY, notified
 
-NOT_YET = "#283: attendance does not word and post its own cancellation notice yet"
 
-
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_check_in_notice_posts_only_to_the_check_in_channel(tmp_path):
     """Pro's notice of round 3's cancellation, posted by attendance, reaches Pro's check-in
     channel and no other."""
@@ -39,7 +36,6 @@ async def test_the_check_in_notice_posts_only_to_the_check_in_channel(tmp_path):
             channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_check_in_channel_carries_the_notification(tmp_path):
     """Not silent, and it mentions the division role as the check-in call does."""
     bot = notice_bot(await notice_db(tmp_path))
@@ -52,7 +48,6 @@ async def test_the_check_in_channel_carries_the_notification(tmp_path):
     assert "no check-in to answer" in call.args[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_attendance_notice_may_notify_the_division_role_and_nobody_else(tmp_path):
     """Pro, whose role is 555, has round 3 at Monza called off. The check-in channel's notice
     mentions the role, and may notify it alone: no member it might name, and not @everyone."""
@@ -65,7 +60,6 @@ async def test_the_attendance_notice_may_notify_the_division_role_and_nobody_els
     }
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_attendance_notice_of_a_division_with_no_role_notifies_nobody(tmp_path):
     """Pro has no role set. Its check-in channel's notice of round 3's cancellation mentions no
     role, and notifies nobody."""
@@ -77,7 +71,6 @@ async def test_the_attendance_notice_of_a_division_with_no_role_notifies_nobody(
     assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize("scope", [SCOPE_ROUND, SCOPE_DIVISION, SCOPE_SEASON])
 async def test_every_scope_says_something_in_the_check_in_channel(tmp_path, scope):
     """A round's, a division's and a season's cancellation each post a notice in Pro's check-in
@@ -88,7 +81,6 @@ async def test_every_scope_says_something_in_the_check_in_channel(tmp_path, scop
     channels[RSVP].send.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_raising_notice_raises_where_its_channel_is_gone(tmp_path):
     """Pro's check-in channel is set but no longer on the server. Posting attendance's notice
     raises StepFailedOnDiscord, caused by nothing else, so the queue stops until the channel is

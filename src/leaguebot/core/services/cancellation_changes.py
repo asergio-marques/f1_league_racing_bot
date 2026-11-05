@@ -736,9 +736,10 @@ async def _division_of(seasons: SeasonService, season_id: int, division_id: int)
 def notice_steps(
     *, modules: "ModuleService", seasons: SeasonService, scope: str
 ) -> dict[str, Step]:
-    """Each module's "called off" notice as a job: the check-in channel's, the forecast channel's
-    and the results channel's, in the order they are posted. *scope* is the notices' (`SCOPE_ROUND`
-    or `SCOPE_DIVISION`).
+    """The forecast channel's and the results channel's "called off" notice, each a job, in the
+    order they are posted. *scope* is the notices' (`SCOPE_ROUND` or `SCOPE_DIVISION`). Attendance's
+    check-in notice has moved to its own module (`attendance.services.cancellation_notice`,
+    `notify_checkin_steps`, planned through `cancellation_notices`, #283).
 
     Public so that a round that ends cancelled without a command, every session being entered as
     not held, posts the notices `/round cancel` posts without the module that ends it importing a
@@ -763,17 +764,11 @@ def notice_steps(
         )
         return StepResult(result={"unset": True} if problem else {"sent": True})
 
-    async def notify_checkin(ctx: StepContext) -> StepResult:
-        return await notify(ctx, "attendance")
-
     async def notify_forecast(ctx: StepContext) -> StepResult:
         return await notify(ctx, "weather")
 
     async def notify_results(ctx: StepContext) -> StepResult:
         return await notify(ctx, "results")
-
-    async def attendance_on(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
 
     async def weather_on(_ctx: StepContext) -> bool:
         return await modules.is_weather_enabled()
@@ -782,10 +777,6 @@ def notice_steps(
         return await modules.is_results_enabled()
 
     return {
-        NOTIFY_CHECKIN: Step(
-            NOTIFY_CHECKIN, StepKind.ACT, notify_checkin, still_due=attendance_on,
-            describe=_named("posting the check-in notice for **{name}**"),
-        ),
         NOTIFY_FORECAST: Step(
             NOTIFY_FORECAST, StepKind.ACT, notify_forecast, still_due=weather_on,
             describe=_named("posting the forecast note for **{name}**"),
@@ -798,14 +789,13 @@ def notice_steps(
 
 
 def _follow_steps(*, modules: "ModuleService", seasons: SeasonService, scope: str) -> dict[str, Step]:
-    """The jobs core carries out after the save: each module's notice (`notice_steps`) and the
-    calendar's repost. *scope* is the notices' (`SCOPE_ROUND` or `SCOPE_DIVISION`). A job reads its
-    division from its own payload (`division_id`, `division_name`, `season_id`). The steps the
-    modules plan are theirs (`cancellation_steps`).
+    """The jobs core carries out after the save: the forecast's and the results' notice
+    (`notice_steps`) and the calendar's repost. *scope* is the notices' (`SCOPE_ROUND` or
+    `SCOPE_DIVISION`). A job reads its division from its own payload (`division_id`,
+    `division_name`, `season_id`). The steps the modules plan are theirs (`cancellation_steps`).
     """
     notifying = notice_steps(modules=modules, seasons=seasons, scope=scope)
     return {
-        NOTIFY_CHECKIN: notifying[NOTIFY_CHECKIN],
         NOTIFY_FORECAST: notifying[NOTIFY_FORECAST],
         NOTIFY_RESULTS: notifying[NOTIFY_RESULTS],
         **calendar_steps(seasons),
@@ -994,12 +984,11 @@ def round_cancel_change(
             cancellation_notices, db, SCOPE_ROUND, target
         )
         planned = list(by_modules.first)
-        planned.append(PlannedStep(NOTIFY_CHECKIN, target))
+        planned += by_notices
         planned += by_modules.with_division.get(target["division_id"], ())
         planned += [
             PlannedStep(NOTIFY_FORECAST, target),
             PlannedStep(NOTIFY_RESULTS, target),
-            *by_notices,
             PlannedStep(POST_CALENDAR, {**target, "round_ids": [round_id], "only_if_posted": True}),
         ]
         return StepResult(
@@ -1270,12 +1259,11 @@ def division_cancel_change(
             cancellation_notices, db, SCOPE_DIVISION, target
         )
         planned = list(after.first)
-        planned.append(PlannedStep(NOTIFY_CHECKIN, target))
+        planned += by_notices
         planned += after.with_division.get(division_id, ())
         planned += [
             PlannedStep(NOTIFY_FORECAST, target),
             PlannedStep(NOTIFY_RESULTS, target),
-            *by_notices,
             PlannedStep(POST_CALENDAR, {**target, "round_ids": called_off, "only_if_posted": True}),
         ]
         return StepResult(
@@ -1525,13 +1513,12 @@ def season_cancel_change(
             by_notices = await _notices_planned_by_the_modules(
                 cancellation_notices, db, SCOPE_SEASON, target
             )
-            planned.append(PlannedStep(NOTIFY_CHECKIN, target))
+            planned += by_notices
             rounds = called_off.get(division_id, [])
             planned += after.with_division.get(division_id, ())
             planned += [
                 PlannedStep(NOTIFY_FORECAST, target),
                 PlannedStep(NOTIFY_RESULTS, target),
-                *by_notices,
                 PlannedStep(POST_CALENDAR, {**target, "round_ids": rounds, "only_if_posted": True}),
             ]
         # The roles are taken after the notices: the check-in notice mentions the division role.
