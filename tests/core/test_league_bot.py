@@ -171,10 +171,6 @@ def test_the_settings_changes_are_registered():
     assert len(SETTING_KINDS) == 24
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: weather's switch is not yet weather's own settings, signed up by the builder",
-)
 def test_weather_s_switch_is_weather_s_own_settings_signed_up_by_the_builder():
     """The builder registers weather's switch-on and switch-off, "module.on:weather" and
     "module.off:weather", once each (#283, S11b): each is weather's own (its check is weather's
