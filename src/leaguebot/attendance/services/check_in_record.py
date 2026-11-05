@@ -18,10 +18,9 @@ from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
-from leaguebot.core.services import driver_service, team_service
+from leaguebot.core.services import driver_service, season_service, team_service
 from leaguebot.core.services.cancellation_notice_service import round_label
 from leaguebot.core.services.change_queue import Step, StepContext, StepView
-from leaguebot.core.services.season_service import SeasonService
 
 if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
@@ -38,24 +37,22 @@ _ANSWERS = (
 )
 
 
-async def checkin_record(
-    db_path: str, division: Any, round_id: int, *, seasons: SeasonService | None = None,
-) -> str:
+async def checkin_record(db_path: str, division: Any, round_id: int) -> str:
     """The log-channel record of *round_id*'s check-in in *division*, or "" where it had none.
 
     *division* is anything with an `id` and a `name`. Read on its own connection and writing
     nothing, so a round that ends cancelled (every session entered as not held) can read the same
-    record `/round cancel` writes beneath its line. *seasons* is the round's own read
-    (`SeasonService.get_round`, built on *db_path* where none is handed); a round no longer there
-    gives "".
+    record `/round cancel` writes beneath its line. The round itself is read through core's
+    `season_service.round_by_id` (architecture.md, "How modules and core fit together"), never
+    from `rounds` directly; a round no longer *division*'s gives "".
 
     Every driver the check-in recorded, grouped by their answer, and — where the reserves had
     already been distributed — who was sent to which team and who stood by. A driver is named as
     attendance's own log lines name one: their mention, with the name a test driver goes by. A
     round whose call was never posted recorded nobody and is left out.
     """
-    round_row = await (seasons or SeasonService(db_path)).get_round(round_id)
-    if round_row is None or round_row.division_id != division.id:
+    round_row = await season_service.round_by_id(db_path, division.id, round_id)
+    if round_row is None:
         return ""
     async with get_connection(db_path) as db:
         rows = await (await db.execute(
