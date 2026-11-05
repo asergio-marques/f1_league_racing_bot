@@ -600,10 +600,6 @@ async def test_an_attendance_enable_run_after_results_went_off_is_refused(tmp_pa
     assert _refused_line(NEEDS_RESULTS.removeprefix("❌ ")) in await log_lines(league)
 
 
-#: Why a switch asked before the season's stage forbade it is not yet refused when it runs.
-_STAGE_AT_RUN = (
-    "#283: a module's switch does not yet read the season's stage again as its change starts"
-)
 #: Why a results switch-off is not yet refused where attendance came on behind it.
 _CASCADE_AT_RUN = (
     "#283: results' switch-off does not yet read again, as it starts, which modules go with it"
@@ -620,7 +616,6 @@ PENDING_COMPLETION = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=_STAGE_AT_RUN)
 @pytest.mark.parametrize(
     ("module", "already_on"),
     [("weather", ()), ("results", ()), ("attendance", ("results",)), ("images", ())],
@@ -650,7 +645,6 @@ async def test_a_switch_on_asked_before_placements_are_confirmed_and_run_after_i
     assert _refused_line(PLACEMENTS_CONFIRMED.removeprefix("❌ ")) in await log_lines(league)
 
 
-@pytest.mark.xfail(strict=True, reason=_STAGE_AT_RUN)
 @pytest.mark.parametrize(
     ("module", "on"),
     [("weather", ("weather",)), ("attendance", ("results", "attendance")), ("images", ("images",))],

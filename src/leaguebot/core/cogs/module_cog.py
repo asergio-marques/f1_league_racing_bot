@@ -310,6 +310,7 @@ class ModuleCog(commands.Cog):
         """
         from leaguebot.core.services.season_lifecycle_service import (
             FROZEN_FOR_COMPLETION_REFUSAL,
+            PLACEMENTS_CONFIRMED_REFUSAL,
             modules_frozen_for_completion,
             configuration_fixed,
         )
@@ -331,10 +332,7 @@ class ModuleCog(commands.Cog):
                 )
         elif action == "enable":
             if await self.bot.season_service.get_confirmed_season() is not None:
-                return await _refused(
-                    "❌ A module cannot be enabled once the season's placements have been "
-                    "confirmed. Enable it before then, or once the season has ended."
-                )
+                return await _refused(PLACEMENTS_CONFIRMED_REFUSAL)
 
         if action == "disable" and await modules_frozen_for_completion(
             self.bot.db_path

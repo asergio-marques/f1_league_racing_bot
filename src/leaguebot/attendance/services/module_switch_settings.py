@@ -13,7 +13,8 @@ on with nothing configured, and never a part-made configuration a later enable w
 Writing the packaged values over a row already there, rather than leaving it, is the Principle
 X.6 reset: re-enabling starts fresh, pinned by
 `tests/core/test_module_enable_disable.py::test_re_enabling_attendance_starts_from_the_packaged_defaults`.
-Open issue #449, which would keep the settings across a switch-off instead, is not this change's.
+The switch-off keeps the settings row rather than clearing it; issue #449 would keep it across
+a switch-off and re-enable without the reset instead.
 
 **The switch-off is one save: `AttendanceService.switch_off_on` and the audit entry.** That
 method lowers the flag and clears every division's check-in and attendance channel bindings —
@@ -23,10 +24,16 @@ cascade from turning Results & Standings off calls the same method on its own sa
 (`results_off_change.py`), so the plain disable and the cascade leave attendance in the same
 state either way.
 
-**The switch-on's check reads the dependency table again as the change starts,** not only at the
-ask (`module_cog.py`'s stage refusal): asked while a module attendance `needs` is on, and run
-once it has gone off first, the save still finds it off and refuses, rather than switching
-attendance on behind what the league was told.
+**The switch-on's check reads the dependency table and the season's stage again as the change
+starts,** not only at the ask (`module_cog.py`'s stage refusal): asked while a module attendance
+`needs` is on, or while no season's placements are confirmed, and run once that module has gone
+off first or an approval has confirmed placements, the save still finds it so and refuses, rather
+than switching attendance on behind what the league was told.
+
+**The switch-off's check reads Pending completion again as the change starts,** as
+`results_off_change`'s already does: asked before the season reaches it, and run once a change
+waiting ahead of it on the lane has finished the last division, the save still finds the season
+Pending completion and refuses, rather than switching attendance off in it.
 """
 
 from __future__ import annotations
@@ -37,6 +44,11 @@ from typing import TYPE_CHECKING, Any
 from leaguebot.core.models.change import AuditRecord, Verdict, module_off, module_on
 from leaguebot.core.models.module_dependencies import needs
 from leaguebot.core.services.change_queue import CheckContext
+from leaguebot.core.services.season_lifecycle_service import (
+    FROZEN_FOR_COMPLETION_REFUSAL,
+    PLACEMENTS_CONFIRMED_REFUSAL,
+    modules_frozen_for_completion,
+)
 from leaguebot.core.services.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
@@ -67,7 +79,7 @@ def module_on_attendance(*, modules: "ModuleService") -> Setting:
     """`module.on:attendance`: the packaged values written over any stored row, the flag raised
     and the audit, in one save (Principle X.6's reset)."""
 
-    async def check(_ctx: CheckContext) -> Verdict:
+    async def check(ctx: CheckContext) -> Verdict:
         if await modules.is_attendance_enabled():
             return Verdict.refuse("⚠️ Attendance module is already enabled.")
         for required in needs("attendance"):
@@ -77,6 +89,8 @@ def module_on_attendance(*, modules: "ModuleService") -> Setting:
                     f"❌ The {_MODULE_LABEL['attendance']} requires the "
                     f"{_MODULE_LABEL[required]} to be enabled first."
                 )
+        if await ctx.bot.season_service.get_confirmed_season() is not None:
+            return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
@@ -114,9 +128,11 @@ def module_off_attendance(*, modules: "ModuleService", attendance: "AttendanceSe
     save. It keeps the settings row and clears the division channel bindings, as the cascade
     from turning Results & Standings off does through the same method."""
 
-    async def check(_ctx: CheckContext) -> Verdict:
+    async def check(ctx: CheckContext) -> Verdict:
         if not await modules.is_attendance_enabled():
             return Verdict.refuse("⚠️ Attendance module is already disabled.")
+        if await modules_frozen_for_completion(ctx.db_path):
+            return Verdict.refuse(FROZEN_FOR_COMPLETION_REFUSAL)
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:

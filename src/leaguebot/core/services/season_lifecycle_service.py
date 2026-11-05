@@ -399,6 +399,14 @@ FROZEN_FOR_COMPLETION_REFUSAL = (
     "Complete it with `/season complete` first."
 )
 
+#: Why no module may be enabled once a season's placements are confirmed: the reply of every
+#: enable refused for it, at the ask (`module_cog.py`) and again where a switch's own check
+#: reads the stage as its change starts.
+PLACEMENTS_CONFIRMED_REFUSAL = (
+    "❌ A module cannot be enabled once the season's placements have been confirmed. Enable it "
+    "before then, or once the season has ended."
+)
+
 #: The kind of the change that winds a season down.
 WIND_DOWN = "season.wind_down"
 TURN_DOWN_STEP = "turn_down"

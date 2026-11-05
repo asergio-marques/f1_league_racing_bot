@@ -36,6 +36,11 @@ from leaguebot.core.models.change import (
     module_on,
 )
 from leaguebot.core.services.change_queue import CheckContext, Step, StepContext
+from leaguebot.core.services.season_lifecycle_service import (
+    FROZEN_FOR_COMPLETION_REFUSAL,
+    PLACEMENTS_CONFIRMED_REFUSAL,
+    modules_frozen_for_completion,
+)
 from leaguebot.core.services.setting_change import After, Saved, Setting
 
 if TYPE_CHECKING:
@@ -61,11 +66,20 @@ def _still_off(_payload: dict[str, Any]) -> str:
 
 
 def module_on_weather(*, modules: "ModuleService") -> Setting:
-    """`module.on:weather`: raise the flag in one save, with its audit entry."""
+    """`module.on:weather`: raise the flag in one save, with its audit entry.
 
-    async def check(_ctx: CheckContext) -> Verdict:
+    **The check reads the season's stage again as the change starts,** not only at the ask
+    (`module_cog.py`'s stage refusal): asked while no season's placements are confirmed, and run
+    once an approval waiting ahead of it on the lane has confirmed them, the save still finds
+    them confirmed and refuses, in the words the ask already gives, rather than switching
+    weather on mid-season.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
         if await modules.is_weather_enabled():
             return Verdict.refuse("⚠️ Weather module is already enabled.")
+        if await ctx.bot.season_service.get_confirmed_season() is not None:
+            return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
@@ -116,11 +130,19 @@ def _remove_jobs(scheduler: "SchedulerService") -> After:
 
 def module_off_weather(*, modules: "ModuleService", scheduler: "SchedulerService") -> Setting:
     """`module.off:weather`: lower the flag and write its audit entry in one save, then remove
-    the season's weather jobs in a step of its own."""
+    the season's weather jobs in a step of its own.
 
-    async def check(_ctx: CheckContext) -> Verdict:
+    **The check reads Pending completion again as the change starts,** as `results_off_change`'s
+    already does: asked before the season reaches it, and run once a change waiting ahead of it
+    on the lane has finished the last division, the save still finds the season Pending
+    completion and refuses, rather than switching weather off in it.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
         if not await modules.is_weather_enabled():
             return Verdict.refuse("⚠️ Weather module is already disabled.")
+        if await modules_frozen_for_completion(ctx.db_path):
+            return Verdict.refuse(FROZEN_FOR_COMPLETION_REFUSAL)
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:

@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import AuditRecord, Verdict, module_on
 from leaguebot.core.services.change_queue import CheckContext
+from leaguebot.core.services.season_lifecycle_service import PLACEMENTS_CONFIRMED_REFUSAL
 from leaguebot.core.services.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
@@ -37,11 +38,20 @@ def _still_off(_payload: dict[str, Any]) -> str:
 
 
 def module_on_results(*, modules: "ModuleService") -> Setting:
-    """`module.on:results`: the flag raised and the audit, in one save."""
+    """`module.on:results`: the flag raised and the audit, in one save.
 
-    async def check(_ctx: CheckContext) -> Verdict:
+    **The check reads the season's stage again as the change starts,** not only at the ask
+    (`module_cog.py`'s stage refusal): asked while no season's placements are confirmed, and run
+    once an approval waiting ahead of it on the lane has confirmed them, the save still finds
+    them confirmed and refuses, in the words the ask already gives, rather than switching
+    results on mid-season.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
         if await modules.is_results_enabled():
             return Verdict.refuse("⚠️ Results & Standings module is already enabled.")
+        if await ctx.bot.season_service.get_confirmed_season() is not None:
+            return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
