@@ -1066,15 +1066,15 @@ to it would switch off the one failure path for every command.
    would leave (`ChangeQueue._undiscardable_refusal`) is a stated exception likewise: its catch-all
    puts the error in the host's log with the full details, and the Discard is refused all the same,
    naming the job in place of the reason, its refusal recorded in the log channel as any refused
-   press is, because an undiscardable job is never dropped for want of its reason; and the `names`
+   press is, because an undiscardable job is never dropped for want of its reason; the `names`
    job an amendment's lapse and its cancel share (`amend_end_changes._names_step`) is a stated
    exception as well: its catch-all puts the error in the host's log and completes the job with no
    names, so the revert goes ahead with a full tie ordered by user id, because a tie so ordered is
    the lesser fault than a round not put back (its docstring says so); and the helper through which a
    placement's capacity guards count the seats and ask the image module
-   (`PlacementService._ask_drawing`) is a stated exception likewise: its catch-all puts the error in
-   the host's log in full, and the guard lets the placement through as if no problem were found,
-   because a capacity check that cannot run must not block a placement;
+   (`PlacementService._ask_drawing`) is a stated exception too: its catch-all puts the error in the
+   host's log in full, and the guard lets the placement through as if no problem were found,
+   because a capacity check that cannot run must not block a placement (its docstring says so);
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
@@ -1091,6 +1091,9 @@ In every case it keeps the full error details for the host's log. Beyond the fir
 catch-all, a command catches only the errors it expects by name, and only to turn them into a
 refusal the member can act on, or to hand them to `report_failure` itself with context or an
 outcome, as `/test-mode backup save` does with a backup fault, saying that the previous backup is unchanged.
+
+*Rejected:* narrowing the capacity guards' catch to the errors they expect by name: a fault of any
+other kind would then block a placement, when a check that cannot run must not.
 
 ---
 
