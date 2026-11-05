@@ -3,8 +3,12 @@
 **The panel follows the modules.** A module's options are offered while it is enabled, so every
 switch that changed something asks the change queue to refresh the panel, as the bot's change
 (#439, slice 6b): each module's switch asks it as a follow-on once it has run (#283, S11e), as
-turning results off always has, and the command refreshes nothing itself. A toggle refused, at the
-ask or as it runs, changed nothing and leaves the panel alone. A refresh the hub refuses is the
+turning results off always has, and the command refreshes nothing itself. A switch built as a
+`Setting` asks it from an `After` step its save plans, an `ACT` step whose result carries the
+refresh as its follow-on, so that `setting_change` plans it only where the save changed something
+(`test_setting_change.py`) and needs nothing new; a switch-off of its own change type asks it in
+its save, as results' does. A toggle refused, at the ask or as it runs, changed nothing and leaves
+the panel alone. A refresh the hub refuses is the
 queue's to stop on (`test_hub_service.py`), never a line the toggle writes.
 
 **The permissions follow the roles.** The hub is seen by the base role (or everyone, where none
@@ -96,7 +100,8 @@ _ON_BEFORE = {
 }
 
 #: Why a toggle other than turning results off fails until the build: the command asks its own
-#: refresh as soon as it has asked the switch, whatever becomes of it.
+#: refresh as soon as it has asked the switch, whatever becomes of it, where the switch's `After`
+#: step is to ask it once the save has changed something.
 _REFRESHED_BY_THE_COMMAND = "#283: the command asks the refresh, not the switch's follow-on"
 
 
