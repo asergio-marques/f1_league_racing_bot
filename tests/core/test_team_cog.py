@@ -470,8 +470,15 @@ class TestOneRolePerTeam:
 # The one leak no per-send cleanup would catch: a division rejected part way through
 # returns immediately, and every picture drawn for the divisions before it is never sent.
 # There is no sweeper behind this, so the `finally` around the batch is the only thing
-# that removes them.
+# that hands them back to the drawing to release.
 # ---------------------------------------------------------------------------
+
+#: Why the batch's tests fail until the build.
+_LINEUP_THROUGH_THE_DRAWING = (
+    "#283: /team lineup still draws and releases through the image module's own functions, not "
+    "the drawing the bot carries"
+)
+
 
 class TestTeamLineupDiscardsItsPictures:
     @staticmethod
@@ -490,76 +497,54 @@ class TestTeamLineupDiscardsItsPictures:
         division.name = f"Division {tier}"
         return division
 
-    def _cog_and_bot(self, divisions):
+    def _cog_and_bot(self, divisions, drawing):
         from leaguebot.core.cogs.team_cog import TeamCog
 
         bot = _make_bot()
         bot.season_service.get_confirmed_season = AsyncMock(return_value=_make_season())
         bot.season_service.get_divisions = AsyncMock(return_value=divisions)
+        bot.image_drawing = drawing
         return TeamCog(bot), bot
 
-    async def test_a_rejection_part_way_through_leaves_no_picture_behind(
-        self, tmp_path, monkeypatch
-    ):
-        from leaguebot.image.services import image_lineup_post
+    @pytest.mark.xfail(strict=True, reason=_LINEUP_THROUGH_THE_DRAWING)
+    async def test_a_rejection_part_way_through_leaves_no_picture_behind(self, tmp_path):
+        """Two divisions: Division 1's lineup is drawn, and Division 2's cannot be. The
+        command refuses, and the picture drawn for Division 1, never sent, is handed back to
+        the drawing to release."""
+        from tests.support.lineup_drawing import LineupDrawingStub
 
         divisions = [self._division(1, 1), self._division(2, 2)]
         drawn = self._artifact(tmp_path, 1)
-        cog, _bot = self._cog_and_bot(divisions)
-
-        outcomes = iter(
-            [
-                MagicMock(action="POSTED", png_path=drawn, notices=[], message=None),
-                MagicMock(
-                    action="REJECTED", png_path=None, notices=[],
-                    message="❌ the template is at fault",
-                ),
-            ]
+        drawing = LineupDrawingStub(
+            by_division={1: {"picture": drawn}, 2: {"problem": "the template is at fault"}}
         )
-
-        monkeypatch.setattr(
-            image_lineup_post, "lineup_enabled", AsyncMock(return_value=True)
-        )
-        monkeypatch.setattr(
-            image_lineup_post,
-            "render_for_command",
-            AsyncMock(side_effect=lambda *a, **k: next(outcomes)),
-        )
+        cog, _bot = self._cog_and_bot(divisions, drawing)
 
         interaction = _make_interaction()
         await _unwrap(cog.team_lineup)(cog, interaction, division=None, public=False)
 
-        assert not drawn.exists(), (
-            "a picture drawn before the rejection was abandoned and never removed"
+        assert drawing.drawn_for_command == [1, 2]
+        assert drawing.discarded == [drawn], (
+            "a picture drawn before the rejection was abandoned and never released"
         )
-        assert not drawn.parent.exists()
+        assert "was not drawn" in interaction.followup.send.await_args.args[0]
 
-    async def test_the_pictures_are_gone_once_the_batch_has_posted(
-        self, tmp_path, monkeypatch
-    ):
-        from leaguebot.image.services import image_lineup_post
+    @pytest.mark.xfail(strict=True, reason=_LINEUP_THROUGH_THE_DRAWING)
+    async def test_the_pictures_are_gone_once_the_batch_has_posted(self, tmp_path):
+        """Two divisions, both drawn: the two pictures go out in one message, and each is
+        handed back to the drawing to release once it has been sent."""
+        from tests.support.lineup_drawing import LineupDrawingStub
 
         divisions = [self._division(1, 1), self._division(2, 2)]
         pngs = [self._artifact(tmp_path, 1), self._artifact(tmp_path, 2)]
-        cog, _bot = self._cog_and_bot(divisions)
-        handed = iter(pngs)
-
-        monkeypatch.setattr(
-            image_lineup_post, "lineup_enabled", AsyncMock(return_value=True)
+        drawing = LineupDrawingStub(
+            by_division={1: {"picture": pngs[0]}, 2: {"picture": pngs[1]}}
         )
-        monkeypatch.setattr(
-            image_lineup_post,
-            "render_for_command",
-            AsyncMock(
-                side_effect=lambda *a, **k: MagicMock(
-                    action="POSTED", png_path=next(handed), notices=[], message=None
-                )
-            ),
-        )
+        cog, _bot = self._cog_and_bot(divisions, drawing)
 
         interaction = _make_interaction()
         await _unwrap(cog.team_lineup)(cog, interaction, division=None, public=False)
 
-        interaction.followup.send.assert_awaited()
-        for png in pngs:
-            assert not png.exists()
+        interaction.followup.send.assert_awaited_once()
+        assert len(interaction.followup.send.await_args.kwargs["files"]) == 2
+        assert drawing.discarded == pngs

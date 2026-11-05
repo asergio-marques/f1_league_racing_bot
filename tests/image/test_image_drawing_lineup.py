@@ -27,6 +27,22 @@ TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "te
 #: 1002 placed there mid-season and not yet confirmed, 1003 seated with no placement at all.
 NAMES = {1001: "Zara Quill", 1002: "Yuri Vexley", 1003: "Cal Cole"}
 
+#: Why the commanded draw's cases fail until the build.
+_NO_COMMANDED_DRAW = (
+    "#283: the image drawing does not yet draw a lineup as /team lineup's output "
+    "(draw_lineup_for_command)"
+)
+#: The lineup drawn as the lineup of record (`draw_lineup`), and as `/team lineup`'s output
+#: (`draw_lineup_for_command`); both draw the same seats, at the same trigger, and report their
+#: notices the same way.
+DRAWS = [
+    pytest.param("draw_lineup", id="of_record"),
+    pytest.param(
+        "draw_lineup_for_command", id="for_command",
+        marks=pytest.mark.xfail(strict=True, reason=_NO_COMMANDED_DRAW),
+    ),
+]
+
 
 def _guild():
     """The league's server: each driver's member by id, and a lineup channel that would take any
@@ -124,18 +140,19 @@ async def test_a_lineup_gate_that_cannot_be_read_answers_text(caplog):
     post_log.assert_not_awaited()
 
 
-async def test_a_drawn_lineup_leaves_out_a_driver_not_yet_confirmed(db_path, monkeypatch):
+@pytest.mark.parametrize("draw", DRAWS)
+async def test_a_drawn_lineup_leaves_out_a_driver_not_yet_confirmed(db_path, monkeypatch, draw):
     """Pro, in a season being raced, seats Zara (placement confirmed), Yuri (placed mid-season and
-    not yet confirmed) and a third seat with no placement. Pro's lineup is drawn: Zara is drawn,
-    Yuri is not (image spec, "A driver whose placement is not yet committed shall not be
-    drawn")."""
+    not yet confirmed) and a third seat with no placement. Pro's lineup is drawn, as the lineup of
+    record and as `/team lineup`'s output alike: Zara is drawn, Yuri is not (image spec, "A driver
+    whose placement is not yet committed shall not be drawn")."""
     from leaguebot.image.utils.svg_document import load_svg
 
     _portraits_spied(monkeypatch)
     guild, *_ = _guild()
     drawing, captured, *_ = _drawing(db_path)
 
-    await drawing.draw_lineup(guild, DIVISION_ID)
+    await getattr(drawing, draw)(guild, DIVISION_ID)
 
     assert captured["image_type"] == "lineup_template"
     spec = captured["builder"](load_svg(TEMPLATES / "lineup_template.svg"))
@@ -144,30 +161,34 @@ async def test_a_drawn_lineup_leaves_out_a_driver_not_yet_confirmed(db_path, mon
     assert "vexley" not in filled, spec.text
 
 
+@pytest.mark.parametrize("draw", DRAWS)
 async def test_a_drawn_lineup_refreshes_portraits_only_at_the_league_s_trigger(
-    db_path, monkeypatch,
+    db_path, monkeypatch, draw,
 ):
-    """Pro's lineup drawn for a posting: the portraits of the drivers it draws are brought up to
-    date as the league's own trigger says, and none missing is fetched beyond it, which only the
-    placements review may ask for. Zara alone is drawn, so hers alone is asked for."""
+    """Pro's lineup drawn for a posting, or as `/team lineup`'s output: the portraits of the
+    drivers it draws are brought up to date as the league's own trigger says, and none missing is
+    fetched beyond it, which only the placements review may ask for. Zara alone is drawn, so hers
+    alone is asked for."""
     spy = _portraits_spied(monkeypatch)
     guild, _, members = _guild()
     drawing, *_ = _drawing(db_path)
 
-    await drawing.draw_lineup(guild, DIVISION_ID)
+    await getattr(drawing, draw)(guild, DIVISION_ID)
 
     spy.assert_awaited_once()
     assert spy.await_args.args[1] == [members[1001]]
     assert spy.await_args.kwargs["obtain_missing"] is False
 
 
+@pytest.mark.parametrize("draw", DRAWS)
 async def test_a_drawn_lineup_reports_its_notices_to_the_log_channel_in_one_message(
-    db_path, monkeypatch,
+    db_path, monkeypatch, draw,
 ):
-    """Pro's lineup drawn with two notices: the drawing itself reports them to the log channel, in
-    one message headed with the lineup and the division, so they reach the log whichever change
-    posted the lineup, and never the lineup channel (Constitution XIV.4, "reported in one
-    message"; the owner's decision on #283)."""
+    """Pro's lineup drawn with two notices, as the lineup of record or as `/team lineup`'s output:
+    the drawing itself reports them to the log channel, in one message headed with the lineup and
+    the division, so they reach the log whichever change or command drew the lineup, and never
+    the lineup channel (Constitution XIV.4, "reported in one message"; the owner's decision on
+    #283)."""
     from leaguebot.image.models.image_module import RenderNotice
 
     _portraits_spied(monkeypatch)
@@ -182,7 +203,7 @@ async def test_a_drawn_lineup_reports_its_notices_to_the_log_channel_in_one_mess
         db_path, outcome=NS(problem=None, notices=notices, png_paths=[])
     )
 
-    await drawing.draw_lineup(guild, DIVISION_ID)
+    await getattr(drawing, draw)(guild, DIVISION_ID)
 
     [call] = post_log.await_args_list
     assert call.args[0].startswith("Image render notices — lineup — Pro:\n"), call.args[0]
@@ -191,14 +212,45 @@ async def test_a_drawn_lineup_reports_its_notices_to_the_log_channel_in_one_mess
     channel.send.assert_not_awaited()
 
 
-@pytest.mark.parametrize("drawn", ["a picture", "a problem"])
+#: The problem's words /team lineup's refusal carries, as `Problem.message("the lineup")` gives
+#: them: a field the template is at fault in named with it, and an internal fault never detailed.
+_INTERNAL_WORDS = (
+    "this image could not be produced — the fault has been recorded for the bot's operator."
+)
+
+
+@pytest.mark.parametrize(
+    "draw,drawn,problem",
+    [
+        pytest.param("draw_lineup", "a picture", None, id="of_record-a_picture"),
+        pytest.param("draw_lineup", "a field problem", "the template has no rows",
+                     id="of_record-a_problem"),
+        pytest.param("draw_lineup_for_command", "a picture", None, id="for_command-a_picture",
+                     marks=pytest.mark.xfail(strict=True, reason=_NO_COMMANDED_DRAW)),
+        pytest.param("draw_lineup_for_command", "a field problem",
+                     "the lineup: `team_1` — the template has no rows",
+                     id="for_command-a_field_problem",
+                     marks=pytest.mark.xfail(strict=True, reason=_NO_COMMANDED_DRAW)),
+        pytest.param("draw_lineup_for_command", "an internal problem", _INTERNAL_WORDS,
+                     id="for_command-an_internal_problem",
+                     marks=pytest.mark.xfail(strict=True, reason=_NO_COMMANDED_DRAW)),
+    ],
+)
 async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_notices(
-    db_path, monkeypatch, tmp_path, drawn,
+    db_path, monkeypatch, tmp_path, draw, drawn, problem,
 ):
     """Pro's lineup drawn, with one notice: the drawing hands core the picture's path where it was
     drawn, or the problem's words where it could not be, and the notices' words either way. It
-    posts nothing to Pro's lineup channel."""
-    from leaguebot.image.models.image_module import RenderNotice
+    posts nothing to Pro's lineup channel. Drawn as the lineup of record, the problem is its bare
+    detail, which the text lineup's fallback line carries. Drawn as `/team lineup`'s output, it
+    is the words the command's refusal reads today: the lineup and the field at fault named before
+    the detail, and an internal fault, which no league can act on, never detailed."""
+    from leaguebot.image.models.image_module import (
+        PROBLEM_UNKNOWN_IMAGE_TYPE,
+        PROBLEM_UNRESOLVED_VALUE,
+        Problem,
+        RenderNotice,
+    )
 
     _portraits_spied(monkeypatch)
     directory = tmp_path / "f1bot_render_lineup"
@@ -207,16 +259,22 @@ async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_not
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
     notice = RenderNotice(image_type="lineup", notice_kind="ASSET_FALLBACK_USED",
                           detail="a fallback flag stood in for Zara's")
+    fault = {
+        "a field problem": Problem(kind=PROBLEM_UNRESOLVED_VALUE,
+                                   detail="the template has no rows", field_id="team_1"),
+        "an internal problem": Problem(kind=PROBLEM_UNKNOWN_IMAGE_TYPE,
+                                       detail="no renderer for lineup_template"),
+    }.get(drawn)
     outcome = (
-        NS(problem=None, notices=[notice], png_paths=[png]) if drawn == "a picture"
-        else NS(problem=NS(detail="the template has no rows"), notices=[notice], png_paths=[])
+        NS(problem=None, notices=[notice], png_paths=[png]) if fault is None
+        else NS(problem=fault, notices=[notice], png_paths=[])
     )
     guild, channel, _ = _guild()
     drawing, *_ = _drawing(db_path, outcome=outcome)
 
-    picture = await drawing.draw_lineup(guild, DIVISION_ID)
+    picture = await getattr(drawing, draw)(guild, DIVISION_ID)
 
-    assert picture.path == (png if drawn == "a picture" else None)
-    assert picture.problem == (None if drawn == "a picture" else "the template has no rows")
+    assert picture.path == (png if fault is None else None)
+    assert picture.problem == problem
     assert tuple(picture.notices) == ("a fallback flag stood in for Zara's",)
     channel.send.assert_not_awaited()

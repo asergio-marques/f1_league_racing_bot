@@ -110,19 +110,6 @@ def test_render_for_command_is_always_a_commanded_posting():
     assert "POST_TEXT_FALLBACK" not in source
 
 
-def test_team_lineup_honours_the_public_parameter():
-    source = (SRC / "leaguebot" / "core" / "cogs" / "team_cog.py").read_text(encoding="utf-8")
-    block = source[source.index("render_for_command"):]
-    assert "ephemeral=not public" in block
-
-
-def test_team_lineup_posts_one_image_per_division():
-    source = (SRC / "leaguebot" / "core" / "cogs" / "team_cog.py").read_text(encoding="utf-8")
-    block = source[source.index("render_for_command"):]
-    assert "for div in all_divisions:" in block
-    assert "files.append(" in block
-
-
 def test_season_review_sends_one_message_per_subsection():
     """The review outgrew a single Discord message and is split by subject.
 
