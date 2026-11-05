@@ -26,10 +26,10 @@ from leaguebot.core.models.cancellation import SCOPE_DIVISION, SCOPE_ROUND, Canc
 from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, StepKind, StepResult
 from leaguebot.core.services.change_queue import Step, StepContext
 from leaguebot.core.services.notice_handler import send_notice
+from leaguebot.core.services.season_lifecycle_service import require_guild
 from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import league_guild
 
 if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
@@ -133,7 +133,7 @@ def notify_forecast_steps(*, modules: "ModuleService", seasons: SeasonService) -
 
     async def notify_forecast(ctx: StepContext) -> StepResult:
         payload = ctx.step_payload
-        guild = await league_guild(ctx.bot)
+        guild = await require_guild(ctx.bot)
         division = next(
             (
                 each

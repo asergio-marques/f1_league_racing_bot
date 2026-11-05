@@ -421,10 +421,6 @@ async def test_a_call_message_discord_will_not_delete_stops_the_queue_keeping_th
     assert CHECKIN_LOGGED in _success_lines(league)[0]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the notice jobs do not yet stop where the league's server is not in the cache",
-)
 @pytest.mark.parametrize(
     ("module", "steps_of", "job"),
     [
