@@ -1491,6 +1491,26 @@ async def live_season(db_path: str) -> Season | None:
     return _row_to_season(row)
 
 
+async def division_first_round(db_path: str, division_id: int) -> Round | None:
+    """*division_id*'s first round by round number, or None where it has none.
+
+    For a module reading core's tables only through core's services (architecture.md, "How
+    modules and core fit together"), where the caller has the database path and no
+    `SeasonService` of its own: results' and attendance's opening posts are drawn against this
+    round, since every cell of the grid both sheets draw is keyed by a round and this one's is
+    empty, which is exactly what an opening posting should show.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
+            "phase1_done, phase2_done, phase3_done, status FROM rounds "
+            "WHERE division_id = ? ORDER BY round_number LIMIT 1",
+            (division_id,),
+        )
+        row = await cursor.fetchone()
+    return _row_to_round(row) if row else None
+
+
 async def round_called(db_path: str, round_id: int) -> str:
     """How a league reads *round_id*: "round 3 in **Pro**", or "a round no longer there".
 

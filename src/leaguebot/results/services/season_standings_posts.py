@@ -7,12 +7,12 @@ its own, one division at a time, each a job of the season's approval on the chan
 up to the hook core declares for placements confirmed
 (:func:`placements_confirmed_on`, architecture.md, "How modules and core fit together"). The
 final standings move here too, in a later slice; until then ``season_classification_service``
-still calls :func:`_remove_earlier_try`, :func:`_keeping` and :func:`_produce_stranding` for its
+still calls :func:`remove_earlier_try`, :func:`keeping` and :func:`produce_stranding` for its
 own final posting, and that import is listed under ``.importlinter`` with #283.
 
 **Each posting reads the division's first round as it runs** (never the table itself: through
-core's `SeasonService`, architecture.md, "A module reads core's tables only through core's
-services"), **and raises where it cannot post**, for the queue to stop on — except that it
+core's `division_first_round`, architecture.md, "A module reads core's tables only through
+core's services"), **and raises where it cannot post**, for the queue to stop on — except that it
 returns without posting where no standings channel is set, or where no driver is ranked, neither
 of which is a fault the queue should stop on. The standings channel is read from
 `division_results_config`, where `/results channel standings` keeps it. No message id is
@@ -30,14 +30,16 @@ from typing import Any
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.change_queue import Step, StepContext
+from leaguebot.core.services.module_service import ModuleService
+from leaguebot.core.services.season_lifecycle_service import require_guild
 from leaguebot.core.utils.league_bot import LeagueBot
 
 OPENING_STANDINGS = "opening_standings"
 
 
 async def _opening_round(db_path: str, division_id: int):
-    """The division's first round, read through core's `SeasonService`, or None where it has
-    none.
+    """The division's first round, read through core's `division_first_round`, or None where it
+    has none.
 
     The sheets are drawn against it: not because they stand after it, they stand after nothing,
     but because the grid of rounds down the side of both is read from the season's calendar and
@@ -45,13 +47,12 @@ async def _opening_round(db_path: str, division_id: int):
     empty, which is exactly what an opening sheet should show. Approval refuses a division with no
     rounds, so None cannot normally happen.
     """
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.season_service import division_first_round
 
-    rounds = await SeasonService(db_path).get_division_rounds(division_id)
-    return rounds[0] if rounds else None
+    return await division_first_round(db_path, division_id)
 
 
-async def _remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, Any] | None:
+async def remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, Any] | None:
     """Take down the standings a try before this one left posted in part, or None where it left none.
 
     No id of an opening or final standings is recorded, so a table already sent when a later one
@@ -81,7 +82,7 @@ async def _remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, A
 
 
 @asynccontextmanager
-async def _keeping(removed: dict[str, Any] | None, what: str) -> AsyncIterator[None]:
+async def keeping(removed: dict[str, Any] | None, what: str) -> AsyncIterator[None]:
     """Carry what the earlier try's removal left on any failure of this try.
 
     Where the earlier try's copies are down (*removed* is not None), a failure of this one that
@@ -105,7 +106,7 @@ async def _keeping(removed: dict[str, Any] | None, what: str) -> AsyncIterator[N
         ) from failure
 
 
-async def _produce_stranding(what: str, channel_id, posting) -> None:
+async def produce_stranding(what: str, channel_id, posting) -> None:
     """Await *posting*, results' ``produce_standings``, naming on its failure a table already sent.
 
     No id of the classification is recorded, so a table already sent when a later one failed is
@@ -161,8 +162,8 @@ async def post_opening_standings(
     opener = await _opening_round(db_path, division_id)
     if opener is None:
         return
-    removed = await _remove_earlier_try(guild, kept)
-    async with _keeping(removed, "opening"):
+    removed = await remove_earlier_try(guild, kept)
+    async with keeping(removed, "opening"):
         async with get_connection(db_path) as db:
             config = await (
                 await db.execute(
@@ -191,7 +192,7 @@ async def post_opening_standings(
         team_snaps = await standings_service.opening_team_standings(db_path, division_id)
         if not driver_snaps:
             return
-        await _produce_stranding(
+        await produce_stranding(
             "opening",
             channel_id,
             produce_standings(
@@ -221,25 +222,33 @@ async def placements_confirmed_on(
     return (PlannedStep(OPENING_STANDINGS, {"division_id": division_id, "division_name": division_name}),)
 
 
-def opening_steps() -> dict[str, Step]:
+def opening_steps(modules: ModuleService) -> dict[str, Step]:
     """Results' step definition for the opening standings, signed up to
-    *placements_confirmed_steps* beside :func:`placements_confirmed_on`."""
+    *placements_confirmed_steps* beside :func:`placements_confirmed_on`. The builder hands in
+    *modules*, as it hands cancellation's steps theirs, so that `still_due` reads results'
+    switch without looking the service up on the bot (architecture.md, "How modules and core
+    fit together")."""
 
     async def run(ctx: StepContext) -> StepResult:
-        guild = await _guild(ctx.bot)
+        guild = await require_guild(ctx.bot)
         await post_opening_standings(
             ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
             as_text=ctx.tries > 0, kept=ctx.kept,
         )
         return StepResult()
 
-    async def still_due(ctx: StepContext) -> bool:
-        return await ctx.bot.module_service.is_results_enabled()
+    async def still_due(_ctx: StepContext) -> bool:
+        return await modules.is_results_enabled()
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the opening standings of **{ctx.step_payload['division_name']}**"
 
     def not_done(view: Any) -> str:
+        """The lines a discarded opening standings job leaves for doing by hand, joined by a
+        plain newline: `kept_line`'s caller (`_left`, architecture.md, "How modules and core fit
+        together") splits them apart again, so that a table left standing in part gets its own
+        "not done:" line in the approval's log and its own bullet in the reply, as it did before
+        this job became results' own (#283)."""
         line = (
             f"**{view.payload['division_name']}** — its opening standings could not be "
             f"posted. No command posts them again; the first round's results post the "
@@ -249,7 +258,7 @@ def opening_steps() -> dict[str, Step]:
         if stranded:
             ids = ", ".join(str(each_id) for each_id in stranded)
             line += (
-                f"\n• **{view.payload['division_name']}** — a part of its opening standings "
+                f"\n**{view.payload['division_name']}** — a part of its opening standings "
                 f"was posted before the job stopped and stands in "
                 f"<#{(view.result or {}).get('channel_id')}> (message {ids}): delete it by hand."
             )
@@ -261,9 +270,3 @@ def opening_steps() -> dict[str, Step]:
             not_done=not_done,
         ),
     }
-
-
-async def _guild(bot: LeagueBot):
-    from leaguebot.core.utils.league_server import league_guild
-
-    return await league_guild(bot)

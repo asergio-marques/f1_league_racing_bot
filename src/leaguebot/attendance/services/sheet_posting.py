@@ -14,8 +14,8 @@ the opening's heading and with no message text (see
 its own, one division at a time, each a job of the season's approval on the change queue, signed
 up to the hook core declares for placements confirmed, after results' own opening standings
 (architecture.md, "How modules and core fit together"). It reads the division's first round
-through core's `SeasonService`, never the table itself, and raises where it cannot post, for the
-queue to stop on.
+through core's `division_first_round`, never the table itself, and raises where it cannot post,
+for the queue to stop on.
 """
 
 from __future__ import annotations
@@ -45,6 +45,8 @@ from leaguebot.core.services.change_queue import (
     StepContext,
 )
 from leaguebot.core.services import standing_posts
+from leaguebot.core.services.module_service import ModuleService
+from leaguebot.core.services.season_lifecycle_service import require_guild
 from leaguebot.core.utils.league_server import league_guild
 
 POST_SHEET = "post_sheet"
@@ -182,8 +184,8 @@ async def ask_sheet_post(
 
 
 async def _opening_round(db_path: str, division_id: int):
-    """The division's first round, read through core's `SeasonService`, or None where it has
-    none.
+    """The division's first round, read through core's `division_first_round`, or None where it
+    has none.
 
     The sheet is drawn against it: not because it stands after it, it stands after nothing, but
     because the grid of rounds down its side is read from the season's calendar and the heading
@@ -191,10 +193,9 @@ async def _opening_round(db_path: str, division_id: int):
     exactly what an opening sheet should show. Approval refuses a division with no rounds, so
     None cannot normally happen.
     """
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.season_service import division_first_round
 
-    rounds = await SeasonService(db_path).get_division_rounds(division_id)
-    return rounds[0] if rounds else None
+    return await division_first_round(db_path, division_id)
 
 
 async def post_opening_sheet(
@@ -234,15 +235,16 @@ async def placements_confirmed_on(
     )
 
 
-def opening_steps() -> dict[str, Step]:
+def opening_steps(modules: ModuleService) -> dict[str, Step]:
     """Attendance's step definition for the opening sheet, signed up to
-    *placements_confirmed_steps* beside results' `season_standings_posts.opening_steps`."""
+    *placements_confirmed_steps* beside results' `season_standings_posts.opening_steps`. The
+    builder hands in *modules*, as it hands cancellation's steps theirs, so that `still_due`
+    reads attendance's switch without looking the service up on the bot (architecture.md, "How
+    modules and core fit together")."""
 
     async def run(ctx: StepContext) -> StepResult:
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
-        guild = await league_guild(ctx.bot)
-        if guild is None:
-            raise GuildUnavailable("the league's server is not in the cache")
+        guild = await require_guild(ctx.bot)
         result = await post_opening_sheet(
             ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
             as_text=ctx.tries > 0,
@@ -260,8 +262,8 @@ def opening_steps() -> dict[str, Step]:
         await attendance_service.record_sheet_on(db, int(ctx.step_payload["division_id"]),
                                                   result.result)
 
-    async def still_due(ctx: StepContext) -> bool:
-        return await ctx.bot.module_service.is_attendance_enabled()
+    async def still_due(_ctx: StepContext) -> bool:
+        return await modules.is_attendance_enabled()
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the opening attendance sheet of **{ctx.step_payload['division_name']}**"

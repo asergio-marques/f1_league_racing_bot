@@ -297,8 +297,10 @@ def _sign_up_to_placements_confirmed(bot: LeagueBot) -> None:
     bot.placements_confirmed.subscribe(season_standings_posts.placements_confirmed_on)
     bot.placements_confirmed.subscribe(sheet_posting.placements_confirmed_on)
     bot.placements_confirmed_steps = Hook()
-    bot.placements_confirmed_steps.subscribe(season_standings_posts.opening_steps)
-    bot.placements_confirmed_steps.subscribe(sheet_posting.opening_steps)
+    bot.placements_confirmed_steps.subscribe(
+        partial(season_standings_posts.opening_steps, bot.module_service)
+    )
+    bot.placements_confirmed_steps.subscribe(partial(sheet_posting.opening_steps, bot.module_service))
 
 
 def _sign_up_to_season_end(bot: LeagueBot) -> None:

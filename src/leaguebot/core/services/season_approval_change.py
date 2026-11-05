@@ -846,7 +846,9 @@ def _left(ctx: OutcomeContext, steps: Mapping[str, Step], *, told: bool = True) 
     """What was not done, one line for each job a league admin discarded, in the order of the
     jobs, the drivers whose roles were not granted gathered into one line. *told* adds the review's
     channel not told, which the member's reply cannot carry. A module's own opening post is named
-    in its own step's words (`kept_line`); the jobs core still defines keep their own branches."""
+    in its own step's words (`kept_line`), split on a newline where it hands back more than one
+    (a table left standing in part, named on a line of its own); the jobs core still defines keep
+    their own branches."""
     lines: list[str] = []
     ungranted: list[str] = []
     ungranted_at: int | None = None
@@ -856,7 +858,7 @@ def _left(ctx: OutcomeContext, steps: Mapping[str, Step], *, told: bool = True) 
         each = view.payload
         words = kept_line(steps, view)
         if words is not None:
-            lines.append(words)
+            lines.extend(words.split("\n"))
         elif view.name == GRANT_ROLES:
             if ungranted_at is None:
                 ungranted_at = len(lines)

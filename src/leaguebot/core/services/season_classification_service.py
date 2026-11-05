@@ -23,8 +23,8 @@ posting a job of the change queue** that raises where it cannot post
 (:func:`post_final_standings`, :func:`post_final_sheet`), so the queue stops there and a league
 admin retries or discards it; a picture Discord refuses is posted as text in the same try, never
 failing the completion on its own. Its standings share the earlier-try bookkeeping results'
-opening standings use (:func:`leaguebot.results.services.season_standings_posts._remove_earlier_try`,
-``_keeping``, ``_produce_stranding``), imported from there rather than kept twice; that import is
+opening standings use (:func:`leaguebot.results.services.season_standings_posts.remove_earlier_try`,
+``keeping``, ``produce_stranding``), imported from there rather than kept twice; that import is
 listed under ``.importlinter`` with #283 until the final posts move there too.
 """
 
@@ -36,9 +36,9 @@ from typing import Any
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.services.season_standings_posts import (
-    _keeping,
-    _produce_stranding,
-    _remove_earlier_try,
+    keeping,
+    produce_stranding,
+    remove_earlier_try,
 )
 
 log = logging.getLogger(__name__)
@@ -94,8 +94,8 @@ async def post_final_standings(
     last = await _final_round(db_path, division_id, round_id)
     if last is None:
         return
-    removed = await _remove_earlier_try(guild, kept)
-    async with _keeping(removed, "final"):
+    removed = await remove_earlier_try(guild, kept)
+    async with keeping(removed, "final"):
         async with get_connection(db_path) as db:
             config = await (
                 await db.execute(
@@ -121,7 +121,7 @@ async def post_final_standings(
         )
         if not driver_snaps:
             return
-        await _produce_stranding(
+        await produce_stranding(
             "final",
             channel_id,
             produce_standings(
