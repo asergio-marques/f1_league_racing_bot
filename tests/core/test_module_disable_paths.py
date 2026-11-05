@@ -274,6 +274,40 @@ async def test_disabling_images_twice_does_no_work(tmp_path):
     ]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: /module disable images lowers the flag before its audit entry, not in one save",
+)
+async def test_an_image_disable_that_cannot_be_written_leaves_the_module_on(tmp_path):
+    """The flag and the audit entry are one save, so a fault at the audit leaves the module on.
+    The member gets the standard failure reply, saying nothing was saved and what to run again,
+    in place of today's 'It may have been partly done'; the log channel gets the one failure
+    line, and never a success."""
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog, asked = await _images_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER refuse_the_audit BEFORE INSERT ON audit_entries "
+            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+        )
+        await db.commit()
+
+    await cog._disable_images(asked)
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_images_enabled() is True
+    assert last_said(asked) == (
+        "❌ `/module disable` stopped on a fault in the bot, not on anything you entered, and "
+        "did not finish. Nothing was saved. Run `/module disable images` again to retry. The "
+        "fault is recorded in the log channel."
+    )
+    assert await log_lines(league) == [
+        f"❌ `/module disable` failed for Admin (`<@{MEMBER_ID}>`) — IntegrityError. "
+        "The details are in the host's log."
+    ]
+
+
 async def test_disabling_images_is_audited(tmp_path):
     league, cog, asked = await _images_league(tmp_path)
 
