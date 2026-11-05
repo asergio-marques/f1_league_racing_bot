@@ -584,7 +584,9 @@ async def post_review(league: SeasonLeague) -> Review:
     view = _ApproveView(league.cog, ADMIN_ID)
     report = [await league.review_channel.send("📋 Season 3 placements review")]
     prompt = await league.review_channel.send("Approve these placements?", view=view)
-    evidence = (await take_fingerprint(league.bot, SEASON_ID)).areas
+    evidence = (
+        await take_fingerprint(league.db_path, SEASON_ID, drawing=league.bot.image_drawing)
+    ).areas
     async with get_connection(league.db_path) as db:
         await store_review_prompt(
             db, season_id=SEASON_ID, channel_id=REVIEW_CHANNEL, message_id=prompt.id,
@@ -710,7 +712,9 @@ async def post_mid_season_review(league: SeasonLeague) -> Review:
     view = _ConfirmMidSeasonPlacementsView(league.cog, ADMIN_ID)
     report = [await league.review_channel.send("📋 Season 3 mid-season placements review")]
     prompt = await league.review_channel.send("Confirm these placements?", view=view)
-    evidence = (await take_fingerprint(league.bot, SEASON_ID)).areas
+    evidence = (
+        await take_fingerprint(league.db_path, SEASON_ID, drawing=league.bot.image_drawing)
+    ).areas
     async with get_connection(league.db_path) as db:
         await store_review_prompt(
             db, season_id=SEASON_ID, channel_id=REVIEW_CHANNEL, message_id=prompt.id,

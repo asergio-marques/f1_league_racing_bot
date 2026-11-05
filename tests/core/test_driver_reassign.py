@@ -28,6 +28,10 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.driver_service import DriverService
 from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
 
+FINGERPRINT_NOT_YET = (
+    "#283: take_fingerprint is not yet handed the database and the image module's drawing"
+)
+
 SERVER_ID = 2437
 A, B, C, D = "6201", "6202", "6203", "6204"
 ACTOR = 77
@@ -206,6 +210,7 @@ async def test_a_signup_in_progress_on_the_new_account_is_refused(tmp_path):
 # ── An open review ─────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=FINGERPRINT_NOT_YET)
 async def test_a_reassign_expires_an_open_placements_review(tmp_path):
     """E41: the review names the driver by the account the reassign replaces."""
     from leaguebot.core.services.season_fingerprint_service import take_fingerprint
@@ -218,14 +223,11 @@ async def test_a_reassign_expires_an_open_placements_review(tmp_path):
         )
         await db.commit()
     await _profile(db_path, A)
-    bot = SimpleNamespace(
-        db_path=db_path,
-        image_config_service=SimpleNamespace(get_config=AsyncMock(return_value=None)),
-    )
-    before = await take_fingerprint(bot, 1)
+    drawing = SimpleNamespace(artwork_signature=AsyncMock(return_value=[]))
+    before = await take_fingerprint(db_path, 1, drawing=drawing)
 
     await _reassign(db_path, A, B)
 
-    assert "the unsettled signups" in (await take_fingerprint(bot, 1)).differs_from(
-        before
-    )
+    assert "the unsettled signups" in (
+        await take_fingerprint(db_path, 1, drawing=drawing)
+    ).differs_from(before)

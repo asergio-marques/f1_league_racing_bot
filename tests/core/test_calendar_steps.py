@@ -52,6 +52,10 @@ from tests.support.season_league import (
     season_league,
 )
 
+FINGERPRINT_NOT_YET = (
+    "#283: take_fingerprint is not yet handed the database and the image module's drawing"
+)
+
 PRO_CALENDAR = DIVISIONS[PRO][3].calendar
 #: The link Discord gives Pro's old calendar, which a discarded deletion names.
 OLD_LINK = f"https://discord.test/{PRO_CALENDAR}/{CALENDAR_MESSAGE}"
@@ -146,7 +150,8 @@ async def test_a_calendar_post_refused_leaves_the_old_calendar_and_plans_no_dele
 
 @pytest.mark.parametrize("occasion", [
     pytest.param("round cancel", id="round cancel"),
-    pytest.param("season approval", id="season approval"),
+    pytest.param("season approval", id="season approval",
+                 marks=pytest.mark.xfail(strict=True, reason=FINGERPRINT_NOT_YET)),
 ])
 async def test_an_old_calendar_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
     tmp_path, monkeypatch, occasion,
@@ -247,6 +252,7 @@ async def test_the_calendar_replaced_is_read_when_the_job_runs(tmp_path):
     assert 6005 not in league.channel(PRO_CALENDAR).messages
 
 
+@pytest.mark.xfail(strict=True, reason=FINGERPRINT_NOT_YET)
 async def test_a_first_calendar_plans_no_delete(tmp_path, monkeypatch):
     """A season approved with no calendar posted before: its calendar is posted and its id saved,
     and nothing is planned to delete."""
@@ -347,7 +353,8 @@ async def _round_not_held(tmp_path: Any, monkeypatch: Any) -> tuple[Any, None]:
 
 @pytest.mark.parametrize(("start", "change", "divisions", "posted"), [
     pytest.param(_approved, "the ✅ Approve button of `/season placements-review`",
-                 ("Pro", "Am"), POSTED_AS_TEXT, id="the approval"),
+                 ("Pro", "Am"), POSTED_AS_TEXT, id="the approval",
+                 marks=pytest.mark.xfail(strict=True, reason=FINGERPRINT_NOT_YET)),
     pytest.param(_round_cancelled, "`/round cancel`", ("Pro",), POSTED_AS_TEXT,
                  id="a round's cancellation"),
     pytest.param(_round_not_held, "posting round 3's cancelled sessions", ("Pro",),

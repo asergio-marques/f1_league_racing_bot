@@ -27,6 +27,10 @@ from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     db_path,  # noqa: F401 — the fixture
 )
 
+FINGERPRINT_NOT_YET = (
+    "#283: take_fingerprint is not yet handed the database and the image module's drawing"
+)
+
 
 def _service(db_path) -> PlacementService:
     service = PlacementService(db_path)
@@ -573,6 +577,7 @@ async def _placing(tmp_path, monkeypatch):
     return league, press
 
 
+@pytest.mark.xfail(strict=True, reason=FINGERPRINT_NOT_YET)
 async def test_a_lineup_discord_refuses_after_a_confirmation_stops_the_queue_and_the_placements_stand(
     tmp_path, monkeypatch,
 ):
@@ -668,6 +673,7 @@ async def _prompt_rows(env) -> int:
         return (await cursor.fetchone())[0]
 
 
+@pytest.mark.xfail(strict=True, reason=FINGERPRINT_NOT_YET)
 async def test_a_stumbled_confirmation_still_clears_its_review(tmp_path, monkeypatch):
     """On `placing_league`, Admin's mid-season review stands in channel 610, the season unchanged
     since its report. Admin presses ✅ Confirm placements and the queue runs, but the
