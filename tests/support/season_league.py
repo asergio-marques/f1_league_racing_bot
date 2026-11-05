@@ -1466,3 +1466,20 @@ def draw_standings_pictures(monkeypatch: Any, tmp_path: Any) -> AsyncMock:
 def refuses_pictures(content: Any, kwargs: dict[str, Any]) -> bool:
     """A channel's `fail_when` refusing every send that carries a picture, and no text."""
     return bool(kwargs.get("file") or kwargs.get("files"))
+
+
+def notices_handed(league: SeasonLeague) -> list[tuple[str, dict[str, Any], bool]]:
+    """Sign a subscriber of the test's own up to the hook the modules' cancellation notices are
+    planned through (`cancellation_notices`), after the modules', planning nothing. The list it
+    gives fills as the hook is called, one entry for each division told: the scope, the division
+    as the cancellation hands it, and whether the connection handed is in the middle of a save."""
+    from leaguebot.core.models.cancellation import CancellationNotices
+
+    handed: list[tuple[str, dict[str, Any], bool]] = []
+
+    async def record(db: Any, scope: str, target: dict[str, Any]) -> CancellationNotices:
+        handed.append((scope, dict(target), db.in_transaction))
+        return CancellationNotices()
+
+    league.bot.cancellation_notices.subscribe(record)
+    return handed

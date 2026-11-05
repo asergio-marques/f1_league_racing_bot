@@ -59,6 +59,7 @@ from tests.support.season_league import (
     cancel_division,
     cancel_round,
     cancellation_changes,
+    notices_handed,
     ongoing_league,
     open_submission,
     removed_jobs,
@@ -922,6 +923,25 @@ async def test_each_enabled_module_says_its_piece_in_its_own_channel_as_a_job_of
         | ({"notify_results"} if not on["results"] else set())
     sent = [cid for kind, cid, _mid in league.events if kind == "send"]
     assert sent == told
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: the notices are not yet planned through the modules' hook"
+)
+async def test_the_save_hands_the_round_s_division_to_the_notices_hook(tmp_path):
+    """Round 3 (Silverstone) in Pro is cancelled. Inside the save, on the save's own connection,
+    the hook the modules' notices are planned through is called once, handed the round scope and
+    Pro as the save finds it: its id, name and season, and the round's number and track."""
+    league = await ongoing_league(tmp_path)
+    handed = notices_handed(league)
+    await _asked(league)
+
+    await _done(league)
+
+    assert handed == [("round", {
+        "division_id": PRO, "division_name": "Pro", "season_id": SEASON_ID,
+        "round_number": 3, "track_name": "Silverstone",
+    }, True)]
 
 
 async def test_a_channel_never_set_is_named_not_notified_and_stops_nothing(tmp_path):

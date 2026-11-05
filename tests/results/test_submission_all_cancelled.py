@@ -58,6 +58,7 @@ from tests.support.season_league import (
     SeasonLeague,
     accept_session,
     complete_season,
+    notices_handed,
     ongoing_league,
     open_submission,
     reply,
@@ -523,6 +524,28 @@ async def test_a_round_ending_cancelled_posts_the_round_cancelled_notices_in_che
     assert str(checkin.args[0]).startswith(f"<@&{PRO_ROLE}>")
     assert NOTICE_HEADING in str(checkin.args[0])
     assert not checkin.kwargs.get("silent")
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: the notices are not yet planned through the modules' hook"
+)
+async def test_a_round_ending_cancelled_hands_its_division_to_the_notices_hook(tmp_path):
+    """Round 3 ends cancelled when the admin types CANCELLED for its race. Inside the save that
+    ends it, on that save's own connection, the hook the modules' notices are planned through is
+    called once, handed the round scope and Pro's round 3: Pro's id, name and season, and the
+    round's number."""
+    league = await _league(tmp_path)
+    handed = notices_handed(league)
+
+    await _cancel_the_race(league)
+    await run_queue(league.bot)
+
+    assert [
+        (scope, {key: target[key] for key in ("division_id", "division_name", "season_id",
+                                               "round_number")}, in_save)
+        for scope, target, in_save in handed
+    ] == [("round", {"division_id": PRO, "division_name": "Pro", "season_id": SEASON_ID,
+                     "round_number": 3}, True)]
 
 
 async def test_a_round_ending_cancelled_leaves_its_call_and_forecast_until_the_day_after(

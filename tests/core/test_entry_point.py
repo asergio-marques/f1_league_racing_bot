@@ -123,6 +123,12 @@ _CANCELLATION_PARTS = (
      "close_called_off_on", "results' close"),
     ("rounds_called_off", "leaguebot.attendance.services.check_in_changes",
      "take_down_called_off_on", "attendance's take-down"),
+    ("cancellation_notices", "leaguebot.attendance.services.cancellation_notice",
+     "notices_on", "attendance's check-in notice"),
+    ("cancellation_notices", "leaguebot.weather.services.cancellation_notice",
+     "notices_on", "weather's forecast note"),
+    ("cancellation_notices", "leaguebot.results.services.cancellation_notice",
+     "notices_on", "results' results note"),
 )
 
 
@@ -262,6 +268,9 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the modules' notices are not yet signed up to the cancellations"
+)
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -269,8 +278,11 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     reviews results holds for staging, then the reasons signup awaits from an admin. A
     cancellation of rounds: what stands in its way, results' refusal of a round whose open
     submission has accepted results; the rounds called off, results' close of their empty
-    submissions, then attendance's take-down of their calls; and the steps a module plans,
-    results' deletion of a submission channel, then attendance's take-down of a call. A round's
+    submissions, then attendance's take-down of their calls; the notices posted for a division,
+    each handed the save's connection, the scope and the division told, attendance's check-in
+    notice, then weather's forecast note, then results' results note; and the steps a module
+    plans, results' deletion of a submission channel, attendance's take-down of a call, then
+    attendance's check-in notice, weather's forecast note and results' results note. A round's
     timing windows read: attendance's window, then weather's, each handed whether the round is
     being amended. A round amended: inside the save, weather's withdrawal of the forecasts the
     amendment withdraws, then attendance's reopening of its check-in; as the round is armed again,
@@ -305,7 +317,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
 
     import leaguebot.__main__ as entry_point
     from leaguebot.core.cogs.season_cog import SeasonCog
-    from leaguebot.core.services.cancellation_notice_service import SCOPE_ROUND
+    from leaguebot.core.models.cancellation import SCOPE_ROUND
     from leaguebot.results.services import penalty_wizard
     from leaguebot.signup.services import signup_views
     from leaguebot.weather.services import forecast_changes
@@ -320,9 +332,11 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         monkeypatch.setattr(module, name, spy)
         if hasattr(entry_point, name):
             monkeypatch.setattr(entry_point, name, spy)
+    cancellation_handed: list[tuple] = []
     for _hook, module_name, name, part in _CANCELLATION_PARTS:
-        async def awaited_spy(*_args, part=part, **_kwargs):
+        async def awaited_spy(*args, part=part, **_kwargs):
             called.append(part)
+            cancellation_handed.append(args)
         monkeypatch.setattr(importlib.import_module(module_name), name, awaited_spy,
                             raising=False)
     for module_name, name, part in _WINDOWS_PARTS:
@@ -379,8 +393,17 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     called.clear()
     await bot.rounds_called_off.call(None, SCOPE_ROUND, ())
     assert called == ["results' close", "attendance's take-down"]
+    called.clear()
+    cancellation_handed.clear()
+    told = {"division_id": 0, "division_name": "Pro", "season_id": 0}
+    await bot.cancellation_notices.call(None, SCOPE_ROUND, told)
+    assert called == [part for each, _module, _name, part in _CANCELLATION_PARTS
+                      if each == "cancellation_notices"]
+    # Each part is handed the save's connection, the scope, then the division told.
+    assert cancellation_handed == [(None, SCOPE_ROUND, told)] * len(called)
     assert [sorted(steps) for steps in bot.cancellation_steps.call()] == [
-        ["delete_channel"], ["take_down_call"]
+        ["delete_channel"], ["take_down_call"], ["notify_checkin"], ["notify_forecast"],
+        ["notify_results"],
     ]
     called.clear()
     await bot.round_windows_read.call(amending=True)

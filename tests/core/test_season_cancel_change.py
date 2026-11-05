@@ -74,6 +74,7 @@ from tests.support.season_league import (
     cancel_season,
     complete_season,
     driver_state,
+    notices_handed,
     ongoing_league,
     open_submission,
     profile_id,
@@ -1008,6 +1009,26 @@ async def test_the_jobs_run_in_order(tmp_path):
     assert set(between) <= {"signup_notice", "close_signup", "take_driver_role"}
     assert "discard_backup" not in names
     assert await _status(league) == "CANCELLED"
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: the notices are not yet planned through the modules' hook"
+)
+async def test_the_save_hands_each_running_division_to_the_notices_hook(tmp_path):
+    """The season is cancelled while Pro and Am are both still running. Inside the save, on the
+    save's own connection, the hook the modules' notices are planned through is called once for
+    each, in tier order, handed the season scope and the division: its id, name and season."""
+    league = await ongoing_league(tmp_path)
+    handed = notices_handed(league)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert handed == [
+        ("season", {"division_id": each, "division_name": DIVISIONS[each][0],
+                    "season_id": SEASON_ID}, True)
+        for each in (PRO, AM)
+    ]
 
 
 async def test_every_round_of_every_division_loses_its_timed_work_first(tmp_path):

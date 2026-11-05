@@ -57,6 +57,7 @@ from tests.support.season_league import (
     cancel_division,
     cancel_round,
     cancellation_changes,
+    notices_handed,
     ongoing_league,
     open_submission,
     profile_id,
@@ -575,6 +576,24 @@ async def test_a_subscriber_s_planned_steps_are_planned_in_the_save_in_order(tmp
     ]
     assert json.loads(jobs[2]["payload"])["channel_id"] == _ITS_CHANNEL
     assert [json.loads(job["payload"])["round_id"] for job in jobs[4:6]] == [R3, R4]
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: the notices are not yet planned through the modules' hook"
+)
+async def test_the_save_hands_the_division_to_the_notices_hook(tmp_path):
+    """Pro is cancelled. Inside the save, on the save's own connection, the hook the modules'
+    notices are planned through is called once, handed the division scope and Pro: its id, name
+    and season."""
+    league = await ongoing_league(tmp_path)
+    handed = notices_handed(league)
+    await _asked(league)
+
+    await _done(league)
+
+    assert handed == [
+        ("division", {"division_id": PRO, "division_name": "Pro", "season_id": SEASON_ID}, True)
+    ]
 
 
 async def test_every_round_of_the_division_loses_its_timed_work(tmp_path):
