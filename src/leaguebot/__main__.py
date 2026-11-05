@@ -861,7 +861,6 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         season_complete_change(
-            modules=bot.module_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,

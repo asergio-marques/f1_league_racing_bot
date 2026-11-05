@@ -125,7 +125,6 @@ from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.scheduler_service import SchedulerService
 
@@ -156,10 +155,8 @@ SEASON_CANCEL = "season.cancel"
 SEASON_ABORT = "season.abort"
 
 #: The job names this change adds to the shared ones, as the stop notice, the tests and
-#: ``StepView`` know them. The modules' own final posts (results' ``final_standings``,
-#: attendance's ``final_sheet``) are no longer named here: `season_complete_change` tells them
-#: apart from the shared jobs by which names `season_completed_steps` defined, not by a copy of
-#: their names.
+#: ``StepView`` know them. The modules' own final posts are told apart from the shared jobs by the
+#: names `season_completed_steps` defines.
 SETTLE = "settle"
 END = "end"
 CLOSE = "close"
@@ -498,7 +495,6 @@ def _not_done(
 
 def season_complete_change(
     *,
-    modules: "ModuleService",
     seasons: "SeasonService",
     scheduler: "SchedulerService",
     placement: "PlacementService",
@@ -516,9 +512,9 @@ def season_complete_change(
 ) -> ChangeType:
     """The change that completes the confirmed season; see the module.
 
-    The builder hands in *modules* (which of results and attendance are on), the *seasons*
-    service (the season the check reads), the *scheduler* (whose season-end job `settle` removes),
-    the *placement* service (which takes back roles), the hooks the modules sign up to
+    The builder hands in the *seasons* service (the season the check reads), the *scheduler*
+    (whose season-end job `settle` removes), the *placement* service (which takes back roles), the
+    hooks the modules sign up to
     (*final_round_read*, *season_completed*, *season_completed_steps*, *season_end_refused*,
     *season_end_closes*, *drivers_returned*, *driver_returned_jobs*, *season_end_steps*,
     *test_mode_flushed*, *drivers_deleted*) and the hook each driver deleted calls
