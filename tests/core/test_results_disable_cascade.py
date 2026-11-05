@@ -121,6 +121,11 @@ async def _make_cog(db_path: str, *, attendance_enabled: bool,
     bot.db_path = db_path
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
+    # The disable now reads every module's flag through the table (#283), not attendance's
+    # alone, so each other module's getter needs its own double too.
+    bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+    bot.module_service.is_signup_enabled = AsyncMock(return_value=False)
+    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     bot.output_router.post_log = AsyncMock(return_value=None)
     # A real one: the disable asks it whether a season is running, and then to close any round
     # only the results module could have moved (issue #167).
@@ -427,10 +432,6 @@ async def test_the_dependency_table_decides_the_cascade_and_its_warning(tmp_path
     assert updated_reply(interaction) == "✅ Results & Standings module disabled."
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the results disable hands the dependency table attendance's flag alone",
-)
 async def test_the_results_disable_hands_every_switched_on_module_to_the_table(
     tmp_path, monkeypatch
 ):

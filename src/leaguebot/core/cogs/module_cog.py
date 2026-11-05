@@ -32,6 +32,20 @@ _MODULE_CHOICES = [
     app_commands.Choice(name="images", value="images"),
 ]
 
+#: Every module `/module` offers, as the dependency table and `ModuleService`'s getters name
+#: them (`is_<name>_enabled`). Read generally so a second table entry (stewarding's) needs no
+#: change here.
+_MODULE_NAMES = ("weather", "signup", "results", "attendance", "images")
+
+#: How each module reads in a refusal, keyed as `_MODULE_NAMES` is.
+_MODULE_LABEL = {
+    "weather": "Weather module",
+    "signup": "Signup module",
+    "results": "Results & Standings module",
+    "attendance": "Attendance module",
+    "images": "Image module",
+}
+
 #: How the change that turns results off names itself in its lines.
 _RESULTS_OFF = "`/module disable results`"
 #: How the change that turns signup off names itself in the acknowledgement.
@@ -328,6 +342,35 @@ class ModuleCog(commands.Cog):
             return await _refused(FROZEN_FOR_COMPLETION_REFUSAL)
         return False
 
+    async def _enabled_modules(self) -> frozenset[str]:
+        """Every module `/module` offers that is switched on, read generally over the table's
+        names rather than naming one by its flag, so a second table entry needs no change
+        here."""
+        enabled = set()
+        for module in _MODULE_NAMES:
+            is_enabled = getattr(self.bot.module_service, f"is_{module}_enabled")
+            if await is_enabled():
+                enabled.add(module)
+        return frozenset(enabled)
+
+    async def _refuse_missing_dependency(
+        self, interaction: discord.Interaction, module: str
+    ) -> bool:
+        """Refuse enabling *module* while a module it `needs` is off, reading the dependency
+        table for every module rather than a rule of *module*'s own, so a second table entry
+        needs no change here. Empty for a module with no entry, as `needs` already is."""
+        for required in needs(module):
+            is_enabled = getattr(self.bot.module_service, f"is_{required}_enabled")
+            if not await is_enabled():
+                await refuse(
+                    interaction,
+                    f"❌ The {_MODULE_LABEL[module]} requires the {_MODULE_LABEL[required]} "
+                    "to be enabled first.",
+                    what=describe(interaction),
+                )
+                return True
+        return False
+
     # ── Weather enable ──────────────────────────────────────────────────
 
     async def _enable_weather(
@@ -336,6 +379,8 @@ class ModuleCog(commands.Cog):
         # A season whose placements are confirmed refuses the enable before this handler is
         # reached (issue #220), so there is never a running season to catch up on: its
         # forecast channels are checked, and its phases armed, when placements are confirmed.
+        if await self._refuse_missing_dependency(interaction, "weather"):
+            return
         # The switch is weather's own change on the queue: this asks for it and does nothing
         # else.
         await self.bot.change_queue.ask(
@@ -417,8 +462,7 @@ class ModuleCog(commands.Cog):
 
         # Warn before anything irreversible, and write nothing until the league confirms it.
         active_season = await self.bot.season_service.get_confirmed_season()
-        attendance_on = await self.bot.module_service.is_attendance_enabled()
-        enabled = {"attendance"} if attendance_on else set()
+        enabled = await self._enabled_modules()
         cascade_attendance = "attendance" in taken_down_with("results", enabled)
 
         if active_season is not None or cascade_attendance:
@@ -449,12 +493,7 @@ class ModuleCog(commands.Cog):
         self, interaction: discord.Interaction
     ) -> None:
         # 1. Guard: the dependency table's needs must be enabled first
-        if "results" in needs("attendance") and not await self.bot.module_service.is_results_enabled():
-            await refuse(
-                interaction,
-                "❌ The Attendance module requires the Results & Standings module to be enabled first.",
-                what=describe(interaction),
-            )
+        if await self._refuse_missing_dependency(interaction, "attendance"):
             return
 
         # 2. Guard: no ACTIVE season

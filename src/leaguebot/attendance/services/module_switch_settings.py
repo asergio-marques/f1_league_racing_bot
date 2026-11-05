@@ -22,6 +22,11 @@ that had moved on — while keeping the settings row, on the connection the save
 cascade from turning Results & Standings off calls the same method on its own save's connection
 (`results_off_change.py`), so the plain disable and the cascade leave attendance in the same
 state either way.
+
+**The switch-on's check reads the dependency table again as the change starts,** not only at the
+ask (`module_cog.py`'s stage refusal): asked while a module attendance `needs` is on, and run
+once it has gone off first, the save still finds it off and refuses, rather than switching
+attendance on behind what the league was told.
 """
 
 from __future__ import annotations
@@ -30,6 +35,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import AuditRecord, Verdict, module_off, module_on
+from leaguebot.core.models.module_dependencies import needs
 from leaguebot.core.services.change_queue import CheckContext
 from leaguebot.core.services.setting_change import Saved, Setting
 
@@ -41,6 +47,12 @@ if TYPE_CHECKING:
 
 _ENABLE_COMMAND = "/module enable attendance"
 _DISABLE_COMMAND = "/module disable attendance"
+
+#: How each module the dependency table may name reads in attendance's own refusal.
+_MODULE_LABEL = {
+    "attendance": "Attendance module",
+    "results": "Results & Standings module",
+}
 
 
 def _still_off(_payload: dict[str, Any]) -> str:
@@ -58,6 +70,13 @@ def module_on_attendance(*, modules: "ModuleService") -> Setting:
     async def check(_ctx: CheckContext) -> Verdict:
         if await modules.is_attendance_enabled():
             return Verdict.refuse("⚠️ Attendance module is already enabled.")
+        for required in needs("attendance"):
+            is_enabled = getattr(modules, f"is_{required}_enabled")
+            if not await is_enabled():
+                return Verdict.refuse(
+                    f"❌ The {_MODULE_LABEL['attendance']} requires the "
+                    f"{_MODULE_LABEL[required]} to be enabled first."
+                )
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:

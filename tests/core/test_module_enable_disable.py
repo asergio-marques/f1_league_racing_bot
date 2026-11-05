@@ -549,11 +549,6 @@ async def test_the_results_dependency_is_checked_before_the_season(tmp_path):
     assert await change_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the cog's enable refusal reads attendance's entry in the dependency table "
-    "alone",
-)
 async def test_the_dependency_table_decides_whether_attendance_may_be_enabled(tmp_path, monkeypatch):
     """The refusal reads the table in `core/models/` rather than a rule of its own, for every
     module: with attendance's entry taken out and a test-only entry making weather need results,
@@ -584,11 +579,6 @@ async def test_the_dependency_table_decides_whether_attendance_may_be_enabled(tm
     assert await _weather_flag(league.db_path) == 0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: /module enable attendance writes at once, so results going off before it "
-    "runs is not checked again",
-)
 async def test_an_attendance_enable_run_after_results_went_off_is_refused(tmp_path):
     """Asked while results is on, and run once results has gone off: the change's own check
     reads the dependency again as it starts, so attendance stays off, nothing is audited, and the
