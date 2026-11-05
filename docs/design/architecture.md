@@ -1077,8 +1077,8 @@ to it would switch off the one failure path for every command.
    because a capacity check that cannot run must not block a placement (its docstring says so); and
    the image module's calendar gate (`ImageDrawing.calendar_wanted`) is a stated exception likewise:
    its catch-all puts the error in the host's log alone, with no line to the log channel, and
-   answers that the league does not draw its calendar, so the text goes out, because a gate that
-   cannot be read must not lose a league its calendar (its docstring says so);
+   answers that the league does not draw its calendar, so the text calendar goes out, because a
+   gate that cannot be read must not lose a league its calendar (its docstring says so);
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
