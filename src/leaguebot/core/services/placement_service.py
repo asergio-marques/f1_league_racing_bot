@@ -136,9 +136,9 @@ class PlacementService:
         #: textual lineup is unaffected by its absence — which is the point: without a bot
         #: this service behaves exactly as it did before 038.
         self._bot = bot
-        #: Core's answer to its own drawing question (`image_drawing.ImageDrawing`), the
-        #: builder's implementation handed in, as results is handed attendance's. The four
-        #: capacity guards ask it rather than reach image's services through the bot. None in
+        #: The image module's answers to core's drawing protocol (`image_drawing.ImageDrawing`),
+        #: handed in by the builder as results is handed attendance's. The four capacity
+        #: guards ask it rather than reach image's services through the bot. None in
         #: every unit test that exercises placement alone: no guard asks anything, and a test
         #: roster of any size is accepted.
         self._drawing = drawing
@@ -697,11 +697,15 @@ class PlacementService:
         return None if row is None else bool(row["is_reserve"])
 
     async def _ask_drawing(
-        self, method: str, count: Callable[[], Awaitable[int | None]]
+        self,
+        guard: str,
+        count: Callable[[], Awaitable[int | None]],
+        ask: Callable[[ImageDrawing, int], Awaitable[CapacityProblem | None]],
     ) -> CapacityProblem | None:
-        """Read the guard's own count with *count*, ask the image module's handed drawing
-        *method* of it, and hand back what it says, or None where nothing is handed, the
-        count reports the guard does not apply (None), or either step could not run.
+        """Read the guard's own count with *count*, *ask* the image module's handed drawing
+        about it, and hand back what it says, or None where nothing is handed, the count
+        reports the guard does not apply (None), or either step could not run. *guard* names
+        the guard in the host's log.
 
         **The capacity guards' one catch.** Reading the seats and asking the drawing are one
         guard, not two: a fault in either must not block a placement, only a genuine
@@ -715,9 +719,9 @@ class PlacementService:
             seated = await count()
             if seated is None:
                 return None
-            return await getattr(self._drawing, method)(seated)
+            return await ask(self._drawing, seated)
         except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
-            log.error("%s could not run: %s", method, exc, exc_info=True)
+            log.error("%s capacity guard could not run: %s", guard, exc, exc_info=True)
             return None
 
     async def _guard_reserve_capacity(
@@ -762,7 +766,10 @@ class PlacementService:
                 ).fetchone()
             return ((row["seated"] if row else 0) or 0) + adding
 
-        problem = await self._ask_drawing("reserve_capacity_problem", _reserves_seated)
+        problem = await self._ask_drawing(
+            "reserve", _reserves_seated,
+            lambda drawing, seated: drawing.reserve_capacity_problem(seated),
+        )
         if problem is not None:
             raise ValueError(
                 f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
@@ -807,7 +814,10 @@ class PlacementService:
                 ).fetchone()
             return ((row["seated"] if row else 0) or 0) + adding
 
-        problem = await self._ask_drawing("sheet_capacity_problem", _drivers_seated)
+        problem = await self._ask_drawing(
+            "sheet", _drivers_seated,
+            lambda drawing, seated: drawing.sheet_capacity_problem(seated),
+        )
         if problem is not None:
             raise ValueError(
                 f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
@@ -860,7 +870,10 @@ class PlacementService:
                 ).fetchone()
             return ((row["seated"] if row else 0) or 0) + adding
 
-        problem = await self._ask_drawing("standings_capacity_problem", _classified_seated)
+        problem = await self._ask_drawing(
+            "standings", _classified_seated,
+            lambda drawing, seated: drawing.standings_capacity_problem(seated),
+        )
         if problem is not None:
             raise ValueError(
                 f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
@@ -937,7 +950,10 @@ class PlacementService:
                 row = await cursor.fetchone()
             return ((row["seated"] if row else 0) or 0) + 1
 
-        problem = await self._ask_drawing("declared_capacity_problem", _division_seated)
+        problem = await self._ask_drawing(
+            "declared", _division_seated,
+            lambda drawing, seated: drawing.declared_capacity_problem(seated),
+        )
         if problem is not None:
             raise ValueError(f"{problem.problem}. {problem.remedy}")
 

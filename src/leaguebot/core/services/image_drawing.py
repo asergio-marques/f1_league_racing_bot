@@ -1,14 +1,13 @@
 """What core asks of the image module.
 
-`ImageDrawing` is the protocol the builder hands `PlacementService` and its other callers, so
-that core imports nothing of the image module: callers call these methods and the image module
-implements them (`leaguebot.image.services.image_drawing.ImageDrawing`). It is attached to the
+`ImageDrawing` is the protocol the builder hands `PlacementService`, so that core imports
+nothing of the image module: core calls these methods and the image module implements them (`leaguebot.image.services.image_drawing.ImageDrawing`). It is attached to the
 bot as `bot.image_drawing` and declared on `LeagueBot`, as results declares
 `AttendanceAfterReview` for attendance (architecture.md, "How modules and core fit together").
 
-Its first part is the four placement capacity questions. Each answers a `CapacityProblem` — the
-problem as a sentence with no final stop, and the remedy naming `/images config toggle` or
-disabling the module — or `None` where nothing is wrong. Core joins the two into its own
+It holds the four placement capacity questions. Each answers a `CapacityProblem` — the problem
+as a sentence with no final stop, and the image module's own words for what to do about it — or
+`None` where nothing is wrong. Core joins the two into its own
 refusal, adding what is core's own to say.
 """
 from __future__ import annotations
@@ -31,8 +30,7 @@ class CapacityProblem:
 
 
 class ImageDrawing(Protocol):
-    """The image module's answers to what core asks of it in order to place a driver, run a
-    calendar, post a lineup, sign artwork and draw a portrait."""
+    """The image module's answers to what core asks of it in order to place a driver."""
 
     async def reserve_capacity_problem(self, reserves: int) -> CapacityProblem | None:
         """Whether *reserves* reserve drivers would outgrow the configured lineup template's
