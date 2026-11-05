@@ -1296,18 +1296,21 @@ async def build(settings: Settings) -> LeagueBot:
     # Core's drawing protocol, image's own implementation, made once and declared on the
     # bot so that core reaches it without importing this module (architecture.md, "How
     # modules and core fit together"), as results reaches attendance through its own hook.
-    # The renderer draws the calendar's picture; the log writer is where its notices are
-    # reported, in one message, whichever change posts the calendar (#283).
+    # The renderer draws the calendar's and the lineup's pictures; the log writer is where
+    # their notices are reported, in one message, whichever change posts one (#283). The
+    # database path is what the lineup's drawing reads beyond the image module's own
+    # services: the division, its committed seats, and whether nationality is collected.
     bot.image_drawing = ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
         renderer=bot.image_render_service, post_log=bot.output_router.post_log,
+        db_path=settings.db_path,
     )
 
     from leaguebot.core.services.placement_service import PlacementService
-    # The bot is handed over so the lineup refresh can reach the image module (038). The
-    # textual lineup does not use it. The drawing is handed so the capacity guards can ask
-    # image's answer without reaching the bot for it (#283).
-    bot.placement_service = PlacementService(settings.db_path, bot, drawing=bot.image_drawing)
+    # The drawing is handed so the capacity guards and the lineup refresh can ask image's
+    # answer without a bot of their own (#283): PlacementService posts through the guild it is
+    # given, and reaches the image module only through this drawing.
+    bot.placement_service = PlacementService(settings.db_path, drawing=bot.image_drawing)
 
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.signup.services.wizard_service import WizardService

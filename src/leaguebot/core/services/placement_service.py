@@ -22,7 +22,6 @@ from leaguebot.core.services.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.signup.models.signup_module import AvailabilitySlot
 from leaguebot.core.models.team import TeamRoleConfig
-from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -130,17 +129,10 @@ class PlacementService:
     def __init__(
         self,
         db_path: str,
-        bot: LeagueBot | None = None,
         *,
         drawing: ImageDrawing | None = None,
     ) -> None:
         self._db_path = db_path
-        #: The bot, where one is available. Needed only by the lineup **image** path
-        #: (``_refresh_lineup_post``), which reads the module toggles and the render service
-        #: through it. None in every unit test that exercises placement alone, and the
-        #: textual lineup is unaffected by its absence — which is the point: without a bot
-        #: this service behaves exactly as it did before 038.
-        self._bot = bot
         #: The image module's answers to core's drawing protocol (`image_drawing.ImageDrawing`),
         #: handed in by the builder as results is handed attendance's. The four capacity
         #: guards ask it rather than reach image's services through the bot. None in
