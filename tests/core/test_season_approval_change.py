@@ -1034,16 +1034,17 @@ async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monk
 
 
 @pytest.mark.xfail(strict=True, reason=(
-    "#283: the approval words a calendar's fallback in its reply and repeats a calendar's notices "
-    "in its log"
+    "#283: the approval's reply reprints its log record of a calendar's fallback and notices, "
+    "and its log repeats the notices the drawing has already reported"
 ))
 async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallback(
     tmp_path, monkeypatch,
 ):
     """Season 3 approved with its calendars drawn as pictures: Pro's drawing fails, and Am's draws
-    with a notice. The reply's "Calendar images" section names Am's notice and not Pro's
-    fallback, which is its job's own line (Constitution XIV.4); no line of the approval's own
-    repeats either, the render reporting its notices itself."""
+    with a notice. The reply ends in a "Calendar images" section naming Am's notice alone, and not
+    Pro's fallback, which is its job's own line (Constitution XIV.4). No line of the approval's
+    own in the log channel names the notice or the fallback: the drawing reports its notices
+    itself (`test_calendar_post_service.py`), and the job its fallback."""
     from leaguebot.core.services import calendar_post_service
 
     league = await _league_for(tmp_path, monkeypatch, images=True)
@@ -1063,13 +1064,11 @@ async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallb
 
     await run_queue(league.bot)
 
-    assert "⚠️ **Calendar images**" in reply(press)
-    assert f"Am: {notice}" in reply(press)
+    assert reply(press).endswith(f"\n\n⚠️ **Calendar images**\n  • Am: {notice}"), reply(press)
     assert "the template has no rows" not in reply(press)
-    assert "Fell back" not in reply(press)
-    assert not [line for line in _log_lines(league) if notice in line]
     assert not [line for line in _log_lines(league)
-                if "| /season placements-review |" in line and "the template has no rows" in line]
+                if "| /season placements-review |" in line
+                and (notice in line or "the template has no rows" in line)]
 
 
 #: Each post retried: its job, its channel, the modules it needs, and where it reaches for its
