@@ -137,8 +137,8 @@ ignore_imports =
 
 # The dependency table (architecture.md, "How modules and core fit together"): attendance needs
 # results, and every module may ask the image module to draw its posts. No other module uses
-# another. It is written here by hand until #283 writes it into the code, where turning a module
-# on or off reads it.
+# another. The table itself lives in code, at core/models/module_dependencies.py, where turning
+# a module on or off reads it; test_import_contracts.py holds the contracts below to it.
 
 [importlinter:contract:results-uses-no-other-module-but-image]
 name = Results uses no other module but image
