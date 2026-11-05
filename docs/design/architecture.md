@@ -1078,16 +1078,16 @@ to it would switch off the one failure path for every command.
    image module's calendar gate (`ImageDrawing.calendar_wanted`) is a stated exception likewise:
    its catch-all puts the error in the host's log alone, with no line to the log channel, and
    answers that the league does not draw its calendar, so the text calendar goes out, because a
-   gate that cannot be read must not lose a league its calendar (its docstring says so); and the
-   image module's lineup gate (`ImageDrawing.lineup_wanted`) is a stated exception beside it: its
+   gate that cannot be read must not lose a league its calendar (its docstring says so); the image
+   module's lineup gate (`ImageDrawing.lineup_wanted`) is a stated exception beside it: its
    catch-all puts the error in the host's log alone, with no line to the log channel, and answers
    that the league does not draw its lineup, so the text lineup goes out, because a gate that
-   cannot be read must not lose a league its lineup (its docstring says so); and the image
-   module's artwork signature (`ImageDrawing.artwork_signature`) is a stated exception too: its
-   catch-all signs a configured directory it cannot resolve as `[column, value, "unresolvable"]`,
-   with a warning to the host's log alone, and signs the rest all the same, because a fault of any
-   other kind would empty the whole fingerprint and the review would read as changed in every area
-   (its docstring says so);
+   cannot be read must not lose a league its lineup (its docstring says so); and the image module's
+   artwork signature (`ImageDrawing.artwork_signature`) is a stated exception too: its catch-all
+   signs a configured directory it cannot resolve as `[column, value, "unresolvable"]`, with a
+   warning to the host's log alone, and signs the rest all the same, because a fault that escaped
+   it would empty the whole fingerprint and the review would read as changed in every area (its
+   docstring says so);
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
