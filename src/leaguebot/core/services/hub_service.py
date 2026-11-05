@@ -327,7 +327,7 @@ REFRESH_HUB = "refresh_hub"
 def hub_refresh_after(command: str) -> After:
     """The `After` step a module switch plans once its save has changed something: it does no
     work of its own and only asks `HUB_REFRESH` as its follow-on, naming *command*
-    ("`/module enable weather`"), so the panel is brought up to date once, after the switch has
+    ("/module enable weather"), so the panel is brought up to date once, after the switch has
     run, rather than by the command whatever the switch becomes of it.
 
     This step cannot fail — it asks for a change rather than making one — so its *fault_reply*

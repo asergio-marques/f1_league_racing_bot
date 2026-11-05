@@ -1,6 +1,6 @@
 """One settings change, built from a `Setting`: the value, its audit entry and its line, saved together (bar a step that carries the line).
 
-Every settings command of results, weather, attendance and images declares a `Setting`, and
+Every settings command of results, weather, attendance, images and signup declares a `Setting`, and
 `setting_change` turns it into a `ChangeType` for the change queue (`change_queue`), so that the
 line, the audit entry's being written, the answer for a value already held and the answer for a
 fault are decided in one place (each setting's save builds the audit record itself).
