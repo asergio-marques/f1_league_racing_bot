@@ -312,89 +312,210 @@ async def test_a_weather_disable_whose_jobs_cannot_be_removed_leaves_weather_off
 # ---------------------------------------------------------------------------
 # Results & Standings
 # ---------------------------------------------------------------------------
+#
+# Results' switch-on is results' own change on the change queue (#283, S11d): `/module enable
+# results` keeps the stage refusals and asks `module.on:results`, the member is acknowledged at
+# once, and the queue carries it out. Each test drives the command's handler on the bot the entry
+# point builds, with the real queue and "now" pinned, and runs the queue.
+
+#: Why a test of results' switch-on fails before it moves onto the queue.
+RESULTS_ON_THE_QUEUE = (
+    "#283: /module enable results is not yet acknowledged as results' change on the queue"
+)
+#: Why a test of attendance's switch fails before it moves onto the queue.
+ATTENDANCE_ON_THE_QUEUE = (
+    "#283: /module enable attendance is not yet acknowledged as attendance's change on the queue"
+)
 
 
-async def test_results_is_enabled(tmp_path):
-    db_path = await _make_db(tmp_path)
-    interaction = _interaction()
+async def _league(tmp_path, *modules: str):
+    """A league whose settings run on the queue, with *modules* on and every other module off,
+    and the module cog over its bot."""
+    from tests.support.settings_league import settings_league
 
-    await _make_cog(db_path)._enable_results(interaction)
+    league = await settings_league(tmp_path, modules=modules)
+    return league, ModuleCog(league.bot)
 
+
+async def _confirm_a_season(db_path: str) -> None:
+    """A season whose placements are confirmed: ACTIVE, the status every stage after the first
+    confirmation holds."""
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT module_enabled FROM results_module_config",
+        await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-09-17', 'ACTIVE', 5)"
         )
-        assert (await cursor.fetchone())["module_enabled"] == 1
+        await db.commit()
+
+
+async def _flag(db_path: str, table: str) -> int | None:
+    """A module's switch on its own configuration table, None where no row holds it."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(f"SELECT module_enabled FROM {table}")
+        row = await cursor.fetchone()
+    return None if row is None else row["module_enabled"]
+
+
+def _refused_line(reason: str) -> str:
+    """The log channel's line for `/module enable` refused for Admin, because of *reason*."""
+    return f"⛔ `/module enable` refused for {NAMED} — {reason}"
+
+
+#: The refusal of an attendance enable while results is off, as the member reads it.
+NEEDS_RESULTS = (
+    "❌ The Attendance module requires the Results & Standings module to be enabled first."
+)
+
+
+@pytest.mark.xfail(strict=True, reason=RESULTS_ON_THE_QUEUE)
+async def test_results_is_enabled(tmp_path):
+    """The member is acknowledged at once, and once the change has run the module is on and
+    audited, and the reply and the Success line keep today's words."""
+    from tests.support.change_queue import acknowledgement, run_queue
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog = await _league(tmp_path)
+    asked = _asked(league, "enable")
+
+    await cog._enable_results(asked)
+    assert acknowledgement(asked).startswith("⏳ Turning Results & Standings on. ")
+    await run_queue(league.bot)
+
+    assert await _flag(league.db_path, "results_module_config") == 1
+    [entry] = await _audit(league.db_path)
+    assert entry["change_type"] == "MODULE_ENABLE"
+    assert json.loads(entry["new_value"])["module"] == "results"
+    assert last_said(asked) == "✅ Results & Standings module enabled."
+    assert await log_lines(league) == [f"{NAMED} | /module enable results | Success"]
 
 
 async def test_results_cannot_be_enabled_mid_season(tmp_path):
     """FR-003. It changes how a round is scored, so the remaining rounds would be scored
-    by different rules than the ones already run."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, season=_season())
-    interaction = _interaction()
+    by different rules than the ones already run. Refused at once: nothing is queued and nothing
+    audited, and the refusal reaches the log channel as one line in the standard form."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._enable_results(interaction)
+    league, cog = await _league(tmp_path)
+    await _confirm_a_season(league.db_path)
+    asked = _asked(league, "enable")
 
-    assert "once a season's placements are confirmed" in _replied(interaction)
-    assert await _audit(db_path) == []
+    await cog._enable_results(asked)
+
+    refusal = "Results & Standings module cannot be enabled once a season's placements are confirmed."
+    assert last_said(asked) == f"❌ {refusal}"
+    assert await change_rows(league.db_path) == []
+    assert await _audit(league.db_path) == []
+    assert await log_lines(league) == [_refused_line(refusal)]
 
 
 async def test_enabling_results_twice_does_no_work(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, results_enabled=True)
-    interaction = _interaction()
+    """Refused at once: nothing is queued and nothing audited, and the refusal reaches the log
+    channel as one line in the standard form."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._enable_results(interaction)
+    league, cog = await _league(tmp_path, "results")
+    asked = _asked(league, "enable")
 
-    assert "already enabled" in _replied(interaction)
-    assert await _audit(db_path) == []
+    await cog._enable_results(asked)
+
+    assert last_said(asked) == "⚠️ Results & Standings module is already enabled."
+    assert await change_rows(league.db_path) == []
+    assert await _audit(league.db_path) == []
+    assert await log_lines(league) == [
+        _refused_line("Results & Standings module is already enabled.")
+    ]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: a failed /module enable results is not caught and answered 'The module is "
+    "still off'",
+)
+async def test_a_results_enable_that_cannot_be_written_says_the_module_is_still_off(tmp_path):
+    """The flag and its audit entry are one save, so a fault at the audit leaves the module off.
+    The member gets the standard failure reply, saying the module is still off and what to do
+    next, in place of today's 'It may have been partly done', with no error text; the log channel
+    gets the one failure line, and never a success."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog = await _league(tmp_path)
+    await _refuse_the_audit(league.db_path)
+    asked = _asked(league, "enable")
+
+    await cog._enable_results(asked)
+    await run_queue(league.bot)
+
+    assert await _flag(league.db_path, "results_module_config") in (None, 0)
+    assert last_said(asked) == (
+        "❌ `/module enable` stopped on a fault in the bot, not on anything you entered, and did "
+        "not finish. The module is still off. Run `/module enable results` again once the fault "
+        "is cleared. The fault is recorded in the log channel."
+    )
+    assert await log_lines(league) == [
+        f"❌ `/module enable` failed for {NAMED} — IntegrityError. The details are in the host's log."
+    ]
 
 
 # ---------------------------------------------------------------------------
 # Attendance — the dependency
 # ---------------------------------------------------------------------------
+#
+# Attendance's switch-on is attendance's own change on the change queue (#283, S11d): `/module
+# enable attendance` keeps the dependency and stage refusals and asks `module.on:attendance`, the
+# member is acknowledged at once, and the queue carries it out.
 
 
 async def test_attendance_requires_results_first(tmp_path):
     """Attendance points are distributed after post-race penalties are approved; with
-    Results off there is no approval to hang them on."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, results_enabled=False)
-    interaction = _interaction()
+    Results off there is no approval to hang them on. Refused at once: nothing is queued and
+    nothing audited, and the refusal reaches the log channel as one line in the standard form."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._enable_attendance(interaction)
+    league, cog = await _league(tmp_path)
+    asked = _asked(league, "enable")
 
-    assert _replied(interaction) == (
-        "❌ The Attendance module requires the Results & Standings module to be enabled first."
-    )
-    assert await _audit(db_path) == []
+    await cog._enable_attendance(asked)
+
+    assert last_said(asked) == NEEDS_RESULTS
+    assert await change_rows(league.db_path) == []
+    assert await _audit(league.db_path) == []
+    assert await log_lines(league) == [_refused_line(NEEDS_RESULTS.removeprefix("❌ "))]
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_ON_THE_QUEUE)
 async def test_attendance_is_enabled_once_results_is(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, results_enabled=True)
-    interaction = _interaction()
+    """The member is acknowledged at once, and once the change has run the module is on, and
+    the reply and the Success line keep today's words."""
+    from tests.support.change_queue import acknowledgement, run_queue
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._enable_attendance(interaction)
+    league, cog = await _league(tmp_path, "results")
+    asked = _asked(league, "enable")
 
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT module_enabled FROM attendance_config",
-        )
-        assert (await cursor.fetchone())["module_enabled"] == 1
+    await cog._enable_attendance(asked)
+    assert acknowledgement(asked).startswith("⏳ Turning the attendance module on. ")
+    await run_queue(league.bot)
+
+    assert await _flag(league.db_path, "attendance_config") == 1
+    assert last_said(asked) == "✅ Attendance module enabled."
+    assert await log_lines(league) == [f"{NAMED} | /module enable attendance | Success"]
 
 
 async def test_enabling_attendance_writes_the_packaged_defaults(tmp_path):
     """The league can drive the module the moment it is on, without a setup command that
     does not exist. Both sanction thresholds start unset — a league opts into them."""
-    db_path = await _make_db(tmp_path)
+    from tests.support.change_queue import run_queue
 
-    await _make_cog(db_path, results_enabled=True)._enable_attendance(
-        _interaction()
-    )
+    league, cog = await _league(tmp_path, "results")
 
-    async with get_connection(db_path) as db:
+    await cog._enable_attendance(_asked(league, "enable"))
+    await run_queue(league.bot)
+
+    async with get_connection(league.db_path) as db:
         cursor = await db.execute(
             "SELECT rsvp_notice_days, rsvp_last_notice_hours, rsvp_deadline_hours, "
             "no_rsvp_penalty, absent_penalty, no_show_penalty, "
@@ -408,64 +529,132 @@ async def test_enabling_attendance_writes_the_packaged_defaults(tmp_path):
 
 
 async def test_attendance_cannot_be_enabled_mid_season(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, results_enabled=True, season=_season())
-    interaction = _interaction()
+    """Refused at once: nothing is queued and nothing audited, and the refusal reaches the log
+    channel as one line in the standard form."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._enable_attendance(interaction)
+    league, cog = await _league(tmp_path, "results")
+    await _confirm_a_season(league.db_path)
+    asked = _asked(league, "enable")
 
-    assert "once a season's placements are confirmed" in _replied(interaction)
+    await cog._enable_attendance(asked)
+
+    refusal = "Attendance module cannot be enabled once a season's placements are confirmed."
+    assert last_said(asked) == f"❌ {refusal}"
+    assert await change_rows(league.db_path) == []
+    assert await _audit(league.db_path) == []
+    assert await log_lines(league) == [_refused_line(refusal)]
 
 
 async def test_the_results_dependency_is_checked_before_the_season(tmp_path):
-    """A league with neither in place is told about the dependency, which is the thing
-    they have to fix first — being told about the season would send them the wrong way."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, results_enabled=False, season=_season())
-    interaction = _interaction()
+    """Within attendance's own handler, a league with neither in place is told about the
+    dependency, which is the thing they have to fix first — being told about the season would
+    send them the wrong way. Through `/module enable` itself, a season whose placements are
+    confirmed is refused first by the stage check every module shares
+    (`test_module_stage_gates.py`), before this handler is reached."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said
 
-    await cog._enable_attendance(interaction)
+    league, cog = await _league(tmp_path)
+    await _confirm_a_season(league.db_path)
+    asked = _asked(league, "enable")
 
-    assert "requires the Results & Standings module" in _replied(interaction)
+    await cog._enable_attendance(asked)
+
+    assert last_said(asked) == NEEDS_RESULTS
+    assert await change_rows(league.db_path) == []
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the cog's enable refusal reads attendance's entry in the dependency table "
+    "alone",
+)
 async def test_the_dependency_table_decides_whether_attendance_may_be_enabled(tmp_path, monkeypatch):
-    """The refusal reads the table in `core/models/` rather than a rule of its own: with the table
-    emptied, attendance is switched on while results is off."""
+    """The refusal reads the table in `core/models/` rather than a rule of its own, for every
+    module: with attendance's entry taken out and a test-only entry making weather need results,
+    attendance is switched on while results is off, and `/module enable weather` is refused
+    while results is off, naming the module it needs, and weather stays off."""
     from leaguebot.core.models import module_dependencies
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import last_said
 
-    monkeypatch.setattr(module_dependencies, "NEEDS", {})
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, results_enabled=False)
-    interaction = _interaction()
+    monkeypatch.setattr(
+        module_dependencies, "NEEDS", {"weather": frozenset({"results"})}
+    )
+    league, cog = await _league(tmp_path)
+    asked = _asked(league, "enable")
 
-    await cog._enable_attendance(interaction)
+    await cog._enable_attendance(asked)
+    await run_queue(league.bot)
 
-    assert "requires the Results & Standings module" not in _replied(interaction)
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT module_enabled FROM attendance_config")
-        assert (await cursor.fetchone())["module_enabled"] == 1
+    assert last_said(asked) == "✅ Attendance module enabled."
+    assert await _flag(league.db_path, "attendance_config") == 1
+
+    weather = _asked(league, "enable")
+    choice = SimpleNamespace(name="weather", value="weather")
+    await undecorate(ModuleCog.enable)(cog, weather, choice)
+    await run_queue(league.bot)
+
+    assert "requires the Results & Standings module to be enabled first." in last_said(weather)
+    assert await _weather_flag(league.db_path) == 0
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: /module enable attendance writes at once, so results going off before it "
+    "runs is not checked again",
+)
+async def test_an_attendance_enable_run_after_results_went_off_is_refused(tmp_path):
+    """Asked while results is on, and run once results has gone off: the change's own check
+    reads the dependency again as it starts, so attendance stays off, nothing is audited, and the
+    member's reply becomes the dependency refusal, which reaches the log channel."""
+    from tests.support.change_queue import acknowledgement, run_queue
+    from tests.support.settings_league import last_said, log_lines, switch
+
+    league, cog = await _league(tmp_path, "results")
+    asked = _asked(league, "enable")
+
+    await cog._enable_attendance(asked)
+    assert acknowledgement(asked).startswith("⏳ Turning the attendance module on. ")
+    await switch(league.bot, ("results",), on=False)
+    await run_queue(league.bot)
+
+    assert await _flag(league.db_path, "attendance_config") in (None, 0)
+    assert await _audit(league.db_path) == []
+    assert last_said(asked) == NEEDS_RESULTS
+    assert _refused_line(NEEDS_RESULTS.removeprefix("❌ ")) in await log_lines(league)
 
 
 async def test_enabling_attendance_twice_does_no_work(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, results_enabled=True, attendance_enabled=True)
-    interaction = _interaction()
+    """Refused at once: nothing is queued and nothing audited, and the refusal reaches the log
+    channel as one line in the standard form."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._enable_attendance(interaction)
+    league, cog = await _league(tmp_path, "results", "attendance")
+    asked = _asked(league, "enable")
 
-    assert "already enabled" in _replied(interaction)
-    assert await _audit(db_path) == []
+    await cog._enable_attendance(asked)
+
+    assert last_said(asked) == "⚠️ Attendance module is already enabled."
+    assert await change_rows(league.db_path) == []
+    assert await _audit(league.db_path) == []
+    assert await log_lines(league) == [_refused_line("Attendance module is already enabled.")]
 
 
 async def test_enabling_attendance_is_audited(tmp_path):
-    db_path = await _make_db(tmp_path)
+    from tests.support.change_queue import run_queue
 
-    await _make_cog(db_path, results_enabled=True)._enable_attendance(
-        _interaction()
-    )
+    league, cog = await _league(tmp_path, "results")
 
-    assert (await _audit(db_path))[0]["change_type"] == "ATTENDANCE_MODULE_ENABLED"
+    await cog._enable_attendance(_asked(league, "enable"))
+    await run_queue(league.bot)
+
+    assert [entry["change_type"] for entry in await _audit(league.db_path)] == [
+        "ATTENDANCE_MODULE_ENABLED"
+    ]
 
 
 async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path):
@@ -473,25 +662,25 @@ async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path
     windows, penalties and thresholds finds the packaged ones after turning the module off
     and on again, through the commands themselves."""
     from leaguebot.attendance.services.attendance_service import AttendanceService
-    from leaguebot.core.services.module_service import ModuleService
+    from tests.support.change_queue import run_queue
 
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, results_enabled=True)
-    cog.bot.module_service.is_attendance_enabled = ModuleService(db_path).is_attendance_enabled
-    cog.bot.attendance_service = AttendanceService(db_path)
+    league, cog = await _league(tmp_path, "results")
 
-    await cog._enable_attendance(_interaction())
-    async with get_connection(db_path) as db:
+    await cog._enable_attendance(_asked(league, "enable"))
+    await run_queue(league.bot)
+    async with get_connection(league.db_path) as db:
         await db.execute(
             "UPDATE attendance_config SET rsvp_notice_days = 7, rsvp_last_notice_hours = 48, "
             "rsvp_deadline_hours = 6, no_rsvp_penalty = 2, absent_penalty = 3, "
             "no_show_penalty = 4, autoreserve_threshold = 5, autosack_threshold = 9"
         )
         await db.commit()
-    await cog._disable_attendance(_interaction())
-    await cog._enable_attendance(_interaction())
+    await cog._disable_attendance(_asked(league, "disable"))
+    await run_queue(league.bot)
+    await cog._enable_attendance(_asked(league, "enable"))
+    await run_queue(league.bot)
 
-    cfg = await AttendanceService(db_path).get_config()
+    cfg = await AttendanceService(league.db_path).get_config()
     assert cfg.module_enabled is True
     assert (cfg.rsvp_notice_days, cfg.rsvp_last_notice_hours, cfg.rsvp_deadline_hours) == (5, 24, 2)
     assert (cfg.no_rsvp_penalty, cfg.absent_penalty, cfg.no_show_penalty) == (1, 1, 1)
@@ -502,36 +691,31 @@ async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path
 async def test_an_attendance_enable_that_cannot_be_audited_leaves_the_module_off(tmp_path):
     """The configuration and its audit entry are one write: where the second fails, the
     first is not kept either, and the league is told, in the standard failure reply, that the
-    module is still off and what to do next. The error's own text is not shown."""
-    db_path = await _make_db(tmp_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "CREATE TRIGGER refuse_the_audit BEFORE INSERT ON audit_entries "
-            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
-        )
-        await db.commit()
-    cog = _make_cog(db_path, results_enabled=True)
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "module enable"
+    module is still off and what to do next. The error's own text is not shown, and the log
+    channel gets the one failure line, naming the kind of fault and never its words."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._enable_attendance(interaction)
+    league, cog = await _league(tmp_path, "results")
+    await _refuse_the_audit(league.db_path)
+    asked = _asked(league, "enable")
 
-    replied = _replied(interaction)
-    assert "stopped on a fault in the bot" in replied
-    assert "The module is still off." in replied
-    assert "again once the fault is cleared" in replied
+    await cog._enable_attendance(asked)
+    await run_queue(league.bot)
+
+    replied = last_said(asked)
+    assert replied == (
+        "❌ `/module enable` stopped on a fault in the bot, not on anything you entered, and did "
+        "not finish. The module is still off. Run `/module enable attendance` again once the "
+        "fault is cleared. The fault is recorded in the log channel."
+    )
     assert "disk I/O error" not in replied
-    assert "Module remains disabled" not in replied
-    async with get_connection(db_path) as db:
+    async with get_connection(league.db_path) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM attendance_config")
         assert (await cursor.fetchone())[0] == 0
-    # One failure line: the command, the member and the kind of fault, never its words.
-    [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
-    assert "/module enable" in line
-    assert f"failed for Admin (<@{ACTOR_ID}>)" in line
-    assert "IntegrityError" in line
-    assert "disk I/O error" not in line
+    assert await log_lines(league) == [
+        f"❌ `/module enable` failed for {NAMED} — IntegrityError. The details are in the host's log."
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -597,19 +781,10 @@ async def _stage(db_path: str, stage: str, status: str) -> None:
 #: the reply. A case whose verb is None calls the enable handler directly, the command's own
 #: stage check standing in front of it otherwise. Weather's "already enabled", refused by its
 #: change on the queue, is pinned by `test_enabling_weather_twice_does_no_work`; images' the same
-#: way, by `test_enabling_twice_does_no_work`.
+#: way, by `test_enabling_twice_does_no_work`. Results' and attendance's refusals (the dependency,
+#: the season and "already enabled") are each pinned on the league's bot, with the real queue, by
+#: their own tests above.
 MODULE_REFUSALS = [
-    pytest.param("enable", "results", {"results_enabled": True}, None, "already enabled",
-                 id="results-already-enabled"),
-    pytest.param(None, "results", {"season": "confirmed"}, None,
-                 "once a season's placements are confirmed", id="results-mid-season"),
-    pytest.param("enable", "attendance", {"results_enabled": False}, None,
-                 "requires the Results & Standings module", id="attendance-needs-results"),
-    pytest.param(None, "attendance", {"results_enabled": True, "season": "confirmed"}, None,
-                 "once a season's placements are confirmed", id="attendance-mid-season"),
-    pytest.param("enable", "attendance",
-                 {"results_enabled": True, "attendance_enabled": True}, None,
-                 "already enabled", id="attendance-already-enabled"),
     pytest.param("enable", "signup", {"signup_enabled": True}, None, "already enabled",
                  id="signup-already-enabled"),
     pytest.param("enable", "weather", {"season": "confirmed"}, None, "cannot be enabled once",

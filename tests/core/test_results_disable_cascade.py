@@ -425,3 +425,39 @@ async def test_the_dependency_table_decides_the_cascade_and_its_warning(tmp_path
 
     assert await _module_flags(db_path) == (0, 1, 1)
     assert updated_reply(interaction) == "✅ Results & Standings module disabled."
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the results disable hands the dependency table attendance's flag alone",
+)
+async def test_the_results_disable_hands_every_switched_on_module_to_the_table(
+    tmp_path, monkeypatch
+):
+    """The cascade reads every switched-on module through the table, not attendance's flag
+    alone, so a second entry in the table needs no change to the command: with weather and
+    attendance on and signup off, `/module disable results` hands the table weather and
+    attendance among the modules switched on, and never signup."""
+    from leaguebot.core.cogs import module_cog
+    from leaguebot.core.models import module_dependencies
+
+    handed: list[frozenset[str]] = []
+    real = module_dependencies.taken_down_with
+
+    def spy(module, enabled):
+        handed.append(frozenset(enabled))
+        return real(module, enabled)
+
+    monkeypatch.setattr(module_dependencies, "taken_down_with", spy)
+    monkeypatch.setattr(module_cog, "taken_down_with", spy, raising=False)
+    db_path = await _make_db(tmp_path, attendance_enabled=True)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET weather_module_enabled = 1")
+        await db.commit()
+    cog = await _make_cog(db_path, attendance_enabled=True, queued=True)
+
+    await cog._disable_results(member_interaction(cog.bot, user=member(ACTOR_ID)))
+
+    [enabled] = handed
+    assert {"weather", "attendance"} <= enabled
+    assert "signup" not in enabled
