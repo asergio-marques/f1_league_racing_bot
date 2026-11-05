@@ -188,7 +188,7 @@ async def test_weather_is_enabled(tmp_path):
     asked = _asked(league, "enable")
 
     await cog._enable_weather(asked)
-    assert acknowledgement(asked).startswith("⏳")
+    assert acknowledgement(asked).startswith("⏳ Turning the weather module on. ")
     await run_queue(league.bot)
 
     assert await _weather_flag(league.db_path) == 1
@@ -241,7 +241,7 @@ async def test_disabling_weather_cancels_every_scheduled_job(tmp_path):
     asked = _asked(league, "disable")
 
     await cog._disable_weather(asked)
-    assert acknowledgement(asked).startswith("⏳")
+    assert acknowledgement(asked).startswith("⏳ Turning the weather module off. ")
 
     await run_queue(league.bot, steps=1)
     assert await _weather_flag(league.db_path) == 0
