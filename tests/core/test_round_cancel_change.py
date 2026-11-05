@@ -336,28 +336,40 @@ async def test_the_round_s_audit_records_the_status_it_was_cancelled_from(tmp_pa
     assert await _round_audits(league) == [{"old_value": status, "new_value": "CANCELLED"}]
 
 
+@pytest.mark.parametrize("refused, job, note, target, other", [
+    pytest.param(PRO_CH.forecast, "notify_forecast", "forecast note", "forecast channel",
+                 PRO_CH.results, id="forecast"),
+    pytest.param(PRO_CH.results, "notify_results", "results note", "results channel",
+                 PRO_CH.forecast, id="results"),
+])
 async def test_a_notice_discord_refuses_stops_the_queue_and_once_discarded_is_named_not_notified(
-    tmp_path,
+    tmp_path, refused, job, note, target, other,
 ):
+    """Weather and results are on. Discord refuses Pro's forecast note, or its results note, for
+    round 3's cancellation: the queue stops at it before the calendar, and the log channel's stop
+    line names it as "posting the forecast note for **Pro**" or "posting the results note for
+    **Pro**". A league admin discards it: the reply's "Not notified" section and the success line
+    name the forecast channel, or the results channel, and the other note and the calendar are
+    still posted."""
     league = await ongoing_league(tmp_path, weather=True)
-    _refused(league, PRO_CH.forecast)
+    _refused(league, refused)
     interaction = await _asked(league)
 
     await run_queue(league.bot)
-    assert await _stopped_at(league) == "notify_forecast"
+    assert await _stopped_at(league) == job
     assert league.texts(PRO_CH.calendar) == []
     [stop] = [line for line in _log_lines(league) if "The queue is stopped at job #" in line]
-    assert "posting the forecast note for **Pro**" in stop
+    assert f"posting the {note} for **Pro**" in stop
     assert "`/round cancel`" in stop
     assert "Admin (`<@77>`)" in stop
     assert "failed (Discord refused or failed a request from the bot)" in stop
 
     await discard_job(league.bot)
 
-    named = "**Pro** — forecast channel: the notice could not be posted, and a league admin discarded it"
+    named = f"**Pro** — {target}: the notice could not be posted, and a league admin discarded it"
     assert CANCELLED in reply(interaction)
     assert named in _not_notified(reply(interaction))
-    assert len(league.texts(PRO_CH.results)) == 1
+    assert len(league.texts(other)) == 1
     assert len(league.texts(PRO_CH.calendar)) == 1
     lines = _success_lines(league)
     assert len(lines) == 1 and f"\n  not notified: {named}" in lines[0]
@@ -411,7 +423,8 @@ async def test_a_call_message_discord_will_not_delete_stops_the_queue_keeping_th
 
 async def test_a_discarded_check_in_notice_still_has_the_call_taken_down(tmp_path):
     """Discord refuses the check-in notice for Pro's round 3, so the queue stops at it, and a
-    league admin discards it. The call still comes down whether or not the notice could be posted
+    league admin discards it. The log channel's stop line names it as "posting the check-in notice
+    for **Pro**". The call still comes down whether or not the notice could be posted
     (attendance spec, Cancellation): messages 7001-7003 are deleted and the call's record is gone,
     its check-in is still written beneath the success line, and the discarded notice is named."""
     league = await ongoing_league(tmp_path, attendance=True)
@@ -420,6 +433,8 @@ async def test_a_discarded_check_in_notice_still_has_the_call_taken_down(tmp_pat
 
     await run_queue(league.bot)
     assert await _stopped_at(league) == "notify_checkin"
+    [stop] = [line for line in _log_lines(league) if "The queue is stopped at job #" in line]
+    assert "posting the check-in notice for **Pro**" in stop
     await discard_job(league.bot)
 
     assert not set(CALL_MESSAGES) & set(league.channel(PRO_CH.checkin).messages)
