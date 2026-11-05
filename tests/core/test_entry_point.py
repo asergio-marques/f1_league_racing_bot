@@ -129,6 +129,8 @@ _CANCELLATION_PARTS = (
      "notices_on", "weather's forecast note"),
     ("cancellation_notices", "leaguebot.results.services.cancellation_notice",
      "notices_on", "results' results note"),
+    ("round_ended_not_held", "leaguebot.attendance.services.check_in_record",
+     "read_check_in_on", "attendance's check-in record"),
 )
 
 
@@ -268,6 +270,11 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the check-in record is core's, handed to results' not-held end by name, with "
+    "no hook a round ending not held calls",
+)
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -278,8 +285,11 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     submissions, then attendance's take-down of their calls; the notices posted for a division,
     each handed the save's connection, the scope and the division told, attendance's check-in
     notice, then weather's forecast note, then results' results note; and the steps a module
-    plans, results' deletion of a submission channel, attendance's take-down of a call, then
-    attendance's check-in notice, weather's forecast note and results' results note. A round's
+    plans, results' deletion of a submission channel, attendance's take-down of a call,
+    attendance's reading of a round's check-in record, then attendance's check-in notice,
+    weather's forecast note and results' results note. A round ended with every session entered
+    as not held, handed the save's connection and the round: attendance's reading of its check-in
+    record for the log. A round's
     timing windows read: attendance's window, then weather's, each handed whether the round is
     being amended. A round amended: inside the save, weather's withdrawal of the forecasts the
     amendment withdraws, then attendance's reopening of its check-in; as the round is armed again,
@@ -399,9 +409,15 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     # Each part is handed the save's connection, the scope, then the division told.
     assert cancellation_handed == [(None, SCOPE_ROUND, told)] * len(called)
     assert [sorted(steps) for steps in bot.cancellation_steps.call()] == [
-        ["delete_channel"], ["take_down_call"], ["notify_checkin"], ["notify_forecast"],
-        ["notify_results"],
+        ["delete_channel"], ["take_down_call"], ["read_check_in"], ["notify_checkin"],
+        ["notify_forecast"], ["notify_results"],
     ]
+    called.clear()
+    cancellation_handed.clear()
+    ended = {"round_id": 0, "division_id": 0, "division_name": "Pro", "season_id": 0}
+    await bot.round_ended_not_held.call(None, ended)
+    assert called == ["attendance's check-in record"]
+    assert cancellation_handed == [(None, ended)]
     called.clear()
     await bot.round_windows_read.call(amending=True)
     assert called == ["attendance's window, amending True", "weather's window, amending True"]
