@@ -651,6 +651,26 @@ async def approval_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
+def fingerprints_taken(monkeypatch: Any, change_module: Any) -> list[dict[str, Any]]:
+    """Every fingerprint taken is of one fixed season, so a review's evidence always matches the
+    season as its change finds it; each one *change_module*'s check takes is recorded, its
+    arguments by name (`season_id`, `drawing` and the rest) and by place (`args`)."""
+    from leaguebot.core.services import season_fingerprint_service as sfs
+
+    taken: list[dict[str, Any]] = []
+
+    async def _fixed(*_args: Any, **_kwargs: Any) -> Any:
+        return sfs.SeasonFingerprint({"season": "as reviewed"})
+
+    async def _recorded(*args: Any, **kwargs: Any) -> Any:
+        taken.append({"args": args, **kwargs})
+        return await _fixed()
+
+    monkeypatch.setattr(sfs, "take_fingerprint", _fixed)
+    monkeypatch.setattr(change_module, "take_fingerprint", _recorded)
+    return taken
+
+
 async def set_module_flag(db_path: str, name: str, on: bool) -> None:
     """Turn module *name* on or off as `/module enable|disable` leaves its flag, written here on
     the league's database: each module's switch is its own change in the bot, whose save is what

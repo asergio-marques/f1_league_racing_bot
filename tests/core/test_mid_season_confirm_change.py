@@ -545,6 +545,33 @@ async def test_the_confirmation_is_audited(tmp_path, monkeypatch):
 # ── The checks when it runs ─────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#283: the builder does not yet hand the mid-season confirmation the image module's drawing, "
+    "nor its check the season's fingerprint with it"
+))
+async def test_the_confirmation_s_check_takes_the_fingerprint_with_the_image_module_s_drawing(
+    tmp_path, monkeypatch,
+):
+    """Season 3 is placing drivers mid-season and its review stands. The admin presses Confirm
+    placements and the queue runs. Each time the confirmation's check compares the season with
+    the review, it takes the season's fingerprint of season 3 with the bot's image drawing,
+    which the builder hands the confirmation, so the artwork on disk is judged as the image
+    module signs it."""
+    from leaguebot.core.services import mid_season_confirm_change
+    from tests.support.season_league import fingerprints_taken
+
+    league = await _league(tmp_path, monkeypatch)
+    taken = fingerprints_taken(monkeypatch, mid_season_confirm_change)
+
+    await _pressed(league)
+    await run_queue(league.bot)
+
+    assert taken, "the confirmation's check took no fingerprint"
+    for each in taken:
+        assert each.get("drawing") is league.bot.image_drawing, each
+        assert SEASON_ID in (*each["args"], each.get("season_id")), each
+
+
 @pytest.mark.xfail(strict=True, reason=FINGERPRINT_NOT_YET)
 @pytest.mark.parametrize("change", sorted(_REFUSALS))
 async def test_a_refusal_found_when_the_confirmation_runs_updates_the_reply_and_the_queue_goes_on(
