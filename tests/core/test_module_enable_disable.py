@@ -279,7 +279,9 @@ async def test_attendance_requires_results_first(tmp_path):
 
     await cog._enable_attendance(interaction)
 
-    assert "requires the Results & Standings module" in _replied(interaction)
+    assert _replied(interaction) == (
+        "❌ The Attendance module requires the Results & Standings module to be enabled first."
+    )
     assert await _audit(db_path) == []
 
 

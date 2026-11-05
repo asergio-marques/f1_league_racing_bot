@@ -131,7 +131,15 @@ def test_the_cascade_is_announced_in_its_own_right():
     """The silent half of issue #114."""
     warning = _results_disable_warning(season_active=False, attendance=True)
 
-    assert "Attendance goes with it" in warning
+    assert warning == (
+        "⚠️ **Attendance goes with it.** Attendance depends on Results & Standings and "
+        "cannot run alone. If you continue:\n"
+        "• every check-in call, reminder and deadline still to come will stop;\n"
+        "• every division's check-in and attendance channels will be cleared, and you "
+        "will have to set them again;\n"
+        "• Attendance cannot be switched back on once a season's placements are confirmed.\n"
+        "Timings, penalties and thresholds are kept either way."
+    )
 
 
 def test_a_league_facing_both_costs_is_told_both():
