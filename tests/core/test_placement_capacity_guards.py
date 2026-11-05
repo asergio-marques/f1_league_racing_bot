@@ -219,6 +219,66 @@ async def test_placement_capacity_guards_run_with_a_stub_drawing(
     assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
 
 
+def _failing_reads(monkeypatch, fragment: str, fault: Exception) -> None:
+    """Every read `placement_service` makes whose SQL holds *fragment* raises *fault*; every
+    other read and write runs on the real connection."""
+    from contextlib import asynccontextmanager
+
+    from leaguebot.core.services import placement_service
+
+    real = placement_service.get_connection
+
+    class _Connection:
+        def __init__(self, db):
+            self._db = db
+
+        def execute(self, sql, *args, **kwargs):
+            if fragment in sql:
+                raise fault
+            return self._db.execute(sql, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._db, name)
+
+    @asynccontextmanager
+    async def connection(*args, **kwargs):
+        async with real(*args, **kwargs) as db:
+            yield _Connection(db)
+
+    monkeypatch.setattr(placement_service, "get_connection", connection)
+
+
+@pytest.mark.parametrize(
+    "team, read",
+    [
+        (RESERVE, "AND ti.is_reserve = 1"),
+        (ORDINARY, "AS seated FROM driver_season_assignments WHERE division_id = ?"),
+        (ORDINARY, "AND ti.is_reserve = 0"),
+        (ORDINARY, "AS seated FROM driver_season_assignments WHERE season_id = ?"),
+    ],
+    ids=["reserve", "sheet", "standings", "declared"],
+)
+async def test_a_capacity_guard_s_own_read_fault_lets_the_placement_through(
+    tmp_path, monkeypatch, caplog, team, read
+):
+    """A guard's own count of the seats, read before the drawing is asked, sits inside the one
+    catch with the asking: where the count raises, the placement goes through and the error is
+    kept whole in the host's log, as where the drawing raises."""
+    from leaguebot.core.services.placement_service import PlacementService
+
+    db_path, season_id, division_id = await _seed(tmp_path)
+    fault = RuntimeError("the seats could not be counted")
+    _failing_reads(monkeypatch, read, fault)
+    with caplog.at_level(logging.ERROR, logger="leaguebot.core.services.placement_service"):
+        result = await _place(
+            PlacementService(db_path, drawing=_Drawing({})), season_id, division_id, team
+        )
+
+    assert result["team_name"] == team
+    assert await _placed(db_path)
+    assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
+
+
 @pytest.mark.parametrize(
     "team, asked",
     [
