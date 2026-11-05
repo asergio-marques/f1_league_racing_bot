@@ -246,17 +246,16 @@ async def replace_calendar_message(
 
     if image_path is not None:
         # Closed here, where the attachment is, so the file's handle is released before
-        # the caller's `finally` removes it. The caller still discards the path, which is
-        # what covers a picture that never reached a send at all.
-        from leaguebot.image.services.image_render_service import discard_attachment
-
+        # the caller's `finally` hands the path to `drawing.discard_picture` — the only
+        # place the render itself is released (#283), so core need not import the image
+        # module's own discard, which knows its render directories as its private rule.
         attachment = discord.File(str(image_path), filename=image_path.name)
         try:
             return await post_standing(
                 channel, content, mentions=discord.AllowedMentions.none(), file=attachment
             )
         finally:
-            discard_attachment(attachment)
+            attachment.close()
     return await post_standing(channel, content, mentions=discord.AllowedMentions.none())
 
 
