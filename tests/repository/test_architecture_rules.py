@@ -694,9 +694,12 @@ KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.results.services.results_post_service._bot_member"): (1, PASS["results"]),
     ("attendance/services/attendance_service.py", "leaguebot.results.services.results_post_service._channel_fault"): (1, PASS["results"]),
+    ("core/services/season_classification_service.py", "leaguebot.results.services.season_standings_posts._keeping"): (1, PASS["results"]),
+    ("core/services/season_classification_service.py", "leaguebot.results.services.season_standings_posts._produce_stranding"): (1, PASS["results"]),
+    ("core/services/season_classification_service.py", "leaguebot.results.services.season_standings_posts._remove_earlier_try"): (1, PASS["results"]),
     ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._load_driver_rows"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "leaguebot.image.services.image_results_post._driver_names"): (2, PASS["image"]),
-    ("core/services/season_classification_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
+    ("results/services/season_standings_posts.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("results/services/verdict_announcement_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
 }
 
@@ -1447,6 +1450,7 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "enforce_attendance_sanctions"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_checkin_attachment"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (1, PASS["attendance"]),
+    ("attendance/services/sheet_posting.py", "opening_steps.still_due"): (1, PASS["attendance"]),
     ("attendance/services/sheet_posting.py", "sheet_step.still_due"): (1, PASS["attendance"]),
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
     ("core/services/calendar_post_service.py", "image_calendar_wanted"): (2, PASS["core"]),
@@ -1483,6 +1487,7 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
     ("results/services/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "_build_division_validation_data"): (2, PASS["results"]),
+    ("results/services/season_standings_posts.py", "opening_steps.still_due"): (1, PASS["results"]),
     ("signup/services/signup_views.py", "AdminReviewView._guard"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "AdminReviewView._resolve"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "CorrectionParameterView.__init__.make_callback.callback"): (1, PASS["signup"]),
@@ -2421,7 +2426,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/placement_service.py", "PlacementService.get_unassigned_drivers_seeded"):
         (1, PASS["core"]),
     ("core/services/season_classification_service.py", "post_final_standings"): (1, PASS["core"]),
-    ("core/services/season_classification_service.py", "post_opening_standings"): (1, PASS["core"]),
     ("core/services/season_end_changes.py", "_last_rounds_with_results"): (1, PASS["core"]),
     ("core/services/season_end_service.py", "write_driver_history_entries_on"): (3, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "take_fingerprint"): (21, PASS["core"]),

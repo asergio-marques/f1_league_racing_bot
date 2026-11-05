@@ -12,9 +12,11 @@ own final posting, and that import is listed under ``.importlinter`` with #283.
 
 **Each posting reads the division's first round as it runs** (never the table itself: through
 core's `SeasonService`, architecture.md, "A module reads core's tables only through core's
-services"), **and raises where it cannot post**, for the queue to stop on. The standings channel
-is read from `division_results_config`, where `/division results-channel` keeps it. No message id
-is recorded (results specification: the opening classification is not kept), so a table already
+services"), **and raises where it cannot post**, for the queue to stop on — except that it
+returns without posting where no standings channel is set, or where no driver is ranked, neither
+of which is a fault the queue should stop on. The standings channel is read from
+`division_results_config`, where `/results channel standings` keeps it. No message id is
+recorded (results specification: the opening classification is not kept), so a table already
 sent when a later one fails is named on the failure (`result`), and the job keeps it: the next
 try is handed it as *kept* and removes that copy before it posts both again.
 """
