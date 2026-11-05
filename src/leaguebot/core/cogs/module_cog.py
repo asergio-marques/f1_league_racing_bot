@@ -524,98 +524,33 @@ class ModuleCog(commands.Cog):
         )
         await interaction.followup.send("✅ Attendance module enabled.", ephemeral=True)
 
-    # ── Images enable (T015) ───────────────────────────────────────────
+    # ── Images enable ────────────────────────────────────────────────
 
     async def _enable_images(
         self, interaction: discord.Interaction
     ) -> None:
-        from leaguebot.image.services.image_render_service import (
-            converter_absent_message,
-            converter_available,
+        # The switch is image's own change on the queue: this asks for it and does nothing
+        # else.
+        await self.bot.change_queue.ask(
+            module_on("images"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
-        if await self.bot.module_service.is_images_enabled():
-            await refuse(
-                interaction, "⚠️ Image module is already enabled.", what=describe(interaction)
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        now = datetime.now(timezone.utc).isoformat()
-        try:
-            # create_with_defaults is idempotent: an existing configuration is left
-            # exactly as it was, which is what makes re-enabling lossless (FR-004a).
-            await self.bot.image_config_service.create_with_defaults()
-            await self.bot.module_service.set_images_enabled(True)
-            async with get_connection(self.bot.db_path) as db:
-                await db.execute(
-                    "INSERT INTO audit_entries "
-                    "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                    "VALUES (?, ?, NULL, 'IMAGE_MODULE_ENABLED', '', '', ?)",
-                    (interaction.user.id, str(interaction.user), now),
-                )
-                await db.commit()
-        except Exception as exc:  # noqa: BLE001 — undone, then reported to say the module is still off
-            # The flag goes back down first. Where that fails too the module cannot be said to be
-            # off, and the second fault goes to the command's failure path instead.
-            await self.bot.module_service.set_images_enabled(False)
-            await report_failure(
-                interaction, exc, what=describe(interaction), outcome=_still_off("images")
-            )
-            return
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable images | Success",
-        )
-
-        message = "✅ Image module enabled. All output aspects start disabled — use `/images config toggle`."
-        # The module enables even without the rasteriser, so an administrator can finish
-        # configuring while waiting for it to be installed (FR-007, FR-008).
-        if not converter_available(use_cache=False):
-            message += "\n\n" + converter_absent_message()
-
-        await interaction.followup.send(message, ephemeral=True)
-
-    # ── Images disable (T016) ──────────────────────────────────────────
+    # ── Images disable ──────────────────────────────────────────────────
 
     async def _disable_images(
         self, interaction: discord.Interaction
     ) -> None:
-        """Clear the enabled flag and nothing else.
-
-        No configuration row is deleted, no toggle reset and no notice history purged.
-        This is the Principle X.6 exception for configuration that cannot go stale: no
-        image config value names a Discord channel, role, message or scheduled job, so
-        none can become a stale binding while the module is off (FR-004a). No
-        ``--preserve-config`` flag is offered because nothing is cleared (FR-004b).
-        """
-        if not await self.bot.module_service.is_images_enabled():
-            await refuse(
-                interaction, "⚠️ Image module is already disabled.", what=describe(interaction)
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        now = datetime.now(timezone.utc).isoformat()
-        await self.bot.module_service.set_images_enabled(False)
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'IMAGE_MODULE_DISABLED', '', '', ?)",
-                (interaction.user.id, str(interaction.user), now),
-            )
-            await db.commit()
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable images | Success",
-        )
-        await interaction.followup.send(
-            "✅ Image module disabled. Every aspect reverts to text output.\n"
-            "Your configuration is kept — re-enabling restores it exactly.",
-            ephemeral=True,
+        # The switch-off is image's own change on the queue: it lowers the flag and writes
+        # its audit entry in one save, deleting nothing and removing nothing (Principle X.6's
+        # exception, which image claims). This asks for it and does nothing else.
+        await self.bot.change_queue.ask(
+            module_off("images"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ── Attendance disable ─────────────────────────────────────────────

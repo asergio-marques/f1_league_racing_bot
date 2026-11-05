@@ -42,8 +42,6 @@ from tests.support.change_queue import MEMBER_ID
 
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
-#: Why a test of the queue's acknowledgement fails before the switch moves onto the queue.
-ON_THE_QUEUE = "#283: /module enable images is not yet acknowledged as image's change on the queue"
 #: The enable's reply where the host carries the rasteriser.
 ENABLED = "✅ Image module enabled. All output aspects start disabled — use `/images config toggle`."
 
@@ -139,7 +137,6 @@ async def _refuse_the_audit(db_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize("rasteriser", [True, False], ids=["with a rasteriser", "without"])
 async def test_the_module_is_enabled(tmp_path, rasteriser):
     """With or without a rasteriser (FR-007 / FR-008). Refusing would leave a league unable to
@@ -223,10 +220,6 @@ async def test_the_rasteriser_check_is_not_cached(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: a failed /module enable images leaves the configuration rows it created",
-)
 async def test_a_failed_enable_leaves_the_module_off(tmp_path):
     """The configuration, the flag and the audit entry are one save, so a fault at its last
     write leaves the module off with no configuration behind it: never on with nothing

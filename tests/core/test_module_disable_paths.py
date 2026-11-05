@@ -197,16 +197,10 @@ async def _attendance_flag(db_path: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-#
 # Images' switch is image's own change on the change queue (#283, S11c): `/module disable images`
 # asks `module.off:images`, the member is acknowledged at once, and the queue carries it out.
 # Each test drives the command's handler on the bot the entry point builds, with the real queue
 # and "now" pinned, and runs the queue.
-
-#: Why a test of the queue's acknowledgement fails before the switch moves onto the queue.
-IMAGES_ON_THE_QUEUE = (
-    "#283: /module disable images is not yet acknowledged as image's change on the queue"
-)
 
 
 async def _images_league(tmp_path, *, on: bool = True):
@@ -218,7 +212,6 @@ async def _images_league(tmp_path, *, on: bool = True):
     return league, ModuleCog(league.bot), interaction(league.bot, "module disable")
 
 
-@pytest.mark.xfail(strict=True, reason=IMAGES_ON_THE_QUEUE)
 async def test_disabling_images_clears_the_flag(tmp_path):
     """The member is acknowledged at once, and once the change has run the module is off."""
     from tests.support.change_queue import acknowledgement
@@ -269,10 +262,6 @@ async def test_disabling_images_twice_does_no_work(tmp_path):
     assert await _audit_types(league.db_path) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: /module disable images lowers the flag before its audit entry, not in one save",
-)
 async def test_an_image_disable_that_cannot_be_written_leaves_the_module_on(tmp_path):
     """The flag and the audit entry are one save, so a fault at the audit leaves the module on.
     The member gets the standard failure reply, saying nothing was saved and what to run again,
