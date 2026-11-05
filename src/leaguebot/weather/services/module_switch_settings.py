@@ -48,6 +48,7 @@ if TYPE_CHECKING:
 
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.services.season_service import SeasonService
 
 #: The name of the step, after the switch-off's save, that removes the season's weather jobs.
 REMOVE_JOBS = "remove_jobs"
@@ -65,7 +66,7 @@ def _still_off(_payload: dict[str, Any]) -> str:
     return "The module is still off. Run `/module enable weather` again once the fault is cleared."
 
 
-def module_on_weather(*, modules: "ModuleService") -> Setting:
+def module_on_weather(*, modules: "ModuleService", seasons: "SeasonService") -> Setting:
     """`module.on:weather`: raise the flag in one save, with its audit entry.
 
     **The check reads the season's stage again as the change starts,** not only at the ask
@@ -75,10 +76,10 @@ def module_on_weather(*, modules: "ModuleService") -> Setting:
     weather on mid-season.
     """
 
-    async def check(ctx: CheckContext) -> Verdict:
+    async def check(_ctx: CheckContext) -> Verdict:
         if await modules.is_weather_enabled():
             return Verdict.refuse("⚠️ Weather module is already enabled.")
-        if await ctx.bot.season_service.get_confirmed_season() is not None:
+        if await seasons.get_confirmed_season() is not None:
             return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)
         return Verdict.go()
 

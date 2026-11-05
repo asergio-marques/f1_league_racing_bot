@@ -1008,7 +1008,9 @@ def register_change_types(bot: LeagueBot) -> None:
         setting_change(deadline_setting(modules=bot.module_service, seasons=bot.season_service))
     )
     bot.change_queue.register(
-        setting_change(module_on_weather(modules=bot.module_service))
+        setting_change(
+            module_on_weather(modules=bot.module_service, seasons=bot.season_service)
+        )
     )
     bot.change_queue.register(
         setting_change(
@@ -1016,13 +1018,17 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(
-        setting_change(module_on_images(modules=bot.module_service))
+        setting_change(
+            module_on_images(modules=bot.module_service, seasons=bot.season_service)
+        )
     )
     bot.change_queue.register(
         setting_change(module_off_images(modules=bot.module_service))
     )
     bot.change_queue.register(
-        setting_change(module_on_attendance(modules=bot.module_service))
+        setting_change(
+            module_on_attendance(modules=bot.module_service, seasons=bot.season_service)
+        )
     )
     bot.change_queue.register(
         setting_change(
@@ -1030,7 +1036,9 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(
-        setting_change(module_on_results(modules=bot.module_service))
+        setting_change(
+            module_on_results(modules=bot.module_service, seasons=bot.season_service)
+        )
     )
     for setting in (
         *points_settings(modules=bot.module_service, seasons=bot.season_service),

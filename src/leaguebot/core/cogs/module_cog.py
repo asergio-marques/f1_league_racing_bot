@@ -32,10 +32,11 @@ _MODULE_CHOICES = [
     app_commands.Choice(name="images", value="images"),
 ]
 
-#: Every module `/module` offers, as the dependency table and `ModuleService`'s getters name
-#: them (`is_<name>_enabled`). Read generally so a second table entry (stewarding's) needs no
-#: change here.
-_MODULE_NAMES = ("weather", "signup", "results", "attendance", "images")
+#: Every module `/module` offers, as `/module` and `ModuleService`'s getters name them
+#: (`is_<name>_enabled`) — the same names the dependency table's entries use, except images,
+#: which the table calls "image" (`module_dependencies.py`'s own docstring). Read generally so a
+#: second table entry (stewarding's) needs no change here.
+_MODULE_NAMES = tuple(choice.value for choice in _MODULE_CHOICES)
 
 #: How each module reads in a refusal, keyed as `_MODULE_NAMES` is.
 _MODULE_LABEL = {

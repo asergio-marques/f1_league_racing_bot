@@ -56,11 +56,14 @@ if TYPE_CHECKING:
 
     from leaguebot.attendance.services.attendance_service import AttendanceService
     from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.season_service import SeasonService
 
 _ENABLE_COMMAND = "/module enable attendance"
 _DISABLE_COMMAND = "/module disable attendance"
 
-#: How each module the dependency table may name reads in attendance's own refusal.
+#: How each module the dependency table may name reads in attendance's own refusal. Covers only
+#: what `needs("attendance")` names today; a further entry needs a label added here too, or the
+#: refusal raises `KeyError` rather than naming it.
 _MODULE_LABEL = {
     "attendance": "Attendance module",
     "results": "Results & Standings module",
@@ -75,11 +78,11 @@ def _nothing_saved(_payload: dict[str, Any]) -> str:
     return "Nothing was saved. Run `/module disable attendance` again to retry."
 
 
-def module_on_attendance(*, modules: "ModuleService") -> Setting:
+def module_on_attendance(*, modules: "ModuleService", seasons: "SeasonService") -> Setting:
     """`module.on:attendance`: the packaged values written over any stored row, the flag raised
     and the audit, in one save (Principle X.6's reset)."""
 
-    async def check(ctx: CheckContext) -> Verdict:
+    async def check(_ctx: CheckContext) -> Verdict:
         if await modules.is_attendance_enabled():
             return Verdict.refuse("⚠️ Attendance module is already enabled.")
         for required in needs("attendance"):
@@ -89,7 +92,7 @@ def module_on_attendance(*, modules: "ModuleService") -> Setting:
                     f"❌ The {_MODULE_LABEL['attendance']} requires the "
                     f"{_MODULE_LABEL[required]} to be enabled first."
                 )
-        if await ctx.bot.season_service.get_confirmed_season() is not None:
+        if await seasons.get_confirmed_season() is not None:
             return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)
         return Verdict.go()
 

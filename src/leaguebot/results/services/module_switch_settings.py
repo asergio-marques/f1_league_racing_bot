@@ -10,9 +10,9 @@ fit together", designs the gap this closes: weather's switch
 **The switch-on is one save: the flag and the audit entry.** A fault leaves the module off, so
 the member is told to run the command again rather than being left unsure whether it half-ran.
 
-The switch-off is already its own change on the queue (`results_off_change.py`, #439) and is
-unchanged by this: it is more than a flag flip, closing the season's rounds and taking down its
-messages, and that shape is not this change's to touch.
+The switch-off is `results_off_change.py`'s: more than a flag flip, it closes the season's rounds
+and takes down its messages, so it is its own change on the queue (#439), built apart from the
+switch-on here.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.season_service import SeasonService
 
 _ENABLE_COMMAND = "/module enable results"
 
@@ -37,7 +38,7 @@ def _still_off(_payload: dict[str, Any]) -> str:
     return "The module is still off. Run `/module enable results` again once the fault is cleared."
 
 
-def module_on_results(*, modules: "ModuleService") -> Setting:
+def module_on_results(*, modules: "ModuleService", seasons: "SeasonService") -> Setting:
     """`module.on:results`: the flag raised and the audit, in one save.
 
     **The check reads the season's stage again as the change starts,** not only at the ask
@@ -47,10 +48,10 @@ def module_on_results(*, modules: "ModuleService") -> Setting:
     results on mid-season.
     """
 
-    async def check(ctx: CheckContext) -> Verdict:
+    async def check(_ctx: CheckContext) -> Verdict:
         if await modules.is_results_enabled():
             return Verdict.refuse("⚠️ Results & Standings module is already enabled.")
-        if await ctx.bot.season_service.get_confirmed_season() is not None:
+        if await seasons.get_confirmed_season() is not None:
             return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)
         return Verdict.go()
 

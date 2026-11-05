@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.season_service import SeasonService
 
 _ENABLE_COMMAND = "/module enable images"
 _DISABLE_COMMAND = "/module disable images"
@@ -56,7 +57,7 @@ def _still_off(_payload: dict[str, Any]) -> str:
     return "The module is still off. Run `/module enable images` again once the fault is cleared."
 
 
-def module_on_images(*, modules: "ModuleService") -> Setting:
+def module_on_images(*, modules: "ModuleService", seasons: "SeasonService") -> Setting:
     """`module.on:images`: the configuration created where missing, the flag and the audit, in
     one save.
 
@@ -67,10 +68,10 @@ def module_on_images(*, modules: "ModuleService") -> Setting:
     images on mid-season.
     """
 
-    async def check(ctx: CheckContext) -> Verdict:
+    async def check(_ctx: CheckContext) -> Verdict:
         if await modules.is_images_enabled():
             return Verdict.refuse("⚠️ Image module is already enabled.")
-        if await ctx.bot.season_service.get_confirmed_season() is not None:
+        if await seasons.get_confirmed_season() is not None:
             return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)
         return Verdict.go()
 
