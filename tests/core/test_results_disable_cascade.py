@@ -405,7 +405,6 @@ async def test_no_warning_where_neither_attendance_nor_a_season_is_at_stake(tmp_
     assert updated_reply(interaction) == "✅ Results & Standings module disabled."
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /module disable does not read the dependency table yet")
 async def test_the_dependency_table_decides_the_cascade_and_its_warning(tmp_path, monkeypatch):
     """The cascade and its warning read the table in `core/models/` rather than a rule of their
     own: with the table emptied, attendance on and no season running, results goes off at once,

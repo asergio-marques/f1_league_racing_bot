@@ -14,7 +14,7 @@ from discord.ext import commands
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin, module_off
-from leaguebot.core.models.module_dependencies import needs
+from leaguebot.core.models.module_dependencies import needs, taken_down_with
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.interaction_errors import describe, report_failure
@@ -485,16 +485,18 @@ class ModuleCog(commands.Cog):
         # Warn before anything irreversible, and write nothing until the league confirms it.
         active_season = await self.bot.season_service.get_confirmed_season()
         attendance_on = await self.bot.module_service.is_attendance_enabled()
+        enabled = {"attendance"} if attendance_on else set()
+        cascade_attendance = "attendance" in taken_down_with("results", enabled)
 
-        if active_season is not None or attendance_on:
+        if active_season is not None or cascade_attendance:
             await interaction.response.send_message(
                 _results_disable_warning(
-                    season_active=active_season is not None, attendance=attendance_on
+                    season_active=active_season is not None, attendance=cascade_attendance
                 ),
                 view=_ConfirmDisableResultsView(
                     self,
                     interaction.user.id,
-                    cascade_attendance=attendance_on,
+                    cascade_attendance=cascade_attendance,
                 ),
                 ephemeral=True,
             )
