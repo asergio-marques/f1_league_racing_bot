@@ -968,15 +968,27 @@ async def test_the_save_hands_the_round_s_division_to_the_notices_hook(tmp_path)
     }, True)]
 
 
-async def test_a_channel_never_set_is_named_not_notified_and_stops_nothing(tmp_path):
+@pytest.mark.parametrize("unset, job, target", [
+    pytest.param("UPDATE divisions SET forecast_channel_id = NULL WHERE id = ?",
+                 "notify_forecast", "forecast channel", id="forecast"),
+    pytest.param("UPDATE division_results_config SET results_channel_id = NULL "
+                 "WHERE division_id = ?", "notify_results", "results channel", id="results"),
+])
+async def test_a_channel_never_set_is_named_not_notified_and_stops_nothing(
+    tmp_path, unset, job, target,
+):
+    """Weather and results are on, and Pro has no forecast channel set, or no results channel.
+    Round 3 is cancelled: the note is not posted, the reply's "Not notified" section and the
+    success line name "**Pro** — forecast channel: no channel is set", or the results channel,
+    and the calendar is still posted."""
     league = await ongoing_league(tmp_path, weather=True)
-    await league.write("UPDATE divisions SET forecast_channel_id = NULL WHERE id = ?", PRO)
+    await league.write(unset, PRO)
     interaction = await _asked(league)
 
     await _done(league)
 
-    named = "**Pro** — forecast channel: no channel is set"
-    assert (await _job(league, "notify_forecast"))["result"] == {"unset": True}
+    named = f"**Pro** — {target}: no channel is set"
+    assert (await _job(league, job))["result"] == {"unset": True}
     assert named in _not_notified(reply(interaction))
     assert f"\n  not notified: {named}" in _success_lines(league)[0]
     assert len(league.texts(PRO_CH.calendar)) == 1
