@@ -118,6 +118,13 @@ class LeagueBot(commands.Bot):
     rounds_called_off: AwaitedHook
     cancellation_notices: AwaitedHook
     cancellation_steps: Hook
+    #: A round ending with every session entered as not held (results' not-held round end),
+    #: given the ending save's connection and the round told (`round_id`, `division_id`,
+    #: `division_name`, `season_id`, and a round's `round_number`): each module signs up its own
+    #: part, planned inside that save, and hands back the steps it plans. Attendance's part
+    #: reads the round's check-in for the log line. The builder makes it and hands it to results'
+    #: not-held round end (architecture.md, "A hook core declares is a list of subscribers").
+    round_ended_not_held: AwaitedHook
     #: The rounds a closer made FINAL (results turned off, a season cancelled), given the closing's
     #: connection and the rounds' ids: each module signing up its part inside the save (results
     #: marks the drivers who raced them as former drivers). The builder makes it and hands it to

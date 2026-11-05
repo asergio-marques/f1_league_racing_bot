@@ -611,14 +611,8 @@ RECORD_HEADING = "\n  check-in, Pro, Round 3 (Silverstone):"
 
 #: The job that reads round 3's check-in, as attendance names it.
 READ_CHECK_IN = "read_check_in"
-#: Why the job reading the check-in, renamed by the test, goes unwritten until it is attendance's
-#: own, planned through the hook a round ending not held calls, and read without its name.
-_NOT_YET_ATTENDANCE_S = (
-    "#283: the check-in record's job is core's, handed to results by name, not attendance's"
-)
 #: The case of attendance's job reading the check-in run under a name of the test's own.
-_RENAMED = pytest.param(True, id="under another name",
-                        marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_ATTENDANCE_S))
+_RENAMED = pytest.param(True, id="under another name")
 
 
 def _read_check_in_renamed(monkeypatch: Any) -> str:

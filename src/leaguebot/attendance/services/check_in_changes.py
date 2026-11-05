@@ -89,8 +89,9 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
+from leaguebot.attendance.services.check_in_record import checkin_record
 from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, Round, RoundFormat
-from leaguebot.core.services import cancellation_notice_service, season_service, standing_posts
+from leaguebot.core.services import season_service, standing_posts
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
     ChangeType,
@@ -477,15 +478,14 @@ async def take_down_call(
     where a call stood. Its record is not forgotten here: the job's record does it, in the save
     that marks the job done.
 
-    Returns `{"audit", "taken_down"}`: the log-channel record of the check-in (core's
-    `checkin_record`, which stays core's until the notices move), read **before** the call comes
-    down, and whether a call stood. Where a message cannot be deleted it raises
-    `StepFailedOnDiscord` whose `result` is `{"audit", "undeleted"}`, so the audit is kept on the
-    job whether it goes through or is discarded, and the call's record stays for the next try,
-    which reads the audit again. The raise is `from` the Discord failure that caused it, as
-    *check_in_deletes* raises it.
+    Returns `{"audit", "taken_down"}`: the log-channel record of the check-in (attendance's own
+    `checkin_record`), read **before** the call comes down, and whether a call stood. Where a
+    message cannot be deleted it raises `StepFailedOnDiscord` whose `result` is `{"audit",
+    "undeleted"}`, so the audit is kept on the job whether it goes through or is discarded, and
+    the call's record stays for the next try, which reads the audit again. The raise is `from`
+    the Discord failure that caused it, as *check_in_deletes* raises it.
     """
-    audit = await cancellation_notice_service.checkin_record(bot.db_path, division, round_id)
+    audit = await checkin_record(bot.db_path, division, round_id)
     try:
         taken_down = await check_in_deletes(round_id, division.id)
     except StepFailedOnDiscord as exc:

@@ -183,6 +183,33 @@ async def accounts_of_profile(db, profile_id: int) -> list[str]:
     return [str(r[0]) for r in await cursor.fetchall()]
 
 
+async def driver_names_for_profiles(
+    db_path: str, profile_ids,
+) -> dict[int, tuple[str, str | None]]:
+    """The current account and test display name of each driver in *profile_ids*, keyed by
+    their profile id: ``(discord_user_id, test_display_name)``.
+
+    The one read a module names a driver through without reading `driver_profiles` itself
+    (core owns it, CLAUDE.md); a caller names a mention and, where the driver is a test one, the
+    name beside it, exactly as `driver_profiles.test_display_name` holds it. An id holding no
+    profile is simply absent from the answer (`team_names_for_instances` is the same shape for a
+    team).
+    """
+    ids = sorted({int(i) for i in profile_ids})
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    async with get_connection(db_path) as db:
+        rows = await (
+            await db.execute(
+                f"SELECT id, discord_user_id, test_display_name FROM driver_profiles "  # noqa: S608
+                f"WHERE id IN ({marks})",
+                ids,
+            )
+        ).fetchall()
+    return {int(r["id"]): (str(r["discord_user_id"]), r["test_display_name"]) for r in rows}
+
+
 async def current_account_of(db, discord_user_id) -> str:
     """The current account of the driver holding *discord_user_id*; the account itself if none."""
     cursor = await db.execute(

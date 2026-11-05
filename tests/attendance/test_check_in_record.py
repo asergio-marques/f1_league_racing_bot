@@ -265,9 +265,6 @@ async def test_a_take_down_discord_refuses_raises_keeping_the_audit_and_the_ids(
 
 # ── The record a round's cancellation writes, read for a league's round ──
 
-#: Why a test of attendance's own check-in record fails until the record moves out of core.
-_NOT_YET_ATTENDANCE_S = "#283: the check-in record is still core's, read in core's notice service"
-
 #: Round 3's check-in in Pro, as `/round cancel` writes it beneath its line: Lewis accepted, and
 #: Max gave no answer.
 CHECKIN_AUDIT = (
@@ -279,7 +276,6 @@ CHECKIN_AUDIT = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_ATTENDANCE_S)
 async def test_checkin_record_gives_what_round_cancel_writes(tmp_path):
     """Round 3's check-in recorded Lewis as accepted and Max as giving no answer. Attendance's
     `checkin_record`, read for Pro's round 3, gives the record `/round cancel` writes beneath its

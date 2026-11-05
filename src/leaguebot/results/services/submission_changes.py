@@ -80,13 +80,9 @@ from leaguebot.core.services.change_queue import (
 )
 from leaguebot.core.services import season_service
 from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
-from leaguebot.core.services.cancellation_changes import (
-    check_in_record,
-    check_in_record_not_written,
-    not_notified,
-)
+from leaguebot.core.services.cancellation_changes import not_notified
 from leaguebot.core.services.cancellation_notice_service import failure_log_lines
-from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
+from leaguebot.core.services.season_lifecycle_service import WIND_DOWN, kept_line
 from leaguebot.core.services.season_service import set_round_status_on
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild
@@ -569,7 +565,7 @@ async def _submission_standing(ctx: CheckContext) -> Verdict:
 
 
 def submission_all_cancelled_change(
-    *, seasons: "SeasonService", record: dict[str, Step],
+    *, seasons: "SeasonService", round_ended_not_held: AwaitedHook,
     cancellation_notices: AwaitedHook, cancellation_steps: dict[str, Step],
     now: Callable[[], datetime],
 ) -> ChangeType:
@@ -579,14 +575,15 @@ def submission_all_cancelled_change(
     The payload is the last turn's: ``round_id``, ``channel_id``, ``round_number`` and
     ``sessions``, each ``{"session_id", "session_type"}`` of the round's cancelled sessions in
     running order. A resubmission's adds ``resubmission`` and ``old_tables``, the ids of the
-    earlier results tables the new sessions could not carry. *seasons* posts the calendar, *record*
-    holds the job core builds that reads the round's check-in, *cancellation_notices* is the hook
-    each module's own notice is planned through, called inside the save on its connection,
-    *cancellation_steps* holds every step definition the modules hand back to core's
-    `cancellation_steps` hook (the same the three cancellations register: the modules' own
-    notices among them, and also review posting's and attendance's take-down of the call) so
-    this change carries the jobs *cancellation_notices* plans, and *now* is the queue's clock,
-    read when the round's ending is audited.
+    earlier results tables the new sessions could not carry. *seasons* posts the calendar,
+    *round_ended_not_held* is the hook attendance's reading of the round's check-in is planned
+    through, called inside the save on its connection, *cancellation_notices* is the hook each
+    module's own notice is planned through, called inside the same save, *cancellation_steps*
+    holds every step definition the modules hand back to core's `cancellation_steps` hook (the
+    same the three cancellations register: the modules' own notices among them, attendance's
+    check-in reading, and review posting's and attendance's take-down of the call) so this
+    change carries the jobs *round_ended_not_held* and *cancellation_notices* plan, and *now* is
+    the queue's clock, read when the round's ending is audited.
 
     Its first job, ``end_round`` (a save, **never to be discarded**: without it the round would
     never finish and its season could never be completed), ends the round CANCELLED through core's
@@ -677,10 +674,15 @@ def submission_all_cancelled_change(
             for planned in await cancellation_notices.call(db, SCOPE_ROUND, target)
             for step in (*planned.steps, *planned.after_with_division)
         ]
+        check_in_read = [
+            step
+            for planned in await round_ended_not_held.call(db, target)
+            for step in planned
+        ]
         return StepResult(
             result={"ended": True, "previous": previous, **target},
             then=(
-                *(PlannedStep(name, target) for name in record),
+                *check_in_read,
                 *posts,
                 *deletions,
                 *reposts,
@@ -722,6 +724,34 @@ def submission_all_cancelled_change(
     async def describe_ask_close(_ctx: StepContext) -> str:
         return "asking for the submission channel to be closed"
 
+    steps: dict[str, Step] = {
+        END_ROUND: Step(
+            END_ROUND, StepKind.SAVE, end_round, describe=describe_end_round,
+            undiscardable=would_never_finish,
+        ),
+        NAMES: posting_steps()[NAMES],
+        POST_SESSION_RESULTS: posting_steps()[POST_SESSION_RESULTS],
+        POST_STANDINGS: posting_steps()[POST_STANDINGS],
+        DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
+        **calendar_steps(seasons),
+        **cancellation_steps,
+        ASK_CLOSE: Step(ASK_CLOSE, StepKind.SAVE, ask_close, describe=describe_ask_close),
+    }
+
+    def check_in_record_line(ctx: OutcomeContext) -> str:
+        """The round's check-in, read by the job *round_ended_not_held* planned, from its own
+        result (`{"record": text}`), never by its name."""
+        return "".join(
+            str(view.result["record"])
+            for view in ctx.steps
+            if view.result is not None and "record" in view.result
+        )
+
+    def check_in_not_written_lines(ctx: OutcomeContext) -> list[str]:
+        """What a league admin's discard of the check-in's reading leaves undone, in the job's
+        own words (`kept_line`), never naming it."""
+        return [text for view in ctx.steps if (text := kept_line(steps, view)) is not None]
+
     def ended_lines(ctx: OutcomeContext) -> tuple[str, ...]:
         """The one line recording the ending, with what a league admin discarded beneath it; none
         where the ending found nothing to end."""
@@ -735,9 +765,9 @@ def submission_all_cancelled_change(
             f"  division: {ended['division_name']}\n"
             f"  round: {ended['round_number']}\n"
             "  reason: every session was entered as not held"
-            + check_in_record(ctx)
+            + check_in_record_line(ctx)
             + failure_log_lines(not_notified(ctx))
-            + "".join(f"\n  {text}" for text in check_in_record_not_written(ctx))
+            + "".join(f"\n  {text}" for text in check_in_not_written_lines(ctx))
             + "".join(f"\n  {text}" for text in review_posting.not_done(ctx))
         )
         return (line,)
@@ -746,20 +776,7 @@ def submission_all_cancelled_change(
         kind=ALL_CANCELLED_KIND,
         opening=(),
         plan=plan,
-        steps={
-            END_ROUND: Step(
-                END_ROUND, StepKind.SAVE, end_round, describe=describe_end_round,
-                undiscardable=would_never_finish,
-            ),
-            NAMES: posting_steps()[NAMES],
-            POST_SESSION_RESULTS: posting_steps()[POST_SESSION_RESULTS],
-            POST_STANDINGS: posting_steps()[POST_STANDINGS],
-            DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
-            **calendar_steps(seasons),
-            **record,
-            **cancellation_steps,
-            ASK_CLOSE: Step(ASK_CLOSE, StepKind.SAVE, ask_close, describe=describe_ask_close),
-        },
+        steps=steps,
         check=_submission_standing,
         key=lambda payload: f"{ALL_CANCELLED_KIND}:{payload['round_id']}",
         doing=lambda payload: f"posting round {payload['round_number']}'s cancelled sessions",

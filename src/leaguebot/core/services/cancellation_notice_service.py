@@ -13,8 +13,6 @@ What stays core's own:
 
 - `NoticeFailure`, `failure_lines` and `failure_log_lines` — the one shape every failure to
   notify is reported in, whichever module or job it came from;
-- `checkin_record` — a round's check-in, for the log channel, read on the connection core hands
-  the job that reads it; see the module's own docstring;
 - `round_label` — the round's name in a notice, shared because attendance's, weather's and
   results' notices word a round the same way;
 - `post_cancellation_notice` and `require_division` — the one shape attendance's, weather's and
@@ -38,7 +36,6 @@ from typing import Any
 
 import discord
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.services.notice_handler import send_notice
 from leaguebot.core.services.season_service import SeasonService
@@ -104,71 +101,6 @@ async def require_division(seasons: SeasonService, season_id: int, division_id: 
     if division is None:
         raise LookupError(f"division {division_id} is no longer there")
     return division
-
-
-#: The order the audit lists the answers in, and the words it lists them under.
-_ANSWERS = (
-    ("ACCEPTED", "accepted"),
-    ("TENTATIVE", "tentative"),
-    ("DECLINED", "declined"),
-    ("NO_RSVP", "no answer"),
-)
-
-
-async def checkin_record(db_path: str, division, round_id: int) -> str:
-    """The log-channel record of *round_id*'s check-in in *division*, or "" where it had none.
-
-    *division* is anything with an `id` and a `name`. Public because a round that ends cancelled
-    (every session entered as not held) writes the same record beneath its line, through a job
-    core builds and hands the module that ends it; it reads on its own connection and writes
-    nothing.
-
-    Every driver the check-in recorded, grouped by their answer, and — where the reserves had
-    already been distributed — who was sent to which team and who stood by. A driver is named
-    as the attendance module's own log lines name one: their mention, with the name a test
-    driver goes by. A round whose call was never posted recorded nobody and is left out.
-    """
-    async with get_connection(db_path) as db:
-        round_row = await (await db.execute(
-            "SELECT round_number, track_name FROM rounds WHERE id = ? AND division_id = ?",
-            (round_id, division.id),
-        )).fetchone()
-        if round_row is None:
-            return ""
-        rows = await (await db.execute(
-            """
-            SELECT dp.discord_user_id, dp.test_display_name,
-                   dra.rsvp_status, dra.is_standby, ti.full_name AS team_name
-              FROM driver_round_attendance dra
-              JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
-              LEFT JOIN team_instances ti ON ti.id = dra.assigned_team_id
-             WHERE dra.round_id = ? AND dra.division_id = ?
-             ORDER BY CAST(dp.discord_user_id AS INTEGER)
-            """,
-            (round_id, division.id),
-        )).fetchall()
-    if not rows:
-        return ""
-
-    def _name(row) -> str:
-        name = row["test_display_name"]
-        return f"<@{row['discord_user_id']}>" + (f" ({name})" if name else "")
-
-    lines = [
-        f"\n  check-in, {division.name}, "
-        f"{round_label(round_row['round_number'], round_row['track_name'])}:"
-    ]
-    for status, label in _ANSWERS:
-        named = [_name(r) for r in rows if r["rsvp_status"] == status]
-        lines.append(f"\n    {label}: {', '.join(named) if named else 'none'}")
-    reserves = [
-        f"{_name(r)} to {r['team_name']}" if r["team_name"] else f"{_name(r)} on standby"
-        for r in rows
-        if r["team_name"] or r["is_standby"]
-    ]
-    if reserves:
-        lines.append(f"\n    reserves: {', '.join(reserves)}")
-    return "".join(lines)
 
 
 #: How many failures a reply names before summing up the rest, and how long one line may run.

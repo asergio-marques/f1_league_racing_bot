@@ -198,9 +198,12 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     in the save, then attendance's take-down of their calls), the notices told of a division
     (attendance's check-in notice, then weather's forecast note, then results' results note,
     #283), and the steps a module plans (results' deletion of a submission channel, attendance's
-    take-down of a call, then each module's own notice, attendance's, weather's, then results')."""
+    take-down of a call, attendance's reading of a round's check-in record, then each module's
+    own notice, attendance's, weather's, then results'). Results' not-held round end is handed
+    `round_ended_not_held` too, to which attendance signs up the reading of a round's check-in
+    record (#283)."""
     from leaguebot.attendance.services import cancellation_notice as attendance_cancellation_notice
-    from leaguebot.attendance.services import check_in_changes
+    from leaguebot.attendance.services import check_in_changes, check_in_record
     from leaguebot.results.services import cancellation_notice as results_cancellation_notice
     from leaguebot.results.services import result_submission_service, review_posting
     from leaguebot.weather.services import cancellation_notice as weather_cancellation_notice
@@ -214,6 +217,8 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     bot.cancellation_notices.subscribe(attendance_cancellation_notice.notices_on)
     bot.cancellation_notices.subscribe(weather_cancellation_notice.notices_on)
     bot.cancellation_notices.subscribe(results_cancellation_notice.notices_on)
+    bot.round_ended_not_held = AwaitedHook()
+    bot.round_ended_not_held.subscribe(check_in_record.read_check_in_on)
     bot.cancellation_steps = Hook()
     bot.cancellation_steps.subscribe(review_posting.cancellation_steps)
     bot.cancellation_steps.subscribe(partial(
@@ -221,6 +226,10 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
         seasons=bot.season_service,
         modules=bot.module_service,
         deletes=check_in_changes.check_in_deletes(bot, bot.attendance_service),
+    ))
+    bot.cancellation_steps.subscribe(partial(
+        check_in_record.read_check_in_steps,
+        modules=bot.module_service,
     ))
     bot.cancellation_steps.subscribe(partial(
         attendance_cancellation_notice.notify_checkin_steps,
@@ -487,7 +496,6 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.attendance.services.sheet_posting import sheet_post_change
     from leaguebot.core.services.calendar_post_service import calendar_sync_change
     from leaguebot.core.services.cancellation_changes import (
-        check_in_record_steps,
         division_cancel_change,
         round_cancel_change,
         season_cancel_change,
@@ -618,7 +626,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         submission_all_cancelled_change(
             seasons=bot.season_service,
-            record=check_in_record_steps(modules=bot.module_service),
+            round_ended_not_held=bot.round_ended_not_held,
             cancellation_notices=bot.cancellation_notices,
             cancellation_steps=steps_of_the_modules(bot.cancellation_steps),
             now=lambda: bot.change_queue.now(),
