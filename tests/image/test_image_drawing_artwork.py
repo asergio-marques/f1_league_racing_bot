@@ -99,6 +99,22 @@ async def test_the_signature_names_each_template_then_each_asset_folder_by_name_
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_league_with_no_image_configuration_signs_no_artwork():
+    """Before the image module has a configuration, there is no artwork to sign: the answer is
+    empty, as the fingerprint's own signature was."""
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    service = MagicMock()
+    service.get_config = AsyncMock(return_value=None)
+    drawing = ImageDrawing(
+        MagicMock(), service, MagicMock(),
+        renderer=MagicMock(), post_log=AsyncMock(), db_path=":memory:",
+    )
+
+    assert await drawing.artwork_signature() == []
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_template_edited_on_disk_changes_the_signature(folders):
     """Takes the place of core's own test of the same name: no setting changed, only the file."""
     drawing = _drawing(
