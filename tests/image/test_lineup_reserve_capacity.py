@@ -1,15 +1,12 @@
-"""The lineup reserve block bounds *reserve* placements, and nothing else — issue #140.
+"""The image module's answer to core's reserve question: does the lineup's reserve block hold
+that many reserves? (#140, #283)
 
-`PlacementService._guard_reserve_capacity` refuses a placement that would seat more reserve
-drivers than the configured lineup template draws slots for. It counts the division's reserves
-and adds one — which is the right measurement only where the driver being placed is going into
-the reserve team.
-
-Until #140 the guard was never told which team was being filled, so it made that measurement on
-every assignment. A division carrying as many reserves as its template declared slots could then
-place nobody at all: filling an ordinary race seat was refused, citing the reserve block. Every
-route in was blocked together, `assign_driver` being the single choke point through which the
-signup wizard, `/driver assign` and attendance's autoreserve alike seat a driver.
+Core counts the reserves a placement would leave in the division and asks; the image module reads
+the configured lineup template off the event loop and hands back the problem and its remedy, or
+nothing. That only a reserve placement asks, and that only reserves are counted, is core's, and is
+`tests/core/test_placement_capacity_guards.py`'s. Here the real implementation is handed to
+`PlacementService` as well, so that the refusal a league reads is pinned word for word (#140: a
+full reserve block refused a free race seat).
 
 Nothing here rasterises: the templates are built in memory and read as SVG.
 """
@@ -20,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from lxml import etree
 
+_NOT_YET = "#283: the image module does not yet answer core's reserve capacity question"
 
 SVG_NS = "http://www.w3.org/2000/svg"
 LINEUP = "lineup_template"
@@ -149,141 +147,37 @@ async def _seed(tmp_path, *, reserves: int, regulars: int = 0, teams: int = 2):
     return db_path, season_id, division_id
 
 
-def _bot(db_path, reports, *, toggle: bool = True):
-    # `db_path` is not decoration: the lineup refresh `assign_driver` ends on reads
-    # `bot.db_path`, and a MagicMock there writes a file named after itself into the
-    # repo root. The suite keeps no scratch.
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    bot.image_config_service.get_toggles = AsyncMock(return_value={"lineup": toggle})
-    bot.image_validity_service.template_reports = AsyncMock(return_value=reports)
-    return bot
+REMEDY = "Enlarge the template, or turn the `lineup` image aspect off with `/images config toggle`."
+
+
+def _drawing(reports, *, toggle: bool = True, images: bool = True):
+    """The image module's implementation of core's protocol, over stand-ins for its own services:
+    the images module *images*, the `lineup` aspect *toggle*, and the template *reports*."""
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    modules = MagicMock()
+    modules.is_images_enabled = AsyncMock(return_value=images)
+    config = MagicMock()
+    config.get_toggles = AsyncMock(return_value={"lineup": toggle})
+    validity = MagicMock()
+    validity.template_reports = AsyncMock(return_value=reports)
+    return ImageDrawing(modules=modules, config=config, validity=validity)
 
 
 def _report(path):
     return MagicMock(valid=True, resolved_path=str(path), template_key=LINEUP)
 
 
-def _service(db_path, bot):
+async def _assign(db_path, season_id, division_id, team, drawing):
     from leaguebot.core.services.placement_service import PlacementService
-
-    return PlacementService(db_path, bot=bot)
-
-
-# ── The defect: an ordinary team is not the reserve block ─────────────────
-
-
-async def test_a_placement_into_an_ordinary_team_is_not_refused_for_reserve_capacity(
-    tmp_path,
-):
-    """#140: a full reserve block said nothing about a free seat on a race team."""
-    db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
-    template = _template_file(tmp_path, reserve_slots=3)
-    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
-
-    await service._guard_reserve_capacity(division_id, ORDINARY)
-
-
-# ── The measurement it does exist to make ─────────────────────────────────
-
-
-async def test_a_reserve_placement_past_the_slots_is_refused(tmp_path):
-    db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
-    template = _template_file(tmp_path, reserve_slots=3)
-    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
-
-    with pytest.raises(ValueError) as excinfo:
-        await service._guard_reserve_capacity(division_id, RESERVE)
-
-    message = str(excinfo.value)
-    assert "4 reserve drivers" in message
-    assert "3 reserve slots" in message
-    assert "**not** assigned" in message
-
-
-async def test_a_reserve_placement_within_the_slots_is_allowed(tmp_path):
-    db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
-    template = _template_file(tmp_path, reserve_slots=5)
-    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
-
-    await service._guard_reserve_capacity(division_id, RESERVE)
-
-
-async def test_drivers_on_ordinary_teams_do_not_count_towards_the_reserve_block(tmp_path):
-    """The block bounds reserves alone, so a full grid never fills it."""
-    db_path, _season_id, division_id = await _seed(tmp_path, reserves=1, regulars=4)
-    template = _template_file(tmp_path, reserve_slots=2)
-    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
-
-    await service._guard_reserve_capacity(division_id, RESERVE)
-
-
-async def test_a_change_seating_several_reserves_is_measured_whole(tmp_path):
-    """#150: a test roster seats its reserves in one change, so they are counted together."""
-    db_path, _season_id, division_id = await _seed(tmp_path, reserves=1)
-    template = _template_file(tmp_path, reserve_slots=3)
-    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
-
-    await service._guard_reserve_capacity(division_id, RESERVE, adding=2)
-    with pytest.raises(ValueError) as excinfo:
-        await service._guard_reserve_capacity(division_id, RESERVE, adding=3)
-
-    assert "4 reserve drivers" in str(excinfo.value)
-
-
-# ── Everything it must not raise for ──────────────────────────────────────
-
-
-async def test_an_unknown_team_is_left_to_the_check_that_reports_it(tmp_path):
-    """assign_driver names a team that does not exist in its own words."""
-    db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
-    template = _template_file(tmp_path, reserve_slots=3)
-    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
-
-    await service._guard_reserve_capacity(division_id, "No Such Team")
-
-
-async def test_the_lineup_aspect_being_off_lets_every_placement_through(tmp_path):
-    """The ceiling exists because a graphic would drop a driver. No graphic, no ceiling."""
-    db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
-    template = _template_file(tmp_path, reserve_slots=3)
-    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}, toggle=False))
-
-    await service._guard_reserve_capacity(division_id, RESERVE)
-
-
-async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
-    """A fault in the check must not cost a league a placement (XIV.7)."""
-    db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
-    bot = _bot(db_path, {})
-    bot.image_validity_service.template_reports = AsyncMock(
-        side_effect=RuntimeError("boom")
-    )
-    service = _service(db_path, bot)
-
-    await service._guard_reserve_capacity(division_id, RESERVE)
-
-
-# ── Through the choke point, not only in isolation ────────────────────────
-
-
-async def test_an_ordinary_placement_survives_a_full_reserve_block_through_assign_driver(
-    tmp_path,
-):
-    """#140 as a league met it: `/driver assign` refused, citing the reserve block."""
-    db_path, season_id, division_id = await _seed(tmp_path, reserves=3)
-    template = _template_file(tmp_path, reserve_slots=3)
-    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
     guild = MagicMock()
     guild.get_member.return_value = None
     guild.fetch_member = AsyncMock(return_value=None)
-
-    result = await service.assign_driver(
+    return await PlacementService(db_path, drawing=drawing).assign_driver(
         driver_profile_id=9999,
         division_id=division_id,
-        team_name=ORDINARY,
+        team_name=team,
         season_id=season_id,
         acting_user_id=99,
         acting_user_name="Tester",
@@ -291,24 +185,94 @@ async def test_an_ordinary_placement_survives_a_full_reserve_block_through_assig
         discord_user_id="8888",
     )
 
-    assert result["team_name"] == ORDINARY
+
+# ── The answer ────────────────────────────────────────────────────────────
 
 
-async def test_a_reserve_overflow_still_reaches_the_caller_through_assign_driver(tmp_path):
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
+@pytest.mark.parametrize(
+    "slots, reserves, problem",
+    [
+        (
+            3,
+            4,
+            "that would give the division 4 reserve drivers, but the configured lineup "
+            "template declares 3 reserve slots",
+        ),
+        (
+            1,
+            2,
+            "that would give the division 2 reserve drivers, but the configured lineup "
+            "template declares 1 reserve slot",
+        ),
+    ],
+    ids=["slots", "one-slot"],
+)
+async def test_reserves_past_the_slots_are_a_problem(tmp_path, slots, reserves, problem):
+    template = _template_file(tmp_path, reserve_slots=slots)
+
+    answer = await _drawing({LINEUP: _report(template)}).reserve_capacity_problem(reserves)
+
+    assert (answer.problem, answer.remedy) == (problem, REMEDY)
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
+@pytest.mark.parametrize(
+    "slots, reserves",
+    [(5, 4), (3, 3), (0, 9)],
+    ids=["within", "exactly", "no-reserve-block"],
+)
+async def test_reserves_the_block_holds_are_no_problem(tmp_path, slots, reserves):
+    """A template declaring no reserve slot at all measures nothing."""
+    template = _template_file(tmp_path, reserve_slots=slots)
+
+    answer = await _drawing({LINEUP: _report(template)}).reserve_capacity_problem(reserves)
+
+    assert answer is None
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
+@pytest.mark.parametrize(
+    "toggle, images", [(False, True), (True, False)], ids=["aspect-off", "module-off"]
+)
+async def test_no_lineup_drawn_means_no_problem(tmp_path, toggle, images):
+    """The ceiling exists because a graphic would drop a driver. No graphic, no ceiling."""
+    template = _template_file(tmp_path, reserve_slots=3)
+    drawing = _drawing({LINEUP: _report(template)}, toggle=toggle, images=images)
+
+    assert await drawing.reserve_capacity_problem(4) is None
+
+
+# ── As a league meets it, through the choke point ─────────────────────────
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
+async def test_a_reserve_overflow_reaches_the_caller_through_assign_driver(tmp_path):
     db_path, season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=3)
-    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
-    with pytest.raises(ValueError) as excinfo:
-        await service.assign_driver(
-            driver_profile_id=9999,
-            division_id=division_id,
-            team_name=RESERVE,
-            season_id=season_id,
-            acting_user_id=99,
-            acting_user_name="Tester",
-            guild=MagicMock(),
-            discord_user_id="8888",
+    with pytest.raises(ValueError) as refused:
+        await _assign(
+            db_path, season_id, division_id, RESERVE, _drawing({LINEUP: _report(template)})
         )
 
-    assert "reserve slots" in str(excinfo.value)
+    assert str(refused.value) == (
+        "that would give the division 4 reserve drivers, but the configured lineup template "
+        "declares 3 reserve slots. The driver was **not** assigned. Enlarge the template, or "
+        "turn the `lineup` image aspect off with `/images config toggle`."
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
+async def test_an_ordinary_placement_survives_a_full_reserve_block_through_assign_driver(
+    tmp_path,
+):
+    """#140 as a league met it: `/driver assign` refused, citing the reserve block."""
+    db_path, season_id, division_id = await _seed(tmp_path, reserves=3)
+    template = _template_file(tmp_path, reserve_slots=3)
+
+    result = await _assign(
+        db_path, season_id, division_id, ORDINARY, _drawing({LINEUP: _report(template)})
+    )
+
+    assert result["team_name"] == ORDINARY
