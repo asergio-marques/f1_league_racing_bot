@@ -509,13 +509,15 @@ async def _placements_confirmed(tmp_path: Any, monkeypatch: Any, drawing: Any) -
     return league, press
 
 
-@pytest.mark.parametrize(("start", "change", "divisions"), [
-    pytest.param(_lineup_asked, "posting the lineup of **Pro**", ("Pro",), id="a lineup asked"),
-    pytest.param(_review_approved, "✅ Approve on round 3's penalty review", ("Pro",),
-                 id="a review's sanction"),
-    pytest.param(_placements_approved, "the ✅ Approve button of `/season placements-review`",
-                 ("Pro", "Am"), id="the placements approved"),
-    pytest.param(_placements_confirmed,
+@pytest.mark.parametrize(("start", "member", "change", "divisions"), [
+    pytest.param(_lineup_asked, "the bot", "posting the lineup of **Pro**", ("Pro",),
+                 id="a lineup asked"),
+    pytest.param(_review_approved, "Alex (`<@{member_id}>`)",
+                 "✅ Approve on round 3's penalty review", ("Pro",), id="a review's sanction"),
+    pytest.param(_placements_approved, "Admin (`<@{admin_id}>`)",
+                 "the ✅ Approve button of `/season placements-review`", ("Pro", "Am"),
+                 id="the placements approved"),
+    pytest.param(_placements_confirmed, "Admin (`<@{admin_id}>`)",
                  "the ✅ Confirm placements button of `/season placements-review`",
                  ("Pro", "Am"), id="the placements confirmed mid-season"),
 ])
@@ -525,15 +527,17 @@ async def _placements_confirmed(tmp_path: Any, monkeypatch: Any, drawing: Any) -
     "its job's own line",
 )
 async def test_a_lineup_fallen_back_to_text_is_recorded_by_every_change_that_posts_it(
-    tmp_path, monkeypatch, start, change, divisions,
+    tmp_path, monkeypatch, start, member, change, divisions,
 ):
     """Each change that posts a lineup, where the drawing the builder handed hands back the
     problem "the template has no rows" and the text stands in: each lineup it posts is posted as
     text, the queue does not stop, and the log channel names the problem once for each division,
-    in that lineup's posting job's own "Lineup posted as text" line, opening with the change it
-    ran for, naming the division and saying what puts it right. No reply names the problem or a
+    in that lineup's posting job's own "Lineup posted as text" line, opening with the member and
+    the change it ran for, as every line does, naming the division and saying what puts it right. No reply names the problem or a
     lineup posted as text."""
+    from tests.support.change_queue import MEMBER_ID
     from tests.support.lineup_drawing import LineupDrawingStub
+    from tests.support.season_league import ADMIN_ID
 
     drawing = LineupDrawingStub(problem=PROBLEM)
     league, asked = await start(tmp_path, monkeypatch, drawing)
@@ -546,8 +550,10 @@ async def test_a_lineup_fallen_back_to_text_is_recorded_by_every_change_that_pos
     named = [line for line in logged if PROBLEM in line]
     assert len(named) == len(divisions), named
     for division in divisions:
-        line = POSTED_AS_TEXT.format(change=change, division=division, problem=PROBLEM)
-        assert sum(each.endswith(line) for each in named) == 1, named
+        line = member.format(member_id=MEMBER_ID, admin_id=ADMIN_ID) + " | " + (
+            POSTED_AS_TEXT.format(change=change, division=division, problem=PROBLEM)
+        )
+        assert sum(each.startswith(line) for each in named) == 1, named
     if asked is not None:
         from tests.support.season_league import reply
 
