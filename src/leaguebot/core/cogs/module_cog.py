@@ -4,15 +4,12 @@ Manages the league's modules.
 """
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin, module_off, module_on
 from leaguebot.core.models.module_dependencies import needs, taken_down_with
 from leaguebot.core.utils.channel_guard import league_admin_only
@@ -312,8 +309,9 @@ class ModuleCog(commands.Cog):
         from leaguebot.core.services.season_lifecycle_service import (
             FROZEN_FOR_COMPLETION_REFUSAL,
             PLACEMENTS_CONFIRMED_REFUSAL,
-            modules_frozen_for_completion,
             configuration_fixed,
+            configuration_fixed_refusal,
+            modules_frozen_for_completion,
         )
 
         async def _refused(reply: str) -> bool:
@@ -326,11 +324,7 @@ class ModuleCog(commands.Cog):
         if module == "signup":
             season_number = await configuration_fixed(self.bot.db_path)
             if season_number is not None:
-                return await _refused(
-                    f"❌ The signup module is fixed for Season {season_number} now that its "
-                    f"configuration has been confirmed. It can be {action}d again once the "
-                    "season has ended, or while a new season is in configuration."
-                )
+                return await _refused(configuration_fixed_refusal(season_number, action))
         elif action == "enable":
             if await self.bot.season_service.get_confirmed_season() is not None:
                 return await _refused(PLACEMENTS_CONFIRMED_REFUSAL)
@@ -553,7 +547,7 @@ class ModuleCog(commands.Cog):
             what=describe(interaction),
         )
 
-    # ── Signup enable (T010) ───────────────────────────────────────────
+    # ── Signup enable ───────────────────────────────────────────────────
 
     async def _enable_signup(
         self,
@@ -562,52 +556,13 @@ class ModuleCog(commands.Cog):
         if await self._refuse_missing_dependency(interaction, "signup"):
             return
 
-        # Guard already-enabled
-        if await self.bot.module_service.is_signup_enabled():
-            await refuse(
-                interaction, "⚠️ Signup module is already enabled.", what=describe(interaction)
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        # Upsert a bare config row — its channel NULL. The league's roles are core's (#276).
-        from leaguebot.signup.models.signup_module import SignupModuleConfig
-        new_cfg = SignupModuleConfig(
-            signup_channel_id=None,
-            signups_open=False,
-            signup_button_message_id=None,
-            selected_tracks=[],
-        )
-        await self.bot.signup_module_service.save_config(new_cfg)
-
-        # Set enabled + audit
-        await self.bot.module_service.set_signup_enabled(True)
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'MODULE_ENABLE', '', ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"module": "signup"}), now),
-            )
-            await db.commit()
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable signup | Success",
-        )
-        # The two roles are the league's (issue #276): named only where still to be set.
-        server_cfg = await self.bot.config_service.get_server_config()
-        steps = ["  • `/signup channel <channel>`"]
-        if server_cfg is None or server_cfg.base_role_id is None:
-            steps.append("  • `/bot base-role <role>`")
-        if server_cfg is None or server_cfg.driver_role_id is None:
-            steps.append("  • `/bot driver-role <role>`")
-        await interaction.followup.send(
-            "✅ Signup module enabled.\n"
-            "Next steps — configure with:\n" + "\n".join(steps),
-            ephemeral=True,
+        # The switch is signup's own change on the queue, whose check refuses "already enabled"
+        # and the season's stage being fixed: this asks for it and does nothing else.
+        await self.bot.change_queue.ask(
+            module_on("signup"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ── Signup disable (T018) ──────────────────────────────────────────

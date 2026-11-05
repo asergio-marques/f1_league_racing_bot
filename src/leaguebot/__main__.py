@@ -571,6 +571,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.results.services.rounds_sync_change import rounds_sync_change
     from leaguebot.signup.services.closing_steps import closing_change, reason_delete_change
     from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
+    from leaguebot.signup.services.module_switch_settings import module_on_signup
     from leaguebot.signup.services.signup_off_change import signup_off_change
     from leaguebot.signup.services.window_changes import window_close_change, window_open_change
     from leaguebot.signup.services.review_changes import (
@@ -1038,6 +1039,11 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         setting_change(
             module_on_results(modules=bot.module_service, seasons=bot.season_service)
+        )
+    )
+    bot.change_queue.register(
+        setting_change(
+            module_on_signup(modules=bot.module_service, config=bot.config_service)
         )
     )
     for setting in (

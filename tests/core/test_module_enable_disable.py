@@ -678,8 +678,18 @@ SIGNUP_FIXED = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#283: signup's switches do not read the stage at the run")
-@pytest.mark.parametrize(("verb", "on"), [("enable", ()), ("disable", ("signup",))])
+@pytest.mark.parametrize(
+    ("verb", "on"),
+    [
+        pytest.param("enable", (), id="enable"),
+        pytest.param(
+            "disable", ("signup",), id="disable",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#283: signup's switch-off does not read the stage at the run"
+            ),
+        ),
+    ],
+)
 async def test_a_signup_switch_asked_before_the_configuration_is_confirmed_and_run_after_is_refused(
     tmp_path, verb, on
 ):

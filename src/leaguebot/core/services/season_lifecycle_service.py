@@ -589,6 +589,17 @@ async def configuration_fixed(db_path: str) -> int | None:
     return int(row["season_number"])
 
 
+def configuration_fixed_refusal(season_number: int, action: str) -> str:
+    """The refusal for a signup switch asked while `configuration_fixed` names *season_number*,
+    word for word as `/module`'s own stage check gives it: *action* is "enable" or "disable",
+    read from the command so the reply says which was refused."""
+    return (
+        f"❌ The signup module is fixed for Season {season_number} now that its "
+        f"configuration has been confirmed. It can be {action}d again once the "
+        "season has ended, or while a new season is in configuration."
+    )
+
+
 async def modules_frozen_for_completion(db_path: str) -> bool:
     """True while the server's season stands in Pending completion.
 

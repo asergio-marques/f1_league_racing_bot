@@ -125,7 +125,6 @@ ignore_imports =
     # #283: results:
     leaguebot.core.cogs.season_cog -> leaguebot.results.services.season_points_service
     # #283: signup:
-    leaguebot.core.cogs.module_cog -> leaguebot.signup.models.signup_module
     leaguebot.core.services.placement_service -> leaguebot.signup.models.signup_module
     # #283: weather:
     leaguebot.core.cogs.season_cog -> leaguebot.weather.services.weather_config_service

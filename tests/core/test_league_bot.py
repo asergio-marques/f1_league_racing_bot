@@ -190,9 +190,6 @@ def test_the_settings_changes_are_registered():
         pytest.param(
             "signup", "leaguebot.signup.", {"server_configs", "signup_module_config"}, None,
             id="signup",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#283: signup's switch-on is not a setting the builder registers"
-            ),
         ),
     ],
 )

@@ -474,7 +474,6 @@ async def _signup_config(db_path: str) -> dict | None:
     return None if row is None else dict(row)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: signup's switch-on is not its own change on the queue")
 async def test_enabling_signup_writes_a_bare_configuration(tmp_path):
     """So the `/signup …` commands have a row to update. Without it every one of them would be a
     silent no-op against nothing. The member is acknowledged at once; once the change has run the
@@ -499,7 +498,6 @@ async def test_enabling_signup_writes_a_bare_configuration(tmp_path):
     assert await log_lines(league) == [f"{NAMED} | /module enable signup | Success"]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: signup's switch-on replaces a standing configuration row")
 async def test_re_enabling_signup_keeps_a_standing_row(tmp_path):
     """A configuration row standing while the module is off (a restored database could hold one)
     is kept, not replaced by a bare one: the switch-on creates only what is missing. The signup
@@ -580,7 +578,6 @@ async def test_enabling_signup_twice_does_no_work(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: signup's switch-on is three saves off the queue")
 async def test_a_signup_enable_that_cannot_be_written_says_the_module_is_still_off(tmp_path):
     """The flag, the configuration row and the audit entry are one save, so a fault at the audit
     leaves the module off with no row created. The member gets the standard failure reply, saying
