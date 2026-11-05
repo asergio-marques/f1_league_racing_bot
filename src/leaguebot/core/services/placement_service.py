@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -696,19 +696,26 @@ class PlacementService:
             ).fetchone()
         return None if row is None else bool(row["is_reserve"])
 
-    async def _ask_drawing(self, method: str, count: int) -> CapacityProblem | None:
-        """Ask the image module's handed drawing *method* of *count*, and hand back what it
-        says, or None where nothing is handed or it could not answer.
+    async def _ask_drawing(
+        self, method: str, count: Callable[[], Awaitable[int | None]]
+    ) -> CapacityProblem | None:
+        """Read the guard's own count with *count*, ask the image module's handed drawing
+        *method* of it, and hand back what it says, or None where nothing is handed, the
+        count reports the guard does not apply (None), or either step could not run.
 
-        **The capacity guards' one catch:** a drawing that raises must not block a placement,
-        only a genuine over-capacity may, so the fault goes to the host's log in full and the
-        guard that asked answers as if told nothing was wrong (architecture.md, "A catch-all
-        error handler", a stated exception beside ``amend_end_changes._names_step``).
+        **The capacity guards' one catch.** Reading the seats and asking the drawing are one
+        guard, not two: a fault in either must not block a placement, only a genuine
+        over-capacity may, so the fault goes to the host's log in full and the guard that
+        asked answers as if told nothing was wrong (architecture.md, "A catch-all error
+        handler", a stated exception beside ``amend_end_changes._names_step``).
         """
         if self._drawing is None:
             return None
         try:
-            return await getattr(self._drawing, method)(count)
+            seated = await count()
+            if seated is None:
+                return None
+            return await getattr(self._drawing, method)(seated)
         except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
             log.error("%s could not run: %s", method, exc, exc_info=True)
             return None
@@ -733,27 +740,29 @@ class PlacementService:
         *adding* is how many reserves the change seats — one for a placement, more for a test
         roster seated whole (``guard_roster_capacity``).
 
-        Asks the image module's handed drawing (``_ask_drawing``): never raises for its own
-        reasons, only a genuine over-capacity the drawing reports may.
+        Reads its own count and asks the image module's handed drawing (``_ask_drawing``)
+        under the one catch: never raises for its own reasons, only a genuine over-capacity
+        the drawing reports may.
         """
-        # Not a reserve placement, or no such team — `assign_driver` reports a team that
-        # does not exist in its own words, and this guard stays quiet.
-        if not await self._is_reserve_team(division_id, team_name):
-            return
 
-        async with get_connection(self._db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT COUNT(*) AS seated FROM driver_season_assignments dsa "
-                    "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
-                    "JOIN team_instances ti ON ti.id = ts.team_instance_id "
-                    "WHERE dsa.division_id = ? AND ti.is_reserve = 1",
-                    (division_id,),
-                )
-            ).fetchone()
-        seated = (row["seated"] if row else 0) or 0
+        async def _reserves_seated() -> int | None:
+            # Not a reserve placement, or no such team — `assign_driver` reports a team
+            # that does not exist in its own words, and this guard stays quiet.
+            if not await self._is_reserve_team(division_id, team_name):
+                return None
+            async with get_connection(self._db_path) as db:
+                row = await (
+                    await db.execute(
+                        "SELECT COUNT(*) AS seated FROM driver_season_assignments dsa "
+                        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+                        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+                        "WHERE dsa.division_id = ? AND ti.is_reserve = 1",
+                        (division_id,),
+                    )
+                ).fetchone()
+            return ((row["seated"] if row else 0) or 0) + adding
 
-        problem = await self._ask_drawing("reserve_capacity_problem", seated + adding)
+        problem = await self._ask_drawing("reserve_capacity_problem", _reserves_seated)
         if problem is not None:
             raise ValueError(
                 f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
@@ -782,20 +791,23 @@ class PlacementService:
         *adding* is how many drivers the change seats, of either kind — one for a placement,
         more for a test roster seated whole (``guard_roster_capacity``).
 
-        Asks the image module's handed drawing (``_ask_drawing``): never raises for its own
-        reasons, only a genuine over-capacity the drawing reports may.
+        Reads its own count and asks the image module's handed drawing (``_ask_drawing``)
+        under the one catch: never raises for its own reasons, only a genuine over-capacity
+        the drawing reports may.
         """
-        async with get_connection(self._db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT COUNT(*) AS seated FROM driver_season_assignments "
-                    "WHERE division_id = ?",
-                    (division_id,),
-                )
-            ).fetchone()
-        seated = (row["seated"] if row else 0) or 0
 
-        problem = await self._ask_drawing("sheet_capacity_problem", seated + adding)
+        async def _drivers_seated() -> int | None:
+            async with get_connection(self._db_path) as db:
+                row = await (
+                    await db.execute(
+                        "SELECT COUNT(*) AS seated FROM driver_season_assignments "
+                        "WHERE division_id = ?",
+                        (division_id,),
+                    )
+                ).fetchone()
+            return ((row["seated"] if row else 0) or 0) + adding
+
+        problem = await self._ask_drawing("sheet_capacity_problem", _drivers_seated)
         if problem is not None:
             raise ValueError(
                 f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
@@ -826,27 +838,29 @@ class PlacementService:
         *adding* is how many classified drivers the change seats — one for a placement, more
         for a test roster seated whole (``guard_roster_capacity``).
 
-        Asks the image module's handed drawing (``_ask_drawing``): never raises for its own
-        reasons, only a genuine over-capacity the drawing reports may.
+        Reads its own count and asks the image module's handed drawing (``_ask_drawing``)
+        under the one catch: never raises for its own reasons, only a genuine over-capacity
+        the drawing reports may.
         """
-        # A reserve placement adds no entry to the classification, and no such team —
-        # `assign_driver` reports a team that does not exist in its own words.
-        if await self._is_reserve_team(division_id, team_name) is not False:
-            return
 
-        async with get_connection(self._db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT COUNT(*) AS seated FROM driver_season_assignments dsa "
-                    "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
-                    "JOIN team_instances ti ON ti.id = ts.team_instance_id "
-                    "WHERE dsa.division_id = ? AND ti.is_reserve = 0",
-                    (division_id,),
-                )
-            ).fetchone()
-        seated = (row["seated"] if row else 0) or 0
+        async def _classified_seated() -> int | None:
+            # A reserve placement adds no entry to the classification, and no such team —
+            # `assign_driver` reports a team that does not exist in its own words.
+            if await self._is_reserve_team(division_id, team_name) is not False:
+                return None
+            async with get_connection(self._db_path) as db:
+                row = await (
+                    await db.execute(
+                        "SELECT COUNT(*) AS seated FROM driver_season_assignments dsa "
+                        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+                        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+                        "WHERE dsa.division_id = ? AND ti.is_reserve = 0",
+                        (division_id,),
+                    )
+                ).fetchone()
+            return ((row["seated"] if row else 0) or 0) + adding
 
-        problem = await self._ask_drawing("standings_capacity_problem", seated + adding)
+        problem = await self._ask_drawing("standings_capacity_problem", _classified_seated)
         if problem is not None:
             raise ValueError(
                 f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
@@ -895,8 +909,9 @@ class PlacementService:
         guard is silent — it activates **by data**, the moment the first image type declares
         one, with no further code change.
 
-        Never raises for its own reasons: a fault in this check must not block a placement,
-        only a genuine over-capacity the drawing reports may.
+        Reads its own count and asks the image module's handed drawing (``_ask_drawing``)
+        under the one catch: never raises for its own reasons, only a genuine over-capacity
+        the drawing reports may.
         """
         # The reserve block is guarded separately: it counts reserve drivers, not every
         # seated driver, and its capacity comes from the template rather than from here.
@@ -912,16 +927,17 @@ class PlacementService:
         # joins no classification.
         await self._guard_standings_capacity(division_id, team_name)
 
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT COUNT(*) AS seated FROM driver_season_assignments "
-                "WHERE season_id = ? AND division_id = ?",
-                (season_id, division_id),
-            )
-            row = await cursor.fetchone()
-        seated = (row["seated"] if row else 0) or 0
+        async def _division_seated() -> int | None:
+            async with get_connection(self._db_path) as db:
+                cursor = await db.execute(
+                    "SELECT COUNT(*) AS seated FROM driver_season_assignments "
+                    "WHERE season_id = ? AND division_id = ?",
+                    (season_id, division_id),
+                )
+                row = await cursor.fetchone()
+            return ((row["seated"] if row else 0) or 0) + 1
 
-        problem = await self._ask_drawing("declared_capacity_problem", seated + 1)
+        problem = await self._ask_drawing("declared_capacity_problem", _division_seated)
         if problem is not None:
             raise ValueError(f"{problem.problem}. {problem.remedy}")
 
