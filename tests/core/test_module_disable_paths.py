@@ -21,9 +21,10 @@ moment somebody turned the module back on, against a season that had moved on.
 off is `ATTENDANCE_MODULE_DISABLED`; attendance going off because Results & Standings did is
 `ATTENDANCE_MODULE_CASCADE_DISABLED`. The distinction matters because the second was nobody's
 decision, and a league reading its log needs to see that. Both go through
-`AttendanceService.switch_off_on`, on a connection the caller hands it: the plain disable commits
-it with its own audit, and the cascade is a part of turning Results & Standings off, saved with the
-switch-off on the change queue (#439), where it has no interaction of its own to answer.
+`AttendanceService.switch_off_on`, on a connection the caller hands it: the plain disable is
+attendance's own change on the change queue (#283), saved with its audit, and the cascade is a part
+of turning Results & Standings off, saved with the switch-off on the change queue (#439), where it
+has no interaction of its own to answer.
 
 **Enabling signup writes a bare configuration row and then names the three commands that fill
 it in.** A module enabled with nothing configured does nothing at all, and the next steps are
@@ -306,45 +307,141 @@ async def test_disabling_images_is_audited(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+# Attendance's switch-off is attendance's own change on the change queue (#283, S11d): `/module
+# disable attendance` asks `module.off:attendance`, the member is acknowledged at once, and the
+# queue carries it out. Each test drives the command's handler on the bot the entry point builds,
+# with the real queue and "now" pinned, and runs the queue.
+
+#: Why a test of attendance's switch-off fails before it moves onto the queue.
+ATTENDANCE_OFF_ON_THE_QUEUE = (
+    "#283: /module disable attendance is not yet acknowledged as attendance's change on the queue"
+)
+#: Why a fault in attendance's switch-off is not yet answered as one that saved nothing.
+ATTENDANCE_OFF_FAULT = (
+    "#283: a fault in /module disable attendance is not yet answered as one that saved nothing"
+)
+#: Admin as the league's log lines name them.
+NAMED = f"Admin (`<@{MEMBER_ID}>`)"
+
+
+async def _attendance_league(tmp_path, *, on: bool = True, divisions: int = 0):
+    """A league whose settings run on the queue, Results & Standings on and attendance *on* or
+    off, *divisions* divisions of an active season each with its own RSVP channel bound, the
+    module cog over its bot, and `/module disable` as Admin."""
+    from tests.support.settings_league import interaction, settings_league
+
+    league = await settings_league(
+        tmp_path, modules=("results", "attendance") if on else ("results",)
+    )
+    if divisions:
+        async with get_connection(league.db_path) as db:
+            await db.execute(
+                "INSERT INTO seasons (id, season_number, start_date, status) "
+                "VALUES (1, 1, '2026-01-01', 'ACTIVE')"
+            )
+            for index in range(1, divisions + 1):
+                await db.execute(
+                    "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+                    "VALUES (?, 1, ?, ?, ?)",
+                    (index, f"Division {index}", index, 500 + index),
+                )
+                await db.execute(
+                    "INSERT INTO attendance_division_config "
+                    "(division_id, rsvp_channel_id) VALUES (?, ?)",
+                    (index, str(700000 + index)),
+                )
+            await db.commit()
+    return league, ModuleCog(league.bot), interaction(league.bot, "module disable")
+
+
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_OFF_ON_THE_QUEUE)
 async def test_disabling_attendance_clears_the_flag(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+    """The member is acknowledged at once, and once the change has run the module is off, and
+    the reply and the Success line keep today's words."""
+    from tests.support.change_queue import acknowledgement
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._disable_attendance(_interaction())
+    league, cog, asked = await _attendance_league(tmp_path)
 
-    assert await _attendance_flag(db_path) == 0
+    await cog._disable_attendance(asked)
+    assert acknowledgement(asked).startswith("⏳ Turning the attendance module off. ")
+    await run_queue(league.bot)
+
+    assert await _attendance_flag(league.db_path) == 0
+    assert last_said(asked) == "✅ Attendance module disabled."
+    assert await log_lines(league) == [f"{NAMED} | /module disable attendance | Success"]
 
 
 async def test_disabling_attendance_clears_its_division_channels(tmp_path):
     """Those are stale bindings: a channel recorded against a division for a module that
     is off would have the bot posting into it the moment it came back on, against a season
     that had moved along."""
-    db_path = await _make_db(tmp_path, attendance_divisions=2)
-    cog = _make_cog(db_path)
-    assert await _division_configs(db_path) == 2
+    league, cog, asked = await _attendance_league(tmp_path, divisions=2)
+    assert await _division_configs(league.db_path) == 2
 
-    await cog._disable_attendance(_interaction())
+    await cog._disable_attendance(asked)
+    await run_queue(league.bot)
 
-    assert await _division_configs(db_path) == 0
+    assert await _division_configs(league.db_path) == 0
 
 
 async def test_disabling_attendance_twice_does_no_work(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, attendance_enabled=False)
-    interaction = _interaction()
+    """Refused at once: nothing is queued and nothing audited, and the refusal reaches the log
+    channel as one line in the standard form."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._disable_attendance(interaction)
+    league, cog, asked = await _attendance_league(tmp_path, on=False)
 
-    assert "already disabled" in _replied(interaction)
-    assert await _audit_types(db_path) == []
+    await cog._disable_attendance(asked)
+
+    assert last_said(asked) == "⚠️ Attendance module is already disabled."
+    assert await change_rows(league.db_path) == []
+    assert await _audit_types(league.db_path) == []
+    assert await log_lines(league) == [
+        f"⛔ `/module disable` refused for {NAMED} — Attendance module is already disabled."
+    ]
 
 
 async def test_a_manager_s_disable_is_audited_as_their_decision(tmp_path):
-    db_path = await _make_db(tmp_path)
+    league, cog, asked = await _attendance_league(tmp_path)
 
-    await _make_cog(db_path)._disable_attendance(_interaction())
+    await cog._disable_attendance(asked)
+    await run_queue(league.bot)
 
-    assert await _audit_types(db_path) == ["ATTENDANCE_MODULE_DISABLED"]
+    assert await _audit_types(league.db_path) == ["ATTENDANCE_MODULE_DISABLED"]
+
+
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_OFF_FAULT)
+async def test_an_attendance_disable_that_cannot_be_written_leaves_the_module_on(tmp_path):
+    """The switch-off and its audit entry are one save, so a fault at the audit leaves the module
+    on and its division channels bound. The member gets the standard failure reply, saying
+    nothing was saved and what to run again, and the log channel gets the one failure line, and
+    never a success."""
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog, asked = await _attendance_league(tmp_path, divisions=1)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER refuse_the_audit BEFORE INSERT ON audit_entries "
+            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+        )
+        await db.commit()
+
+    await cog._disable_attendance(asked)
+    await run_queue(league.bot)
+
+    assert await _attendance_flag(league.db_path) == 1
+    assert await _division_configs(league.db_path) == 1
+    assert last_said(asked) == (
+        "❌ `/module disable` stopped on a fault in the bot, not on anything you entered, and "
+        "did not finish. Nothing was saved. Run `/module disable attendance` again to retry. The "
+        "fault is recorded in the log channel."
+    )
+    assert await log_lines(league) == [
+        f"❌ `/module disable` failed for {NAMED} — IntegrityError. "
+        "The details are in the host's log."
+    ]
 
 
 # ---------------------------------------------------------------------------
