@@ -1,18 +1,19 @@
-"""The standings row and round ceilings — 040, US4 (FR-043, FR-044).
+"""The standings row and round ceilings at the season review — 040, US4 (FR-043, FR-045).
 
 Both standings catalogues declare ``capacity=None``: their rows are counted from the
 template file, not from a number in the catalogue, so ``declared_capacities()`` cannot see
-them and the generic image guard in ``placement_service`` steps straight past them.
+them.
 
 Two ceilings, caught at two moments, as Constitution XIV.12 requires:
 
 * **A driver assignment** that would take a division past the drivers template's rows is
-  refused with the change unapplied. That is the earliest moment the overflow exists — the
-  posting is far too late, by which point the league has already lost a graphic.
+  refused with the change unapplied. Core counts and refuses
+  (`tests/core/test_placement_capacity_guards.py`); the image module measures the template
+  (`tests/image/test_standings_drivers_capacity.py`).
 * **`/season placements-review`** reports what either template could not draw for the season as a
   whole: the drivers rows, the constructors rows, and each template's round columns against
   the longest calendar. It is the only moment the *constructors* ceiling can be caught at
-  all, because seating a driver adds no team.
+  all, because seating a driver adds no team. That half is this file's.
 """
 from __future__ import annotations
 
@@ -27,8 +28,6 @@ pytestmark = pytest.mark.asyncio
 SVG_NS = "http://www.w3.org/2000/svg"
 DRIVERS = "standings_drivers_template"
 CONSTRUCTORS = "standings_constructors_template"
-ORDINARY = "Team 1"
-RESERVE = "Reserve"
 
 _ROW_SUFFIXES = ("position", "driver_name", "team_name", "points")
 
@@ -148,136 +147,6 @@ def _bot(db_path, reports, *, toggle=True):
     bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=toggle)
     bot.image_validity_service.template_reports = AsyncMock(return_value=reports)
     return bot
-
-
-def _report(path):
-    return MagicMock(valid=True, resolved_path=str(path), template_key=DRIVERS)
-
-
-# ── At the assignment (FR-044) ────────────────────────────────────────────
-
-
-async def test_an_assignment_past_the_drivers_template_rows_is_refused(tmp_path):
-    from leaguebot.core.services.placement_service import PlacementService
-
-    db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
-    template = _template_file(tmp_path, DRIVERS, rows=2)
-    service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
-
-    with pytest.raises(ValueError) as excinfo:
-        await service._guard_standings_capacity(division_id, ORDINARY)
-
-    message = str(excinfo.value)
-    assert "3 drivers" in message
-    assert DRIVERS in message
-    assert "**not** assigned" in message
-
-
-async def test_an_assignment_within_the_rows_is_allowed(tmp_path):
-    from leaguebot.core.services.placement_service import PlacementService
-
-    db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
-    template = _template_file(tmp_path, DRIVERS, rows=5)
-    service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
-
-    await service._guard_standings_capacity(division_id, ORDINARY)
-
-
-async def test_a_change_seating_several_drivers_is_measured_whole(tmp_path):
-    """#150: a test roster seats a division in one change, so its drivers are counted together."""
-    from leaguebot.core.services.placement_service import PlacementService
-
-    db_path, _season_id, division_id = await _seed(tmp_path, drivers=1)
-    template = _template_file(tmp_path, DRIVERS, rows=3)
-    service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
-
-    await service._guard_standings_capacity(division_id, ORDINARY, adding=2)
-    with pytest.raises(ValueError) as excinfo:
-        await service._guard_standings_capacity(division_id, ORDINARY, adding=3)
-
-    assert "4 drivers" in str(excinfo.value)
-
-
-async def test_the_toggle_being_off_lets_every_assignment_through(tmp_path):
-    """The ceiling exists because a graphic would drop a driver. No graphic, no ceiling."""
-    from leaguebot.core.services.placement_service import PlacementService
-
-    db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
-    template = _template_file(tmp_path, DRIVERS, rows=2)
-    service = PlacementService(
-        db_path, bot=_bot(db_path, {DRIVERS: _report(template)}, toggle=False)
-    )
-
-    await service._guard_standings_capacity(division_id, ORDINARY)
-
-
-async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
-    """A fault in the check must not cost a league a placement (XIV.7)."""
-    from leaguebot.core.services.placement_service import PlacementService
-
-    db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
-    bot = _bot(db_path, {})
-    bot.image_validity_service.template_reports = AsyncMock(
-        side_effect=RuntimeError("boom")
-    )
-    service = PlacementService(db_path, bot=bot)
-
-    await service._guard_standings_capacity(division_id, ORDINARY)
-
-
-# ── The reserve team is no part of a classification (#140) ───────────────
-
-
-async def test_a_seated_reserve_is_not_counted_against_the_standings_rows(tmp_path):
-    """A reserve stands in for an absent driver and adds no car to the grid.
-
-    `standings_service` filters `ti.is_reserve = 0` out of every classification it builds,
-    so a reserve on the books occupies no row. Counting them here refused an ordinary
-    placement one seat early for each one.
-    """
-    from leaguebot.core.services.placement_service import PlacementService
-
-    db_path, _season_id, division_id = await _seed(tmp_path, drivers=1, reserves=2)
-    template = _template_file(tmp_path, DRIVERS, rows=2)
-    service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
-
-    await service._guard_standings_capacity(division_id, ORDINARY)
-
-
-async def test_the_rows_still_bound_the_classified_drivers(tmp_path):
-    """Excluding reserves must not disarm the ceiling for the drivers who do hold a row."""
-    from leaguebot.core.services.placement_service import PlacementService
-
-    db_path, _season_id, division_id = await _seed(tmp_path, drivers=2, reserves=2)
-    template = _template_file(tmp_path, DRIVERS, rows=2)
-    service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
-
-    with pytest.raises(ValueError) as excinfo:
-        await service._guard_standings_capacity(division_id, ORDINARY)
-
-    assert "3 drivers" in str(excinfo.value), "the two reserves are not among them"
-
-
-async def test_a_reserve_placement_is_not_measured_against_the_standings_rows(tmp_path):
-    """Seating a reserve grows no classification, so a full template cannot refuse it."""
-    from leaguebot.core.services.placement_service import PlacementService
-
-    db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
-    template = _template_file(tmp_path, DRIVERS, rows=2)
-    service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
-
-    await service._guard_standings_capacity(division_id, RESERVE)
-
-
-async def test_an_unknown_team_is_left_to_the_check_that_reports_it(tmp_path):
-    """assign_driver names a team that does not exist in its own words."""
-    from leaguebot.core.services.placement_service import PlacementService
-
-    db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
-    template = _template_file(tmp_path, DRIVERS, rows=2)
-    service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
-
-    await service._guard_standings_capacity(division_id, "No Such Team")
 
 
 # ── At the season review (FR-043, FR-045) ─────────────────────────────────
