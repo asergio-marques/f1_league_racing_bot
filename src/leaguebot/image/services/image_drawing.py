@@ -1,10 +1,10 @@
-"""The image module's answers to core's drawing protocol (#283, plan S12).
+"""The image module's answers to core's drawing protocol.
 
 `ImageDrawing` implements `leaguebot.core.services.image_drawing.ImageDrawing`: the builder
 makes one, attaches it to the bot as `bot.image_drawing`, and hands it to `PlacementService` and
-the other callers S12 brings to it, so that core never imports this module. Each method is a
-capacity question: is the aspect drawn at all, is the template valid, and does it hold that many?
-Answered off the event loop, since parsing and measuring a template takes real time.
+its other callers, so that core never imports this module. Each method is a capacity question:
+is the aspect drawn at all, is the template valid, and does it hold that many? Answered off the
+event loop, since parsing and measuring a template takes real time.
 """
 from __future__ import annotations
 

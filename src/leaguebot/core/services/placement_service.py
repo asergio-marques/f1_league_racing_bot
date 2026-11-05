@@ -140,7 +140,7 @@ class PlacementService:
         #: builder's implementation handed in, as results is handed attendance's. The four
         #: capacity guards ask it rather than reach image's services through the bot. None in
         #: every unit test that exercises placement alone: no guard asks anything, and a test
-        #: roster of any size is accepted, as it was before 283.
+        #: roster of any size is accepted.
         self._drawing = drawing
 
     # ------------------------------------------------------------------
