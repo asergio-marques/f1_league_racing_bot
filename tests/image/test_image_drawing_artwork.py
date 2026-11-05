@@ -11,6 +11,7 @@ the answer is tested against a stand-in for this drawing, under `tests/core/`.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import shutil
 from pathlib import Path
@@ -26,11 +27,13 @@ NOT_YET = "#283: the image module's drawing does not answer the artwork signatur
 
 
 @pytest.fixture
-def folders(tmp_path):
+def folders(request):
     """A template folder holding the packaged templates and an empty flag folder, both inside the
-    project root, where the league's folders must be; named for the test, so that no two tests
-    share them. Removed afterwards."""
-    stem = f"_test_artwork_{tmp_path.name}"
+    project root, where the league's folders must be; named from a digest of the test's full id,
+    case included, so that no two tests share them, on one worker or on two. Removed
+    afterwards."""
+    digest = hashlib.sha256(request.node.nodeid.encode("utf-8")).hexdigest()[:16]
+    stem = f"_test_artwork_{digest}"
     templates = ROOT / "resources" / f"{stem}_templates"
     flags = ROOT / "resources" / f"{stem}_flags"
     for folder in (templates, flags):
