@@ -42,11 +42,11 @@ async def _opening_round(db_path: str, division_id: int):
     """The division's first round, read through core's `division_first_round`, or None where it
     has none.
 
-    The sheets are drawn against it: not because they stand after it, they stand after nothing,
-    but because the grid of rounds down the side of both is read from the season's calendar and
-    the heading context every posting resolves is keyed by a round. Every cell in that grid is
-    empty, which is exactly what an opening sheet should show. Approval refuses a division with no
-    rounds, so None cannot normally happen.
+    The standings are drawn against it: not because they stand after it, they stand after
+    nothing, but because the grid of rounds down their side is read from the season's calendar
+    and the heading context the posting resolves is keyed by a round. Every cell in that grid is
+    empty, which is exactly what the opening standings should show. Approval refuses a division
+    with no rounds, so None cannot normally happen.
     """
     return await division_first_round(db_path, division_id)
 
