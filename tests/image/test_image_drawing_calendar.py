@@ -184,3 +184,20 @@ async def test_the_drawing_hands_back_the_picture_the_problem_and_the_notices(tm
     assert picture.path == (png if drawn == "a picture" else None)
     assert picture.problem == (None if drawn == "a picture" else "the template has no rows")
     assert tuple(picture.notices) == ("a fallback flag stood in for Monaco's",)
+
+
+def test_a_released_calendar_is_removed_with_its_render_directory(tmp_path):
+    """`discard_picture` removes a drawn calendar and the render directory holding it, so no
+    posting leaves its picture behind in the host's temporary space; handed no picture, it
+    does nothing."""
+    drawing, *_ = _drawing()
+    directory = tmp_path / "f1bot_render_calendar"
+    directory.mkdir()
+    png = directory / "calendar_template.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    drawing.discard_picture(png)
+    drawing.discard_picture(None)
+
+    assert not png.exists()
+    assert not directory.exists()
