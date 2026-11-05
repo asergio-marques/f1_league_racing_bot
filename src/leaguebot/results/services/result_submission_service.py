@@ -326,6 +326,10 @@ async def close_called_off_on(
     divisions it ends, whether or not it calls the round off, and every empty submission is
     closed. A submission that has accepted nothing is all there is to close: the cancellation was
     refused while one had accepted results (`cancellation_refusal`).
+
+    The job's own payload carries `channel_target` ("results submission channel of round N"),
+    results' own word for what a discard of it leaves undeleted, so that core's `not_notified`
+    can name it without naming the job (`notice_target` is the same shape for a module's notice).
     """
     standing = {each.round_id: each for each in rounds}
     closed = dict(await close_submissions_on(db, list(standing)))
@@ -334,6 +338,7 @@ async def close_called_off_on(
             "channel_id": closed[round_id],
             "round_id": round_id,
             "what": "results submission channel",
+            "channel_target": f"results submission channel of round {each.round_number}",
             "reason": _CHANNEL_REASON[scope],
             "division_name": each.division_name,
             "round_number": each.round_number,

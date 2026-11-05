@@ -103,16 +103,8 @@ CALENDAR_DISCARDED = (
 ALL_JOBS = ["unarm", "apply", "notify_checkin", "take_down_call", "notify_forecast",
             "notify_results", "post_calendar", "delete_replaced", "close"]
 WIND_DOWN = "season.wind_down"
-#: Why a job renamed by the test goes unnamed in a cancellation's outcome until core stops naming
-#: the modules' jobs.
-_CORE_NAMES_THE_JOB = (
-    "#283: core reads the take-down and the submission channel's deletion by their names"
-)
 #: The case of a job discarded under a name of the test's own (`rename_module_job`).
-_RENAMED = pytest.param(
-    "discarded under another name",
-    marks=pytest.mark.xfail(strict=True, reason=_CORE_NAMES_THE_JOB),
-)
+_RENAMED = pytest.param("discarded under another name")
 #: Every channel a cancellation in Pro posts in: its check-in, forecast, results and calendar.
 _PRO_POSTS = (PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar)
 

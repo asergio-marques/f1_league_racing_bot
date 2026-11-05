@@ -16,7 +16,9 @@ rounds-called-off modules' `with_division` steps for that division and whose
 `after_with_division` are placed after them, so that today's order survives without this module
 naming which job is whose. A job the hook plans says in its own payload or result which target
 it is (`notice_target`, "check-in channel" and so on), so that `not_notified` can name it
-without naming the module.
+without naming the module; a channel a job could not delete (`channel_target`) and a call
+Discord would not delete (its result's own `undeleted`) are named the same way, without naming
+the job that plans either (#283).
 
 **A round whose submission stands open is cancelled only while it has accepted nothing** (owner,
 2026-10-08, amending Constitution XII): any `session_results` row, of either status, is data the
@@ -392,12 +394,10 @@ async def _notices_planned_by_the_modules(
     return tuple(steps), tuple(after)
 
 
-#: The job names, as the stop notice, the tests and `StepView` know them.
+#: The job names, as the stop notice and the tests know them.
 UNARM = "unarm"
 APPLY = "apply"
-TAKE_DOWN_CALL = "take_down_call"
 CLOSE = "close"
-DELETE_CHANNEL = "delete_channel"
 
 UNARM_DISCARDED = (
     "Nothing was cancelled: round {number} in **{division}** stands as it was. Run "
@@ -570,25 +570,28 @@ def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
     A module's own notice job is named by `notice_target`, its own word for what it is
     ("check-in channel", "forecast channel", "results channel") carried on the job's own payload
     (`cancellation_notice.notices_on`, each module), so that core names it without naming the
-    module or its job. The reasons stay core's text."""
+    module or its job. A channel a job could not delete is named the same way, by its own
+    `channel_target` (results' `close_called_off_on`); a call Discord would not delete is named
+    by its own result carrying `undeleted` (attendance's `take_down_call`), read without naming
+    either job. The reasons stay core's text."""
     failures: list[notices.NoticeFailure] = []
     for view in ctx.steps:
         result = view.result or {}
         target = view.payload.get("notice_target")
+        channel_target = view.payload.get("channel_target")
         name = str(view.payload.get("division_name", ""))
         if target is not None:
             if _discarded(view):
                 failures.append(notices.NoticeFailure(name, target, _DISCARDED_NOTICE))
             elif result.get("unset"):
                 failures.append(notices.NoticeFailure(name, target, "no channel is set"))
-        elif view.name == DELETE_CHANNEL:
+        elif channel_target is not None:
             if _discarded(view):
                 failures.append(notices.NoticeFailure(
-                    name,
-                    f"results submission channel of round {view.payload.get('round_number')}",
+                    name, channel_target,
                     _DISCARDED_CHANNEL.format(channel_id=view.payload["channel_id"]),
                 ))
-        elif view.name == TAKE_DOWN_CALL and _discarded(view):
+        elif "undeleted" in result and _discarded(view):
             ids = [str(each) for each in result.get("undeleted", [])]
             failures.append(notices.NoticeFailure(
                 name,
@@ -622,11 +625,12 @@ def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
 
 def checkin_audit(ctx: OutcomeContext) -> str:
     """The check-in of each round called off, read before its call came down and kept on the
-    job whether it went through or was discarded."""
+    job whether it went through or was discarded: every job's own result carrying `audit`
+    (attendance's take-down, `take_down_call`), read without naming the job."""
     return "".join(
-        str((view.result or {}).get("audit", ""))
+        str(view.result["audit"])
         for view in ctx.steps
-        if view.name == TAKE_DOWN_CALL
+        if view.result is not None and "audit" in view.result
     )
 
 
