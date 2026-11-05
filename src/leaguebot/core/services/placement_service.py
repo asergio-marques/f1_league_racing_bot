@@ -888,68 +888,42 @@ class PlacementService:
     async def _guard_image_capacity(
         self, division_id: int, season_id: int, team_name: str
     ) -> None:
-        """Refuse a placement that would outgrow a configured image template.
+        """Refuse a placement that would outgrow any image template whose capacity is fixed
+        in code, asking the image module's handed drawing (``_ask_drawing``).
 
-        Reads the declared capacities from the catalogue module. While no image type is
-        specified every catalogue is empty, ``declared_capacities()`` is empty, and this
-        returns immediately — the guard activates **by data**, the moment the first image
-        type declares a capacity, with no further code change.
+        While no image type declares a capacity the image module answers nothing, and this
+        guard is silent — it activates **by data**, the moment the first image type declares
+        one, with no further code change.
 
-        Never raises for its own reasons: a fault in this check must not block a
-        placement, only a genuine over-capacity may.
+        Never raises for its own reasons: a fault in this check must not block a placement,
+        only a genuine over-capacity the drawing reports may.
         """
-        from leaguebot.image.models.image_catalogues import declared_capacities
-        from leaguebot.core.services.module_service import ModuleService
-
         # The reserve block is guarded separately: it counts reserve drivers, not every
         # seated driver, and its capacity comes from the template rather than from here.
         # It needs the team, because only a placement into the reserve team joins it.
         await self._guard_reserve_capacity(division_id, team_name)
 
         # The attendance sheet's rows are likewise counted from the template rather than
-        # declared as a number, so they are invisible to ``declared_capacities()`` below.
+        # declared in code, so they are invisible to the declared-capacity question below.
         await self._guard_sheet_capacity(division_id)
 
-        # And so are the driver standings' — both standings catalogues declare
-        # ``capacity=None`` and derive their rows from the file. It needs the team too,
-        # because a reserve joins no classification.
+        # And so are the driver standings' — both standings catalogues declare no capacity
+        # and derive their rows from the file. It needs the team too, because a reserve
+        # joins no classification.
         await self._guard_standings_capacity(division_id, team_name)
 
-        capacities = declared_capacities()
-        if not capacities:
-            return
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT COUNT(*) AS seated FROM driver_season_assignments "
+                "WHERE season_id = ? AND division_id = ?",
+                (season_id, division_id),
+            )
+            row = await cursor.fetchone()
+        seated = (row["seated"] if row else 0) or 0
 
-        try:
-            if not await ModuleService(self._db_path).is_images_enabled():
-                return
-
-            smallest = min(capacities.values())
-
-            async with get_connection(self._db_path) as db:
-                cursor = await db.execute(
-                    "SELECT COUNT(*) AS seated FROM driver_season_assignments "
-                    "WHERE season_id = ? AND division_id = ?",
-                    (season_id, division_id),
-                )
-                row = await cursor.fetchone()
-            seated = (row["seated"] if row else 0) or 0
-        except Exception as exc:  # noqa: BLE001
-            log.error("image capacity guard could not run: %s", exc, exc_info=True)
-            return
-
-        if seated + 1 <= smallest:
-            return
-
-        template_key = min(capacities, key=lambda key: capacities[key])
-        from leaguebot.image.models.image_constants import TEMPLATE_LABELS
-
-        label = TEMPLATE_LABELS.get(template_key, template_key)
-        raise ValueError(
-            f"This would seat {seated + 1} drivers in the division, but the "
-            f"**{label}** image template provides only {smallest} rows. "
-            f"Enlarge that template, or disable the images module, before adding "
-            f"another driver."
-        )
+        problem = await self._ask_drawing("declared_capacity_problem", seated + 1)
+        if problem is not None:
+            raise ValueError(f"{problem.problem}. {problem.remedy}")
 
     async def guard_roster_capacity(
         self, division_id: int, added: Mapping[str, int]

@@ -18,7 +18,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
-_NOT_YET = "#283: PlacementService does not yet take a drawing to ask its capacity guards of"
 
 RESERVE = "Reserve"
 ORDINARY = "Team 1"
@@ -169,7 +168,6 @@ async def _placed(db_path) -> bool:
     return row["n"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize(
     "guard, team, refusal",
     [
@@ -221,7 +219,6 @@ async def test_placement_capacity_guards_run_with_a_stub_drawing(
     assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize(
     "team, asked",
     [
@@ -260,7 +257,6 @@ async def test_a_placement_asks_each_guard_its_own_count(tmp_path, team, asked):
     assert drawing.asked == asked
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_an_unknown_team_asks_neither_the_reserve_block_nor_the_standings(tmp_path):
     """Whether a team is the reserve cannot be known of a team the division does not hold, so
     the two guards that ask it are left out, and `assign_driver` refuses the team in its own
@@ -282,7 +278,6 @@ async def test_an_unknown_team_asks_neither_the_reserve_block_nor_the_standings(
     assert not await _placed(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize(
     "added, asked",
     [

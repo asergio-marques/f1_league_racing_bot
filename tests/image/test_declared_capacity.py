@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-_NOT_YET = "#283: the image module does not yet answer core's declared capacity question"
 
 ORDINARY = "Team 1"
 RACE = "results_race_template"
@@ -54,7 +53,6 @@ def _drawing(*, images: bool = True):
 # ── The answer ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize(
     "declared, problem",
     [
@@ -80,7 +78,6 @@ async def test_drivers_past_the_declared_rows_are_a_problem(declare, declared, p
     assert (answer.problem, answer.remedy) == (problem, REMEDY)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize(
     "declared, drivers",
     [({RACE: 5}, 3), ({RACE: 3}, 3), ({}, 99)],
@@ -94,7 +91,6 @@ async def test_drivers_the_declared_rows_hold_are_no_problem(declare, declared, 
     assert await _drawing().declared_capacity_problem(drivers) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_images_module_off_answers_nothing(declare):
     declare(RACE, 2)
 
@@ -176,7 +172,6 @@ async def _seed(tmp_path):
     return db_path, season_id, division_id
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_placement_past_the_declared_rows_is_refused_through_assign_driver(
     tmp_path, declare
 ):

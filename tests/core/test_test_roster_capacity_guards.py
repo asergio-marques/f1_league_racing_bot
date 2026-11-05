@@ -29,7 +29,6 @@ LINEUP = "lineup_template"
 SHEET = "attendance_template"
 DRIVERS = "standings_drivers_template"
 SERVER_ID = 15000
-_NOT_YET = "#283: PlacementService does not yet take the image module's drawing to ask"
 RESERVE = "Reserve"
 DIVISIONS = ("Alpha", "Beta")
 TEAMS = ("Team 1", "Team 2")
@@ -195,7 +194,6 @@ async def _add(path, service, team, division="Alpha", name="Mock"):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_reserve_past_the_lineup_s_reserve_slots_is_refused(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {LINEUP: _lineup(tmp_path, reserve_slots=1)})
@@ -209,7 +207,6 @@ async def test_a_reserve_past_the_lineup_s_reserve_slots_is_refused(tmp_path):
     assert await _seated(path) == 1, "the refused driver was written anyway"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_driver_past_the_sheet_rows_is_refused(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {SHEET: _sheet(tmp_path, rows=2)})
@@ -222,7 +219,6 @@ async def test_a_driver_past_the_sheet_rows_is_refused(tmp_path):
     assert await _seated(path) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_driver_past_the_standings_rows_is_refused_but_a_reserve_is_not(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {DRIVERS: _standings(tmp_path, rows=2)})
@@ -236,7 +232,6 @@ async def test_a_driver_past_the_standings_rows_is_refused_but_a_reserve_is_not(
     assert isinstance(reserve, dict), "a reserve adds no entry to the classification"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_command_refuses_it_in_placements(tmp_path):
     """Through the cog, in the one stage the roster may change in (issue #220).
 
@@ -309,7 +304,6 @@ async def _bulk(path, service, drivers):
     return await add_test_drivers_in_bulk(drivers, path, placement_service=service)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_roster_outgrowing_the_standings_across_its_teams_seats_nobody(tmp_path):
     """No team overflows on its own. The division does, and the import is refused whole."""
     path, _divisions = await _seed(tmp_path)
@@ -327,7 +321,6 @@ async def test_a_roster_outgrowing_the_standings_across_its_teams_seats_nobody(t
     assert await _seated(path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_each_division_is_measured_on_its_own(tmp_path):
     """Three rows each: two divisions of three drivers fit, though six drivers would not."""
     path, _divisions = await _seed(tmp_path)
@@ -343,7 +336,6 @@ async def test_each_division_is_measured_on_its_own(tmp_path):
     assert seated == 6
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_reserves_of_a_roster_are_measured_against_the_reserve_block(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {LINEUP: _lineup(tmp_path, reserve_slots=1)})
@@ -355,7 +347,6 @@ async def test_the_reserves_of_a_roster_are_measured_against_the_reserve_block(t
     assert any("2 reserve drivers" in error for error in errors)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_capacity_fault_is_named_beside_every_other(tmp_path):
     """Every fault is named at once, so a manager fixes the file in one pass."""
     path, _divisions = await _seed(tmp_path)

@@ -3137,8 +3137,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/change_queue.py", "ChangeQueue._update_reply"): (1, PASS["core"]),
     ("core/services/output_router.py", "OutputRouter._enqueue_if_configured"): (1, PASS["core"]),
     ("core/services/output_router.py", "OutputRouter.strip_view"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService._guard_image_capacity"):
-        (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"):
         (1, PASS["core"]),
     ("core/services/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
