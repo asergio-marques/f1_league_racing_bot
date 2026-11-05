@@ -6,10 +6,10 @@ already held and with a fault): `module_on("signup")` (`core/models/change.py`),
 names the change without importing signup. `docs/design/architecture.md`, "How modules and core
 fit together", designs the gap this closes: weather's switch
 (`weather/services/module_switch_settings.py`) is the model. Signup's switch-off is
-`signup_off_change.py`'s own change already (#439, slice 6b); the switch-on here is its match.
+`signup_off_change.py`'s own change already; the switch-on here is its match.
 
 **The switch-on is one save: the flag, a bare configuration row created only where none stands,
-and the audit entry.** Creating only what is missing (amendment A16), rather than replacing a
+and the audit entry.** Creating only what is missing, rather than replacing a
 standing row's values, keeps a configuration that survived a switch-off intact — the time slots
 and question settings already stand again there (issue #127), and a configuration row restored
 from a backup, or left by a disable that never clears it, is kept rather than blanked.

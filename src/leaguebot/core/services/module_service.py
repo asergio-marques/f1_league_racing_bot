@@ -1,6 +1,6 @@
 """ModuleService — reads the on/off flag of each optional module: weather, signup, results,
 attendance and images. Each flag is written by that module's own switch, a `Setting` on the
-change queue (`<module>/services/module_switch_settings.py`), never by this service (#283)."""
+change queue (`<module>/services/module_switch_settings.py`), never by this service."""
 from __future__ import annotations
 
 import logging
