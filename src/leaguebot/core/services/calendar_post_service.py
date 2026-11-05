@@ -462,9 +462,9 @@ _NOTHING_PUTS_IT_RIGHT = (
 def _fallen_back_to_text_line(ctx: StepContext, division_name: str, problem: str) -> str:
     """The `post_calendar` job's own log line where its calendar fell back to text, naming the
     division, the problem, and what puts it right (Constitution XIV.4: recorded alongside the
-    source's own entry, the owner's decision on #283). A season being cancelled by the change
-    this job runs for is read from the change's own kind, there being no command left once the
-    season is cancelled that posts the picture again."""
+    source's own entry). A season being cancelled by the change this job runs for is read from
+    the change's own kind, there being no command left once the season is cancelled that posts
+    the picture again."""
     put_right = _NOTHING_PUTS_IT_RIGHT if ctx.kind == SEASON_CANCEL else _FIX_IT
     return (
         " | Calendar posted as text\n"
@@ -539,7 +539,7 @@ def calendar_steps(seasons: "SeasonService") -> dict[str, Step]:
             as_text=ctx.tries > 0,
         )
         # `fell_back` is true only where text was actually posted in the graphic's place: the
-        # unset-channel "problem" posts nothing (no `message_id`), and is no fallback (#283).
+        # unset-channel "problem" posts nothing (no `message_id`), and is no fallback.
         fell_back = posting.fell_back and posting.message_id is not None
         lines = (
             (_fallen_back_to_text_line(ctx, division.name, str(posting.problem)),)

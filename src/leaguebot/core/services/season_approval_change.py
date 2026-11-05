@@ -886,10 +886,10 @@ def _left(ctx: OutcomeContext, steps: Mapping[str, Step], *, told: bool = True) 
 
 def _calendar_notices(ctx: OutcomeContext) -> list[str]:
     """The reply's "Calendar images" section: the notices a calendar's drawing carried, one per
-    division. A calendar fallen back to text is not reported here — that is its job's own log
-    line (Constitution XIV.4, the owner's decision on #283), and the notices themselves are the
-    drawing's own report to the log channel, not repeated by the approval (XIV.4, "reported in
-    one message")."""
+    division. A calendar fallen back to text is not reported here — that is the posting's own
+    log line — and the notices themselves are the drawing's own report to the log channel, so
+    this reply carries them without the approval logging them again (Constitution XIV.4, "where
+    each is reported", "how they are reported")."""
     return [
         f"{(view.result or {})['division']}: {detail}"
         for view in ctx.steps

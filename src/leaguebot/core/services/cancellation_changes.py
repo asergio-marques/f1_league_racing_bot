@@ -565,7 +565,8 @@ def _saved_number(ctx: OutcomeContext) -> Any:
 
 def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
     """Every place the cancellation could not reach, one for each job that found none to tell or
-    was discarded, in the order of the jobs, and the calendar posted as text.
+    was discarded, in the order of the jobs. A calendar posted as text is not a place unreached:
+    it was posted, and its fallback is recorded by the posting's own log line, not named here.
 
     A module's own notice job is named by `notice_target`, its own word for what it is
     ("check-in channel", "forecast channel", "results channel") carried on the job's own payload
@@ -619,9 +620,7 @@ def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
                     name, "calendar",
                     _DISCARDED_CALENDAR_CANCELLED if cancelled else _DISCARDED_CALENDAR,
                 ))
-            # A calendar posted as text is not notified of nothing: it was posted, and its
-            # fallback is the job's own log line (Constitution XIV.4, the owner's decision on
-            # #283), not a thing the cancellation names here.
+            # A calendar posted as text is not discarded: nothing further to name here.
     return failures
 
 
