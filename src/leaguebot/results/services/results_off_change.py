@@ -132,7 +132,7 @@ def results_off_change(
         # off — the state the dependency table forbids. Refuse rather than carry that out. The
         # other way round costs the league nothing (`attendance_off_on` on a module already off
         # does nothing), so it is left to run, as the switch-off's save already allows for. The
-        # ask itself is left to the cog's own reading of the dependency table, as before.
+        # ask itself is left to the cog's own reading of the dependency table.
         if ctx.change_id is not None and not ctx.payload.get("cascade_attendance"):
             enabled_now = frozenset({"attendance"}) if await attendance_enabled() else frozenset()
             if "attendance" in taken_down_with("results", enabled_now):
