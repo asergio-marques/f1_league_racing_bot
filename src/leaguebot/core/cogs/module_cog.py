@@ -410,6 +410,9 @@ class ModuleCog(commands.Cog):
     async def _enable_results(
         self, interaction: discord.Interaction
     ) -> None:
+        if await self._refuse_missing_dependency(interaction, "results"):
+            return
+
         # Block if ACTIVE season exists (FR-003)
         active_season = await self.bot.season_service.get_confirmed_season()
         if active_season is not None:
@@ -511,6 +514,9 @@ class ModuleCog(commands.Cog):
     async def _enable_images(
         self, interaction: discord.Interaction
     ) -> None:
+        if await self._refuse_missing_dependency(interaction, "images"):
+            return
+
         # The switch is image's own change on the queue: this asks for it and does nothing
         # else.
         await self.bot.change_queue.ask(
@@ -554,6 +560,9 @@ class ModuleCog(commands.Cog):
         self,
         interaction: discord.Interaction,
     ) -> None:
+        if await self._refuse_missing_dependency(interaction, "signup"):
+            return
+
         # Guard already-enabled
         if await self.bot.module_service.is_signup_enabled():
             await refuse(
