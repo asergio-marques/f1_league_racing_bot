@@ -31,7 +31,6 @@ from tests.support.season_classification import (
     seed_season,
 )
 
-_NOT_ATTENDANCE_FINAL_YET = "#283: the final sheet is not yet posted by attendance's own module"
 
 
 @pytest.fixture
@@ -126,7 +125,6 @@ async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
     assert attendance.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_OPENING
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ATTENDANCE_FINAL_YET)
 async def test_the_final_sheet_is_asked_to_raise_and_posted_as_the_final_one(db_path):
     """Div A's final attendance sheet, drawn against its round 2 and retried as text: attendance's
     posting, which always raises, is asked for it as the final classification, and as text."""

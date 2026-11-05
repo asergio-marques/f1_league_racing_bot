@@ -69,7 +69,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.models.season_end import COMPLETION
-from leaguebot.core.services import approval_checks, season_classification_service, standing_posts
+from leaguebot.core.services import approval_checks, standing_posts
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -992,50 +992,3 @@ async def test_mode_on(db: aiosqlite.Connection) -> bool:
     return row is not None and bool(row["test_mode_active"])
 
 
-async def sheet_completed_on(
-    _db: aiosqlite.Connection, division_id: int, division_name: str, round_id: int
-) -> tuple[PlannedStep, ...]:
-    """Core's own temporary subscriber to `season_completed`: the final sheet job for
-    *division_id*, drawn against *round_id*. Attendance's own job takes its place (#283, S10e)."""
-    return (
-        PlannedStep(
-            FINAL_SHEET,
-            {"division_id": division_id, "division_name": division_name, "round_id": round_id},
-        ),
-    )
-
-
-def sheet_completed_steps_on(modules: "ModuleService") -> dict[str, Step]:
-    """Core's own temporary subscriber to `season_completed_steps`: the step definition for the
-    final sheet. Attendance's own step takes its place (#283, S10e)."""
-
-    async def final_sheet(ctx: StepContext) -> StepResult:
-        guild = await require_guild(ctx.bot)
-        each = ctx.step_payload
-        result = await season_classification_service.post_final_sheet(
-            ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
-            as_text=ctx.tries > 0,
-        )
-        # The final sheet stands beside the last round's: nothing is saved for it and nothing
-        # deleted, so it plans no deletion and carries no record.
-        return StepResult(result=result)
-
-    async def sheet_due(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
-
-    async def describe_sheet(ctx: StepContext) -> str:
-        return f"posting the final attendance sheet of **{ctx.step_payload['division_name']}**"
-
-    def not_done(view: Any) -> str:
-        name = view.payload["division_name"]
-        return (
-            f"**{name}** — its final classification (attendance sheet) could not be posted. "
-            "No command posts it again."
-        )
-
-    return {
-        FINAL_SHEET: Step(
-            FINAL_SHEET, StepKind.ACT, final_sheet, still_due=sheet_due,
-            describe=describe_sheet, not_done=not_done,
-        ),
-    }

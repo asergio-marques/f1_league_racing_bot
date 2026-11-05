@@ -504,11 +504,6 @@ _FINAL_POSTS = [
 ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the completion does not yet take a module's discarded final post from that "
-    "module's own step",
-)
 @pytest.mark.parametrize("job, owner, cid, today", _FINAL_POSTS)
 async def test_a_discarded_final_post_is_named_in_its_own_step_s_words(
     tmp_path, monkeypatch, job, owner, cid, today,

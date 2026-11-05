@@ -306,22 +306,22 @@ def _sign_up_to_placements_confirmed(bot: LeagueBot) -> None:
 def _sign_up_to_season_completed(bot: LeagueBot) -> None:
     """Make the hooks a division's final round read and a season completed declare, and sign
     each module's final post up to them: results' read of its own `session_results` and its
-    final standings; core's own final sheet for now, attendance's own taking its place once
-    attendance is signed up too (#283). The builder hands them to `season_complete_change`."""
-    from leaguebot.core.services import season_end_changes
+    final standings, then attendance's final sheet (#283). The builder hands them to
+    `season_complete_change`."""
+    from leaguebot.attendance.services import sheet_posting
     from leaguebot.results.services import season_standings_posts
 
     bot.final_round_read = AwaitedHook()
     bot.final_round_read.subscribe(season_standings_posts.final_round_on)
     bot.season_completed = AwaitedHook()
     bot.season_completed.subscribe(season_standings_posts.season_completed_on)
-    bot.season_completed.subscribe(season_end_changes.sheet_completed_on)
+    bot.season_completed.subscribe(sheet_posting.season_completed_on)
     bot.season_completed_steps = Hook()
     bot.season_completed_steps.subscribe(
         partial(season_standings_posts.final_steps, bot.module_service)
     )
     bot.season_completed_steps.subscribe(
-        partial(season_end_changes.sheet_completed_steps_on, bot.module_service)
+        partial(sheet_posting.final_steps, bot.module_service)
     )
 
 
