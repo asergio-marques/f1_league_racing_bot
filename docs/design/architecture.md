@@ -187,11 +187,11 @@ imports no other module. Every other module may call the image module without an
 table. Core reaches it through a protocol it declares, which the image module implements and the
 builder hands in, as results reaches attendance (below). Core's own graphics (the calendar, the
 lineup) are asked for through it, with the capacity guards, the artwork signature and the checks
-that a calendar or a lineup is wanted, rather than drawn by importing the module. That is not the rejected
-object of named operations above: a hook is a moment several modules take part in, and this is a
-question one module answers. Where a module must let one that depends on it act (results after a
-round, for attendance), it does so through what the builder hands it, never by importing the
-dependant.
+that a calendar or a lineup is wanted, rather than drawn by importing the module. That is not the
+rejected object of named operations above: a hook is a moment several modules take part in, and
+this is a question one module answers. Where a module must let one that depends on it act (results
+after a round, for attendance), it does so through what the builder hands it, never by importing
+the dependant.
 
 **Results reaches attendance through a protocol, handed in by the builder.** What attendance does
 after a round's review (recording the round's attendance and its pardons, recalculating after an
