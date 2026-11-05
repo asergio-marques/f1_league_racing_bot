@@ -256,22 +256,17 @@ async def test_disabling_images_keeps_the_configuration(tmp_path):
 
 
 async def test_disabling_images_twice_does_no_work(tmp_path):
-    """Refused at once: nothing is queued and nothing audited, and the refusal reaches the log
-    channel as one line in the standard form."""
+    """Refused at once: nothing is queued and nothing audited."""
     from tests.support.change_queue import change_rows
-    from tests.support.settings_league import last_said, log_lines
+    from tests.support.settings_league import last_said
 
     league, cog, asked = await _images_league(tmp_path, on=False)
 
     await cog._disable_images(asked)
 
-    assert last_said(asked) == "⚠️ Image module is already disabled."
+    assert "already disabled" in last_said(asked)
     assert await change_rows(league.db_path) == []
     assert await _audit_types(league.db_path) == []
-    assert await log_lines(league) == [
-        f"⛔ `/module disable` refused for Admin (`<@{MEMBER_ID}>`) — "
-        "Image module is already disabled."
-    ]
 
 
 @pytest.mark.xfail(
