@@ -68,10 +68,6 @@ def _division(message_id=None):
     )
 
 
-    assert logged.count("not notified: ") == 30
-    assert cns.failure_log_lines([]) == ""
-
-
 # ── The check-in call of a round called off comes down; its answers stay ───
 
 ROUND_ID = 31

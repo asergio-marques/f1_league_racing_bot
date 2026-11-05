@@ -35,3 +35,5 @@ def test_a_long_list_of_failures_is_summed_up_in_the_reply():
 def test_the_log_names_every_failure_in_full():
     failures = [cns.NoticeFailure(f"Division {n}", "results channel", "gone") for n in range(30)]
     logged = cns.failure_log_lines(failures)
+    assert logged.count("not notified: ") == 30
+    assert cns.failure_log_lines([]) == ""
