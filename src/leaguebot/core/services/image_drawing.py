@@ -1,9 +1,10 @@
 """What core asks of the image module.
 
-`ImageDrawing` is the protocol the builder hands `PlacementService`, the calendar's posting and
-the season fingerprint (`take_fingerprint`, asked for and its callers — the season approval and
-the mid-season confirmation — handing on its own), so that core imports nothing of the image
-module: core calls these methods and the image module implements them
+`ImageDrawing` is the protocol the builder hands `PlacementService`, the calendar's posting, and
+the season approval and mid-season confirmation, so that core imports nothing of the image module.
+The season fingerprint (`take_fingerprint`) is handed it by its callers: the cogs hand it
+`bot.image_drawing`, and the approval and the confirmation the drawing the builder gave them. Core
+calls these methods and the image module implements them
 (`leaguebot.image.services.image_drawing.ImageDrawing`). It is attached to the bot as
 `bot.image_drawing` and declared on `LeagueBot`, as results declares `AttendanceAfterReview` for
 attendance (architecture.md, "How modules and core fit together").
@@ -120,8 +121,7 @@ class ImageDrawing(Protocol):
         configured asset folder, each by name, size and modification time, never by content. A
         configured directory that cannot be resolved is signed `[column, value, "unresolvable"]`
         and the rest are still signed (architecture.md, "A catch-all error handler"). An unset
-        column is left out,
-        and an empty list where the module has no configuration at all. The season fingerprint
-        digests this answer unchanged, so a review drawn before an edit still compares equal
-        after one that leaves it unchanged, and names the templates and artwork changing where it
-        does not."""
+        column is left out, and the answer is an empty list where the module has no
+        configuration at all. The season fingerprint digests this answer unchanged, so a review
+        compares equal while the artwork stands, and names the templates and artwork as changed
+        once it does not."""
