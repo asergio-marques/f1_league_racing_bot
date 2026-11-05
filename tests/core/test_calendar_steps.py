@@ -276,7 +276,8 @@ POSTED_AS_TEXT = (
     " | Calendar posted as text\n"
     "  division: {division}\n"
     "  problem: {problem}\n"
-    "  to put it right: fix the calendar template, then run `/division calendar-sync`"
+    "  to put it right: fix the calendar template, then run `/division calendar-sync` while the "
+    "season is still being raced"
 )
 #: The same line where a season's cancellation posted the calendar: no command posts it again
 #: once the season is cancelled, so nothing puts it right (the owner's decision on #283).

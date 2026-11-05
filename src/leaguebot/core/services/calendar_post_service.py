@@ -460,8 +460,12 @@ CLOSE = "close"
 _COMMAND = "`/division calendar-sync`"
 
 #: What puts a calendar fallen back to text right: correct the template, then run the sync
-#: command — unless the season was being cancelled as the posting ran, which no command repeats.
-_FIX_IT = "fix the calendar template, then run `/division calendar-sync`"
+#: command, which is refused once every division is done — unless the season was being cancelled
+#: as the posting ran, which no command repeats.
+_FIX_IT = (
+    "fix the calendar template, then run `/division calendar-sync` while the season is still "
+    "being raced"
+)
 _NOTHING_PUTS_IT_RIGHT = (
     "nothing does; no command posts the picture again now the season is cancelled, and the "
     "text calendar stands"
