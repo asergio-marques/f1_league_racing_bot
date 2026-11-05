@@ -24,8 +24,12 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.cancellation import SCOPE_DIVISION, SCOPE_ROUND, CancellationNotices
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
+from leaguebot.core.services.cancellation_notice_service import (
+    post_cancellation_notice,
+    require_division,
+    round_label,
+)
 from leaguebot.core.services.change_queue import Step, StepContext
-from leaguebot.core.services.notice_handler import post_cancellation_notice, require_division
 from leaguebot.core.services.season_lifecycle_service import require_guild
 from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.utils.in_a_job import posts_in_a_job
@@ -37,16 +41,12 @@ if TYPE_CHECKING:
 NOTIFY_FORECAST = "notify_forecast"
 
 
-def _round_label(round_number: int, track_name: str | None) -> str:
-    return f"Round {round_number} ({track_name or 'Mystery'})"
-
-
 def weather_note(scope: str, division_name: str, round_number=None, track_name=None) -> str:
     """The forecast channel's note of *scope*'s cancellation, word for word."""
     if scope == SCOPE_ROUND:
         return (
             f"\U0001f4e2 **Round {round_number} Cancelled: {division_name}**\n"
-            f"{_round_label(round_number, track_name)} has been cancelled. "
+            f"{round_label(round_number, track_name)} has been cancelled. "
             "No weather forecast will be posted for it."
         )
     if scope == SCOPE_DIVISION:

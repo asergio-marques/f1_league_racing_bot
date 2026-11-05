@@ -32,26 +32,18 @@ pictures, report sections and question are sent through it with their other part
 that core keeps one send of its own rather than a second beside it for the review alone.
 `edit_notice` edits a notice in place; no job of the bot edits one yet.
 
-**`post_cancellation_notice` is the one shape attendance's, weather's and results' own
-cancellation notices share** (#283): a channel id read from the module's own table, answered "no
-channel is set" where there is none; a channel gone from the server raising `StepFailedOnDiscord`
-with no cause; a send Discord refuses raising it `from` that refusal; any other exception a fault
-of the bot's own, left to propagate. Each module keeps only what is its own: the channel read, the
-note's wording, and its mentions and silence. **`require_division`** is the matching lookup: the
-division a job's own payload names, or `LookupError` where it is gone.
+A cancellation's own notice is posted and found through `cancellation_notice_service`
+(`post_cancellation_notice`, `require_division`), core's own part of a cancellation, not through
+this file: posting one calls `send_notice` for the actual send, but answering "no channel is
+set" and finding the division are not sending, so they stay out of the handler that does only
+that.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
 import discord
 
-from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.utils.in_a_job import posts_in_a_job
-
-if TYPE_CHECKING:
-    from leaguebot.core.services.season_service import SeasonService
 
 
 @posts_in_a_job
@@ -74,46 +66,6 @@ async def edit_notice(message, *, mentions: discord.AllowedMentions, **parts) ->
     *mentions* says whom the edited notice may notify, and is required.
     """
     await message.edit(allowed_mentions=mentions, **parts)
-
-
-@posts_in_a_job
-async def post_cancellation_notice(
-    guild, channel_id: int | None, text: str, *, mentions: discord.AllowedMentions, **parts,
-) -> str | None:
-    """Post a module's cancellation notice *text* to *channel_id* on *guild*, as a job on the
-    change queue, returning "no channel is set" where *channel_id* is None, raising
-    `StepFailedOnDiscord` (no cause) where the channel is set and gone, and `from` Discord's
-    refusal where it refuses the send. Any other exception is a fault of the bot's own and
-    propagates unchanged.
-
-    The one shape attendance's, weather's and results' own cancellation notices share (#283): each
-    module reads its own channel id and builds its own wording, mentions and silence (*parts*),
-    and calls this to post it."""
-    if not channel_id:
-        return "no channel is set"
-    channel = guild.get_channel(int(channel_id)) if guild is not None else None
-    if channel is None:
-        raise StepFailedOnDiscord(f"the channel <#{channel_id}> is no longer on the server")
-    try:
-        await send_notice(channel, text, mentions=mentions, **parts)
-    except discord.HTTPException as exc:
-        raise StepFailedOnDiscord(
-            f"the message could not be posted to <#{channel_id}>: {exc}"
-        ) from exc
-    return None
-
-
-async def require_division(seasons: "SeasonService", season_id: int, division_id: int) -> Any:
-    """The division *division_id* of season *season_id*, as `seasons.get_divisions` gives it, or
-    `LookupError` where it is no longer there — the lookup a cancellation notice job makes for the
-    division its own payload names (#283)."""
-    division = next(
-        (each for each in await seasons.get_divisions(int(season_id)) if each.id == int(division_id)),
-        None,
-    )
-    if division is None:
-        raise LookupError(f"division {division_id} is no longer there")
-    return division
 
 
 @posts_in_a_job
