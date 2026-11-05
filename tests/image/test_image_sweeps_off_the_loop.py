@@ -363,7 +363,6 @@ async def test_a_fault_that_cannot_say_its_message_leaks_nothing():
 # Core's capacity questions, answered off the loop (#283)
 # ---------------------------------------------------------------------------
 
-_NOT_YET = "#283: the image module does not yet answer core's placement capacity questions"
 
 
 def _drawing(aspect: str) -> Any:
@@ -396,7 +395,6 @@ PLACEMENT_GUARDS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize(
     "aspect,guard", [case[1:] for case in PLACEMENT_GUARDS], ids=[c[0] for c in PLACEMENT_GUARDS]
 )
@@ -416,7 +414,6 @@ async def test_a_placement_guard_measures_its_template_off_the_loop(monkeypatch,
     assert (answer.problem, answer.remedy) == (expected.problem, expected.remedy)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize(
     "aspect,guard", [case[1:] for case in PLACEMENT_GUARDS], ids=[c[0] for c in PLACEMENT_GUARDS]
 )

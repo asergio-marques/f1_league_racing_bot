@@ -23,7 +23,7 @@ from leaguebot.image.services.image_attendance_post import (
 from leaguebot.image.services.image_config_service import ImageConfigService
 from leaguebot.image.services.image_standings_post import DRIVERS_TEMPLATE_KEY
 from leaguebot.image.services.image_validity_service import ImageValidityService
-from leaguebot.image.utils.svg_document import load_svg, off_the_loop
+from leaguebot.image.utils.svg_document import off_the_loop
 
 #: The lineup's one template, named here as the other aspects name their own (image_lineup_post's
 #: LINEUP_TEMPLATE_KEY, image_attendance_post's ATTENDANCE_TEMPLATE_KEY).
@@ -66,6 +66,11 @@ class ImageDrawing:
         if report is None:
             return None
         path = report.resolved_path
+        # Imported here, not at module level, so a test's `monkeypatch.setattr` on
+        # `svg_document.load_svg` is picked up: a name bound at import time would keep the
+        # unpatched function (as `season_cog.py`'s own template reads do, for the same reason).
+        from leaguebot.image.utils.svg_document import load_svg
+
         problem = await off_the_loop(
             lambda: reserve_capacity_problem(load_svg(path), reserves)
         )
@@ -78,6 +83,8 @@ class ImageDrawing:
         if report is None:
             return None
         path = report.resolved_path
+        from leaguebot.image.utils.svg_document import load_svg
+
         problem = await off_the_loop(
             lambda: row_capacity_problem(ATTENDANCE_TEMPLATE_KEY, load_svg(path), drivers)
         )
@@ -90,6 +97,8 @@ class ImageDrawing:
         if report is None:
             return None
         path = report.resolved_path
+        from leaguebot.image.utils.svg_document import load_svg
+
         problem = await off_the_loop(
             lambda: row_capacity_problem(DRIVERS_TEMPLATE_KEY, load_svg(path), drivers)
         )
