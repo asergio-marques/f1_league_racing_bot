@@ -180,6 +180,23 @@ def test_the_settings_changes_are_registered():
             "images", "leaguebot.image.", {"image_config", "image_aspect_toggles"},
             {"image_config"}, id="images",
         ),
+        pytest.param(
+            "attendance", "leaguebot.attendance.", {"attendance_config"},
+            {"attendance_config", "attendance_division_config"}, id="attendance",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#283: attendance's switch is not yet attendance's own settings, signed up "
+                "by the builder",
+            ),
+        ),
+        pytest.param(
+            "results", "leaguebot.results.", {"results_module_config"}, None, id="results",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#283: results' switch-on is not yet results' own setting, signed up by "
+                "the builder",
+            ),
+        ),
     ],
 )
 def test_a_module_s_switch_is_its_own_settings_signed_up_by_the_builder(
@@ -190,7 +207,10 @@ def test_a_module_s_switch_is_its_own_settings_signed_up_by_the_builder(
     the module's own (its check is the module's code) and may write only the tables holding the
     module's switch and, for images' switch-on, the configuration it creates where missing.
     Weather's switch is weather's column on the core table `server_configs`; images' is image's
-    own `image_config`."""
+    own `image_config`; attendance's is `attendance_config`, its switch-off clearing the
+    division channels in `attendance_division_config` too (#283, S11d). Results' switch-on is
+    `results_module_config`; its switch-off is its own change already (`results_off_change`),
+    whose tables are not declared, so only its owner is checked (*off_writes* None)."""
     from leaguebot.__main__ import register_change_types
     from leaguebot.core.models.change import module_off, module_on
 
@@ -201,7 +221,8 @@ def test_a_module_s_switch_is_its_own_settings_signed_up_by_the_builder(
     for kind, writes in ((module_on(module), on_writes), (module_off(module), off_writes)):
         [switch] = [change_type for change_type in registered if change_type.kind == kind]
         assert switch.check.__module__.startswith(package), kind
-        assert sorted(switch.writes) == sorted(writes), kind
+        if writes is not None:
+            assert sorted(switch.writes) == sorted(writes), kind
 
 
 def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():

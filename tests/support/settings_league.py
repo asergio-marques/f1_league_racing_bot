@@ -92,10 +92,24 @@ async def _set_results_flag(db_path: str, on: bool) -> None:
         await db.commit()
 
 
+async def _set_attendance_flag(db_path: str, on: bool) -> None:
+    """Attendance's flag written as `/module enable|disable attendance` leaves it, its settings
+    the packaged values where no row stood, the change's own save being what writes it in the
+    bot."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_config (id, module_enabled) VALUES (1, ?) "
+            "ON CONFLICT(id) DO UPDATE SET module_enabled = excluded.module_enabled",
+            (int(on),),
+        )
+        await db.commit()
+
+
 async def switch(bot: Any, modules: tuple[str, ...], *, on: bool) -> None:
     """Turn each of *modules* on or off, as `/module enable|disable` leaves its flag."""
     setters = {
         "results": lambda value: _set_results_flag(bot.db_path, value),
+        "attendance": lambda value: _set_attendance_flag(bot.db_path, value),
         "weather": bot.module_service.set_weather_enabled,
         "images": bot.module_service.set_images_enabled,
     }
