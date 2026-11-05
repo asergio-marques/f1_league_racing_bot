@@ -360,6 +360,96 @@ async def test_a_fault_that_cannot_say_its_message_leaks_nothing():
 
 
 # ---------------------------------------------------------------------------
+# Core's capacity questions, answered off the loop (#283)
+# ---------------------------------------------------------------------------
+
+_NOT_YET = "#283: the image module does not yet answer core's placement capacity questions"
+
+
+def _drawing(aspect: str) -> Any:
+    """The image module's answers to core's capacity questions, the images module and *aspect*
+    on, over every template the bot ships, each reported valid at its own path."""
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    modules = MagicMock()
+    modules.is_images_enabled = AsyncMock(return_value=True)
+    config = MagicMock()
+    config.get_toggles = AsyncMock(return_value={aspect: True})
+    validity = MagicMock()
+    validity.template_reports = AsyncMock(
+        return_value={
+            path.stem: SimpleNamespace(
+                valid=True, reason=None, resolved_path=path, template_key=path.stem
+            )
+            for path in sorted(SHIPPED.glob("*.svg"))
+        }
+    )
+    return ImageDrawing(modules=modules, config=config, validity=validity)
+
+
+#: Each capacity question a placement asks, the output it is asked for, and how it is asked:
+#: of ninety-nine drivers, more than any template the bot ships draws.
+PLACEMENT_GUARDS = [
+    ("reserve", "lineup", lambda drawing: drawing.reserve_capacity_problem(99)),
+    ("attendance-sheet", "attendance", lambda drawing: drawing.sheet_capacity_problem(99)),
+    ("standings", "standings", lambda drawing: drawing.standings_capacity_problem(99)),
+]
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
+@pytest.mark.parametrize(
+    "aspect,guard", [case[1:] for case in PLACEMENT_GUARDS], ids=[c[0] for c in PLACEMENT_GUARDS]
+)
+async def test_a_placement_guard_measures_its_template_off_the_loop(monkeypatch, aspect, guard):
+    """The reserve, attendance sheet and standings answers parse and measure their template in
+    a worker thread, and find ninety-nine drivers too many, as they did on the loop."""
+    drawing = _drawing(aspect)
+    expected = await guard(drawing)
+    held = Held(svg_document.load_svg)
+    monkeypatch.setattr(svg_document, "load_svg", held)
+
+    answer = await answered_while(held, lambda: guard(drawing))
+
+    assert held.calls, "the answer parsed no template"
+    assert held.held_loop == 0
+    assert answer is not None
+    assert (answer.problem, answer.remedy) == (expected.problem, expected.remedy)
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
+@pytest.mark.parametrize(
+    "aspect,guard", [case[1:] for case in PLACEMENT_GUARDS], ids=[c[0] for c in PLACEMENT_GUARDS]
+)
+async def test_a_placement_guard_s_fault_crosses_back_with_nothing_it_parsed(
+    monkeypatch, aspect, guard
+):
+    """A template that fails as it is measured is kept to the worker thread: the fault is
+    raised again on the loop as its own class and message, for core's guard to let the
+    placement through, and no tree reaches the loop."""
+    load_svg = svg_document.load_svg
+
+    def parse_then_refuse(path: Any) -> Any:
+        root = load_svg(path)
+        raise CapacityError(f"the <{etree.QName(root).localname}> cannot be counted")
+
+    held = Held(parse_then_refuse)
+    monkeypatch.setattr(svg_document, "load_svg", held)
+    drawing = _drawing(aspect)
+
+    async def outcome() -> Any:
+        try:
+            return await guard(drawing)
+        except Exception as exc:  # noqa: BLE001 — the fault is the subject
+            return exc
+
+    answer = await answered_while(held, outcome)
+
+    assert held.calls
+    assert type(answer) is CapacityError and str(answer) == REFUSAL
+    assert not holds_a_tree(answer)
+
+
+# ---------------------------------------------------------------------------
 # The two parses kept on the loop, because the tree is changed there
 # ---------------------------------------------------------------------------
 

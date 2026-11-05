@@ -1,10 +1,10 @@
 """Core's template reads run off the event loop, so the bot keeps answering while they parse.
 
 A template's parse takes a good part of a second on a Raspberry Pi, and on the loop it would
-leave the bot answering nothing until it finished. The season review's capacity checks, the
-round guard and the placement guards each parse one configured template, and each hands the
-parse to a worker thread with its reading of the tree, so that only counts and names come back:
-a tree parsed in a worker thread never leaves that thread (`load_svg`).
+leave the bot answering nothing until it finished. The season review's capacity checks and the
+round guard each parse one configured template, and each hands the parse to a worker thread
+with its reading of the tree, so that only counts and names come back: a tree parsed in a
+worker thread never leaves that thread (`load_svg`).
 
 Each test runs its entry point twice against the templates the bot ships: once as it stands,
 and once with the parse replaced by a `Held` one (`tests/support/off_the_loop.py`), which waits
@@ -13,7 +13,8 @@ never have found the loop held. These checks swallow their own faults, so a pars
 would show as `held_loop` and as an answer that differs, never as an error. Each is run once
 more with a parse that fails holding its tree, and must keep the fault, and the tree, to the
 worker thread.
-`tests/image/test_image_sweeps_off_the_loop.py` holds the image module to the same.
+`tests/image/test_image_sweeps_off_the_loop.py` holds the image module to the same, the answers
+it gives the placement guards included (#283).
 """
 from __future__ import annotations
 
@@ -27,7 +28,6 @@ from lxml import etree
 
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.image.models.image_catalogues import CapacityError
 from leaguebot.image.utils import svg_document
 from tests.support.off_the_loop import Held, answered_while
@@ -138,59 +138,6 @@ async def test_a_season_check_parses_its_template_off_the_loop(
         assert answer
 
 
-async def _service(tmp_path, monkeypatch, *, enabled: str, reserve: bool) -> PlacementService:
-    """The placement service of the sixty-round season, the output *enabled* names on, the
-    team placed into a reserve team or not as *reserve* says."""
-    import leaguebot.image.services.image_attendance_post as attendance_post
-    import leaguebot.image.services.image_lineup_post as lineup_post
-    import leaguebot.image.services.image_standings_post as standings_post
-
-    db_path = await _season(tmp_path)
-    for module, name in (
-        (lineup_post, "lineup_enabled"),
-        (attendance_post, "attendance_enabled"),
-        (standings_post, "standings_enabled"),
-    ):
-        monkeypatch.setattr(module, name, AsyncMock(return_value=name == enabled))
-    bot = MagicMock()
-    bot.image_validity_service.template_reports = AsyncMock(return_value=_reports())
-    service = PlacementService(db_path, bot)
-    monkeypatch.setattr(service, "_is_reserve_team", AsyncMock(return_value=reserve))
-    return service
-
-
-#: Each placement guard, the output it guards, and whether the team placed into is reserve.
-PLACEMENT_GUARDS = [
-    ("reserve", "lineup_enabled", True,
-     lambda service: service._guard_reserve_capacity(DIVISION_ID, "Reserve", adding=99)),
-    ("attendance-sheet", "attendance_enabled", False,
-     lambda service: service._guard_sheet_capacity(DIVISION_ID, adding=99)),
-    ("standings", "standings_enabled", False,
-     lambda service: service._guard_standings_capacity(DIVISION_ID, "Team 1", adding=99)),
-]
-
-
-@pytest.mark.parametrize(
-    "enabled,reserve,guard", [case[1:] for case in PLACEMENT_GUARDS],
-    ids=[c[0] for c in PLACEMENT_GUARDS],
-)
-async def test_a_placement_guard_measures_its_template_off_the_loop(
-    tmp_path, monkeypatch, enabled, reserve, guard
-):
-    """The reserve, attendance sheet and standings guards parse and measure their template in
-    a worker thread, and refuse ninety-nine more drivers as they did before."""
-    service = await _service(tmp_path, monkeypatch, enabled=enabled, reserve=reserve)
-
-    async def refusal() -> str:
-        with pytest.raises(ValueError) as refused:
-            await guard(service)
-        return str(refused.value)
-
-    answer, _held = await _held_alike(monkeypatch, refusal)
-
-    assert "was **not** assigned" in answer
-
-
 def _parse_then_refuse(load_svg):
     """A parse that fails after it has the tree, as a template that cannot be counted does,
     while the failing frame still holds it."""
@@ -222,22 +169,3 @@ async def test_a_season_check_s_fault_crosses_back_with_nothing_it_parsed(
 
     assert held.calls
     assert answer == SEASON_FALLBACKS.get(request.node.callspec.id, [])
-
-
-@pytest.mark.parametrize(
-    "enabled,reserve,guard", [case[1:] for case in PLACEMENT_GUARDS],
-    ids=[c[0] for c in PLACEMENT_GUARDS],
-)
-async def test_a_placement_guard_s_fault_crosses_back_with_nothing_it_parsed(
-    tmp_path, monkeypatch, enabled, reserve, guard
-):
-    """A template that fails as it is measured is kept to the worker thread: the guard lets
-    the placement through, as it always has, and no tree reaches the loop."""
-    service = await _service(tmp_path, monkeypatch, enabled=enabled, reserve=reserve)
-    held = Held(_parse_then_refuse(svg_document.load_svg))
-    monkeypatch.setattr(svg_document, "load_svg", held)
-
-    answer = await answered_while(held, lambda: guard(service))
-
-    assert held.calls
-    assert answer is None
