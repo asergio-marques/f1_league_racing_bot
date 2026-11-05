@@ -535,11 +535,12 @@ class ModuleCog(commands.Cog):
     async def _disable_signup(
         self, interaction: discord.Interaction
     ) -> None:
-        # The switch-off is signup's own change on the queue, whose check refuses "already
-        # disabled" and fills its own payload with the window standing now: where it is open it
-        # closes it first, as jobs, and its switch-off turns the module off, forgets the channel
-        # and audits it, then clears the channel's overwrites in a job of its own, so that they go
-        # only with the module. This asks for it and does nothing else.
+        # The switch-off is signup's own change on the queue. It fills its own payload at the ask
+        # with the window standing then, and its check refuses "already disabled", a season whose
+        # configuration is fixed and a window changed since the ask. Where the window is open it
+        # closes it first, as jobs; its switch-off turns the module off, forgets the channel and
+        # audits it, then clears the channel's overwrites in a job of its own, so that they go only
+        # with the module. This asks for it and does nothing else.
         await self.bot.change_queue.ask(
             module_off("signup"),
             {},

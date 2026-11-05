@@ -513,9 +513,9 @@ class ChangeType:
     applies to a member's change only: a bot's change whose check raises still stops its lane.
 
     *fill*, where set, lets a change type fill its own payload with a value read from the state
-    standing at the ask (`signup_off_change`'s window), before `check` is run and the request
-    saved: `ask` and `ask_after` call it on the payload once, only where the change is not yet
-    saved, so the value saved with the request is the one that stood then, and the check made
+    standing at the ask (`signup_off_change`'s window), before its check is run: `ChangeQueue.check`
+    runs it on every ask and every probe made before the change is saved, never as the change
+    starts, so the value saved with the request is the one that stood then, and the check made
     again as the change starts can judge whether the two still agree. None fills nothing.
     """
 
