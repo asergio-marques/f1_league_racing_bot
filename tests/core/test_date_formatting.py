@@ -25,9 +25,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from leaguebot.image.models.image_constants import DATE_FORMATS, TIME_FORMATS
 from leaguebot.core.utils.date_formatting import (
+    DATE_FORMATS,
     DEFAULT_DATE_FORMAT,
+    TIME_FORMATS,
     format_date,
     format_date_and_time,
     format_time,
