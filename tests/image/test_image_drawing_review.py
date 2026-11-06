@@ -29,7 +29,6 @@ from leaguebot.image.models.image_module import (
     DirectoryReport,
     ValidityReport,
 )
-from leaguebot.image.services.image_config_service import portrait_configuration_fault
 from leaguebot.image.services.image_validity_service import (
     ImageValidityService,
     plain_reason,
@@ -102,6 +101,14 @@ def _portraits(**values):
 
 
 _INVALID_PORTRAITS = {"use_pfp": True, "pfp_prerender": False, "pfp_daily": False}
+
+#: The portrait fault, word for word as a manager reads it in the review and in the refusal.
+_NEVER_FETCHED = (
+    "Driver portraits are set to be obtained from Discord, but neither pre-render "
+    "nor daily updates are enabled, so no portrait would ever be fetched. Enable "
+    "`/images use-pfp prerender-toggle` or `/images use-pfp daily-toggle`, or turn "
+    "off `/images use-pfp toggle`."
+)
 
 
 # ── The drawing program ───────────────────────────────────────────────────
@@ -207,7 +214,7 @@ async def test_the_review_section_states_each_aspect_template_folder_and_the_dep
             _portraits(**_INVALID_PORTRAITS),
             [
                 "  ✅ Driver portraits from Discord: enabled",
-                f"      ⛔ {portrait_configuration_fault(_portraits(**_INVALID_PORTRAITS))}",
+                f"      ⛔ {_NEVER_FETCHED}",
             ],
             id="invalid",
         ),
@@ -337,9 +344,7 @@ async def test_the_portrait_fault_fires_only_on_settings_that_would_never_fetch(
     config = _portraits(**values)
     drawing = _drawing(images_on=images_on, config=config)
 
-    expected = portrait_configuration_fault(config) if faulty else None
-    assert expected is not None or not faulty
-    assert await drawing.portrait_fault() == expected
+    assert await drawing.portrait_fault() == (_NEVER_FETCHED if faulty else None)
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_YET)
