@@ -467,7 +467,7 @@ async def test_the_replacement_is_given_to_every_driver(tmp_path, column, change
     """Every driver lost the old role with it. Whoever the driver role belongs to is given the
     replacement — the base role too, the one time the bot grants it — once the queue has saved
     it, as the setting's follow-on: nobody is given it while the change waits. The reply and the
-    line are today's, word for word."""
+    line are today's, word for word, the line the only one the log channel takes."""
     from tests.support.change_queue import run_queue
 
     db_path = await _make_db(tmp_path, stage="ONGOING", drivers=_TWO_DRIVERS)
@@ -489,15 +489,16 @@ async def test_the_replacement_is_given_to_every_driver(tmp_path, column, change
         f"✅ **{label}** set to <@&{NEW_ROLE}>.\n{_REPLACED}\n"
         f"It has been given to 2 driver(s).{others}"
     )
-    assert _lines(bot)[-1] == (
+    assert _lines(bot) == [
         f"{NAMED} | {command} | Success\n  role: Drivers (`<@&{NEW_ROLE}>`)\n"
         f"  replaced: a role no longer on the server\n  given to: 2 driver(s)"
-    )
+    ]
 
 
 @pytest.mark.parametrize("column,change_type", _BOTH)
 async def test_a_driver_who_could_not_be_given_it_is_named(tmp_path, column, change_type):
-    """The reply and the line are today's, word for word."""
+    """The reply and the line are today's, word for word, the line the only one the log channel
+    takes."""
     db_path = await _make_db(tmp_path, stage="ONGOING", drivers=_TWO_DRIVERS)
     command, label = _WORDS[column]
 
@@ -509,11 +510,11 @@ async def test_a_driver_who_could_not_be_given_it_is_named(tmp_path, column, cha
         f"It has been given to 1 driver(s). It could not be given to <@5002> — give it to them "
         f"by hand.{others}"
     )
-    assert _lines(bot)[-1] == (
+    assert _lines(bot) == [
         f"{NAMED} | {command} | Success\n  role: Drivers (`<@&{NEW_ROLE}>`)\n"
         f"  replaced: a role no longer on the server\n  given to: 1 driver(s)\n"
         f"  not given to: `<@5002>`"
-    )
+    ]
 
 
 @pytest.mark.xfail(strict=True, reason=QUEUED)
