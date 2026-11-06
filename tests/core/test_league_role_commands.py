@@ -524,8 +524,9 @@ async def test_a_fault_giving_the_replacement_leaves_the_role_saved(
     """Season 4's configuration is fixed and the stored role is gone from the server; the manager
     sets a new one, and giving it to the drivers raises once the queue has saved it. The role is
     saved and audited, and the queue is not stopped. The reply says the role is set and replaced,
-    then that it could not be given to the drivers, for the league to give it by hand; the log
-    channel gets the queue's failure line, and no success line, the grants carrying it."""
+    then that it could not be given to the drivers, for the league to give it by hand, a base role
+    still reminding the league that its other members need it too; the log channel gets the
+    queue's failure line, and no success line, the grants carrying it (decision 169)."""
     from leaguebot.core.services.placement_service import PlacementService
     from tests.support.change_queue import stopped_job
 
@@ -539,9 +540,11 @@ async def test_a_fault_giving_the_replacement_leaves_the_role_saved(
 
     assert (await _stored(db_path))[column] == NEW_ROLE
     assert [r["change_type"] for r in await _audit_rows(db_path)] == [change_type]
+    others = _OTHER_MEMBERS if column == "base_role_id" else ""
     assert _reply(asked) == (
         f"✅ **{label}** set to <@&{NEW_ROLE}>.\n{_REPLACED}\n"
-        f"⚠️ The role is saved, but it could not be given to the drivers: give it to them by hand."
+        f"⚠️ The role is saved, but it could not be given to the drivers: give it to them by "
+        f"hand.{others}"
     )
     assert _lines(bot) == [
         f"❌ `{command}` failed for {NAMED} — RuntimeError. The details are in the host's log."
