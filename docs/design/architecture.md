@@ -427,8 +427,8 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   the old hub stood down and the new one's permissions set once its channel is moved; see "The
   record is the queue's"), and the work after it that the setting does not need (checking it
   against the templates, arming or removing a timed job, granting a role to every driver) is work
-  nothing later depends on. A fault in either leaves nothing half-done and nothing behind it on
-  the lane waits on it. A fault in the save is rolled back whole, so nothing is saved and the member
+  nothing later depends on. A fault in either leaves nothing half-done and nothing behind it on the
+  lane waits on it. A fault in the save is rolled back whole, so nothing is saved and the member
   can simply ask again; a fault in a step after the save leaves the setting saved, so asking again
   with the same value saves nothing and repeats no step, and the reply says what was not done, or
   what to do by hand, where the step has anything to say. So such a step carries `Step.on_fault`:
