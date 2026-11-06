@@ -223,8 +223,8 @@ def _on_fault(ctx: StepContext, error: BaseException) -> StepResult:
     """A fault in the save: nothing saved, the member told to run `/bot init` again, and the
     host's log recording it — there being no log channel to write to while the claim is still
     unmade (`_failed` in `setting_change.py` is not reused: it would queue a line to a log
-    channel that may not exist yet)."""
-    log.error("%s failed for %s (%s)", ctx.what, ctx.named, ctx.actor_id, exc_info=error)
+    channel that may not exist yet). The traceback is the queue's own to log
+    (`ChangeQueue._run_step`), once, before this is called; nothing here logs it again."""
     return StepResult(result={"outcome": "faulted"})
 
 
