@@ -442,7 +442,8 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   *Rejected:* a step that catches its own fault, which would leave its partial writes on the save's
   connection and could not catch what fails after it returns, the queue's own audit and line writes
   and the commit; and stopping the lane for a setting, which would hold every other change for a
-  fault the member can cure by asking again.
+  fault that either the member cures by asking again (a save rolled back) or that nothing later on
+  the lane depends on (a step after it).
 
   The same holds for a member's roles moved after their driver's or their team's change. A `/driver`
   or `/team` change saves the driver's or the team's rows and their audit record in one step, and

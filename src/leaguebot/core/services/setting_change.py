@@ -39,12 +39,14 @@ settings code reads the wall clock.
 
 **A setting never holds up the queue.** Its save, its check as it comes up to run and the steps
 after it end on a fault instead of stopping the lane (`Step.on_fault`,
-`ChangeType.on_check_fault`): a settings change is one atomic save, so a fault leaves nothing
-half-done, nothing behind it waits on it, and the member can simply ask again. A save that faults
-has been rolled back whole, so nothing is saved, the member is told so and to run it again
-(`NOTHING_SAVED`, or the setting's own words), and the log channel gets the failure line. A step
+`ChangeType.on_check_fault`): a settings change is one atomic save, so a fault is cured one of two
+ways and nothing behind it on the lane ever waits on it. A save that faults has been rolled back
+whole, so nothing is saved, the member is told so and to run it again (`NOTHING_SAVED`, or the
+setting's own words), and the log channel gets the failure line — the cure is asking again. A step
 after the save, which the setting does not need (checking it against the templates, arming or
-removing a timed job), leaves the setting saved and says what was not done (`After.fault_reply`).
+removing a timed job, granting a role to every driver), leaves the setting saved: asking again with
+the same value now saves nothing and repeats no step, so the cure is instead whatever the reply
+names — what was not done, or what to do by hand (`After.fault_reply`).
 *Rejected:* a bespoke change type per command, which forms the line, the audit and the fault
 answer a score of ways; and a step catching its own fault, which could not undo its partial
 writes nor catch what fails after it returns (see `change_queue`).
