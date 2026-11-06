@@ -426,25 +426,26 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   driver where it replaces one gone from the server while the season's configuration is fixed, or
   the old hub stood down and the new one's permissions set once its channel is moved; see "The
   record is the queue's"), and the work after it that the setting does not need (checking it
-  against the templates, arming or removing a timed job, granting a role to every driver) is work
-  nothing later depends on. A fault in either leaves nothing half-done and nothing behind it on the
-  lane waits on it. A fault in the save is rolled back whole, so nothing is saved and the member
-  can simply ask again; a fault in a step after the save leaves the setting saved, so asking again
-  with the same value saves nothing and repeats no step, and the reply says what was not done, or
-  what to do by hand, where the step has anything to say. So such a step carries `Step.on_fault`:
-  where it raises, the queue does not stop the lane but marks the job done with what `on_fault`
-  returns, in a save of its own with its lines, and the change carries on to its next step or
-  finishes. A change type may likewise give `ChangeType.on_check_fault` for a check that raises as
-  a **member's** change starts: the change is ended as REFUSED in one save, with the failure line
-  in place of a refusal's, and the reply it returns. What the member is told and what the log
-  channel records of either is the core specification's "How a change is carried out"; the full
-  detail goes to the host's log. A step that is `undiscardable` may not carry `on_fault`, since it
-  is a step a stop must hold. `core/services/setting_change.py` builds both callbacks for every
-  settings command once. *Rejected:* a step that catches its own fault, which would leave its
-  partial writes on the save's connection and could not catch what fails after it returns, the
-  queue's own audit and line writes and the commit; and stopping the lane for a setting, which
-  would hold every other change for a fault that either the member cures by asking again (a save
-  rolled back) or that nothing later on the lane depends on (a step after it).
+  against the templates, arming or removing a timed job, granting a role to every driver, asking
+  the hub's panel to be posted again as the bot's own change) is work nothing later depends on. A
+  fault in either leaves nothing half-done and nothing behind it on the lane waits on it. A fault
+  in the save is rolled back whole, so nothing is saved and the member can simply ask again; a
+  fault in a step after the save leaves the setting saved, so asking again with the same value
+  saves nothing and repeats no step, and the reply says what was not done, or what to do by hand,
+  where the step has anything to say. So such a step carries `Step.on_fault`: where it raises, the
+  queue does not stop the lane but marks the job done with what `on_fault` returns, in a save of
+  its own with its lines, and the change carries on to its next step or finishes. A change type may
+  likewise give `ChangeType.on_check_fault` for a check that raises as a **member's** change
+  starts: the change is ended as REFUSED in one save, with the failure line in place of a
+  refusal's, and the reply it returns. What the member is told and what the log channel records of
+  either is the core specification's "How a change is carried out"; the full detail goes to the
+  host's log. A step that is `undiscardable` may not carry `on_fault`, since it is a step a stop
+  must hold. `core/services/setting_change.py` builds both callbacks for every settings command
+  once. *Rejected:* a step that catches its own fault, which would leave its partial writes on the
+  save's connection and could not catch what fails after it returns, the queue's own audit and line
+  writes and the commit; and stopping the lane for a setting, which would hold every other change
+  for a fault that either the member cures by asking again (a save rolled back) or that nothing
+  later on the lane depends on (a step after it).
 
   The same holds for a member's roles moved after their driver's or their team's change. A `/driver`
   or `/team` change saves the driver's or the team's rows and their audit record in one step, and
@@ -583,10 +584,11 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   while the season's configuration is fixed, or stands the old hub down and sets the new one's
   permissions once its channel is moved: there the value and the audit record share the save and
   the line follows in that step's own save, so that a fault of the bot's own in that step — a
-  failed arming, a failed grant, a guild or channel gone missing — records no success, while a
-  permission Discord refuses without raising, or a base role gone from the server, records a
-  success with that fault named beneath it. *Rejected:* a bespoke change type for each command,
-  which forms the line, the audit and the fault answer a score of ways.
+  failed arming, a failed grant, the guild or the new hub's channel gone missing — records no
+  success, while a permission edit Discord refuses, which the step reports rather than raises, or a
+  base role gone from the server, records a success with that fault named beneath it. *Rejected:* a
+  bespoke change type for each command, which forms the line, the audit and the fault answer a
+  score of ways.
 
 ---
 
