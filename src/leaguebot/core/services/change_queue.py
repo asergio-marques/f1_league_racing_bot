@@ -476,7 +476,8 @@ class ChangeType:
     change is never refused as a repeat.
 
     *lane* says, from the payload, the lane the change runs on: `LEAGUE_LANE` (the default, the
-    queue as a league knows it) or a conversation's, `"channel:<id>"`, keyed by the channel it is
+    queue as a league knows it), `REPAIR_LANE` (given a `Setting` marked `Setting.repairs_the_bot`,
+    through `setting_change`), or a conversation's, `"channel:<id>"`, keyed by the channel it is
     held in. The lane is fixed by what asked for the change, so the same payload always gives the
     same lane; a follow-on a step asks takes its own kind's lane, not its asker's.
 
