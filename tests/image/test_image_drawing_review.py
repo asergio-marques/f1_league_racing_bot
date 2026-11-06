@@ -193,11 +193,6 @@ async def test_the_review_section_states_each_aspect_template_folder_and_the_dep
     [
         pytest.param(None, ["  ❌ Driver portraits from Discord: disabled"], id="no-configuration"),
         pytest.param(
-            _portraits(use_pfp=False),
-            ["  ❌ Driver portraits from Discord: disabled"],
-            id="disabled",
-        ),
-        pytest.param(
             _portraits(use_pfp=True, pfp_prerender=True, pfp_daily=True, pfp_daily_time="07:45"),
             [
                 "  ✅ Driver portraits from Discord: enabled — updated before each render, and "
@@ -222,9 +217,11 @@ async def test_the_review_section_states_each_aspect_template_folder_and_the_dep
 )
 async def test_the_review_section_states_the_portrait_settings(rasteriser, config, portrait_lines):
     """The portrait settings are always stated, off included: "the bot is not obtaining
-    portraits" is an answer for a manager deciding whether the season is configured. Enabled,
-    they name each update trigger and the daily time in UTC; settings that would never fetch a
-    portrait are marked ⛔ with the fault the approval refuses on. Takes the place of
+    portraits" is an answer for a manager deciding whether the season is configured, and with no
+    configuration at all they read as off (portraits switched off are stated by the full-section
+    test above). Enabled, they name each update trigger and the daily time in UTC; settings that
+    would never fetch a portrait are marked ⛔ with the fault the approval refuses on. Takes the
+    place of
     `tests/core/test_season_review_images.py`'s three portrait-line tests."""
     drawing = _drawing(config=config)
 
