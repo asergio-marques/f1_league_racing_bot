@@ -25,14 +25,18 @@ for anyone to clear a stop with.
   starts.
 - **The claim is lost to a race**, `claim_on` finding the row already claimed by the time the
   save runs: judged exactly where the claim is taken, never by a read beforehand that a second
-  writer could still overtake.
+  writer could still overtake. Whichever refusal fits whoever won is answered: another server's
+  above, or this server's own claim, taken first by another save — the narrower "already
+  configured" that `check` has not already caught.
 
 None of the three can be a `Verdict.refuse` from `check`: that path always writes a line to the
 league's log channel (`ChangeQueue._refuse`), which the first two must not reach, there being no
-log channel of this server's league to write to yet. Instead the save reports them for itself,
-in the step's own `result`, read back by `_outcome` to answer the member; nothing of them is
-queued as a log line, and the host's log is written directly, as `_refuse_on_host` writes it
-for the same two refusals judged at the ask.
+log channel of this server's league to write to yet. Instead the save reports them for itself, in
+the step's own `result`, read back by `_outcome` to answer the member. Another server's claim and
+a reset cleaning up queue no line; the host's log is written directly, as `_refuse_on_host` writes
+it for the same two refusals judged at the ask. The lost race to this server's own claim queues its
+refusal line on the save's connection, the claim just taken by the winner having set the log
+channel it goes to.
 
 **"Already configured" is `check`'s refusal**, judged at the ask and again as the change
 starts, in the league's log channel both times, as any other member's refusal is
@@ -67,6 +71,7 @@ from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.services.change_queue import ChangeType, CheckContext, Step, StepContext
 from leaguebot.core.services.setting_change import NOTHING_SAVED
 from leaguebot.core.utils.interaction_errors import failure_reply
+from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.config_service import ConfigService
@@ -149,21 +154,16 @@ def _save(config: "ConfigService") -> Callable[[aiosqlite.Connection, StepContex
         """Claim the server, write the four settings and the `BOT_INITIALISED` audit entry, one
         save.
 
-        Another server holding the league, and a race lost for the claim, are found here and
-        answered without a line in the league's log channel — there being none of this server's
-        to write to, or the claimed one not being this server's. Both are logged to the host
-        directly.
+        `claim_on`'s own condition is where another server holding the league and a lost race
+        are both found, there being no read beforehand that a second writer could still overtake:
+        either way the claim is not taken, and this step tells which. Another server is answered
+        without a line in the league's log channel — there being none of this server's to write
+        to — and logged to the host directly. Already configured is this server's own claim,
+        taken first by another save: its line goes to the log channel that claim has just set, on
+        this save's connection, as any other refusal recorded as the change starts does.
         """
         payload = ctx.payload
         server_id = int(payload["server_id"])
-
-        league_server_id = await config.get_league_server_id()
-        if league_server_id is not None and league_server_id != server_id:
-            log.info(
-                "%s refused for %s (%s): another server already holds the league",
-                ctx.what, ctx.named, ctx.actor_id,
-            )
-            return StepResult(result={"outcome": "another_server"})
 
         claimed = {
             "server_id": server_id,
@@ -183,9 +183,8 @@ def _save(config: "ConfigService") -> Callable[[aiosqlite.Connection, StepContex
             ),
         )
         if not created:
-            # Lost a race with a concurrent `/bot init`. Whichever refusal fits whoever won:
-            # another server's, or this server's own claim having gone through on another save
-            # first.
+            # The claim was not taken: either another server already holds the league, or this
+            # one's own claim went through on another save first.
             now_held = await config.get_league_server_id()
             if now_held != server_id:
                 log.info(
@@ -197,7 +196,10 @@ def _save(config: "ConfigService") -> Callable[[aiosqlite.Connection, StepContex
                 "%s refused for %s (%s): already configured",
                 ctx.what, ctx.named, ctx.actor_id,
             )
-            return StepResult(result={"outcome": "already_configured"})
+            return StepResult(
+                result={"outcome": "already_configured"},
+                lines=(refusal_line(ctx.named, COMMAND, reply_reason(ALREADY_CONFIGURED)),),
+            )
 
         details = tuple(
             _line_detail(column, line_key, payload, claimed[column])
