@@ -655,8 +655,6 @@ def hub_channel_setting(*, config: "ConfigService") -> Setting:
         row = await cursor.fetchone()
         old_channel_id = None if row is None else row["hub_channel_id"]
         old_message_id = None if row is None else row["hub_message_id"]
-        if old_channel_id == value:
-            return Saved(changed=False, details=(f"channel: <#{value}>",))
         if not await config.set_core_setting_on(db, "hub_channel_id", value):
             return Saved(changed=False)
         await config.set_core_setting_on(db, "hub_message_id", None)
