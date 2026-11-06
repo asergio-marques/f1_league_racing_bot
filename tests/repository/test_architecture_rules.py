@@ -1797,8 +1797,6 @@ def _tables_written(sql: str, module: str) -> list[str]:
 #: read by hand and found to set none of a module's: how many such statements, and where their
 #: columns come from. The count is held exactly, so a statement added later is read by hand too.
 COLUMNS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/config_service.py", "ConfigService.set_core_setting"):
-        (1, "sets only a column named in `_SETTABLE_COLUMNS`, none of them a module's"),
     ("core/services/config_service.py", "ConfigService.set_core_setting_on"):
         (1, "sets only a column named in `_SETTABLE_COLUMNS`, none of them a module's"),
     ("core/cogs/season_cog.py", "SeasonCog.division_amend"):
@@ -2040,7 +2038,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog.division_lineup_channel"): (1, PASS["core"]),
     ("core/services/audit_service.py", "record_change"): (1, PASS["core"]),
     ("core/services/config_service.py", "ConfigService.save_server_config"): (2, PASS["core"]),
-    ("core/services/config_service.py", "ConfigService.set_core_setting"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService._create_profile"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),

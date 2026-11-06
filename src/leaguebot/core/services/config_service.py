@@ -152,35 +152,19 @@ class ConfigService:
         "hub_message_id",
     }
 
-    async def set_core_setting(self, column: str, value: int | None) -> bool:
-        """Write one core-config column, leaving every other column untouched, and commit.
-
-        One column at a time is the point: test mode, the module flags, the league's two
-        roles and the other settings are each written by their own command, and a whole-row
-        save from any of them would carry stale values over the others.
-
-        Returns False where no server is claimed, a packed row included: its settings
-        belong to the next server's `/bot init`.
-        """
-        if column not in self._SETTABLE_COLUMNS:
-            raise ValueError(f"{column!r} is not a core setting")
-
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                f"UPDATE server_configs SET {column} = ? WHERE server_id IS NOT NULL",
-                (value,),
-            )
-            await db.commit()
-            return cursor.rowcount > 0
-
     async def set_core_setting_on(
         self, db: aiosqlite.Connection, column: str, value: int | None
     ) -> bool:
         """Write one core-config column on *db*, committing nothing: a setting's own save.
 
-        The column-at-a-time contract `set_core_setting` keeps, on the connection a change's
-        save is handed, so the value and its audit entry go in the one save `setting_change`
-        makes of them.
+        One column at a time is the point: test mode, the module flags, the league's two
+        roles and the other settings are each written by their own command, and a whole-row
+        save from any of them would carry stale values over the others. Writing on the
+        connection a change's save is handed means the value and its audit entry go in the
+        one save `setting_change` makes of them.
+
+        Returns False where no server is claimed, a packed row included: its settings
+        belong to the next server's `/bot init`.
         """
         if column not in self._SETTABLE_COLUMNS:
             raise ValueError(f"{column!r} is not a core setting")
