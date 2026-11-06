@@ -1083,7 +1083,7 @@ to it would switch off the one failure path for every command.
    catch-all puts the error in the host's log alone, with no line to the log channel, and answers
    that the league does not draw its lineup, so the text lineup goes out, because a gate that
    cannot be read must not lose a league its lineup (its docstring says so); the helper through
-   which the season cog's own capacity checks count and ask the drawing
+   which the season cog's own capacity checks count and ask the image module
    (`SeasonCog._ask_drawing`) — the round guard at `/round add` and the round import
    (`_calendar_round_overflow`), and the review's and the approval's (`_lineup_problems`,
    `_calendar_capacity_warning`, `_attendance_capacity_warning`) — is a stated exception beside
