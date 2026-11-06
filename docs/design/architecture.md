@@ -426,14 +426,14 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   every driver where the one it replaces is gone; see "The record is the queue's"), and the work
   after it that the setting does not need (checking it against the templates, arming or
   removing a timed job) is work nothing later depends on. A fault in either leaves nothing
-  half-done and nothing behind it on the lane waits on it; where asking again would simply repeat
-  the same work, the member can do that, and where it would not (a grant already run to every
-  driver), the reply says what to do by hand instead. So such a step carries `Step.on_fault`:
-  where it raises, the queue does not stop the lane but marks the
-  job done with what `on_fault` returns, in a save of its own with its lines, and the change carries
-  on to its next step or finishes. A save that faults has been rolled back whole, so nothing is
-  saved but the mark and the failure line; a step after the save leaves the setting saved. A change
-  type may likewise give `ChangeType.on_check_fault` for a check that raises as a **member's**
+  half-done and nothing behind it on the lane waits on it. A fault in the save is rolled back
+  whole, so nothing is saved and the member can simply ask again; a fault in a step after the save
+  leaves the setting saved, so asking again with the same value saves nothing and repeats no step,
+  and the reply says instead what was not done, or what to do by hand. So such a step carries
+  `Step.on_fault`: where it raises, the queue does not stop the lane but marks the job done with
+  what `on_fault` returns, in a save of its own with its lines, and the change carries on to its
+  next step or finishes. A change type may likewise give `ChangeType.on_check_fault` for a check
+  that raises as a **member's**
   change starts: the change is ended as REFUSED in one save, with the failure line in place of a
   refusal's, and the reply it returns. What the member is told and what the log channel records of
   either is the core specification's "How a change is carried out"; the full detail goes to the
