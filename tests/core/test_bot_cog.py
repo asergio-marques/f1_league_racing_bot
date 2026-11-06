@@ -774,14 +774,15 @@ async def test_a_role_set_to_the_role_it_holds_is_answered_nothing_changed(
 @pytest.mark.parametrize(
     "attribute,column,factory,new_id",
     [pytest.param(*s, marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE), id=s[1])
-     for s in _SETTINGS if s[1] in ("log_channel_id", "league_admin_role_id")],
+     for s in _SETTINGS],
 )
 async def test_a_repair_setting_takes_effect_while_the_queue_is_stopped_on_another_job(
     tmp_path, attribute, column, factory, new_id
 ):
     """The league's server is set up, and the league's queue is stopped on another job, which
-    failed on a fault in the bot. An administrator runs `/bot log-channel`, or `/bot admin-role`,
-    with a new channel or role, to repair the league. Nothing is written as they ask; once the
+    failed on a fault in the bot. An administrator runs `/bot log-channel`,
+    `/bot interaction-channel`, `/bot interaction-role` or `/bot admin-role` with a new channel or
+    role, to repair the league. Nothing is written as they ask; once the
     queue runs, the setting is saved and they are answered with today's reply, past the stop,
     while the other job stays stopped where it was (decision 162)."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
