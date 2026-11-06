@@ -239,8 +239,8 @@ module offers the others is public, and its docstring says what it promises.
 ## How a change is carried out
 
 **Every change goes through one queue.** Every change to the bot's data is put on one queue, one
-durable list of jobs, and carried out in order within its lane (below), whoever or whatever asks for
-it: a person (a command, a button, a form, a typed answer), a timer, a Discord event (a member
+durable list of jobs, and carried out in order within its lane, save the one overtake (below),
+whoever or whatever asks for it: a person (a command, a button, a form, a typed answer), a timer, a Discord event (a member
 leaving), or a handler or start step the start-up sweep calls. Commands that only read do not use it. Carrying out changes on the spot is what left
 data half-changed when two presses overlapped, the bot stopped part-way or a step failed, and what
 let a success be reported over a change only half done.
@@ -320,10 +320,10 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   channel stops only that conversation. Nothing on a lane overtakes the change at its head, not
   even one whose job is stopped, save a change of a kind marked `ChangeType.overtakes_a_stop`
   (below, "A job that fails stops its lane"): `_choose` takes, of each lane, its running change or
-  else its oldest queued one, or such an overtaking change queued behind a stopped head.
+  else its oldest queued one, or such an overtaking change queued, or already running past the
+  stop, behind a stopped head not yet due for a try.
   Lanes run side by side, `ALWAYS_RUN_LANES` (the league lane alone) always and at most three
-  conversation lanes with them, the rest waiting oldest change first. SQLite lets one writer in at
-  a
+  conversation lanes with them, the rest waiting oldest change first. SQLite lets one writer in at a
   time, so one write lock, taken round each save and released at its commit, keeps that single
   writer in the process; no call to Discord is made under it, so a long save makes another lane's
   save wait in Python rather than fail on SQLite's busy timeout. Inside the save of a save step, or
@@ -416,7 +416,7 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   runs it afresh. Every job of a round's review is such a job, one a module cannot step over (the
   results and attendance specifications say which, and what each stop leaves). A new change asked
   for meanwhile is acknowledged as usual, joins the back of its lane and says that the lane is
-  stopped.
+  stopped; one that overtakes a stop says it runs past it, the stop standing (`held_behind_text`).
 
   **Three exceptions: a league's settings, roles moved after a driver's or team's change, and the
   four settings a league repairs itself with.** A change to one of a league's settings is one
@@ -455,25 +455,26 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   the bot up" name as a league's way back in when one of the four is wrong or gone, and that rule
   is why a stop on an unrelated job must not be able to hold such a repair up. Each change type
   gives `overtakes_a_stop=True` (`Setting.repairs_the_bot`, read once by `setting_change`, never a
-  list of kinds kept by the queue). Where a lane's head is stopped and a queued change behind it
-  is of such a kind, `_heads` and `_choose` take that change instead: the lane still runs one
-  change at a time, and the choice is still deterministic, but a repair jumps the queue behind a
-  stop rather than wait with everything else — the stopped head itself stays stopped, and every
+  list of kinds kept by the queue). Where a lane's head is stopped and not yet due for a try, and a
+  queued change behind it is of such a kind, `_heads` and `_choose` take that change instead: the
+  lane still works one change at a time, and the choice is still deterministic, but a repair jumps
+  the queue behind a stop rather than wait with everything else — the stopped head itself stays stopped, and every
   ordinary change still waits its turn behind it. Every other setting, the module switches and
   `/bot base-role`, `driver-role` and `hub-channel` among them, keeps the plain rule, one change at
   a time in the order asked.
 
   An overtaking change and its lane's stopped head are both RUNNING at once, which the schema's
   one-RUNNING-per-lane rule (`queued_changes_one_running`) would otherwise refuse: `queued_changes`
-  marks such a change `overtook_a_stop`, and the index excludes it, so the rule still holds between
-  every other pair of changes on a lane. *Rejected:* a lane of the four settings' own, beside the
+  marks every change of such a kind `overtook_a_stop` as it starts, and the index excludes it, so
+  the rule still holds between every other pair of changes on a lane. *Rejected:* a lane of the four settings' own, beside the
   league's — it would let two lanes write the league's configuration at once, each save
   re-judging the other's collisions, for no gain once overtaking a stop does the same job on the
   one lane. A channel setting's save re-checks nothing even though an overtaking change runs ahead
   of its stopped head's remaining jobs, because no change that can stop a lane gives a channel a
-  job: on the queue only a `Setting` claims one of the channels a channel setting's check reads
-  (`channel_registry_service.find_channel_use`'s sources), and a `Setting` never stops a lane,
-  ending on a fault instead (`setting_change.py`'s own docstring says so). So no stopped head ever
+  job: a change that claims one of the channels a channel setting's check reads
+  (`channel_registry_service.find_channel_use`'s sources) is a `Setting`, and a `Setting` never
+  stops a lane, ending on a fault instead (`setting_change.py`'s own docstring says so); every
+  command that sets such a channel keeps to this as it moves onto the queue. So no stopped head ever
   has a remaining job that claims a channel, an overtaking change runs to its own end before the
   head is tried again, and a channel setting's check as the change starts is still the save's last
   judgement of the state. That invariant is the one a later reader could tune away: a change that
@@ -543,8 +544,7 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   stepping aside either: the job is ended, not stopped, and nothing it leaves undone is waited on.
   The third exception is the one true overtake: the four settings a league repairs itself with run
   ahead of their own lane's stopped head, by design, because a league locked out of the bot has no
-  other lane to wait apart on. It is named as what it is rather than argued away, and it is kept
-  narrow: `ChangeType.overtakes_a_stop` is read once from `Setting.repairs_the_bot` for four kinds
+  other lane to wait apart on. It is kept narrow: `ChangeType.overtakes_a_stop` is read once from `Setting.repairs_the_bot` for four kinds
   alone, the stopped head stays stopped, and everything else on the lane still waits behind it.
   *Rejected:* a queue for each module, which leaves the conversations of one module waiting on each
   other and the league's work split across queues with no one order; and the league dropping a
