@@ -194,6 +194,10 @@ def _save(config: "ConfigService") -> Callable[[aiosqlite.Connection, StepContex
                     ctx.what, ctx.named, ctx.actor_id,
                 )
                 return StepResult(result={"outcome": "another_server"})
+            log.info(
+                "%s refused for %s (%s): already configured",
+                ctx.what, ctx.named, ctx.actor_id,
+            )
             return StepResult(result={"outcome": "already_configured"})
 
         details = tuple(
