@@ -1,4 +1,4 @@
-"""`core.bot_init`: `/bot init`, on the change queue (#283).
+"""`core.bot_init`: `/bot init`, on the change queue.
 
 Not a `Setting` (`setting_change.py`): a setting writes one column of a server already
 claimed, where `/bot init` claims the server itself, which no setting does. One SAVE step
@@ -97,9 +97,8 @@ ANOTHER_SERVER = (
 COMMAND = "/bot init"
 
 #: The four settings `/bot init` claims: the column, the reply's label, and the line's own key
-#: for it, word for word as `_audit`'s line once named them. The reply names each by its
-#: mention alone; the line adds a role's name beside its mention, a channel's mention being
-#: clickable and so self-naming.
+#: for it. The reply names each by its mention alone; the line adds a role's name beside its
+#: mention, a channel's mention being clickable and so self-naming.
 _SETTINGS = (
     ("league_admin_role_id", "League admin role", "league_admin_role"),
     ("interaction_role_id", "Interaction role", "interaction_role"),

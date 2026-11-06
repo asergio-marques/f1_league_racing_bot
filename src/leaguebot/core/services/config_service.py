@@ -79,16 +79,12 @@ class ConfigService:
 
         `/bot init`'s save (`core/services/bot_init_change.py`) calls this on the connection its
         change writes the four settings and the audit entry with, so the claim, the settings and
-        the audit entry are one save (#283): a fault in any of them leaves the claim untaken.
+        the audit entry are one save: a fault in any of them leaves the claim untaken.
 
         Claim-only, and deliberately so: every later change to a setting goes through the setters
-        below, which write a single column each.
-
-        An upsert here used to overwrite `test_mode_active` from whatever the caller's
-        `ServerConfig` happened to carry. A `/bot init force:True` once built one without reading
-        the stored row first, so its path silently switched test mode off while leaving the test
-        drivers seated. Refusing to update at all makes that unreachable rather than merely
-        corrected.
+        below, which write a single column each. Writing neither `test_mode_active` nor the
+        module flags here means a claim can never carry a stale value of either over what the
+        row already held.
 
         **It is also the claim** (issue #244). One bot serves one league, and the league's
         server is the `server_id` of the one row this table holds. A fresh bot has no row,
