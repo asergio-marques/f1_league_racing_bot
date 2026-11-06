@@ -416,10 +416,13 @@ async def test_a_step_after_the_save_that_raises_leaves_the_hub_saved_and_record
     ]
 
 
-async def test_a_channel_doing_another_job_is_refused(db_path):
+@pytest.mark.parametrize("manage", [True, False], ids=["bot-manages", "bot-cannot-manage"])
+async def test_a_channel_doing_another_job_is_refused(db_path, manage):
     """The log channel is the bot's; a panel there would sink under its lines. Refused at the
-    ask in today's words: nothing is written, nothing touched, and nothing asked of the queue."""
-    log_channel = _channel(LOG_CHANNEL)
+    ask in today's words: nothing is written, nothing touched, and nothing asked of the queue.
+    Where the bot also lacks Manage Channel and Manage Permissions there
+    (*bot-cannot-manage*), the channel's job is still the refusal given: it is checked first."""
+    log_channel = _channel(LOG_CHANNEL, manage=manage)
     cog, interaction = await _setup(db_path, log_channel)
 
     await _run(cog, interaction, log_channel)
@@ -434,13 +437,16 @@ async def test_a_channel_doing_another_job_is_refused(db_path):
     assert await change_rows(db_path) == []
 
 
-async def test_setting_the_hub_it_already_is_changes_nothing(db_path):
+@pytest.mark.parametrize("manage", [True, False], ids=["bot-manages", "bot-cannot-manage"])
+async def test_setting_the_hub_it_already_is_changes_nothing(db_path, manage):
     """Core spec :91, one panel in the hub, and the refusal of a channel's own value. The hub is
     7920, its panel 7930 standing: running the command for 7920 again is refused at the ask in
     today's words, before anything is written, so the panel 7930 is the one panel left
-    standing — none posted beside it, none deleted, and nothing asked of the queue."""
+    standing — none posted beside it, none deleted, and nothing asked of the queue. Where the
+    bot has also lost Manage Channel and Manage Permissions there (*bot-cannot-manage*), the
+    channel's own value is still the refusal given: it is checked first."""
     await _configure(db_path, hub_channel_id=HUB, hub_message_id=OLD_PANEL)
-    channel = _channel(HUB)
+    channel = _channel(HUB, manage=manage)
     cog, interaction = await _setup(db_path, channel)
 
     await _run(cog, interaction, channel)
