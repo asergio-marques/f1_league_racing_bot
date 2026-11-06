@@ -237,7 +237,10 @@ _GRANT_FAULT_REPLY = (
 
 
 def _role_mention(payload: dict[str, Any]) -> str:
-    return f"<@&{int(payload['value'])}>"
+    """What the manager reads as the role: Discord's own mention, carried in the payload since a
+    role Discord renders as `@everyone` (its default role) cannot be reconstructed from an id
+    alone."""
+    return str(payload["role_mention"])
 
 
 def _guild_and_role(ctx: StepContext) -> tuple[discord.Guild, discord.Role]:
@@ -297,7 +300,7 @@ def _league_role_setting(
         )
         row = await cursor.fetchone()
         current = None if row is None else row[column]
-        role_detail = f"role: {payload['role_name']} ({_role_mention(payload)})"
+        role_detail = f"role: {payload['role_name']} (<@&{value}>)"
         if current == value:
             return Saved(changed=False, details=(role_detail,))
         if not await config.set_core_setting_on(db, column, value):
@@ -403,17 +406,21 @@ def _grant_to_drivers(placement: "PlacementService", *, is_base_role: bool) -> A
 
 
 def _given_reply(result: Mapping[str, Any], *, is_base_role: bool) -> str:
-    """What the grant to every driver tells the manager, once it has run."""
+    """What the grant to every driver tells the manager, once it has run.
+
+    Everybody already holds `@everyone`, the base role included, so the other-members reminder
+    that follows every other base role's grant does not: it would send a league to hand out a
+    role every member already holds.
+    """
     if result.get("given") == "everyone":
-        told = "Everybody holds it already."
-    else:
-        told = f"It has been given to {result['granted']} driver(s)."
-        if result["not_granted"]:
-            told += (
-                " It could not be given to "
-                + ", ".join(f"<@{uid}>" for uid in result["not_granted"])
-                + " — give it to them by hand."
-            )
+        return "\nEverybody holds it already."
+    told = f"It has been given to {result['granted']} driver(s)."
+    if result["not_granted"]:
+        told += (
+            " It could not be given to "
+            + ", ".join(f"<@{uid}>" for uid in result["not_granted"])
+            + " — give it to them by hand."
+        )
     if is_base_role:
         told += _OTHER_MEMBERS
     return f"\n{told}"

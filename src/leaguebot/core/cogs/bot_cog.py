@@ -386,6 +386,7 @@ class BotCog(commands.Cog):
         payload: dict[str, Any] = {
             "value": role.id,
             "role_name": role.name,
+            "role_mention": role.mention,
             "old_role_id": old_role_id,
         }
         # Only a follow-on reaching Discord needs the server: the base role's (always) and a
