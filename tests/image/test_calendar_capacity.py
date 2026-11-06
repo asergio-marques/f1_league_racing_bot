@@ -30,7 +30,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from lxml import etree
 
-NOT_YET = "#283: the image module answers no calendar question of core's"
 SVG_NS = "http://www.w3.org/2000/svg"
 CALENDAR = "calendar_template"
 ROUND_REMEDY = (
@@ -103,13 +102,11 @@ QUESTIONS = pytest.mark.parametrize("question", ["round", "review"])
     [20, 24],
     ids=["within_capacity", "exactly_at_capacity"],
 )
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_round_within_capacity_is_not_refused(tmp_path, would_hold):
     """The comparison is `>`, so a template drawing twenty-four rounds takes twenty-four."""
     assert await _drawing(tmp_path).round_capacity_problem(would_hold) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_round_past_capacity_is_refused(tmp_path):
     """The remedy names both ways out: enlarging the template and turning the aspect off are
     genuinely different decisions, and a league may reasonably take either."""
@@ -124,7 +121,6 @@ async def test_a_round_past_capacity_is_refused(tmp_path):
 # ── The review's longest calendar (XIV.9) ─────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_warning_says_what_will_happen_instead(tmp_path):
     """The calendar is posted as text rather than not at all, which is the difference between
     a degraded season and a broken one. The division holding the longest calendar is named, so
@@ -140,7 +136,6 @@ async def test_the_warning_says_what_will_happen_instead(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_season_within_capacity_earns_no_warning(tmp_path):
     from leaguebot.core.services.image_drawing import Held
 
@@ -150,14 +145,12 @@ async def test_a_season_within_capacity_earns_no_warning(tmp_path):
 # ── Where the questions stand aside ───────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_guard_is_inert_while_the_image_module_is_off(tmp_path):
     """No graphic will be drawn, so there is no capacity to outgrow."""
     assert await _drawing(tmp_path, images=False).round_capacity_problem(100) is None
 
 
 @QUESTIONS
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_guard_is_inert_while_the_calendar_aspect_is_off(tmp_path, question):
     """A league can run the image module and draw no calendar — the aspect is what decides
     whether this template is used at all."""
@@ -170,7 +163,6 @@ async def test_the_guard_is_inert_while_the_calendar_aspect_is_off(tmp_path, que
     [None, SimpleNamespace(valid=False, resolved_path="/tmp/bad.svg", template_key=CALENDAR)],
     ids=["no_calendar_template", "invalid_template"],
 )
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_missing_or_invalid_template_is_not_used_to_refuse(tmp_path, report, question):
     """A league with no calendar template has no capacity to outgrow. An invalid one's
     capacity cannot be trusted, and refusing a round on an unreadable number would block a
@@ -184,7 +176,6 @@ async def test_a_missing_or_invalid_template_is_not_used_to_refuse(tmp_path, rep
 
 @QUESTIONS
 @pytest.mark.parametrize("fault", ["unreadable template", "no rounds declared", "reports down"])
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_fault_reading_the_template_is_let_out_for_core_s_catch(
     tmp_path, fault, question
 ):

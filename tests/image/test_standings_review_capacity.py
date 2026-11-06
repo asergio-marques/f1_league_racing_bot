@@ -36,7 +36,6 @@ from lxml import etree
 
 pytestmark = pytest.mark.asyncio
 
-NOT_YET = "#283: the image module answers no standings question of the season review"
 SVG_NS = "http://www.w3.org/2000/svg"
 DRIVERS = "standings_drivers_template"
 CONSTRUCTORS = "standings_constructors_template"
@@ -129,7 +128,6 @@ def _columns(label, name, columns, held):
 # ── At the season review (FR-043, FR-045) ─────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_review_names_the_two_templates_apart_never_as_one_pair(tmp_path):
     """FR-045 — a manager told 'the standings template' would not know which to enlarge. Each
     ceiling reports its own template, its own count and the division it was counted in: the
@@ -155,7 +153,6 @@ async def test_the_review_names_the_two_templates_apart_never_as_one_pair(tmp_pa
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_counts_the_templates_hold_exactly_are_no_problem(tmp_path):
     """A template drawing as many rows and round columns as the season holds draws it whole."""
     drawing = _drawing({
@@ -170,7 +167,6 @@ async def test_counts_the_templates_hold_exactly_are_no_problem(tmp_path):
     ) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_calendar_longer_than_the_round_columns_is_reported(tmp_path):
     drawing = _drawing(
         {DRIVERS: _report(_template_file(tmp_path, DRIVERS, rows=5, rounds=2), DRIVERS)}
@@ -183,7 +179,6 @@ async def test_a_calendar_longer_than_the_round_columns_is_reported(tmp_path):
     assert _answers(problems) == [_columns("Standings — drivers", "Alpha", 2, 5)]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_template_drawing_no_grid_at_all_is_not_an_overflow(tmp_path):
     """XIV.3 — a template that draws the classification alone is a legitimate choice."""
     drawing = _drawing(
@@ -196,7 +191,6 @@ async def test_a_template_drawing_no_grid_at_all_is_not_an_overflow(tmp_path):
 
 
 @pytest.mark.parametrize("valid", [None, False], ids=["missing", "invalid"])
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_an_invalid_template_is_left_to_the_layer_that_reports_it(tmp_path, valid):
     """Layer 2 reports a template missing or invalid, and reporting it here too would say it
     twice."""
@@ -209,7 +203,6 @@ async def test_an_invalid_template_is_left_to_the_layer_that_reports_it(tmp_path
     ) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_standings_are_not_checked_with_their_aspect_off(tmp_path):
     """No standings are drawn as images, so there is nothing for the templates to fall short
     of."""
@@ -228,7 +221,6 @@ async def test_the_standings_are_not_checked_with_their_aspect_off(tmp_path):
     ) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_an_uncountable_template_is_skipped_and_the_other_still_answered(tmp_path):
     """A gap in the drivers template's row numbering cannot be counted: Layer 2 reports it, and
     the constructors template is still measured."""

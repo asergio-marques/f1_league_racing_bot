@@ -18,12 +18,22 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.services.image_drawing import CalendarPicture, CapacityProblem, LineupPicture
+if TYPE_CHECKING:
+    from leaguebot.image.models.image_catalogues import FieldCatalogue
+
+from leaguebot.core.services.image_drawing import (
+    CalendarPicture,
+    CapacityProblem,
+    DivisionTeams,
+    Held,
+    LineupPicture,
+)
 from leaguebot.core.services.module_service import ModuleService
 from leaguebot.core.utils.paths import resolve_within_project_root
 from leaguebot.image.models.image_catalogues import (
+    catalogue_for,
     declared_capacities,
     reserve_capacity_problem,
     row_capacity_problem,
@@ -50,7 +60,11 @@ from leaguebot.image.services.image_render_service import (
     resolve_configured_directories,
     spec_builder_with_faults,
 )
-from leaguebot.image.services.image_standings_post import DRIVERS_TEMPLATE_KEY
+from leaguebot.image.services.image_rsvp_post import RSVP_ASPECT, RSVP_TEMPLATE_KEY
+from leaguebot.image.services.image_standings_post import (
+    CONSTRUCTORS_TEMPLATE_KEY,
+    DRIVERS_TEMPLATE_KEY,
+)
 from leaguebot.image.services.image_validity_service import ImageValidityService
 from leaguebot.image.utils.image_naming import stem_for_drawing
 from leaguebot.image.utils.svg_document import off_the_loop
@@ -66,8 +80,36 @@ _DECLARED_REMEDY = (
     "Enlarge that template, or disable the images module, before adding another driver."
 )
 
+#: The season review's own remedies (XIV.9): a warning names the one way out, enlarging the
+#: template, since the aspect is already on and turning it off would lose the picture outright
+#: rather than just the one division it cannot draw.
+_REVIEW_REMEDY = "Enlarge the template to draw it."
+
+#: The round guard's own remedy (XIV.12): naming both ways out, since enlarging the template
+#: and turning the aspect off are genuinely different decisions a league may reasonably take.
+_ROUND_REMEDY = (
+    "Enlarge the template, or turn the `calendar` image aspect off with `/images config toggle`."
+)
+
 #: The calendar's own aspect.
 CALENDAR_ASPECT = "calendar"
+
+#: The standings' own aspect.
+STANDINGS_ASPECT = "standings"
+
+
+def _rows_and_rounds(catalogue: FieldCatalogue, path: Path) -> tuple[int, int]:
+    """The rows and the round columns a standings template at *path* draws, nought for
+    none.
+
+    Parsed and counted here, in the worker thread the review runs it in, so that the tree
+    never leaves the thread that parsed it (`load_svg`). Raises `CapacityError` for a
+    template that cannot be counted.
+    """
+    from leaguebot.image.utils.svg_document import load_svg
+
+    root = load_svg(path)
+    return catalogue.capacity(root) or 0, catalogue.column_capacity(root) or 0
 
 
 def _path_signature(path: Path) -> list:
@@ -196,6 +238,190 @@ class ImageDrawing:
             f"**{label}** image template provides only {smallest} rows"
         )
         return CapacityProblem(problem=problem, remedy=_DECLARED_REMEDY)
+
+    # ── The season review's capacity questions ──────────────────────────────
+
+    async def lineup_review_problems(self, divisions: list[DivisionTeams]) -> list[str]:
+        """Not gated on the `lineup` aspect (FR-023): this reports a template that cannot
+        draw the season, a fault whether or not that graphic is posted, and gated on the
+        module alone — a league with no templates configured has nothing to measure."""
+        if not await self._modules.is_images_enabled():
+            return []
+        reports = await self._validity.template_reports()
+        report = reports.get(LINEUP_TEMPLATE_KEY)
+        if report is None or not report.valid or report.resolved_path is None:
+            # An unusable template is already reported by the review's own render, which
+            # withholds the approve button; naming it twice would tell a manager nothing new.
+            return []
+
+        from leaguebot.image.utils.svg_document import FieldIndex, load_svg
+
+        def measure(path: Path) -> tuple[int, Any]:
+            # Parsed and read in one worker thread: the tree never leaves it (`load_svg`).
+            root = load_svg(path)
+            catalogue = catalogue_for(LINEUP_TEMPLATE_KEY)
+            return catalogue.capacity(root) or 0, FieldIndex(root).declared()
+
+        blocks, declared = await off_the_loop(measure, report.resolved_path)
+        catalogue = catalogue_for(LINEUP_TEMPLATE_KEY)
+        nest = catalogue.rows.nested if catalogue.rows is not None else None
+
+        problems: list[str] = []
+        for division in divisions:
+            teams = division.teams
+            if len(teams) > blocks:
+                dropped = ", ".join(f"**{team.name}**" for team in teams[blocks:][:8])
+                problems.append(
+                    f"division **{division.name}** fields {len(teams)} teams but the "
+                    f"lineup template declares {blocks} "
+                    f"{'block' if blocks == 1 else 'blocks'}; {dropped} would be dropped"
+                )
+                continue
+
+            if nest is None:
+                continue
+            for ordinal, team in enumerate(teams, start=1):
+                slots = nest.declared_capacity(f"team_{ordinal}", declared)
+                if team.seated > slots:
+                    problems.append(
+                        f"division **{division.name}**: **{team.name}** seats "
+                        f"{team.seated} drivers but block {ordinal} of the lineup "
+                        f"template declares {slots} seat "
+                        f"{'slot' if slots == 1 else 'slots'}"
+                    )
+        return problems
+
+    async def round_capacity_problem(self, would_hold: int) -> CapacityProblem | None:
+        """The round guard (XIV.12): naming both ways out, since enlarging the template and
+        turning the `calendar` aspect off are genuinely different decisions."""
+        path = await self._drawn_template(CALENDAR_ASPECT, CALENDAR_TEMPLATE_KEY)
+        if path is None:
+            return None
+        from leaguebot.image.utils.svg_document import load_svg
+
+        capacity = await off_the_loop(
+            lambda: catalogue_for(CALENDAR_TEMPLATE_KEY).capacity(load_svg(path))
+        )
+        if not capacity or would_hold <= capacity:
+            return None
+        problem = (
+            f"That would give the division {would_hold} rounds, but the configured "
+            f"calendar template draws {capacity}"
+        )
+        return CapacityProblem(problem=problem, remedy=_ROUND_REMEDY)
+
+    async def calendar_review_problem(self, longest: Held) -> CapacityProblem | None:
+        """The review's warning (XIV.9): the calendar is posted as text rather than not at
+        all, so the division holding the longest calendar is named, never refused."""
+        path = await self._drawn_template(CALENDAR_ASPECT, CALENDAR_TEMPLATE_KEY)
+        if path is None:
+            return None
+        from leaguebot.image.utils.svg_document import load_svg
+
+        capacity = await off_the_loop(
+            lambda: catalogue_for(CALENDAR_TEMPLATE_KEY).capacity(load_svg(path))
+        )
+        if not capacity or longest.count <= capacity:
+            return None
+        problem = (
+            f"Calendar template draws {capacity} round(s); `{longest.name}` holds "
+            f"{longest.count}. That division's calendar cannot be drawn as an image and "
+            f"will be posted as text"
+        )
+        return CapacityProblem(problem=problem, remedy=_REVIEW_REMEDY)
+
+    async def sheet_review_problem(self, longest: Held) -> CapacityProblem | None:
+        """The sheet's round columns against the season's longest calendar (XIV.9). A
+        template drawing no round grid at all is a legitimate choice (XIV.3), not a problem."""
+        path = await self._drawn_template(ATTENDANCE_ASPECT, ATTENDANCE_TEMPLATE_KEY)
+        if path is None:
+            return None
+        from leaguebot.image.utils.svg_document import load_svg
+
+        declared = await off_the_loop(
+            lambda: catalogue_for(ATTENDANCE_TEMPLATE_KEY).column_capacity(load_svg(path))
+        )
+        if not declared or longest.count <= declared:
+            return None
+        problem = (
+            f"Attendance sheet template draws {declared} round column(s); "
+            f"`{longest.name}` holds {longest.count}. That division's sheet cannot be "
+            f"drawn as an image and will be posted as text"
+        )
+        return CapacityProblem(problem=problem, remedy=_REVIEW_REMEDY)
+
+    async def standings_review_problems(
+        self, drivers: Held, teams: Held, longest: Held
+    ) -> list[CapacityProblem]:
+        """The two standings templates against the season (FR-043, FR-045): each reported
+        apart, never as one pair — a manager told 'the standings template' would not know
+        which to enlarge. An uncountable template is skipped on its own; the other is still
+        answered."""
+        if not await self._config.is_aspect_enabled(STANDINGS_ASPECT):
+            return []
+        reports = await self._validity.template_reports()
+
+        from leaguebot.image.models.image_catalogues import CapacityError
+
+        problems: list[CapacityProblem] = []
+        for template_key, held in (
+            (DRIVERS_TEMPLATE_KEY, drivers),
+            (CONSTRUCTORS_TEMPLATE_KEY, teams),
+        ):
+            report = reports.get(template_key)
+            if report is None or not report.valid or not report.resolved_path:
+                continue
+            label = TEMPLATE_LABELS.get(template_key, template_key)
+            catalogue = catalogue_for(template_key)
+
+            try:
+                declared_rows, declared_rounds = await off_the_loop(
+                    _rows_and_rounds, catalogue, report.resolved_path
+                )
+            except CapacityError:
+                continue  # an uncountable template is skipped; the other is still answered
+
+            if declared_rows and held.count > declared_rows:
+                problems.append(CapacityProblem(
+                    problem=(
+                        f"**{label}** draws {declared_rows} row(s); `{held.name}` holds "
+                        f"{held.count}. That division's standings cannot be drawn as an "
+                        f"image and will be posted as text"
+                    ),
+                    remedy=_REVIEW_REMEDY,
+                ))
+
+            # Nought round columns means the template draws no season grid, which is a
+            # legitimate choice (XIV.3) and never a divergence.
+            if declared_rounds and longest.count > declared_rounds:
+                problems.append(CapacityProblem(
+                    problem=(
+                        f"**{label}** draws {declared_rounds} round column(s); "
+                        f"`{longest.name}` holds {longest.count}. That division's "
+                        f"standings cannot be drawn as an image and will be posted as text"
+                    ),
+                    remedy=_REVIEW_REMEDY,
+                ))
+        return problems
+
+    async def checkin_review_problem(self, sessions: int) -> CapacityProblem | None:
+        """The check-in call's sessions against the season's most demanding round (XIV.9)."""
+        path = await self._drawn_template(RSVP_ASPECT, RSVP_TEMPLATE_KEY)
+        if path is None:
+            return None
+        from leaguebot.image.utils.svg_document import load_svg
+
+        declared = await off_the_loop(
+            lambda: catalogue_for(RSVP_TEMPLATE_KEY).capacity(load_svg(path))
+        )
+        if not declared or sessions <= declared:
+            return None
+        problem = (
+            f"Check-in template names {declared} session(s); this season holds a round "
+            f"run over {sessions}. That call cannot be drawn as an image and will be "
+            f"posted without one"
+        )
+        return CapacityProblem(problem=problem, remedy=_REVIEW_REMEDY)
 
     # ── The calendar ───────────────────────────────────────────────────────
 

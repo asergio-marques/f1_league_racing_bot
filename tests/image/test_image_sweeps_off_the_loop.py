@@ -454,7 +454,6 @@ async def test_a_placement_guard_s_fault_crosses_back_with_nothing_it_parsed(
     assert not holds_a_tree(answer)
 
 
-NOT_YET = "#283: the image module answers no capacity question of the season review"
 
 
 def _lineup_of_thirty() -> Any:
@@ -496,7 +495,6 @@ REVIEW_QUESTIONS = [
     [case[1:4] for case in REVIEW_QUESTIONS],
     ids=[c[0] for c in REVIEW_QUESTIONS],
 )
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_review_question_measures_its_template_off_the_loop(
     monkeypatch, aspect, question, says
 ):
@@ -521,7 +519,6 @@ async def test_a_review_question_measures_its_template_off_the_loop(
     [(case[1], case[2], case[4]) for case in REVIEW_QUESTIONS],
     ids=[c[0] for c in REVIEW_QUESTIONS],
 )
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_review_question_s_fault_crosses_back_with_nothing_it_parsed(
     monkeypatch, aspect, question, quiet
 ):

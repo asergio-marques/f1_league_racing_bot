@@ -9,13 +9,15 @@ calls these methods and the image module implements them
 `bot.image_drawing` and declared on `LeagueBot`, as results declares `AttendanceAfterReview` for
 attendance (architecture.md, "How modules and core fit together").
 
-It holds the four placement capacity questions, the calendar, the lineup (of record, and as a
-command's output), the portrait discard and the artwork signature. Each capacity question answers a `CapacityProblem` — the problem as a sentence with
-no final stop, and the image module's own words for what to do about it — or `None` where
-nothing is wrong. Core joins the two into its own refusal, adding what is core's own to say.
-The calendar's `draw_calendar` and the lineup's `draw_lineup` answer a `CalendarPicture` or
-`LineupPicture` instead, because core itself posts what it hands back rather than wording a
-refusal from it.
+It holds the four placement capacity questions, the season review's own capacity questions, the
+calendar, the lineup (of record, and as a command's output), the portrait discard and the
+artwork signature. Each capacity question answers a `CapacityProblem` — the problem as a
+sentence with no final stop, and the image module's own words for what to do about it — or
+`None` where nothing is wrong. Core joins the two into its own refusal, adding what is core's
+own to say. The lineup review question answers bare sentences instead (`list[str]`), since
+today's lineup problems carry no remedy of their own. The calendar's `draw_calendar` and the
+lineup's `draw_lineup` answer a `CalendarPicture` or `LineupPicture` instead, because core
+itself posts what it hands back rather than wording a refusal from it.
 """
 from __future__ import annotations
 
@@ -35,6 +37,33 @@ class CapacityProblem:
 
     problem: str
     remedy: str
+
+
+@dataclass(frozen=True)
+class TeamSeats:
+    """One race team of a division, for the lineup review question: its name, and how many
+    drivers are seated in it. An empty seat is not counted."""
+
+    name: str
+    seated: int
+
+
+@dataclass(frozen=True)
+class DivisionTeams:
+    """One division's race teams, in tier order, for the lineup review question. The reserve
+    team is not among them: it holds no block of the lineup template's team collection."""
+
+    name: str
+    teams: tuple[TeamSeats, ...]
+
+
+@dataclass(frozen=True)
+class Held:
+    """What the season review asks a warning question about: the division *name* holding the
+    most of whatever is counted, and the count itself."""
+
+    name: str
+    count: int
 
 
 @dataclass(frozen=True)
@@ -89,6 +118,41 @@ class ImageDrawing(Protocol):
         """Whether *drivers* seated in the division would outgrow the smallest capacity any
         image template declares in code, or None. Nothing while the images module is off, or
         while no catalogue declares one."""
+
+    async def lineup_review_problems(self, divisions: list[DivisionTeams]) -> list[str]:
+        """Which of *divisions* the configured lineup template cannot draw, each as a bare
+        sentence with no final stop, naming the division and its teams. An empty list where
+        every division fits, or where the lineup is not drawn (the module off, no valid
+        template configured). Not gated on the `lineup` aspect: this reports a template that
+        cannot draw the season, a fault whether or not that graphic is posted."""
+
+    async def round_capacity_problem(self, would_hold: int) -> CapacityProblem | None:
+        """Whether a division holding *would_hold* rounds would outgrow the configured
+        calendar template, or None. Nothing where the calendar is not drawn (the module off,
+        the `calendar` aspect off, no valid template)."""
+
+    async def calendar_review_problem(self, longest: Held) -> CapacityProblem | None:
+        """Whether *longest* — the division holding the season's most rounds — would outgrow
+        the configured calendar template, or None. Nothing where the calendar is not drawn."""
+
+    async def sheet_review_problem(self, longest: Held) -> CapacityProblem | None:
+        """Whether *longest* — the division holding the season's most rounds — would outgrow
+        the configured attendance sheet's round columns, or None. Nothing where the sheet is
+        not drawn, or where the template draws no round grid at all."""
+
+    async def standings_review_problems(
+        self, drivers: Held, teams: Held, longest: Held
+    ) -> list[CapacityProblem]:
+        """Which of the two standings templates cannot draw the season: *drivers* against the
+        drivers template's rows, *teams* against the constructors template's rows, and
+        *longest* against each template's round columns, in that order — drivers rows, drivers
+        columns, constructors rows, constructors columns. Each template missing from the
+        answer is either not drawn, or one that cannot be counted, which is skipped on its own
+        while the other is still answered. Empty where the standings are not drawn at all."""
+
+    async def checkin_review_problem(self, sessions: int) -> CapacityProblem | None:
+        """Whether a round run over *sessions* sessions would outgrow the configured check-in
+        call template, or None. Nothing where the call is not drawn."""
 
     async def calendar_wanted(self) -> bool:
         """Whether this league conveys its calendar as a picture: both the module and the

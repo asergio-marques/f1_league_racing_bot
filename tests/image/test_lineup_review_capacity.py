@@ -27,7 +27,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-NOT_YET = "#283: the image module answers no lineup question of the season review"
 SVG_NS = "http://www.w3.org/2000/svg"
 LINEUP = "lineup_template"
 
@@ -106,7 +105,6 @@ TOO_MANY = (
         id="different numbers of teams",
     ),
 ])
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_divisions_fielding_different_teams_pass(tmp_path, divisions):
     """Divisions may field teams of other names, or another number of them: the second is the
     very thing the withdrawn uniformity rule refused. A team seating as many drivers as its
@@ -121,14 +119,12 @@ async def test_divisions_fielding_different_teams_pass(tmp_path, divisions):
 # ── 2 & 3. What still fails, and what it names ────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_division_exceeding_the_blocks_fails_naming_the_teams(tmp_path):
     drawing = _drawing(tmp_path, blocks=4)
 
     assert await drawing.lineup_review_problems(_too_many_teams()) == [TOO_MANY]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_team_seating_more_drivers_than_its_block_fails_naming_the_team(tmp_path):
     drawing = _drawing(tmp_path, blocks=4, seats=2)
 
@@ -143,7 +139,6 @@ async def test_a_team_seating_more_drivers_than_its_block_fails_naming_the_team(
 # ── 4. Not gated on the toggle (FR-023), gated on the module ──────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_check_runs_with_the_lineup_toggle_off(tmp_path):
     """It reports a template that cannot draw the season, not a restriction on the season."""
     drawing = _drawing(tmp_path, blocks=4, lineup_on=False)
@@ -151,7 +146,6 @@ async def test_the_check_runs_with_the_lineup_toggle_off(tmp_path):
     assert await drawing.lineup_review_problems(_too_many_teams()) == [TOO_MANY]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_check_is_silent_where_the_image_module_is_disabled(tmp_path):
     """FR-023 withdraws the *toggle* gate and says nothing of module enablement.
 
@@ -166,7 +160,6 @@ async def test_the_check_is_silent_where_the_image_module_is_disabled(tmp_path):
 # ── 5. An unusable template ───────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_an_unusable_template_is_not_reported_twice(tmp_path):
     """The review's own render already names it; saying so again tells nobody anything. Six
     teams against its four blocks are not measured."""

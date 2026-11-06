@@ -34,7 +34,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from lxml import etree
 
-NOT_YET = "#283: the image module answers no attendance question of the season review"
 SVG_NS = "http://www.w3.org/2000/svg"
 SHEET = "attendance_template"
 CALL = "rsvp_template"
@@ -93,14 +92,12 @@ def _held(name, rounds):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_sheet_that_fits_the_longest_calendar_earns_no_warning(tmp_path):
     drawing = _drawing(tmp_path, columns=(1, 2, 3))
 
     assert await drawing.sheet_review_problem(_held("Pro", 3)) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_sheet_too_narrow_for_the_longest_calendar_is_warned_about(tmp_path):
     """It names the division handed, whose sheet will fall back to text: the one a manager
     needs to know about."""
@@ -115,7 +112,6 @@ async def test_a_sheet_too_narrow_for_the_longest_calendar_is_warned_about(tmp_p
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_template_with_no_grid_is_not_a_divergence(tmp_path):
     """XIV.3: nought means the sheet draws no round grid, which is a legitimate design."""
     drawing = _drawing(tmp_path, columns=(), aspects=("attendance",))
@@ -123,7 +119,6 @@ async def test_a_template_with_no_grid_is_not_a_divergence(tmp_path):
     assert await drawing.sheet_review_problem(_held("Pro", 30)) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_sheet_is_not_checked_with_its_aspect_off(tmp_path):
     drawing = _drawing(tmp_path, columns=(1,), aspects=())
 
@@ -131,7 +126,6 @@ async def test_the_sheet_is_not_checked_with_its_aspect_off(tmp_path):
 
 
 @pytest.mark.parametrize("valid", [None, False], ids=["missing", "invalid"])
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_missing_or_invalid_template_is_not_this_checks_to_report(tmp_path, valid):
     """Layer 2 reports it, and reporting it here too would say it twice."""
     sheet = _template_file(tmp_path, SHEET, ["round_1_number"])
@@ -146,7 +140,6 @@ async def test_a_missing_or_invalid_template_is_not_this_checks_to_report(tmp_pa
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_call_naming_two_sessions_fits_a_season_with_no_sprint(tmp_path):
     """No round is a sprint, so core asks of two sessions."""
     drawing = _drawing(tmp_path, sessions=(1, 2), aspects=("rsvp",))
@@ -154,7 +147,6 @@ async def test_a_call_naming_two_sessions_fits_a_season_with_no_sprint(tmp_path)
     assert await drawing.checkin_review_problem(2) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_sprint_round_needs_four_sessions(tmp_path):
     """A sprint round is run over four sessions, so core asks of four; the call has to name
     every one."""
@@ -169,14 +161,12 @@ async def test_a_sprint_round_needs_four_sessions(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_call_naming_four_sessions_fits_a_sprint_season(tmp_path):
     drawing = _drawing(tmp_path, sessions=(1, 2, 3, 4), aspects=("rsvp",))
 
     assert await drawing.checkin_review_problem(4) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_call_too_small_for_any_round_is_warned_about(tmp_path):
     drawing = _drawing(tmp_path, sessions=(1,), aspects=("rsvp",))
 
@@ -188,7 +178,6 @@ async def test_a_call_too_small_for_any_round_is_warned_about(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_call_is_not_checked_with_its_aspect_off(tmp_path):
     drawing = _drawing(tmp_path, sessions=(1,), aspects=())
 
@@ -201,7 +190,6 @@ async def test_the_call_is_not_checked_with_its_aspect_off(tmp_path):
 
 
 @pytest.mark.parametrize("question", ["sheet", "call"])
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_an_uncountable_template_is_let_out_for_core_s_catch(tmp_path, question):
     """A gap in the numbering cannot be counted. The image module lets the `CapacityError`
     out, and core's one catch drops the review's attendance, standings and check-in warnings
