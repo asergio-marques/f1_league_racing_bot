@@ -162,17 +162,18 @@ def _server(
     channel_missing: bool = False,
     set_permissions_fails: bool = False,
     refusing: tuple[int, ...] = (),
+    also: tuple[Any, ...] = (),
 ) -> MagicMock:
-    """The league's server: it finds *role*, the stored role 3001 (unless *old_role_gone*), the
-    signup channel 700 (unless *channel_missing*), whose `set_permissions` is recorded in
-    `signup_channel` and raises where *set_permissions_fails*, and the drivers 5001 and 5002, kept
-    in `drivers`, each refusing the role where named in *refusing*."""
+    """The league's server: it finds *role*, every role in *also*, the stored role 3001 (unless
+    *old_role_gone*), the signup channel 700 (unless *channel_missing*), whose `set_permissions` is
+    recorded in `signup_channel` and raises where *set_permissions_fails*, and the drivers 5001 and
+    5002, kept in `drivers`, each refusing the role where named in *refusing*."""
     channel = MagicMock(spec=discord.TextChannel)
     channel.id = SIGNUP_CHANNEL
     channel.set_permissions = AsyncMock(
         side_effect=RuntimeError("missing permissions") if set_permissions_fails else None
     )
-    roles = {role.id: role}
+    roles = {found.id: found for found in (role, *also)}
     if not old_role_gone and role.id != OLD_ROLE:
         roles[OLD_ROLE] = _role(OLD_ROLE, "Old members")
     drivers = {
@@ -784,6 +785,33 @@ async def test_a_changed_base_role_is_handed_to_the_base_role_changed_hook(tmp_p
     assert handed == [(NEW_ROLE, guild, OLD_ROLE, role)]
     assert [c.args[0].id for c in _permission_calls(guild)] == [OLD_ROLE, NEW_ROLE]
 
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the base role's save takes the role it replaces from the ask, not the database",
+)
+async def test_two_base_roles_asked_in_turn_each_replace_the_one_before(tmp_path):
+    """The league's base role is 3001. The manager asks `/bot base-role` for 3002 and then, while
+    that change still waits, for 3003; the queue runs both in turn. The second replaces the role
+    the first saved, read as it is saved, not the one the league held when it was asked: its audit
+    entry records 3002 replaced by 3003, and the signup channel's overwrite moves from 3001 to 3002
+    and then from 3002 to 3003, leaving 3003 the base role."""
+    from tests.support.change_queue import run_queue
+
+    db_path = await _make_db(tmp_path)
+    first, second = _role(), _role(3003, "Members")
+    guild = _server(second, also=(first,))
+    bot = await _league(db_path, guild)
+
+    for role in (first, second):
+        await _command("base_role_id")(BotCog(bot), _asked(bot, "base_role_id", guild), role)
+    await run_queue(bot)
+
+    assert (await _stored(db_path))["base_role_id"] == 3003
+    assert [
+        (json.loads(r["old_value"]), json.loads(r["new_value"])) for r in await _audit_rows(db_path)
+    ] == [({"role_id": OLD_ROLE}, {"role_id": NEW_ROLE}), ({"role_id": NEW_ROLE}, {"role_id": 3003})]
+    assert [c.args[0].id for c in _permission_calls(guild)] == [OLD_ROLE, NEW_ROLE, NEW_ROLE, 3003]
 
 
 # ---------------------------------------------------------------------------
