@@ -22,6 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
+import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
@@ -31,6 +32,7 @@ __all__ = [
     "as_text_channel",
     "channel_refusal",
     "find_channel_use",
+    "find_channel_use_on",
     "SETTING_LABELS",
     "DIVISION_SOURCES",
     "SERVER_SOURCES",
@@ -119,39 +121,54 @@ async def find_channel_use(
     thing, not colliding with its own history.
     """
     async with get_connection(db_path) as db:
-        for setting, table, column in SERVER_SOURCES:
-            if ignore is not None and ignore.setting == setting:
-                continue
-            cursor = await db.execute(
-                f"SELECT 1 FROM {table} WHERE {column} = ? LIMIT 1", (channel_id,)
-            )
-            if await cursor.fetchone() is not None:
-                return ChannelUse(setting)
+        return await find_channel_use_on(db, channel_id, ignore=ignore)
 
-        for setting, table, column in DIVISION_SOURCES:
-            if table == "divisions":
-                sql = (
-                    f"SELECT d.name FROM divisions d "
-                    f"JOIN seasons s ON s.id = d.season_id "
-                    f"WHERE s.status IN ('SETUP', 'ACTIVE') "
-                    f"  AND d.{column} = ? LIMIT 1"
-                )
-            else:
-                sql = (
-                    f"SELECT d.name FROM {table} c "
-                    f"JOIN divisions d ON d.id = c.division_id "
-                    f"JOIN seasons s ON s.id = d.season_id "
-                    f"WHERE s.status IN ('SETUP', 'ACTIVE') "
-                    f"  AND c.{column} = ? LIMIT 1"
-                )
-            cursor = await db.execute(sql, (channel_id,))
-            row = await cursor.fetchone()
-            if row is None:
-                continue
-            use = ChannelUse(setting, row[0])
-            if ignore is not None and ignore == use:
-                continue
-            return use
+
+async def find_channel_use_on(
+    db: aiosqlite.Connection,
+    channel_id: int,
+    *,
+    ignore: ChannelUse | None = None,
+) -> ChannelUse | None:
+    """:func:`find_channel_use`, on a connection already open.
+
+    For a caller inside a save, under the queue's write lock, where another lane's save may
+    have landed between an earlier check and this one (`docs/design/architecture.md`, "One
+    change at a time to a lane").
+    """
+    for setting, table, column in SERVER_SOURCES:
+        if ignore is not None and ignore.setting == setting:
+            continue
+        cursor = await db.execute(
+            f"SELECT 1 FROM {table} WHERE {column} = ? LIMIT 1", (channel_id,)
+        )
+        if await cursor.fetchone() is not None:
+            return ChannelUse(setting)
+
+    for setting, table, column in DIVISION_SOURCES:
+        if table == "divisions":
+            sql = (
+                f"SELECT d.name FROM divisions d "
+                f"JOIN seasons s ON s.id = d.season_id "
+                f"WHERE s.status IN ('SETUP', 'ACTIVE') "
+                f"  AND d.{column} = ? LIMIT 1"
+            )
+        else:
+            sql = (
+                f"SELECT d.name FROM {table} c "
+                f"JOIN divisions d ON d.id = c.division_id "
+                f"JOIN seasons s ON s.id = d.season_id "
+                f"WHERE s.status IN ('SETUP', 'ACTIVE') "
+                f"  AND c.{column} = ? LIMIT 1"
+            )
+        cursor = await db.execute(sql, (channel_id,))
+        row = await cursor.fetchone()
+        if row is None:
+            continue
+        use = ChannelUse(setting, row[0])
+        if ignore is not None and ignore == use:
+            continue
+        return use
 
     return None
 

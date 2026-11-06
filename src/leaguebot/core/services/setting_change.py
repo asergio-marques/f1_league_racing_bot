@@ -13,9 +13,13 @@ change waiting ahead may set the value or move it away. A request for a value al
 acknowledged and then answered "Nothing changed", with a line saying so and no audit entry; it is
 never refused.
 
-**The check at the start is the last judgement of the state against queued writers.** Settings are
-written only on the league lane or `REPAIR_LANE` (below), one change at a time on each, and
-conversation lanes may not write these tables. The save judges only held or not.
+**The check at the start is the last judgement of the state against queued writers, save where
+two lanes write the same table.** Settings are written only on the league lane or `REPAIR_LANE`
+(below), one change at a time on each, and conversation lanes may not write these tables. The
+save judges only held or not. Where a setting's table is confined to it alone this holds outright;
+a channel setting of `REPAIR_LANE` shares `server_configs` with the league lane's own channel
+settings, so its save judges the channel's use again, on its own connection and under the lock —
+`bot_settings`' own docstring says how.
 
 **A setting that repairs the bot's own way in runs on `REPAIR_LANE`, apart from the league's.**
 `Setting.repairs_the_bot` is read once, here, to choose a change type's lane — never a list of
