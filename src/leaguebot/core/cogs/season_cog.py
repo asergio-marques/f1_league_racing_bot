@@ -867,13 +867,14 @@ class SeasonCog(commands.Cog):
         it, and hand back what it says, or *nothing* where no count applies (None), or
         either step could not run. *guard* names the guard in the host's log.
 
-        One catch for all four of the season review's capacity checks (`_lineup_problems`,
-        `_calendar_round_overflow`, `_calendar_capacity_warning`,
-        `_attendance_capacity_warning`), beside `PlacementService._ask_drawing`'s: a fault in
-        either step must not block an approval, a round or a season, only a genuine
-        over-capacity may, so the fault goes to the host's log in full and the guard that
-        asked answers as if told nothing was wrong (architecture.md, "A catch-all error
-        handler", a stated exception beside `PlacementService._ask_drawing`'s).
+        One catch for the season cog's four capacity checks: the round guard at `/round add`
+        and the round import (`_calendar_round_overflow`), and the review's and the
+        approval's (`_lineup_problems`, `_calendar_capacity_warning`,
+        `_attendance_capacity_warning`). A capacity check that cannot run must not block an
+        approval, a round or a season, only a genuine over-capacity may, so the fault goes to
+        the host's log in full and the check that asked answers as if told nothing was wrong
+        (architecture.md, "A catch-all error handler", a stated exception beside
+        `PlacementService._ask_drawing`'s).
         """
         try:
             counted = await count()
@@ -1033,7 +1034,7 @@ class SeasonCog(commands.Cog):
         )
 
     async def _standings_capacity_lines(
-        self, drivers, teams, longest
+        self, drivers: Held, teams: Held, longest: Held
     ) -> list[str]:
         """What the two standings templates could not draw for this season (FR-043), worded
         around the image module's answer.

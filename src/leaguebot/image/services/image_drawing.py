@@ -185,7 +185,7 @@ class ImageDrawing:
         For the review's warnings: they report a template that cannot draw the season
         whether or not the images module itself ends up posting anything, since the warning
         is about what the artwork declares, not what is drawn this time (as
-        `lineup_review_problems` and `standings_review_problems` are gated already).
+        `standings_review_problems` is gated already).
         """
         toggles = await self._config.get_toggles()
         if not toggles.get(aspect):
@@ -202,7 +202,7 @@ class ImageDrawing:
             return None
         # Imported here, not at module level, so a test's `monkeypatch.setattr` on
         # `svg_document.load_svg` is picked up: a name bound at import time would keep the
-        # unpatched function (as `season_cog.py`'s own template reads do, for the same reason).
+        # unpatched function (as this module's review questions do, for the same reason).
         from leaguebot.image.utils.svg_document import load_svg
 
         problem = await off_the_loop(
