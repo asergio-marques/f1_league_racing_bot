@@ -5,8 +5,8 @@ The lineup of record is drawn through core's drawing protocol, and posted by cor
 `leaguebot.image.services.image_drawing.ImageDrawing`): this module holds what that
 drawing, and a command's own output, both need — resolving the division into a
 `LineupDrawing` (`build_drawing`) and rendering it (`render_png`) — plus `render_for_command`,
-which produces the PNG as a command's output and posts nothing, for `/team lineup` and the
-placements review.
+which produces the PNG as a command's output and posts nothing, for `/season
+placements-review`.
 """
 from __future__ import annotations
 
@@ -274,9 +274,10 @@ async def render_for_command(
 ) -> LineupPostOutcome:
     """Produce a division's lineup PNG as **command output**, posting it nowhere.
 
-    Used by `/team lineup` and `/season placements-review`. Constitution XIV.7 makes a commanded
-    posting reject rather than fall back, so a fault comes back as ``REJECTED`` with the
-    message to show the caller.
+    Used by `/season placements-review` alone; `/team lineup` draws through core's drawing
+    protocol instead (`ImageDrawing.draw_lineup_for_command`). Constitution XIV.7 makes a
+    commanded posting reject rather than fall back, so a fault comes back as ``REJECTED``
+    with the message to show the caller.
 
     These images are output of a command and **not the lineup of record** (FR-028): this
     function writes no ``lineup_message_id``, deletes nothing from the lineup channel, and
@@ -284,11 +285,9 @@ async def render_for_command(
     lineup as it will stand once mid-season placements are confirmed, is offered here and not
     on the drawing of record (`ImageDrawing.draw_lineup`).
 
-    *obtain_missing_portraits* is set by `/season placements-review` alone. It obtains the
-    portrait of each seated driver who has none, whichever update trigger the league chose,
-    so the review is not judged on a placeholder the league will not see (image
-    specification, "The drawing of placements under review"). `/team lineup` does not set
-    it, and nor does a posting.
+    *obtain_missing_portraits* obtains the portrait of each seated driver who has none,
+    whichever update trigger the league chose, so the review is not judged on a placeholder
+    the league will not see (image specification, "The drawing of placements under review").
     """
     if guild is None or not await lineup_enabled(bot):
         return LineupPostOutcome()
