@@ -3028,18 +3028,6 @@ CATCH_ALLS_ALLOWED = {
         "place 5, a picture that cannot be drawn is withheld and its fault is a line of the job",
     ("core/services/placement_service.py", "PlacementService._ask_drawing"):
         "a stated exception: a capacity guard that cannot run lets the placement through",
-    ("core/cogs/season_cog.py", "SeasonCog._lineup_problems"):
-        "a stated exception beside `PlacementService._ask_drawing`'s: a capacity check that "
-        "cannot run lets the approval through",
-    ("core/cogs/season_cog.py", "SeasonCog._calendar_round_overflow"):
-        "a stated exception beside `PlacementService._ask_drawing`'s: a capacity check that "
-        "cannot run lets the round add through",
-    ("core/cogs/season_cog.py", "SeasonCog._calendar_capacity_warning"):
-        "a stated exception beside `PlacementService._ask_drawing`'s: a capacity check that "
-        "cannot run lets the season review through",
-    ("core/cogs/season_cog.py", "SeasonCog._attendance_capacity_warning"):
-        "a stated exception beside `PlacementService._ask_drawing`'s: a capacity check that "
-        "cannot run lets the season review through",
     ("core/services/calendar_post_service.py", "post_division_calendar"):
         "place 5, a calendar that cannot be drawn is posted as text and its fault is the job's line",
     ("core/services/calendar_post_service.py", "render_for_command"):

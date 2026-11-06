@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from functools import partial
 from types import EllipsisType
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Mapping, cast
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Mapping, TypeVar, cast
 
 import discord
 from discord import app_commands
@@ -49,7 +49,7 @@ from leaguebot.core.services.cancellation_changes import (
     SEASON_CANCEL,
     cancellation_holding_amendment,
 )
-from leaguebot.core.services.image_drawing import DivisionTeams, TeamSeats
+from leaguebot.core.services.image_drawing import DivisionTeams, Held, TeamSeats
 from leaguebot.core.services.mid_season_confirm_change import (
     ALREADY_BEING_CONFIRMED,
     KIND as MID_SEASON_CONFIRM_KIND,
@@ -92,6 +92,7 @@ from leaguebot.core.services.amendment_rules_service import amendment_changes_no
 from leaguebot.results.services import season_points_service
 import leaguebot.core.services.track_service as track_service
 from leaguebot.core.services.season_service import (
+    SeasonCapacityCounts,
     SeasonImmutableError,
     division_amendment_changes_nothing,
     validate_division_name,
@@ -124,6 +125,11 @@ if TYPE_CHECKING:
     from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint
 
 log = logging.getLogger(__name__)
+
+#: `SeasonCog._ask_drawing`'s count and its answer: the count a check reads before asking the
+#: drawing, and what it hands back once asked (or where there is nothing to ask).
+_T = TypeVar("_T")
+_R = TypeVar("_R")
 
 # ---------------------------------------------------------------------------
 # In-memory pending config store
@@ -849,6 +855,35 @@ class SeasonCog(commands.Cog):
             what=describe(interaction),
         )
 
+    async def _ask_drawing(
+        self,
+        guard: str,
+        count: Callable[[], Awaitable[_T | None]],
+        ask: Callable[[_T], Awaitable[_R]],
+        *,
+        nothing: _R,
+    ) -> _R:
+        """Read the guard's own count with *count*, *ask* the image module's drawing about
+        it, and hand back what it says, or *nothing* where no count applies (None), or
+        either step could not run. *guard* names the guard in the host's log.
+
+        One catch for all four of the season review's capacity checks (`_lineup_problems`,
+        `_calendar_round_overflow`, `_calendar_capacity_warning`,
+        `_attendance_capacity_warning`), beside `PlacementService._ask_drawing`'s: a fault in
+        either step must not block an approval, a round or a season, only a genuine
+        over-capacity may, so the fault goes to the host's log in full and the guard that
+        asked answers as if told nothing was wrong (architecture.md, "A catch-all error
+        handler", a stated exception beside `PlacementService._ask_drawing`'s).
+        """
+        try:
+            counted = await count()
+            if counted is None:
+                return nothing
+            return await ask(counted)
+        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
+            log.error("%s capacity check could not run: %s", guard, exc, exc_info=True)
+            return nothing
+
     async def _lineup_problems(self, season_id: int) -> list[str]:
         """Where the lineup template cannot draw a division of this season (047 FR-022).
 
@@ -857,13 +892,12 @@ class SeasonCog(commands.Cog):
         bot. The image module measures its own template and answers each problem as a
         sentence, unchanged.
 
-        A check that cannot run lets the approval through, with the full error in the
-        host's log (`PlacementService._ask_drawing`'s stated exception, architecture.md, "A
-        catch-all error handler").
+        A check that cannot run lets the approval through (`_ask_drawing`'s stated
+        exception, architecture.md, "A catch-all error handler").
         """
-        try:
+        async def held() -> list[DivisionTeams]:
             divisions = await self.bot.season_service.get_divisions(season_id)
-            held: list[DivisionTeams] = []
+            out: list[DivisionTeams] = []
             for division in sorted(divisions, key=lambda d: d.tier):
                 entries = await self.bot.team_service.get_division_teams(division.id)
                 teams = tuple(
@@ -877,12 +911,15 @@ class SeasonCog(commands.Cog):
                     for entry in entries
                     if not entry.get("is_reserve")
                 )
-                held.append(DivisionTeams(division.name, teams))
+                out.append(DivisionTeams(division.name, teams))
+            return out
 
-            return await self.bot.image_drawing.lineup_review_problems(held)
-        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
-            log.error("season: lineup capacity check could not run: %s", exc, exc_info=True)
-            return []
+        return await self._ask_drawing(
+            "season: lineup",
+            held,
+            self.bot.image_drawing.lineup_review_problems,
+            nothing=[],
+        )
 
     async def _calendar_round_overflow(
         self, would_hold: int
@@ -890,27 +927,24 @@ class SeasonCog(commands.Cog):
         """The rejection message where *would_hold* rounds outgrow the calendar template.
 
         None where the guard does not apply — the module off, the aspect off, no valid
-        template, or room to spare. A check that cannot run lets the round through, with
-        the full error in the host's log (`PlacementService._ask_drawing`'s stated
-        exception, architecture.md, "A catch-all error handler"); only a genuine
-        over-capacity refuses the round.
+        template, or room to spare. A check that cannot run lets the round through
+        (`_ask_drawing`'s stated exception, architecture.md, "A catch-all error handler");
+        only a genuine over-capacity refuses the round.
 
         Separate from ``placement_service._guard_image_capacity``, which counts seated
         **drivers**. A calendar's collection is **rounds**, so the two guard different
         commands and must not be merged (research.md § R3).
         """
-        try:
+        async def refusal(would_hold: int) -> str | None:
             problem = await self.bot.image_drawing.round_capacity_problem(would_hold)
-        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
-            log.error("round add: calendar capacity check could not run: %s", exc, exc_info=True)
-            return None
+            if problem is None:
+                return None
+            return f"❌ {problem.problem}. The round was **not** added.\n{problem.remedy}"
 
-        if problem is None:
-            return None
+        async def given() -> int:
+            return would_hold
 
-        return (
-            f"❌ {problem.problem}. The round was **not** added.\n{problem.remedy}"
-        )
+        return await self._ask_drawing("round add: calendar", given, refusal, nothing=None)
 
     async def _calendar_capacity_warning(
         self, season_id: int
@@ -923,24 +957,22 @@ class SeasonCog(commands.Cog):
         it here as a failure would refuse a season that may well draw perfectly.
 
         Counts in a core service and asks the drawing on the bot. A check that cannot run —
-        its own count, or the drawing — lets the season through with the full error in the
-        host's log (`PlacementService._ask_drawing`'s stated exception, architecture.md, "A
-        catch-all error handler").
+        its own count, or the drawing — lets the season through (`_ask_drawing`'s stated
+        exception, architecture.md, "A catch-all error handler").
         """
-        try:
+        async def longest() -> Held | None:
             counts = await self.bot.season_service.capacity_counts(season_id)
-            if counts.longest_calendar is None:
-                return []
-            problem = await self.bot.image_drawing.calendar_review_problem(
-                counts.longest_calendar
-            )
-        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
-            log.error("season review: calendar capacity check could not run: %s", exc, exc_info=True)
-            return []
+            return counts.longest_calendar
 
-        if problem is None:
-            return []
-        return [f"  ⚠️ {problem.problem}. {problem.remedy}", ""]
+        async def warning(longest: Held) -> list[str]:
+            problem = await self.bot.image_drawing.calendar_review_problem(longest)
+            if problem is None:
+                return []
+            return [f"  ⚠️ {problem.problem}. {problem.remedy}", ""]
+
+        return await self._ask_drawing(
+            "season review: calendar", longest, warning, nothing=[]
+        )
 
     async def _attendance_capacity_warning(
         self, season_id: int
@@ -961,12 +993,13 @@ class SeasonCog(commands.Cog):
 
         One check, as `_calendar_capacity_warning` is: a fault in the season's own counts or
         in asking the drawing drops the sheet, the standings and the check-in call together
-        and lets the review through, with the full error in the host's log (a stated
-        exception beside `PlacementService._ask_drawing`'s, architecture.md, "A catch-all
-        error handler").
+        and lets the review through (`_ask_drawing`'s stated exception, architecture.md, "A
+        catch-all error handler").
         """
-        try:
-            counts = await self.bot.season_service.capacity_counts(season_id)
+        async def counted() -> SeasonCapacityCounts:
+            return await self.bot.season_service.capacity_counts(season_id)
+
+        async def warnings(counts: SeasonCapacityCounts) -> list[str]:
             lines: list[str] = []
 
             if counts.longest_calendar is not None:
@@ -994,11 +1027,10 @@ class SeasonCog(commands.Cog):
             if lines:
                 lines.append("")
             return lines
-        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
-            log.error(
-                "season review: attendance capacity check could not run: %s", exc, exc_info=True
-            )
-            return []
+
+        return await self._ask_drawing(
+            "season review: attendance", counted, warnings, nothing=[]
+        )
 
     async def _standings_capacity_lines(
         self, drivers, teams, longest
