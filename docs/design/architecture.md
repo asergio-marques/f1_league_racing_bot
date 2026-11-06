@@ -290,9 +290,7 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   `ChangeType.on_check_fault` has such a change ended in one save as a failure and the lane goes
   on (see "A job that fails stops its lane"), while a bot's change of the same type still stops
   its lane. Meanwhile the log channel records what failed, as the core specification's "Setting
-  the bot up" has it do — save `/bot init`'s check before the server is claimed, when there is no
-  log channel yet to record it in and the host's log holds it alone. This
-  `steward_module.md` §4 designs for a cycle's close, made bot-wide.
+  the bot up" has it do. This `steward_module.md` §4 designs for a cycle's close, made bot-wide.
 
   A check that must refuse a press while the same approval is already in hand reads the queue
   (`unfinished`, or `in_hand` where the refusal names the job it waits on), which give the changes
@@ -448,15 +446,16 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   partial writes on the save's connection and could not catch what fails after it returns, the
   queue's own audit and line writes and the commit; stopping the lane for a setting, which would
   hold every other change for a fault that either the member cures by asking again (a save rolled
-  back) or that nothing later on the lane depends on (a step after it); and a bespoke change type
-  for every settings command, which forms the line, the audit and the fault answer a score of
-  ways.
+  back) or that nothing later on the lane depends on (a step after it).
 
-  `/bot init` is not a setting — it claims the league's server, which no setting does — but its one
-  SAVE step ends on a fault the same way (`Step.on_fault`), and a check that raises as a member's
-  `/bot init` starts ends it the same way (`ChangeType.on_check_fault`): no league admin role
-  exists until a first `/bot init` has claimed one, so nobody could clear a stop on it if it held
-  the lane (`core/services/bot_init_change.py`). *Rejected:* stopping the lane on a fault in
+  `/bot init` (a change type of its own; see "The record is the queue's") ends on a fault rather
+  than stopping the lane, both in its one SAVE step (`Step.on_fault`) and in a check that raises as
+  a member's `/bot init` starts (`ChangeType.on_check_fault`): no league admin role is set while no
+  server holds the league, before a first `/bot init` or after a pack, so nobody could clear a stop
+  on it if it held the lane (`core/services/bot_init_change.py`). A fault in its save writes no
+  line, its claim rolled back with it, and the host's log holds it alone; a fault in its check
+  writes the failure line where a server holds the league, and while none does there is no log
+  channel to take it and the host's log holds it alone. *Rejected:* stopping the lane on a fault in
   `/bot init`, as any other job does, which would leave a stop nobody yet holds the role to clear.
 
   The same holds for a member's roles moved after their driver's or their team's change. A `/driver`
@@ -600,8 +599,9 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   success, while a permission edit Discord refuses, which the step reports rather than raises, or a
   base role gone from the server, records a success with that fault named beneath it. *Rejected:* a
   bespoke change type for each command, which forms the line, the audit and the fault answer a
-  score of ways. `/bot init` is a change type of its own for the reason no settings command is: it
-  alone claims the server, rather than writing a column of one already claimed.
+  score of ways. `/bot init` alone is a change type of its own rather than a `Setting`: it claims
+  the server, where a setting writes one column of a server already claimed
+  (`core/services/bot_init_change.py`).
 
 ---
 
@@ -681,8 +681,8 @@ delete on any table but those. The queue's own tables are always allowed (`QUEUE
 mark, its audit records, its log lines and the changes it asks for), so the mark, the lines and a
 follow-on pass, and an empty `writes` allows those alone. A write the authoriser refuses raises in
 the step, rolls its save back whole and stops the lane at that job, so it never lands; in a
-league's setting or a role move, whose steps end on a fault (see "A job that fails stops its lane"),
-it ends the job instead and the lane goes on. A change type whose `writes` is `None`, the default,
+league's setting, `/bot init`'s save or a role move, whose steps end on a fault (see "A job that
+fails stops its lane"), it ends the job instead and the lane goes on. A change type whose `writes` is `None`, the default,
 is not restricted; most league change types leave it so, and a league change type may declare the
 tables it writes and be confined to them likewise, as replacing a round's results with its
 resubmission drafts does. What a conversation hands the league, it asks of the league lane (see "How
@@ -1128,10 +1128,11 @@ to it would switch off the one failure path for every command.
    gives `Step.on_fault`, and for a check that raises as a member's change of a type that gives
    `ChangeType.on_check_fault`, ends the job instead and the lane goes on (see "A job that fails
    stops its lane"). Either way the fault is logged on the host and recorded in the log channel as a
-   failure, once — save `/bot init`'s save or check, before the server is claimed, when there is no
-   log channel yet and the host's log is where the fault goes alone. The callback a change type may
-   give for a Discard of a change before it started (`ChangeType.on_discarded`) is not a failure
-   path but a stated exception: the catch-all around it
+   failure, once — save a fault in `/bot init`'s save, which writes no line, and a fault in its
+   check while no server holds the league, when there is no log channel to record it in; the
+   host's log holds either alone. The callback a change type may give for a Discard of a change
+   before it started (`ChangeType.on_discarded`) is not a failure path but a stated exception: the
+   catch-all around it
    (`ChangeQueue._discard_follow_ons`) puts the error in the host's log alone, with no line to the
    log channel, and asks no follow-on, because a Discard is the queue's last way past a stop and a
    callback that raises must not hold it; the reader that says what dropping an undiscardable job
