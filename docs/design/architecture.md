@@ -581,10 +581,11 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   daily portrait job, grants a role to every driver where it replaces one gone from the server
   while the season's configuration is fixed, or stands the old hub down and sets the new one's
   permissions once its channel is moved: there the value and the audit record share the save and
-  the line follows in that step's own save, so that a failed arming, a failed grant, or a hub
-  permission Discord refuses, records no success, or records a success with that fault named
-  beneath it where the step reports rather than raises it. *Rejected:* a bespoke change type for
-  each command, which forms the line, the audit and the fault answer a score of ways.
+  the line follows in that step's own save, so that a fault of the bot's own in that step — a
+  failed arming, a failed grant, a guild or channel gone missing — records no success, while a
+  permission Discord refuses without raising, or a base role gone from the server, records a
+  success with that fault named beneath it. *Rejected:* a bespoke change type for each command,
+  which forms the line, the audit and the fault answer a score of ways.
 
 ---
 
