@@ -179,7 +179,6 @@ def _cog(db_path, drawing):
 # ── The lineup (047 FR-022) ───────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_lineup_check_asks_of_each_division_s_race_teams_in_tier_order(tmp_path):
     """Each division in tier order, its race teams in the order they were made and the drivers
     seated in each: an empty seat is not counted and the reserve team is not handed. What the
@@ -210,7 +209,6 @@ async def test_the_lineup_check_asks_of_each_division_s_race_teams_in_tier_order
     ),
     pytest.param(False, None, id="within the calendar"),
 ])
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_round_past_the_calendar_is_refused_in_core_s_words(tmp_path, found, refusal):
     """`/round add` and the bulk import ask of the rounds the division would hold. Core says the
     round was **not** added; the problem and its remedy are the image module's."""

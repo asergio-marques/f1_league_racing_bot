@@ -49,6 +49,7 @@ from leaguebot.core.services.cancellation_changes import (
     SEASON_CANCEL,
     cancellation_holding_amendment,
 )
+from leaguebot.core.services.image_drawing import DivisionTeams, TeamSeats
 from leaguebot.core.services.mid_season_confirm_change import (
     ALREADY_BEING_CONFIRMED,
     KIND as MID_SEASON_CONFIRM_KIND,
@@ -867,85 +868,34 @@ class SeasonCog(commands.Cog):
     async def _lineup_problems(self, season_id: int) -> list[str]:
         """Where the lineup template cannot draw a division of this season (047 FR-022).
 
-        One check, and it is a **count**. The template declares a number of team blocks and
-        a number of seat slots within each; a division fielding more teams than there are
-        blocks, or seating more drivers on a team than that block has slots, cannot be
-        drawn without dropping somebody. A division fielding *fewer* is the ordinary case
-        and is drawn with the surplus removed in silence.
-
-        Two checks stood here until v6.0.0 and both are withdrawn with the keyed template:
-        the divisions measured against **each other** for uniformity, and the template
-        measured against each division's team *names*. A template names no team now, so a
-        season composed however a league likes is drawable, and nothing here restricts it.
-
-        **Not gated on the `lineup` toggle** (FR-023). This reports a template that cannot
-        draw the season, which is a fault whether or not that graphic is posted; it is not,
-        as the uniformity rule was, a restriction on how a season may be composed.
-
-        It *is* gated on the **module**. FR-023 names the toggle and says nothing of module
-        enablement, and a league that has not enabled image generation has no template to
-        measure — complaining about one would be noise about a feature it does not use.
+        Counts each division's race teams, in tier order, and the drivers seated in each —
+        an empty seat uncounted, the reserve team unhanded — and asks the drawing on the
+        bot. The image module measures its own template and answers each problem as a
+        sentence, unchanged.
 
         Never raises for its own reasons: a fault in this reader must not block a season.
         """
         try:
-            if not await self.bot.module_service.is_images_enabled():
-                return []
-
-            reports = await self.bot.image_validity_service.template_reports()
-            report = reports.get("lineup_template")
-            if report is None or not report.valid or report.resolved_path is None:
-                # An unusable template is already reported by the review's own render,
-                # which withholds the approve button; naming it twice would tell a
-                # manager nothing new.
-                return []
-
-            from leaguebot.image.models.image_catalogues import catalogue_for
-            from leaguebot.image.utils.svg_document import FieldIndex, load_svg, off_the_loop
-
-            catalogue = catalogue_for("lineup_template")
-
-            def measure(catalogue: FieldCatalogue, path: Path) -> tuple[int, set[str]]:
-                # Parsed and read in one worker thread: the tree never leaves it (`load_svg`).
-                root = load_svg(path)
-                return catalogue.capacity(root) or 0, FieldIndex(root).declared()
-
-            blocks, declared = await off_the_loop(measure, catalogue, report.resolved_path)
-            nest = catalogue.rows.nested if catalogue.rows is not None else None
-
             divisions = await self.bot.season_service.get_divisions(season_id)
-            problems: list[str] = []
-
+            held: list[DivisionTeams] = []
             for division in sorted(divisions, key=lambda d: d.tier):
                 entries = await self.bot.team_service.get_division_teams(division.id)
-                teams = [e for e in entries if not e.get("is_reserve")]
-
-                if len(teams) > blocks:
-                    dropped = ", ".join(f"**{t['name']}**" for t in teams[blocks:][:8])
-                    problems.append(
-                        f"division **{division.name}** fields {len(teams)} teams but the "
-                        f"lineup template declares {blocks} "
-                        f"{'block' if blocks == 1 else 'blocks'}; {dropped} would be dropped"
+                teams = tuple(
+                    TeamSeats(
+                        entry["name"],
+                        sum(
+                            1 for seat in entry.get("seats", [])
+                            if seat.get("discord_user_id")
+                        ),
                     )
-                    continue
+                    for entry in entries
+                    if not entry.get("is_reserve")
+                )
+                held.append(DivisionTeams(division.name, teams))
 
-                if nest is None:
-                    continue
-                for ordinal, team in enumerate(teams, start=1):
-                    slots = nest.declared_capacity(f"team_{ordinal}", declared)
-                    seated = sum(
-                        1 for seat in team.get("seats", []) if seat.get("discord_user_id")
-                    )
-                    if seated > slots:
-                        problems.append(
-                            f"division **{division.name}**: **{team['name']}** seats "
-                            f"{seated} drivers but block {ordinal} of the lineup template "
-                            f"declares {slots} seat "
-                            f"{'slot' if slots == 1 else 'slots'}"
-                        )
-            return problems
+            return await self.bot.image_drawing.lineup_review_problems(held)
         except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
-            log.error("season: lineup template check failed: %s", exc, exc_info=True)
+            log.error("season: lineup capacity check could not run: %s", exc, exc_info=True)
             return []
 
     async def _calendar_round_overflow(
@@ -961,40 +911,17 @@ class SeasonCog(commands.Cog):
         **drivers**. A calendar's collection is **rounds**, so the two guard different
         commands and must not be merged (research.md § R3).
         """
-        from leaguebot.image.models.image_catalogues import catalogue_for
-
         try:
-            if not await self.bot.module_service.is_images_enabled():
-                return None
-            if not await self.bot.image_config_service.is_aspect_enabled(
-                "calendar"
-            ):
-                return None
-
-            reports = await self.bot.image_validity_service.template_reports()
-            report = reports.get("calendar_template")
-            if report is None or not report.valid or report.resolved_path is None:
-                return None
-
-            from leaguebot.image.utils.svg_document import load_svg, off_the_loop
-
-            # Parsed and counted in one worker thread: the tree never leaves it (`load_svg`).
-            capacity = await off_the_loop(
-                lambda path: catalogue_for("calendar_template").capacity(load_svg(path)),
-                report.resolved_path,
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.error("round add: calendar capacity guard could not run: %s", exc, exc_info=True)
+            problem = await self.bot.image_drawing.round_capacity_problem(would_hold)
+        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
+            log.error("round add: calendar capacity check could not run: %s", exc, exc_info=True)
             return None
 
-        if not capacity or would_hold <= capacity:
+        if problem is None:
             return None
 
         return (
-            f"❌ That would give the division {would_hold} rounds, but the configured "
-            f"calendar template draws {capacity}. The round was **not** added.\n"
-            f"Enlarge the template, or turn the `calendar` image aspect off with "
-            f"`/images config toggle`."
+            f"❌ {problem.problem}. The round was **not** added.\n{problem.remedy}"
         )
 
     async def _calendar_capacity_warning(
