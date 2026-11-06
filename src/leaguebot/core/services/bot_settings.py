@@ -216,8 +216,10 @@ _LEAGUE_ROLE_WORDS: dict[str, tuple[str, str, str]] = {
     "driver_role_id": ("/bot driver-role", "Driver role", "DRIVER_ROLE_SET"),
 }
 
-#: The name of the step, after the base role's save, that moves the signup channel's overwrite.
-MOVE_SIGNUP_OVERWRITE = "move_signup_overwrite"
+#: The name of the step, after the base role's save, that calls the "base role changed" hook.
+#: The step names the moment, never the module that happens to subscribe to it (signup's own
+#: operation, `move_base_role_overwrite`, stays signup's).
+BASE_ROLE_CHANGED = "base_role_changed"
 
 #: The name of the step, after a role replaced because it is gone from the server, that grants
 #: the new role to every driver.
@@ -278,13 +280,14 @@ def _league_role_setting(
     driver role Discord will not let the bot grant — have nothing to do with a value already
     held, so they are judged there and never reach this `Setting`.
 
-    **The base role's save plans two follow-ons the driver role never needs:** moving the
-    signup channel's overwrite (`MOVE_SIGNUP_OVERWRITE`), and setting the hub's permissions
-    again (`REAPPLY_HUB`, shared with the four repair settings' role columns above) — the hub is
-    seen by the base role too. **Either role, replaced because the old one is gone from the
-    server, plans a third:** granting the new role to every driver (`GRANT_TO_DRIVERS`), which
-    `carries_line` (`setting_change`) so that its given/not-given detail sits beneath the save's
-    own line, one post, and a fault there leaves the role saved with only the failure line.
+    **The base role's save plans two follow-ons the driver role never needs:** calling the "base
+    role changed" hook (`BASE_ROLE_CHANGED`), which moves the signup channel's overwrite without
+    core naming signup, and setting the hub's permissions again (`REAPPLY_HUB`, shared with the
+    four repair settings' role columns above) — the hub is seen by the base role too. **Either
+    role, replaced because the old one is gone from the server, plans a third:** granting the new
+    role to every driver (`GRANT_TO_DRIVERS`), which `carries_line` (`setting_change`) so that its
+    given/not-given detail sits beneath the save's own line, one post, and a fault there leaves
+    the role saved with only the failure line.
     """
     command, label, change_type = _LEAGUE_ROLE_WORDS[column]
     is_base_role = column == "base_role_id"
@@ -308,7 +311,7 @@ def _league_role_setting(
         details = [role_detail]
         then: list[PlannedStep] = []
         if is_base_role:
-            then.append(PlannedStep(MOVE_SIGNUP_OVERWRITE))
+            then.append(PlannedStep(BASE_ROLE_CHANGED))
             then.append(PlannedStep(REAPPLY_HUB))
         if payload.get("replacing_gone"):
             details.append("replaced: a role no longer on the server")
@@ -337,7 +340,7 @@ def _league_role_setting(
 
     after: dict[str, After] = {}
     if is_base_role:
-        after[MOVE_SIGNUP_OVERWRITE] = _move_signup_overwrite()
+        after[BASE_ROLE_CHANGED] = _move_signup_overwrite()
         after[REAPPLY_HUB] = _reapply_hub(command, config)
     after[GRANT_TO_DRIVERS] = _grant_to_drivers(placement, is_base_role=is_base_role)
 
@@ -366,7 +369,7 @@ def _move_signup_overwrite() -> After:
         await ctx.bot.base_role_changed.call(guild, ctx.payload.get("old_role_id"), role)
         return StepResult()
 
-    return After(step=Step(MOVE_SIGNUP_OVERWRITE, StepKind.ACT, run), fault_reply=lambda _p, r: r)
+    return After(step=Step(BASE_ROLE_CHANGED, StepKind.ACT, run), fault_reply=lambda _p, r: r)
 
 
 def _grant_to_drivers(placement: "PlacementService", *, is_base_role: bool) -> After:
@@ -438,7 +441,7 @@ def driver_role_setting(*, config: "ConfigService", placement: "PlacementService
 
 __all__ = [
     "GRANT_TO_DRIVERS",
-    "MOVE_SIGNUP_OVERWRITE",
+    "BASE_ROLE_CHANGED",
     "REAPPLY_HUB",
     "admin_role_setting",
     "base_role_setting",
