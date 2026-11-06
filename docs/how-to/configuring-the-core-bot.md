@@ -120,9 +120,9 @@ everything else sits behind. Drivers do not need it.
 /bot admin-role role:@NewOwners
 ```
 
-Each changes that one setting and touches nothing else.
+Each changes that one setting and touches nothing else. Setting `/bot interaction-role` or `/bot admin-role` to the role it already holds changes nothing — you're told so, and the hub's permissions are left alone; the two channel commands refuse outright instead if you give them the channel they already hold.
 
-> **These work from any channel, and a server administrator can run them.** That is on purpose. They exist for the day something goes wrong with the four settings themselves — somebody deletes the log channel, archives the command channel, or removes one of the two roles. If they needed the command channel or a league role to run, the one thing you could not repair would be the thing that had broken; and if they needed the league admin role, a server that had lost that role could never get it back. So these five, and only these five, also accept Discord's **Administrator** permission.
+> **These work from any channel, and a server administrator can run them.** That is on purpose. They exist for the day something goes wrong with the four settings themselves — somebody deletes the log channel, archives the command channel, or removes one of the two roles. If they needed the command channel or a league role to run, the one thing you could not repair would be the thing that had broken; and if they needed the league admin role, a server that had lost that role could never get it back. So these five, and only these five, also accept Discord's **Administrator** permission. They also take effect even while the bot is stuck on an unrelated job elsewhere — every other change waits its turn, but these four never do.
 >
 > `/bot pack` is **not** one of them. It clears the settings rather than repairing them, so it asks for the league admin role and is given in the command channel like everything else.
 

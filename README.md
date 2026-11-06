@@ -384,9 +384,11 @@ The team list always holds the **Reserve** team, which has unlimited seats and c
 | `/bot interaction-role` | `role` | The role permitted to use bot commands |
 | `/bot admin-role` | `role` | The role that governs the bot and may undo a league entire |
 
-Each changes **one** setting and leaves everything else exactly as it stands — the other three settings, your module switches, and test mode. Each change is recorded in the log channel and audited with the value it replaced, as `/bot init` is with the four settings it takes.
+Each changes **one** setting and leaves everything else exactly as it stands — the other three settings, your module switches, and test mode. Each change is recorded in the log channel and audited with the value it replaced, as `/bot init` is with the four settings it takes. The command answers at once that the change is under way, then updates that reply once it has run.
 
-> **These are deliberately usable from any channel, and by a server administrator as well as by a league admin.** They exist for when one of the four settings is wrong — a log channel deleted, an interaction channel archived, either role removed by mistake. Requiring the interaction channel or a league role to run them would lock you out of the very failure they repair, and requiring the league admin role would leave a server that has lost it with no way to set one. These five commands are the only place Discord's Administrator permission reaches the bot at all.
+> **These are deliberately usable from any channel, and by a server administrator as well as by a league admin.** They exist for when one of the four settings is wrong — a log channel deleted, an interaction channel archived, either role removed by mistake. Requiring the interaction channel or a league role to run them would lock you out of the very failure they repair, and requiring the league admin role would leave a server that has lost it with no way to set one. These five commands are the only place Discord's Administrator permission reaches the bot at all. For the same reason, each still takes effect even while the bot's queue is stuck on an unrelated job elsewhere — every other change waits its turn, but these four never do.
+
+Setting `/bot interaction-role` or `/bot admin-role` to the role it already holds changes nothing: you're told so, it's logged as nothing changed, no audit entry is written, and the hub's permissions are left alone. The two channel commands, by contrast, refuse outright if you give them the channel they already hold.
 
 If the bot has never been configured on the server, these refuse and point you at `/bot init`.
 
