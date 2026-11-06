@@ -1779,7 +1779,7 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
     # Every case but these runs on the league's configured server.
     if not (case.endswith("before init") or case == "init lost race to the same server"):
         await _seed_config(db_path)
-    if case.startswith("log-channel"):
+    if case.startswith(("log-channel", "interaction-channel")):
         # A setting asks the change queue, whose check refuses at the ask: the bot the entry
         # point builds, its log channel's lines read where every refusal records one.
         bot = await _queued_bot(db_path)
@@ -1788,7 +1788,8 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
         bot = _resetting_bot(db_path, tmp_path)
     cog = BotCog(bot)
     command = {
-        "init": "bot init", "log": "bot log-channel", "base": "bot base-role",
+        "init": "bot init", "log": "bot log-channel",
+        "interaction": "bot interaction-channel", "base": "bot base-role",
         "driver": "bot driver-role", "hub": "bot hub-channel", "factory": "bot factory-reset",
     }[case.split("-")[0].split(" ")[0]]
     interaction = _refusable(bot, _owner_interaction(), command)
@@ -1810,6 +1811,19 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
         await _unwrap(cog.handle_log_channel)(cog, interaction, _channel(CONFIGURED_LOG))
         return bot, interaction, command, (
             f"ℹ️ <#{CONFIGURED_LOG}> is already the bot log channel. Nothing was changed."
+        )
+    if case == "interaction-channel already another job":
+        await _unwrap(cog.handle_interaction_channel)(cog, interaction, _channel(CONFIGURED_LOG))
+        return bot, interaction, command, (
+            f"❌ <#{CONFIGURED_LOG}> is already the bot log channel. A channel does one job — "
+            f"pick one that is not in use, or clear the other setting first."
+        )
+    if case == "interaction-channel already this setting":
+        await _unwrap(cog.handle_interaction_channel)(
+            cog, interaction, _channel(CONFIGURED_CHANNEL)
+        )
+        return bot, interaction, command, (
+            f"ℹ️ <#{CONFIGURED_CHANNEL}> is already the bot command channel. Nothing was changed."
         )
     if case == "base-role fixed for the season":
         await _seed_ongoing_season(db_path)
@@ -1877,6 +1891,8 @@ def _replied(interaction: MagicMock) -> str:
         "init lost race to the same server",
         "log-channel already another job",
         "log-channel already this setting",
+        "interaction-channel already another job",
+        "interaction-channel already this setting",
         "base-role fixed for the season",
         "driver-role cannot be granted",
         "hub-channel already another job",
