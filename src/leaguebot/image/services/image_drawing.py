@@ -168,9 +168,25 @@ class ImageDrawing:
         self._db_path = db_path
 
     async def _drawn_template(self, aspect: str, template_key: str) -> Path | None:
-        """The template's path where *aspect* is drawn and the template is valid, else None."""
+        """The template's path where the module and *aspect* are both drawn and the template
+        is valid, else None.
+
+        For the questions that gate what is actually posted: a graphic that will not be drawn
+        has no capacity to outgrow.
+        """
         if not await self._modules.is_images_enabled():
             return None
+        return await self._reviewed_template(aspect, template_key)
+
+    async def _reviewed_template(self, aspect: str, template_key: str) -> Path | None:
+        """The template's path where *aspect* is drawn and the template is valid, else None —
+        not gated on the module.
+
+        For the review's warnings: they report a template that cannot draw the season
+        whether or not the images module itself ends up posting anything, since the warning
+        is about what the artwork declares, not what is drawn this time (as
+        `lineup_review_problems` and `standings_review_problems` are gated already).
+        """
         toggles = await self._config.get_toggles()
         if not toggles.get(aspect):
             return None
@@ -312,8 +328,12 @@ class ImageDrawing:
 
     async def calendar_review_problem(self, longest: Held) -> CapacityProblem | None:
         """The review's warning (XIV.9): the calendar is posted as text rather than not at
-        all, so the division holding the longest calendar is named, never refused."""
-        path = await self._drawn_template(CALENDAR_ASPECT, CALENDAR_TEMPLATE_KEY)
+        all, so the division holding the longest calendar is named, never refused.
+
+        Gated on the `calendar` aspect and a valid template, not on the module: the warning
+        is about what the configured template declares, whether or not a calendar is drawn
+        this time (`_reviewed_template`)."""
+        path = await self._reviewed_template(CALENDAR_ASPECT, CALENDAR_TEMPLATE_KEY)
         if path is None:
             return None
         from leaguebot.image.utils.svg_document import load_svg
@@ -332,8 +352,11 @@ class ImageDrawing:
 
     async def sheet_review_problem(self, longest: Held) -> CapacityProblem | None:
         """The sheet's round columns against the season's longest calendar (XIV.9). A
-        template drawing no round grid at all is a legitimate choice (XIV.3), not a problem."""
-        path = await self._drawn_template(ATTENDANCE_ASPECT, ATTENDANCE_TEMPLATE_KEY)
+        template drawing no round grid at all is a legitimate choice (XIV.3), not a problem.
+
+        Gated on the `attendance` aspect and a valid template, not on the module
+        (`_reviewed_template`), as `calendar_review_problem` is."""
+        path = await self._reviewed_template(ATTENDANCE_ASPECT, ATTENDANCE_TEMPLATE_KEY)
         if path is None:
             return None
         from leaguebot.image.utils.svg_document import load_svg
@@ -405,8 +428,11 @@ class ImageDrawing:
         return problems
 
     async def checkin_review_problem(self, sessions: int) -> CapacityProblem | None:
-        """The check-in call's sessions against the season's most demanding round (XIV.9)."""
-        path = await self._drawn_template(RSVP_ASPECT, RSVP_TEMPLATE_KEY)
+        """The check-in call's sessions against the season's most demanding round (XIV.9).
+
+        Gated on the `rsvp` aspect and a valid template, not on the module
+        (`_reviewed_template`), as `calendar_review_problem` is."""
+        path = await self._reviewed_template(RSVP_ASPECT, RSVP_TEMPLATE_KEY)
         if path is None:
             return None
         from leaguebot.image.utils.svg_document import load_svg
