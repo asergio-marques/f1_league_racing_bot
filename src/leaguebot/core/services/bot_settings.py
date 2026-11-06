@@ -38,14 +38,17 @@ never its permissions). The hub is seen by the interaction role, the league admi
 base role (`hub_service.apply_hub_permissions`), so changing any of the three sets them again
 once the role is saved, from an `After` step the save plans, never from the command.
 
-**`/bot hub-channel` (issue #279) is a `Setting` too, built by `hub_channel_setting`
+**`/bot hub-channel` is a `Setting` too, built by `hub_channel_setting`
 below, but not a repair setting: it waits its turn on the league lane like the two roles.** The
-manage-permission check and the unconfigured-server refusal have nothing to do with a value
-already held, so the cog judges them before the change is even asked for, as the missing driver
-role is judged before `/bot driver-role` asks for its own. The channel already doing another job,
-or already this channel, is the setting's own `check`, run as the change starts, since a change
-queued ahead of this one might have claimed the channel for something else since it was asked;
-the save never reaches it, since `check` would already have refused it. **The old hub's
+cog judges all four of its refusals at the ask, before the change is even asked for: the channel
+already doing another job, the channel already the hub, the bot's missing Manage Channel or
+Manage Permissions, and the server not yet configured. The missing-permission refusal has
+nothing to do with a value already held, so nothing repeats it once the change starts, as the
+missing driver role is judged before `/bot driver-role` asks for its own and not again. The
+channel already doing another job, or already this channel, and the server not yet configured
+are the setting's own `check` as well, run again as the change starts, since a change queued
+ahead of this one might have claimed the channel for something else, or left the server
+unconfigured, since it was asked. **The old hub's
 permissions cleared and the new hub's permissions set are one `After` step after the save**
 (`_restyle_hub`), which `carries_line`: the two permission edits are each Discord's to refuse
 without raising, so both faults, where either or both happen, sit beneath the save's own line in
@@ -539,7 +542,7 @@ def driver_role_setting(*, config: "ConfigService", placement: "PlacementService
 
 
 # ----------------------------------------------------------------------------
-# The hub channel (issue #279) — not a repair setting
+# The hub channel — not a repair setting
 # ----------------------------------------------------------------------------
 
 #: The name of the step, after the hub channel's save, that stands the old hub down and sets

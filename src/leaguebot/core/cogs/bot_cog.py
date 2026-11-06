@@ -443,7 +443,7 @@ class BotCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
-    # /bot hub-channel — the hub (issue #279)
+    # /bot hub-channel — the hub
     # ------------------------------------------------------------------
 
     @group.command(
@@ -457,15 +457,15 @@ class BotCog(commands.Cog):
     ) -> None:
         """Point the hub at *channel*: ask the change queue for `bot_settings.hub_channel_setting`.
 
-        The channel already doing another job, or already the hub, is judged here first, as it
-        was before this command went through the queue, so a manager re-running it for the hub's
-        own value still reads "Nothing was changed" rather than a permission refusal that happens
-        to be true as well. The missing-permission refusal has nothing to do with a value already
-        held, so it is judged next, before the change is even asked for, as a driver role Discord
-        will not let the bot grant is judged before `/bot driver-role` asks for its own. Both are
-        the setting's own `check` as well, run again as the change starts, since a change queued
-        ahead of this one might have claimed the channel for something else since it was asked;
-        what follows the save is `setting_change`'s and `bot_settings`'s.
+        The channel already doing another job, or already the hub, is judged here first, so a
+        manager re-running it for the hub's own value still reads "Nothing was changed" rather
+        than a permission refusal that happens to be true as well. The missing-permission refusal
+        has nothing to do with a value already held, so it is judged next, before the change is
+        even asked for, as a driver role Discord will not let the bot grant is judged before
+        `/bot driver-role` asks for its own. The channel-in-use and the unconfigured-server
+        refusals are the setting's own `check` as well, run again as the change starts, since a
+        change queued ahead of this one might have claimed the channel for something else since
+        it was asked; what follows the save is `setting_change`'s and `bot_settings`'s.
         """
         from leaguebot.core.services.channel_registry_service import ChannelUse, find_channel_use, refusal
 
