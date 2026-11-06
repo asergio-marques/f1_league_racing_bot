@@ -20,6 +20,9 @@ from leaguebot.core.services.config_service import RELEASE_CLAIM_SQL, ConfigServ
 OLD_SERVER = 4242
 NEW_SERVER = 5353
 
+#: Why a claim test fails until the build: the claim is still its own commit, off the queue.
+_CLAIM_ON = "#283: the claim is not yet written on the save's connection"
+
 
 def _config(server_id: int) -> ServerConfig:
     return ServerConfig(
@@ -36,14 +39,26 @@ async def service(tmp_path) -> ConfigService:
     db_path = os.path.join(str(tmp_path), "test.db")
     await run_migrations(db_path)
     service = ConfigService(db_path)
-    assert await service.save_server_config(_config(OLD_SERVER))
+    old = _config(OLD_SERVER)
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE server_configs SET test_mode_active = 1, weather_module_enabled = 1, "
-            "signup_module_enabled = 1, test_mode_nationality_required = 0"
+            "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, "
+            "log_channel_id, league_admin_role_id, test_mode_active, weather_module_enabled, "
+            "signup_module_enabled, test_mode_nationality_required) "
+            "VALUES (?, ?, ?, ?, ?, 1, 1, 1, 0)",
+            (old.server_id, old.interaction_role_id, old.interaction_channel_id,
+             old.log_channel_id, old.league_admin_role_id),
         )
         await db.commit()
     return service
+
+
+async def _claim(service: ConfigService, cfg: ServerConfig) -> bool:
+    """Take the claim for *cfg* as `/bot init`'s save does, on a connection of its own, committed."""
+    async with get_connection(service._db_path) as db:
+        created = await service.claim_on(db, cfg)
+        await db.commit()
+    return created
 
 
 async def _release(service: ConfigService) -> None:
@@ -99,10 +114,11 @@ async def test_a_released_row_takes_no_setting(service):
     assert (await _row(service))["log_channel_id"] is None
 
 
+@pytest.mark.xfail(strict=True, reason=_CLAIM_ON)
 async def test_another_server_claims_a_released_row(service):
     await _release(service)
 
-    assert await service.save_server_config(_config(NEW_SERVER)) is True
+    assert await _claim(service, _config(NEW_SERVER)) is True
 
     config = await service.get_server_config()
     assert config.server_id == NEW_SERVER
@@ -111,10 +127,11 @@ async def test_another_server_claims_a_released_row(service):
     assert await service.get_league_server_id() == NEW_SERVER
 
 
+@pytest.mark.xfail(strict=True, reason=_CLAIM_ON)
 async def test_the_claim_carries_test_mode_and_the_module_flags_over(service):
     """`ServerConfig` defaults test mode off; the claim must write neither it nor the flags."""
     await _release(service)
-    await service.save_server_config(_config(NEW_SERVER))
+    assert await _claim(service, _config(NEW_SERVER)) is True
 
     config = await service.get_server_config()
     assert config.test_mode_active is True
@@ -136,11 +153,12 @@ def test_server_config_carries_no_module_flags():
     assert [n for n in names if n.endswith("_module_enabled")] == []
 
 
+@pytest.mark.xfail(strict=True, reason=_CLAIM_ON)
 async def test_only_one_server_claims_a_released_row(service):
     await _release(service)
 
-    assert await service.save_server_config(_config(NEW_SERVER)) is True
-    assert await service.save_server_config(_config(OLD_SERVER)) is False
+    assert await _claim(service, _config(NEW_SERVER)) is True
+    assert await _claim(service, _config(OLD_SERVER)) is False
     assert await service.get_league_server_id() == NEW_SERVER
 
 
