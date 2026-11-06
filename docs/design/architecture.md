@@ -276,10 +276,10 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   of. It may likewise ask one where a league admin discards a member's change stopped at its check
   before any job of it started (`ChangeType.on_discarded`), saved with the Discard. A refusal
   callback that raises stops its lane at the change's first job, as a check that raises does (save
-  in a member's settings change, described below), and the change is checked again at each try; a
-  discard callback that raises is logged on the host and the Discard goes ahead without it, Discard
-  being the queue's last way past a stop. *Rejected:* planning a step on the refused change, which
-  would leave a refused change with jobs to run.
+  in a member's settings change or `/bot init`, described below), and the change is checked again
+  at each try; a discard callback that raises is logged on the host and the Discard goes ahead
+  without it, Discard being the queue's last way past a stop. *Rejected:* planning a step on the
+  refused change, which would leave a refused change with jobs to run.
   A change a timer, an event, or a handler or start step the sweep calls asked for is dropped once
   its work is no longer due, as a job that fires after its work was cancelled does nothing (see
   "Timed work and restarts"). Where it is refused by its check for any reason but that its work is
