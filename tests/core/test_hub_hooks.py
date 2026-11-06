@@ -298,8 +298,6 @@ async def test_the_roles_the_hub_names_set_its_permissions_again(
 NAMED = "Admin (`<@77>`)"
 #: The role a setting below is set to: a role of the league's server, which holds no setting yet.
 NEW_ROLE = 5150
-#: Why a role setting's hub permissions are not yet its follow-on.
-FOLLOW_ON = "#283: the role settings do not yet set the hub's permissions as their follow-on"
 #: What a role setting whose hub permissions raise adds to its success.
 NOT_UPDATED = "⚠️ The setting is saved, but the hub's permissions could not be updated."
 
@@ -395,10 +393,8 @@ async def test_a_channel_setting_leaves_the_hub_s_permissions_alone(db_path):
     "attribute,column,command",
     [
         pytest.param("handle_interaction_role", "interaction_role_id", "bot interaction-role",
-                     marks=pytest.mark.xfail(strict=True, reason=FOLLOW_ON),
                      id="interaction-role"),
         pytest.param("handle_admin_role", "league_admin_role_id", "bot admin-role",
-                     marks=pytest.mark.xfail(strict=True, reason=FOLLOW_ON),
                      id="admin-role"),
     ],
 )
@@ -443,7 +439,7 @@ _REFUSED = discord.HTTPException(MagicMock(status=403, reason="Forbidden"), "Mis
             f"✅ **Interaction role** set to <@&{NEW_ROLE}>.\n{NOT_UPDATED}",
             f"❌ `/bot interaction-role` failed for {NAMED} — RuntimeError. The details are in "
             f"the host's log.",
-            marks=pytest.mark.xfail(strict=True, reason=FOLLOW_ON), id="raises",
+            id="raises",
         ),
     ],
 )

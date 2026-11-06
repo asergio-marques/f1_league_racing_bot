@@ -506,6 +506,12 @@ def register_change_types(bot: LeagueBot) -> None:
         round_cancel_change,
         season_cancel_change,
     )
+    from leaguebot.core.services.bot_settings import (
+        admin_role_setting,
+        interaction_channel_setting,
+        interaction_role_setting,
+        log_channel_setting,
+    )
     from leaguebot.core.services.channel_tell_change import channel_tell_change
     from leaguebot.core.services.clean_change import clean_change
     from leaguebot.core.services.hub_service import hub_refresh_change
@@ -1047,6 +1053,10 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     for setting in (
+        log_channel_setting(config=bot.config_service),
+        interaction_channel_setting(config=bot.config_service),
+        interaction_role_setting(config=bot.config_service),
+        admin_role_setting(config=bot.config_service),
         *points_settings(modules=bot.module_service, seasons=bot.season_service),
         *amendment_settings(modules=bot.module_service, seasons=bot.season_service),
         *image_settings(

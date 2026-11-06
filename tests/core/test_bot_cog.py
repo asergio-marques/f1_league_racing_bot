@@ -58,8 +58,6 @@ CONFIGURED_ADMIN_ROLE = 444
 
 #: "Now", as the change queue's clock gives it to the tests that run it.
 NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
-#: Why a test of the four settings fails until they are core's `Setting`s on the queue.
-ON_THE_QUEUE = "#283: the four /bot settings are not yet Settings on the change queue"
 
 def _unwrap(cmd):
     """Strip `bot_setup_only` and return the command body.
@@ -611,7 +609,7 @@ async def test_a_setting_command_writes_only_its_own_column(
 
 @pytest.mark.parametrize(
     "attribute,column,factory,new_id",
-    [pytest.param(*s, marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE), id=s[1])
+    [pytest.param(*s, id=s[1])
      for s in _SETTINGS],
 )
 async def test_a_setting_command_is_audited_with_the_value_it_replaced(
@@ -643,7 +641,7 @@ async def test_a_setting_command_is_audited_with_the_value_it_replaced(
 
 @pytest.mark.parametrize(
     "attribute,column,factory,new_id",
-    [pytest.param(*s, marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE), id=s[1])
+    [pytest.param(*s, id=s[1])
      for s in _SETTINGS],
 )
 async def test_a_setting_command_is_acknowledged_then_answered_and_logged_in_today_s_words(
@@ -682,7 +680,7 @@ async def test_a_setting_command_is_acknowledged_then_answered_and_logged_in_tod
 
 @pytest.mark.parametrize(
     "attribute,column,factory,new_id",
-    [pytest.param(*s, marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE), id=s[1])
+    [pytest.param(*s, id=s[1])
      for s in _SETTINGS],
 )
 async def test_a_core_setting_saves_its_value_and_audit_together(
@@ -731,10 +729,8 @@ async def test_a_core_setting_saves_its_value_and_audit_together(
     "attribute,column,held",
     [
         pytest.param("handle_interaction_role", "interaction_role_id", CONFIGURED_ROLE,
-                     marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE),
                      id="interaction_role_id"),
         pytest.param("handle_admin_role", "league_admin_role_id", CONFIGURED_ADMIN_ROLE,
-                     marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE),
                      id="league_admin_role_id"),
     ],
 )
@@ -773,7 +769,7 @@ async def test_a_role_set_to_the_role_it_holds_is_answered_nothing_changed(
 
 @pytest.mark.parametrize(
     "attribute,column,factory,new_id",
-    [pytest.param(*s, marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE), id=s[1])
+    [pytest.param(*s, id=s[1])
      for s in _SETTINGS],
 )
 async def test_a_repair_setting_takes_effect_while_the_queue_is_stopped_on_another_job(
@@ -967,7 +963,6 @@ async def test_a_setting_command_admits_an_administrator_before_the_bot_is_confi
     assert (await _row(db_path))["league_admin_role_id"] == CONFIGURED_ADMIN_ROLE
 
 
-@pytest.mark.xfail(strict=True, reason="#283: ConfigService has no set_core_setting_on yet")
 async def test_set_core_setting_refuses_a_column_of_the_callers_choosing(tmp_path):
     """The column is interpolated into the UPDATE, so the allow-list is load-bearing: in the
     setter that commits, and in `set_core_setting_on`, which writes on the connection a

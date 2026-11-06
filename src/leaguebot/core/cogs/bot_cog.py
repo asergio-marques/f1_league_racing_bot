@@ -229,78 +229,31 @@ class BotCog(commands.Cog):
         log.info("Bot configured by %s", interaction.user)
 
     # ------------------------------------------------------------------
-    # The four settings, each written on its own
+    # The four settings, each a core `Setting` on the change queue
     # ------------------------------------------------------------------
 
-    async def _set_one(
-        self,
-        interaction: discord.Interaction,
-        *,
-        column: str,
-        value: int,
-        command: str,
-        label: str,
-        mention: str,
-        change_type: str,
+    async def _ask_setting(
+        self, interaction: discord.Interaction, kind: str, value: int
     ) -> None:
-        """Shared body of the four setting commands.
+        """Ask the queue for one of the four `/bot` repair settings (`core/services/bot_settings.py`).
 
-        Writes a single column, so nothing else in the row — test mode, the module flags,
-        the other three settings — can be carried over stale from a half-built model.
-
-        Audited with the value it replaced (issue #371): these decide who may command and
-        govern the bot, and once a setting is overwritten nothing else keeps what it was.
+        An unconfigured server is refused here, to the host's log alone, before the change is
+        even asked for: there is no log channel of the league's to record a refusal in, and
+        there being none is not itself a member's command to refuse through the queue. Every
+        other refusal — a channel already doing another job, or already this setting — is
+        `Setting.check`'s, run at the ask and again as the change starts, and recorded in the
+        league's log channel as any other refusal is. The write, the audit entry and the line
+        once it has run are `setting_change`'s and `bot_settings`'s, on `REPAIR_LANE` so a
+        stopped job elsewhere on the league's lane cannot lock a league out of repairing these.
         """
-
-        # A channel does one job (decided 2026-09-06). Keyed on the column, because this
-        # body also carries the interaction *role*, which no channel rule governs.
-        _setting = {
-            "interaction_channel_id": "interaction",
-            "log_channel_id": "log",
-        }.get(column)
-        if _setting is not None:
-            from leaguebot.core.services.channel_registry_service import (
-                ChannelUse,
-                find_channel_use,
-                refusal,
-            )
-
-            use = await find_channel_use(self.bot.db_path, value)
-            if use is not None:
-                await refuse(
-                    interaction,
-                    refusal(mention, use, same_setting=(use == ChannelUse(_setting))),
-                    what=describe(interaction),
-                )
-                return
-
-        config = await self.bot.config_service.get_server_config()
-        old_value = None if config is None else getattr(config, column)
-
-        changed = await self.bot.config_service.set_core_setting(column, value)
-        if not changed:
+        if await self.bot.config_service.get_server_config() is None:
             await _refuse_on_host(
                 interaction, "⛔ This server is not configured yet — run `/bot init` first."
             )
             return
-
-        key = "channel_id" if _setting is not None else "role_id"
-        await _audit(
-            self.bot, interaction.user, change_type, {key: old_value}, {key: value}
+        await self.bot.change_queue.ask(
+            kind, {"value": value}, interaction=interaction, what=describe(interaction),
         )
-
-        await interaction.response.send_message(
-            f"✅ **{label}** set to {mention}.", ephemeral=True
-        )
-        # Posted after the write, so a new log channel is told about itself and an
-        # administrator sees at once that the repair took.
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | {command} | Success\n"
-            f"  {column}: {mention}",
-        )
-        log.info("%s set %s", interaction.user, column)
-        if column in ("interaction_role_id", "league_admin_role_id"):
-            await _reapply_hub_permissions(self.bot, interaction)
 
     @group.command(
         name="log-channel",
@@ -311,15 +264,7 @@ class BotCog(commands.Cog):
     async def handle_log_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
-        await self._set_one(
-            interaction,
-            column="log_channel_id",
-            value=channel.id,
-            command="/bot log-channel",
-            label="Log channel",
-            mention=f"<#{channel.id}>",
-            change_type="LOG_CHANNEL_SET",
-        )
+        await self._ask_setting(interaction, "core.setting.log_channel", channel.id)
 
     @group.command(
         name="interaction-channel",
@@ -330,15 +275,7 @@ class BotCog(commands.Cog):
     async def handle_interaction_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
-        await self._set_one(
-            interaction,
-            column="interaction_channel_id",
-            value=channel.id,
-            command="/bot interaction-channel",
-            label="Interaction channel",
-            mention=f"<#{channel.id}>",
-            change_type="INTERACTION_CHANNEL_SET",
-        )
+        await self._ask_setting(interaction, "core.setting.interaction_channel", channel.id)
 
     @group.command(
         name="interaction-role",
@@ -349,15 +286,7 @@ class BotCog(commands.Cog):
     async def handle_interaction_role(
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
-        await self._set_one(
-            interaction,
-            column="interaction_role_id",
-            value=role.id,
-            command="/bot interaction-role",
-            label="Interaction role",
-            mention=f"<@&{role.id}>",
-            change_type="INTERACTION_ROLE_SET",
-        )
+        await self._ask_setting(interaction, "core.setting.interaction_role", role.id)
 
     @group.command(
         name="admin-role",
@@ -375,15 +304,7 @@ class BotCog(commands.Cog):
         so it is gated on Discord's Administrator permission alongside the role, as its four
         siblings are, and runs from any channel for the same reason they do.
         """
-        await self._set_one(
-            interaction,
-            column="league_admin_role_id",
-            value=role.id,
-            command="/bot admin-role",
-            label="League admin role",
-            mention=f"<@&{role.id}>",
-            change_type="LEAGUE_ADMIN_ROLE_SET",
-        )
+        await self._ask_setting(interaction, "core.setting.admin_role", role.id)
 
     # ------------------------------------------------------------------
     # The league's two roles (issue #276)

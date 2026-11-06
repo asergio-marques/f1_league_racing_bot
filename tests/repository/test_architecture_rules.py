@@ -790,11 +790,6 @@ LOG_CHANNEL_NAMED_BY = {
     "core/services/bot_settings.py": "the setting that sets it",
 }
 
-#: Why the check of the files naming the log channel fails until core's four `/bot` settings
-#: have a home.
-_NO_BOT_SETTINGS_YET = "#283: core/services/bot_settings.py does not exist yet"
-
-
 def _files_naming_the_log_channel() -> set[str]:
     found: set[str] = set()
     for path, _function, node in _nodes():
@@ -808,7 +803,6 @@ def _files_naming_the_log_channel() -> set[str]:
     return found
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_BOT_SETTINGS_YET)
 def test_only_the_router_writes_the_log_channel():
     """Every log line goes through `OutputRouter` (architecture.md, "Posting to Discord"), which
     keeps the rules for log lines in one place: no one is mentioned, a long record is split, and
@@ -1907,7 +1901,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
 }
 
 
-@pytest.mark.xfail(strict=True, reason="#283: ConfigService has no set_core_setting_on yet")
 def test_what_was_read_by_hand_is_still_what_it_was():
     """Each function read by hand is excused the statements that were read, and no more: one
     added since, or one gone, fails here until it is read again and the count set to match."""

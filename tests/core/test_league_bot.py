@@ -160,7 +160,6 @@ SETTING_KINDS = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#283: core's four /bot settings are not yet registered")
 def test_the_settings_changes_are_registered():
     """The builder registers the twenty-eight settings changes of core, results, weather and
     images, once each, and no other kind carrying ".setting." (#439, slice 7; #283, S13a): the
