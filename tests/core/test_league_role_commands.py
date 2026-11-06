@@ -545,15 +545,33 @@ async def test_a_fault_giving_the_replacement_leaves_the_role_saved(
     assert await stopped_job(db_path) is None
 
 
-async def test_a_base_role_replaced_by_everyone_is_given_to_nobody(tmp_path):
-    """Everybody holds @everyone already."""
-    db_path = await _make_db(tmp_path, stage="ONGOING", drivers=_TWO_DRIVERS)
-    role = _role()
+@pytest.mark.parametrize(
+    ("stored", "stage", "said"),
+    [
+        pytest.param(
+            OLD_ROLE, "ONGOING",
+            f"✅ **Base role** set to @everyone.\n{_REPLACED}\nEverybody holds it already.",
+            id="replacing-a-gone-role",
+        ),
+        pytest.param(
+            SERVER_ID, None, "ℹ️ Nothing changed: **Base role** is already @everyone.",
+            id="already-held",
+        ),
+    ],
+)
+async def test_a_base_role_replaced_by_everyone_is_given_to_nobody(tmp_path, stored, stage, said):
+    """Everybody holds @everyone already. Replacing a base role gone from the server while Season
+    4's configuration is fixed, or setting it while @everyone is already the base role, the reply
+    names it "@everyone", as Discord renders the server's default role, never as a role mention;
+    it carries no reminder that the league's other members need it, and no driver is given it."""
+    db_path = await _make_db(tmp_path, stage=stage, base_role=stored, drivers=_TWO_DRIVERS)
+    role = _role(SERVER_ID, "@everyone")
+    role.mention = "@everyone"
     role.is_default.return_value = True
 
     _bot, asked, guild = await _set(db_path, "base_role_id", role, old_role_gone=True)
 
-    assert "Everybody holds it already" in _reply(asked)
+    assert _reply(asked) == said
     for driver in guild.drivers.values():
         driver.add_roles.assert_not_awaited()
 
@@ -723,6 +741,7 @@ async def test_a_changed_base_role_is_handed_to_the_base_role_changed_hook(tmp_p
 
     assert handed == [(NEW_ROLE, guild, OLD_ROLE, role)]
     assert [c.args[0].id for c in _permission_calls(guild)] == [OLD_ROLE, NEW_ROLE]
+
 
 
 # ---------------------------------------------------------------------------
