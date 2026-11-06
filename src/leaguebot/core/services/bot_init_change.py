@@ -198,7 +198,7 @@ def _save(config: "ConfigService") -> Callable[[aiosqlite.Connection, StepContex
             )
             return StepResult(
                 result={"outcome": "already_configured"},
-                lines=(refusal_line(ctx.named, COMMAND, reply_reason(ALREADY_CONFIGURED)),),
+                lines=(refusal_line(ctx.named, ctx.what, reply_reason(ALREADY_CONFIGURED)),),
             )
 
         details = tuple(
