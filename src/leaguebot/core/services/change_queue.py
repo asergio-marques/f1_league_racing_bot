@@ -107,7 +107,7 @@ on its own. A request made while the queue is stopped is queued at the back and 
 queue is stopped.
 
 **A job that ends on a fault does not stop it** (`Step.on_fault`, `ChangeType.on_check_fault`). A
-settings change is one atomic save, and the work after it that the setting does not need (checking
+settings change, or `/bot init`'s claim, is one atomic save, and the work after it that the setting does not need (checking
 it against the templates, arming or removing a timed job) is work nothing later depends on: a fault
 leaves nothing half-done, nothing behind it waits on it, and the member can simply ask again. Where
 a step sets `on_fault`, `_step_failed` marks the job done with the result `on_fault` returns, in a

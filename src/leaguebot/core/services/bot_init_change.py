@@ -6,8 +6,8 @@ claims it, writes the four settings and the `BOT_INITIALISED` audit entry in one
 (`ConfigService.claim_on`, on the save's own connection), stamped with the queue's clock. A
 fault in it, or a check that raises as the change starts, ends the change on a fault rather
 than stopping the lane (`Step.on_fault`, `ChangeType.on_check_fault`, `NOTHING_SAVED`, as
-`setting_change` reuses them): no league admin role exists yet, before a first `/bot init`,
-for anyone to clear a stop with.
+`setting_change` reuses them): no league admin role is set while no server holds the league,
+before a first `/bot init` or after a pack, for anyone to clear a stop with.
 
 **Three refusals are the save's to judge, not the check's:**
 
