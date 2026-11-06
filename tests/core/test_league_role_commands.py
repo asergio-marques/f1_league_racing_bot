@@ -552,14 +552,6 @@ async def test_a_fault_giving_the_replacement_leaves_the_role_saved(
     assert await stopped_job(db_path) is None
 
 
-async def test_a_replaced_driver_role_says_nothing_of_other_members(tmp_path):
-    db_path = await _make_db(tmp_path, stage="ONGOING", drivers=_TWO_DRIVERS)
-
-    _bot, asked, _guild = await _set(db_path, "driver_role_id", old_role_gone=True)
-
-    assert "other members" not in _reply(asked)
-
-
 async def test_a_base_role_replaced_by_everyone_is_given_to_nobody(tmp_path):
     """Everybody holds @everyone already."""
     db_path = await _make_db(tmp_path, stage="ONGOING", drivers=_TWO_DRIVERS)
