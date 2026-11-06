@@ -1,17 +1,25 @@
-"""`season review` measured against the lineup template — 047 US2.
+"""The image module's answer to core's lineup question at season review: can the configured
+lineup template draw these divisions? — 047 US2 (#283).
 
-Two checks stood in `_lineup_problems` until v6.0.0, and both are withdrawn with the keyed
-template: the divisions measured against **each other** for uniformity, and the template
-measured against each division's team **names**. What remains is a count, and it is no
-longer gated on the `lineup` toggle: it reports a template that cannot draw the season,
-which is a fault whether or not that graphic is posted. It *is* still gated on the module.
+Core counts each division's race teams, in tier order, and the drivers seated in each, and asks
+(`tests/core/test_season_review_capacity.py`, where an empty seat going uncounted and the
+reserve team going unhanded are pinned). The image module measures the template and answers
+each problem as a sentence; core refuses the approval on them.
+
+Two checks stood here until v6.0.0, and both are withdrawn with the keyed template: the
+divisions measured against **each other** for uniformity, and the template measured against
+each division's team **names**. What remains is a count, and it is no longer gated on the
+`lineup` toggle: it reports a template that cannot draw the season, which is a fault whether or
+not that graphic is posted. It *is* still gated on the module.
 
 Covers:
   1. Divisions fielding different teams, and different numbers of them, pass (FR-019).
   2. A division exceeding the template's blocks fails, naming the division and the teams.
   3. A team seating more drivers than its block has slots fails, naming the team.
   4. The check runs with the `lineup` toggle **off**, and is silent with the module off.
-  5. A configured-but-empty seat beyond the block's slots does not fail it (FR-012).
+  5. An unusable template is not reported twice.
+
+Nothing here rasterises: the templates are built in memory and read as SVG.
 """
 from __future__ import annotations
 
@@ -19,9 +27,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
-
+NOT_YET = "#283: the image module answers no lineup question of the season review"
 SVG_NS = "http://www.w3.org/2000/svg"
+LINEUP = "lineup_template"
 
 
 def _template_bytes(blocks: int, seats: int, reserve_slots: int = 2) -> bytes:
@@ -38,179 +46,130 @@ def _template_bytes(blocks: int, seats: int, reserve_slots: int = 2) -> bytes:
     return "".join(parts).encode("utf-8")
 
 
-def _seat(occupied: bool):
-    return {"seat_number": 1, "discord_user_id": "42" if occupied else None}
+def _division(name: str, *teams: tuple[str, int]):
+    """What core hands for one division: its race teams in order, each with the drivers
+    seated in it."""
+    from leaguebot.core.services.image_drawing import DivisionTeams, TeamSeats
+
+    return DivisionTeams(name, tuple(TeamSeats(team, seated) for team, seated in teams))
 
 
-def _team(name: str, drivers: int, empty_seats: int = 0):
-    seats = [_seat(True) for _ in range(drivers)] + [_seat(False) for _ in range(empty_seats)]
-    return {"name": name, "is_reserve": False, "max_seats": len(seats), "seats": seats}
+def _drawing(tmp_path, *, blocks=4, seats=2, lineup_on=True, images=True, valid=True):
+    """The image module's implementation of core's protocol, over stand-ins for its own
+    services: the images module *images*, the `lineup` aspect *lineup_on*, and a lineup
+    template of *blocks* blocks of *seats* seat slots, *valid* or not."""
+    from leaguebot.image.services.image_drawing import ImageDrawing
 
-
-def _bot(tmp_path, divisions, teams_by_division, *, blocks=4, seats=2, lineup_on=True):
-    path = tmp_path / "lineup_template.svg"
+    path = tmp_path / f"{LINEUP}.svg"
     path.write_bytes(_template_bytes(blocks, seats))
 
-    bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    bot.image_config_service.get_toggles = AsyncMock(return_value={"lineup": lineup_on})
-    bot.image_validity_service.template_reports = AsyncMock(
-        return_value={"lineup_template": MagicMock(valid=True, resolved_path=path)}
+    modules = MagicMock()
+    modules.is_images_enabled = AsyncMock(return_value=images)
+    config = MagicMock()
+    config.get_toggles = AsyncMock(return_value={"lineup": lineup_on})
+    config.is_aspect_enabled = AsyncMock(side_effect=lambda aspect: lineup_on)
+    validity = MagicMock()
+    validity.template_reports = AsyncMock(return_value={
+        LINEUP: MagicMock(
+            valid=valid, resolved_path=path if valid else None, template_key=LINEUP
+        )
+    })
+    return ImageDrawing(
+        modules=modules, config=config, validity=validity,
+        renderer=MagicMock(), post_log=AsyncMock(), db_path="",
     )
-    bot.season_service.get_divisions = AsyncMock(
-        return_value=[MagicMock(id=d["id"], tier=d["tier"], name=d["name"]) for d in divisions]
-    )
-    bot.team_service.get_division_teams = AsyncMock(
-        side_effect=lambda division_id: teams_by_division[division_id]
-    )
-    return bot
 
 
-async def _problems(bot):
-    return await SeasonCog._lineup_problems(MagicMock(bot=bot), season_id=1)
+def _too_many_teams():
+    return [
+        _division("Elite", *((f"Team {n}", 1) for n in range(1, 7))),
+        _division("Challenger", ("Alpine", 1)),
+    ]
 
 
-DIVISIONS = [
-    {"id": 10, "tier": 1, "name": "Elite"},
-    {"id": 20, "tier": 2, "name": "Challenger"},
-]
+TOO_MANY = (
+    "division **Elite** fields 6 teams but the lineup template declares 4 blocks; "
+    "**Team 5**, **Team 6** would be dropped"
+)
 
 
 # ── 1. Divisions may differ in composition (FR-019) ───────────────────────
 
 
-@pytest.mark.parametrize("teams_by_division", [
+@pytest.mark.parametrize("divisions", [
     pytest.param(
-        {
-            10: [_team("Red Bull", 2), _team("Ferrari", 2)],
-            20: [_team("Haas", 2), _team("Alpine", 2)],
-        },
+        [("Elite", ("Red Bull", 2), ("Ferrari", 2)), ("Challenger", ("Haas", 2), ("Alpine", 2))],
         id="different team names",
     ),
     pytest.param(
-        {
-            10: [_team("Red Bull", 2), _team("Ferrari", 2), _team("Haas", 2)],
-            20: [_team("Alpine", 1)],
-        },
+        [("Elite", ("Red Bull", 2), ("Ferrari", 2), ("Haas", 2)), ("Challenger", ("Alpine", 1))],
         id="different numbers of teams",
     ),
 ])
-@pytest.mark.asyncio
-async def test_divisions_fielding_different_teams_pass(tmp_path, teams_by_division):
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_divisions_fielding_different_teams_pass(tmp_path, divisions):
     """Divisions may field teams of other names, or another number of them: the second is the
-    very thing the withdrawn uniformity rule refused."""
-    bot = _bot(tmp_path, DIVISIONS, teams_by_division)
+    very thing the withdrawn uniformity rule refused. A team seating as many drivers as its
+    block has slots fits."""
+    drawing = _drawing(tmp_path)
 
-    assert await _problems(bot) == []
+    assert await drawing.lineup_review_problems(
+        [_division(name, *teams) for name, *teams in divisions]
+    ) == []
 
 
 # ── 2 & 3. What still fails, and what it names ────────────────────────────
 
 
-@pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_division_exceeding_the_blocks_fails_naming_the_teams(tmp_path):
-    bot = _bot(
-        tmp_path,
-        DIVISIONS,
-        {
-            10: [_team(f"Team {n}", 1) for n in range(1, 7)],
-            20: [_team("Alpine", 1)],
-        },
-        blocks=4,
-    )
+    drawing = _drawing(tmp_path, blocks=4)
 
-    problems = await _problems(bot)
-
-    assert len(problems) == 1
-    assert "Elite" in problems[0]
-    assert "Team 5" in problems[0] and "Team 6" in problems[0]
-    assert "4 blocks" in problems[0]
+    assert await drawing.lineup_review_problems(_too_many_teams()) == [TOO_MANY]
 
 
-@pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_team_seating_more_drivers_than_its_block_fails_naming_the_team(tmp_path):
-    bot = _bot(
-        tmp_path,
-        DIVISIONS,
-        {10: [_team("Red Bull", 3)], 20: [_team("Alpine", 1)]},
-        blocks=4,
-        seats=2,
-    )
+    drawing = _drawing(tmp_path, blocks=4, seats=2)
 
-    problems = await _problems(bot)
-
-    assert len(problems) == 1
-    assert "Red Bull" in problems[0]
-    assert "3 drivers" in problems[0]
+    assert await drawing.lineup_review_problems(
+        [_division("Elite", ("Red Bull", 3)), _division("Challenger", ("Alpine", 1))]
+    ) == [
+        "division **Elite**: **Red Bull** seats 3 drivers but block 1 of the lineup "
+        "template declares 2 seat slots"
+    ]
 
 
-# ── 4. Not gated on the toggle (FR-023) ───────────────────────────────────
+# ── 4. Not gated on the toggle (FR-023), gated on the module ──────────────
 
 
-@pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_check_runs_with_the_lineup_toggle_off(tmp_path):
     """It reports a template that cannot draw the season, not a restriction on the season."""
-    bot = _bot(
-        tmp_path,
-        DIVISIONS,
-        {
-            10: [_team(f"Team {n}", 1) for n in range(1, 7)],
-            20: [_team("Alpine", 1)],
-        },
-        blocks=4,
-        lineup_on=False,
-    )
+    drawing = _drawing(tmp_path, blocks=4, lineup_on=False)
 
-    problems = await _problems(bot)
-
-    assert len(problems) == 1
-    assert "Elite" in problems[0]
+    assert await drawing.lineup_review_problems(_too_many_teams()) == [TOO_MANY]
 
 
-# ── 5. A configured-but-empty seat drops nobody (FR-012) ──────────────────
-
-
-@pytest.mark.asyncio
-async def test_a_configured_empty_seat_beyond_the_block_does_not_fail(tmp_path):
-    """Three configured seats, two filled, a block of two. Nobody is dropped."""
-    bot = _bot(
-        tmp_path,
-        DIVISIONS,
-        {10: [_team("Red Bull", 2, empty_seats=1)], 20: [_team("Alpine", 1)]},
-        blocks=4,
-        seats=2,
-    )
-
-    assert await _problems(bot) == []
-
-
-@pytest.mark.asyncio
-async def test_an_unusable_template_is_not_reported_twice(tmp_path):
-    """The review's own render already names it; saying so again tells nobody anything."""
-    bot = _bot(tmp_path, DIVISIONS, {10: [], 20: []})
-    bot.image_validity_service.template_reports = AsyncMock(
-        return_value={"lineup_template": MagicMock(valid=False, resolved_path=None)}
-    )
-
-    assert await _problems(bot) == []
-
-
-@pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_check_is_silent_where_the_image_module_is_disabled(tmp_path):
     """FR-023 withdraws the *toggle* gate and says nothing of module enablement.
 
     A league that has not enabled image generation has no template to measure, and telling
     it about one would be noise about a feature it does not use.
     """
-    bot = _bot(
-        tmp_path,
-        DIVISIONS,
-        {
-            10: [_team(f"Team {n}", 1) for n in range(1, 7)],
-            20: [_team("Alpine", 1)],
-        },
-        blocks=4,
-    )
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    drawing = _drawing(tmp_path, blocks=4, images=False)
 
-    assert await _problems(bot) == []
+    assert await drawing.lineup_review_problems(_too_many_teams()) == []
+
+
+# ── 5. An unusable template ───────────────────────────────────────────────
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_an_unusable_template_is_not_reported_twice(tmp_path):
+    """The review's own render already names it; saying so again tells nobody anything. Six
+    teams against its four blocks are not measured."""
+    drawing = _drawing(tmp_path, blocks=4, valid=False)
+
+    assert await drawing.lineup_review_problems(_too_many_teams()) == []
