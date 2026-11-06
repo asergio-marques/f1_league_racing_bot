@@ -321,8 +321,10 @@ async def test_the_stand_down_the_permissions_and_the_refresh_follow_the_save_as
     """The hub is 7921, its panel 7930 standing; the manager points it at 7920. While the change
     waits on the queue, nothing is touched and it is the only change asked. Once the queue has
     run it: the old hub's overwrites are cleared, then the new hub's permissions set, and then a
-    refresh of the panel is asked of the queue as the bot's own change, after the setting's, naming
-    the command and the old panel 7930 in 7921 for it to take down once the new is up."""
+    refresh of the panel is asked of the queue as the bot's own change, after the setting's, in
+    today's words ("posting the hub panel", which the log channel's lines about it name) and on
+    behalf of the manager who ran the command, naming the command and the old panel 7930 in 7921
+    for it to take down once the new is up."""
     await _configure(db_path, hub_channel_id=OLD_HUB, hub_message_id=OLD_PANEL)
     order: list[str] = []
     old, new = _channel(OLD_HUB), _channel(HUB)
@@ -339,6 +341,7 @@ async def test_the_stand_down_the_permissions_and_the_refresh_follow_the_save_as
     setting, refresh = await change_rows(db_path)
     assert setting["kind"] == "core.setting.hub_channel_id"
     assert (refresh["kind"], refresh["origin"]) == (hub_service.HUB_REFRESH, "BOT")
+    assert (refresh["what"], refresh["actor_id"]) == ("posting the hub panel", 77)
     payload = json.loads(refresh["payload"])
     assert "/bot hub-channel" in payload["command"]
     assert (payload["old_channel_id"], payload["old_message_id"]) == (OLD_HUB, OLD_PANEL)
