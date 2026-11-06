@@ -30,7 +30,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.services.team_service import TeamService
 
-NOT_YET = "#283: the season review's capacity checks still measure the image module's templates"
 SEASON_ID = 1
 PROBLEM = "The stub template draws too few"
 REMEDY = "Enlarge the stub template."
@@ -226,7 +225,6 @@ async def test_a_round_past_the_calendar_is_refused_in_core_s_words(tmp_path, fo
     pytest.param(("Division 1", "Premier"), "Premier", id="longest sorts last"),
     pytest.param(("Short", "Long"), "Long", id="longest sorts first"),
 ])
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_calendar_and_the_sheet_ask_of_the_division_holding_the_most_rounds(
     tmp_path, names, longest
 ):
@@ -253,7 +251,6 @@ async def test_the_calendar_and_the_sheet_ask_of_the_division_holding_the_most_r
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_attendance_warnings_ask_of_the_season_s_counts_in_review_order(tmp_path):
     """The attendance sheet of the division holding the most rounds; the two standings of the
     division seating the most drivers, the one fielding the most race teams and the one holding
@@ -283,7 +280,6 @@ async def test_the_attendance_warnings_ask_of_the_season_s_counts_in_review_orde
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_season_with_no_divisions_is_asked_only_of_the_check_in_call(tmp_path):
     """No division holds a calendar, a sheet or standings, so nothing is asked of them; a round
     is run over two sessions at the least, so the check-in call is still asked of two."""
@@ -299,7 +295,6 @@ async def test_a_season_with_no_divisions_is_asked_only_of_the_check_in_call(tmp
     pytest.param(["NORMAL", "ENDURANCE", "MYSTERY"], id="normal, endurance and mystery"),
     pytest.param(["MYSTERY"], id="mystery alone"),
 ])
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_season_with_no_sprint_asks_the_check_in_call_of_two_sessions(tmp_path, formats):
     """A sprint round is run over four sessions and every other format over two, a mystery
     round among them: a season holding rounds but no sprint asks the check-in call of two."""
@@ -310,7 +305,6 @@ async def test_a_season_with_no_sprint_asks_the_check_in_call_of_two_sessions(tm
     assert drawing.asked[-1] == ("checkin_review_problem", 2)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_season_the_templates_draw_earns_no_warning_and_no_blank_line(tmp_path):
     drawing = _Drawing()
     cog = _cog(await _seed(tmp_path, SEASON), drawing)
@@ -356,7 +350,6 @@ FAULTS = [
 
 
 @pytest.mark.parametrize("fault,question,check,nothing", FAULTS)
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_check_that_cannot_run_lets_the_season_through(
     tmp_path, monkeypatch, caplog, fault, question, check, nothing
 ):

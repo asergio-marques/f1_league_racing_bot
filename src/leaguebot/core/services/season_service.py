@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date, datetime
 
 import aiosqlite
@@ -28,6 +29,7 @@ from leaguebot.core.models.season import (
     status_of_stage,
 )
 from leaguebot.core.models.session import Session, SessionType, SESSIONS_BY_FORMAT
+from leaguebot.core.services.image_drawing import Held
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.input_validator import NAME
 
@@ -100,6 +102,19 @@ def division_amendment_changes_nothing(
 
 class SeasonImmutableError(Exception):
     """Raised when a mutation is attempted on a COMPLETED (archived) season."""
+
+
+@dataclass(frozen=True)
+class SeasonCapacityCounts:
+    """What the season review's capacity warnings ask of the image module
+    (`SeasonService.capacity_counts`): the division holding the most rounds, the most
+    seated drivers and the most race teams, each or None where the season holds no
+    division, and the most sessions any round of the season is run over."""
+
+    longest_calendar: Held | None
+    most_drivers: Held | None
+    most_teams: Held | None
+    longest_sessions: int
 
 
 class SeasonService:
@@ -760,6 +775,58 @@ class SeasonService:
             div.penalty_channel_id = r["penalty_channel_id"]
             result.append(div)
         return result
+
+    async def capacity_counts(self, season_id: int) -> SeasonCapacityCounts:
+        """What the season review's warnings ask of the image module: the division holding
+        the most rounds, the most seated drivers (reserves among them) and the most race
+        teams (the reserve team not among them), and the most sessions any round of the
+        season is run over — four where any round is a sprint, two otherwise, never fewer
+        even where the season holds no round at all.
+
+        Every division count is None where the season holds no division: there is then
+        nothing for the calendar, the sheet or the standings to be asked about, and the
+        season review asks only the check-in call's sessions.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT d.name AS name, "
+                "       (SELECT COUNT(*) FROM rounds r WHERE r.division_id = d.id) "
+                "           AS rounds, "
+                "       (SELECT COUNT(*) FROM driver_season_assignments dsa "
+                "         WHERE dsa.division_id = d.id) AS drivers, "
+                "       (SELECT COUNT(*) FROM team_instances ti "
+                "         WHERE ti.division_id = d.id AND ti.is_reserve = 0) AS teams "
+                "FROM divisions d WHERE d.season_id = ?",
+                (season_id,),
+            )
+            divisions = await cursor.fetchall()
+
+            cursor = await db.execute(
+                "SELECT COUNT(*) AS sprints FROM rounds r "
+                "JOIN divisions d ON d.id = r.division_id "
+                "WHERE d.season_id = ? AND r.format = ?",
+                (season_id, RoundFormat.SPRINT.value),
+            )
+            sprint_row = await cursor.fetchone()
+
+        longest_sessions = 4 if (sprint_row and (sprint_row["sprints"] or 0) > 0) else 2
+
+        if not divisions:
+            return SeasonCapacityCounts(
+                longest_calendar=None, most_drivers=None, most_teams=None,
+                longest_sessions=longest_sessions,
+            )
+
+        longest = max(divisions, key=lambda d: d["rounds"] or 0)
+        most_seated = max(divisions, key=lambda d: d["drivers"] or 0)
+        most_fielded = max(divisions, key=lambda d: d["teams"] or 0)
+
+        return SeasonCapacityCounts(
+            longest_calendar=Held(longest["name"], longest["rounds"] or 0),
+            most_drivers=Held(most_seated["name"], most_seated["drivers"] or 0),
+            most_teams=Held(most_fielded["name"], most_fielded["teams"] or 0),
+            longest_sessions=longest_sessions,
+        )
 
     async def rename_division(self, division_id: int, new_name: str) -> None:
         """Update a division's name."""

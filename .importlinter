@@ -94,15 +94,12 @@ ignore_imports =
     leaguebot.core.utils.league_bot -> leaguebot.*.services.*
     # #283: image, which core is to ask for its graphics through the protocol it declares
     # (architecture.md, "How modules and core fit together"):
-    leaguebot.core.cogs.season_cog -> leaguebot.image.models.image_catalogues
     leaguebot.core.cogs.season_cog -> leaguebot.image.models.image_constants
     leaguebot.core.cogs.season_cog -> leaguebot.image.models.image_module
     leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_config_service
     leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_lineup_post
     leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_render_service
-    leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_standings_service
     leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_validity_service
-    leaguebot.core.cogs.season_cog -> leaguebot.image.utils.svg_document
     # #283: results:
     leaguebot.core.cogs.season_cog -> leaguebot.results.services.season_points_service
     # #283: signup:

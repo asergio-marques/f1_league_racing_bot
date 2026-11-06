@@ -121,9 +121,6 @@ from leaguebot.core.utils.round_import import (
 )
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
-    from leaguebot.image.models.image_catalogues import FieldCatalogue
     from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint
 
 log = logging.getLogger(__name__)
@@ -191,19 +188,6 @@ def _pending_to_division_models(cfg: PendingConfig) -> list[Division]:
 #: a reply over 2000 characters is refused by Discord whole rather than truncated, which
 #: would lose the report entirely.
 _MAX_REPORTED_ERRORS = 25
-
-
-def _rows_and_rounds(catalogue: FieldCatalogue, path: Path) -> tuple[int, int]:
-    """The rows and the round columns the standings template at *path* draws, nought for none.
-
-    Parsed and counted here, in the worker thread the review runs it in, so that the tree never
-    leaves the thread that parsed it (`load_svg`). Raises `CapacityError` for a template that
-    cannot be counted.
-    """
-    from leaguebot.image.utils.svg_document import load_svg
-
-    root = load_svg(path)
-    return catalogue.capacity(root) or 0, catalogue.column_capacity(root) or 0
 
 
 def _format_import_errors(errors: list[str]) -> str:
@@ -933,243 +917,102 @@ class SeasonCog(commands.Cog):
         against the greatest round count any division holds; which division is actually
         drawn is decided later, and the same divergence is fatal at that moment. Reporting
         it here as a failure would refuse a season that may well draw perfectly.
+
+        Counts in a core service and asks the drawing on the bot. A check that cannot run —
+        its own count, or the drawing — lets the season through with the full error in the
+        host's log (`PlacementService._ask_drawing`'s stated exception, architecture.md, "A
+        catch-all error handler").
         """
-        from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
-
         try:
-            config = await self.bot.image_config_service.get_config()
-            if config is None or not await self.bot.image_config_service.is_aspect_enabled(
-                "calendar"
-            ):
+            counts = await self.bot.season_service.capacity_counts(season_id)
+            if counts.longest_calendar is None:
                 return []
-
-            reports = await self.bot.image_validity_service.template_reports()
-            report = reports.get("calendar_template")
-            if report is None or not report.valid or report.resolved_path is None:
-                return []  # already named by the template problems list
-
-            from leaguebot.image.utils.svg_document import load_svg, off_the_loop
-
-            # Parsed and counted in one worker thread: the tree never leaves it (`load_svg`).
-            capacity = await off_the_loop(
-                lambda path: catalogue_for("calendar_template").capacity(load_svg(path)),
-                report.resolved_path,
+            problem = await self.bot.image_drawing.calendar_review_problem(
+                counts.longest_calendar
             )
-            if not capacity:
-                return []
-
-            async with get_connection(self.bot.db_path) as db:
-                cursor = await db.execute(
-                    "SELECT d.name AS name, COUNT(r.id) AS rounds "
-                    "FROM divisions d LEFT JOIN rounds r ON r.division_id = d.id "
-                    "WHERE d.season_id = ? GROUP BY d.id ORDER BY rounds DESC LIMIT 1",
-                    (season_id,),
-                )
-                row = await cursor.fetchone()
-            if row is None:
-                return []
-            held = row["rounds"] or 0
-            if held <= capacity:
-                return []
-
-            return [
-                f"  ⚠️ Calendar template draws {capacity} round(s); "
-                f"`{row['name']}` holds {held}. That division's calendar cannot be drawn "
-                f"as an image and will be posted as text. Enlarge the template to draw it.",
-                "",
-            ]
-        except CapacityError:
-            return []  # an uncountable template is Layer 2's to report, not this
-        except Exception as exc:  # noqa: BLE001 — a review must never fail on this
-            log.error("season review: calendar capacity check failed: %s", exc, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
+            log.error("season review: calendar capacity check could not run: %s", exc, exc_info=True)
             return []
+
+        if problem is None:
+            return []
+        return [f"  ⚠️ {problem.problem}. {problem.remedy}", ""]
 
     async def _attendance_capacity_warning(
         self, season_id: int
     ) -> list[str]:
-        """Compare the two attendance templates against the season's most demanding data.
+        """Compare the attendance sheet, the standings and the check-in call against the
+        season's most demanding data.
 
-        Two stand-in comparisons, both **warnings** and never refusals (Constitution XIV.9):
-        the sheet's rounds against the greatest number any division of the season holds, and
-        the check-in call's sessions against the largest number any round of it holds. Which
-        division and which round are actually drawn is decided later, and the same divergence
-        is fatal at that moment.
+        Warnings, never refusals (Constitution XIV.9): the sheet's rounds against the
+        division holding the most, the standings against the division seating the most
+        drivers and the one fielding the most race teams, and the check-in call's sessions
+        against the largest number any round of the season is run over. Which division and
+        which round are actually drawn is decided later, and the same divergence is fatal
+        at that moment.
 
         The sheet's **rows** are not compared here. They are guarded at the command that would
         overflow them — a driver assignment — which is the earlier moment XIV.12 requires, and
         where the change can still be left unapplied.
+
+        One check, as `_calendar_capacity_warning` is: a fault in the season's own counts or
+        in asking the drawing drops the sheet, the standings and the check-in call together
+        and lets the review through, with the full error in the host's log (a stated
+        exception beside `PlacementService._ask_drawing`'s, architecture.md, "A catch-all
+        error handler").
         """
-        from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
-
-        lines: list[str] = []
         try:
-            from leaguebot.image.utils.svg_document import load_svg, off_the_loop
+            counts = await self.bot.season_service.capacity_counts(season_id)
+            lines: list[str] = []
 
-            reports = await self.bot.image_validity_service.template_reports()
+            if counts.longest_calendar is not None:
+                problem = await self.bot.image_drawing.sheet_review_problem(
+                    counts.longest_calendar
+                )
+                if problem is not None:
+                    lines.append(f"  ⚠️ {problem.problem}. {problem.remedy}")
 
-            # The sheet's round grid, against the season's longest calendar.
-            if await self.bot.image_config_service.is_aspect_enabled(
-                "attendance"
+            if (
+                counts.most_drivers is not None
+                and counts.most_teams is not None
+                and counts.longest_calendar is not None
             ):
-                report = reports.get("attendance_template")
-                if report is not None and report.valid and report.resolved_path:
-                    # Parsed and counted in one worker thread: the tree never leaves it.
-                    declared = await off_the_loop(
-                        lambda path: catalogue_for("attendance_template").column_capacity(
-                            load_svg(path)
-                        ),
-                        report.resolved_path,
-                    )
-                    # Nought means the template draws no grid at all, which is a legitimate
-                    # choice (XIV.3) and never a divergence.
-                    if declared:
-                        async with get_connection(self.bot.db_path) as db:
-                            cursor = await db.execute(
-                                "SELECT d.name AS name, COUNT(r.id) AS rounds "
-                                "FROM divisions d LEFT JOIN rounds r ON r.division_id = d.id "
-                                "WHERE d.season_id = ? GROUP BY d.id "
-                                "ORDER BY rounds DESC LIMIT 1",
-                                (season_id,),
-                            )
-                            row = await cursor.fetchone()
-                        held = (row["rounds"] if row else 0) or 0
-                        if row is not None and held > declared:
-                            lines.append(
-                                f"  ⚠️ Attendance sheet template draws {declared} round "
-                                f"column(s); `{row['name']}` holds {held}. That division's "
-                                f"sheet cannot be drawn as an image and will be posted as "
-                                f"text. Enlarge the template to draw it."
-                            )
+                lines += await self._standings_capacity_lines(
+                    counts.most_drivers, counts.most_teams, counts.longest_calendar
+                )
 
-            # The standings, against the season's largest division and its calendar. Both
-            # championships are reported apart, never as one pair (FR-045): they are two
-            # files, and a manager told "the standings template" would not know which to
-            # enlarge.
-            if await self.bot.image_config_service.is_aspect_enabled(
-                "standings"
-            ):
-                lines += await self._standings_capacity_lines(season_id, reports)
-
-            # The call's session list, against the season's largest round.
-            if await self.bot.image_config_service.is_aspect_enabled(
-                "rsvp"
-            ):
-                report = reports.get("rsvp_template")
-                if report is not None and report.valid and report.resolved_path:
-                    # Parsed and counted in one worker thread: the tree never leaves it.
-                    declared = await off_the_loop(
-                        lambda path: catalogue_for("rsvp_template").capacity(load_svg(path)),
-                        report.resolved_path,
-                    )
-                    if declared:
-                        async with get_connection(self.bot.db_path) as db:
-                            cursor = await db.execute(
-                                "SELECT COUNT(*) AS sprints FROM rounds r "
-                                "JOIN divisions d ON d.id = r.division_id "
-                                "WHERE d.season_id = ? AND r.format = 'SPRINT'",
-                                (season_id,),
-                            )
-                            row = await cursor.fetchone()
-                        # A sprint round is run over four sessions; every other format over
-                        # two. The largest the season holds is what the template must carry.
-                        needed = 4 if (row and (row["sprints"] or 0) > 0) else 2
-                        if needed > declared:
-                            lines.append(
-                                f"  ⚠️ Check-in template names {declared} session(s); this "
-                                f"season holds a round run over {needed}. That call cannot "
-                                f"be drawn as an image and will be posted without one. "
-                                f"Enlarge the template to draw it."
-                            )
+            call_problem = await self.bot.image_drawing.checkin_review_problem(
+                counts.longest_sessions
+            )
+            if call_problem is not None:
+                lines.append(f"  ⚠️ {call_problem.problem}. {call_problem.remedy}")
 
             if lines:
                 lines.append("")
             return lines
-        except CapacityError:
-            return []  # an uncountable template is Layer 2's to report, not this
-        except Exception as exc:  # noqa: BLE001 — a review must never fail on this
-            log.error("season review: attendance capacity check failed: %s", exc, exc_info=True)
-            return []
-
-    async def _standings_capacity_lines(self, season_id: int, reports) -> list[str]:
-        """What the two standings templates could not draw for this season (FR-043).
-
-        Three ceilings, each reported in its own terms and against its own file: the drivers
-        template's rows against the largest division's classification, the constructors
-        template's rows against its team count, and each template's round columns against the
-        longest calendar — the grid draws every round the division holds, run or not.
-
-        The drivers **row** ceiling is also guarded at a driver assignment, which is the
-        earlier moment XIV.12 asks for. This is the season-wide view of the same rule, and
-        the only place the constructors ceiling can be caught at all: seating a driver adds
-        no team.
-        """
-        from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
-        from leaguebot.image.models.image_constants import TEMPLATE_LABELS
-        from leaguebot.image.services.image_standings_service import (
-            CONSTRUCTORS_TEMPLATE_KEY,
-            DRIVERS_TEMPLATE_KEY,
-        )
-        from leaguebot.image.utils.svg_document import off_the_loop
-
-        async with get_connection(self.bot.db_path) as db:
-            cursor = await db.execute(
-                "SELECT d.name AS name, "
-                "       (SELECT COUNT(*) FROM driver_season_assignments dsa "
-                "         WHERE dsa.division_id = d.id) AS drivers, "
-                "       (SELECT COUNT(*) FROM team_instances ti "
-                "         WHERE ti.division_id = d.id AND ti.is_reserve = 0) AS teams, "
-                "       (SELECT COUNT(*) FROM rounds r WHERE r.division_id = d.id) AS rounds "
-                "FROM divisions d WHERE d.season_id = ?",
-                (season_id,),
+        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
+            log.error(
+                "season review: attendance capacity check could not run: %s", exc, exc_info=True
             )
-            divisions = await cursor.fetchall()
-
-        if not divisions:
             return []
 
-        lines: list[str] = []
-        for template_key, column in (
-            (DRIVERS_TEMPLATE_KEY, "drivers"),
-            (CONSTRUCTORS_TEMPLATE_KEY, "teams"),
-        ):
-            report = reports.get(template_key)
-            if report is None or not report.valid or not report.resolved_path:
-                continue
-            catalogue = catalogue_for(template_key)
-            label = TEMPLATE_LABELS.get(template_key, template_key)
+    async def _standings_capacity_lines(
+        self, drivers, teams, longest
+    ) -> list[str]:
+        """What the two standings templates could not draw for this season (FR-043), worded
+        around the image module's answer.
 
-            # Read through the same two counters ``build_fill_spec`` reads, so what the
-            # review promises and what the render does cannot disagree (XIV.10).
-            try:
-                declared_rows, declared_rounds = await off_the_loop(
-                    _rows_and_rounds, catalogue, report.resolved_path
-                )
-            except CapacityError:
-                continue  # an uncountable template is Layer 2's to report, not this
-
-            worst = max(divisions, key=lambda d: d[column] or 0)
-            held = worst[column] or 0
-            if declared_rows and held > declared_rows:
-                lines.append(
-                    f"  ⚠️ **{label}** draws {declared_rows} row(s); `{worst['name']}` "
-                    f"holds {held}. That division's standings cannot be drawn as an image "
-                    f"and will be posted as text. Enlarge the template to draw it."
-                )
-
-            # Nought round columns means the template draws no season grid, which is a
-            # legitimate choice (XIV.3) and never a divergence.
-            if declared_rounds:
-                longest = max(divisions, key=lambda d: d["rounds"] or 0)
-                rounds_held = longest["rounds"] or 0
-                if rounds_held > declared_rounds:
-                    lines.append(
-                        f"  ⚠️ **{label}** draws {declared_rounds} round column(s); "
-                        f"`{longest['name']}` holds {rounds_held}. That division's "
-                        f"standings cannot be drawn as an image and will be posted as "
-                        f"text. Enlarge the template to draw it."
-                    )
-
-        return lines
+        *drivers* is the division seating the most, *teams* the one fielding the most race
+        teams, and *longest* the one holding the most rounds — each `Held`, from
+        `SeasonService.capacity_counts`. The drivers **row** ceiling is also guarded at a
+        driver assignment, which is the earlier moment XIV.12 asks for. This is the
+        season-wide view of the same rule, and the only place the constructors ceiling can
+        be caught at all: seating a driver adds no team.
+        """
+        problems = await self.bot.image_drawing.standings_review_problems(
+            drivers, teams, longest
+        )
+        return [f"  ⚠️ {problem.problem}. {problem.remedy}" for problem in problems]
 
     async def _build_image_review_section(self) -> list[str]:
         """The image module's addendum to `/season placements-review` (FR-033).
