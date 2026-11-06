@@ -489,9 +489,6 @@ async def test_template_relocation(module_service, config_service, template_dir)
         await saves.set_field(config_service, column, TEMPLATE_COLUMNS[column])
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the image module's drawing does not yet answer the review's section"
-)
 async def test_season_review_and_config_view_agree(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -575,9 +572,6 @@ async def test_season_review_and_config_view_agree(
         )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the image module's drawing does not yet answer the review's section"
-)
 def test_the_review_names_every_configured_asset_directory():
     """`/season placements-review` states where each asset class is read from.
 

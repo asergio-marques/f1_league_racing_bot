@@ -39,7 +39,9 @@ from leaguebot.image.models.image_catalogues import (
     row_capacity_problem,
 )
 from leaguebot.image.models.image_constants import (
+    ASPECT_LABELS,
     ASSET_DIRECTORIES,
+    ASSET_LABELS,
     TEMPLATE_COLUMNS,
     TEMPLATE_LABELS,
 )
@@ -65,7 +67,12 @@ from leaguebot.image.services.image_standings_post import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
 )
-from leaguebot.image.services.image_validity_service import ImageValidityService
+from leaguebot.image.services.image_validity_service import (
+    ImageValidityService,
+    plain_reason,
+    plain_remedy,
+    templates_of_enabled_aspects,
+)
 from leaguebot.image.utils.image_naming import stem_for_drawing
 from leaguebot.image.utils.svg_document import off_the_loop
 
@@ -688,3 +695,195 @@ class ImageDrawing:
                 signature.append([column, value, "unresolvable"])
 
         return signature
+
+    # ── What the season reviews ask of the image configuration ──────────────
+
+    def rasteriser_fault(self) -> str | None:
+        """What is wrong with the host's drawing program, in these words, or None where there is
+        nothing wrong (core/services/image_drawing.py)."""
+        from leaguebot.image.services.image_render_service import (
+            CONVERTER_NAME,
+            converter_available,
+        )
+
+        if converter_available():
+            return None
+        return f"{CONVERTER_NAME} is not installed on this host."
+
+    async def review_section(self) -> list[str]:
+        """Both season reviews' image section, beneath core's own heading
+        (core/services/image_drawing.py): built from the same `AspectStatus` list
+        `/images config view` renders, so a divergence between the two surfaces is impossible
+        by construction. Template detail is summarised rather than repeated in full — a season
+        review is already long, and `/images config view` is where the sixteen lines belong.
+
+        Lets a fault reading the configuration out, for the caller to state the section as
+        unreadable in its own words.
+        """
+        from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
+
+        lines: list[str] = []
+
+        # Imported here, not at module level, so a test's `monkeypatch.setattr` on
+        # `image_render_service.converter_available` is picked up (as `rasteriser_fault`'s
+        # own import is, for the same reason).
+        from leaguebot.image.services.image_render_service import (
+            CONVERTER_NAME,
+            converter_available,
+        )
+
+        if not converter_available():
+            lines.append(
+                f"  ⛔ {CONVERTER_NAME} is not installed on this host — "
+                f"no image will be generated until it is."
+            )
+
+        statuses = await self._validity.aspect_statuses()
+        reports = await self._validity.template_reports()
+        directories = await self._validity.directory_reports()
+        config = await self._config.get_config()
+
+        icons = {STATE_ENABLED: "✅", STATE_DISABLED: "❌"}
+        for status in statuses:
+            icon = icons.get(status.state, "⚠️")
+            lines.append(f"  {icon} {ASPECT_LABELS[status.aspect]}")
+            for reason in status.reasons:
+                lines.append(f"      ↳ {reason}")
+
+        invalid = [r for r in reports.values() if not r.valid]
+        lines.append(
+            f"  Templates: {len(reports) - len(invalid)}/{len(reports)} resolve"
+        )
+
+        # FR-008: name each one. A count tells a manager nothing about what to fix, and
+        # this is the report they read before approving — the approval refuses on the
+        # same findings, so seeing them here is what lets them act first.
+        #
+        # Split by whether the aspect drawing the template is switched on, because that
+        # is what decides whether the fault stops the season. A template beneath a
+        # switched-off aspect is still named: it is a real fault a manager will meet the
+        # moment they switch that aspect on, and finding it then — after the season is
+        # running — is worse than reading it here.
+        if invalid:
+            drawn = templates_of_enabled_aspects(await self._config.get_toggles())
+
+            def _detail(report) -> str:
+                label = TEMPLATE_LABELS.get(report.template_key, report.template_key)
+                return (
+                    f"      • **{label}**: {plain_reason(report)}. "
+                    f"{plain_remedy(report)}"
+                )
+
+            blocking = [r for r in reports.values() if not r.valid and r.template_key in drawn]
+            dormant = [r for r in reports.values() if not r.valid and r.template_key not in drawn]
+
+            if blocking:
+                lines.append("  ⛔ These block approval:")
+                lines += [_detail(report) for report in blocking]
+            if dormant:
+                lines.append(
+                    "  ⚠️ These do not block approval — the output that draws them is "
+                    "switched off, so nothing posts them. Fix them before switching it on:"
+                )
+                lines += [_detail(report) for report in dormant]
+
+        # FR-033: where the assets are read from. The paths are configuration a manager
+        # sets once and then cannot see anywhere in this report, and a graphic that draws
+        # placeholders because a folder was renamed looks exactly like one whose artwork
+        # is missing. Naming the directory is what separates the two.
+        #
+        # Summarised, as the templates above are: the path and whether it resolves. The
+        # fault and its remedy belong to `/images config view`, which has room for them.
+        if config is not None and directories:
+            lines.append("  Asset directories:")
+            for column, report in directories.items():
+                icon = "✅" if report.valid else "⚠️"
+                label = ASSET_LABELS.get(column, column)
+                lines.append(f"      {icon} {label}: `{getattr(config, column)}`")
+            unresolved = sum(1 for r in directories.values() if not r.valid)
+            if unresolved:
+                # Deliberately not the "↳" the aspect reasons use: that marker belongs to
+                # a reason hanging off one of the eight aspects, and `/images config view`
+                # is compared against this report line for line by
+                # `test_season_review_and_config_view_agree`. Borrowing it here would make
+                # the two surfaces look divergent when they are not.
+                lines.append(
+                    f"      • {unresolved} of these cannot be read — "
+                    f"`/images config view` names the fault."
+                )
+
+        lines += await self._portrait_review_lines(config)
+
+        lines.append(f"  _{ImageValidityService.depth_summary(reports)}_")
+        return lines
+
+    async def _portrait_review_lines(self, config: Any) -> list[str]:
+        """How driver portraits are being obtained, for `review_section`.
+
+        Always stated, including when the feature is off: a manager reading the review is
+        deciding whether the season is configured, and "the bot is not obtaining portraits"
+        is an answer to that rather than an absence of one.
+        """
+        from leaguebot.image.services.image_config_service import portrait_configuration_fault
+
+        if config is None or not getattr(config, "use_pfp", False):
+            return ["  ❌ Driver portraits from Discord: disabled"]
+
+        triggers = []
+        if getattr(config, "pfp_prerender", False):
+            triggers.append("before each render")
+        if getattr(config, "pfp_daily", False):
+            triggers.append(f"daily at {getattr(config, 'pfp_daily_time', '?')} UTC")
+
+        lines = [
+            "  ✅ Driver portraits from Discord: enabled"
+            + (f" — updated {', and '.join(triggers)}" if triggers else "")
+        ]
+        fault = portrait_configuration_fault(config)
+        if fault is not None:
+            lines.append(f"      ⛔ {fault}")
+        return lines
+
+    async def template_faults(self) -> list[str]:
+        """Every broken template a switched-on output draws (core/services/image_drawing.py).
+
+        Lets a fault reading the templates out, for the caller to refuse on: a check that
+        never ran is not a pass.
+        """
+        reports = await self._validity.template_reports()
+        drawn = templates_of_enabled_aspects(await self._config.get_toggles())
+
+        faults: list[str] = []
+        for key in sorted(reports):
+            report = reports[key]
+            if not report.valid and key in drawn:
+                label = TEMPLATE_LABELS.get(key, key)
+                faults.append(f"Template **{label}**: {plain_reason(report)}.")
+        return faults
+
+    async def colour_shortfall_problems(self) -> list[str]:
+        """Every per-tier colour a template wants and no tier has set
+        (core/services/image_drawing.py), flattened from the same map `/images config view`
+        renders, so all three surfaces name the same shortfall in the same words.
+
+        Lets a fault reading the shortfall out, for the caller to stand aside on.
+        """
+        shortfall = await self._validity.colour_shortfall()
+        return [
+            f"`{template_key}` — {line}"
+            for template_key in sorted(shortfall)
+            for line in shortfall[template_key]
+        ]
+
+    async def portrait_fault(self) -> str | None:
+        """The driver-portrait settings fault that would withhold approval, or None
+        (core/services/image_drawing.py).
+
+        Lets a fault reading the configuration out, for the caller to stand aside on.
+        """
+        from leaguebot.image.services.image_config_service import portrait_configuration_fault
+
+        if not await self._modules.is_images_enabled():
+            return None
+        config = await self._config.get_config()
+        return portrait_configuration_fault(config)

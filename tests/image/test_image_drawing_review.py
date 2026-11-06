@@ -35,9 +35,6 @@ from leaguebot.image.services.image_validity_service import (
     plain_remedy,
 )
 
-#: Why each test fails until the build: the drawing does not yet answer the review's questions.
-NOT_YET = "#283: the image module's drawing does not yet answer the season review's questions"
-
 #: The sentence a template reads when its folder cannot be found, chosen because it names the
 #: same plain reason and remedy whatever else the report carries.
 _FOLDER_MISSING = "template directory does not exist"
@@ -114,7 +111,6 @@ _NEVER_FETCHED = (
 # ── The drawing program ───────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize(
     ("available", "expected"),
     [(False, "Inkscape is not installed on this host."), (True, None)],
@@ -131,7 +127,6 @@ def test_the_rasteriser_fault_names_a_missing_drawing_program(rasteriser, availa
 # ── The image section of both reviews ─────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_review_section_states_each_aspect_template_folder_and_the_depth_checked(
     rasteriser,
 ):
@@ -187,7 +182,6 @@ async def test_the_review_section_states_each_aspect_template_folder_and_the_dep
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize(
     ("config", "portrait_lines"),
     [
@@ -232,7 +226,6 @@ async def test_the_review_section_states_the_portrait_settings(rasteriser, confi
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_review_section_lets_a_fault_reading_the_configuration_out():
     """A template report that cannot be read is let out, for core to state the section as
     unreadable in its own words rather than the image module guessing at a partial section."""
@@ -246,7 +239,6 @@ async def test_the_review_section_lets_a_fault_reading_the_configuration_out():
 # ── The configuration's faults ────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_template_faults_name_each_broken_template_a_switched_on_output_draws():
     """The lineup output is on and its template's folder cannot be found: it is named, with its
     plain reason, as the approval refuses on it. The verdicts template is broken too, but its
@@ -264,7 +256,6 @@ async def test_the_template_faults_name_each_broken_template_a_switched_on_outpu
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_template_faults_let_a_fault_reading_the_templates_out():
     """Templates that cannot be read are let out, for core to refuse on: a check that never ran
     is not a pass."""
@@ -275,7 +266,6 @@ async def test_the_template_faults_let_a_fault_reading_the_templates_out():
         await drawing.template_faults()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_colour_problems_flatten_the_shortfall_by_template():
     """The per-tier colours no tier has set, flattened from the same map `/images config view`
     renders, one line each, templates in order of their key. Takes the place of
@@ -296,7 +286,6 @@ async def test_the_colour_problems_flatten_the_shortfall_by_template():
     assert await drawing.colour_shortfall_problems() == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_colour_problems_let_a_fault_reading_the_shortfall_out():
     """Let out for core, which stands aside on it: a reader that cannot answer must not be the
     thing that refuses a season."""
@@ -307,7 +296,6 @@ async def test_the_colour_problems_let_a_fault_reading_the_shortfall_out():
         await drawing.colour_shortfall_problems()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize(
     ("images_on", "values", "faulty"),
     [
@@ -344,7 +332,6 @@ async def test_the_portrait_fault_fires_only_on_settings_that_would_never_fetch(
     assert await drawing.portrait_fault() == (_NEVER_FETCHED if faulty else None)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_portrait_fault_lets_a_fault_reading_the_configuration_out():
     """Let out for core, which stands aside on it: a season is never blocked on settings that
     could not be read."""

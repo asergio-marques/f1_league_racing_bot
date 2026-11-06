@@ -18,6 +18,14 @@ own to say. The lineup review question answers bare sentences instead (`list[str
 today's lineup problems carry no remedy of their own. The calendar's `draw_calendar` and the
 lineup's `draw_lineup` answer a `CalendarPicture` or `LineupPicture` instead, because core
 itself posts what it hands back rather than wording a refusal from it.
+
+It also answers both season reviews' image section and the configuration faults that refuse an
+approval: `rasteriser_fault`, `review_section`, `template_faults`, `colour_shortfall_problems`
+and `portrait_fault`. The image module words each in full; core places them beneath its own
+`"**Image output**"` heading and decides which refuse. `review_section` and `template_faults`
+let a fault reading the configuration out, for core to refuse on — a check that never ran is
+not a pass — while `colour_shortfall_problems` and `portrait_fault` are read behind core's own
+`try`, so a fault in either stands aside rather than blocking a season it could not read.
 """
 from __future__ import annotations
 
@@ -203,3 +211,37 @@ class ImageDrawing(Protocol):
         configuration at all. The season fingerprint digests this answer unchanged, so a review
         compares equal while the artwork stands, and names the templates and artwork as changed
         once it does not."""
+
+    # ── What the season reviews ask of the image configuration ──────────────
+
+    def rasteriser_fault(self) -> str | None:
+        """What is wrong with the host's drawing program, or None where nothing is: the line the
+        approval and both confirmations refuse on, asked when each is judged so that a host
+        losing the program between the review and the button is caught. Synchronous, since it
+        reads nothing but the host."""
+
+    async def review_section(self) -> list[str]:
+        """The image module's lines for both season reviews, beneath core's own
+        `"**Image output**"` heading: the drawing program's absence, each aspect and its
+        template's state, the asset directories, and the driver-portrait settings. A fault
+        reading the configuration is let out, for core to state the section as unreadable in
+        its own words rather than the image module guessing at a partial section."""
+
+    async def template_faults(self) -> list[str]:
+        """Every broken template a switched-on output draws, each a sentence ending in a full
+        stop, naming the template and its plain reason. A template beneath a switched-off
+        output is no fault — that output posts as text. A fault reading the templates is let
+        out, for core to refuse on: a check that never ran is not a pass."""
+
+    async def colour_shortfall_problems(self) -> list[str]:
+        """Every per-tier colour a template wants and no tier has set, flattened from the same
+        map `/images config view` renders, one line each naming its template, templates in
+        order of their key. A fault reading the shortfall is let out, for core to stand aside
+        on: a reader that cannot answer must not be the thing that refuses a season."""
+
+    async def portrait_fault(self) -> str | None:
+        """The driver-portrait settings fault that would withhold approval, or None: portraits
+        obtained from Discord with neither pre-render nor daily updates enabled would never
+        fetch one, and so is a fault wherever the images module is on; every other combination,
+        and the module off, is none. A fault reading the configuration is let out, for core to
+        stand aside on: a season is never blocked on settings that could not be read."""
