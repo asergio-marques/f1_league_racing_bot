@@ -508,6 +508,8 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     from leaguebot.core.services.bot_settings import (
         admin_role_setting,
+        base_role_setting,
+        driver_role_setting,
         interaction_channel_setting,
         interaction_role_setting,
         log_channel_setting,
@@ -1057,6 +1059,8 @@ def register_change_types(bot: LeagueBot) -> None:
         interaction_channel_setting(config=bot.config_service),
         interaction_role_setting(config=bot.config_service),
         admin_role_setting(config=bot.config_service),
+        base_role_setting(config=bot.config_service, placement=bot.placement_service),
+        driver_role_setting(config=bot.config_service, placement=bot.placement_service),
         *points_settings(modules=bot.module_service, seasons=bot.season_service),
         *amendment_settings(modules=bot.module_service, seasons=bot.season_service),
         *image_settings(

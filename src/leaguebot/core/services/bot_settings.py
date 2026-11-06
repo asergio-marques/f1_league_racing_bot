@@ -1,21 +1,28 @@
-"""The four `/bot` repair settings — log channel, interaction channel, interaction role and
-league admin role — as core `Setting`s on the change queue.
+"""The four `/bot` repair settings, and the league's base and driver roles, as core `Setting`s
+on the change queue.
 
 `/bot log-channel`, `interaction-channel`, `interaction-role` and `admin-role` each ask one
 change built from a `Setting` below by `setting_change` (`core/services/setting_change.py`,
 which holds what every settings change does with a value already held and with a fault):
 weather's switch (`weather/services/module_switch_settings.py`) is the model. Each writes a
 single column of `server_configs`, so nothing else in the row — test mode, the module flags, the
-other three settings — can be carried over stale from a half-built model.
+other three settings — can be carried over stale from a half-built model. `/bot base-role` and
+`/bot driver-role` (issue #276, #283 S13b) are `Setting`s too, built by `_league_role_setting`
+below: unlike the four, they are a league manager's ordinary commands, so they wait their turn
+on the league lane like any other change rather than overtaking a stop, and the command itself
+judges the refusals that have nothing to do with a value already held — the season's
+configuration being fixed, and a driver role Discord will not let the bot grant — before ever
+asking the queue, since both need the server itself (the season, the role's place in Discord's
+hierarchy) and not only the value.
 
-**Each overtakes a stop on the league lane, instead of waiting behind it**
-(`Setting.repairs_the_bot`, read by `setting_change`): these are a league's way back in when one
-of the four is wrong or gone, so a stop on an unrelated job cannot hold one up. The lane still
-runs one change at a time — the queue runs an overtaking change to its own end before its
-lane's stopped head is tried again, never beside it — so nothing else writes `server_configs`
+**Each of the four repair settings overtakes a stop on the league lane, instead of waiting
+behind it** (`Setting.repairs_the_bot`, read by `setting_change`): these are a league's way back
+in when one of the four is wrong or gone, so a stop on an unrelated job cannot hold one up. The
+lane still runs one change at a time — the queue runs an overtaking change to its own end before
+its lane's stopped head is tried again, never beside it — so nothing else writes `server_configs`
 while one of these four does.
 
-**The two channels refuse a collision at the ask; the two roles judge "already held" in the save
+**The two channels refuse a collision at the ask; the four roles judge "already held" in the save
 alone.** A channel already doing another job is refused outright, and one already holding this
 very setting is refused too, "Nothing was changed" — re-running the command is not a collision
 with something else. Nothing runs beside the save to land a second writer between the check and
@@ -27,9 +34,9 @@ follow from it.
 
 **A role setting sets the hub's permissions again as its own follow-on**
 (`hub_service.hub_refresh_after` does not fit here: it asks the hub's *panel* to be refreshed,
-never its permissions). The hub is seen by the interaction role and the league admin role
-(`hub_service.apply_hub_permissions`), so changing either sets them again once the role is
-saved, from an `After` step the save plans, never from the command.
+never its permissions). The hub is seen by the interaction role, the league admin role and the
+base role (`hub_service.apply_hub_permissions`), so changing any of the three sets them again
+once the role is saved, from an `After` step the save plans, never from the command.
 """
 
 from __future__ import annotations
@@ -38,6 +45,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
+import discord
 
 from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.change_queue import CheckContext, Step, StepContext
@@ -51,6 +59,7 @@ from leaguebot.core.services.setting_change import After, Saved, Setting
 
 if TYPE_CHECKING:
     from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.placement_service import PlacementService
 
 _UNCONFIGURED = "⛔ This server is not configured yet — run `/bot init` first."
 
@@ -197,9 +206,240 @@ def admin_role_setting(*, config: "ConfigService") -> Setting:
     return _bot_setting("league_admin_role_id", config)
 
 
+# ----------------------------------------------------------------------------
+# The league's two roles (issue #276, #283 S13b) — not repair settings
+# ----------------------------------------------------------------------------
+
+#: The command as its line names it, and the label its reply gives the role, by column.
+_LEAGUE_ROLE_WORDS: dict[str, tuple[str, str, str]] = {
+    "base_role_id": ("/bot base-role", "Base role", "BASE_ROLE_SET"),
+    "driver_role_id": ("/bot driver-role", "Driver role", "DRIVER_ROLE_SET"),
+}
+
+#: The name of the step, after the base role's save, that moves the signup channel's overwrite.
+MOVE_SIGNUP_OVERWRITE = "move_signup_overwrite"
+
+#: The name of the step, after a role replaced because it is gone from the server, that grants
+#: the new role to every driver.
+GRANT_TO_DRIVERS = "grant_to_drivers"
+
+_GIVEN_TO_EVERYONE = "  given to: everybody, as @everyone"
+
+#: What a replaced base role adds: the bot knows its drivers and nobody else.
+_OTHER_MEMBERS = (
+    " The league's other members need it too: give it to them by hand, the bot knowing only "
+    "its drivers."
+)
+
+_GRANT_FAULT_REPLY = (
+    "\n⚠️ The role is saved, but it could not be given to the drivers: give it to them by hand."
+)
+
+
+def _role_mention(payload: dict[str, Any]) -> str:
+    return f"<@&{int(payload['value'])}>"
+
+
+def _guild_and_role(ctx: StepContext) -> tuple[discord.Guild, discord.Role]:
+    """The guild and the role a league role setting's follow-on reads from *ctx*, raised by name
+    rather than narrowed away: the change was asked for on a guild holding this very role, so a
+    restart apart, Discord still has both while the follow-on runs."""
+    guild = ctx.bot.get_guild(int(ctx.payload["guild_id"]))
+    if guild is None:
+        raise RuntimeError(f"guild {ctx.payload['guild_id']} is gone")
+    role = guild.get_role(int(ctx.payload["value"]))
+    if role is None:
+        raise RuntimeError(f"role {ctx.payload['value']} is gone from guild {guild.id}")
+    return guild, role
+
+
+def _replaced_reply(payload: dict[str, Any]) -> str:
+    return (
+        f"\nThe role it replaces is no longer on the server, so it could be replaced although "
+        f"Season {payload['season_number']}'s configuration is fixed."
+    )
+
+
+def _league_role_setting(
+    column: str, *, config: "ConfigService", placement: "PlacementService"
+) -> Setting:
+    """`/bot base-role` or `/bot driver-role` on *column*: a league manager's own command, not
+    one of the four repair settings above, so it waits its turn on the league lane.
+
+    The payload carries what the command has already judged against the server, which the save
+    takes as read rather than asking the database or Discord again: *old_role_id* (the role it
+    may replace), *guild_id*, *replacing_gone* (whether that role is gone from the server, so it
+    may be replaced while the season's configuration is fixed — decided 2026-09-22, #374) and
+    *season_number* (for the reply's wording, where *replacing_gone*). The command's own
+    refusals — the season's configuration being fixed without a gone role to replace, and a
+    driver role Discord will not let the bot grant — have nothing to do with a value already
+    held, so they are judged there and never reach this `Setting`.
+
+    **The base role's save plans two follow-ons the driver role never needs:** moving the
+    signup channel's overwrite (`MOVE_SIGNUP_OVERWRITE`), and setting the hub's permissions
+    again (`REAPPLY_HUB`, shared with the four repair settings' role columns above) — the hub is
+    seen by the base role too. **Either role, replaced because the old one is gone from the
+    server, plans a third:** granting the new role to every driver (`GRANT_TO_DRIVERS`), which
+    `carries_line` (`setting_change`) so that its given/not-given detail sits beneath the save's
+    own line, one post, and a fault there leaves the role saved with only the failure line.
+    """
+    command, label, change_type = _LEAGUE_ROLE_WORDS[column]
+    is_base_role = column == "base_role_id"
+
+    async def check(_ctx: CheckContext) -> Verdict:
+        return Verdict.go()
+
+    async def save(db: aiosqlite.Connection, payload: dict[str, Any]) -> Saved:
+        value = int(payload["value"])
+        old_role_id = payload.get("old_role_id")
+        cursor = await db.execute(
+            f"SELECT {column} FROM server_configs WHERE server_id IS NOT NULL"
+        )
+        row = await cursor.fetchone()
+        current = None if row is None else row[column]
+        role_detail = f"role: {payload['role_name']} ({_role_mention(payload)})"
+        if current == value:
+            return Saved(changed=False, details=(role_detail,))
+        if not await config.set_core_setting_on(db, column, value):
+            return Saved(changed=False)
+        details = [role_detail]
+        then: list[PlannedStep] = []
+        if is_base_role:
+            then.append(PlannedStep(MOVE_SIGNUP_OVERWRITE))
+            then.append(PlannedStep(REAPPLY_HUB))
+        if payload.get("replacing_gone"):
+            details.append("replaced: a role no longer on the server")
+            then.append(PlannedStep(GRANT_TO_DRIVERS))
+        return Saved(
+            changed=True,
+            audits=(AuditRecord(change_type, {"role_id": old_role_id}, {"role_id": value}),),
+            details=tuple(details),
+            then=tuple(then),
+        )
+
+    def doing(payload: dict[str, Any]) -> str:
+        return f"Setting **{label}** to {_role_mention(payload)}"
+
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        mention = _role_mention(payload)
+        if not results[_SAVE_STEP]["changed"]:
+            return f"ℹ️ Nothing changed: **{label}** is already {mention}."
+        text = f"✅ **{label}** set to {mention}."
+        granted = results.get(GRANT_TO_DRIVERS)
+        if granted is not None:
+            text += _replaced_reply(payload)
+            if not granted.get("failed"):
+                text += _given_reply(granted, is_base_role=is_base_role)
+        return text
+
+    after: dict[str, After] = {}
+    if is_base_role:
+        after[MOVE_SIGNUP_OVERWRITE] = _move_signup_overwrite()
+        after[REAPPLY_HUB] = _reapply_hub(command, config)
+    after[GRANT_TO_DRIVERS] = _grant_to_drivers(placement, is_base_role=is_base_role)
+
+    return Setting(
+        kind=f"core.setting.{column}",
+        command=lambda _payload: command,
+        doing=doing,
+        check=check,
+        save=save,
+        reply=reply,
+        writes=("server_configs",),
+        after=after,
+    )
+
+
+def _move_signup_overwrite() -> After:
+    """The `After` step the base role's save plans: move the signup channel's overwrite from
+    the old role to the new (issue #276).
+
+    Reaches `bot.signup_module_service` directly today (`KNOWN_MODULE_LOOKUPS_IN_CORE`): a
+    "base role changed" hook replaces this once the builder signs signup's own subscriber up to
+    it (#283, S13b commit 2). `move_base_role_overwrite` never raises, logging its own faults, so
+    this step never fails.
+    """
+
+    async def run(ctx: StepContext) -> StepResult:
+        guild, role = _guild_and_role(ctx)
+        await ctx.bot.signup_module_service.move_base_role_overwrite(
+            guild, ctx.payload.get("old_role_id"), role
+        )
+        return StepResult()
+
+    return After(step=Step(MOVE_SIGNUP_OVERWRITE, StepKind.ACT, run), fault_reply=lambda _p, r: r)
+
+
+def _grant_to_drivers(placement: "PlacementService", *, is_base_role: bool) -> After:
+    """The `After` step a role replaced because it is gone from the server plans: grant the new
+    role to every driver who lost the old one with it (decided 2026-09-22, #374).
+
+    `carries_line=True`: the given/not-given detail is written beneath the save's own line only
+    once this step has run, so a fault here leaves the role saved and the log channel only the
+    queue's failure line (`setting_change`'s module docstring, "Recorded twice, in one save, but
+    for a step that carries the line").
+    """
+
+    async def run(ctx: StepContext) -> StepResult:
+        guild, role = _guild_and_role(ctx)
+        if role.is_default():
+            return StepResult(result={"given": "everyone"}, lines=(_GIVEN_TO_EVERYONE,))
+        outcome = await placement.grant_to_every_driver(guild, role.id)
+        return StepResult(
+            result={"granted": outcome.granted, "not_granted": outcome.not_granted},
+            lines=(
+                f"  given to: {outcome.granted} driver(s)"
+                + "".join(f"\n  not given to: <@{uid}>" for uid in outcome.not_granted),
+            ),
+        )
+
+    def fault_reply(_payload: dict[str, Any], reply: str) -> str:
+        text = reply + _GRANT_FAULT_REPLY
+        if is_base_role:
+            text += _OTHER_MEMBERS
+        return text
+
+    return After(
+        step=Step(GRANT_TO_DRIVERS, StepKind.ACT, run),
+        fault_reply=fault_reply,
+        carries_line=True,
+    )
+
+
+def _given_reply(result: Mapping[str, Any], *, is_base_role: bool) -> str:
+    """What the grant to every driver tells the manager, once it has run."""
+    if result.get("given") == "everyone":
+        told = "Everybody holds it already."
+    else:
+        told = f"It has been given to {result['granted']} driver(s)."
+        if result["not_granted"]:
+            told += (
+                " It could not be given to "
+                + ", ".join(f"<@{uid}>" for uid in result["not_granted"])
+                + " — give it to them by hand."
+            )
+    if is_base_role:
+        told += _OTHER_MEMBERS
+    return f"\n{told}"
+
+
+def base_role_setting(*, config: "ConfigService", placement: "PlacementService") -> Setting:
+    """`/bot base-role`: the role every member of the league holds."""
+    return _league_role_setting("base_role_id", config=config, placement=placement)
+
+
+def driver_role_setting(*, config: "ConfigService", placement: "PlacementService") -> Setting:
+    """`/bot driver-role`: the role granted when a signup is approved."""
+    return _league_role_setting("driver_role_id", config=config, placement=placement)
+
+
 __all__ = [
+    "GRANT_TO_DRIVERS",
+    "MOVE_SIGNUP_OVERWRITE",
     "REAPPLY_HUB",
     "admin_role_setting",
+    "base_role_setting",
+    "driver_role_setting",
     "interaction_channel_setting",
     "interaction_role_setting",
     "log_channel_setting",

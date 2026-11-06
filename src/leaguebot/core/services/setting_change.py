@@ -191,7 +191,13 @@ def _check_fault_reply(setting: Setting, what: str, payload: dict[str, Any]) -> 
 
 
 def _after_step(after: After) -> Step:
-    """*after*'s step as the change runs it: ending on a fault, and writing the line it carries."""
+    """*after*'s step as the change runs it: ending on a fault, and writing the line it carries.
+
+    A step's own lines are joined beneath the kept line as one post, word for word, rather than
+    posted apart from it: a carrying step may add its own detail (the given/not-given lines of
+    a role's grant to every driver, #283 S13b) to what the save already has to say, never only
+    stand in for it.
+    """
     inner = after.step
 
     async def run(ctx: StepContext) -> StepResult:
@@ -203,7 +209,7 @@ def _after_step(after: After) -> Step:
         )
         if kept is None:
             return result
-        return dataclasses.replace(result, lines=(*result.lines, kept))
+        return dataclasses.replace(result, lines=("\n".join((kept, *result.lines)),))
 
     return dataclasses.replace(inner, run=run, on_fault=_failed)
 

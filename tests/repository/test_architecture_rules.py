@@ -1437,6 +1437,7 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (1, PASS["attendance"]),
     ("attendance/services/sheet_posting.py", "sheet_step.still_due"): (1, PASS["attendance"]),
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
+    ("core/services/bot_settings.py", "_move_signup_overwrite.run"): (1, PASS["core"]),
     ("image/services/driver_portrait_service.py", "run_daily_refresh"): (1, PASS["image"]),
     ("image/services/image_attendance_post.py", "attendance_enabled"): (3, PASS["image"]),
     ("image/services/image_attendance_post.py", "render_sheet"): (2, PASS["image"]),
@@ -2696,7 +2697,7 @@ def _module_lookups_in_core_among(nodes, attributes: frozenset[str]) -> Counter[
 
 
 KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/cogs/bot_cog.py", "BotCog._set_league_role"): (1, PASS["core"]),
+    ("core/services/bot_settings.py", "_move_signup_overwrite.run"): (1, PASS["core"]),
     ("core/cogs/driver_cog.py", "DriverCog.reassign"): (1, PASS["core"]),
     ("core/cogs/driver_cog.py", "DriverCog.reject"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._attendance_review_lines"): (1, PASS["core"]),

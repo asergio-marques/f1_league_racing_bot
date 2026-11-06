@@ -318,7 +318,6 @@ async def test_a_league_with_signup_disabled_still_sets_the_role(tmp_path, colum
     assert _permission_calls(guild) == []
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 @pytest.mark.parametrize("column,change_type", _BOTH)
 async def test_the_change_records_the_role_it_replaced(tmp_path, column, change_type):
     """A league that finds its members locked out needs to know which role used to hold the
@@ -349,7 +348,6 @@ async def test_the_change_is_logged_with_the_roles_name(tmp_path, column, change
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 @pytest.mark.parametrize("column,change_type", _BOTH)
 async def test_the_manager_is_told_which_role_was_set(tmp_path, column, change_type):
     """The manager is answered at once with the queue's acknowledgement, which answers inside
@@ -376,7 +374,6 @@ async def test_the_manager_is_told_which_role_was_set(tmp_path, column, change_t
     assert _reply(asked) == f"✅ **{label}** set to <@&{NEW_ROLE}>."
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 @pytest.mark.parametrize("column,change_type", _BOTH)
 async def test_a_league_role_saves_its_value_and_audit_together(
     tmp_path, monkeypatch, column, change_type
@@ -461,7 +458,6 @@ async def test_a_role_never_set_stays_fixed(tmp_path, column, change_type):
     assert (await _stored(db_path))[column] is None
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 @pytest.mark.parametrize("column,change_type", _BOTH)
 async def test_the_replacement_is_given_to_every_driver(tmp_path, column, change_type):
     """Every driver lost the old role with it. Whoever the driver role belongs to is given the
@@ -517,7 +513,6 @@ async def test_a_driver_who_could_not_be_given_it_is_named(tmp_path, column, cha
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 @pytest.mark.parametrize("column,change_type", _BOTH)
 async def test_a_fault_giving_the_replacement_leaves_the_role_saved(
     tmp_path, monkeypatch, column, change_type
@@ -635,7 +630,6 @@ async def test_the_previous_role_loses_its_access(tmp_path):
     assert revoked[0].args[0].id == OLD_ROLE
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 @pytest.mark.parametrize("column,change_type", _BOTH)
 async def test_re_setting_the_same_role_does_not_revoke_it(tmp_path, column, change_type):
     """The removal and the grant are two calls; on one role a naive "remove then add" would
