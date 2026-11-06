@@ -484,6 +484,87 @@ async def test_a_role_gone_from_the_server_may_be_replaced_while_fixed(
 
 
 @pytest.mark.parametrize("column,change_type", _BOTH)
+async def test_a_second_gone_role_replacement_while_fixed_is_refused(
+    tmp_path, column, change_type
+):
+    """Season 4's configuration is fixed (Ongoing) and the stored role 3001 is gone from the
+    server. The manager asks for 3002 and, while that change still waits, for 3003; the queue runs
+    both. The first replaces the gone role: 3002 is saved, given to every driver, and its line says
+    it replaced a role no longer on the server. The second is judged against the role now stored,
+    3002, which is on the server, so it is refused as it starts in the season-fixed words: 3002
+    stays stored, the drivers keep 3002 and are given nothing more, and only the first is
+    audited."""
+    from tests.support.change_queue import run_queue
+
+    db_path = await _make_db(tmp_path, stage="ONGOING", drivers=_TWO_DRIVERS)
+    command, _label = _WORDS[column]
+    first, second = _role(), _role(3003, "Members")
+    guild = _server(second, also=(first,), old_role_gone=True)
+    bot = await _league(db_path, guild)
+    asks = [_asked(bot, column, guild), _asked(bot, column, guild)]
+
+    for asked, role in zip(asks, (first, second)):
+        await _command(column)(BotCog(bot), asked, role)
+    await run_queue(bot)
+
+    reason = (
+        f"The league's roles are fixed for Season 4 now that its configuration has been "
+        f"confirmed. `{command}` is available again once the season has ended, or while a new "
+        f"season is in configuration — or at once, should the role be deleted from the server."
+    )
+    assert (await _stored(db_path))[column] == NEW_ROLE
+    assert [r["change_type"] for r in await _audit_rows(db_path)] == [change_type]
+    for driver in guild.drivers.values():
+        driver.add_roles.assert_awaited_once_with(first, reason="League role replaced")
+    assert _reply(asks[1]) == f"❌ {reason}"
+    assert _lines(bot) == [
+        f"{NAMED} | {command} | Success\n  role: Drivers (`<@&{NEW_ROLE}>`)\n"
+        f"  replaced: a role no longer on the server\n  given to: 2 driver(s)",
+        f"⛔ `{command}` refused for {NAMED} — {reason}",
+    ]
+
+
+@pytest.mark.parametrize("column,change_type", _BOTH)
+async def test_a_gone_role_replaced_after_a_confirmation_ahead_fixes_the_season_is_granted(
+    tmp_path, column, change_type
+):
+    """Season 4 stands in Configuration and the stored role 3001 is already gone from the server
+    when the manager asks for 3002; Season 4's configuration is confirmed (it moves on to Waiting)
+    before the change runs, as a confirmation waiting ahead of it would. The change, judged as it
+    starts, finds the season fixed but the role it replaces gone, so it goes ahead: 3002 is saved
+    and audited, given to every driver, and the reply and the line name Season 4 and the
+    replacement."""
+    from tests.support.change_queue import run_queue
+
+    db_path = await _make_db(tmp_path, stage="CONFIGURATION", drivers=_TWO_DRIVERS)
+    command, label = _WORDS[column]
+    role = _role()
+    guild = _server(role, old_role_gone=True)
+    bot = await _league(db_path, guild)
+    asked = _asked(bot, column, guild)
+
+    await _command(column)(BotCog(bot), asked, role)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE seasons SET status = 'SETUP', stage = 'WAITING'")
+        await db.commit()
+    await run_queue(bot)
+
+    assert (await _stored(db_path))[column] == NEW_ROLE
+    assert [r["change_type"] for r in await _audit_rows(db_path)] == [change_type]
+    for driver in guild.drivers.values():
+        driver.add_roles.assert_awaited_once_with(role, reason="League role replaced")
+    others = _OTHER_MEMBERS if column == "base_role_id" else ""
+    assert _reply(asked) == (
+        f"✅ **{label}** set to <@&{NEW_ROLE}>.\n{_REPLACED}\n"
+        f"It has been given to 2 driver(s).{others}"
+    )
+    assert _lines(bot) == [
+        f"{NAMED} | {command} | Success\n  role: Drivers (`<@&{NEW_ROLE}>`)\n"
+        f"  replaced: a role no longer on the server\n  given to: 2 driver(s)"
+    ]
+
+
+@pytest.mark.parametrize("column,change_type", _BOTH)
 async def test_a_role_never_set_stays_fixed(tmp_path, column, change_type):
     """Not set is not gone: a league that ran its season with no signup module chose no role."""
     db_path = await _make_db(tmp_path, stage="ONGOING", base_role=None, driver_role=None)
