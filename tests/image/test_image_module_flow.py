@@ -489,17 +489,23 @@ async def test_template_relocation(module_service, config_service, template_dir)
         await saves.set_field(config_service, column, TEMPLATE_COLUMNS[column])
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the image module's drawing does not yet answer the review's section"
+)
 async def test_season_review_and_config_view_agree(
     module_service, config_service, template_dir, monkeypatch
 ):
     """FR-033: both surfaces render from the same AspectStatus list, so they cannot drift.
 
     One template is broken and one aspect enabled, then the aspect section of each
-    surface is compared line for line.
+    surface is compared line for line: `/images config view`'s, and the image module's
+    section of the season reviews, as its drawing answers it.
     """
+    from unittest.mock import AsyncMock, MagicMock
+
     import leaguebot.image.services.image_render_service as render_service
     from leaguebot.image.cogs.image_cog import ImageCog
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.image.services.image_drawing import ImageDrawing
     from leaguebot.image.services.image_validity_service import ImageValidityService
 
     monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
@@ -525,11 +531,13 @@ async def test_season_review_and_config_view_agree(
 
     image_cog = ImageCog.__new__(ImageCog)
     image_cog.bot = bot
-    season_cog = SeasonCog.__new__(SeasonCog)
-    season_cog.bot = bot
+    drawing = ImageDrawing(
+        module_service, config_service, validity,
+        renderer=MagicMock(), post_log=AsyncMock(), db_path=":memory:",
+    )
 
     view_lines = await image_cog.build_aspect_section()
-    review_lines = await season_cog._build_image_review_section()
+    review_lines = await drawing.review_section()
 
     def aspect_lines(lines):
         """The eight aspect lines, and the reasons hanging off them.
@@ -567,23 +575,26 @@ async def test_season_review_and_config_view_agree(
         )
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the image module's drawing does not yet answer the review's section"
+)
 def test_the_review_names_every_configured_asset_directory():
     """`/season placements-review` states where each asset class is read from.
 
     A manager sets these paths once and then has nowhere in the review to see them, so a
     graphic drawing placeholders because a folder was renamed looks exactly like one whose
-    artwork was never supplied. Naming the directory is what tells the two apart.
+    artwork was never supplied. Naming the directory is what tells the two apart. The
+    section is the image module's, answered by its drawing.
 
     Asserted against `ASSET_LABELS` rather than a written-out list, so an asset class
     added later is covered by this test the day it appears.
     """
-    import asyncio
     import inspect
 
     from leaguebot.image.models.image_constants import ASSET_LABELS
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.image.services import image_drawing
 
-    source = inspect.getsource(SeasonCog._build_image_review_section)
+    source = inspect.getsource(image_drawing)
 
     assert "directory_reports" in source, "the review does not read the directories"
     assert "ASSET_LABELS" in source, "the review does not label them"

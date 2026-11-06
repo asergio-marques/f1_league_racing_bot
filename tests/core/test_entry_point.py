@@ -116,6 +116,45 @@ async def test_the_builder_hands_every_change_that_posts_a_calendar_the_image_mo
     }
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the approval and the confirmation are not yet handed the drawing's rasteriser "
+    "check",
+)
+async def test_the_builder_hands_the_approval_and_the_confirmation_the_drawing_s_rasteriser_check(
+    tmp_path, monkeypatch,
+):
+    """A season's approval and a mid-season confirmation of placements each judge the host's
+    drawing program again as they run. The builder hands both the image module's drawing's own
+    check, the one the reviews ask, so the three ask it one way and cannot disagree."""
+    from leaguebot.core.services import mid_season_confirm_change, season_approval_change
+
+    handed = {}
+
+    def _capturing(name, made):
+        def _make(**kwargs):
+            handed[name] = kwargs["rasteriser_fault"]
+            return made(**kwargs)
+
+        return _make
+
+    monkeypatch.setattr(
+        season_approval_change, "season_approval_change",
+        _capturing("approval", season_approval_change.season_approval_change),
+    )
+    monkeypatch.setattr(
+        mid_season_confirm_change, "mid_season_confirm_change",
+        _capturing("confirmation", mid_season_confirm_change.mid_season_confirm_change),
+    )
+
+    bot = await built_bot(tmp_path, now=_NOW)
+
+    assert handed == {
+        "approval": bot.image_drawing.rasteriser_fault,
+        "confirmation": bot.image_drawing.rasteriser_fault,
+    }
+
+
 async def test_the_review_s_calendar_picture_is_drawn_through_the_image_module_s_drawing(
     tmp_path, monkeypatch,
 ):

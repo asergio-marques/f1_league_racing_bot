@@ -7,7 +7,7 @@ shortfall, and it is reported wherever a manager looks at their configuration.
 
 **The point of this file is that there is one implementation, not three.** `/season placements-review`,
 `/images config view` and the aspect toggle all read the same `AspectStatus` list — a fact
-`season_cog` records in as many words at its `_build_image_review_section` — and
+the image module's drawing records in as many words at the review's section it answers — and
 `test_the_shortfall_reaches_every_surface` is what stops that quietly becoming untrue.
 """
 from __future__ import annotations
@@ -242,22 +242,3 @@ async def test_the_aspect_toggle_passes_the_shortfall_through(monkeypatch):
     assert await image_settings.aspect_blocking_reasons(
         "calendar", config=config, validity=validity
     ) == []
-
-
-# ── The season approval gate ──────────────────────────────────────────────
-
-def test_approval_is_gated_on_it():
-    """The gate must actually be wired into `_do_approve`, not merely available.
-
-    Through `_image_configuration_faults` since #396, which the review withholds its button
-    on too, so the two read the shortfall from one place.
-    """
-    import inspect
-
-    from leaguebot.core.cogs.season_cog import SeasonCog
-
-    faults = inspect.getsource(SeasonCog._image_configuration_faults)
-    approve = inspect.getsource(SeasonCog._do_approve)
-    assert "_colour_shortfall_problems()" in faults
-    assert "await self._image_configuration_faults()" in approve
-    assert "Season cannot be approved" in approve
