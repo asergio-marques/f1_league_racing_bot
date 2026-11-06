@@ -1417,9 +1417,15 @@ class ChangeQueue:
     ) -> list[tuple[aiosqlite.Row, aiosqlite.Row | None]]:
         """The head of each lane (or of *lane* alone), oldest first, each with its next job not
         done. A lane's head is its RUNNING change, as one resumed after a stop, else its QUEUED
-        change with the lowest id, which nothing on that lane overtakes — save a queued change of
-        a kind marked `ChangeType.overtakes_a_stop`, listed ahead of a stopped head so `_choose`
-        takes it first (the stopped head and every ordinary change still wait behind it)."""
+        change with the lowest id, which nothing on that lane overtakes — save a change of a kind
+        marked `ChangeType.overtakes_a_stop`, listed ahead of the head so `_choose` takes it
+        first (the head and every ordinary change still wait behind it): a QUEUED one once the
+        head is stopped and not yet due, or one already RUNNING past the stop
+        (`overtook_a_stop`), whether or not the head is due by now. Looking for the latter
+        whenever the head's own lane carries a RUNNING `overtook_a_stop` change, due or not,
+        keeps that change from being interleaved with the head's own jobs once the head's try
+        falls due in turn: the head waits for the overtaking change to finish, exactly as every
+        other change behind it does."""
         on_lane = "" if lane is None else " AND c.lane = ?"
         cursor = await db.execute(
             "SELECT * FROM queued_changes c WHERE c.state IN ('RUNNING', 'QUEUED') AND c.id = ("
@@ -1431,12 +1437,23 @@ class ChangeQueue:
         heads = []
         for change in await cursor.fetchall():
             job = await self._next_job(db, change["id"])
-            if self._waits_for_a_try(job):
+            if self._waits_for_a_try(job) or await self._overtake_in_progress(db, change):
                 overtaking = await self._overtaking_change(db, change)
                 if overtaking is not None:
                     heads.append((overtaking, await self._next_job(db, overtaking["id"])))
             heads.append((change, job))
         return heads
+
+    async def _overtake_in_progress(self, db: aiosqlite.Connection, head: aiosqlite.Row) -> bool:
+        """Whether *head*'s lane carries a change already RUNNING past the stop
+        (`overtook_a_stop`): it must be let finish before the head is tried again, so that its
+        own jobs are never interleaved with the head's."""
+        cursor = await db.execute(
+            "SELECT 1 FROM queued_changes WHERE lane = ? AND id > ? "
+            "AND state = 'RUNNING' AND overtook_a_stop = 1 LIMIT 1",
+            (head["lane"], head["id"]),
+        )
+        return await cursor.fetchone() is not None
 
     async def _next_job(self, db: aiosqlite.Connection, change_id: int) -> aiosqlite.Row | None:
         cursor = await db.execute(
