@@ -455,8 +455,7 @@ class BotCog(commands.Cog):
     async def handle_hub_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
-        """Point the hub at *channel*: ask the change queue for `bot_settings.hub_channel_setting`
-        (#283).
+        """Point the hub at *channel*: ask the change queue for `bot_settings.hub_channel_setting`.
 
         The missing-permission refusal has nothing to do with a value already held, so it is
         judged here, before the change is even asked for, as a driver role Discord will not

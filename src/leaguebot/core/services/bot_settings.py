@@ -7,7 +7,7 @@ which holds what every settings change does with a value already held and with a
 weather's switch (`weather/services/module_switch_settings.py`) is the model. Each writes a
 single column of `server_configs`, so nothing else in the row — test mode, the module flags, the
 other three settings — can be carried over stale from a half-built model. `/bot base-role` and
-`/bot driver-role` (issue #276, #283) are `Setting`s too, built by `_league_role_setting`
+`/bot driver-role` (issue #276) are `Setting`s too, built by `_league_role_setting`
 below: unlike the four, they are a league manager's ordinary commands, so they wait their turn
 on the league lane like any other change rather than overtaking a stop. The command judges, once,
 before ever asking the queue, a driver role Discord will not let the bot grant, which has nothing
@@ -38,21 +38,21 @@ never its permissions). The hub is seen by the interaction role, the league admi
 base role (`hub_service.apply_hub_permissions`), so changing any of the three sets them again
 once the role is saved, from an `After` step the save plans, never from the command.
 
-**`/bot hub-channel` (issue #279, #283) is a `Setting` too, built by `hub_channel_setting`
+**`/bot hub-channel` (issue #279) is a `Setting` too, built by `hub_channel_setting`
 below, but not a repair setting: it waits its turn on the league lane like the two roles.** The
-channel-in-use check, the manage-permission check and the already-this-channel refusal are all
-judged once, at the ask, before the change is even asked for — `Setting.check` here repeats only
-the channel-in-use and unconfigured judgements, as the four repair settings' `check` does, since
-a change queued ahead of this one might have claimed the channel for something else since it was
-asked; a collision with the hub's own value cannot arise there; the save never reaches it, since
-`check` would already have refused it. **The old hub's permissions cleared, the new hub's
-permissions set, and the panel's refresh asked, are one `After` step after the save**
+manage-permission check and the unconfigured-server refusal have nothing to do with a value
+already held, so the cog judges them before the change is even asked for, as the missing driver
+role is judged before `/bot driver-role` asks for its own. The channel already doing another job,
+or already this channel, is the setting's own `check`, run as the change starts, since a change
+queued ahead of this one might have claimed the channel for something else since it was asked;
+the save never reaches it, since `check` would already have refused it. **The old hub's
+permissions cleared and the new hub's permissions set are one `After` step after the save**
 (`_restyle_hub`), which `carries_line`: the two permission edits are each Discord's to refuse
-without raising, so both faults, where either or both happen, sit beneath the save's own line
-in one post, word for word as the four repair settings' hub follow-on already read (owner
-decision 169). A fault of the bot's own — not a refusal of Discord's — makes the step raise, and
-leaves the setting saved with no success line, as any other step after a save does; the panel's
-refresh is asked by a step of its own straight after, so it still follows even then.
+without raising, so both faults, where either or both happen, sit beneath the save's own line in
+one post. A fault of the bot's own — not a refusal of Discord's — makes the step raise, and
+leaves the setting saved with no success line, as any other step after a save does. **The panel's
+refresh is asked by a second `After` step straight after** (`_ask_hub_refresh`), which runs
+whether or not `_restyle_hub` did, since it only asks for a change and so cannot itself fail.
 """
 
 from __future__ import annotations
@@ -539,25 +539,25 @@ def driver_role_setting(*, config: "ConfigService", placement: "PlacementService
 
 
 # ----------------------------------------------------------------------------
-# The hub channel (issue #279, #283) — not a repair setting
+# The hub channel (issue #279) — not a repair setting
 # ----------------------------------------------------------------------------
 
-#: The name of the step, after the hub channel's save, that stands the old hub down, sets the
-#: new one's permissions, and asks for the panel's refresh.
+#: The name of the step, after the hub channel's save, that stands the old hub down and sets
+#: the new one's permissions.
 RESTYLE_HUB = "restyle_hub"
 
 
 def _restyle_hub(config: "ConfigService") -> After:
-    """The `After` step the hub channel's save plans: stand the old hub down, set the new
-    hub's permissions, and ask for the panel's refresh.
+    """The `After` step the hub channel's save plans: stand the old hub down and set the new
+    hub's permissions.
 
     Both permission edits report a Discord refusal rather than raising
     (`apply_hub_permissions`, and the clearing below), so both faults, where either or both
-    happen, sit beneath the save's own line in one post (`carries_line=True`), word for word
-    as the four repair settings' own hub follow-on (`_reapply_hub`) already reads. A fault of
-    the bot's own makes this step raise instead, caught by `setting_change`'s `on_fault`, which
+    happen, sit beneath the save's own line in one post (`carries_line=True`). A fault of the
+    bot's own makes this step raise instead, caught by `setting_change`'s `on_fault`, which
     leaves the setting saved with no success line; the refresh is still asked, from the step
-    straight after, which cannot itself fail since it only asks for a change.
+    straight after (`_ask_hub_refresh`), which cannot itself fail since it only asks for a
+    change.
     """
 
     async def run(ctx: StepContext) -> StepResult:

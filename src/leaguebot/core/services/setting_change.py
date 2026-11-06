@@ -120,7 +120,7 @@ class Saved:
 
 #: The key, in a carrying step's own result, of the outcome word it reports in place of
 #: "Success" — "Success, with faults" where the step has something Discord refused to report
-#: without raising (the hub's permissions, #283): the step still succeeded, so the line is
+#: without raising (the hub's permissions): the step still succeeded, so the line is
 #: still written, but not as a plain success.
 RENAMED_OUTCOME = "renamed_outcome"
 
