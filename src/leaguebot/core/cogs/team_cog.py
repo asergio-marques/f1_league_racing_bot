@@ -531,52 +531,48 @@ class TeamCog(commands.Cog):
 
         # ── The graphic replaces the textual output where configured (FR-026) ──
         #
-        # One image per division, honouring `public`. These are command output and **not**
-        # the lineup of record: nothing is written to `lineup_message_id` and the lineup
-        # channel is untouched (FR-028). A fatal error rejects rather than falling back —
-        # the caller is the one person able to fix the template (Constitution XIV.7).
-        from leaguebot.image.services.image_lineup_post import lineup_enabled, render_for_command
-
-        if await lineup_enabled(self.bot):
-            from leaguebot.image.services.image_render_service import discard_attachment
-
+        # One image per division, honouring `public`, drawn through core's drawing protocol
+        # as a command's output. These are command output and **not** the lineup of record:
+        # nothing is written to `lineup_message_id` and the lineup channel is untouched
+        # (FR-028). A fatal error rejects rather than falling back — the caller is the one
+        # person able to fix the template (Constitution XIV.7). The drawing has already
+        # reported any notices to the log channel, headed with the division, so this command
+        # never posts them a second time.
+        if await self.bot.image_drawing.lineup_wanted():
             files: list[discord.File] = []
-            notices: list = []
-            # One `finally` around the whole batch, because a rejection part way through
-            # abandons every picture drawn before it — the divisions already rendered are
-            # never sent, and without this their files would be the one leak no posting
-            # path accounts for.
+            drawn_paths: list = []
+            # One `finally` around the whole batch, because a rejection part way through, or
+            # a fault that leaves the command, abandons every picture drawn before it — the
+            # divisions already rendered are never sent, and without this their files would
+            # be the one leak no posting path accounts for.
             try:
                 for div in all_divisions:
-                    outcome = await render_for_command(self.bot, interaction.guild, div.id)
-                    if outcome.action == "REJECTED":
+                    picture = await self.bot.image_drawing.draw_lineup_for_command(
+                        interaction.guild, div.id
+                    )
+                    if picture.path is not None:
+                        drawn_paths.append(picture.path)
+                    if picture.problem is not None:
                         await interaction.followup.send(
-                            f"{outcome.message}\n_Lineup for **{div.name}** was not drawn._",
+                            f"❌ {picture.problem}\n"
+                            f"_Lineup for **{div.name}** was not drawn._",
                             ephemeral=True,
                         )
                         return
-                    if outcome.png_path is not None:
+                    if picture.path is not None:
                         files.append(
-                            discord.File(
-                                str(outcome.png_path), filename=outcome.png_path.name
-                            )
+                            discord.File(str(picture.path), filename=picture.path.name)
                         )
-                    notices.extend(outcome.notices)
 
                 if files:
                     text = "\n".join(f"**{div.name}**" for div in all_divisions)
-                    if notices:
-                        from leaguebot.image.services.image_render_service import ImageRenderService
-
-                        await ImageRenderService.report_notices(
-                            self.bot, notices
-                        )
                     await interaction.followup.send(
                         text, files=files, ephemeral=not public
                     )
                     return
             finally:
-                discard_attachment(*files)
+                for path in drawn_paths:
+                    self.bot.image_drawing.discard_picture(path)
 
         lines: list[str] = []
         for div in all_divisions:

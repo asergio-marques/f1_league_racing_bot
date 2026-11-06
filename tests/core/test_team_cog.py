@@ -473,13 +473,6 @@ class TestOneRolePerTeam:
 # that hands them back to the drawing to release.
 # ---------------------------------------------------------------------------
 
-#: Why the batch's tests fail until the build.
-_LINEUP_THROUGH_THE_DRAWING = (
-    "#283: /team lineup still draws and releases through the image module's own functions, not "
-    "the drawing the bot carries"
-)
-
-
 class TestTeamLineupDiscardsItsPictures:
     @staticmethod
     def _artifact(tmp_path, div_id):
@@ -506,7 +499,6 @@ class TestTeamLineupDiscardsItsPictures:
         bot.image_drawing = drawing
         return TeamCog(bot), bot
 
-    @pytest.mark.xfail(strict=True, reason=_LINEUP_THROUGH_THE_DRAWING)
     async def test_a_rejection_part_way_through_leaves_no_picture_behind(self, tmp_path):
         """Two divisions: Division 1's lineup is drawn, and Division 2's cannot be. The
         command refuses, and the picture drawn for Division 1, never sent, is handed back to
@@ -529,7 +521,6 @@ class TestTeamLineupDiscardsItsPictures:
         )
         assert "was not drawn" in interaction.followup.send.await_args.args[0]
 
-    @pytest.mark.xfail(strict=True, reason=_LINEUP_THROUGH_THE_DRAWING)
     async def test_the_pictures_are_gone_once_the_batch_has_posted(self, tmp_path):
         """Two divisions, both drawn: the two pictures go out in one message, which names each
         division in bold on a line of its own, and each picture is handed back to the drawing to

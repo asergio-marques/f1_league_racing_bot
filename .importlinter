@@ -104,8 +104,6 @@ ignore_imports =
     leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_validity_service
     leaguebot.core.cogs.season_cog -> leaguebot.image.utils.asset_resolver
     leaguebot.core.cogs.season_cog -> leaguebot.image.utils.svg_document
-    leaguebot.core.cogs.team_cog -> leaguebot.image.services.image_lineup_post
-    leaguebot.core.cogs.team_cog -> leaguebot.image.services.image_render_service
     leaguebot.core.cogs.team_cog -> leaguebot.image.utils.asset_resolver
     leaguebot.core.services.team_service -> leaguebot.image.utils.asset_resolver
     # #283: results:

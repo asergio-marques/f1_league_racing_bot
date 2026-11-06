@@ -108,9 +108,19 @@ class ImageDrawing(Protocol):
         lineup goes out and a league never loses its lineup to a fault reading a switch."""
 
     async def draw_lineup(self, guild: Any, division_id: int) -> LineupPicture:
-        """Draw *division_id*'s lineup in *guild*. Hands back the picture drawn, or the problem
-        naming why it could not be, and the notices it survived — already reported to the log
-        channel in one message."""
+        """Draw *division_id*'s lineup in *guild*, as the lineup of record. Hands back the
+        picture drawn, or the problem naming why it could not be, and the notices it survived
+        — already reported to the log channel in one message."""
+
+    async def draw_lineup_for_command(self, guild: Any, division_id: int) -> LineupPicture:
+        """Draw *division_id*'s lineup in *guild*, as a command's own output rather than the
+        lineup of record: not written to the lineup of record, and drawn as it will stand
+        where the caller asks (`/season placements-review` alone). Hands back the picture
+        drawn, or the problem naming why it could not be — worded for the command's own
+        refusal rather than the text fallback's — and the notices it survived, already
+        reported to the log channel in one message. A fault reading the division itself (the
+        database cannot be opened) is let out, for the command's own failure path to report,
+        rather than turned into refusal words."""
 
     def discard_picture(self, path: Path | None) -> None:
         """Release a path `draw_calendar` or `draw_lineup` handed back, whichever way its

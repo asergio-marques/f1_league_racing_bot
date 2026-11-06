@@ -301,12 +301,13 @@ class ImageDrawing:
             log.exception("lineup: could not read the image gates")
             return False
 
-    async def draw_lineup(self, guild: Any, division_id: int) -> LineupPicture:
-        """Draw *division_id*'s lineup in *guild*: the gates already asked through
-        `lineup_wanted`, the division's committed seats read from the database, the portraits
-        refreshed at the league's own trigger, and the render. The notices are reported to the
-        log channel in one message before this returns, so the caller never posts them there
-        again."""
+    async def _render_lineup(self, guild: Any, division_id: int) -> Any:
+        """The gates already asked through `lineup_wanted`, the division's committed seats
+        read from the database, the portraits refreshed at the league's own trigger, and the
+        render: what `draw_lineup` and `draw_lineup_for_command` both need before them part.
+        The notices are reported to the log channel in one message before this returns, so
+        neither caller posts them there again. Hands back the division row and the render's
+        outcome, for each to word the problem its own way."""
         from leaguebot.image.services.driver_portrait_service import refresh_before_render
         from leaguebot.image.services.image_lineup_post import build_drawing
         from leaguebot.image.services.image_lineup_service import (
@@ -350,7 +351,25 @@ class ImageDrawing:
                 )
             )
 
+        return _division, outcome
+
+    async def draw_lineup(self, guild: Any, division_id: int) -> LineupPicture:
+        """Draw *division_id*'s lineup in *guild*, as the lineup of record: the problem, where
+        one is met, is its bare detail — the words the text lineup's fallback line carries."""
+        _division, outcome = await self._render_lineup(guild, division_id)
+
         problem = outcome.problem.detail if outcome.problem is not None else None
+        notices = tuple(each.detail for each in outcome.notices)
+        path = outcome.png_paths[0] if outcome.png_paths else None
+        return LineupPicture(path=path, problem=problem, notices=notices)
+
+    async def draw_lineup_for_command(self, guild: Any, division_id: int) -> LineupPicture:
+        """Draw *division_id*'s lineup in *guild*, as a command's output: the problem, where
+        one is met, names the lineup and the field at fault before the detail, and an internal
+        fault, which no league can act on, is never detailed (`Problem.message`)."""
+        _division, outcome = await self._render_lineup(guild, division_id)
+
+        problem = outcome.problem.message("the lineup") if outcome.problem is not None else None
         notices = tuple(each.detail for each in outcome.notices)
         path = outcome.png_paths[0] if outcome.png_paths else None
         return LineupPicture(path=path, problem=problem, notices=notices)

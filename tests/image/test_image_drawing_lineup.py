@@ -27,20 +27,12 @@ TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "te
 #: 1002 placed there mid-season and not yet confirmed, 1003 seated with no placement at all.
 NAMES = {1001: "Zara Quill", 1002: "Yuri Vexley", 1003: "Cal Cole"}
 
-#: Why the commanded draw's cases fail until the build.
-_NO_COMMANDED_DRAW = (
-    "#283: the image drawing does not yet draw a lineup as /team lineup's output "
-    "(draw_lineup_for_command)"
-)
 #: The lineup drawn as the lineup of record (`draw_lineup`), and as `/team lineup`'s output
 #: (`draw_lineup_for_command`); both draw the same seats, at the same trigger, and report their
 #: notices the same way.
 DRAWS = [
     pytest.param("draw_lineup", id="of_record"),
-    pytest.param(
-        "draw_lineup_for_command", id="for_command",
-        marks=pytest.mark.xfail(strict=True, reason=_NO_COMMANDED_DRAW),
-    ),
+    pytest.param("draw_lineup_for_command", id="for_command"),
 ]
 
 
@@ -225,15 +217,12 @@ _INTERNAL_WORDS = (
         pytest.param("draw_lineup", "a picture", None, id="of_record-a_picture"),
         pytest.param("draw_lineup", "a field problem", "the template has no rows",
                      id="of_record-a_problem"),
-        pytest.param("draw_lineup_for_command", "a picture", None, id="for_command-a_picture",
-                     marks=pytest.mark.xfail(strict=True, reason=_NO_COMMANDED_DRAW)),
+        pytest.param("draw_lineup_for_command", "a picture", None, id="for_command-a_picture"),
         pytest.param("draw_lineup_for_command", "a field problem",
                      "the lineup: `team_1` — the template has no rows",
-                     id="for_command-a_field_problem",
-                     marks=pytest.mark.xfail(strict=True, reason=_NO_COMMANDED_DRAW)),
+                     id="for_command-a_field_problem"),
         pytest.param("draw_lineup_for_command", "an internal problem", _INTERNAL_WORDS,
-                     id="for_command-an_internal_problem",
-                     marks=pytest.mark.xfail(strict=True, reason=_NO_COMMANDED_DRAW)),
+                     id="for_command-an_internal_problem"),
     ],
 )
 async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_notices(
@@ -280,7 +269,6 @@ async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_not
     channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_COMMANDED_DRAW)
 async def test_a_lineup_that_cannot_be_read_raises_out_of_the_commanded_draw(
     monkeypatch, tmp_path,
 ):

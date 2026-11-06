@@ -38,12 +38,6 @@ from leaguebot.core.cogs.team_cog import TeamCog
 from tests.support.lineup_drawing import LineupDrawingStub
 from tests.support.undecorate import undecorate
 
-#: Why the drawn path's tests fail until the build.
-_THROUGH_THE_DRAWING = (
-    "#283: /team lineup still draws through the image module's own functions, not the drawing "
-    "the bot carries"
-)
-
 SERVER_ID = 9208
 SEASON_ID = 3
 ACTOR_ID = 77
@@ -270,7 +264,6 @@ async def test_asking_publicly_sends_publicly(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_THROUGH_THE_DRAWING)
 async def test_a_rejected_graphic_refuses_rather_than_falling_back(tmp_path):
     """The league draws its lineup, and Division 1's lineup cannot be drawn: the template is
     missing a field. The manager is told why, by that one message alone, and nothing else is
@@ -294,7 +287,6 @@ async def test_a_rejected_graphic_refuses_rather_than_falling_back(tmp_path):
 
 
 @pytest.mark.parametrize("public", [False, True], ids=["private", "public"])
-@pytest.mark.xfail(strict=True, reason=_THROUGH_THE_DRAWING)
 async def test_a_drawn_lineup_is_sent_as_files(tmp_path, public):
     """The league draws its lineup, and Division 1's lineup is drawn, with a notice. The manager
     is sent the picture in place of the text, under the division's name in bold, seen by them
@@ -318,7 +310,6 @@ async def test_a_drawn_lineup_is_sent_as_files(tmp_path, public):
     cog.bot.output_router.post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_THROUGH_THE_DRAWING)
 async def test_a_drawing_that_fails_fails_the_command_and_releases_what_it_drew(tmp_path):
     """The league draws its lineup across two divisions: Division 1's is drawn, and drawing
     Division 2's raises (the database cannot be read). The error is not caught and worded by the
