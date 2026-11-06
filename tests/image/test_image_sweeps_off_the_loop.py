@@ -11,8 +11,9 @@ it there. Nothing parsed in a worker thread leaves it, neither a return value no
 Each test patches the evaluation with a `Held` one (`tests/support/off_the_loop.py`), which
 waits for a coroutine on the loop to release it: in a worker thread it goes through, and the
 entry point must pass on what it answered, or what it raised, unchanged. On the loop it gives
-up, failing the test rather than deadlocking it. `tests/core/test_template_parses_off_the_loop.py`
-holds core's entry points to the same.
+up, failing the test rather than deadlocking it. Core parses no template: it asks the image
+module, whose answers to its capacity questions, the season review's among them, are held here to
+the same.
 """
 from __future__ import annotations
 
@@ -375,7 +376,9 @@ def _drawing(aspect: str) -> Any:
     modules = MagicMock()
     modules.is_images_enabled = AsyncMock(return_value=True)
     config = MagicMock()
+    config.get_config = AsyncMock(return_value=object())
     config.get_toggles = AsyncMock(return_value={aspect: True})
+    config.is_aspect_enabled = AsyncMock(side_effect=lambda name: name == aspect)
     validity = MagicMock()
     validity.template_reports = AsyncMock(
         return_value={
@@ -448,6 +451,107 @@ async def test_a_placement_guard_s_fault_crosses_back_with_nothing_it_parsed(
 
     assert held.calls
     assert type(answer) is CapacityError and str(answer) == REFUSAL
+    assert not holds_a_tree(answer)
+
+
+NOT_YET = "#283: the image module answers no capacity question of the season review"
+
+
+def _lineup_of_thirty() -> Any:
+    from leaguebot.core.services.image_drawing import DivisionTeams, TeamSeats
+
+    return [DivisionTeams("Pro", tuple(TeamSeats(f"Team {n}", 1) for n in range(1, 31)))]
+
+
+def _held(count: int) -> Any:
+    from leaguebot.core.services.image_drawing import Held
+
+    return Held("Pro", count)
+
+
+#: Each capacity question the season review and the round guard ask, the output it is asked for,
+#: how it is asked (of thirty teams, sixty rounds, ninety-nine drivers and a sprint round's four
+#: sessions), whether the templates the bot ships leave it something to say, and what it answers
+#: where its template cannot be counted: the fault let out for core's catch, or for the
+#: standings, which skip an uncountable template on its own, nothing.
+REVIEW_QUESTIONS = [
+    ("lineup", "lineup", lambda drawing: drawing.lineup_review_problems(_lineup_of_thirty()),
+     True, CapacityError),
+    ("calendar-round", "calendar", lambda drawing: drawing.round_capacity_problem(61), True,
+     CapacityError),
+    ("calendar-review", "calendar",
+     lambda drawing: drawing.calendar_review_problem(_held(60)), True, CapacityError),
+    ("attendance-sheet", "attendance",
+     lambda drawing: drawing.sheet_review_problem(_held(60)), True, CapacityError),
+    ("standings", "standings",
+     lambda drawing: drawing.standings_review_problems(_held(99), _held(99), _held(60)), True,
+     []),
+    ("check-in", "rsvp", lambda drawing: drawing.checkin_review_problem(4), False,
+     CapacityError),
+]
+
+
+@pytest.mark.parametrize(
+    "aspect,question,says",
+    [case[1:4] for case in REVIEW_QUESTIONS],
+    ids=[c[0] for c in REVIEW_QUESTIONS],
+)
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_review_question_measures_its_template_off_the_loop(
+    monkeypatch, aspect, question, says
+):
+    """The lineup, calendar, attendance sheet, standings and check-in answers to the season
+    review and the round guard parse and measure their template in a worker thread, and answer
+    as they did on the loop."""
+    drawing = _drawing(aspect)
+    expected = await question(drawing)
+    held = Held(svg_document.load_svg)
+    monkeypatch.setattr(svg_document, "load_svg", held)
+
+    answer = await answered_while(held, lambda: question(drawing))
+
+    assert held.calls, "the answer parsed no template"
+    assert held.held_loop == 0
+    assert answer == expected
+    assert bool(answer) is says
+
+
+@pytest.mark.parametrize(
+    "aspect,question,quiet",
+    [(case[1], case[2], case[4]) for case in REVIEW_QUESTIONS],
+    ids=[c[0] for c in REVIEW_QUESTIONS],
+)
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_review_question_s_fault_crosses_back_with_nothing_it_parsed(
+    monkeypatch, aspect, question, quiet
+):
+    """A template that fails as it is measured is kept to the worker thread: the fault is
+    raised again on the loop as its own class and message, for core's one catch to let the
+    season and the round through, or the standings skip that template and answer nothing; and
+    no tree reaches the loop."""
+    load_svg = svg_document.load_svg
+
+    def parse_then_refuse(path: Any) -> Any:
+        root = load_svg(path)
+        raise CapacityError(f"the <{etree.QName(root).localname}> cannot be counted")
+
+    held = Held(parse_then_refuse)
+    monkeypatch.setattr(svg_document, "load_svg", held)
+    drawing = _drawing(aspect)
+
+    async def outcome() -> Any:
+        try:
+            return await question(drawing)
+        except Exception as exc:  # noqa: BLE001 — the fault is the subject
+            return exc
+
+    answer = await answered_while(held, outcome)
+
+    assert held.calls
+    if quiet is CapacityError:
+        assert type(answer) is CapacityError and str(answer) == REFUSAL
+    else:
+        assert answer == quiet
     assert not holds_a_tree(answer)
 
 
