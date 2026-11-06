@@ -429,6 +429,48 @@ async def test_a_role_is_refused_once_the_configuration_is_confirmed(
 
 
 @pytest.mark.parametrize("column,change_type", _BOTH)
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: a league role's change does not read the season's stage again as it starts",
+)
+async def test_a_role_asked_before_the_configuration_is_confirmed_and_run_after_is_refused(
+    tmp_path, column, change_type
+):
+    """Season 4 stands in Configuration when the manager asks to set the role to 3002, so the ask
+    is acknowledged; Season 4's configuration is confirmed (it moves on to Waiting) before the
+    change runs, as a confirmation waiting ahead of it on the league's lane would. The change reads
+    the stage again as it starts and is refused: the role stays 3001, nothing is audited, the
+    signup channel is not touched, and the manager's reply becomes the refusal the command gives
+    at the ask, word for word, which reaches the log channel as the only line it takes."""
+    from tests.support.change_queue import acknowledgement, run_queue
+
+    db_path = await _make_db(tmp_path, stage="CONFIGURATION")
+    command, _label = _WORDS[column]
+    role = _role()
+    guild = _server(role)
+    bot = await _league(db_path, guild)
+    asked = _asked(bot, column, guild)
+
+    await _command(column)(BotCog(bot), asked, role)
+    assert acknowledgement(asked).startswith("⏳ ")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE seasons SET status = 'SETUP', stage = 'WAITING'")
+        await db.commit()
+    await run_queue(bot)
+
+    reason = (
+        f"The league's roles are fixed for Season 4 now that its configuration has been "
+        f"confirmed. `{command}` is available again once the season has ended, or while a new "
+        f"season is in configuration — or at once, should the role be deleted from the server."
+    )
+    assert _reply(asked) == f"❌ {reason}"
+    assert (await _stored(db_path))[column] == OLD_ROLE
+    assert await _audit_rows(db_path) == []
+    assert _permission_calls(guild) == []
+    assert _lines(bot) == [f"⛔ `{command}` refused for {NAMED} — {reason}"]
+
+
+@pytest.mark.parametrize("column,change_type", _BOTH)
 async def test_a_role_gone_from_the_server_may_be_replaced_while_fixed(
     tmp_path, column, change_type
 ):
