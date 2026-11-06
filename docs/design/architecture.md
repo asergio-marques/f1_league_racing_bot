@@ -573,9 +573,10 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   `Setting` (its check, its save on a connection, its reply and the tables it writes) and
   `setting_change` builds the change type, so that the line, whether an audit record is written, the
   answer for a value already held and the answer for a fault are decided in one place. A setting's value, its
-  audit record and its line are one save, save where a step after it arms the daily portrait job:
-  there the value and the audit record share the save and the line follows in the arming job's
-  save, so that an arming that failed records no success. *Rejected:* a bespoke change type for
+  audit record and its line are one save, save where a step after it arms the daily portrait job,
+  or grants a role to every driver where the one it replaces is gone from the server: there the
+  value and the audit record share the save and the line follows in that step's own save, so that
+  a failed arming, or a failed grant, records no success. *Rejected:* a bespoke change type for
   each command, which forms the line, the audit and the fault answer a score of ways.
 
 ---

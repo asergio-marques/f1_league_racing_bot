@@ -51,10 +51,11 @@ writes nor catch what fails after it returns (see `change_queue`).
 
 **Recorded twice, in one save, but for a step that carries the line.** The value, its audit entry
 and its line share one save, save where a step after it `carries_line` (the arming of the daily
-portrait job): the value and the audit entry share the save, the line is kept in its result, and
-the arming writes it once it has succeeded, so that a failed arming records no success. A restart
-between the two reaches the arming as the change carries on. The steps after the save are planned
-only where the save changed something.
+portrait job, and a role's grant to every driver where the one it replaces is gone from the
+server): the value and the audit entry share the save, the line is kept in its result, and the
+carrying step writes it once it has succeeded, so that a failed arming, or a failed grant,
+records no success. A restart between the two reaches the carrying step as the change carries
+on. The steps after the save are planned only where the save changed something.
 
 **A setting is confined to the tables it declares** (`Setting.writes`, the queue's authoriser): a
 save writing another table raises, is rolled back and ends as any fault in the save.
@@ -195,8 +196,8 @@ def _after_step(after: After) -> Step:
 
     A step's own lines are joined beneath the kept line as one post, word for word, rather than
     posted apart from it: a carrying step may add its own detail (the given/not-given lines of
-    a role's grant to every driver, #283 S13b) to what the save already has to say, never only
-    stand in for it.
+    a role's grant to every driver) to what the save already has to say, never only stand in
+    for it.
     """
     inner = after.step
 
