@@ -1191,10 +1191,13 @@ async def test_a_setting_command_admits_an_administrator_before_the_bot_is_confi
     tmp_path,
 ):
     """The bootstrap. `/bot init` has no configuration to read a role out of."""
-    db_path = await _make_db(tmp_path)
-    cog = BotCog(_bot(db_path))
+    from tests.support.change_queue import run_queue
 
-    interaction = _interaction()
+    db_path = await _make_db(tmp_path)
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
+
+    interaction = _asking(bot, "bot init")
     interaction.user.guild_permissions.administrator = True
     interaction.user.roles = []
 
@@ -1206,6 +1209,7 @@ async def test_a_setting_command_admits_an_administrator_before_the_bot_is_confi
         _channel(CONFIGURED_CHANNEL),
         _channel(CONFIGURED_LOG),
     )
+    await run_queue(bot)
 
     assert (await _row(db_path))["league_admin_role_id"] == CONFIGURED_ADMIN_ROLE
 
