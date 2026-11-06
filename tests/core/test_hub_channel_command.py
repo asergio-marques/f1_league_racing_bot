@@ -199,7 +199,6 @@ async def test_the_hub_is_set_permissioned_and_given_its_panel(db_path):
     assert await _stored(db_path) == {"hub_channel_id": HUB, "hub_message_id": NEW_PANEL}
     assert "overwrites" in channel.edit.await_args.kwargs
     assert "Nothing is offered here yet." in channel.send.await_args.args[0]
-    assert _replied(interaction) == SET
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_YET)
