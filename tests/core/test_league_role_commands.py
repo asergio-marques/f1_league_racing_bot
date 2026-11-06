@@ -811,7 +811,10 @@ async def test_two_base_roles_asked_in_turn_each_replace_the_one_before(tmp_path
     assert [
         (json.loads(r["old_value"]), json.loads(r["new_value"])) for r in await _audit_rows(db_path)
     ] == [({"role_id": OLD_ROLE}, {"role_id": NEW_ROLE}), ({"role_id": NEW_ROLE}, {"role_id": 3003})]
-    assert [c.args[0].id for c in _permission_calls(guild)] == [OLD_ROLE, NEW_ROLE, NEW_ROLE, 3003]
+    assert [
+        (c.args[0].id, "removed" if c.kwargs == {"overwrite": None} else "granted")
+        for c in _permission_calls(guild)
+    ] == [(OLD_ROLE, "removed"), (NEW_ROLE, "granted"), (NEW_ROLE, "removed"), (3003, "granted")]
 
 
 # ---------------------------------------------------------------------------
