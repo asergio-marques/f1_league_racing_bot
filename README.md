@@ -431,6 +431,8 @@ The hub is the one channel every member of your league can use the bot from, rat
 
 **Moving it** posts the panel in the new channel and then deletes it from the old one, each a job of the change queue, and clears the permissions the bot set in the old one. The hub may not share a channel with anything else the bot posts to. The bot needs **Manage Channel** and **Manage Permissions** on the channel, and refuses before changing anything if it lacks either. A permission Discord refuses is named in the reply and the log channel, and the hub stays set. A panel Discord refuses or cannot post stops the change queue like any post, with Retry and Discard on its notice, and the hub stays set.
 
+This is a change on the queue: you are told at once that it is under way ("⏳ Setting **Hub channel** to <#…>. This message will be updated when it is done; if it takes longer, the log channel will say so."), and that message is updated once it has run. Where the permissions cannot be set at all — a fault of the bot's own, not Discord refusing one — the hub is still set, and the reply adds "⚠️ The setting is saved, but the hub's permissions could not be updated.".
+
 ---
 
 ### `/clean-bot` — Delete recent bot messages in this channel

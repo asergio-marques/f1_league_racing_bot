@@ -86,7 +86,7 @@ it only to place it; the rules governing it belong to its own specification.
 
 ### The hub
 - The hub is the one channel every member of the league may use. A league need not set one.
-- The hub channel shall be set by a command of its own, a league manager's. Setting it shall set who may see it and post the hub's panel there.
+- The hub channel shall be set by a command of its own, a league manager's. The command shall acknowledge at once that the change is under way, then update that reply once it has run. Setting it shall set who may see it and post the hub's panel there.
 - The hub channel shall be visible to holders of the base role, or to every member where the league has set no base role, and to holders of the interaction role and the league admin role. Nobody but the bot shall post in it.
     - Where the base role is set but no longer in the server, the hub shall stay closed to members, and the command setting it shall say so.
     - Changing the base role, the interaction role or the league admin role shall set the hub's permissions again.
