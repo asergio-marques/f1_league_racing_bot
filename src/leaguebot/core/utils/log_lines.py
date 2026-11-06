@@ -150,10 +150,17 @@ def stop_line(
     return line if admins is None else f"{line}\n<@&{admins}>"
 
 
-def held_behind_text(job_id: int, lane: str = LEAGUE_LANE) -> str:
+def held_behind_text(job_id: int, lane: str = LEAGUE_LANE, *, overtaking: bool = False) -> str:
     """What a member's acknowledgement adds where *lane* is stopped at job *job_id*: their request
-    runs once that job is cleared. A sentence for the end of the acknowledgement, not a log line."""
+    runs once that job is cleared, or, where *overtaking* (one of the four repair settings,
+    `ChangeType.overtakes_a_stop`), that it runs past the stop instead, which stays as it was. A
+    sentence for the end of the acknowledgement, not a log line."""
     who = _Lane(lane)
+    if overtaking:
+        return (
+            f"{who.The} {who.is_} stopped at job #{job_id}, so this request runs at once, past "
+            f"the stop; that job stays stopped."
+        )
     return (
         f"{who.The} {who.is_} stopped at job #{job_id}, so this request runs once that job is "
         f"cleared."

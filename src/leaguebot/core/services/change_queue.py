@@ -898,7 +898,7 @@ class ChangeQueue:
             await self._acknowledge(
                 change_id, change_type, payload, interaction,
                 first_job=first_job, stopped_at=stopped[0][2]["id"] if stopped else None,
-                lane=lane,
+                lane=lane, overtaking=change_type.overtakes_a_stop,
             )
         except Exception:  # noqa: BLE001 — the change is saved and goes ahead whatever this does
             log.error(
@@ -1040,12 +1040,14 @@ class ChangeQueue:
         first_job: int | None,
         stopped_at: int | None,
         lane: str = LEAGUE_LANE,
+        overtaking: bool = False,
     ) -> None:
         """Tell the member their saved change is under way, and hold the interaction to update.
 
         The acknowledgement names the request's first job, *first_job*, and where its *lane* is
-        stopped, at the job *stopped_at*, says so and that the request runs once that job is
-        cleared.
+        stopped, at the job *stopped_at*, says so — that the request runs once that job is
+        cleared, or, where *overtaking* (`ChangeType.overtakes_a_stop`), that it runs past the
+        stop instead, which stays as it was.
 
         The change is already saved, so a failed acknowledgement is not the request's failure:
         it is logged with its details, nothing is held and `acknowledged_at` stays unset, and the
@@ -1058,7 +1060,7 @@ class ChangeQueue:
         if first_job is not None:
             text += f" It begins with job #{first_job}."
         if stopped_at is not None:
-            text += f" {held_behind_text(stopped_at, lane)}"
+            text += f" {held_behind_text(stopped_at, lane, overtaking=overtaking)}"
         message: discord.WebhookMessage | None = None
         try:
             if interaction.response.is_done():
