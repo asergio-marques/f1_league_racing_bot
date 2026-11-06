@@ -775,11 +775,17 @@ async def test_a_setting_command_works_outside_the_interaction_channel(
 async def test_a_setting_command_refuses_an_unconfigured_server(
     tmp_path, attribute, column, factory, new_id
 ):
+    """No server is set up yet; an administrator runs the command. It is refused at the ask,
+    pointing them at `/bot init`, and once the queue has run nothing is saved or audited."""
+    from tests.support.change_queue import run_queue
+
     db_path = await _make_db(tmp_path)
-    cog = BotCog(_bot(db_path))
-    interaction = _interaction()
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
+    interaction = _asking(bot, _WORDS[column][0][1:])
 
     await _unwrap(getattr(cog, attribute))(cog, interaction, factory(new_id))
+    await run_queue(bot)
 
     assert "/bot init" in interaction.response.send_message.call_args.args[0]
     assert await _row(db_path) == {}
