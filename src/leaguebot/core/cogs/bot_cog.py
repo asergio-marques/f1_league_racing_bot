@@ -343,6 +343,7 @@ class BotCog(commands.Cog):
         and *season_number* are carried in the payload for the setting's save and its
         follow-ons to read, since they need the server and not only the value.
         """
+        from leaguebot.core.services.bot_settings import season_fixed_refusal
         from leaguebot.core.services.season_lifecycle_service import configuration_fixed
 
         season_number = await configuration_fixed(self.bot.db_path)
@@ -357,10 +358,7 @@ class BotCog(commands.Cog):
         if season_number is not None and not replacing_gone:
             await refuse(
                 interaction,
-                f"❌ The league's roles are fixed for Season {season_number} now that its "
-                f"configuration has been confirmed. `{command}` is available again once the "
-                "season has ended, or while a new season is in configuration — or at once, "
-                "should the role be deleted from the server.",
+                season_fixed_refusal(command, season_number),
                 what=describe(interaction),
             )
             return
@@ -383,18 +381,17 @@ class BotCog(commands.Cog):
                 await refuse(interaction, f"❌ {refusal}", what=describe(interaction))
                 return
 
+        # The raw id, not `guild_of(interaction).id`: the payload is JSON-encoded for the
+        # queue's key, and `interaction.guild_id` is already the plain int discord.py gives.
+        # The setting's own check reads it to judge the fixed season again, against the
+        # server's state as the change starts rather than as it was asked.
         payload: dict[str, Any] = {
             "value": role.id,
             "role_name": role.name,
             "role_mention": role.mention,
             "old_role_id": old_role_id,
+            "guild_id": interaction.guild_id,
         }
-        # Only a follow-on reaching Discord needs the server: the base role's (always) and a
-        # replaced role's grant to every driver (only while replacing one gone from it). The
-        # raw id, not `guild_of(interaction).id`: the payload is JSON-encoded for the queue's
-        # key, and `interaction.guild_id` is already the plain int discord.py gives.
-        if column == "base_role_id" or replacing_gone:
-            payload["guild_id"] = interaction.guild_id
         if replacing_gone:
             payload["replacing_gone"] = True
             payload["season_number"] = season_number

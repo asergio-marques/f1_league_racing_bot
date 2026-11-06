@@ -430,10 +430,6 @@ async def test_a_role_is_refused_once_the_configuration_is_confirmed(
 
 
 @pytest.mark.parametrize("column,change_type", _BOTH)
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: a league role's change does not read the season's stage again as it starts",
-)
 async def test_a_role_asked_before_the_configuration_is_confirmed_and_run_after_is_refused(
     tmp_path, column, change_type
 ):

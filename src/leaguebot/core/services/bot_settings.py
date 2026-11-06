@@ -9,11 +9,11 @@ single column of `server_configs`, so nothing else in the row — test mode, the
 other three settings — can be carried over stale from a half-built model. `/bot base-role` and
 `/bot driver-role` (issue #276, #283) are `Setting`s too, built by `_league_role_setting`
 below: unlike the four, they are a league manager's ordinary commands, so they wait their turn
-on the league lane like any other change rather than overtaking a stop, and the command itself
-judges the refusals that have nothing to do with a value already held — the season's
-configuration being fixed, and a driver role Discord will not let the bot grant — before ever
-asking the queue, since both need the server itself (the season, the role's place in Discord's
-hierarchy) and not only the value.
+on the league lane like any other change rather than overtaking a stop. The command judges, once,
+before ever asking the queue, a driver role Discord will not let the bot grant, which has nothing
+to do with a value already held or the season; the season's configuration being fixed is judged
+there too, for the member's prompt reply, and again by the setting's own `check` as the change
+starts, since a confirmation queued ahead of it may have fixed the season since it was asked.
 
 **Each of the four repair settings overtakes a stop on the league lane, instead of waiting
 behind it** (`Setting.repairs_the_bot`, read by `setting_change`): these are a league's way back
@@ -265,20 +265,39 @@ def _replaced_reply(payload: dict[str, Any]) -> str:
     )
 
 
+def season_fixed_refusal(command: str, season_number: int) -> str:
+    """Why *command* is refused while Season *season_number*'s configuration is fixed, word for
+    word as `_set_league_role` (`bot_cog.py`) refuses it at the ask, and as the setting's own
+    `check` refuses it again as the change starts (#283)."""
+    return (
+        f"❌ The league's roles are fixed for Season {season_number} now that its "
+        f"configuration has been confirmed. `{command}` is available again once the "
+        "season has ended, or while a new season is in configuration — or at once, "
+        "should the role be deleted from the server."
+    )
+
+
 def _league_role_setting(
     column: str, *, config: "ConfigService", placement: "PlacementService"
 ) -> Setting:
     """`/bot base-role` or `/bot driver-role` on *column*: a league manager's own command, not
     one of the four repair settings above, so it waits its turn on the league lane.
 
-    The payload carries what the command has already judged against the server, which the save
-    takes as read rather than asking the database or Discord again: *old_role_id* (the role it
-    may replace), *guild_id*, *replacing_gone* (whether that role is gone from the server, so it
-    may be replaced while the season's configuration is fixed — decided 2026-09-22, #374) and
-    *season_number* (for the reply's wording, where *replacing_gone*). The command's own
-    refusals — the season's configuration being fixed without a gone role to replace, and a
-    driver role Discord will not let the bot grant — have nothing to do with a value already
-    held, so they are judged there and never reach this `Setting`.
+    The payload carries what the command judged against the server at the ask: *old_role_id* (the
+    role it may replace), *guild_id*, *replacing_gone* (whether that role was gone from the
+    server, so it may be replaced while the season's configuration is fixed — decided
+    2026-09-22, #374) and *season_number* (for the reply's wording, where *replacing_gone*). A
+    driver role Discord will not let the bot grant is judged only there, since it has nothing to
+    do with a value already held and never reaches this `Setting`.
+
+    **The season's configuration being fixed is judged again as the change starts** (`check`),
+    against the server's state then rather than as it was asked: a confirmation queued ahead of
+    this change may have fixed the season since, as `season_fixed_refusal` already refuses it at
+    the ask. It also re-judges whether the stored role is still gone from the server — Discord's
+    truth, not the stale *replacing_gone* the ask recorded — since a role recreated meanwhile, or
+    a season no longer fixed, must not be refused, or a role no longer gone must not slip through.
+    The save still trusts *old_role_id* and *replacing_gone* for its own write: `check` runs
+    immediately before it, on the same lane, with nothing else able to land between them.
 
     **The base role's save plans two follow-ons the driver role never needs:** calling the "base
     role changed" hook (`BASE_ROLE_CHANGED`), which moves the signup channel's overwrite without
@@ -292,7 +311,21 @@ def _league_role_setting(
     command, label, change_type = _LEAGUE_ROLE_WORDS[column]
     is_base_role = column == "base_role_id"
 
-    async def check(_ctx: CheckContext) -> Verdict:
+    async def check(ctx: CheckContext) -> Verdict:
+        from leaguebot.core.services.season_lifecycle_service import configuration_fixed
+
+        if await config.get_server_config() is None:
+            return Verdict.refuse(_UNCONFIGURED)
+        season_number = await configuration_fixed(ctx.db_path)
+        if season_number is not None:
+            old_role_id = ctx.payload.get("old_role_id")
+            guild = ctx.bot.get_guild(int(ctx.payload["guild_id"]))
+            replacing_gone = (
+                old_role_id is not None
+                and (guild is None or guild.get_role(old_role_id) is None)
+            )
+            if not replacing_gone:
+                return Verdict.refuse(season_fixed_refusal(command, season_number))
         return Verdict.go()
 
     async def save(db: aiosqlite.Connection, payload: dict[str, Any]) -> Saved:
@@ -449,4 +482,5 @@ __all__ = [
     "interaction_channel_setting",
     "interaction_role_setting",
     "log_channel_setting",
+    "season_fixed_refusal",
 ]
