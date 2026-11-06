@@ -457,13 +457,27 @@ class BotCog(commands.Cog):
     ) -> None:
         """Point the hub at *channel*: ask the change queue for `bot_settings.hub_channel_setting`.
 
-        The missing-permission refusal has nothing to do with a value already held, so it is
-        judged here, before the change is even asked for, as a driver role Discord will not
-        let the bot grant is judged before `/bot driver-role` asks for its own. The channel
-        already doing another job, or already the hub, is the setting's own `check`, run as
-        the change starts: the write, the audit entry and the line, and what follows the save,
-        are `setting_change`'s and `bot_settings`'s.
+        The channel already doing another job, or already the hub, is judged here first, as it
+        was before this command went through the queue, so a manager re-running it for the hub's
+        own value still reads "Nothing was changed" rather than a permission refusal that happens
+        to be true as well. The missing-permission refusal has nothing to do with a value already
+        held, so it is judged next, before the change is even asked for, as a driver role Discord
+        will not let the bot grant is judged before `/bot driver-role` asks for its own. Both are
+        the setting's own `check` as well, run again as the change starts, since a change queued
+        ahead of this one might have claimed the channel for something else since it was asked;
+        what follows the save is `setting_change`'s and `bot_settings`'s.
         """
+        from leaguebot.core.services.channel_registry_service import ChannelUse, find_channel_use, refusal
+
+        use = await find_channel_use(self.bot.db_path, channel.id)
+        if use is not None:
+            await refuse(
+                interaction,
+                refusal(channel.mention, use, same_setting=(use == ChannelUse("hub"))),
+                what=describe(interaction),
+            )
+            return
+
         guild = guild_of(interaction)
         perms = channel.permissions_for(guild.me)
         missing = [
