@@ -116,11 +116,6 @@ async def test_the_builder_hands_every_change_that_posts_a_calendar_the_image_mo
     }
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the approval and the confirmation are not yet handed the drawing's rasteriser "
-    "check",
-)
 async def test_the_builder_hands_the_approval_and_the_confirmation_the_drawing_s_rasteriser_check(
     tmp_path, monkeypatch,
 ):

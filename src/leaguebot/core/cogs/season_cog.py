@@ -1052,124 +1052,22 @@ class SeasonCog(commands.Cog):
         return [f"  ⚠️ {problem.problem}. {problem.remedy}" for problem in problems]
 
     async def _build_image_review_section(self) -> list[str]:
-        """The image module's addendum to `/season placements-review` (FR-033).
+        """The image module's addendum to `/season placements-review` (FR-033), beneath core's
+        own heading: the drawing's own words (`ImageDrawing.review_section`,
+        core/services/image_drawing.py), which the image module builds from the same
+        `AspectStatus` list `/images config view` renders, so a divergence between the two
+        surfaces is impossible by construction.
 
-        Built from the same `AspectStatus` list `/images config view` renders, so a
-        divergence between the two surfaces is impossible by construction. Template
-        detail is summarised rather than repeated in full — a season review is already
-        long, and `/images config view` is where the sixteen lines belong.
+        A stated exception (architecture.md, "A catch-all error handler"): a review must never
+        fail because of this section, so a fault reading the configuration is stated as such
+        and the review goes on.
         """
-        from leaguebot.image.models.image_constants import ASPECT_LABELS
-        from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
-        from leaguebot.image.services.image_render_service import (
-            CONVERTER_NAME,
-            converter_available,
-        )
-        from leaguebot.image.services.image_validity_service import (
-            ImageValidityService,
-            plain_reason,
-            plain_remedy,
-        )
-
-        lines: list[str] = ["**Image output**"]
-
-        if not converter_available():
-            lines.append(
-                f"  ⛔ {CONVERTER_NAME} is not installed on this host — "
-                f"no image will be generated until it is."
-            )
-
         try:
-            statuses = await self.bot.image_validity_service.aspect_statuses()
-            reports = await self.bot.image_validity_service.template_reports()
-            directories = await self.bot.image_validity_service.directory_reports()
-            config = await self.bot.image_config_service.get_config()
-        except Exception as exc:  # a review must never fail because of this section
+            lines = await self.bot.image_drawing.review_section()
+        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
             log.error("season review: image section failed: %s", exc, exc_info=True)
             return ["**Image output**", "  ⚠️ Could not be read.", ""]
-
-        icons = {STATE_ENABLED: "✅", STATE_DISABLED: "❌"}
-        for status in statuses:
-            icon = icons.get(status.state, "⚠️")
-            lines.append(f"  {icon} {ASPECT_LABELS[status.aspect]}")
-            for reason in status.reasons:
-                lines.append(f"      ↳ {reason}")
-
-        invalid = [r for r in reports.values() if not r.valid]
-        lines.append(
-            f"  Templates: {len(reports) - len(invalid)}/{len(reports)} resolve"
-        )
-
-        # FR-008: name each one. A count tells a manager nothing about what to fix, and
-        # this is the report they read before approving — the approval refuses on the
-        # same findings, so seeing them here is what lets them act first.
-        #
-        # Split by whether the aspect drawing the template is switched on, because that
-        # is what decides whether the fault stops the season. The confirmation of placements blocks on
-        # exactly the first list, so the heading is a promise the gate keeps rather than
-        # a guess. A template beneath a switched-off aspect is still named: it is a real
-        # fault a manager will meet the moment they switch that aspect on, and finding it
-        # then — after the season is running — is worse than reading it here.
-        if invalid:
-            from leaguebot.image.models.image_constants import TEMPLATE_LABELS as _LABELS
-            from leaguebot.image.services.image_validity_service import templates_of_enabled_aspects
-
-            drawn = templates_of_enabled_aspects(
-                await self.bot.image_config_service.get_toggles()
-            )
-
-            def _detail(report) -> str:
-                label = _LABELS.get(report.template_key, report.template_key)
-                return (
-                    f"      • **{label}**: {plain_reason(report)}. "
-                    f"{plain_remedy(report)}"
-                )
-
-            blocking = [r for r in reports.values() if not r.valid and r.template_key in drawn]
-            dormant = [r for r in reports.values() if not r.valid and r.template_key not in drawn]
-
-            if blocking:
-                lines.append("  ⛔ These block approval:")
-                lines += [_detail(report) for report in blocking]
-            if dormant:
-                lines.append(
-                    "  ⚠️ These do not block approval — the output that draws them is "
-                    "switched off, so nothing posts them. Fix them before switching it on:"
-                )
-                lines += [_detail(report) for report in dormant]
-
-        # FR-033: where the assets are read from. The paths are configuration a manager
-        # sets once and then cannot see anywhere in this report, and a graphic that draws
-        # placeholders because a folder was renamed looks exactly like one whose artwork
-        # is missing. Naming the directory is what separates the two.
-        #
-        # Summarised, as the templates above are: the path and whether it resolves. The
-        # fault and its remedy belong to `/images config view`, which has room for them.
-        if config is not None and directories:
-            from leaguebot.image.models.image_constants import ASSET_LABELS
-
-            lines.append("  Asset directories:")
-            for column, report in directories.items():
-                icon = "✅" if report.valid else "⚠️"
-                label = ASSET_LABELS.get(column, column)
-                lines.append(f"      {icon} {label}: `{getattr(config, column)}`")
-            unresolved = sum(1 for r in directories.values() if not r.valid)
-            if unresolved:
-                # Deliberately not the "↳" the aspect reasons use: that marker belongs to
-                # a reason hanging off one of the eight aspects, and `/images config view`
-                # is compared against this report line for line by
-                # `test_season_review_and_config_view_agree`. Borrowing it here would make
-                # the two surfaces look divergent when they are not.
-                lines.append(
-                    f"      • {unresolved} of these cannot be read — "
-                    f"`/images config view` names the fault."
-                )
-
-        lines += await self._portrait_review_lines()
-
-        lines.append(f"  _{ImageValidityService.depth_summary(reports)}_")
-        lines.append("")
-        return lines
+        return ["**Image output**", *lines, ""]
 
     async def _portrait_configuration_blocker(self) -> str | None:
         """The portrait-settings reason approval must be withheld, or None.

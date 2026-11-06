@@ -527,11 +527,7 @@ def register_change_types(bot: LeagueBot) -> None:
         steps_of_the_modules,
         wind_down_change,
     )
-    from leaguebot.image.services.image_render_service import (
-        CONVERTER_NAME,
-        converter_available,
-        discard_render,
-    )
+    from leaguebot.image.services.image_render_service import discard_render
     from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
     from leaguebot.core.services.setting_change import setting_change
     from leaguebot.image.services.image_settings import image_settings
@@ -966,11 +962,9 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     # The season's approval is judged again as it runs: the clock is the queue's, the windows the
-    # enabled modules', and the drawing program the host's, read through `converter_available`
-    # when it is judged, so a test that patches it moves the judgement.
-    def rasteriser_fault() -> str | None:
-        return None if converter_available() else f"{CONVERTER_NAME} is not installed on this host."
-
+    # enabled modules', and the drawing program the host's, read through the image module's
+    # drawing's own check when it is judged, the one the reviews ask too, so the three ask it
+    # one way and cannot disagree.
     bot.change_queue.register(
         season_approval_change(
             modules=bot.module_service,
@@ -982,7 +976,7 @@ def register_change_types(bot: LeagueBot) -> None:
             round_windows_read=bot.round_windows_read,
             placements_confirmed=bot.placements_confirmed,
             placements_confirmed_steps=bot.placements_confirmed_steps,
-            rasteriser_fault=rasteriser_fault,
+            rasteriser_fault=bot.image_drawing.rasteriser_fault,
             snapshot_points_on=snapshot_configs_to_season_on,
             forget_setup=lambda: _forget_setup(bot),
             now=lambda: bot.change_queue.now(),
@@ -996,7 +990,7 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service,
             placement=bot.placement_service,
             drawing=bot.image_drawing,
-            rasteriser_fault=rasteriser_fault,
+            rasteriser_fault=bot.image_drawing.rasteriser_fault,
         )
     )
     bot.change_queue.register(season_review_take_down_change())

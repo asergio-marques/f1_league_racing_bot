@@ -136,9 +136,6 @@ def test_the_review_and_the_approval_read_the_same_evaluation():
 
 # ── The image section of both reviews ─────────────────────────────────────
 
-#: Why the section's tests fail until the build: the section is not yet asked of the drawing.
-SECTION_ASKS_THE_DRAWING = "#283: the review's image section is not yet asked of the image module's drawing"
-
 
 def _section_cog(section):
     """A cog whose drawing answers the image section's lines with *section*, or raises it where
@@ -155,7 +152,6 @@ def _section_cog(section):
     return cog
 
 
-@pytest.mark.xfail(strict=True, reason=SECTION_ASKS_THE_DRAWING)
 async def test_the_image_section_is_the_drawings_lines_beneath_cores_heading():
     """Both reviews head the image module's section **Image output**, place its lines beneath
     unchanged, and close it with a blank line. What the lines say is the image module's

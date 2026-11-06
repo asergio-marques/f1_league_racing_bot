@@ -2698,7 +2698,6 @@ KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/driver_cog.py", "DriverCog.reassign"): (1, PASS["core"]),
     ("core/cogs/driver_cog.py", "DriverCog.reject"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._attendance_review_lines"): (1, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog._build_image_review_section"): (5, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._colour_shortfall_problems"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._configuration_faults"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._do_approve"): (1, PASS["core"]),
