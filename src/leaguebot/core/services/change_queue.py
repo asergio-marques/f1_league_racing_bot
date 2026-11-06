@@ -28,10 +28,10 @@ accepted only where the bot stops, not where a save fails.
 `ChangeQueue._task`, is kept on the instance and started by `start()` (idempotent), from `start_up`
 and never from an interaction, so that it inherits no interaction's context. It wakes on the signal
 or when the next try falls due and starts one task per lane that has something to do, kept in
-`_workers`: `ALWAYS_RUN_LANES`' always (the league's own changes, and `REPAIR_LANE`, where a
-league's four repair settings run — see "A job that fails stops its lane"), and at most
+`_workers`: `ALWAYS_RUN_LANES`' always (the league's own changes), and at most
 `CONVERSATION_LANES_AT_ONCE` conversations' besides, the oldest change first, the rest waiting for
-a slot. A lane's task holds that lane's `_working` lock while it drains the lane, and has a
+a slot. A league's four repair settings run on the league lane too, and may overtake a stopped
+head there — see "A job that fails stops its lane". A lane's task holds that lane's `_working` lock while it drains the lane, and has a
 catch-all of its own, so that a fault outside any change pauses only its lane
 (`WORKER_PAUSE_AFTER_FAULT`); the dispatcher holds no lane's lock. The league lane's task runs
 once when the queue starts, so that a fault there is met at once.
