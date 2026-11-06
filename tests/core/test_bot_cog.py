@@ -558,6 +558,26 @@ def _delivered(bot: Any, channel_id: int) -> list[str]:
     return [unruled(str(text)) for text in bot.test_channels[channel_id].sent]
 
 
+#: The league's hub channel, where a test sets one.
+HUB = 7930
+
+
+def _hub_found_by(bot: Any) -> MagicMock:
+    """The hub channel, `HUB`, as the league's server finds it for *bot*, its `edit` recording any
+    permissions set on it; the server also finds the configured interaction and admin roles."""
+    hub = MagicMock(spec=discord.TextChannel)
+    hub.id = HUB
+    hub.edit = AsyncMock()
+    roles = {role_id: _role(role_id) for role_id in (CONFIGURED_ROLE, CONFIGURED_ADMIN_ROLE)}
+    guild = MagicMock()
+    guild.get_channel = MagicMock(side_effect=lambda cid: hub if cid == HUB else None)
+    guild.get_role = MagicMock(side_effect=roles.get)
+    guild.default_role = _role(1)
+    guild.me = _role(2)
+    bot.get_guild = MagicMock(return_value=guild)
+    return hub
+
+
 def _shown(column: str, new_id: int) -> str:
     """The value as the setting's line shows it: a role's mention wrapped so it notifies nobody."""
     return f"<#{new_id}>" if column.endswith("channel_id") else f"`<@&{new_id}>`"
@@ -721,15 +741,20 @@ async def test_a_core_setting_saves_its_value_and_audit_together(
 async def test_a_role_set_to_the_role_it_holds_is_answered_nothing_changed(
     tmp_path, attribute, column, held
 ):
-    """The league's server is set up; an administrator sets the interaction role, or the league
-    admin role, to the role it already holds. The change is acknowledged and run, and answered
-    "Nothing changed" in `setting_change`'s way: the reply says the role already holds the
-    setting, the log channel gets a "Nothing changed" line, and no audit entry is written."""
+    """The league's server is set up, its hub set to a channel the server finds; an administrator
+    sets the interaction role, or the league admin role, to the role it already holds. The change
+    is acknowledged and run, and answered "Nothing changed" in `setting_change`'s way: the reply
+    says the role already holds the setting, the log channel gets a "Nothing changed" line, no
+    audit entry is written, and the hub's permissions are not set again (decision 163, p3)."""
     from tests.support.change_queue import run_queue
 
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET hub_channel_id = ?", (HUB,))
+        await db.commit()
     bot = await _queued_bot(db_path)
+    hub = _hub_found_by(bot)
     cog = BotCog(bot)
     command, label = _WORDS[column]
     interaction = _asking(bot, command[1:])
@@ -743,6 +768,7 @@ async def test_a_role_set_to_the_role_it_holds_is_answered_nothing_changed(
         f"{_NAMED} | {command} | Nothing changed\n  {column}: `<@&{held}>`"
     ]
     assert await _audit_rows(db_path) == []
+    hub.edit.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
