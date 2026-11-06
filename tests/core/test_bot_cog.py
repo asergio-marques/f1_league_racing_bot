@@ -1774,7 +1774,7 @@ async def _init(cog, interaction):
 
 async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str, str]:
     """Set up the refusal *case* and run it: the bot, the interaction, the command as the log
-    names it, and a phrase of today's reply."""
+    names it, and a phrase of today's reply: for a channel setting's refusal, the whole of it."""
     db_path = await _make_db(tmp_path)
     # Every case but these runs on the league's configured server.
     if not (case.endswith("before init") or case == "init lost race to the same server"):
@@ -1802,10 +1802,15 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
         return bot, interaction, command, "already configured"
     if case == "log-channel already another job":
         await _unwrap(cog.handle_log_channel)(cog, interaction, _channel(CONFIGURED_CHANNEL))
-        return bot, interaction, command, "bot command channel"
+        return bot, interaction, command, (
+            f"❌ <#{CONFIGURED_CHANNEL}> is already the bot command channel. A channel does one "
+            f"job — pick one that is not in use, or clear the other setting first."
+        )
     if case == "log-channel already this setting":
         await _unwrap(cog.handle_log_channel)(cog, interaction, _channel(CONFIGURED_LOG))
-        return bot, interaction, command, "Nothing was changed."
+        return bot, interaction, command, (
+            f"ℹ️ <#{CONFIGURED_LOG}> is already the bot log channel. Nothing was changed."
+        )
     if case == "base-role fixed for the season":
         await _seed_ongoing_season(db_path)
         await _unwrap(cog.handle_base_role)(cog, interaction, _grantable_role())
