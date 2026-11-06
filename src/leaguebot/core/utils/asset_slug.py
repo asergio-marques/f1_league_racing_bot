@@ -7,8 +7,7 @@ than carrying its own copy.
 The normalisation is the project's own, and it is **underscores**. It is the rule the
 proof of concept already implements — ``normalize()`` in ``poc/build_poc.py``, whose
 docstring calls it "the spec's normalization" — and the rule every asset already shipped
-under ``resources/`` is named by. Constitution v2.13.0 briefly stated a hyphen; that was
-an invention and was withdrawn in v3.0.0.
+under ``resources/`` is named by.
 """
 from __future__ import annotations
 
