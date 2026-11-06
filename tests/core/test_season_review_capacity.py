@@ -290,6 +290,21 @@ async def test_a_season_with_no_divisions_is_asked_only_of_the_check_in_call(tmp
     assert drawing.asked == [("checkin_review_problem", 2)]
 
 
+@pytest.mark.parametrize("formats", [
+    pytest.param(["NORMAL", "ENDURANCE", "MYSTERY"], id="normal, endurance and mystery"),
+    pytest.param(["MYSTERY"], id="mystery alone"),
+])
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_season_with_no_sprint_asks_the_check_in_call_of_two_sessions(tmp_path, formats):
+    """A sprint round is run over four sessions and every other format over two, a mystery
+    round among them: a season holding rounds but no sprint asks the check-in call of two."""
+    drawing = _Drawing()
+    cog = _cog(await _seed(tmp_path, [("Pro", 1, formats, [])]), drawing)
+
+    assert await cog._attendance_capacity_warning(SEASON_ID) == []
+    assert drawing.asked[-1] == ("checkin_review_problem", 2)
+
+
 @pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_season_the_templates_draw_earns_no_warning_and_no_blank_line(tmp_path):
     drawing = _Drawing()
