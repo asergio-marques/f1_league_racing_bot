@@ -354,9 +354,14 @@ class OutputRouter:
         the bot stop before then.
 
         Returns the row's id, or None where the bot is not set up and there is no log channel
-        to write to: it logs that to the host, as :meth:`post_log` does before set-up.
+        to write to: it logs that to the host, as :meth:`post_log` does before set-up. "Set up"
+        means claimed (:mod:`config_service`'s "configured means the row holds a server"): a
+        packed row exists with ``log_channel_id`` NULL, which would otherwise be inserted into
+        ``pending_messages.channel_id`` (NOT NULL) and fail there instead of here.
         """
-        cursor = await db.execute("SELECT log_channel_id FROM server_configs LIMIT 1")
+        cursor = await db.execute(
+            "SELECT log_channel_id FROM server_configs WHERE server_id IS NOT NULL"
+        )
         row = await cursor.fetchone()
         if row is None:
             log.error("queue_log_on: the bot is not set up, so there is no log channel")

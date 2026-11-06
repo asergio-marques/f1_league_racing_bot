@@ -74,18 +74,21 @@ class ConfigService:
             row = await cursor.fetchone()
         return None if row is None else int(row["server_id"])
 
-    async def save_server_config(self, cfg: ServerConfig) -> bool:
-        """Claim the league's server while no server holds the claim. Returns whether it did.
+    async def claim_on(self, db: aiosqlite.Connection, cfg: ServerConfig) -> bool:
+        """Claim the league's server for *cfg* on *db*, committing nothing. Returns whether it did.
 
-        Claim-only, and deliberately so. `/bot init` is the sole caller and runs once; every
-        later change to a setting goes through the setters
+        `/bot init`'s save (`core/services/bot_init_change.py`) calls this on the connection its
+        change writes the four settings and the audit entry with, so the claim, the settings and
+        the audit entry are one save (#283): a fault in any of them leaves the claim untaken.
+
+        Claim-only, and deliberately so: every later change to a setting goes through the setters
         below, which write a single column each.
 
         An upsert here used to overwrite `test_mode_active` from whatever the caller's
-        `ServerConfig` happened to carry. `/bot init` builds one without reading the stored
-        row first, so its `force` path silently switched test mode off while leaving the
-        test drivers seated. Refusing to update at all makes that unreachable rather than
-        merely corrected.
+        `ServerConfig` happened to carry. A `/bot init force:True` once built one without reading
+        the stored row first, so its path silently switched test mode off while leaving the test
+        drivers seated. Refusing to update at all makes that unreachable rather than merely
+        corrected.
 
         **It is also the claim** (issue #244). One bot serves one league, and the league's
         server is the `server_id` of the one row this table holds. A fresh bot has no row,
@@ -95,46 +98,43 @@ class ConfigService:
         league's and came with it. Either way the condition is part of the statement, not a
         read before it, so two servers racing to `/bot init` cannot both win.
         """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                """
-                UPDATE server_configs
-                SET server_id = ?, interaction_role_id = ?, interaction_channel_id = ?,
-                    log_channel_id = ?, league_admin_role_id = ?
-                WHERE server_id IS NULL
-                """,
-                (
-                    cfg.server_id,
-                    cfg.interaction_role_id,
-                    cfg.interaction_channel_id,
-                    cfg.log_channel_id,
-                    cfg.league_admin_role_id,
-                ),
-            )
-            if cursor.rowcount > 0:
-                await db.commit()
-                return True
-            cursor = await db.execute(
-                """
-                INSERT INTO server_configs
-                    (server_id, interaction_role_id, interaction_channel_id,
-                     log_channel_id, league_admin_role_id, test_mode_active,
-                     test_mode_nationality_required)
-                SELECT ?, ?, ?, ?, ?, ?, ?
-                WHERE NOT EXISTS (SELECT 1 FROM server_configs)
-                """,
-                (
-                    cfg.server_id,
-                    cfg.interaction_role_id,
-                    cfg.interaction_channel_id,
-                    cfg.log_channel_id,
-                    cfg.league_admin_role_id,
-                    int(cfg.test_mode_active),
-                    int(cfg.test_mode_nationality_required),
-                ),
-            )
-            await db.commit()
-            return cursor.rowcount > 0
+        cursor = await db.execute(
+            """
+            UPDATE server_configs
+            SET server_id = ?, interaction_role_id = ?, interaction_channel_id = ?,
+                log_channel_id = ?, league_admin_role_id = ?
+            WHERE server_id IS NULL
+            """,
+            (
+                cfg.server_id,
+                cfg.interaction_role_id,
+                cfg.interaction_channel_id,
+                cfg.log_channel_id,
+                cfg.league_admin_role_id,
+            ),
+        )
+        if cursor.rowcount > 0:
+            return True
+        cursor = await db.execute(
+            """
+            INSERT INTO server_configs
+                (server_id, interaction_role_id, interaction_channel_id,
+                 log_channel_id, league_admin_role_id, test_mode_active,
+                 test_mode_nationality_required)
+            SELECT ?, ?, ?, ?, ?, ?, ?
+            WHERE NOT EXISTS (SELECT 1 FROM server_configs)
+            """,
+            (
+                cfg.server_id,
+                cfg.interaction_role_id,
+                cfg.interaction_channel_id,
+                cfg.log_channel_id,
+                cfg.league_admin_role_id,
+                int(cfg.test_mode_active),
+                int(cfg.test_mode_nationality_required),
+            ),
+        )
+        return cursor.rowcount > 0
 
     #: The four settings `/bot init` establishes and the four commands beside it repair, the
     #: league's two roles, which `/bot base-role` and `/bot driver-role` set (issue #276), and

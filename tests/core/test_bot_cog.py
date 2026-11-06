@@ -64,9 +64,6 @@ CONFIGURED_ADMIN_ROLE = 444
 #: "Now", as the change queue's clock gives it to the tests that run it.
 NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
 
-#: Why a `/bot init` test fails until the build: the command still claims off the queue.
-_INIT_QUEUED = "#283: /bot init is not yet a change on the change queue"
-
 #: The queue's acknowledgement of `/bot init`, before anything is claimed.
 _INIT_ACKNOWLEDGED = (
     "⏳ Saving the bot configuration. This message will be updated when it is done; if it takes "
@@ -262,7 +259,6 @@ def _init_line(*, admin_name: str = "Stewards", named: str = None, log_channel: 
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_INIT_QUEUED)
 async def test_bot_init_configures_an_unconfigured_server(tmp_path):
     """No server is claimed yet. An administrator runs `/bot init` with the interaction role, the
     league admin role, the interaction channel and the log channel. They are answered at once with
@@ -289,7 +285,6 @@ async def test_bot_init_configures_an_unconfigured_server(tmp_path):
     assert row["log_channel_id"] == CONFIGURED_LOG
 
 
-@pytest.mark.xfail(strict=True, reason=_INIT_QUEUED)
 async def test_bot_init_is_audited_with_the_four_settings(tmp_path):
     """Issue #371. Nothing stood before the claim, so every value it replaced is null. The entry
     is stamped with the queue's clock, never the host's."""
@@ -570,7 +565,6 @@ async def test_a_second_bot_init_queued_behind_the_first_is_refused_as_it_starts
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_INIT_QUEUED)
 @pytest.mark.parametrize("before", ["fresh", "packed"])
 async def test_bot_init_ends_on_a_fault_without_stopping_the_queue(
     tmp_path, monkeypatch, caplog, before
@@ -647,7 +641,6 @@ async def _claim(db_path: str, cfg) -> bool:
     return created
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the claim is not yet written on the save's connection")
 async def test_the_claim_will_not_overwrite_an_existing_row(tmp_path):
     """The insert-only contract, at the layer that enforces it: the league's server is set up, and
     the claim is asked for the same server with other settings. It is not taken, and the log
@@ -671,7 +664,6 @@ async def test_the_claim_will_not_overwrite_an_existing_row(tmp_path):
     assert (await _row(db_path))["log_channel_id"] == CONFIGURED_LOG
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the claim is not yet written on the save's connection")
 async def test_the_claim_will_not_take_a_second_server(tmp_path):
     """Issue #244: one bot serves one league, and the first server set up is the league's. The
     league's server is set up, and the claim is asked for another server: it is not taken."""
@@ -1314,7 +1306,6 @@ def test_bot_init_requires_the_league_admin_role():
     assert parameter.required
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the claim is not yet written on the save's connection")
 async def test_the_claim_persists_the_league_admin_role(tmp_path):
     """No server is claimed; the claim is taken with all four settings, the league admin role among
     them, which is stored and read back."""

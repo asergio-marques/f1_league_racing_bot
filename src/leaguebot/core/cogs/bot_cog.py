@@ -41,8 +41,9 @@ from discord.ext import commands
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import LEAGUE_LANE
-from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.services import backup_service, factory_reset_service, pack_service
+from leaguebot.core.services.bot_init_change import ANOTHER_SERVER as _ANOTHER_SERVER
+from leaguebot.core.services.bot_init_change import KIND as BOT_INIT
 from leaguebot.core.utils.channel_guard import (
     DRIVER_ROLE_STANDS_FOR,
     bot_setup_only,
@@ -58,21 +59,8 @@ from leaguebot.core.utils.log_lines import lane_name, refuse
 
 log = logging.getLogger(__name__)
 
-#: Named in every refusal, so an administrator meeting one is told where to go next.
-_SETTINGS_COMMANDS = (
-    "`/bot log-channel`, `/bot interaction-channel`, `/bot interaction-role` "
-    "and `/bot admin-role`"
-)
-
 #: The word `/bot pack` asks to be typed, as the reset it replaced did.
 _CONFIRM_WORD = "CONFIRM"
-
-#: One bot serves one league (issue #244). The tree refuses a command from another server
-#: before it gets here; this is the clearer message for the one command a second server is
-#: likeliest to try, and the answer to a lost race between two.
-_ANOTHER_SERVER = (
-    "⛔ This bot already serves the league on another server. One bot serves one league."
-)
 
 
 async def _refuse_on_host(interaction: discord.Interaction, reply: str) -> None:
@@ -157,7 +145,10 @@ class BotCog(commands.Cog):
 
         if self._clean_up is not None and not self._clean_up.done():
             # A new claim would be made while the last reset is still deleting the bot's
-            # messages and roles here. Nothing is configured, so the host's log alone.
+            # messages and roles here. Nothing is configured, so the host's log alone. Judged
+            # only here: `BotCog._clean_up` is kept in memory on the cog, never in the
+            # database the queue reads, so the change type's check cannot ask it again as the
+            # change starts.
             await _refuse_on_host(
                 interaction,
                 "⛔ A factory reset is still cleaning up Discord. Run `/bot init` again once "
@@ -165,69 +156,18 @@ class BotCog(commands.Cog):
             )
             return
 
-        existing = await self.bot.config_service.get_server_config()
-        if existing:
-            await refuse(
-                interaction,
-                "⚠️ This server is already configured, and `/bot init` runs once.\n"
-                f"To change a setting use {_SETTINGS_COMMANDS}.\n"
-                "To move the league to another server, use `/bot pack` first.",
-                what=describe(interaction),
-            )
-            return
-
-        claimed = {
+        payload = {
             "server_id": server_id,
             "interaction_role_id": interaction_role.id,
+            "interaction_role_name": interaction_role.name,
             "league_admin_role_id": league_admin_role.id,
+            "league_admin_role_name": league_admin_role.name,
             "interaction_channel_id": interaction_channel.id,
             "log_channel_id": log_channel.id,
         }
-        created = await self.bot.config_service.save_server_config(
-            ServerConfig(
-                server_id=server_id,
-                interaction_role_id=interaction_role.id,
-                league_admin_role_id=league_admin_role.id,
-                interaction_channel_id=interaction_channel.id,
-                log_channel_id=log_channel.id,
-            )
+        await self.bot.change_queue.ask(
+            BOT_INIT, payload, interaction=interaction, what=describe(interaction),
         )
-        if not created:
-            # Lost a race with a concurrent /bot init. Report the refusal that fits whoever
-            # won rather than claiming a success that wrote nothing.
-            if await self.bot.config_service.get_league_server_id() != server_id:
-                await _refuse_on_host(interaction, _ANOTHER_SERVER)
-                return
-            await refuse(
-                interaction,
-                "⚠️ This server is already configured, and `/bot init` runs once.\n"
-                f"To change a setting use {_SETTINGS_COMMANDS}.",
-                what=describe(interaction),
-            )
-            return
-
-        # Audited as replacing nothing (issue #371): the claim is taken only where no server
-        # holds it, so a first run finds no row and a run after a pack finds all five cleared.
-        await _audit(
-            self.bot, interaction.user, "BOT_INITIALISED", dict.fromkeys(claimed), claimed
-        )
-
-        await interaction.response.send_message(
-            f"✅ Bot configuration saved!\n"
-            f"**League admin role**: {league_admin_role.mention}\n"
-            f"**Interaction role**: {interaction_role.mention}\n"
-            f"**Interaction channel**: {interaction_channel.mention}\n"
-            f"**Log channel**: {log_channel.mention}",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot init | Success\n"
-            f"  league_admin_role: {league_admin_role.name} (<@&{league_admin_role.id}>)\n"
-            f"  interaction_role: {interaction_role.name} (<@&{interaction_role.id}>)\n"
-            f"  interaction_channel: <#{interaction_channel.id}>\n"
-            f"  log_channel: <#{log_channel.id}>",
-        )
-        log.info("Bot configured by %s", interaction.user)
 
     # ------------------------------------------------------------------
     # The four settings, each a core `Setting` on the change queue

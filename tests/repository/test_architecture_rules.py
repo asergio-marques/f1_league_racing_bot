@@ -788,6 +788,7 @@ LOG_CHANNEL_NAMED_BY = {
     "core/services/channel_registry_service.py": "lists it among the channels in use",
     "core/services/pack_service.py": "clears it when the bot is packed",
     "core/services/bot_settings.py": "the setting that sets it",
+    "core/services/bot_init_change.py": "the change that first claims it",
 }
 
 def _files_naming_the_log_channel() -> set[str]:
@@ -2037,7 +2038,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog.division_calendar_channel"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_lineup_channel"): (1, PASS["core"]),
     ("core/services/audit_service.py", "record_change"): (1, PASS["core"]),
-    ("core/services/config_service.py", "ConfigService.save_server_config"): (2, PASS["core"]),
     ("core/services/driver_service.py", "DriverService._create_profile"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),

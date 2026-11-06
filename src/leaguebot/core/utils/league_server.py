@@ -1,7 +1,7 @@
 """One bot serves one league, on one Discord server — and this is where that is enforced.
 
 **The league's server is the one `server_configs` row.** The first `/bot init` claims it, and
-`ConfigService.save_server_config` refuses to claim a second, so whichever server was set up
+`ConfigService.claim_on` refuses to claim a second, so whichever server was set up
 first is the league's until `/bot pack` clears the claim again (issue #247). No setting names
 the server in advance: a bot that is invited only where its host puts it — Discord's *Public Bot*
 switch off, as the README requires — never meets a second server anyway, and this is the

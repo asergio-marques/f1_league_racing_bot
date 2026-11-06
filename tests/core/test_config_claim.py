@@ -20,9 +20,6 @@ from leaguebot.core.services.config_service import RELEASE_CLAIM_SQL, ConfigServ
 OLD_SERVER = 4242
 NEW_SERVER = 5353
 
-#: Why a claim test fails until the build: the claim is still its own commit, off the queue.
-_CLAIM_ON = "#283: the claim is not yet written on the save's connection"
-
 
 def _config(server_id: int) -> ServerConfig:
     return ServerConfig(
@@ -114,7 +111,6 @@ async def test_a_released_row_takes_no_setting(service):
     assert (await _row(service))["log_channel_id"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=_CLAIM_ON)
 async def test_another_server_claims_a_released_row(service):
     await _release(service)
 
@@ -127,7 +123,6 @@ async def test_another_server_claims_a_released_row(service):
     assert await service.get_league_server_id() == NEW_SERVER
 
 
-@pytest.mark.xfail(strict=True, reason=_CLAIM_ON)
 async def test_the_claim_carries_test_mode_and_the_module_flags_over(service):
     """`ServerConfig` defaults test mode off; the claim must write neither it nor the flags."""
     await _release(service)
@@ -153,7 +148,6 @@ def test_server_config_carries_no_module_flags():
     assert [n for n in names if n.endswith("_module_enabled")] == []
 
 
-@pytest.mark.xfail(strict=True, reason=_CLAIM_ON)
 async def test_only_one_server_claims_a_released_row(service):
     await _release(service)
 
