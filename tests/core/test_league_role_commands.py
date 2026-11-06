@@ -782,10 +782,6 @@ async def test_a_changed_base_role_is_handed_to_the_base_role_changed_hook(tmp_p
     assert [c.args[0].id for c in _permission_calls(guild)] == [OLD_ROLE, NEW_ROLE]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the base role's save takes the role it replaces from the ask, not the database",
-)
 async def test_two_base_roles_asked_in_turn_each_replace_the_one_before(tmp_path):
     """The league's base role is 3001. The manager asks `/bot base-role` for 3002 and then, while
     that change still waits, for 3003; the queue runs both in turn. The second replaces the role

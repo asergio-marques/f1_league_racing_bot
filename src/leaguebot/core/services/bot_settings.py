@@ -258,6 +258,17 @@ def _guild_and_role(ctx: StepContext) -> tuple[discord.Guild, discord.Role]:
     return guild, role
 
 
+def _replaced_role_id(ctx: StepContext) -> int | None:
+    """The role a league role's save actually replaced, read as the save read it (`current` in
+    *its* `Saved.result`, kept there for this), never the payload's stale *old_role_id*: a second
+    change queued behind the first may have moved the value on by the time this one's save runs."""
+    return next(
+        (view.result or {}).get("replaced")
+        for view in ctx.steps
+        if view.name == _SAVE_STEP
+    )
+
+
 def _replaced_reply(payload: dict[str, Any]) -> str:
     return (
         f"\nThe role it replaces is no longer on the server, so it could be replaced although "
@@ -296,8 +307,15 @@ def _league_role_setting(
     the ask. It also re-judges whether the stored role is still gone from the server — Discord's
     truth, not the stale *replacing_gone* the ask recorded — since a role recreated meanwhile, or
     a season no longer fixed, must not be refused, or a role no longer gone must not slip through.
-    The save still trusts *old_role_id* and *replacing_gone* for its own write: `check` runs
-    immediately before it, on the same lane, with nothing else able to land between them.
+    `replacing_gone` still decides, for the save, whether a role gone from the server grants its
+    replacement to every driver: `check` runs immediately before the save, on the same lane, with
+    nothing else able to land between them.
+
+    **The save reads the role it replaces itself** (`current`, kept in its result as *replaced*),
+    never the payload's *old_role_id*: a change waiting ahead on the lane may have moved the value
+    on since this one was asked, and auditing or handing on a role already superseded would carry
+    the wrong one to the hook and the log (#283). *old_role_id* still serves `check`'s judgement
+    above, which asks Discord rather than the database.
 
     **The base role's save plans two follow-ons the driver role never needs:** calling the "base
     role changed" hook (`BASE_ROLE_CHANGED`), which moves the signup channel's overwrite without
@@ -330,7 +348,6 @@ def _league_role_setting(
 
     async def save(db: aiosqlite.Connection, payload: dict[str, Any]) -> Saved:
         value = int(payload["value"])
-        old_role_id = payload.get("old_role_id")
         cursor = await db.execute(
             f"SELECT {column} FROM server_configs WHERE server_id IS NOT NULL"
         )
@@ -351,8 +368,9 @@ def _league_role_setting(
             then.append(PlannedStep(GRANT_TO_DRIVERS))
         return Saved(
             changed=True,
-            audits=(AuditRecord(change_type, {"role_id": old_role_id}, {"role_id": value}),),
+            audits=(AuditRecord(change_type, {"role_id": current}, {"role_id": value}),),
             details=tuple(details),
+            result={"replaced": current},
             then=tuple(then),
         )
 
@@ -391,15 +409,16 @@ def _league_role_setting(
 
 def _move_signup_overwrite() -> After:
     """The `After` step the base role's save plans: call the "base role changed" hook the
-    builder makes, with the server, the role replaced and the role now set, handing no
-    connection (signup's subscriber opens its own). Core never reaches `bot.signup_module_service`
+    builder makes, with the server, the role the save actually replaced (`_replaced_role_id`,
+    never the payload's stale *old_role_id*) and the role now set, handing no connection
+    (signup's subscriber opens its own). Core never reaches `bot.signup_module_service`
     itself (#283). The hook's subscribers never raise, each logging its own faults, so this
     step never fails.
     """
 
     async def run(ctx: StepContext) -> StepResult:
         guild, role = _guild_and_role(ctx)
-        await ctx.bot.base_role_changed.call(guild, ctx.payload.get("old_role_id"), role)
+        await ctx.bot.base_role_changed.call(guild, _replaced_role_id(ctx), role)
         return StepResult()
 
     return After(step=Step(BASE_ROLE_CHANGED, StepKind.ACT, run), fault_reply=lambda _p, r: r)
