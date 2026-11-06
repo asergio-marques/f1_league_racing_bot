@@ -286,10 +286,11 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   no longer due (a channel unset, the bot's permission lost), it has nobody to refuse, so it stops
   its lane like a job that fails (below), at its first job and with the check's reason, and is
   checked again at each try. So does any change, a member's included, whose check raises as it
-  starts, save a member's settings change: a change type that gives `ChangeType.on_check_fault`
-  has such a change ended in one save as a failure and the lane goes on (see "A job that fails
-  stops its lane"), while a bot's change of the same type still stops its lane. Meanwhile the log
-  channel records what failed, as the core specification's "Setting the bot up" has it do. This `steward_module.md` §4 designs for a cycle's close, made bot-wide.
+  starts, save a member's settings change or `/bot init`: a change type that gives
+  `ChangeType.on_check_fault` has such a change ended in one save as a failure and the lane goes
+  on (see "A job that fails stops its lane"), while a bot's change of the same type still stops
+  its lane. Meanwhile the log channel records what failed, as the core specification's "Setting
+  the bot up" has it do. This `steward_module.md` §4 designs for a cycle's close, made bot-wide.
 
   A check that must refuse a press while the same approval is already in hand reads the queue
   (`unfinished`, or `in_hand` where the refusal names the job it waits on), which give the changes
@@ -419,39 +420,44 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   for meanwhile is acknowledged as usual, joins the back of its lane and says that the lane is
   stopped; one that overtakes a stop says it runs past it, the stop standing (`held_behind_text`).
 
-  **Four exceptions: a league's settings, roles moved after a driver's or team's change, the four
-  settings a league repairs itself with, and `/bot init`.** A change to one of a league's settings
-  is one atomic save of its value and its audit record (its line with them, or in the save of the
-  step after it that carries the line — the arming of the daily portrait job, a role's grant to
-  every driver where it replaces one gone from the server while the season's configuration is
-  fixed, or the old hub stood down and the new one's permissions set once its channel is moved; see
-  "The record is the queue's"), and the work after it that the setting does not need (checking it
-  against the templates, arming or removing a timed job, granting a role to every driver, asking
-  the hub's panel to be posted again as the bot's own change) is work nothing later depends on. A
-  fault in either leaves nothing half-done and nothing behind it on the lane waits on it. A fault
-  in the save is rolled back whole, so nothing is saved and the member can simply ask again; a
-  fault in a step after the save leaves the setting saved, so asking again with the same value
-  saves nothing and repeats no step, and the reply says what was not done, or what to do by hand,
-  where the step has anything to say. So such a step carries `Step.on_fault`: where it raises, the
-  queue does not stop the lane but marks the job done with what `on_fault` returns, in a save of
-  its own with its lines, and the change carries on to its next step or finishes. A change type may
-  likewise give `ChangeType.on_check_fault` for a check that raises as a **member's** change
-  starts: the change is ended as REFUSED in one save, with the failure line in place of a
-  refusal's, and the reply it returns. What the member is told and what the log channel records of
-  either is the core specification's "How a change is carried out"; the full detail goes to the
-  host's log. A step that is `undiscardable` may not carry `on_fault`, since it is a step a stop
-  must hold. `core/services/setting_change.py` builds both callbacks for every settings command
-  once. `/bot init` is not a setting — it claims the league's server, which no setting does — but
-  its one save ends on a fault for the same reason a setting's does: no league admin role exists
-  until a first `/bot init` has claimed one, so nobody could clear a stop on it if it held the lane
-  (`core/services/bot_init_change.py`). *Rejected:* a step that catches its own fault, which would
-  leave its partial writes on the save's connection and could not catch what fails after it
-  returns, the queue's own audit and line writes and the commit; stopping the lane for a setting or
-  for `/bot init`, which would hold every other change for a fault that either the member cures by
-  asking again (a save rolled back) or that nothing later on the lane depends on (a step after
-  it); and a bespoke change type for every settings command, which forms the line, the audit and
-  the fault answer a score of ways — the reason `/bot init` is one, and no settings command is,
-  is that it alone claims the server rather than writing a column of one already claimed.
+  **Four exceptions: a league's settings, `/bot init`, roles moved after a driver's or team's
+  change, and the four settings a league repairs itself with.** A change to one of a league's
+  settings is one atomic save of its value and its audit record (its line with them, or in the
+  save of the step after it that carries the line — the arming of the daily portrait job, a
+  role's grant to every driver where it replaces one gone from the server while the season's
+  configuration is fixed, or the old hub stood down and the new one's permissions set once its
+  channel is moved; see "The record is the queue's"), and the work after it that the setting does
+  not need (checking it against the templates, arming or removing a timed job, granting a role to
+  every driver, asking the hub's panel to be posted again as the bot's own change) is work nothing
+  later depends on. A fault in either leaves nothing half-done and nothing behind it on the lane
+  waits on it. A fault in the save is rolled back whole, so nothing is saved and the member can
+  simply ask again; a fault in a step after the save leaves the setting saved, so asking again
+  with the same value saves nothing and repeats no step, and the reply says what was not done, or
+  what to do by hand, where the step has anything to say. So such a step carries `Step.on_fault`:
+  where it raises, the queue does not stop the lane but marks the job done with what `on_fault`
+  returns, in a save of its own with its lines, and the change carries on to its next step or
+  finishes. A change type may likewise give `ChangeType.on_check_fault` for a check that raises as
+  a **member's** change starts: the change is ended as REFUSED in one save, with the failure line
+  in place of a refusal's, and the reply it returns. What the member is told and what the log
+  channel records of either is the core specification's "How a change is carried out"; the full
+  detail goes to the host's log. A step that is `undiscardable` may not carry `on_fault`, since it
+  is a step a stop must hold. `core/services/setting_change.py` builds both callbacks for every
+  settings command once. *Rejected:* a step that catches its own fault, which would leave its
+  partial writes on the save's connection and could not catch what fails after it returns, the
+  queue's own audit and line writes and the commit; stopping the lane for a setting, which would
+  hold every other change for a fault that either the member cures by asking again (a save rolled
+  back) or that nothing later on the lane depends on (a step after it); and a bespoke change type
+  for every settings command, which forms the line, the audit and the fault answer a score of
+  ways.
+
+  `/bot init` is not a setting — it claims the league's server, which no setting does — but its
+  one SAVE step ends on a fault the same way (`Step.on_fault`), and its check, on a member's
+  change ending in the same way too (`ChangeType.on_check_fault`): no league admin role exists
+  until a first `/bot init` has claimed one, so nobody could clear a stop on it if it held the
+  lane (`core/services/bot_init_change.py`). *Rejected:* a change type of its own for every
+  settings command, as for `/bot init` above — the reason `/bot init` is one, and no settings
+  command is, is that it alone claims the server rather than writing a column of one already
+  claimed.
 
   The same holds for a member's roles moved after their driver's or their team's change. A `/driver`
   or `/team` change saves the driver's or the team's rows and their audit record in one step, and
@@ -1117,8 +1123,8 @@ to it would switch off the one failure path for every command.
    the job runs again, so that its failure is recorded then; beside it, the dispatcher's own
    catch-all (`ChangeQueue._work`) puts a fault in starting the lanes in the host's log and pauses
    before it looks again. The queue's catch of a step that raises is a failure path as well: it
-   stops the lane, or, for a step of a league's setting or a role move that gives `Step.on_fault`,
-   and for a check that raises as a member's change of a type that gives
+   stops the lane, or, for a step of a league's setting, `/bot init`'s save or a role move that
+   gives `Step.on_fault`, and for a check that raises as a member's change of a type that gives
    `ChangeType.on_check_fault`, ends the job instead and the lane goes on (see "A job that fails
    stops its lane"). Either way the fault is logged on the host and recorded in the log channel as a
    failure, once. The callback a change type may give for a Discard of a change before it started
