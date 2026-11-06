@@ -422,11 +422,11 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   **Three exceptions: a league's settings, roles moved after a driver's or team's change, and the
   four settings a league repairs itself with.** A change to one of a league's settings is one
   atomic save of its value and its audit record (its line with them, or in the save of the step
-  after it that carries the line — the arming of the daily portrait job, or a role's grant to every
-  driver where it replaces one gone from the server while the season's configuration is fixed; see
-  "The record is the queue's"), and the work after it that the setting does not need (checking it
-  against the templates, arming or removing a timed job, granting a role to every driver) is work
-  nothing later depends on. A fault in either leaves nothing half-done and nothing behind it on the
+  after it that carries the line — the arming of the daily portrait job, a role's grant to every
+  driver where it replaces one gone from the server while the season's configuration is fixed, or
+  the hub's permissions set again once its channel is moved; see "The record is the queue's"), and
+  the work after it that the setting does not need (checking it against the templates, arming or
+  removing a timed job, granting a role to every driver) is work nothing later depends on. A fault in either leaves nothing half-done and nothing behind it on the
   lane waits on it. A fault in the save is rolled back whole, so nothing is saved and the member
   can simply ask again; a fault in a step after the save leaves the setting saved, so asking again
   with the same value saves nothing and repeats no step, and the reply says what was not done, or
@@ -578,11 +578,13 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   `setting_change` builds the change type, so that the line, whether an audit record is written,
   the answer for a value already held and the answer for a fault are decided in one place. A
   setting's value, its audit record and its line are one save, save where a step after it arms the
-  daily portrait job, or grants a role to every driver where it replaces one gone from the server
-  while the season's configuration is fixed: there the value and the audit record share the save
-  and the line follows in that step's own save, so that a failed arming, or a failed grant, records
-  no success. *Rejected:* a bespoke change type for each command, which forms the line, the audit
-  and the fault answer a score of ways.
+  daily portrait job, grants a role to every driver where it replaces one gone from the server
+  while the season's configuration is fixed, or stands the old hub down and sets the new one's
+  permissions once its channel is moved: there the value and the audit record share the save and
+  the line follows in that step's own save, so that a failed arming, a failed grant, or a hub
+  permission Discord refuses, records no success, or records a success with that fault named
+  beneath it where the step reports rather than raises it. *Rejected:* a bespoke change type for
+  each command, which forms the line, the audit and the fault answer a score of ways.
 
 ---
 
