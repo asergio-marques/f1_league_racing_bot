@@ -139,7 +139,28 @@
     - Most recent pole position
     - Most recent first-row start
   - Season stats
-    - <!-- TBD -->
+    - Most wins
+    - Most podiums
+    - Most points per entry
+    - Most fastest lap
+    - Highest average finishing position
+    - Most pole positions
+    - Most front-row starts
+    - Highest average starting position
+    - Highest average position gain/loss from the grid in races
+    - Lowest average position gain/loss from the grid in races
+    - Highest pole conversion rate
+    - Lowest pole conversion rate
+    - Lowest grid position to win
+    - Biggest teammate head-to-head
+    - Most penalty points per entry (warnings count as fraction of a penalty point if converted)
+    - Least penalty points per entry (warnings count as fraction of a penalty point if converted)
+    - Highest average time penalties per entry in the current season
+    - Lowest average time penalties per entry in the current season
+    - Highest attendance rate in current season (full-time drivers and reserves are calculated differently)
+    - Lowest attendance rate in current season (full-time drivers and reserves are calculated differently)
+    - Different winners per division
+    - Different pole positions per division
   - Division stats
     - <!-- TBD -->
   - League stats
