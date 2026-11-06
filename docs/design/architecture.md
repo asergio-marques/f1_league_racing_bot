@@ -1082,17 +1082,19 @@ to it would switch off the one failure path for every command.
    module's lineup gate (`ImageDrawing.lineup_wanted`) is a stated exception beside it: its
    catch-all puts the error in the host's log alone, with no line to the log channel, and answers
    that the league does not draw its lineup, so the text lineup goes out, because a gate that
-   cannot be read must not lose a league its lineup (its docstring says so); the season review's
-   own capacity checks (`SeasonCog._lineup_problems`, `_calendar_round_overflow`,
-   `_calendar_capacity_warning` and `_attendance_capacity_warning`) are a stated exception beside
-   `PlacementService._ask_drawing`'s: each catch-all puts the error in the host's log in full and
-   lets the round or the season through as if no problem were found, because a capacity check that
-   cannot run must not block a round or a season (their docstrings say so); and the image module's
-   artwork signature (`ImageDrawing.artwork_signature`) is a stated exception too: its catch-all
-   signs a configured directory it cannot resolve as `[column, value, "unresolvable"]`, with a
-   warning to the host's log alone, and signs the rest all the same, because a fault that escaped
-   it would empty the whole fingerprint and the review would read as changed in every area (its
-   docstring says so);
+   cannot be read must not lose a league its lineup (its docstring says so); the helper through
+   which the season cog's own capacity checks count and ask the drawing
+   (`SeasonCog._ask_drawing`) — the round guard at `/round add` and the round import
+   (`_calendar_round_overflow`), and the review's and the approval's (`_lineup_problems`,
+   `_calendar_capacity_warning`, `_attendance_capacity_warning`) — is a stated exception beside
+   `PlacementService._ask_drawing`'s: its catch-all puts the error in the host's log in full and
+   lets the round or the season through as if no problem were found, because a capacity check
+   that cannot run must not block a round or a season (its docstring says so); and the image
+   module's artwork signature (`ImageDrawing.artwork_signature`) is a stated exception too: its
+   catch-all signs a configured directory it cannot resolve as `[column, value, "unresolvable"]`,
+   with a warning to the host's log alone, and signs the rest all the same, because a fault that
+   escaped it would empty the whole fingerprint and the review would read as changed in every
+   area (its docstring says so);
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
@@ -1111,7 +1113,7 @@ refusal the member can act on, or to hand them to `report_failure` itself with c
 outcome, as `/test-mode backup save` does with a backup fault, saying that the previous backup is unchanged.
 
 *Rejected:* narrowing the capacity guards' catch to the errors they expect by name, in the
-placement guard or the season review's own checks alike: a fault of any other kind would then
+placement guard or the season cog's own checks alike: a fault of any other kind would then
 block a placement, a round or a season, when a check that cannot run must not.
 
 *Rejected:* treating a calendar gate that cannot be read as a picture that could not be drawn: it
