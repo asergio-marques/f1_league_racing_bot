@@ -244,18 +244,21 @@ def _cog(
             setattr(cog, name, _stood_down(name))
 
     # The image section. What it prints has tests of its own, in
-    # `tests/image/test_image_module_flow.py`; under test here is whether its faults withhold the button
-    # (#396), so the report lines are stubbed and the fault reading is left real. Its readers
-    # are pinned to "nothing wrong" — each is wrapped in a `try` that turns a mock's
-    # surprise into a fault of its own, which would withhold the button on the harness.
+    # `tests/image/test_image_drawing_review.py`; under test here is whether its faults withhold
+    # the button (#396), so the report lines are stubbed and the fault reading is left real. The
+    # image module's drawing answers "nothing wrong" to each question of the configuration, and
+    # neither picture is wanted: a mock's answer read as a fault would withhold the button on the
+    # harness.
     cog._build_image_review_section = AsyncMock(return_value=[])
     cog._calendar_capacity_warning = AsyncMock(return_value=[])
     cog._attendance_capacity_warning = AsyncMock(return_value=[])
     cog._lineup_problems = AsyncMock(return_value=lineup_problems or [])
-    bot.image_validity_service.template_reports = AsyncMock(return_value={})
-    bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
-    bot.image_config_service.get_toggles = AsyncMock(return_value={})
-    bot.image_config_service.get_config = AsyncMock(return_value=None)
+    bot.image_drawing.rasteriser_fault = MagicMock(return_value=None)
+    bot.image_drawing.template_faults = AsyncMock(return_value=[])
+    bot.image_drawing.colour_shortfall_problems = AsyncMock(return_value=[])
+    bot.image_drawing.portrait_fault = AsyncMock(return_value=None)
+    bot.image_drawing.calendar_wanted = AsyncMock(return_value=False)
+    bot.image_drawing.lineup_wanted = AsyncMock(return_value=False)
     if image_faults is not None:
         cog._image_configuration_faults = AsyncMock(return_value=image_faults)
 
@@ -300,15 +303,12 @@ def _interaction():
     return interaction
 
 
-async def _review(cog, interaction, *, converter=True):
+async def _review(cog, interaction):
     """Run the command, returning what it shows as ``(text, ephemeral)``: the public review it
     asked the queue to post (its report's sections, then its question where it is offered),
     then its private follow-ups. It must ask `season.review.post` exactly once, with the
     manager's interaction, and post nothing public itself; the request is kept on the cog, read
     by `_asked`.
-
-    *converter* is whether the rasteriser is installed, said rather than read from the host:
-    the image checks ask, and a test must not pass on one host and fail on the next.
     """
     from leaguebot.core.services import season_fingerprint_service as sfs
 
@@ -321,8 +321,6 @@ async def _review(cog, interaction, *, converter=True):
         new=AsyncMock(
             return_value=SimpleNamespace(phase_1_days=5, phase_2_days=2, phase_3_hours=2)
         ),
-    ), patch(
-        "leaguebot.image.services.image_render_service.converter_available", return_value=converter
     ), patch.object(sfs, "take_fingerprint", _evidence):
         await undecorate(SeasonCog.season_review)(cog, interaction)
     asked = [call for call in cog.bot.change_queue.ask.await_args_list
@@ -806,71 +804,56 @@ async def test_points_faults_are_not_checked_with_results_off(db_path):
 # confirmation refuses on, so what withholds the button here is what refuses the press.
 
 
-def _broken(template_key: str):
-    from leaguebot.image.models.image_module import ValidityReport
-
-    return ValidityReport(
-        template_key=template_key,
-        resolved_path=None,
-        valid=False,
-        depth_checked=0,
-        reason="file not found",
-    )
+#: Why the review's image tests fail until the build: the faults are not yet asked of the drawing.
+ASKS_THE_DRAWING = "#283: the review's image faults are not yet asked of the image module's drawing"
 
 
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_a_sound_image_configuration_is_offered_for_approval(db_path):
     cog = _cog(db_path, images=True)
 
     await _review(cog, _interaction())
 
     assert _offered(cog)
+    cog.bot.image_drawing.template_faults.assert_awaited_once_with()
 
 
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_a_missing_rasteriser_withholds_approval(db_path):
     """With the lineup and the calendar off the review draws nothing, so the rasteriser
     being absent was never met by a render — and every graphic of the season would fail."""
     cog = _cog(db_path, images=True)
-
-    messages = await _review(cog, _interaction(), converter=False)
-
-    assert not _offered(cog)
-    assert "image module is not correctly configured" in _private(messages)
-    assert "is not installed on this host" in _private(messages)
-
-
-async def test_a_broken_template_of_a_switched_on_output_withholds_approval(db_path):
-    from leaguebot.image.models.image_constants import TEMPLATE_LABELS
-
-    cog = _cog(db_path, images=True)
-    cog.bot.image_config_service.get_toggles = AsyncMock(return_value={"results": True})
-    cog.bot.image_validity_service.template_reports = AsyncMock(
-        return_value={"results_race_template": _broken("results_race_template")}
-    )
+    cog.bot.image_drawing.rasteriser_fault.return_value = "Inkscape is not installed on this host."
 
     messages = await _review(cog, _interaction())
 
     assert not _offered(cog)
-    assert f"Template **{TEMPLATE_LABELS['results_race_template']}**" in _private(messages)
+    assert "image module is not correctly configured" in _private(messages)
+    assert "Inkscape is not installed on this host." in _private(messages)
+    cog.bot.image_drawing.rasteriser_fault.assert_called_with()
 
 
-async def test_a_broken_template_of_a_switched_off_output_withholds_nothing(db_path):
-    """An output that is off posts as text and draws no template, so its template stops
-    nothing — the review names it as a warning, and offers the button."""
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
+async def test_a_broken_template_of_a_switched_on_output_withholds_approval(db_path):
+    """Which templates a switched-on output draws, and so which withhold the button, is the
+    image module's to say (`tests/image/test_image_drawing_review.py`); the review withholds it
+    on each the module names."""
+    fault = "Template **Results — race**: the template file cannot be found."
     cog = _cog(db_path, images=True)
-    cog.bot.image_validity_service.template_reports = AsyncMock(
-        return_value={"results_race_template": _broken("results_race_template")}
-    )
+    cog.bot.image_drawing.template_faults.return_value = [fault]
 
-    await _review(cog, _interaction())
+    messages = await _review(cog, _interaction())
 
-    assert _offered(cog)
+    assert not _offered(cog)
+    assert fault in _private(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_a_tier_colour_shortfall_withholds_approval(db_path):
     cog = _cog(db_path, images=True)
-    cog.bot.image_validity_service.colour_shortfall = AsyncMock(
-        return_value={"calendar_template": ["`accent` is not set for **Pro**"]}
-    )
+    cog.bot.image_drawing.colour_shortfall_problems.return_value = [
+        "`calendar_template` — `accent` is not set for **Pro**"
+    ]
 
     messages = await _review(cog, _interaction())
 
@@ -1071,15 +1054,21 @@ async def test_a_posted_placements_review_writes_no_line_of_its_own_and_asks_the
 # ---------------------------------------------------------------------------
 
 
+#: Why a test drawing the lineup picture fails until the build: the review's lineup gate is not
+#: yet asked of the image module's drawing.
+LINEUP_GATE_ASKS_THE_DRAWING = (
+    "#283: the review's lineup picture gate is not yet asked of the image module's drawing"
+)
+
+
 def _pictures_wanted(monkeypatch, cog) -> None:
-    """The league's calendar and lineup pictures are switched on: the calendar's answered by the
-    drawing the builder attached to *cog*'s bot."""
-    import leaguebot.image.services.image_lineup_post as lineup_post
-
+    """The league's calendar and lineup pictures are switched on, as answered by the drawing the
+    builder attached to *cog*'s bot."""
     cog.bot.image_drawing.calendar_wanted = AsyncMock(return_value=True)
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    cog.bot.image_drawing.lineup_wanted = AsyncMock(return_value=True)
 
 
+@pytest.mark.xfail(strict=True, reason=LINEUP_GATE_ASKS_THE_DRAWING)
 async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_of_their_text(
         db_path, monkeypatch):
     """Reverses 038 FR-027 (decided 2026-08-27): where an aspect is switched on, its picture
@@ -1117,6 +1106,7 @@ async def test_with_the_image_module_off_no_picture_is_asked_and_the_sections_ar
     assert "*(no drivers assigned)*" in _public(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=LINEUP_GATE_ASKS_THE_DRAWING)
 async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
         db_path, monkeypatch):
     """A finding the picture cannot show is posted either way. Pro's team Ghost has no role and

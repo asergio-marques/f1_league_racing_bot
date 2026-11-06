@@ -27,8 +27,8 @@ Two of the press's gates read the season through helpers whose own tests stand e
 answered "nothing wrong" here unless a test says otherwise: the team names and the lineups
 (`league.cog._team_name_problems`, `league.cog._lineup_problems`); so is the image module's
 configuration (`_image_configuration_faults`), whose rasteriser is judged again when the approval
-runs, through the builder's reader of `converter_available`, which `season_league` points at
-`league.rasteriser_on` when handed *monkeypatch*.
+runs, through the image module's drawing the builder hands it, which reads `converter_available`
+when asked; `season_league` points that at `league.rasteriser_on` when handed *monkeypatch*.
 
 `post_review` posts a review's ✅ Approve prompt, with the season's fingerprint, in the review's
 channel; `press_approve` presses it, answering the backup question under test mode with *backup*.
@@ -535,7 +535,7 @@ async def season_league(
     """The league of the module docstring, its modules and test mode as asked.
 
     With *monkeypatch*, the image module's `converter_available` answers `league.rasteriser_on`,
-    for the builder's reader of the rasteriser to read; patched before the change types are
+    for the drawing's reader of the rasteriser to read; patched before the change types are
     registered, so the reader they are handed reads it.
     """
     now = datetime.now(timezone.utc).replace(microsecond=0)

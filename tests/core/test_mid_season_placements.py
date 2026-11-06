@@ -63,9 +63,11 @@ def _cog(db_path, stage: SeasonStage) -> SeasonCog:
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
     cog.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
-    # The calendar's own gate, asked through the drawing rather than the bot's services
-    # directly (#283); defaults to the same "not drawn" answer the module being off gave.
+    # The calendar's and the lineup's own gates, asked through the drawing rather than the bot's
+    # services directly (#283); each defaults to the same "not drawn" answer the module being off
+    # gave.
     cog.bot.image_drawing.calendar_wanted = AsyncMock(return_value=False)
+    cog.bot.image_drawing.lineup_wanted = AsyncMock(return_value=False)
     return cog
 
 
@@ -362,11 +364,17 @@ def _offered(cog) -> bool:
     return bool(cog.review_asked.get("question"))
 
 
-def _lineup_wanted(monkeypatch, wanted: bool = True) -> None:
-    """The league's lineup picture is switched on, or off."""
-    import leaguebot.image.services.image_lineup_post as lineup_post
+#: Why a test drawing the lineup picture fails until the build: the review's lineup gate is not
+#: yet asked of the image module's drawing.
+LINEUP_GATE_ASKS_THE_DRAWING = (
+    "#283: the review's lineup picture gate is not yet asked of the image module's drawing"
+)
 
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=wanted))
+
+def _lineup_wanted(cog, wanted: bool = True) -> None:
+    """The league's lineup picture is switched on, or off, as answered by the drawing the builder
+    attached to *cog*'s bot."""
+    cog.bot.image_drawing.lineup_wanted = AsyncMock(return_value=wanted)
 
 
 async def test_the_mid_season_review_names_each_driver_to_confirm_and_offers_the_button(monkeypatch):
@@ -483,6 +491,7 @@ async def test_every_fault_is_named_at_once(monkeypatch):
     assert "Inkscape is not installed" in private
 
 
+@pytest.mark.xfail(strict=True, reason=LINEUP_GATE_ASKS_THE_DRAWING)
 async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_its_text(
     monkeypatch,
 ):
@@ -495,8 +504,8 @@ async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_i
         SimpleNamespace(id=DIVISION_ID, name="Pro", status="ACTIVE"),
         SimpleNamespace(id=77, name="Am", status="ACTIVE"),
     ]
-    _lineup_wanted(monkeypatch)
     cog = _report_cog(placements=[_placement("1002")], divisions=divisions, images=True)
+    _lineup_wanted(cog)
 
     messages = await _mid_season_report(cog, monkeypatch)
     text = "\n".join(m for m, private in messages if not private)
@@ -513,8 +522,8 @@ async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_i
 async def test_nothing_is_drawn_or_announced_where_the_lineup_graphic_is_off(monkeypatch):
     """With the image module on but the lineup picture switched off, the review asks the queue
     for no picture, and Pro's lineup, once confirmed, is in its report as text."""
-    _lineup_wanted(monkeypatch, wanted=False)
     cog = _report_cog(placements=[_placement("1002")], images=True)
+    _lineup_wanted(cog, wanted=False)
 
     messages = await _mid_season_report(cog, monkeypatch)
 

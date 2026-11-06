@@ -161,9 +161,6 @@ def _cog(
     )
     season_svc.get_divisions_with_results_config = AsyncMock(return_value=[])
 
-    # Read by the per-tier colour check, behind its own `try`.
-    cog.bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
-
     module_svc = cog.bot.module_service
     module_svc.is_signup_enabled = AsyncMock(return_value=signup_enabled)
     module_svc.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)

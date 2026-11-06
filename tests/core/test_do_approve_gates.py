@@ -142,12 +142,14 @@ def _cog(db_path, **overrides):
     module_svc.is_signup_enabled = AsyncMock(return_value=False)
     module_svc.is_images_enabled = AsyncMock(return_value=False)
 
-    # The image readers the review helpers reach for. Each is wrapped in a `try` that logs
-    # and carries on, so leaving them unpinned would not fail a test — it would just log an
-    # error and skip the check, which is the silence issue #240 is about.
-    cog.bot.image_config_service.get_config = AsyncMock(return_value=None)
-    cog.bot.image_config_service.get_toggles = AsyncMock(return_value={})
-    cog.bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
+    # The image module's drawing, answering "nothing wrong" to each question of the image
+    # configuration. Said in as many words, since a mock's answer read as a fault would refuse
+    # the season on the harness, and one read as a pass would hide a check that never ran.
+    drawing = cog.bot.image_drawing
+    drawing.rasteriser_fault = MagicMock(return_value=None)
+    drawing.template_faults = AsyncMock(return_value=[])
+    drawing.colour_shortfall_problems = AsyncMock(return_value=[])
+    drawing.portrait_fault = AsyncMock(return_value=None)
 
     # The gates that read the season rather than Discord. Each answers "nothing wrong",
     # so the sequence runs its whole length — which is what makes a missing attribute
@@ -236,95 +238,76 @@ async def test_the_withdrawn_template_gate_is_not_called_again(db_path):
 # The review draws the lineup and the calendar and nothing else, so its render was never
 # evidence that a results or weather template would draw, nor that the rasteriser was there
 # at all with both of those off. Each such season was named as blocked by the review and
-# then approved here. These drive the gate with the real `_image_configuration_faults` and
-# the rasteriser said rather than read from the host.
+# then approved here. These drive the gate with the real `_image_configuration_faults`, over a
+# stand-in for the image module's drawing that answers each question as the test says; what the
+# image module answers is tested against its own drawing, in
+# `tests/image/test_image_drawing_review.py`.
+
+#: Why the gate's image tests fail until the build: the faults are not yet asked of the drawing.
+ASKS_THE_DRAWING = "#283: the approval's image faults are not yet asked of the image module's drawing"
+
+_RASTERISER = "Inkscape is not installed on this host."
 
 
-def _images_on(cog, monkeypatch, *, converter=True, toggles=None, reports=None):
+def _images_on(cog, *, rasteriser=None, templates=(), colours=()):
+    """The image module switched on, its drawing answering the drawing program's fault, the
+    broken templates a switched-on output draws and the per-tier colour problems as given."""
     cog.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    cog.bot.image_config_service.get_toggles = AsyncMock(return_value=toggles or {})
-    cog.bot.image_validity_service.template_reports = AsyncMock(return_value=reports or {})
-    monkeypatch.setattr(
-        "leaguebot.image.services.image_render_service.converter_available", lambda: converter
-    )
+    cog.bot.image_drawing.rasteriser_fault = MagicMock(return_value=rasteriser)
+    cog.bot.image_drawing.template_faults = AsyncMock(return_value=list(templates))
+    cog.bot.image_drawing.colour_shortfall_problems = AsyncMock(return_value=list(colours))
     return cog
 
 
-def _broken(template_key: str):
-    from leaguebot.image.models.image_module import ValidityReport
-
-    return ValidityReport(
-        template_key=template_key,
-        resolved_path=None,
-        valid=False,
-        depth_checked=0,
-        reason="file not found",
-    )
-
-
-async def test_a_sound_image_configuration_still_approves(db_path, monkeypatch):
-    cog = _images_on(_cog(db_path), monkeypatch)
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
+async def test_a_sound_image_configuration_still_approves(db_path):
+    cog = _images_on(_cog(db_path))
 
     await _run(cog, _interaction())
 
     _assert_asked(cog)
+    cog.bot.image_drawing.template_faults.assert_awaited_once_with()
 
 
-async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path, monkeypatch):
-    cog = _images_on(_cog(db_path), monkeypatch, converter=False)
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
+async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path):
+    cog = _images_on(_cog(db_path), rasteriser=_RASTERISER)
     interaction = _interaction()
 
     await _run(cog, interaction)
 
     assert "image module is not correctly configured" in _replies(interaction)
-    assert "is not installed on this host" in _replies(interaction)
+    assert _RASTERISER in _replies(interaction)
+    cog.bot.image_drawing.rasteriser_fault.assert_called_with()
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_nothing(
-    db_path, monkeypatch
-):
-    from leaguebot.image.models.image_constants import TEMPLATE_LABELS
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
+async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_nothing(db_path):
+    """Which templates a switched-on output draws, and so which break the season, is the image
+    module's to say (`test_image_drawing_review.py`); the approval refuses on each it names."""
+    fault = "Template **Results — race**: the template file cannot be found."
+    cog = _images_on(_cog(db_path), templates=[fault])
+    interaction = _interaction()
 
+    await _run(cog, interaction)
+
+    assert fault in _replies(interaction)
+    cog.bot.change_queue.ask.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
+async def test_a_tier_colour_shortfall_refuses_and_commits_nothing(db_path):
     cog = _images_on(
-        _cog(db_path),
-        monkeypatch,
-        toggles={"results": True},
-        reports={"results_race_template": _broken("results_race_template")},
+        _cog(db_path), colours=["`calendar_template` — `accent` is not set for **Pro**"]
     )
     interaction = _interaction()
 
     await _run(cog, interaction)
 
-    assert f"Template **{TEMPLATE_LABELS['results_race_template']}**" in _replies(interaction)
-    cog.bot.change_queue.ask.assert_not_awaited()
-
-
-async def test_a_broken_template_of_a_switched_off_output_still_approves(
-    db_path, monkeypatch
-):
-    """An output that is off posts as text and draws no template."""
-    cog = _images_on(
-        _cog(db_path),
-        monkeypatch,
-        reports={"results_race_template": _broken("results_race_template")},
+    assert "Tier colour: `calendar_template` — `accent` is not set for **Pro**" in _replies(
+        interaction
     )
-
-    await _run(cog, _interaction())
-
-    _assert_asked(cog)
-
-
-async def test_a_tier_colour_shortfall_refuses_and_commits_nothing(db_path, monkeypatch):
-    cog = _images_on(_cog(db_path), monkeypatch)
-    cog.bot.image_validity_service.colour_shortfall = AsyncMock(
-        return_value={"calendar_template": ["`accent` is not set for **Pro**"]}
-    )
-    interaction = _interaction()
-
-    await _run(cog, interaction)
-
-    assert "Tier colour: `calendar_template`" in _replies(interaction)
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
@@ -923,7 +906,7 @@ async def _a_lineup_too_small(db_path, monkeypatch):
 
 async def _an_image_fault(db_path, monkeypatch):
     return (
-        _images_on(_cog(db_path), monkeypatch, converter=False),
+        _images_on(_cog(db_path), rasteriser=_RASTERISER),
         "image module is not correctly configured",
         None,
     )
@@ -1088,7 +1071,7 @@ async def _gate_4a_a_lineup_too_small(db_path, monkeypatch):
 
 
 async def _gate_4b_an_image_fault(db_path, monkeypatch):
-    cog = _images_on(_cog(db_path), monkeypatch, converter=False)
+    cog = _images_on(_cog(db_path), rasteriser=_RASTERISER)
     return cog, "image module is not correctly configured"
 
 
