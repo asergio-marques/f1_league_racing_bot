@@ -65,11 +65,13 @@ it only to place it; the rules governing it belong to its own specification.
 - Two roles shall describe a member's standing in the league, whichever modules are enabled: the **base role**, held by the league's members, and the **driver role**, held by its drivers.
     - The base role shall be granted by the league and never by the bot, save where it is replaced as set out below. A module that reads it states what it governs.
     - The driver role shall be granted when a driver's signup is approved, and revoked whenever the driver returns to Not Signed Up.
-- Each shall be set by a command of its own, a league manager's.
+- Each shall be set by a command of its own, a league manager's. The command shall acknowledge at once that the change is under way, then update that reply once it has run.
     - The driver role shall be one the bot can grant. The command setting it shall refuse `@everyone`, a role managed by an integration, a role at or above the bot's own highest, and any role while the bot lacks the permission to manage roles, saying why.
 - Neither shall be required unless a module requires it. The signup module requires both, as its own specification sets out.
+- Either set to the role it already holds shall change nothing: it shall be answered that nothing changed, recorded in the log channel as nothing changed, with no audit entry, and neither the hub's permissions nor, for the base role, the signup channel's shall be set again. Decided 2026-11-06 (#283).
 - Confirming a season's configuration shall fix both until the season ends. A driver role changed mid-season would leave every driver holding the old one, the season's end revoking only the new.
     - A role no longer on the server may nonetheless be replaced while it is fixed. The replacement shall be granted to every driver — every driver who is not a test driver and is Unassigned or Assigned — the base role included, and every driver it could not be given to shall be named. A replaced base role shall remind the league that its other members need it too. Decided 2026-09-22.
+        - Where the grant itself cannot be carried out, the role shall still be saved, its failure alone recorded in the log channel, and the reply shall say that the role is saved but could not be given to the drivers, to give it to them by hand; a replaced base role's reply shall still remind the league that its other members need it too. Decided 2026-11-06 (#283).
     - A role never set shall stay unset until the season ends.
 - Disabling a module shall clear neither. A pack shall clear both, a role belonging to its server.
 
@@ -88,7 +90,7 @@ it only to place it; the rules governing it belong to its own specification.
 - The hub channel shall be visible to holders of the base role, or to every member where the league has set no base role, and to holders of the interaction role and the league admin role. Nobody but the bot shall post in it.
     - Where the base role is set but no longer in the server, the hub shall stay closed to members, and the command setting it shall say so.
     - Changing the base role, the interaction role or the league admin role shall set the hub's permissions again.
-    - The interaction role or the league admin role set to the role it already holds shall change nothing: it shall be answered that nothing changed, recorded in the log channel as nothing changed, with no audit entry, and the hub's permissions shall not be set again. Decided 2026-11-06 (#283).
+    - The base role, the interaction role or the league admin role set to the role it already holds shall change nothing: it shall be answered that nothing changed, recorded in the log channel as nothing changed, with no audit entry, and the hub's permissions shall not be set again. Decided 2026-11-06 (#283).
 - The bot shall keep one panel in the hub channel. It shall be brought up to date whenever a module is enabled or disabled, and posted again where it has been deleted, at the latest when the bot next starts. The panel shall be brought up to date and posted as a job of the change queue, and the bot's start shall ask the queue for it. Its buttons shall work across a restart.
 - The panel's options shall be the modules', save About below. Core shall add no other; each module's specification states what it adds, offered while that module is enabled. A panel offering nothing shall say so.
 - Core shall add one option, About, offered always and placed after every module's option. Decided 2026-09-22 (#258).
