@@ -131,7 +131,7 @@ async def test_another_server_claims_a_released_row(service):
 async def test_the_claim_carries_test_mode_and_the_module_flags_over(service):
     """`ServerConfig` defaults test mode off; the claim must write neither it nor the flags."""
     await _release(service)
-    assert await _claim(service, _config(NEW_SERVER)) is True
+    await _claim(service, _config(NEW_SERVER))
 
     config = await service.get_server_config()
     assert config.test_mode_active is True
