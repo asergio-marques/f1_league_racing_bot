@@ -1,0 +1,146 @@
+# Statistics module
+- <COMMAND CHANGE> "stats" shall be added to the list of accepted values in the "module enable" and "module disable" commands. The module may be enabled via the "module enable" command, akin to the weather, signup, results & standings, attendance and stewarding modules. It is a league admin's command.
+- <COMMAND CHANGE> The statistics module may be disabled via a "module disable" command akin to the weather, signup, results & standings and stewarding modules. It is a league admin's command.
+- The statistics module is disabled by default.
+- The statistics module may be enabled or disabled at any point of a season, or while there is no current season.
+- The statistics module may only be enabled if one of the results & standings or stewarding modules is enabled.
+- The statistics module may optionally use the image module for output of data. Multiple templates must be defined for this purpose, and config commands added. It shall support the use of custom league templates, and pre-shipped templates will be provided.
+- If the results & standings module is disabled, and the stewarding module is triggered to be disabled, the statistics module will be disabled as well.
+- If the stewarding module is disabled, and the results & standings module is triggered to be disabled, the statistics module will be disabled as well.
+- The statistics module may only write to the database when to update driver or track historical data at the time of final results for any given round of any division. As such, the statistics module will require interfacing with the core and results & standings and stewarding modules.
+- Statistics commands that do not pertain to configuration will be usable by all Discord users with the role configured as "base role" in the channel configured as the "hub channel".
+
+## Concepts
+- NOTE: Some of these concepts are new, but actually apply to core.
+- Regulation set - A set of game editions in which track records can be compared to each other; they shall not overlap. May specify a future edition whose tracks are not yet specified or supported by the bot.
+- Track record - The lowest lap time achieved for a track across all regulation sets and session types.
+- Race lap record - The lowest lap time achieved for a track across all regulation sets, in a Feature Race session.
+- Regulation track record - The lowest lap time achieved for a track for a given regulation set and across all session types.
+- Regulation race lap record - The lowest lap time achieved for a track across a given regulation set, in a Feature Race session.
+- Race time record - The lowest flag-to-finish time achieved for a track across all regulation sets, in a Feature Race session in a non-endurance format.
+- Endurance race time record - The lowest flag-to-finish time achieved for a track across all regulation sets, in a Feature Race session in an endurance format.
+- Hat-trick - Achievement attained by a driver who achieves pole position (thus starting first), fastest lap, and first place in a round's Feature Qualifying and Feature Race. Does not apply to Sprint Qualifying and Sprint Race.
+- Mini hat-trick - Achievement attained by a driver who achieves pole position (thus starting first), fastest lap, and first place in a round's Sprint Qualifying and Sprint Race. Does not apply to Feature Qualifying and Feature Races.
+- Full hat-trick - Achievement attained by a driver who achieves pole position (thus starting first), fastest lap, and first place in a round's Sprint Qualifying, Sprint Race, Feature Qualifying and Feature Races.
+- Pole conversion rate - The percentage of how many pole positions (first-place starts) are converted to a first place finish in a Feature Race.
+- Podium - A finish between first and third-place, including.
+- Head-to-head - Comparison between drivers in regards to highest position finishes, which regards only sessions in which both participated (DNF/DNS/DSQ are included)
+
+<!-- TBD -->
+
+- Stats I want to include:
+  - Legend for stats (if multiple used, they combine):
+    - (*) - 2 variants (overall, per division tier)
+    - (^) - 3 variants (overall, per division tier, in current season for a given division)
+    - (~) - 2 variants (overall, with rain forecast if weather module active)
+    - (+) - 2 variants (driver, lap time)
+  - Track stats - those listed with (*) have 2 variants (overall, per division tier).
+    - Total rounds run on track (^)
+    - Driver with most feature race wins (*)
+    - Driver with most feature race podiums (*)
+    - Driver with most feature race pole position (*)
+    - Driver with most feature race fastest laps (*)
+    - Driver with most feature race entries (*)
+    - Latest feature race winning driver per division tier
+    - Latest feature race pole position driver per division tier
+    - Track record (*) (+)
+    - Race lap record (*) (+)
+    - Regulation track record (*) (+)
+    - Regulation race lap record (*) (+)
+    - Endurance race time record (*) (+)
+    - Lowest qualifying result to feature race win
+    - Lowest sprint qualifying result to sprint race win
+    - < TBD - Are sprint race specific ones necessary? I don't see people caring about them a whole lot >
+  - Driver stats:
+    - Total entries (rounds raced) (^) (~)
+    - Total points (^) (~)
+    - Race wins (^) (~)
+    - Race podium (^) (~)
+    - Top 10 finishes in races (^) (~)
+    - Lapped finishes per entry (^) (~)
+    - Non-classified finishes per entry (^) (~)
+    - Average wins per entry
+    - Average podiums per entry
+    - Average finishing position in races (^) (~)
+    - Average points per race (^) (~)
+    - Teammate race finish head-to-head
+    - Fastest laps in races (^) (~)
+    - Total pole positions
+    - Total front row starts (top 2)
+    - Average pole positions per entry
+    - Average front row starts per entry
+    - Best qualifying position
+    - Average qualifying position (^) (~)
+    - Average gap to pole
+    - Teammate race finish head-to-head
+    - Biggest point tally in a single round (^)
+    - Average position gain/loss from the grid in races
+    - Pole conversion rate
+    - Percentage of wins from non-first row starts
+    - Lowest grid position to win
+    - Hat-tricks
+    - Mini hat-tricks
+    - Full hat-tricks
+    - Track record laps held (all categories, not just track records proper)
+    - Current attendance streak
+    - Current win streak
+    - Current podium streak
+    - Current top 10 streak
+    - Current teammate head-to-head race streak
+    - Current pole position streak
+    - Current front row streak
+    - Current teammate head-to-head qualifying streak
+    - Current hat-trick streak
+    - Current mini hat-trick streak
+    - Current full hat-trick streak
+    - Biggest attendance streak
+    - Biggest win streak
+    - Biggest podium streak
+    - Biggest top 10 streak
+    - Biggest teammate head-to-head race streak
+    - Biggest pole position streak
+    - Biggest front row streak
+    - Biggest teammate head-to-head qualifying streak
+    - Biggest hat-trick streak
+    - Biggest mini hat-trick streak
+    - Biggest full hat-trick streak
+    - Drivers' Championship wins
+    - Drivers' Championship runner-up
+    - Drivers' Championship 3rd places
+    - Drivers' Championship podiums
+    - Best Drivers' Championship finish
+    - Drivers' Championship teammate head-to-head
+    - Drivers' Championship win streak
+    - Drivers' Championship podium streak
+    - Constructors' Championship wins
+    - Constructors' Championship runner-up
+    - Constructors' Championship 3rd places
+    - Constructors' Championship podiums
+    - Best Constructors' Championship finish
+    - Constructors' Championship win streak
+    - Constructors' Championship podium streak
+    - Drivers' Championship wins per season raced as full-time driver
+    - Penalty points per entry in the current season (warnings count as fraction of a penalty point if converted)
+    - Average time penalties per entry in the current season
+    - Penalty points per entry in career (warnings count as fraction of a penalty point if converted)
+    - Average time penalties per entry in career
+    - Attendance rate in current season (full-time drivers and reserves are calculated differently)
+    - Attendance rate overall (full-time drivers and reserves are calculated differently)
+    - First win
+    - First podium
+    - First pole
+    - First points
+    - First first-row start
+    - First hat-trick
+    - First full hat-trick
+    - Most recent win
+    - Most recent podium
+    - Most recent top 10
+    - Most recent pole position
+    - Most recent first-row start
+  - Season stats
+    - <!-- TBD -->
+  - Division stats
+    - <!-- TBD -->
+  - League stats
+    - <!-- TBD -->
