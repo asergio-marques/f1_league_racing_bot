@@ -769,27 +769,46 @@ async def test_a_setting_command_works_outside_the_interaction_channel(
     assert _said(interaction)[-1].startswith("✅")
 
 
+@pytest.mark.parametrize("packed", [False, True], ids=["never configured", "packed"])
 @pytest.mark.parametrize(
     "attribute,column,factory,new_id", _SETTINGS, ids=[s[1] for s in _SETTINGS]
 )
 async def test_a_setting_command_refuses_an_unconfigured_server(
-    tmp_path, attribute, column, factory, new_id
+    tmp_path, attribute, column, factory, new_id, packed
 ):
-    """No server is set up yet; an administrator runs the command. It is refused at the ask,
-    pointing them at `/bot init`, and once the queue has run nothing is saved or audited."""
-    from tests.support.change_queue import run_queue
+    """No server is set up yet, or the league's was set up and then packed, its row kept with its
+    claim and the four settings cleared; an administrator runs the command. It is refused at the
+    ask in today's words, pointing them at `/bot init`, and once the queue has run nothing is
+    saved or audited, and no log channel is written or kept a line for."""
+    from leaguebot.core.services.config_service import RELEASE_CLAIM_SQL
+    from tests.support.change_queue import queued_log_lines, run_queue
 
     db_path = await _make_db(tmp_path)
+    if packed:
+        await _seed_config(db_path)
+        async with get_connection(db_path) as db:
+            await db.execute(RELEASE_CLAIM_SQL)
+            await db.commit()
     bot = await _queued_bot(db_path)
     cog = BotCog(bot)
     interaction = _asking(bot, _WORDS[column][0][1:])
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT * FROM server_configs")
+        before = [dict(r) for r in await cursor.fetchall()]
 
     await _unwrap(getattr(cog, attribute))(cog, interaction, factory(new_id))
     await run_queue(bot)
 
-    assert "/bot init" in interaction.response.send_message.call_args.args[0]
-    assert await _row(db_path) == {}
+    assert _said(interaction) == [
+        "⛔ This server is not configured yet — run `/bot init` first."
+    ]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT * FROM server_configs")
+        after = [dict(r) for r in await cursor.fetchall()]
+    assert after == before
     assert await _audit_rows(db_path) == []
+    assert all(not channel.sent for channel in bot.test_channels.values())
+    assert await queued_log_lines(db_path) == []
 
 
 @pytest.mark.parametrize(
