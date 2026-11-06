@@ -33,6 +33,16 @@ class ChangeState(str, Enum):
 #: `"channel:<id>"`, keyed by the channel it is held in.
 LEAGUE_LANE = "league"
 
+#: The lane of a setting a league repairs its own way back in with (`Setting.repairs_the_bot`,
+#: `core/services/setting_change.py`): always run, as `LEAGUE_LANE` is, and never counted against
+#: `CONVERSATION_LANES_AT_ONCE`, so a stop on the league's lane, or a full house of conversations,
+#: cannot by itself hold up the one repair a league locked out needs.
+REPAIR_LANE = "repair"
+
+#: Lanes the dispatcher starts a worker for whatever else is running: the league's own changes,
+#: and the handful that repair the bot's own way in.
+ALWAYS_RUN_LANES = (LEAGUE_LANE, REPAIR_LANE)
+
 
 class ChangeOrigin(str, Enum):
     """Who asked: a member, through a command, button or form, or the bot itself."""

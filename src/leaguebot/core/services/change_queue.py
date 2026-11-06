@@ -28,11 +28,13 @@ accepted only where the bot stops, not where a save fails.
 `ChangeQueue._task`, is kept on the instance and started by `start()` (idempotent), from `start_up`
 and never from an interaction, so that it inherits no interaction's context. It wakes on the signal
 or when the next try falls due and starts one task per lane that has something to do, kept in
-`_workers`: the league lane's always, and at most `CONVERSATION_LANES_AT_ONCE` conversations'
-besides, the oldest change first, the rest waiting for a slot. A lane's task holds that lane's
-`_working` lock while it drains the lane, and has a catch-all of its own, so that a fault outside
-any change pauses only its lane (`WORKER_PAUSE_AFTER_FAULT`); the dispatcher holds no lane's lock.
-The league lane's task runs once when the queue starts, so that a fault there is met at once.
+`_workers`: `ALWAYS_RUN_LANES`' always (the league's own changes, and `REPAIR_LANE`, where a
+league's four repair settings run — see "A job that fails stops its lane"), and at most
+`CONVERSATION_LANES_AT_ONCE` conversations' besides, the oldest change first, the rest waiting for
+a slot. A lane's task holds that lane's `_working` lock while it drains the lane, and has a
+catch-all of its own, so that a fault outside any change pauses only its lane
+(`WORKER_PAUSE_AFTER_FAULT`); the dispatcher holds no lane's lock. The league lane's task runs
+once when the queue starts, so that a fault there is met at once.
 `run_until_idle` is the tests' loop: serial, one change at a time across lanes, the lowest change id
 first, taking each lane's lock as it runs that lane's head, so that a test's drain and the
 production task never drain one lane at once. A due time the dispatcher cannot act on, because its
@@ -203,6 +205,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection, inserted_id, never_lend
 from leaguebot.core.models.change import (
+    ALWAYS_RUN_LANES,
     AuditRecord,
     ChangeOrigin,
     ChangeState,
@@ -1219,10 +1222,10 @@ class ChangeQueue:
                 pass
 
     async def _dispatch(self) -> None:
-        """Start a task for each lane that has something to do and none: the league's always, and
-        a conversation's while fewer than `CONVERSATION_LANES_AT_ONCE` have one, the oldest
-        change first. A lane has something to do where its head can run now, or a stop notice of
-        its own is due to be posted again."""
+        """Start a task for each lane that has something to do and none: `ALWAYS_RUN_LANES`'
+        always, and a conversation's while fewer than `CONVERSATION_LANES_AT_ONCE` have one, the
+        oldest change first. A lane has something to do where its head can run now, or a stop
+        notice of its own is due to be posted again."""
         async with get_connection(self._db_path) as db:
             heads = await self._heads(db, None)
         wanted = [change["lane"] for change, job in heads if not self._waits_for_a_try(job)]
@@ -1232,11 +1235,11 @@ class ChangeQueue:
         if self._first_pass:
             self._first_pass = False
             wanted.insert(0, LEAGUE_LANE)
-        conversations = sum(1 for lane in self._workers if lane != LEAGUE_LANE)
-        for lane in dict.fromkeys(sorted(wanted, key=lambda each: each != LEAGUE_LANE)):
+        conversations = sum(1 for lane in self._workers if lane not in ALWAYS_RUN_LANES)
+        for lane in dict.fromkeys(sorted(wanted, key=lambda each: each not in ALWAYS_RUN_LANES)):
             if lane in self._workers:
                 continue
-            if lane != LEAGUE_LANE:
+            if lane not in ALWAYS_RUN_LANES:
                 if conversations >= CONVERSATION_LANES_AT_ONCE:
                     continue
                 conversations += 1
@@ -1277,12 +1280,12 @@ class ChangeQueue:
         conversation slot is taken, is left out: the task ending wakes the dispatcher, so waiting
         for a time that has passed would spin.
         """
-        conversations = sum(1 for lane in self._workers if lane != LEAGUE_LANE)
+        conversations = sum(1 for lane in self._workers if lane not in ALWAYS_RUN_LANES)
 
         def _counts(lane: str) -> bool:
             if lane in self._workers:
                 return False
-            return lane == LEAGUE_LANE or conversations < CONVERSATION_LANES_AT_ONCE
+            return lane in ALWAYS_RUN_LANES or conversations < CONVERSATION_LANES_AT_ONCE
 
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(

@@ -22,11 +22,12 @@ conversation lanes may not write these tables. The save judges only held or not.
 kinds kept in the queue itself. It marks the log channel, the interaction channel, the interaction
 role and the league admin role: the core specification calls these out as a league's way back in
 when one is wrong or gone, and a league locked out by a stopped job on its own lane would have no
-way to clear it. Being on a lane of their own is what lets them run while the league's lane is
-stopped on an unrelated job, without changing anything about how a lane runs — one change at a
-time, in the order asked, no two lanes' jobs interleaved. *Rejected:* a flag on the queue read at
-dispatch, which would need the queue to know these four by name; the queue already tells one lane
-from another solely by what a change type's `lane` returns.
+way to clear it. `REPAIR_LANE` is one of `ALWAYS_RUN_LANES` (`core/models/change.py`), so the
+dispatcher keeps a worker on it whatever else is running, as it does the league's — nothing
+changes about how a lane runs, one change at a time, in the order asked, no two lanes' jobs
+interleaved. *Rejected:* a flag on the queue read at dispatch, which would need the queue to know
+these four by name; the queue already tells one lane from another, and which it always runs,
+solely by its name.
 
 **The line is formed here and nowhere else:** `{member} | {command} | {outcome}`, the values
 beneath it, saved in the same save as the value and its audit entry. A save is handed only the
@@ -68,6 +69,7 @@ import aiosqlite
 
 from leaguebot.core.models.change import (
     LEAGUE_LANE,
+    REPAIR_LANE,
     AuditRecord,
     PlannedStep,
     StepKind,
@@ -89,14 +91,6 @@ NOTHING_SAVED = "Nothing was saved. Run `{command}` again to retry."
 
 #: The name of the step that saves the setting.
 SAVE = "save"
-
-#: The lane of a setting the core specification names a league's way back into a server it is
-#: locked out of (the log channel, the interaction channel, and the two roles the tier guards
-#: read): its own, apart from `LEAGUE_LANE`, so that a stop on the league's lane — on a job one of
-#: these may itself be needed to clear — never holds it up (`Setting.repairs_the_bot`;
-#: `docs/design/architecture.md`, "A job that fails stops its lane"). Every other setting keeps
-#: the league lane, one change at a time with everything else a league does.
-REPAIR_LANE = "repair"
 
 #: The key, in the save's result, of the line kept back for a step that carries it.
 _KEPT_LINE = "setting_line"
