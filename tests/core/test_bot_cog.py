@@ -535,17 +535,32 @@ async def test_a_lost_race_to_another_server_names_the_other_server(tmp_path, ca
     ), [record.getMessage() for record in caplog.records]
 
 
-async def test_a_second_bot_init_queued_behind_the_first_is_refused_as_it_starts(tmp_path):
+@pytest.mark.parametrize("judged_by", ["check", "save"])
+async def test_a_second_bot_init_queued_behind_the_first_is_refused_as_it_starts(
+    tmp_path, judged_by
+):
     """No server is claimed yet. An administrator runs `/bot init`, then runs it again on the same
     server with another log channel before the queue has run the first. The queue runs both. The
-    first claims the server; the second is refused as it starts, the server now being configured:
-    its acknowledgement is updated to the refusal a second `/bot init` meets at the ask, word for
-    word, and the log channel the first has just set records the refusal beneath the first's
-    success line. Nothing of the second is written, and the queue is not stopped."""
+    first claims the server; the second is refused as it starts, the server now being configured,
+    found by the second's check, or, where the two raced past their checks together, by its save's
+    claim: either way its acknowledgement is updated to the refusal a second `/bot init` meets at
+    the ask, word for word, and the log channel the first has just set records the refusal beneath
+    the first's success line, the same line from either. Nothing of the second is written, and the
+    queue is not stopped."""
+    import dataclasses
+
+    from leaguebot.core.models.change import Verdict
+    from leaguebot.core.services.bot_init_change import KIND
     from tests.support.change_queue import run_queue, stopped_job
 
     db_path = await _make_db(tmp_path)
     bot = await _queued_bot(db_path)
+    if judged_by == "save":
+        async def passes(_ctx):
+            return Verdict.go()
+
+        queue = bot.change_queue
+        queue.register(dataclasses.replace(queue._type(KIND), check=passes))
     cog = BotCog(bot)
     first = _asking(bot, "bot init")
     second = _asking(bot, "bot init")
