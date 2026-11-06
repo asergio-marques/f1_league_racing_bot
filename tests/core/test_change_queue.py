@@ -1444,6 +1444,33 @@ async def test_the_acknowledgement_names_the_request_s_first_job(env):
     assert f"job #{first['id']}" in reply
 
 
+async def test_the_queue_acknowledges_a_change_before_any_server_is_claimed(tmp_path):
+    """No server is claimed yet: the bot is fresh, with no configuration and so no log channel. A
+    member asks for a change. The queue saves it and acknowledges it as under way, naming its first
+    job, as it does on a league's server: nothing it does at the ask reads the configuration, so
+    `/bot init` can be asked of it (#283). Nothing is written for a log channel, and the queue is
+    not stopped."""
+    db_path = str(tmp_path / "queue.db")
+    await run_migrations(db_path)
+    bot = league_double(db_path)
+    bot.config_service.get_server_config = AsyncMock(return_value=None)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=None)
+    attach_queue(bot, db_path, now=Clock(NOW), types=[_type(steps=[_act("a", [])])])
+    interaction = member_interaction(bot)
+
+    change_id = await bot.change_queue.ask("dummy", {}, interaction=interaction, what=WHAT)
+
+    assert change_id is not None
+    [job] = await step_rows(db_path)
+    reply = acknowledgement(interaction)
+    assert _acknowledges(reply)
+    assert f"job #{job['id']}" in reply
+    assert [row["state"] for row in await change_rows(db_path)] == ["QUEUED"]
+    assert await queued_log_lines(db_path) == []
+    assert bot.log_channel.sent == []
+    assert await stopped_job(db_path) is None
+
+
 async def test_a_change_asked_while_the_queue_is_stopped_joins_the_back_and_says_so(env):
     """A request made while the queue is stopped is saved and acknowledged as under way, the
     acknowledgement adding that the queue is stopped at job #N; it runs only once that job is
