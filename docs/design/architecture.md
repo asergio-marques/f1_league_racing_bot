@@ -1089,12 +1089,20 @@ to it would switch off the one failure path for every command.
    `_calendar_capacity_warning`, `_attendance_capacity_warning`) — is a stated exception beside
    `PlacementService._ask_drawing`'s: its catch-all puts the error in the host's log in full and
    lets the round or the season through as if no problem were found, because a capacity check
-   that cannot run must not block a round or a season (its docstring says so); and the image
-   module's artwork signature (`ImageDrawing.artwork_signature`) is a stated exception too: its
-   catch-all signs a configured directory it cannot resolve as `[column, value, "unresolvable"]`,
-   with a warning to the host's log alone, and signs the rest all the same, because a fault that
-   escaped it would empty the whole fingerprint and the review would read as changed in every
-   area (its docstring says so);
+   that cannot run must not block a round or a season (its docstring says so); the season cog's
+   reading of the image module's configuration faults (`SeasonCog._image_configuration_faults`)
+   is a stated exception too: a fault reading the templates is a fault of their own and is let
+   through to refuse the season, while a fault reading the per-tier colours or the portrait
+   settings stands aside instead, because a reader that cannot answer must not be the thing that
+   refuses a season (its docstring says so); the season cog's own image review section
+   (`SeasonCog._build_image_review_section`) is a stated exception beside it: its catch-all puts
+   the error in the host's log and states the section as unreadable in the review, because a
+   review must never fail for this (its docstring says so); and the image module's artwork
+   signature (`ImageDrawing.artwork_signature`) is a stated exception too: its catch-all signs a
+   configured directory it cannot resolve as `[column, value, "unresolvable"]`, with a warning to
+   the host's log alone, and signs the rest all the same, because a fault that escaped it would
+   empty the whole fingerprint and the review would read as changed in every area (its docstring
+   says so);
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
