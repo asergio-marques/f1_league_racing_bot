@@ -226,19 +226,27 @@ def _on_fault(ctx: StepContext, error: BaseException) -> StepResult:
     return StepResult(result={"outcome": "faulted"})
 
 
+def _fault_reply(what: str) -> str:
+    """The member's reply to a fault: nothing saved, `/bot init` to run again, and the fault
+    recorded in the host's log, the only place it goes before a log channel is claimed."""
+    return failure_reply(
+        what, NOTHING_SAVED.format(command=COMMAND), recorded="the bot host's log"
+    )
+
+
 def _check_fault_reply(what: str, _payload: dict[str, Any], _error: BaseException) -> str:
     """A check that raises as the change starts ends it the same way a fault in the save does
     (`ChangeType.on_check_fault`): nothing is saved, and the member is told to run `/bot init`
     again. Without this, a raised check would stop the league lane with no league admin role yet
     to clear it (see the module docstring)."""
-    return failure_reply(what, NOTHING_SAVED.format(command=COMMAND))
+    return _fault_reply(what)
 
 
 def _outcome(ctx: Any) -> str:
     results = {view.name: dict(view.result) for view in ctx.steps if view.result is not None}
     saved = results.get(SAVE, {})
     if saved.get("outcome") == "faulted":
-        return failure_reply(ctx.what, NOTHING_SAVED.format(command=COMMAND))
+        return _fault_reply(ctx.what)
     if saved.get("outcome") == "already_configured":
         return ALREADY_CONFIGURED
     if saved.get("outcome") == "another_server":

@@ -61,19 +61,25 @@ log = logging.getLogger(__name__)
 #: and `{outcome}` what became of the change.
 FAILURE_REPLY = (
     "❌ {what} stopped on a fault in the bot, not on anything you entered, and did not "
-    "finish. {outcome} The fault is recorded in the log channel."
+    "finish. {outcome} The fault is recorded in {recorded}."
 )
 #: The outcome of a failure the command did not undo.
 PARTLY_DONE = "It may have been partly done — check before running it again."
 
 
-def failure_reply(what: str, outcome: str | None = None) -> str:
+def failure_reply(
+    what: str, outcome: str | None = None, *, recorded: str = "the log channel"
+) -> str:
     """The reply for *what*, its first letter raised to open the sentence.
 
     *outcome*, where given, replaces `PARTLY_DONE`: a command that undid itself says what
     became of the change, and what to do next, rather than that it may have been partly done.
+    *recorded* names where the fault was recorded, the log channel unless a command fails before
+    there is one.
     """
-    return FAILURE_REPLY.format(what=what[:1].upper() + what[1:], outcome=outcome or PARTLY_DONE)
+    return FAILURE_REPLY.format(
+        what=what[:1].upper() + what[1:], outcome=outcome or PARTLY_DONE, recorded=recorded
+    )
 
 
 def failure_line(what: str, named: str, error: BaseException) -> str:

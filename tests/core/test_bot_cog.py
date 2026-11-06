@@ -565,18 +565,20 @@ async def test_a_second_bot_init_queued_behind_the_first_is_refused_as_it_starts
     assert await stopped_job(db_path) is None
 
 
+@pytest.mark.parametrize("where", ["save", "check"])
 @pytest.mark.parametrize("before", ["fresh", "packed"])
 async def test_bot_init_ends_on_a_fault_without_stopping_the_queue(
-    tmp_path, monkeypatch, caplog, before
+    tmp_path, monkeypatch, caplog, before, where
 ):
     """No server is claimed: the bot is *fresh*, or the league was *packed* (its row kept, test
-    mode on, the four settings and the server cleared). An administrator runs `/bot init`, and the
-    audit entry's write fails on the database as the queue runs it. The claim and the four settings
-    are not saved either, being one save with the audit entry: no server is the league's. The
-    member is told in the queue's words that nothing was saved and to run it again; no line is
-    written for any channel, there being no log channel, and the host's log records the fault. The
-    change ends there and the queue is not stopped: run again once the fault is gone, `/bot init`
-    claims the server."""
+    mode on, the four settings and the server cleared). An administrator runs `/bot init`, and as
+    the queue runs it the database fails *where*: in the audit entry's write in the save, or in the
+    check's read as the change starts. The claim and the four settings are not saved either, being
+    one save with the audit entry: no server is the league's. The member is told in the queue's
+    words that nothing was saved and to run it again, and that the fault is in the bot host's log;
+    no line is written for any channel, there being no log channel, and the host's log records the
+    fault. The change ends there and the queue is not stopped, there being no league admin role to
+    clear a stop: run again once the fault is gone, `/bot init` claims the server."""
     import sqlite3
 
     from leaguebot.core.services import change_queue
@@ -592,14 +594,16 @@ async def test_bot_init_ends_on_a_fault_without_stopping_the_queue(
             await db.commit()
     bot = await _queued_bot(db_path)
     cog = BotCog(bot)
-    monkeypatch.setattr(
-        change_queue, "record_change_on",
-        AsyncMock(side_effect=sqlite3.OperationalError("disk I/O error")),
-    )
     interaction = _asking(bot, "bot init")
 
     await _ask_init(cog, interaction)
+    fault = AsyncMock(side_effect=sqlite3.OperationalError("disk I/O error"))
+    if where == "save":
+        monkeypatch.setattr(change_queue, "record_change_on", fault)
+    else:
+        monkeypatch.setattr(bot.config_service, "get_league_server_id", fault)
     await run_queue(bot)
+    monkeypatch.undo()
 
     assert await bot.config_service.get_league_server_id() is None
     assert await _audit_rows(db_path) == []
@@ -614,7 +618,7 @@ async def test_bot_init_ends_on_a_fault_without_stopping_the_queue(
     assert _said(interaction)[-1] == (
         "❌ `/bot init` stopped on a fault in the bot, not on anything you entered, and did not "
         "finish. Nothing was saved. Run `/bot init` again to retry. The fault is recorded in the "
-        "log channel."
+        "bot host's log."
     )
     assert all(not channel.sent for channel in bot.test_channels.values())
     assert await queued_log_lines(db_path) == []
@@ -624,7 +628,6 @@ async def test_bot_init_ends_on_a_fault_without_stopping_the_queue(
         for record in caplog.records
     ), [record.getMessage() for record in caplog.records]
 
-    monkeypatch.undo()
     again = _asking(bot, "bot init")
     await _ask_init(cog, again)
     await run_queue(bot)
