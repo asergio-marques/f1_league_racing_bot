@@ -435,15 +435,15 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   returns, in a save of its own with its lines, and the change carries on to its next step or
   finishes. A change type may likewise give `ChangeType.on_check_fault` for a check that raises as
   a **member's** change starts: the change is ended as REFUSED in one save, with the failure line
-  in place of a refusal's, and the reply it returns. What the member is told and what the log channel records of
-  either is the core specification's "How a change is carried out"; the full detail goes to the
-  host's log. A step that is `undiscardable` may not carry `on_fault`, since it is a step a stop
-  must hold. `core/services/setting_change.py` builds both callbacks for every settings command once.
-  *Rejected:* a step that catches its own fault, which would leave its partial writes on the save's
-  connection and could not catch what fails after it returns, the queue's own audit and line writes
-  and the commit; and stopping the lane for a setting, which would hold every other change for a
-  fault that either the member cures by asking again (a save rolled back) or that nothing later on
-  the lane depends on (a step after it).
+  in place of a refusal's, and the reply it returns. What the member is told and what the log
+  channel records of either is the core specification's "How a change is carried out"; the full
+  detail goes to the host's log. A step that is `undiscardable` may not carry `on_fault`, since it
+  is a step a stop must hold. `core/services/setting_change.py` builds both callbacks for every
+  settings command once. *Rejected:* a step that catches its own fault, which would leave its
+  partial writes on the save's connection and could not catch what fails after it returns, the
+  queue's own audit and line writes and the commit; and stopping the lane for a setting, which
+  would hold every other change for a fault that either the member cures by asking again (a save
+  rolled back) or that nothing later on the lane depends on (a step after it).
 
   The same holds for a member's roles moved after their driver's or their team's change. A `/driver`
   or `/team` change saves the driver's or the team's rows and their audit record in one step, and
