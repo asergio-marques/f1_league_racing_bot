@@ -30,9 +30,7 @@ owner's alone, from any channel; see `leaguebot.core.utils.channel_guard.server_
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from datetime import datetime, timezone
 from typing import Any
 
 import discord
@@ -670,29 +668,6 @@ class BotCog(commands.Cog):
         ):
             return
         log.warning("factory reset: the closing line could not be posted:\n%s", line)
-
-
-async def _audit(bot: LeagueBot, user, change_type: str, old: dict, new: dict) -> None:
-    """Write the audit entry for a change to the bot's configuration upon its server.
-
-    The other half of the log line each command posts: a configuration change is recorded
-    in both (issue #371). None of these belongs to a division.
-    """
-    async with get_connection(bot.db_path) as db:
-        await db.execute(
-            "INSERT INTO audit_entries "
-            "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
-            "timestamp) VALUES (?, ?, NULL, ?, ?, ?, ?)",
-            (
-                user.id,
-                str(user),
-                change_type,
-                json.dumps(old),
-                json.dumps(new),
-                datetime.now(timezone.utc).isoformat(),
-            ),
-        )
-        await db.commit()
 
 
 async def _clean_up(guild, bot_user_id: int, targets, report, close) -> None:

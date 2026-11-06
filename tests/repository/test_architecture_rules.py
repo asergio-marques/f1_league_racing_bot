@@ -180,7 +180,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (1, PASS["attendance"]),
     ("core/cogs/bot_cog.py", "BotCog.handle_pack"): (1, PASS["core"]),
-    ("core/cogs/bot_cog.py", "_audit"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._team_name_problems"): (3, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._track_autocomplete"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_amend"): (3, PASS["core"]),
@@ -2033,7 +2032,6 @@ def _saves_outside_a_change() -> Counter[tuple[str, str]]:
 
 KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Core's pass
-    ("core/cogs/bot_cog.py", "_audit"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_amend"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_calendar_channel"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_lineup_channel"): (1, PASS["core"]),
