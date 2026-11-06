@@ -13,13 +13,19 @@ queue's to stop on (`test_hub_service.py`), never a line the toggle writes.
 
 **The permissions follow the roles.** The hub is seen by the base role (or everyone, where none
 is set) and by both tier roles, so changing any of the three sets them again. The driver role
-and the channel settings name nobody the hub cares about.
+and the channel settings name nobody the hub cares about. The interaction role and the league
+admin role are core `Setting`s on the change queue (#283, S13a): each sets the permissions again
+from an `After` step its save plans, once the queue has saved the role, never from the command.
+A refusal Discord returns there is logged as "Hub permissions not updated", and any other fault
+is the step's to report in `setting_change`'s way: either leaves the role saved, says so in the
+reply where it raised, and stops nothing. The base role still sets them itself until S13b.
 
 **A restart recovers the hub.** Its buttons are routed again and its panel's refresh asked of the
 change queue, handed to the recovery by the start-up.
 """
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -272,8 +278,6 @@ def _role(role_id: int = 5150):
     "attribute,reapplies",
     [
         ("handle_base_role", True),
-        ("handle_interaction_role", True),
-        ("handle_admin_role", True),
         ("handle_driver_role", False),
     ],
 )
@@ -289,16 +293,183 @@ async def test_the_roles_the_hub_names_set_its_permissions_again(
     assert reapply.await_count == (1 if reapplies else 0)
 
 
-async def test_a_channel_setting_leaves_the_hub_s_permissions_alone(db_path, monkeypatch):
-    reapply = AsyncMock()
-    monkeypatch.setattr(bot_cog, "_reapply_hub_permissions", reapply)
-    cog = _bot_cog(db_path)
+#: The member the role and channel settings below are run by, as a saved log line names them,
+#: the mention wrapped so it notifies nobody.
+NAMED = "Admin (`<@77>`)"
+#: The role a setting below is set to: a role of the league's server, which holds no setting yet.
+NEW_ROLE = 5150
+#: Why a role setting's hub permissions are not yet its follow-on.
+FOLLOW_ON = "#283: the role settings do not yet set the hub's permissions as their follow-on"
+#: What a role setting whose hub permissions raise adds to its success.
+NOT_UPDATED = "⚠️ The setting is saved, but the hub's permissions could not be updated."
+
+
+def _hub(*, edit_raises: BaseException | None = None) -> MagicMock:
+    """The hub channel, 7930, as the league's server finds it: its `edit` recording the
+    overwrites it is given, or raising *edit_raises*."""
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = HUB
+    channel.edit = AsyncMock(side_effect=edit_raises)
+    return channel
+
+
+def _hub_guild(hub: MagicMock) -> MagicMock:
+    """The league's server, as `test_hub_service._guild` builds it: it finds the hub *hub*, and
+    the interaction role (900), the league admin role (902) and `NEW_ROLE`."""
+    known = {role_id: _role(role_id) for role_id in (900, 902, NEW_ROLE)}
+    guild = MagicMock()
+    guild.get_channel = MagicMock(side_effect=lambda cid: hub if cid == HUB else None)
+    guild.get_role = MagicMock(side_effect=known.get)
+    guild.default_role = _role(1)
+    guild.me = _role(2)
+    return guild
+
+
+async def _roles_league(db_path: str, hub: MagicMock) -> Any:
+    """The bot the entry point builds on *db_path* (`db_path`'s league, its hub set to 7930), its
+    configuration read from the database, the league's server finding *hub*, the log channel
+    (101) and channel 4040 recording what each is sent, and its real change queue."""
+    from datetime import datetime, timezone
+
+    from tests.support.change_queue import league_bot, league_queue, text_channel
+
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET hub_channel_id = ?", (HUB,))
+        await db.commit()
+    bot = await league_bot(db_path, real_config=True)
+    bot.get_guild = MagicMock(return_value=_hub_guild(hub))
+    channels = {101: bot.log_channel, 4040: text_channel(4040)}
+    bot.get_channel = MagicMock(side_effect=channels.get)
+    bot.fetch_channel = AsyncMock(side_effect=lambda cid: channels[cid])
+    league_queue(bot, db_path, now=datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc))
+    return bot
+
+
+def _asked(bot: Any, command: str) -> Any:
+    """`/<command>` run on the league's server by Admin (77)."""
+    from tests.support.change_queue import member
+    from tests.support.settings_league import interaction
+
+    asked = interaction(bot, command, user=member(77))
+    asked.guild_id = SERVER_ID
+    return asked
+
+
+def _lines(bot: Any) -> list[str]:
+    """Every line the log channel took, without the rule drawn beneath each."""
+    from tests.support.settings_league import unruled
+
+    return [unruled(str(line)) for line in bot.log_channel.sent]
+
+
+def _success(command: str, column: str) -> str:
+    return f"{NAMED} | {command} | Success\n  {column}: `<@&{NEW_ROLE}>`"
+
+
+async def _role_set_to(db_path: str, column: str) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(f"SELECT {column} FROM server_configs")
+        return (await cursor.fetchone())[0]
+
+
+async def test_a_channel_setting_leaves_the_hub_s_permissions_alone(db_path):
+    """The league's hub is set; an administrator runs `/bot log-channel` with channel 4040, and
+    the queue runs it. The hub channel's permissions are never edited."""
+    from tests.support.change_queue import run_queue
+
+    hub = _hub()
+    bot = await _roles_league(db_path, hub)
     channel = MagicMock()
     channel.id = 4040
+    channel.mention = "<#4040>"
 
-    await undecorate(BotCog.handle_log_channel)(cog, _interaction(), channel)
+    await undecorate(BotCog.handle_log_channel)(
+        BotCog(bot), _asked(bot, "bot log-channel"), channel
+    )
+    await run_queue(bot)
 
-    reapply.assert_not_awaited()
+    hub.edit.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "attribute,column,command",
+    [
+        pytest.param("handle_interaction_role", "interaction_role_id", "bot interaction-role",
+                     marks=pytest.mark.xfail(strict=True, reason=FOLLOW_ON),
+                     id="interaction-role"),
+        pytest.param("handle_admin_role", "league_admin_role_id", "bot admin-role",
+                     marks=pytest.mark.xfail(strict=True, reason=FOLLOW_ON),
+                     id="admin-role"),
+    ],
+)
+async def test_a_role_setting_sets_the_hub_s_permissions_again_as_its_follow_on(
+    db_path, attribute, column, command
+):
+    """The league's hub is set; an administrator sets the interaction role, or the league admin
+    role, to role 5150. The command sets no permission itself: the hub is untouched while the
+    setting waits on the queue. Once the queue has run it, the hub's permissions have been set
+    once, and they name the new role."""
+    from tests.support.change_queue import run_queue
+
+    hub = _hub()
+    bot = await _roles_league(db_path, hub)
+
+    await undecorate(getattr(BotCog, attribute))(
+        BotCog(bot), _asked(bot, command), _role(NEW_ROLE)
+    )
+    hub.edit.assert_not_awaited()
+    await run_queue(bot)
+
+    hub.edit.assert_awaited_once()
+    assert NEW_ROLE in {role.id for role in hub.edit.await_args.kwargs["overwrites"]}
+    assert await _role_set_to(db_path, column) == NEW_ROLE
+
+
+_REFUSED = discord.HTTPException(MagicMock(status=403, reason="Forbidden"), "Missing Permissions")
+
+
+@pytest.mark.parametrize(
+    "fault,reply,line",
+    [
+        pytest.param(
+            _REFUSED,
+            f"✅ **Interaction role** set to <@&{NEW_ROLE}>.",
+            f"{NAMED} | `/bot interaction-role` | Hub permissions not updated: The hub <#{HUB}>'s "
+            f"permissions could not be set: {_REFUSED}",
+            id="refused",
+        ),
+        pytest.param(
+            RuntimeError("x"),
+            f"✅ **Interaction role** set to <@&{NEW_ROLE}>.\n{NOT_UPDATED}",
+            f"❌ `/bot interaction-role` failed for {NAMED} — RuntimeError. The details are in "
+            f"the host's log.",
+            marks=pytest.mark.xfail(strict=True, reason=FOLLOW_ON), id="raises",
+        ),
+    ],
+)
+async def test_hub_permissions_that_fail_after_a_role_setting_leave_it_saved(
+    db_path, fault, reply, line
+):
+    """The league's hub is set; an administrator sets the interaction role to role 5150, and
+    setting the hub's permissions again fails once the queue has saved it: Discord refuses the
+    edit (*refused*), or it raises (*raises*). Either way the role is saved and the queue is not
+    stopped. A refusal keeps the success reply, and the log channel gets the success line, then
+    a line naming the member, the command and the refusal. A raise adds to the reply that the
+    permissions could not be updated, and the log channel gets the success line, then the
+    queue's failure line naming the kind of fault."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.settings_league import last_said
+
+    bot = await _roles_league(db_path, _hub(edit_raises=fault))
+    asked = _asked(bot, "bot interaction-role")
+
+    await undecorate(BotCog.handle_interaction_role)(BotCog(bot), asked, _role(NEW_ROLE))
+    await run_queue(bot)
+
+    assert await _role_set_to(db_path, "interaction_role_id") == NEW_ROLE
+    assert last_said(asked) == reply
+    assert _lines(bot) == [_success("/bot interaction-role", "interaction_role_id"), line]
+    assert await stopped_job(db_path) is None
 
 
 async def test_permissions_that_cannot_be_set_again_are_logged(db_path, monkeypatch):
