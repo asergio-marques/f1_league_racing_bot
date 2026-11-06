@@ -539,12 +539,15 @@ class TeamCog(commands.Cog):
         # reported any notices to the log channel, headed with the division, so this command
         # never posts them a second time.
         if await self.bot.image_drawing.lineup_wanted():
-            files: list[discord.File] = []
             drawn_paths: list = []
             # One `finally` around the whole batch, because a rejection part way through, or
             # a fault that leaves the command, abandons every picture drawn before it — the
             # divisions already rendered are never sent, and without this their files would
-            # be the one leak no posting path accounts for.
+            # be the one leak no posting path accounts for. `discord.File` is opened only once
+            # every division has drawn clean, and closed again before this hands the paths to
+            # `discard_picture`, so no render is unlinked while its handle is still open — the
+            # model `calendar_post_service.replace_calendar_message` and
+            # `placement_service._refresh_lineup_post` both set.
             try:
                 for div in all_divisions:
                     picture = await self.bot.image_drawing.draw_lineup_for_command(
@@ -559,17 +562,21 @@ class TeamCog(commands.Cog):
                             ephemeral=True,
                         )
                         return
-                    if picture.path is not None:
-                        files.append(
-                            discord.File(str(picture.path), filename=picture.path.name)
-                        )
 
-                if files:
-                    text = "\n".join(f"**{div.name}**" for div in all_divisions)
-                    await interaction.followup.send(
-                        text, files=files, ephemeral=not public
-                    )
-                    return
+                if drawn_paths:
+                    files = [
+                        discord.File(str(path), filename=path.name)
+                        for path in drawn_paths
+                    ]
+                    try:
+                        text = "\n".join(f"**{div.name}**" for div in all_divisions)
+                        await interaction.followup.send(
+                            text, files=files, ephemeral=not public
+                        )
+                        return
+                    finally:
+                        for attachment in files:
+                            attachment.close()
             finally:
                 for path in drawn_paths:
                     self.bot.image_drawing.discard_picture(path)
