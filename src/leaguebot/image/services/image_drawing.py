@@ -760,7 +760,9 @@ class ImageDrawing:
         # same findings, so seeing them here is what lets them act first.
         #
         # Split by whether the aspect drawing the template is switched on, because that
-        # is what decides whether the fault stops the season. A template beneath a
+        # is what decides whether the fault stops the season. The confirmation of placements
+        # blocks on exactly the first list (`template_faults`), so the heading is a promise
+        # the gate keeps rather than a guess. A template beneath a
         # switched-off aspect is still named: it is a real fault a manager will meet the
         # moment they switch that aspect on, and finding it then — after the season is
         # running — is worse than reading it here.
@@ -864,7 +866,10 @@ class ImageDrawing:
     async def colour_shortfall_problems(self) -> list[str]:
         """Every per-tier colour a template wants and no tier has set
         (core/services/image_drawing.py), flattened from the same map `/images config view`
-        renders, so all three surfaces name the same shortfall in the same words.
+        renders, so all three surfaces name the same shortfall in the same words. One answer
+        because two surfaces ask it: the review reports what would block an approval and the
+        approval refuses on it, so a review that did not look for a missing colour would send a
+        manager to an approval that then refused for a fault the review never named.
 
         Lets a fault reading the shortfall out, for the caller to stand aside on.
         """

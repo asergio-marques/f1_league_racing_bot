@@ -22,10 +22,11 @@ itself posts what it hands back rather than wording a refusal from it.
 It also answers both season reviews' image section and the configuration faults that refuse an
 approval: `rasteriser_fault`, `review_section`, `template_faults`, `colour_shortfall_problems`
 and `portrait_fault`. The image module words each in full; core places them beneath its own
-`"**Image output**"` heading and decides which refuse. `review_section` and `template_faults`
-let a fault reading the configuration out, for core to refuse on — a check that never ran is
-not a pass — while `colour_shortfall_problems` and `portrait_fault` are read behind core's own
-`try`, so a fault in either stands aside rather than blocking a season it could not read.
+`"**Image output**"` heading and decides which refuse. `template_faults` lets a fault reading
+the templates out, for core to refuse on — a check that never ran is not a pass; `review_section`
+lets a fault out, for core to state the section as unreadable; and `colour_shortfall_problems`
+and `portrait_fault` are read behind core's own `try`, so a fault in either stands aside rather
+than blocking a season it could not read.
 """
 from __future__ import annotations
 
@@ -195,7 +196,8 @@ class ImageDrawing(Protocol):
 
     def discard_picture(self, path: Path | None) -> None:
         """Release a path `draw_calendar`, `draw_lineup` or `draw_lineup_for_command` handed
-        back, whichever way its posting ended. A path of None is a no-op, covering a picture that was never drawn."""
+        back, whichever way its posting ended. A path of None is a no-op, covering a picture
+        that was never drawn."""
 
     async def discard_portraits(self, user_ids: Any) -> int:
         """Remove the portraits obtained for *user_ids*, accounts no driver is drawn under any
