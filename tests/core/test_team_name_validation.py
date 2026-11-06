@@ -14,9 +14,6 @@ import pytest
 
 from leaguebot.core.services.team_service import validate_full_name, validate_team_name
 
-#: Why the tests reading the team's key fail until the build.
-_SLUG_NOT_IN_CORE = "#283: the asset slug rule is still the image module's, not core's"
-
 
 # ── Rule 1: non-empty, trimmed and normalised ─────────────────────────────
 
@@ -102,7 +99,6 @@ DEFAULT_TEAMS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_SLUG_NOT_IN_CORE)
 def test_every_shipped_default_team_name_passes():
     """No existing server is broken by this rule, so no migration is owed."""
     seen: dict[str, str] = {}
@@ -117,7 +113,6 @@ def test_every_shipped_default_team_name_passes():
 # ── Names a league might reasonably choose ────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_SLUG_NOT_IN_CORE)
 @pytest.mark.parametrize(
     "name,key",
     [
@@ -135,7 +130,6 @@ def test_reasonable_names_are_accepted_and_key_as_expected(name, key):
     assert normalise(name) == key
 
 
-@pytest.mark.xfail(strict=True, reason=_SLUG_NOT_IN_CORE)
 def test_the_key_and_the_asset_filename_come_from_one_rule():
     """Constitution XIV.13, v4.3.0 — one datum, one spelling in id and filename alike: core's key
     and the image module's asset file name."""

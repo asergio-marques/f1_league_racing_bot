@@ -10,11 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-#: Why these fail until the build.
-_NOT_IN_CORE = "#283: the asset slug rule is still the image module's, not core's"
 
-
-@pytest.mark.xfail(strict=True, reason=_NOT_IN_CORE)
 @pytest.mark.parametrize(
     ("datum", "expected"),
     [
@@ -41,7 +37,6 @@ def test_normalisation_matches_the_documented_rule(datum, expected):
     assert normalise(datum) == expected
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_IN_CORE)
 @pytest.mark.parametrize("datum", ["", "   ", "!!!", "---", "…"])
 def test_data_with_no_alphanumerics_normalise_to_empty(datum):
     from leaguebot.core.utils.asset_slug import normalise
@@ -49,7 +44,6 @@ def test_data_with_no_alphanumerics_normalise_to_empty(datum):
     assert normalise(datum) == ""
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_IN_CORE)
 def test_normalisation_is_total_and_pure():
     from leaguebot.core.utils.asset_slug import normalise
 

@@ -12,7 +12,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.team import DefaultTeam, TeamInstance
-from leaguebot.image.utils.asset_resolver import normalise
+from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.input_validator import NAME, parse_role_mention, parse_user_mention
 
 log = logging.getLogger(__name__)

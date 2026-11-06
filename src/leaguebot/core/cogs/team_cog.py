@@ -11,7 +11,7 @@ from discord.ext import commands
 
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
-from leaguebot.image.utils.asset_resolver import normalise
+from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, role_grant_refusal, changes_nothing
 from leaguebot.core.utils.interaction_errors import describe, describe_form

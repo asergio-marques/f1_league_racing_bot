@@ -748,7 +748,7 @@ class SeasonCog(commands.Cog):
         """
         from leaguebot.core.db.database import get_connection
         from leaguebot.core.services.team_service import validate_team_name
-        from leaguebot.image.utils.asset_resolver import normalise
+        from leaguebot.core.utils.asset_slug import normalise
 
         problems: list[str] = []
         try:
