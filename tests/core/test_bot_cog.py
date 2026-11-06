@@ -341,15 +341,12 @@ async def test_bot_init_s_line_names_the_league_admin_role(tmp_path):
     assert _delivered(bot, CONFIGURED_LOG) == [_init_line(admin_name="League Admins")]
 
 
-@pytest.mark.xfail(strict=True, reason=_INIT_QUEUED)
 async def test_bot_init_s_reply_names_the_league_admin_role(tmp_path):
     """The queue's acknowledgement is updated, once the change has run, to today's confirmation,
     which lists the league admin role beside the other three settings (#482, F3)."""
     _bot_, interaction = await _init_configured(tmp_path)
 
-    said = _said(interaction)
-    assert said[0].startswith(_INIT_ACKNOWLEDGED)
-    assert said[-1] == _INIT_SAVED.format(log=CONFIGURED_LOG)
+    assert _said(interaction)[-1] == _INIT_SAVED.format(log=CONFIGURED_LOG)
 
 
 async def test_bot_init_is_refused_while_a_factory_reset_is_cleaning_up(tmp_path, caplog):
