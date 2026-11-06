@@ -260,7 +260,7 @@ def _guild_and_role(ctx: StepContext) -> tuple[discord.Guild, discord.Role]:
 
 def _replaced_role_id(ctx: StepContext) -> int | None:
     """The role a league role's save actually replaced, read as the save read it (`current` in
-    *its* `Saved.result`, kept there for this), never the payload's stale *old_role_id*: a second
+    *its* `Saved.result`, kept there for this), never the role the ask saw: a second
     change queued behind the first may have moved the value on by the time this one's save runs."""
     return next(
         (view.result or {}).get("replaced")
@@ -311,11 +311,9 @@ def _league_role_setting(
     """`/bot base-role` or `/bot driver-role` on *column*: a league manager's own command, not
     one of the four repair settings above, so it waits its turn on the league lane.
 
-    The payload carries what the command judged against the server at the ask: *old_role_id* (the
-    role it may replace, named only for the ask's own refusal and the queue's acknowledgement —
-    never read here), *guild_id*, and *replacing_gone*/*season_number*, which decided the ask's
-    own refusal (decided 2026-09-22, #374) and are not read again below: `check` and `save`
-    re-judge both afresh, against the server's and the database's state as the change starts. A
+    The payload carries the role asked for (*value*, *role_name*, *role_mention*) and *guild_id*,
+    and no judgement of the ask's: `check` and `save` judge the season and the role they replace
+    afresh, against the server's and the database's state as the change starts. A
     driver role Discord will not let the bot grant is judged only at the ask, since it has
     nothing to do with a value already held and never reaches this `Setting`.
 
@@ -323,18 +321,20 @@ def _league_role_setting(
     against the server's state then rather than as it was asked: a confirmation queued ahead of
     this change may have fixed the season since, as `season_fixed_refusal` already refuses it at
     the ask. It also re-judges whether the role **stored now** is still gone from the server —
-    the stored column, never the payload's stale *old_role_id*, since a change waiting ahead on
+    the stored column, never the role the ask saw, since a change waiting ahead on
     the lane may already have replaced it: a second gone-role replacement queued behind the
     first must be judged against the role the first one actually left stored, or it would let a
     role still on the server, and held by every driver, be swept aside while the season stays
-    fixed (#283). *old_role_id* only ever named the role the ask itself saw gone, for its own
-    refusal; it never serves `check`.
+    fixed.
 
     **The save reads the role it replaces itself** (`current`, kept in its result as *replaced*),
-    never the payload's *old_role_id*, for the same reason. `check`'s having passed is `save`'s
-    own proof that *current* is gone whenever the season is fixed — nothing lands between them on
-    the lane — so `save` judges the grant to every driver from the season's fixedness alone,
-    queried fresh on its own connection, never from the payload's stale *replacing_gone*.
+    never the role the ask saw, for the same reason. `check`'s having passed is `save`'s own proof
+    that *current* is gone whenever the season is fixed, since no queued change lands between them
+    on the lane, so `save` judges the grant to every driver from the season's fixedness alone,
+    queried fresh on its own connection. One writer is not yet a queued change: the
+    configuration's confirmation sets the season's stage from its command, so it can land
+    between the two. It goes onto the queue with the season's other structural commands, and the
+    window closes then.
 
     **The base role's save plans two follow-ons the driver role never needs:** calling the "base
     role changed" hook (`BASE_ROLE_CHANGED`), which moves the signup channel's overwrite without
@@ -433,9 +433,9 @@ def _league_role_setting(
 def _move_signup_overwrite() -> After:
     """The `After` step the base role's save plans: call the "base role changed" hook the
     builder makes, with the server, the role the save actually replaced (`_replaced_role_id`,
-    never the payload's stale *old_role_id*) and the role now set, handing no connection
+    never the role the ask saw) and the role now set, handing no connection
     (signup's subscriber opens its own). Core never reaches `bot.signup_module_service`
-    itself (#283). The hook's subscribers never raise, each logging its own faults, so this
+    itself. The hook's subscribers never raise, each logging its own faults, so this
     step never fails.
     """
 

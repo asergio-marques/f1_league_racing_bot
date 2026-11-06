@@ -339,9 +339,9 @@ class BotCog(commands.Cog):
         **A role gone from the server may be replaced while it is fixed** (decided 2026-09-22,
         #374). The roles are fixed so that no driver is left holding one the season's end will
         not revoke; nobody holds a deleted role, so that reason is spent, and refusing would
-        leave a season unable to open a window until it ended. *old_role_id*, *replacing_gone*
-        and *season_number* are carried in the payload for the setting's save and its
-        follow-ons to read, since they need the server and not only the value.
+        leave a season unable to open a window until it ended. The ask judges this against the
+        server only for its own refusal; the setting judges it again as the change starts, and
+        reads the role it replaces as it saves, so the payload carries no judgement of the ask's.
         """
         from leaguebot.core.services.bot_settings import season_fixed_refusal
         from leaguebot.core.services.season_lifecycle_service import configuration_fixed
@@ -389,12 +389,8 @@ class BotCog(commands.Cog):
             "value": role.id,
             "role_name": role.name,
             "role_mention": role.mention,
-            "old_role_id": old_role_id,
             "guild_id": interaction.guild_id,
         }
-        if replacing_gone:
-            payload["replacing_gone"] = True
-            payload["season_number"] = season_number
         await self.bot.change_queue.ask(
             kind, payload, interaction=interaction, what=describe(interaction),
         )
