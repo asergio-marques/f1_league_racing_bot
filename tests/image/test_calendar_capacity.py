@@ -121,13 +121,15 @@ async def test_a_round_past_capacity_is_refused(tmp_path):
 # ── The review's longest calendar (XIV.9) ─────────────────────────────────
 
 
-async def test_the_warning_says_what_will_happen_instead(tmp_path):
+@pytest.mark.parametrize("images", [True, False], ids=["module-on", "module-off"])
+async def test_the_warning_says_what_will_happen_instead(tmp_path, images):
     """The calendar is posted as text rather than not at all, which is the difference between
     a degraded season and a broken one. The division holding the longest calendar is named, so
-    a season of eight divisions knows which one to shorten."""
+    a season of eight divisions knows which one to shorten. The review warns on the `calendar`
+    aspect alone, whether or not the images module is on."""
     from leaguebot.core.services.image_drawing import Held
 
-    answer = await _drawing(tmp_path).calendar_review_problem(Held("Premier", 25))
+    answer = await _drawing(tmp_path, images=images).calendar_review_problem(Held("Premier", 25))
 
     assert (answer.problem, answer.remedy) == (
         "Calendar template draws 24 round(s); `Premier` holds 25. That division's calendar "

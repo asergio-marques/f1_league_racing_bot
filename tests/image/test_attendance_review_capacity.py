@@ -57,7 +57,7 @@ def _report(path, key, *, valid=True):
 
 
 def _drawing(tmp_path, *, columns=(1, 2, 3), sessions=(1, 2), aspects=("attendance", "rsvp"),
-             reports=None):
+             reports=None, images=True):
     """The image module's implementation of core's protocol, over stand-ins for its own
     services: the *aspects* switched on, and an attendance sheet drawing the round *columns*
     and a check-in call naming the *sessions*, both valid, unless other *reports* are given."""
@@ -68,7 +68,7 @@ def _drawing(tmp_path, *, columns=(1, 2, 3), sessions=(1, 2), aspects=("attendan
         call = _template_file(tmp_path, CALL, [f"session_{n}_name" for n in sessions])
         reports = {SHEET: _report(sheet, SHEET), CALL: _report(call, CALL)}
     modules = MagicMock()
-    modules.is_images_enabled = AsyncMock(return_value=True)
+    modules.is_images_enabled = AsyncMock(return_value=images)
     config = MagicMock()
     config.get_config = AsyncMock(return_value=MagicMock())
     config.get_toggles = AsyncMock(return_value={aspect: True for aspect in aspects})
@@ -98,10 +98,12 @@ async def test_a_sheet_that_fits_the_longest_calendar_earns_no_warning(tmp_path)
     assert await drawing.sheet_review_problem(_held("Pro", 3)) is None
 
 
-async def test_a_sheet_too_narrow_for_the_longest_calendar_is_warned_about(tmp_path):
+@pytest.mark.parametrize("images", [True, False], ids=["module-on", "module-off"])
+async def test_a_sheet_too_narrow_for_the_longest_calendar_is_warned_about(tmp_path, images):
     """It names the division handed, whose sheet will fall back to text: the one a manager
-    needs to know about."""
-    drawing = _drawing(tmp_path, columns=(1, 2, 3, 4))
+    needs to know about. The review warns on the aspect alone, whether or not the images
+    module is on."""
+    drawing = _drawing(tmp_path, columns=(1, 2, 3, 4), images=images)
 
     answer = await drawing.sheet_review_problem(_held("Am", 6))
 
@@ -167,8 +169,10 @@ async def test_a_call_naming_four_sessions_fits_a_sprint_season(tmp_path):
     assert await drawing.checkin_review_problem(4) is None
 
 
-async def test_a_call_too_small_for_any_round_is_warned_about(tmp_path):
-    drawing = _drawing(tmp_path, sessions=(1,), aspects=("rsvp",))
+@pytest.mark.parametrize("images", [True, False], ids=["module-on", "module-off"])
+async def test_a_call_too_small_for_any_round_is_warned_about(tmp_path, images):
+    """The review warns on the `rsvp` aspect alone, whether or not the images module is on."""
+    drawing = _drawing(tmp_path, sessions=(1,), aspects=("rsvp",), images=images)
 
     answer = await drawing.checkin_review_problem(2)
 
