@@ -1,99 +1,101 @@
-"""The calendar template's capacity — a refusal when a round is added, a warning at review.
+"""The image module's answers to core's two calendar questions — the round a division would
+hold, and the review's longest calendar (#208, #283).
 
-Issue #208. The same overflow is reported two ways at two moments, and the difference is the
-whole point of having both.
+The same overflow is reported two ways at two moments, and the difference is the whole point
+of having both. **Adding a round that outgrows the template is refused outright**, with the
+round not added: `/round add` knows exactly which division it is touching, so the comparison is
+certain and Constitution XIV.12 requires overflow to be rejected at the earliest moment it can
+be detected. **Season review can only warn** (Constitution XIV.9): it compares against the
+greatest round count any division holds, but which division is actually drawn is decided later.
+Core asks the one question or the other, and words the refusal or the warning around the
+answer; `tests/core/test_season_review_capacity.py` pins core's side, its counting, and that a
+check which cannot run lets the season and the round through.
 
-**Adding a round that outgrows the template is refused outright**, with the round not added.
-`/round add` knows exactly which division it is touching, so the comparison is certain and
-Constitution XIV.12 requires overflow to be rejected at the earliest moment it can be detected,
-with the change unapplied.
+Here the image module measures the configured template and answers the problem and its remedy,
+or nothing. It answers nothing where the template is not drawn or cannot be trusted: the module
+off (for the round), the `calendar` aspect off, no valid template, a template declaring no
+rounds. A fault reading the template or the reports is let out, for core's one catch.
 
-**Season review can only warn** (Constitution XIV.9). It compares against the greatest round
-count any division holds, but which division is actually drawn is decided later — so a season
-that would draw perfectly could be refused on a division that never gets drawn. Reporting it as
-a failure there would block a league for a fault it may not have.
-`test_the_review_warns_where_the_add_refuses` is the pair that keeps the two apart.
+**It counts rounds, not drivers.** The placement questions count seated drivers against the
+lineup and attendance templates; a calendar's collection is rounds. The two guard different
+commands and must not be merged (research.md § R3).
 
-**The guard never raises for its own reasons.** A fault in the check must not block a round —
-only a genuine over-capacity may. So a missing template, an invalid one, an unreadable SVG and
-an exception anywhere inside all return "no problem", and the round proceeds. That is the safe
-direction: a league whose template cannot be read still gets its round, and finds out when the
-graphic is drawn.
-
-**It counts rounds, not drivers.** `placement_service._guard_image_capacity` counts seated
-drivers against the lineup and attendance templates; a calendar's collection is rounds. The two
-guard different commands and must not be merged (research.md § R3) — and this file exists partly
-so a later reader sees why there are two.
+Nothing here rasterises: the templates are built in memory and read as SVG.
 """
 from __future__ import annotations
 
-import os
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from lxml import etree
 
-from leaguebot.core.cogs.season_cog import SeasonCog
-from leaguebot.core.db.database import get_connection, run_migrations
-
-SERVER_ID = 11908
-
-
-# ---------------------------------------------------------------------------
-# Fixtures / helpers
-# ---------------------------------------------------------------------------
+NOT_YET = "#283: the image module answers no calendar question of core's"
+SVG_NS = "http://www.w3.org/2000/svg"
+CALENDAR = "calendar_template"
+ROUND_REMEDY = (
+    "Enlarge the template, or turn the `calendar` image aspect off with `/images config toggle`."
+)
+REVIEW_REMEDY = "Enlarge the template to draw it."
 
 
-def _make_cog(
-    *,
-    images_enabled: bool = True,
-    aspect_enabled: bool = True,
-    report=...,
-) -> SeasonCog:
-    bot = MagicMock()
-    bot.db_path = "/tmp/does-not-matter.db"
-    bot.module_service = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=images_enabled)
-    bot.image_config_service = MagicMock()
-    bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=aspect_enabled)
+def _template_file(tmp_path, *, rounds: int):
+    """A calendar template declaring *rounds* rounds."""
+    root = etree.Element(f"{{{SVG_NS}}}svg")
+    root.set("width", "600")
+    root.set("height", "400")
+    etree.SubElement(root, f"{{{SVG_NS}}}text").set("id", "division_name")
+    for number in range(1, rounds + 1):
+        etree.SubElement(root, f"{{{SVG_NS}}}text").set("id", f"round_{number}_number")
+    path = tmp_path / f"{CALENDAR}.svg"
+    path.write_bytes(etree.tostring(root))
+    return path
 
-    resolved = (
-        SimpleNamespace(valid=True, resolved_path="/tmp/calendar.svg")
-        if report is ...
-        else report
+
+def _drawing(
+    tmp_path, *, rounds=24, images=True, aspect=True, report=..., reports_error=None
+):
+    """The image module's implementation of core's protocol, over stand-ins for its own
+    services: the images module *images*, the `calendar` aspect *aspect*, and a valid calendar
+    template drawing *rounds* rounds unless another *report* is given, or *reports_error*
+    raised reading the reports."""
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    if report is ...:
+        report = SimpleNamespace(
+            valid=True, resolved_path=_template_file(tmp_path, rounds=rounds),
+            template_key=CALENDAR,
+        )
+    modules = MagicMock()
+    modules.is_images_enabled = AsyncMock(return_value=images)
+    config = MagicMock()
+    config.get_config = AsyncMock(return_value=MagicMock())
+    config.get_toggles = AsyncMock(return_value={"calendar": aspect})
+    config.is_aspect_enabled = AsyncMock(side_effect=lambda name: aspect and name == "calendar")
+    validity = MagicMock()
+    validity.template_reports = AsyncMock(
+        return_value={CALENDAR: report}, side_effect=reports_error
     )
-    bot.image_validity_service = MagicMock()
-    bot.image_validity_service.template_reports = AsyncMock(
-        return_value={"calendar_template": resolved}
-    )
-
-    cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = bot
-    return cog
-
-
-def _capacity(value: int | None, *, load_error: Exception | None = None):
-    """Patch the SVG load and the catalogue's capacity reading."""
-    catalogue = MagicMock()
-    catalogue.capacity = MagicMock(return_value=value)
-    return (
-        patch(
-            "leaguebot.image.utils.svg_document.load_svg",
-            new=MagicMock(side_effect=load_error, return_value=MagicMock()),
-        ),
-        patch("leaguebot.image.models.image_catalogues.catalogue_for", new=MagicMock(return_value=catalogue)),
+    return ImageDrawing(
+        modules=modules, config=config, validity=validity,
+        renderer=MagicMock(), post_log=AsyncMock(), db_path="",
     )
 
 
-async def _overflow(cog, would_hold: int, capacity_value, **kwargs):
-    load, catalogue = _capacity(capacity_value, **kwargs)
-    with load, catalogue:
-        return await cog._calendar_round_overflow(would_hold)
+async def _ask(drawing, question: str, held: int):
+    """Ask *question* of *held* rounds: ``round`` for the round a division would hold,
+    ``review`` for the review's longest calendar, held by Premier."""
+    if question == "round":
+        return await drawing.round_capacity_problem(held)
+    from leaguebot.core.services.image_drawing import Held
+
+    return await drawing.calendar_review_problem(Held("Premier", held))
 
 
-# ---------------------------------------------------------------------------
-# When the guard applies at all
-# ---------------------------------------------------------------------------
+QUESTIONS = pytest.mark.parametrize("question", ["round", "review"])
+
+
+# ── The round a division would hold (XIV.12) ──────────────────────────────
 
 
 @pytest.mark.parametrize(
@@ -101,222 +103,111 @@ async def _overflow(cog, would_hold: int, capacity_value, **kwargs):
     [20, 24],
     ids=["within_capacity", "exactly_at_capacity"],
 )
-async def test_a_round_within_capacity_is_not_refused(would_hold):
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_round_within_capacity_is_not_refused(tmp_path, would_hold):
     """The comparison is `>`, so a template drawing twenty-four rounds takes twenty-four."""
-    cog = _make_cog()
-
-    assert await _overflow(cog, would_hold, 24) is None
+    assert await _drawing(tmp_path).round_capacity_problem(would_hold) is None
 
 
-async def test_a_round_past_capacity_is_refused():
-    """XIV.12 requires the change unapplied, and a manager needs to know the calendar is
-    unchanged rather than half-extended. The refusal names both ways out: enlarging the
-    template and turning the aspect off are genuinely different decisions, and a league may
-    reasonably take either."""
-    cog = _make_cog()
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_round_past_capacity_is_refused(tmp_path):
+    """The remedy names both ways out: enlarging the template and turning the aspect off are
+    genuinely different decisions, and a league may reasonably take either."""
+    answer = await _drawing(tmp_path).round_capacity_problem(25)
 
-    message = await _overflow(cog, 25, 24)
-
-    assert message is not None
-    assert "25 rounds" in message
-    assert "draws 24" in message
-    assert "**not** added" in message
-    assert "Enlarge the template" in message
-    assert "/images config toggle" in message
+    assert (answer.problem, answer.remedy) == (
+        "That would give the division 25 rounds, but the configured calendar template draws 24",
+        ROUND_REMEDY,
+    )
 
 
-# ---------------------------------------------------------------------------
-# Where the guard stands aside
-# ---------------------------------------------------------------------------
+# ── The review's longest calendar (XIV.9) ─────────────────────────────────
 
 
-async def test_the_guard_is_inert_while_the_image_module_is_off():
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_the_warning_says_what_will_happen_instead(tmp_path):
+    """The calendar is posted as text rather than not at all, which is the difference between
+    a degraded season and a broken one. The division holding the longest calendar is named, so
+    a season of eight divisions knows which one to shorten."""
+    from leaguebot.core.services.image_drawing import Held
+
+    answer = await _drawing(tmp_path).calendar_review_problem(Held("Premier", 25))
+
+    assert (answer.problem, answer.remedy) == (
+        "Calendar template draws 24 round(s); `Premier` holds 25. That division's calendar "
+        "cannot be drawn as an image and will be posted as text",
+        REVIEW_REMEDY,
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_season_within_capacity_earns_no_warning(tmp_path):
+    from leaguebot.core.services.image_drawing import Held
+
+    assert await _drawing(tmp_path).calendar_review_problem(Held("Division 1", 20)) is None
+
+
+# ── Where the questions stand aside ───────────────────────────────────────
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_the_guard_is_inert_while_the_image_module_is_off(tmp_path):
     """No graphic will be drawn, so there is no capacity to outgrow."""
-    cog = _make_cog(images_enabled=False)
-
-    assert await _overflow(cog, 100, 24) is None
+    assert await _drawing(tmp_path, images=False).round_capacity_problem(100) is None
 
 
-async def test_the_guard_is_inert_while_the_calendar_aspect_is_off():
+@QUESTIONS
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_the_guard_is_inert_while_the_calendar_aspect_is_off(tmp_path, question):
     """A league can run the image module and draw no calendar — the aspect is what decides
     whether this template is used at all."""
-    cog = _make_cog(aspect_enabled=False)
-
-    assert await _overflow(cog, 100, 24) is None
+    assert await _ask(_drawing(tmp_path, aspect=False), question, 100) is None
 
 
+@QUESTIONS
 @pytest.mark.parametrize(
     "report",
-    [None, SimpleNamespace(valid=False, resolved_path="/tmp/bad.svg")],
+    [None, SimpleNamespace(valid=False, resolved_path="/tmp/bad.svg", template_key=CALENDAR)],
     ids=["no_calendar_template", "invalid_template"],
 )
-async def test_a_missing_or_invalid_template_is_not_used_to_refuse(report):
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_missing_or_invalid_template_is_not_used_to_refuse(tmp_path, report, question):
     """A league with no calendar template has no capacity to outgrow. An invalid one's
     capacity cannot be trusted, and refusing a round on an unreadable number would block a
-    league for a fault in their artwork rather than their calendar."""
-    cog = _make_cog(report=report)
-
-    assert await _overflow(cog, 100, 24) is None
-
-
-async def test_a_template_reporting_no_capacity_is_not_used_to_refuse():
-    """`None` or zero means the reading failed rather than that the template draws
-    nothing — a template that genuinely drew no rounds would be invalid."""
-    cog = _make_cog()
-
-    assert await _overflow(cog, 100, None) is None
-    assert await _overflow(cog, 100, 0) is None
+    league for a fault in their artwork rather than their calendar; the review's own template
+    problems already name it."""
+    assert await _ask(_drawing(tmp_path, report=report), question, 100) is None
 
 
-async def test_an_unreadable_template_does_not_block_the_round(caplog):
-    """The safe direction: a league whose template cannot be read still gets its round,
-    and finds out when the graphic is drawn."""
-    cog = _make_cog()
-
-    with caplog.at_level("ERROR"):
-        result = await _overflow(cog, 100, 24, load_error=OSError("no such file"))
-
-    assert result is None
-    assert "capacity guard could not run" in caplog.text
+@QUESTIONS
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_template_reporting_no_capacity_is_not_used_to_refuse(tmp_path, question):
+    """Nought means the reading found nothing rather than that the template draws nothing — a
+    template that genuinely drew no rounds would be invalid."""
+    assert await _ask(_drawing(tmp_path, rounds=0), question, 100) is None
 
 
-async def test_a_failure_reading_the_reports_does_not_block_the_round(caplog):
-    cog = _make_cog()
-    cog.bot.image_validity_service.template_reports = AsyncMock(
-        side_effect=RuntimeError("template service down")
-    )
-
-    with caplog.at_level("ERROR"):
-        result = await _overflow(cog, 100, 24)
-
-    assert result is None
+# ── A fault is core's to catch ────────────────────────────────────────────
 
 
-# ---------------------------------------------------------------------------
-# The refusal and the warning are different things
-# ---------------------------------------------------------------------------
-
-
-async def _make_season_db(tmp_path, *, rounds_per_division: dict[str, int]) -> str:
-    db_path = os.path.join(str(tmp_path), "calendar_capacity.db")
-    await run_migrations(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-            (SERVER_ID,),
-        )
-        await db.execute(
-            "INSERT INTO seasons (id, season_number, start_date, status) "
-            "VALUES (1, 1, '2026-01-01', 'SETUP')"
-        )
-        for index, (name, count) in enumerate(rounds_per_division.items(), start=1):
-            await db.execute(
-                "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
-                "VALUES (?, 1, ?, ?, ?)",
-                (index, name, index, 500 + index),
-            )
-            for number in range(1, count + 1):
-                await db.execute(
-                    "INSERT INTO rounds (division_id, round_number, format, track_name, "
-                    "scheduled_at) VALUES (?, ?, 'NORMAL', 'Silverstone Circuit', "
-                    "'2026-06-01')",
-                    (index, number),
-                )
-        await db.commit()
-    return db_path
-
-
-async def _warning(cog, db_path, capacity_value):
-    cog.bot.db_path = db_path
-    cog.bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
-    load, catalogue = _capacity(capacity_value)
-    with load, catalogue:
-        return await cog._calendar_capacity_warning(1)
-
-
-async def test_the_review_warns_where_the_add_refuses(tmp_path):
-    """`/round add` knows which division it is touching, so it refuses. Season review can
-    only compare against the greatest round count any division holds — and which division
-    is drawn is decided later, so a season that would draw perfectly could be refused on a
-    division that never gets drawn.
-
-    The two therefore return different kinds of thing for the same overflow: a refusal
-    message, and a warning line. A reader merging them would either refuse a season
-    wrongly or let a round through that cannot be drawn."""
-    cog = _make_cog()
-    db_path = await _make_season_db(tmp_path, rounds_per_division={"Division 1": 25})
-
-    refusal = await _overflow(cog, 25, 24)
-    warning = await _warning(cog, db_path, 24)
-
-    assert isinstance(refusal, str)
-    assert "not** added" in refusal
-    assert isinstance(warning, list)
-    assert "⚠️" in warning[0]
-    assert "not** added" not in warning[0]
-
-
-@pytest.mark.parametrize(
-    "rounds_per_division,longest",
-    [
-        pytest.param({"Division 1": 10, "Premier": 25}, "Premier", id="longest sorts last"),
-        pytest.param({"Short": 5, "Long": 25}, "Long", id="longest sorts first"),
-    ],
-)
-async def test_the_warning_names_the_division_that_overflows(
-    tmp_path, rounds_per_division, longest
+@QUESTIONS
+@pytest.mark.parametrize("fault", ["unreadable template", "reports down"])
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_fault_reading_the_template_is_let_out_for_core_s_catch(
+    tmp_path, fault, question
 ):
-    """A season of eight divisions needs to know which one to shorten. Only the greatest
-    round count can be judged here, because which division gets drawn is decided later — so
-    a season passes only if its longest calendar fits. The longest division, added second, is
-    named whether its name sorts after the shorter one's or before it."""
-    cog = _make_cog()
-    db_path = await _make_season_db(tmp_path, rounds_per_division=rounds_per_division)
+    """The image module does not decide that a fault lets the round through: it lets the
+    fault out, and core's one catch logs it and lets the season and the round through."""
+    from leaguebot.image.utils.svg_document import SvgError
 
-    warning = await _warning(cog, db_path, 24)
+    if fault == "unreadable template":
+        drawing = _drawing(tmp_path, report=SimpleNamespace(
+            valid=True, resolved_path=tmp_path / "missing.svg", template_key=CALENDAR,
+        ))
+        expected: type[Exception] = SvgError
+    else:
+        drawing = _drawing(tmp_path, reports_error=RuntimeError("template service down"))
+        expected = RuntimeError
 
-    assert longest in warning[0]
-    assert "holds 25" in warning[0]
-
-
-async def test_the_warning_says_what_will_happen_instead(tmp_path):
-    """The calendar is posted as text rather than not at all, which is the difference
-    between a degraded season and a broken one."""
-    cog = _make_cog()
-    db_path = await _make_season_db(tmp_path, rounds_per_division={"Division 1": 25})
-
-    warning = await _warning(cog, db_path, 24)
-
-    assert "posted as text" in warning[0]
-    assert "Enlarge the template" in warning[0]
-
-
-async def test_a_season_within_capacity_earns_no_warning(tmp_path):
-    cog = _make_cog()
-    db_path = await _make_season_db(tmp_path, rounds_per_division={"Division 1": 20})
-
-    assert await _warning(cog, db_path, 24) == []
-
-
-async def test_a_season_with_no_divisions_earns_no_warning(tmp_path):
-    cog = _make_cog()
-    db_path = await _make_season_db(tmp_path, rounds_per_division={})
-
-    assert await _warning(cog, db_path, 24) == []
-
-
-async def test_a_review_never_fails_on_the_capacity_check(tmp_path, caplog):
-    """Constitution XIV.9 — the review is the report a manager approves from, and losing
-    it to a template fault would leave them unable to see anything at all."""
-    cog = _make_cog()
-    db_path = await _make_season_db(tmp_path, rounds_per_division={"Division 1": 25})
-    cog.bot.image_config_service.get_config = AsyncMock(
-        side_effect=RuntimeError("image service down")
-    )
-    cog.bot.db_path = db_path
-
-    with caplog.at_level("ERROR"):
-        result = await cog._calendar_capacity_warning(1)
-
-    assert result == []
+    with pytest.raises(expected):
+        await _ask(drawing, question, 100)
