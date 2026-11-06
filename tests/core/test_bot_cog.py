@@ -746,6 +746,61 @@ async def test_a_role_set_to_the_role_it_holds_is_answered_nothing_changed(
 
 
 @pytest.mark.parametrize(
+    "attribute,column,factory,new_id",
+    [pytest.param(*s, marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE), id=s[1])
+     for s in _SETTINGS if s[1] in ("log_channel_id", "league_admin_role_id")],
+)
+async def test_a_repair_setting_takes_effect_while_the_queue_is_stopped_on_another_job(
+    tmp_path, attribute, column, factory, new_id
+):
+    """The league's server is set up, and the league's queue is stopped on another job, which
+    failed on a fault in the bot. An administrator runs `/bot log-channel`, or `/bot admin-role`,
+    with a new channel or role, to repair the league. Nothing is written as they ask; once the
+    queue runs, the setting is saved and they are answered with today's reply, past the stop,
+    while the other job stays stopped where it was (decision 162)."""
+    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.core.services.change_queue import ChangeType, Step
+    from tests.support.change_queue import member, register, run_queue, stopped_job
+
+    async def fails(_ctx: Any) -> StepResult:
+        raise RuntimeError("a fault in the bot")
+
+    async def go(_ctx: Any) -> Any:
+        return Verdict.go()
+
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = await _queued_bot(db_path)
+    register(bot, ChangeType(
+        kind="test.stopping",
+        opening=(PlannedStep("fail"),),
+        steps={"fail": Step("fail", StepKind.ACT, fails)},
+        check=go,
+        key=lambda _payload: "test.stopping",
+        doing=lambda _payload: "Doing another job",
+        outcome=lambda _ctx: "Done.",
+    ))
+    other = await bot.change_queue.ask("test.stopping", {}, actor=member(), what="another job")
+    await run_queue(bot)
+    stopped = await stopped_job(db_path)
+    assert stopped is not None and stopped["change_id"] == other
+    cog = BotCog(bot)
+    command, label = _WORDS[column]
+    chosen = factory(new_id)
+    interaction = _asking(bot, command[1:])
+
+    await _unwrap(getattr(cog, attribute))(cog, interaction, chosen)
+    assert (await _row(db_path))[column] != new_id
+    await run_queue(bot)
+
+    assert (await _row(db_path))[column] == new_id
+    assert _said(interaction)[-1] == f"✅ **{label}** set to {chosen.mention}."
+    still = await stopped_job(db_path)
+    assert still is not None
+    assert (still["id"], still["change_id"]) == (stopped["id"], other)
+
+
+@pytest.mark.parametrize(
     "attribute,column,factory,new_id", _SETTINGS, ids=[s[1] for s in _SETTINGS]
 )
 async def test_a_setting_command_works_outside_the_interaction_channel(
