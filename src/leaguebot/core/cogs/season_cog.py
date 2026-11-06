@@ -766,15 +766,12 @@ class SeasonCog(commands.Cog):
 
     async def _review_picture_gates(self) -> tuple[bool, bool]:
         """Whether the league conveys its calendar, and its lineup, as pictures: the gates the
-        review draws by, read once for the whole review. A fault in either shows the text, as
-        the gates themselves do."""
-        from leaguebot.image.services.image_lineup_post import lineup_enabled
-
-        try:
-            return await self.bot.image_drawing.calendar_wanted(), await lineup_enabled(self.bot)
-        except Exception as exc:  # noqa: BLE001 — never break a review on this
-            log.error("season review: could not read the image gates: %s", exc, exc_info=True)
-            return False, False
+        review draws by, read once for the whole review. Both gates are stated exceptions of
+        their own (`ImageDrawing.calendar_wanted`, `ImageDrawing.lineup_wanted`;
+        architecture.md, "A catch-all error handler"), so a fault in either already answers
+        False there and needs no catch-all here."""
+        drawing = self.bot.image_drawing
+        return await drawing.calendar_wanted(), await drawing.lineup_wanted()
 
     async def _ask_review(
         self,

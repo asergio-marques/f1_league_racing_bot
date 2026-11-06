@@ -3105,7 +3105,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/bot_cog.py", "_reapply_hub_permissions"): (1, PASS["core"]),
     ("core/cogs/driver_cog.py", "DriverCog.reassign"): (2, PASS["core"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
-    ("core/cogs/season_cog.py", "SeasonCog._review_picture_gates"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._team_name_problems"): (1, PASS["core"]),
     ("core/cogs/test_mode_cog.py", "TestModeCog.toggle"): (1, PASS["core"]),
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),

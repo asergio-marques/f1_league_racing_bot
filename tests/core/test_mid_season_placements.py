@@ -364,13 +364,6 @@ def _offered(cog) -> bool:
     return bool(cog.review_asked.get("question"))
 
 
-#: Why a test drawing the lineup picture fails until the build: the review's lineup gate is not
-#: yet asked of the image module's drawing.
-LINEUP_GATE_ASKS_THE_DRAWING = (
-    "#283: the review's lineup picture gate is not yet asked of the image module's drawing"
-)
-
-
 def _lineup_wanted(cog, wanted: bool = True) -> None:
     """The league's lineup picture is switched on, or off, as answered by the drawing the builder
     attached to *cog*'s bot."""
@@ -491,7 +484,6 @@ async def test_every_fault_is_named_at_once(monkeypatch):
     assert "Inkscape is not installed" in private
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUP_GATE_ASKS_THE_DRAWING)
 async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_its_text(
     monkeypatch,
 ):

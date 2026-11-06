@@ -1046,13 +1046,6 @@ async def test_a_posted_placements_review_writes_no_line_of_its_own_and_asks_the
 # ---------------------------------------------------------------------------
 
 
-#: Why a test drawing the lineup picture fails until the build: the review's lineup gate is not
-#: yet asked of the image module's drawing.
-LINEUP_GATE_ASKS_THE_DRAWING = (
-    "#283: the review's lineup picture gate is not yet asked of the image module's drawing"
-)
-
-
 def _pictures_wanted(monkeypatch, cog) -> None:
     """The league's calendar and lineup pictures are switched on, as answered by the drawing the
     builder attached to *cog*'s bot."""
@@ -1060,7 +1053,6 @@ def _pictures_wanted(monkeypatch, cog) -> None:
     cog.bot.image_drawing.lineup_wanted = AsyncMock(return_value=True)
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUP_GATE_ASKS_THE_DRAWING)
 async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_of_their_text(
         db_path, monkeypatch):
     """Reverses 038 FR-027 (decided 2026-08-27): where an aspect is switched on, its picture
@@ -1098,7 +1090,6 @@ async def test_with_the_image_module_off_no_picture_is_asked_and_the_sections_ar
     assert "*(no drivers assigned)*" in _public(messages)
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUP_GATE_ASKS_THE_DRAWING)
 async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
         db_path, monkeypatch):
     """A finding the picture cannot show is posted either way. Pro's team Ghost has no role and

@@ -92,9 +92,6 @@ ignore_imports =
     # type checker only (under TYPE_CHECKING). Services stay typed attributes on the bot
     # (architecture.md, "How the code is laid out").
     leaguebot.core.utils.league_bot -> leaguebot.*.services.*
-    # #283: image, which core is to ask for its graphics through the protocol it declares
-    # (architecture.md, "How modules and core fit together"):
-    leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_lineup_post
     # #283: results:
     leaguebot.core.cogs.season_cog -> leaguebot.results.services.season_points_service
     # #283: signup:
