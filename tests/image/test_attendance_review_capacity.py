@@ -1,18 +1,17 @@
-"""The attendance templates' capacity, reported at season review.
+"""The image module's answers to core's attendance questions at season review: can the
+attendance sheet draw the longest calendar, and can the check-in call name a round's sessions?
+(#208, #283)
 
-Issue #208. `_attendance_capacity_warning` was uncovered. It compares the attendance sheet and
-the check-in call against the most demanding data the season holds, and it is the sibling of the
-calendar warning in `test_calendar_capacity_guard.py`, which set the pattern this file follows.
+Core counts what the season holds and asks: the division holding the most rounds for the sheet,
+and the most sessions any round is run over for the call — four if any round is a sprint, two
+otherwise. It words each answer as a ⚠️ line of the review, follows the lines with a blank one,
+and lets the review through where a check cannot run (`tests/core/test_season_review_capacity.py`).
+Here the image module measures the configured templates and answers the problem and its remedy,
+or nothing.
 
 **Warnings, never refusals** (Constitution XIV.9). Which division's sheet and which round's call
 are actually drawn is decided later, so a season whose drawn division fits could otherwise be
-refused over one that never is. The lines are appended to the review; none of them withholds the
-approve button.
-
-**Two comparisons, against two different stand-ins.** The sheet's round columns are compared
-with the greatest number of rounds any division holds, and it names that division, because that
-is the sheet that will fall back to text. The call's sessions are compared with the largest
-round the season holds — four sessions if any round is a sprint, two otherwise.
+refused over one that never is.
 
 **A template that draws no grid is a choice, not a fault.** A column capacity of nought means
 the sheet has no round grid at all (XIV.3), and a warning about it would tell a league its
@@ -22,96 +21,71 @@ deliberate design is broken.
 driver assignment — which is the earlier moment XIV.12 requires. A reader adding a row check to
 the review would report the same overflow twice, at the later of the two moments.
 
-**The check never fails the review.** An aspect that is off is not checked, a template that is
-missing or invalid is Layer 2's to report, an uncountable one returns nothing, and any exception
-inside is logged and swallowed — a season review must not fail on a capacity estimate.
+**An aspect that is off is not checked,** and a template that is missing or invalid is Layer 2's
+to report. An uncountable template is let out as `CapacityError`, for core's one catch.
+
+Nothing here rasterises: the templates are built in memory and read as SVG.
 """
 from __future__ import annotations
 
-import os
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from lxml import etree
 
-from leaguebot.core.cogs.season_cog import SeasonCog
-from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.image.models.image_catalogues import CapacityError
-
-SERVER_ID = 13108
-SEASON_ID = 1
-
-
-# ---------------------------------------------------------------------------
-# Fixtures / helpers
-# ---------------------------------------------------------------------------
+NOT_YET = "#283: the image module answers no attendance question of the season review"
+SVG_NS = "http://www.w3.org/2000/svg"
+SHEET = "attendance_template"
+CALL = "rsvp_template"
+REMEDY = "Enlarge the template to draw it."
 
 
-async def _make_db(tmp_path, *, name="att_capacity", divisions=None) -> str:
-    """*divisions* maps a name to a list of round formats."""
-    divisions = divisions if divisions is not None else {"Pro": ["NORMAL"] * 3}
-    db_path = os.path.join(str(tmp_path), f"{name}.db")
-    await run_migrations(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-            (SERVER_ID,),
-        )
-        await db.execute(
-            "INSERT INTO seasons (id, season_number, start_date, status) "
-            "VALUES (?, 1, '2026-01-01', 'SETUP')",
-            (SEASON_ID,),
-        )
-        round_id = 100
-        for tier, (division, formats) in enumerate(divisions.items(), start=1):
-            cursor = await db.execute(
-                "INSERT INTO divisions (season_id, name, tier, mention_role_id) "
-                "VALUES (?, ?, ?, 555)",
-                (SEASON_ID, division, tier),
-            )
-            for number, fmt in enumerate(formats, start=1):
-                round_id += 1
-                await db.execute(
-                    "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format) "
-                    "VALUES (?, ?, ?, '2026-02-01T18:00:00+00:00', ?)",
-                    (round_id, cursor.lastrowid, number, fmt),
-                )
-        await db.commit()
-    return db_path
+def _template_file(tmp_path, key, ids):
+    """A template for *key* declaring the fields *ids*."""
+    root = etree.Element(f"{{{SVG_NS}}}svg")
+    root.set("width", "800")
+    root.set("height", "600")
+    for field_id in ids:
+        etree.SubElement(root, f"{{{SVG_NS}}}text").set("id", field_id)
+    path = tmp_path / f"{key}.svg"
+    path.write_bytes(etree.tostring(root))
+    return path
 
 
-def _report(valid: bool = True):
-    return SimpleNamespace(valid=valid, resolved_path="/tmp/template.svg")
+def _report(path, key, *, valid=True):
+    return SimpleNamespace(valid=valid, resolved_path=path if valid else None, template_key=key)
 
 
-def _make_cog(db_path, *, aspects=("attendance", "rsvp"), reports=None):
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.image_config_service = MagicMock()
-    bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda aspect: aspect in aspects
+def _drawing(tmp_path, *, columns=(1, 2, 3), sessions=(1, 2), aspects=("attendance", "rsvp"),
+             reports=None):
+    """The image module's implementation of core's protocol, over stand-ins for its own
+    services: the *aspects* switched on, and an attendance sheet drawing the round *columns*
+    and a check-in call naming the *sessions*, both valid, unless other *reports* are given."""
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    if reports is None:
+        sheet = _template_file(tmp_path, SHEET, [f"round_{n}_number" for n in columns])
+        call = _template_file(tmp_path, CALL, [f"session_{n}_name" for n in sessions])
+        reports = {SHEET: _report(sheet, SHEET), CALL: _report(call, CALL)}
+    modules = MagicMock()
+    modules.is_images_enabled = AsyncMock(return_value=True)
+    config = MagicMock()
+    config.get_config = AsyncMock(return_value=MagicMock())
+    config.get_toggles = AsyncMock(return_value={aspect: True for aspect in aspects})
+    config.is_aspect_enabled = AsyncMock(side_effect=lambda aspect: aspect in aspects)
+    validity = MagicMock()
+    validity.template_reports = AsyncMock(return_value=reports)
+    return ImageDrawing(
+        modules=modules, config=config, validity=validity,
+        renderer=MagicMock(), post_log=AsyncMock(), db_path="",
     )
-    bot.image_validity_service = MagicMock()
-    bot.image_validity_service.template_reports = AsyncMock(
-        return_value=reports
-        if reports is not None
-        else {"attendance_template": _report(), "rsvp_template": _report()}
-    )
-    cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = bot
-    cog._standings_capacity_lines = AsyncMock(return_value=[])
-    return cog
 
 
-async def _warn(cog, *, columns=24, sessions=4, error=None):
-    catalogue = MagicMock()
-    catalogue.column_capacity = MagicMock(return_value=columns, side_effect=error)
-    catalogue.capacity = MagicMock(return_value=sessions, side_effect=error)
-    with patch("leaguebot.image.utils.svg_document.load_svg", new=MagicMock()), patch(
-        "leaguebot.image.models.image_catalogues.catalogue_for", new=MagicMock(return_value=catalogue)
-    ):
-        return await cog._attendance_capacity_warning(SEASON_ID)
+def _held(name, rounds):
+    from leaguebot.core.services.image_drawing import Held
+
+    return Held(name, rounds)
 
 
 # ---------------------------------------------------------------------------
@@ -119,67 +93,52 @@ async def _warn(cog, *, columns=24, sessions=4, error=None):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_sheet_that_fits_the_longest_calendar_earns_no_warning(tmp_path):
-    db_path = await _make_db(tmp_path)
+    drawing = _drawing(tmp_path, columns=(1, 2, 3))
 
-    assert await _warn(_make_cog(db_path), columns=3) == []
+    assert await drawing.sheet_review_problem(_held("Pro", 3)) is None
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_sheet_too_narrow_for_the_longest_calendar_is_warned_about(tmp_path):
-    db_path = await _make_db(tmp_path, name="att_narrow", divisions={"Pro": ["NORMAL"] * 5})
+    """It names the division handed, whose sheet will fall back to text: the one a manager
+    needs to know about."""
+    drawing = _drawing(tmp_path, columns=(1, 2, 3, 4))
 
-    lines = await _warn(_make_cog(db_path), columns=4)
+    answer = await drawing.sheet_review_problem(_held("Am", 6))
 
-    assert "Attendance sheet template draws 4 round column(s)" in lines[0]
-    assert "holds 5" in lines[0]
-
-
-async def test_the_warning_names_the_division_whose_sheet_will_not_draw(tmp_path):
-    """That is the sheet that will fall back to text, and the one a manager needs to know
-    about."""
-    db_path = await _make_db(
-        tmp_path,
-        name="att_names",
-        divisions={"Pro": ["NORMAL"] * 2, "Am": ["NORMAL"] * 6},
+    assert (answer.problem, answer.remedy) == (
+        "Attendance sheet template draws 4 round column(s); `Am` holds 6. That division's "
+        "sheet cannot be drawn as an image and will be posted as text",
+        REMEDY,
     )
 
-    lines = await _warn(_make_cog(db_path), columns=4)
 
-    assert "`Am` holds 6" in lines[0]
-
-
-async def test_it_is_a_warning_and_not_a_refusal(tmp_path):
-    """XIV.9: which division is drawn is decided later."""
-    db_path = await _make_db(tmp_path, name="att_warning", divisions={"Pro": ["NORMAL"] * 5})
-
-    lines = await _warn(_make_cog(db_path), columns=4)
-
-    assert lines[0].strip().startswith("⚠️")
-    assert "block approval" not in "\n".join(lines)
-
-
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_template_with_no_grid_is_not_a_divergence(tmp_path):
     """XIV.3: nought means the sheet draws no round grid, which is a legitimate design."""
-    db_path = await _make_db(tmp_path, name="att_nogrid", divisions={"Pro": ["NORMAL"] * 30})
+    drawing = _drawing(tmp_path, columns=(), aspects=("attendance",))
 
-    assert await _warn(_make_cog(db_path, aspects=("attendance",)), columns=0) == []
+    assert await drawing.sheet_review_problem(_held("Pro", 30)) is None
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_sheet_is_not_checked_with_its_aspect_off(tmp_path):
-    db_path = await _make_db(tmp_path, name="att_off", divisions={"Pro": ["NORMAL"] * 30})
+    drawing = _drawing(tmp_path, columns=(1,), aspects=())
 
-    assert await _warn(_make_cog(db_path, aspects=()), columns=1) == []
+    assert await drawing.sheet_review_problem(_held("Pro", 30)) is None
 
 
-@pytest.mark.parametrize("report", [None, _report(valid=False)])
-async def test_a_missing_or_invalid_template_is_not_this_checks_to_report(tmp_path, report):
+@pytest.mark.parametrize("valid", [None, False], ids=["missing", "invalid"])
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_missing_or_invalid_template_is_not_this_checks_to_report(tmp_path, valid):
     """Layer 2 reports it, and reporting it here too would say it twice."""
-    db_path = await _make_db(tmp_path, name="att_invalid", divisions={"Pro": ["NORMAL"] * 30})
-    cog = _make_cog(
-        db_path, aspects=("attendance",), reports={"attendance_template": report}
-    )
+    sheet = _template_file(tmp_path, SHEET, ["round_1_number"])
+    report = None if valid is None else _report(sheet, SHEET, valid=False)
+    drawing = _drawing(tmp_path, aspects=("attendance",), reports={SHEET: report})
 
-    assert await _warn(cog, columns=1) == []
+    assert await drawing.sheet_review_problem(_held("Pro", 30)) is None
 
 
 # ---------------------------------------------------------------------------
@@ -187,90 +146,72 @@ async def test_a_missing_or_invalid_template_is_not_this_checks_to_report(tmp_pa
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_call_naming_two_sessions_fits_a_season_with_no_sprint(tmp_path):
-    db_path = await _make_db(tmp_path, name="rsvp_normal", divisions={"Pro": ["NORMAL", "ENDURANCE"]})
+    """No round is a sprint, so core asks of two sessions."""
+    drawing = _drawing(tmp_path, sessions=(1, 2), aspects=("rsvp",))
 
-    assert await _warn(_make_cog(db_path, aspects=("rsvp",)), sessions=2) == []
+    assert await drawing.checkin_review_problem(2) is None
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_sprint_round_needs_four_sessions(tmp_path):
-    """A sprint round is run over four sessions; the call has to name every one."""
-    db_path = await _make_db(tmp_path, name="rsvp_sprint", divisions={"Pro": ["NORMAL", "SPRINT"]})
+    """A sprint round is run over four sessions, so core asks of four; the call has to name
+    every one."""
+    drawing = _drawing(tmp_path, sessions=(1, 2), aspects=("rsvp",))
 
-    lines = await _warn(_make_cog(db_path, aspects=("rsvp",)), sessions=2)
+    answer = await drawing.checkin_review_problem(4)
 
-    assert "Check-in template names 2 session(s)" in lines[0]
-    assert "run over 4" in lines[0]
-
-
-async def test_a_call_naming_four_sessions_fits_a_sprint_season(tmp_path):
-    db_path = await _make_db(tmp_path, name="rsvp_four", divisions={"Pro": ["SPRINT"]})
-
-    assert await _warn(_make_cog(db_path, aspects=("rsvp",)), sessions=4) == []
-
-
-async def test_a_call_too_small_for_any_round_is_warned_about(tmp_path):
-    db_path = await _make_db(tmp_path, name="rsvp_one", divisions={"Pro": ["NORMAL"]})
-
-    lines = await _warn(_make_cog(db_path, aspects=("rsvp",)), sessions=1)
-
-    assert "run over 2" in lines[0]
-
-
-async def test_the_call_is_not_checked_with_its_aspect_off(tmp_path):
-    db_path = await _make_db(tmp_path, name="rsvp_off", divisions={"Pro": ["SPRINT"]})
-
-    assert await _warn(_make_cog(db_path, aspects=()), sessions=1) == []
-
-
-# ---------------------------------------------------------------------------
-# The standings, and never failing
-# ---------------------------------------------------------------------------
-
-
-async def test_the_standings_are_checked_with_their_aspect_on(tmp_path):
-    db_path = await _make_db(tmp_path, name="standings_on")
-    cog = _make_cog(db_path, aspects=("standings",))
-    cog._standings_capacity_lines = AsyncMock(return_value=["  ⚠️ drivers template too short"])
-
-    lines = await _warn(cog)
-
-    assert "  ⚠️ drivers template too short" in lines
-
-
-async def test_the_standings_are_not_checked_with_their_aspect_off(tmp_path):
-    db_path = await _make_db(tmp_path, name="standings_off")
-    cog = _make_cog(db_path, aspects=("attendance",))
-
-    await _warn(cog)
-
-    cog._standings_capacity_lines.assert_not_awaited()
-
-
-async def test_warnings_are_followed_by_a_blank_line(tmp_path):
-    """They are appended to the image section of the review, and the next subsection must
-    not run on from the last warning."""
-    db_path = await _make_db(tmp_path, name="att_blank", divisions={"Pro": ["NORMAL"] * 5})
-
-    lines = await _warn(_make_cog(db_path), columns=4)
-
-    assert lines[-1] == ""
-
-
-async def test_an_uncountable_template_returns_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, name="att_uncountable")
-
-    assert await _warn(_make_cog(db_path), error=CapacityError("no marker")) == []
-
-
-async def test_an_exception_inside_never_fails_the_review(tmp_path, caplog):
-    db_path = await _make_db(tmp_path, name="att_raises")
-    cog = _make_cog(db_path)
-    cog.bot.image_validity_service.template_reports = AsyncMock(
-        side_effect=RuntimeError("validity service down")
+    assert (answer.problem, answer.remedy) == (
+        "Check-in template names 2 session(s); this season holds a round run over 4. That "
+        "call cannot be drawn as an image and will be posted without one",
+        REMEDY,
     )
 
-    with caplog.at_level("ERROR"):
-        assert await _warn(cog) == []
 
-    assert "attendance capacity check failed" in caplog.text
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_call_naming_four_sessions_fits_a_sprint_season(tmp_path):
+    drawing = _drawing(tmp_path, sessions=(1, 2, 3, 4), aspects=("rsvp",))
+
+    assert await drawing.checkin_review_problem(4) is None
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_a_call_too_small_for_any_round_is_warned_about(tmp_path):
+    drawing = _drawing(tmp_path, sessions=(1,), aspects=("rsvp",))
+
+    answer = await drawing.checkin_review_problem(2)
+
+    assert answer.problem == (
+        "Check-in template names 1 session(s); this season holds a round run over 2. That "
+        "call cannot be drawn as an image and will be posted without one"
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_the_call_is_not_checked_with_its_aspect_off(tmp_path):
+    drawing = _drawing(tmp_path, sessions=(1,), aspects=())
+
+    assert await drawing.checkin_review_problem(4) is None
+
+
+# ---------------------------------------------------------------------------
+# A template that cannot be counted is core's to catch
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("question", ["sheet", "call"])
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_an_uncountable_template_is_let_out_for_core_s_catch(tmp_path, question):
+    """A gap in the numbering cannot be counted. The image module lets the `CapacityError`
+    out, and core's one catch drops the review's attendance, standings and check-in warnings
+    together and lets the review through."""
+    from leaguebot.image.models.image_catalogues import CapacityError
+
+    drawing = _drawing(tmp_path, columns=(1, 2, 4), sessions=(1, 3))
+
+    with pytest.raises(CapacityError):
+        if question == "sheet":
+            await drawing.sheet_review_problem(_held("Pro", 3))
+        else:
+            await drawing.checkin_review_problem(2)
