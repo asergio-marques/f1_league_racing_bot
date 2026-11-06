@@ -806,9 +806,6 @@ async def test_the_followup_is_restored_after_the_report(monkeypatch):
 # ── The image module's checks ──────────────────────────────────────────────────────
 
 
-#: Why the image-fault tests fail until the build: the faults are not yet asked of the drawing.
-ASKS_THE_DRAWING = "#283: the image configuration's faults are not yet asked of the image module's drawing"
-
 _RASTERISER = "Inkscape is not installed on this host."
 _PORTRAIT = "Driver portraits are fetched from a folder that does not exist."
 
@@ -835,7 +832,6 @@ def _image_cog(
     return _cog(bot)
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_a_sound_image_configuration_has_no_faults():
     cog = _image_cog()
 
@@ -843,7 +839,6 @@ async def test_a_sound_image_configuration_has_no_faults():
     cog.bot.image_drawing.template_faults.assert_awaited_once_with()
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_every_image_fault_that_needs_no_division_is_named():
     """The drawing program, a broken template a switched-on output draws, a per-tier colour and
     the portrait settings, each in the image module's words, in that order; core adds the
@@ -864,7 +859,6 @@ async def test_every_image_fault_that_needs_no_division_is_named():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass():
     cog = _image_cog(
         rasteriser=_RASTERISER,
@@ -878,7 +872,6 @@ async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass():
     assert faults == [_RASTERISER, "The image templates could not be read."]
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 @pytest.mark.parametrize(
     ("unreadable", "kept"),
     [

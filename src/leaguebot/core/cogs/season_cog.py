@@ -631,28 +631,6 @@ class SeasonCog(commands.Cog):
             f"  season: Season #{cfg.season_number} (F1 {cfg.game_edition})",
         )
 
-    async def _colour_shortfall_problems(self) -> list[str]:
-        """Every per-tier colour a template wants and no tier has set (051).
-
-        Flattened from the same map `/images config view` and the review's aspect section
-        render, so all three surfaces name the same shortfall in the same words.
-
-        Empty on any fault, in the manner of `_team_name_problems`: a reader that cannot
-        answer must not be the thing that refuses a season.
-        """
-        try:
-            shortfall = await self.bot.image_validity_service.colour_shortfall(
-
-            )
-        except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
-            log.error("season: per-tier colour check failed: %s", exc, exc_info=True)
-            return []
-        return [
-            f"`{template_key}` — {line}"
-            for template_key in sorted(shortfall)
-            for line in shortfall[template_key]
-        ]
-
     async def _points_ordering_problems(self, season_id: int) -> list[str]:
         """Every place this season's points would score a lower position above a higher one.
 
@@ -1068,56 +1046,6 @@ class SeasonCog(commands.Cog):
             log.error("season review: image section failed: %s", exc, exc_info=True)
             return ["**Image output**", "  ⚠️ Could not be read.", ""]
         return ["**Image output**", *lines, ""]
-
-    async def _portrait_configuration_blocker(self) -> str | None:
-        """The portrait-settings reason approval must be withheld, or None.
-
-        Read by `/season placements-review` and by the confirmation of placements alike, so the two cannot disagree
-        about whether a season may be approved.
-        """
-        from leaguebot.image.services.image_config_service import portrait_configuration_fault
-
-        try:
-            if not await self.bot.module_service.is_images_enabled():
-                return None
-            config = await self.bot.image_config_service.get_config()
-        except Exception as exc:  # never block a season because this could not be read
-            log.error("season review: portrait blocker failed: %s", exc, exc_info=True)
-            return None
-        return portrait_configuration_fault(config)
-
-    async def _portrait_review_lines(self) -> list[str]:
-        """How driver portraits are being obtained, for `/season placements-review`.
-
-        Always stated, including when the feature is off: a manager reading the review is
-        deciding whether the season is configured, and "the bot is not obtaining portraits"
-        is an answer to that rather than an absence of one.
-        """
-        from leaguebot.image.services.image_config_service import portrait_configuration_fault
-
-        try:
-            config = await self.bot.image_config_service.get_config()
-        except Exception as exc:  # a review must never fail because of this section
-            log.error("season review: portrait settings failed: %s", exc, exc_info=True)
-            return ["  ⚠️ Driver portraits: could not be read."]
-
-        if config is None or not getattr(config, "use_pfp", False):
-            return ["  ❌ Driver portraits from Discord: disabled"]
-
-        triggers = []
-        if getattr(config, "pfp_prerender", False):
-            triggers.append("before each render")
-        if getattr(config, "pfp_daily", False):
-            triggers.append(f"daily at {getattr(config, 'pfp_daily_time', '?')} UTC")
-
-        lines = [
-            "  ✅ Driver portraits from Discord: enabled"
-            + (f" — updated {', and '.join(triggers)}" if triggers else "")
-        ]
-        fault = portrait_configuration_fault(config)
-        if fault is not None:
-            lines.append(f"      ⛔ {fault}")
-        return lines
 
     async def _approval_windows(self):
         """The lead times the enabled modules configure, read once for a whole season.
@@ -2186,51 +2114,44 @@ class SeasonCog(commands.Cog):
         """The image module's faults that need no division, round, lineup or calendar.
 
         The rasteriser, every template a switched-on output draws, the per-tier colours and
-        the driver portrait settings. **The one reading of them every gate shares**: the
-        configuration review and its confirmation, both placements reviews and both
-        confirmations of placements. Each review withholds its button on exactly what its
-        confirmation refuses, so a manager is never shown a fault as blocking and then
+        the driver portrait settings, each in the image module's own words
+        (`ImageDrawing.rasteriser_fault`, `.template_faults`, `.colour_shortfall_problems`,
+        `.portrait_fault`; core/services/image_drawing.py). **The one reading of them every
+        gate shares**: the configuration review and its confirmation, both placements reviews
+        and both confirmations of placements. Each review withholds its button on exactly what
+        its confirmation refuses, so a manager is never shown a fault as blocking and then
         let past it — which the first placements review did (#396), reading only the
         portrait settings while its confirmation read the colours and the portraits and
         neither read the templates or the rasteriser.
 
-        A template beneath a switched-off output is no fault: that output posts as text. A
-        per-tier colour is, where a template marks the slot: a league marking one has said
-        it matters, and a tier left without it would be drawn in whatever the template
-        happened to be authored in — silently, and differently from its siblings.
-
-        Templates that cannot be read are a fault of their own, never a pass; the colour and
-        portrait readers stand aside on a failure of theirs, as their docstrings say. The
-        caller decides whether the module is enabled; this assumes it is.
+        A stated exception (architecture.md, "A catch-all error handler"): templates that
+        cannot be read are a fault of their own, never a pass, so that fault is let through;
+        the colour and portrait checks stand aside on a failure of theirs, since a reader that
+        cannot answer must not be the thing that refuses a season. The caller decides whether
+        the module is enabled; this assumes it is.
         """
-        from leaguebot.image.models.image_constants import TEMPLATE_LABELS
-        from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
-        from leaguebot.image.services.image_validity_service import (
-            plain_reason,
-            templates_of_enabled_aspects,
-        )
-
+        drawing = self.bot.image_drawing
         faults: list[str] = []
-        if not converter_available():
-            faults.append(f"{CONVERTER_NAME} is not installed on this host.")
+        rasteriser_fault = drawing.rasteriser_fault()
+        if rasteriser_fault is not None:
+            faults.append(rasteriser_fault)
         try:
-            reports = await self.bot.image_validity_service.template_reports()
-            drawn = templates_of_enabled_aspects(
-                await self.bot.image_config_service.get_toggles()
-            )
-        except Exception as exc:  # noqa: BLE001 — a check that never ran is not a pass
+            faults += await drawing.template_faults()
+        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
             log.error("config review: the templates could not be read: %s", exc, exc_info=True)
             return [*faults, "The image templates could not be read."]
-        for key in sorted(reports):
-            report = reports[key]
-            if not report.valid and key in drawn:
-                label = TEMPLATE_LABELS.get(key, key)
-                faults.append(f"Template **{label}**: {plain_reason(report)}.")
-        faults += [
-            f"Tier colour: {problem}"
-            for problem in await self._colour_shortfall_problems()
-        ]
-        portrait_fault = await self._portrait_configuration_blocker()
+        try:
+            faults += [
+                f"Tier colour: {problem}"
+                for problem in await drawing.colour_shortfall_problems()
+            ]
+        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
+            log.error("config review: the per-tier colours could not be read: %s", exc, exc_info=True)
+        try:
+            portrait_fault = await drawing.portrait_fault()
+        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
+            log.error("config review: the portrait settings could not be read: %s", exc, exc_info=True)
+            portrait_fault = None
         if portrait_fault is not None:
             faults.append(portrait_fault)
         return faults

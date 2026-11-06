@@ -804,11 +804,6 @@ async def test_points_faults_are_not_checked_with_results_off(db_path):
 # confirmation refuses on, so what withholds the button here is what refuses the press.
 
 
-#: Why the review's image tests fail until the build: the faults are not yet asked of the drawing.
-ASKS_THE_DRAWING = "#283: the review's image faults are not yet asked of the image module's drawing"
-
-
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_a_sound_image_configuration_is_offered_for_approval(db_path):
     cog = _cog(db_path, images=True)
 
@@ -818,7 +813,6 @@ async def test_a_sound_image_configuration_is_offered_for_approval(db_path):
     cog.bot.image_drawing.template_faults.assert_awaited_once_with()
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_a_missing_rasteriser_withholds_approval(db_path):
     """With the lineup and the calendar off the review draws nothing, so the rasteriser
     being absent was never met by a render — and every graphic of the season would fail."""
@@ -833,7 +827,6 @@ async def test_a_missing_rasteriser_withholds_approval(db_path):
     cog.bot.image_drawing.rasteriser_fault.assert_called_with()
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_a_broken_template_of_a_switched_on_output_withholds_approval(db_path):
     """Which templates a switched-on output draws, and so which withhold the button, is the
     image module's to say (`tests/image/test_image_drawing_review.py`); the review withholds it
@@ -848,7 +841,6 @@ async def test_a_broken_template_of_a_switched_on_output_withholds_approval(db_p
     assert fault in _private(messages)
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_a_tier_colour_shortfall_withholds_approval(db_path):
     cog = _cog(db_path, images=True)
     cog.bot.image_drawing.colour_shortfall_problems.return_value = [

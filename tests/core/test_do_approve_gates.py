@@ -243,9 +243,6 @@ async def test_the_withdrawn_template_gate_is_not_called_again(db_path):
 # image module answers is tested against its own drawing, in
 # `tests/image/test_image_drawing_review.py`.
 
-#: Why the gate's image tests fail until the build: the faults are not yet asked of the drawing.
-ASKS_THE_DRAWING = "#283: the approval's image faults are not yet asked of the image module's drawing"
-
 _RASTERISER = "Inkscape is not installed on this host."
 
 
@@ -259,7 +256,6 @@ def _images_on(cog, *, rasteriser=None, templates=(), colours=()):
     return cog
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_a_sound_image_configuration_still_approves(db_path):
     cog = _images_on(_cog(db_path))
 
@@ -269,7 +265,6 @@ async def test_a_sound_image_configuration_still_approves(db_path):
     cog.bot.image_drawing.template_faults.assert_awaited_once_with()
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path):
     cog = _images_on(_cog(db_path), rasteriser=_RASTERISER)
     interaction = _interaction()
@@ -282,7 +277,6 @@ async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_nothing(db_path):
     """Which templates a switched-on output draws, and so which break the season, is the image
     module's to say (`test_image_drawing_review.py`); the approval refuses on each it names."""
@@ -296,7 +290,6 @@ async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_not
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
 async def test_a_tier_colour_shortfall_refuses_and_commits_nothing(db_path):
     cog = _images_on(
         _cog(db_path), colours=["`calendar_template` — `accent` is not set for **Pro**"]
