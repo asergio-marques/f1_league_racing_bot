@@ -445,24 +445,13 @@ async def test_a_hub_channel_gone_stops_the_queue_naming_the_command(league):
     assert league.hub.sent == []
 
 
-async def test_the_panel_s_id_is_saved_with_its_mark(league, monkeypatch):
+async def test_the_panel_s_id_is_saved_with_its_mark(league):
     """The hub is set and no panel stands; the refresh is asked and the queue run. The panel is
     posted; its id is kept, so that the next refresh edits it in place rather than posting a
-    second, and is written in the refresh job's own save, with its mark, never by a commit of
-    the configuration service's own."""
-    written = []
-    own_commit = league.bot.config_service.set_core_setting
-
-    async def _spy(column, value):
-        written.append(column)
-        return await own_commit(column, value)
-
-    monkeypatch.setattr(league.bot.config_service, "set_core_setting", _spy)
-
+    second, and is written in the refresh job's own save, with its mark."""
     await _ask_refresh(league)
     await run_queue(league.bot)
 
-    assert "hub_message_id" not in written
     assert "Nothing is offered here yet." in league.hub.sent[0]
     assert await _stored_panel(league) == league.hub.posted[0].id
     [change] = await _refreshes(league)

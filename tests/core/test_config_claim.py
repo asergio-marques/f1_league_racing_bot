@@ -93,7 +93,9 @@ async def test_a_released_row_takes_no_setting(service):
     """The settings belong to the next server's `/bot init`, not to whoever asks first."""
     await _release(service)
 
-    assert await service.set_core_setting("log_channel_id", 99) is False
+    async with get_connection(service._db_path) as db:
+        assert await service.set_core_setting_on(db, "log_channel_id", 99) is False
+        await db.commit()
     assert (await _row(service))["log_channel_id"] is None
 
 

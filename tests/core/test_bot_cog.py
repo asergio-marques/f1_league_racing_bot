@@ -1004,15 +1004,12 @@ async def test_a_setting_command_admits_an_administrator_before_the_bot_is_confi
 
 
 async def test_set_core_setting_refuses_a_column_of_the_callers_choosing(tmp_path):
-    """The column is interpolated into the UPDATE, so the allow-list is load-bearing: in the
-    setter that commits, and in `set_core_setting_on`, which writes on the connection a
-    setting's save is handed."""
+    """The column is interpolated into the UPDATE, so the allow-list is load-bearing in
+    `set_core_setting_on`, which writes on the connection a setting's save is handed."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     service = ConfigService(db_path)
 
-    with pytest.raises(ValueError):
-        await service.set_core_setting("test_mode_active", 0)
     async with get_connection(db_path) as db:
         with pytest.raises(ValueError):
             await service.set_core_setting_on(db, "test_mode_active", 0)
@@ -1039,7 +1036,9 @@ async def test_a_league_role_or_hub_setting_is_written_alone_and_read_back(tmp_p
     service = ConfigService(db_path)
     before = await _row(db_path)
 
-    assert await service.set_core_setting(column, value) is True
+    async with get_connection(db_path) as db:
+        assert await service.set_core_setting_on(db, column, value) is True
+        await db.commit()
 
     after = await _row(db_path)
     assert after[column] == value
