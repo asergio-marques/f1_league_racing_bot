@@ -778,12 +778,23 @@ async def test_a_repair_setting_takes_effect_while_the_queue_is_stopped_on_anoth
     """The league's server is set up, and the league's queue is stopped on another job, which
     failed on a fault in the bot. An administrator runs `/bot log-channel`,
     `/bot interaction-channel`, `/bot interaction-role` or `/bot admin-role` with a new channel or
-    role, to repair the league. Nothing is written as they ask; once the
-    queue runs, the setting is saved and they are answered with today's reply, past the stop,
-    while the other job stays stopped where it was (decision 162)."""
+    role, to repair the league, after a member has asked for an ordinary change behind the stop.
+    Each is acknowledged at once: the ordinary change is told it runs once the stopped job is
+    cleared; the repair is told, in place of that, that it runs at once, past the stop, and that
+    the stopped job stays stopped. Nothing is written as they ask; once the queue runs, the setting
+    is saved and they are answered with today's reply, past the stop, while the other job stays
+    stopped where it was (decision 162)."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.change_queue import ChangeType, Step
-    from tests.support.change_queue import member, register, run_queue, stopped_job
+    from tests.support.change_queue import (
+        acknowledgement,
+        member,
+        member_interaction,
+        register,
+        run_queue,
+        step_rows,
+        stopped_job,
+    )
 
     async def fails(_ctx: Any) -> StepResult:
         raise RuntimeError("a fault in the bot")
@@ -803,10 +814,24 @@ async def test_a_repair_setting_takes_effect_while_the_queue_is_stopped_on_anoth
         doing=lambda _payload: "Doing another job",
         outcome=lambda _ctx: "Done.",
     ))
+    register(bot, ChangeType(
+        kind="test.waiting",
+        opening=(PlannedStep("fail"),),
+        steps={"fail": Step("fail", StepKind.ACT, fails)},
+        check=go,
+        key=lambda _payload: "test.waiting",
+        doing=lambda _payload: "Doing an ordinary job",
+        outcome=lambda _ctx: "Done.",
+    ))
     other = await bot.change_queue.ask("test.stopping", {}, actor=member(), what="another job")
     await run_queue(bot)
     stopped = await stopped_job(db_path)
     assert stopped is not None and stopped["change_id"] == other
+    ordinary = member_interaction(bot)
+    waiting = await bot.change_queue.ask(
+        "test.waiting", {}, interaction=ordinary, what="an ordinary job",
+        refusal_what="an ordinary job",
+    )
     cog = BotCog(bot)
     command, label = _WORDS[column]
     chosen = factory(new_id)
@@ -814,6 +839,21 @@ async def test_a_repair_setting_takes_effect_while_the_queue_is_stopped_on_anoth
 
     await _unwrap(getattr(cog, attribute))(cog, interaction, chosen)
     assert (await _row(db_path))[column] != new_id
+    (waits,) = [row["id"] for row in await step_rows(db_path, waiting)]
+    repairs = min(
+        row["id"] for row in await step_rows(db_path) if row["change_id"] not in (other, waiting)
+    )
+    assert acknowledgement(ordinary) == (
+        f"⏳ Doing an ordinary job. This message will be updated when it is done; if it takes "
+        f"longer, the log channel will say so. It begins with job #{waits}. The queue is stopped "
+        f"at job #{stopped['id']}, so this request runs once that job is cleared."
+    )
+    assert acknowledgement(interaction) == (
+        f"⏳ Setting **{label}** to {chosen.mention}. This message will be updated when it is "
+        f"done; if it takes longer, the log channel will say so. It begins with job #{repairs}. "
+        f"The queue is stopped at job #{stopped['id']}, so this request runs at once, past the "
+        f"stop; that job stays stopped."
+    )
     await run_queue(bot)
 
     assert (await _row(db_path))[column] == new_id
