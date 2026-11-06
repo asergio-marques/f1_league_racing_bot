@@ -421,12 +421,15 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
 
   **Three exceptions: a league's settings, roles moved after a driver's or team's change, and the
   four settings a league repairs itself with.** A change to one of a league's settings is one
-  atomic save of its value and its audit record (its
-  line with them, or after the arming of the daily portrait job; see "The record is the queue's"),
-  and the work after it that the setting does not need (checking it against the templates, arming or
+  atomic save of its value and its audit record (its line with them, or in the save of the step
+  after it that carries the line — the arming of the daily portrait job, or a role's grant to
+  every driver where the one it replaces is gone; see "The record is the queue's"), and the work
+  after it that the setting does not need (checking it against the templates, arming or
   removing a timed job) is work nothing later depends on. A fault in either leaves nothing
-  half-done, nothing behind it on the lane waits on it, and the member can simply ask again. So such
-  a step carries `Step.on_fault`: where it raises, the queue does not stop the lane but marks the
+  half-done and nothing behind it on the lane waits on it; where asking again would simply repeat
+  the same work, the member can do that, and where it would not (a grant already run to every
+  driver), the reply says what to do by hand instead. So such a step carries `Step.on_fault`:
+  where it raises, the queue does not stop the lane but marks the
   job done with what `on_fault` returns, in a save of its own with its lines, and the change carries
   on to its next step or finishes. A save that faults has been rolled back whole, so nothing is
   saved but the mark and the failure line; a step after the save leaves the setting saved. A change
