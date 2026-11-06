@@ -787,7 +787,12 @@ LOG_CHANNEL_NAMED_BY = {
     "core/cogs/bot_cog.py": "the commands that set it",
     "core/services/channel_registry_service.py": "lists it among the channels in use",
     "core/services/pack_service.py": "clears it when the bot is packed",
+    "core/services/bot_settings.py": "the setting that sets it",
 }
+
+#: Why the check of the files naming the log channel fails until core's four `/bot` settings
+#: have a home.
+_NO_BOT_SETTINGS_YET = "#283: core/services/bot_settings.py does not exist yet"
 
 
 def _files_naming_the_log_channel() -> set[str]:
@@ -803,6 +808,7 @@ def _files_naming_the_log_channel() -> set[str]:
     return found
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_BOT_SETTINGS_YET)
 def test_only_the_router_writes_the_log_channel():
     """Every log line goes through `OutputRouter` (architecture.md, "Posting to Discord"), which
     keeps the rules for log lines in one place: no one is mentioned, a long record is split, and
@@ -1799,6 +1805,8 @@ def _tables_written(sql: str, module: str) -> list[str]:
 COLUMNS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/config_service.py", "ConfigService.set_core_setting"):
         (1, "sets only a column named in `_SETTABLE_COLUMNS`, none of them a module's"),
+    ("core/services/config_service.py", "ConfigService.set_core_setting_on"):
+        (1, "sets only a column named in `_SETTABLE_COLUMNS`, none of them a module's"),
     ("core/cogs/season_cog.py", "SeasonCog.division_amend"):
         (1, "sets only a division's name, tier and role"),
 }
@@ -1899,6 +1907,7 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
 }
 
 
+@pytest.mark.xfail(strict=True, reason="#283: ConfigService has no set_core_setting_on yet")
 def test_what_was_read_by_hand_is_still_what_it_was():
     """Each function read by hand is excused the statements that were read, and no more: one
     added since, or one gone, fails here until it is read again and the count set to match."""
