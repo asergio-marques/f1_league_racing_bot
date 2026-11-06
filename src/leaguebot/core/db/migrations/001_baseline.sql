@@ -888,7 +888,10 @@ CREATE TABLE "pending_messages" (
 -- log channel names a member. `what` is how the change's lines name it. `acknowledged_at` bounds
 -- the update of the member's reply. `lane` is the lane the change runs on: `league`, or
 -- `channel:<id>` for a conversation's own channel; each lane runs one change at a time and stops
--- alone.
+-- alone, save `overtook_a_stop` below.
+-- `overtook_a_stop` marks a change of a kind the queue lets run past its lane's own stopped head
+-- (`ChangeType.overtakes_a_stop`): it is RUNNING beside that head, which stays RUNNING and
+-- stopped, so the one-RUNNING-per-lane rule below is theirs alone and does not hold between them.
 CREATE TABLE "queued_changes" (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     kind            TEXT    NOT NULL,
@@ -902,12 +905,13 @@ CREATE TABLE "queued_changes" (
     actor_display   TEXT,
     what            TEXT    NOT NULL,
     acknowledged_at TEXT,
-    lane            TEXT    NOT NULL DEFAULT 'league'
+    lane            TEXT    NOT NULL DEFAULT 'league',
+    overtook_a_stop INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX "queued_changes_open" ON "queued_changes" (lane, id)
     WHERE state IN ('QUEUED', 'RUNNING');
 CREATE UNIQUE INDEX "queued_changes_one_running" ON "queued_changes" (lane)
-    WHERE state = 'RUNNING';
+    WHERE state = 'RUNNING' AND overtook_a_stop = 0;
 
 -- queued_change_steps
 -- A change's steps in order, each a job of its own. `id` is the job's number, never renumbered:

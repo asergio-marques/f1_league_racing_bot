@@ -476,10 +476,14 @@ class ChangeType:
     change is never refused as a repeat.
 
     *lane* says, from the payload, the lane the change runs on: `LEAGUE_LANE` (the default, the
-    queue as a league knows it), `REPAIR_LANE` (given a `Setting` marked `Setting.repairs_the_bot`,
-    through `setting_change`), or a conversation's, `"channel:<id>"`, keyed by the channel it is
+    queue as a league knows it), or a conversation's, `"channel:<id>"`, keyed by the channel it is
     held in. The lane is fixed by what asked for the change, so the same payload always gives the
     same lane; a follow-on a step asks takes its own kind's lane, not its asker's.
+
+    *overtakes_a_stop*, set on a kind marked `Setting.repairs_the_bot` (through `setting_change`),
+    lets a queued change of this kind run ahead of its lane's own head while that head is stopped
+    on a failure: the stopped job stays stopped and everything else on the lane still waits behind
+    it, but a repair asked meanwhile need not. See `_heads` and "A job that fails stops its lane".
 
     *conversation_open*, on a change type of a conversation's lane, says from the payload whether
     that conversation still stands: a job of the change whose conversation has ended is found no
@@ -535,6 +539,7 @@ class ChangeType:
     on_refused: Callable[[RefusedContext], tuple[FollowOn, ...]] | None = None
     on_discarded: Callable[[DiscardedContext], tuple[FollowOn, ...]] | None = None
     lane: Callable[[dict[str, Any]], str] = league_lane
+    overtakes_a_stop: bool = False
     conversation_open: Callable[[aiosqlite.Connection, dict[str, Any]], Awaitable[bool]] | None = None
     writes: tuple[str, ...] | None = None
     turn_channel: Callable[[dict[str, Any]], int | None] | None = None
@@ -1412,7 +1417,9 @@ class ChangeQueue:
     ) -> list[tuple[aiosqlite.Row, aiosqlite.Row | None]]:
         """The head of each lane (or of *lane* alone), oldest first, each with its next job not
         done. A lane's head is its RUNNING change, as one resumed after a stop, else its QUEUED
-        change with the lowest id, which nothing on that lane overtakes."""
+        change with the lowest id, which nothing on that lane overtakes — save a queued change of
+        a kind marked `ChangeType.overtakes_a_stop`, listed ahead of a stopped head so `_choose`
+        takes it first (the stopped head and every ordinary change still wait behind it)."""
         on_lane = "" if lane is None else " AND c.lane = ?"
         cursor = await db.execute(
             "SELECT * FROM queued_changes c WHERE c.state IN ('RUNNING', 'QUEUED') AND c.id = ("
@@ -1423,13 +1430,41 @@ class ChangeQueue:
         )
         heads = []
         for change in await cursor.fetchall():
-            cursor = await db.execute(
-                "SELECT id, failing_since, next_try_at FROM queued_change_steps "
-                "WHERE change_id = ? AND done_at IS NULL ORDER BY position LIMIT 1",
-                (change["id"],),
-            )
-            heads.append((change, await cursor.fetchone()))
+            job = await self._next_job(db, change["id"])
+            if self._waits_for_a_try(job):
+                overtaking = await self._overtaking_change(db, change)
+                if overtaking is not None:
+                    heads.append((overtaking, await self._next_job(db, overtaking["id"])))
+            heads.append((change, job))
         return heads
+
+    async def _next_job(self, db: aiosqlite.Connection, change_id: int) -> aiosqlite.Row | None:
+        cursor = await db.execute(
+            "SELECT id, failing_since, next_try_at FROM queued_change_steps "
+            "WHERE change_id = ? AND done_at IS NULL ORDER BY position LIMIT 1",
+            (change_id,),
+        )
+        return await cursor.fetchone()
+
+    async def _overtaking_change(
+        self, db: aiosqlite.Connection, head: aiosqlite.Row
+    ) -> aiosqlite.Row | None:
+        """The oldest change behind *head*, stopped, on *head*'s lane, that is QUEUED or already
+        running past the stop (`overtook_a_stop`), whose kind overtakes a stop; None where there
+        is none, or its own next job also waits for a try."""
+        cursor = await db.execute(
+            "SELECT * FROM queued_changes WHERE lane = ? AND id > ? "
+            "AND (state = 'QUEUED' OR (state = 'RUNNING' AND overtook_a_stop = 1)) "
+            "ORDER BY id",
+            (head["lane"], head["id"]),
+        )
+        for change in await cursor.fetchall():
+            change_type = self._types.get(change["kind"])
+            if change_type is None or not change_type.overtakes_a_stop:
+                continue
+            job = await self._next_job(db, change["id"])
+            return None if self._waits_for_a_try(job) else change
+        return None
 
     def _waits_for_a_try(self, job: aiosqlite.Row | None) -> bool:
         """Whether a head's next job is stopped and not yet due: its lane runs nothing."""
@@ -1446,9 +1481,11 @@ class ChangeQueue:
         lanes.
 
         A lane whose head's next job is stopped and not yet due (its `next_try_at` in the future,
-        or none left) is not runnable and holds only itself. Of the runnable lanes' heads the one
-        asked first, the lowest id, is taken, so that one runner carrying out one change at a time
-        is deterministic.
+        or none left) is not runnable and holds only itself, save for a queued change behind it
+        that overtakes a stop (`_heads`), which is taken instead; the stopped head stays stopped
+        and nothing else on the lane runs meanwhile. Of the runnable lanes' heads the one asked
+        first, the lowest id, is taken, so that one runner carrying out one change at a time is
+        deterministic.
         """
         for change, job in await self._heads(db, lane):
             if self._waits_for_a_try(job):
@@ -1517,7 +1554,7 @@ class ChangeQueue:
                 await self._stop(change, pending, error)
             return False
         if verdict.kind is VerdictKind.GO:
-            await self._go(change, pending)
+            await self._go(change, pending, overtaking=change_type.overtakes_a_stop)
             return False
 
         if change_type.conversation_open is not None:
@@ -1566,7 +1603,9 @@ class ChangeQueue:
         self._release(change)
         return True
 
-    async def _go(self, change: aiosqlite.Row, pending: aiosqlite.Row | None) -> None:
+    async def _go(
+        self, change: aiosqlite.Row, pending: aiosqlite.Row | None, *, overtaking: bool = False
+    ) -> None:
         """Start the change whose check has passed.
 
         Where the check had stopped the queue (the change's first job carries a stop), passing
@@ -1574,6 +1613,11 @@ class ChangeQueue:
         last_failure and next_try_at are reset, so that a failure of the job itself is a first
         failure with a notice of its own and the whole schedule, and the line saying job #N went
         through is written. The notice's buttons come off once the save is made.
+
+        *overtaking* marks the change RUNNING with `overtook_a_stop` set, so it can run beside a
+        lane's own stopped head, itself RUNNING and stopped, without tripping the one-RUNNING-
+        per-lane rule that holds between every other pair of changes on a lane
+        (`queued_changes_one_running`).
         """
         stopped = pending is not None and pending["failing_since"] is not None
         ids: list[int] = []
@@ -1581,9 +1625,9 @@ class ChangeQueue:
             await db.execute("BEGIN IMMEDIATE")
             try:
                 cursor = await db.execute(
-                    "UPDATE queued_changes SET state = 'RUNNING' "
+                    "UPDATE queued_changes SET state = 'RUNNING', overtook_a_stop = ? "
                     "WHERE id = ? AND state = 'QUEUED'",
-                    (change["id"],),
+                    (int(overtaking), change["id"]),
                 )
                 if cursor.rowcount == 1 and stopped and pending is not None:
                     await db.execute(

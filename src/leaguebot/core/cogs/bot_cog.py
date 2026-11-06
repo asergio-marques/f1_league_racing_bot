@@ -243,8 +243,9 @@ class BotCog(commands.Cog):
         other refusal — a channel already doing another job, or already this setting — is
         `Setting.check`'s, run at the ask and again as the change starts, and recorded in the
         league's log channel as any other refusal is. The write, the audit entry and the line
-        once it has run are `setting_change`'s and `bot_settings`'s, on `REPAIR_LANE` so a
-        stopped job elsewhere on the league's lane cannot lock a league out of repairing these.
+        once it has run are `setting_change`'s and `bot_settings`'s: the change overtakes a stop
+        elsewhere on the league's lane, so a stopped job there cannot lock a league out of
+        repairing these.
         """
         if await self.bot.config_service.get_server_config() is None:
             await _refuse_on_host(

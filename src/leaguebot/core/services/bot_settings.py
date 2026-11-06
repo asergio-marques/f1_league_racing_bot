@@ -8,23 +8,21 @@ weather's switch (`weather/services/module_switch_settings.py`) is the model. Ea
 single column of `server_configs`, so nothing else in the row — test mode, the module flags, the
 other three settings — can be carried over stale from a half-built model.
 
-**Each runs on `REPAIR_LANE`, not the league's** (`setting_change.REPAIR_LANE`): these are a
-league's way back in when one of the four is wrong or gone, so they run beside the league's own
-lane, never waiting behind it, stopped or not.
+**Each overtakes a stop on the league lane, instead of waiting behind it**
+(`Setting.repairs_the_bot`, read by `setting_change`): these are a league's way back in when one
+of the four is wrong or gone, so a stop on an unrelated job cannot hold one up. The lane still
+runs one change at a time — an overtaking change runs alone, never beside the job it overtakes —
+so nothing else writes `server_configs` while one of these four does.
 
-**The two channels refuse a collision at the ask, and look again in the save; the two roles
-judge "already held" in the save alone.** A channel already doing another job is refused
-outright, and one already holding this very setting is refused too, "Nothing was changed" —
-re-running the command is not a collision with something else. `REPAIR_LANE` runs beside the
-league lane, which also writes `server_configs` (the hub channel, the division channels), so a
-channel can pass both lanes' checks before either has saved; the save judges the collision
-again, on its own connection and under the queue's write lock, and ends as the same refusal with
-nothing written where the channel has since been taken (`find_channel_use_on`,
-`channel_registry_service`). A role given the one it already holds is not a collision at all, so
-it is answered "Nothing changed" by `setting_change`'s own rule for a value already held, once
-the change has run: no refusal, no write, no audit entry, and the hub's permissions are not set
-again, a role re-set to itself changing nothing and so leaving nothing to follow from it. The two
-roles need no such re-check in the save: nothing else writes the roles `server_configs` holds.
+**The two channels refuse a collision at the ask; the two roles judge "already held" in the save
+alone.** A channel already doing another job is refused outright, and one already holding this
+very setting is refused too, "Nothing was changed" — re-running the command is not a collision
+with something else. Nothing runs beside the save to land a second writer between the check and
+it, so the check made at the ask stands. A role given the one it already holds is not a collision
+at all, so it is answered "Nothing changed" by `setting_change`'s own rule for a value already
+held, once the change has run: no refusal, no write, no audit entry, and the hub's permissions
+are not set again, a role re-set to itself changing nothing and so leaving nothing to follow from
+it.
 
 **A role setting sets the hub's permissions again as its own follow-on**
 (`hub_service.hub_refresh_after` does not fit here: it asks the hub's *panel* to be refreshed,
@@ -45,7 +43,6 @@ from leaguebot.core.services.change_queue import CheckContext, Step, StepContext
 from leaguebot.core.services.channel_registry_service import (
     ChannelUse,
     find_channel_use,
-    find_channel_use_on,
     refusal,
 )
 from leaguebot.core.services.hub_service import reapply_hub_permissions
@@ -111,14 +108,6 @@ def _bot_setting(column: str, config: "ConfigService") -> Setting:
 
     async def save(db: aiosqlite.Connection, payload: dict[str, Any]) -> Saved:
         value = int(payload["value"])
-        if channel_setting is not None:
-            use = await find_channel_use_on(db, value)
-            if use is not None:
-                message = refusal(
-                    _mention(column, value), use,
-                    same_setting=(use == ChannelUse(channel_setting)),
-                )
-                return Saved(changed=False, outcome="Refused", result={"refused": message})
         cursor = await db.execute(
             f"SELECT {column} FROM server_configs WHERE server_id IS NOT NULL"
         )
@@ -143,9 +132,6 @@ def _bot_setting(column: str, config: "ConfigService") -> Setting:
     def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
         value = int(payload["value"])
         mention = _mention(column, value)
-        refused = results[_SAVE_STEP].get("refused")
-        if refused is not None:
-            return str(refused)
         if not results[_SAVE_STEP]["changed"]:
             return f"ℹ️ Nothing changed: **{label}** is already {mention}."
         return f"✅ **{label}** set to {mention}."
