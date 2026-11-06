@@ -290,14 +290,24 @@ async def test_a_rejected_graphic_refuses_rather_than_falling_back(tmp_path):
 async def test_a_drawn_lineup_is_sent_as_files(tmp_path, public):
     """The league draws its lineup, and Division 1's lineup is drawn, with a notice. The manager
     is sent the picture in place of the text, under the division's name in bold, seen by them
-    alone unless they asked for it publicly; the picture is handed back to the drawing to release once sent; and the command
-    itself posts nothing to the log channel, because the drawing has already reported the
-    notice there."""
+    alone unless they asked for it publicly; the picture is handed back to the drawing to release
+    once sent, its file already closed, so that the release can remove it; and the command itself
+    posts nothing to the log channel, because the drawing has already reported the notice
+    there."""
     png = tmp_path / "lineup.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
     drawing = LineupDrawingStub(picture=png, notices=("a fallback flag stood in for Zara's",))
     cog = _make_cog(teams=[_team("Alpha", 1, [(1, None, None)])], drawing=drawing)
     interaction = _interaction()
+    closed_when_released = []
+    release = drawing.discard_picture
+
+    def _discard(path):
+        sent = interaction.followup.send.await_args.kwargs["files"]
+        closed_when_released.append(all(each.fp.closed for each in sent))
+        release(path)
+
+    drawing.discard_picture = _discard
 
     await _lineup(cog, interaction, public=public)
 
@@ -307,6 +317,7 @@ async def test_a_drawn_lineup_is_sent_as_files(tmp_path, public):
     assert call.kwargs["ephemeral"] is (not public)
     assert "Seat 1" not in _sent(interaction)
     assert drawing.discarded == [png]
+    assert closed_when_released == [True]
     cog.bot.output_router.post_log.assert_not_awaited()
 
 

@@ -424,6 +424,16 @@ async def test_a_configuration_that_cannot_be_read_discards_nothing_and_raises_n
     assert await discard_portraits(bot.db_path, bot.image_config_service, ["7"]) == 0
     assert sorted(await _rows(db_path)) == ["7"]
 
+    # The same through the drawing core asks, which adds nothing that could raise.
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    drawing = ImageDrawing(
+        MagicMock(), bot.image_config_service, MagicMock(),
+        renderer=MagicMock(), post_log=AsyncMock(), db_path=db_path,
+    )
+    assert await drawing.discard_portraits(["7"]) == 0
+    assert sorted(await _rows(db_path)) == ["7"]
+
 
 async def test_one_portrait_that_cannot_be_removed_does_not_keep_the_rest(
     db_path, directory, monkeypatch
