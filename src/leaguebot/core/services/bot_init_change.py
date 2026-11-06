@@ -92,7 +92,7 @@ ALREADY_CONFIGURED = (
     "To move the league to another server, use `/bot pack` first."
 )
 
-#: Why another server is refused, word for word as `BotCog._refuse_on_host` refuses it at the
+#: Why another server is refused, word for word as `bot_cog._refuse_on_host` refuses it at the
 #: ask: one bot serves one league.
 ANOTHER_SERVER = (
     "⛔ This bot already serves the league on another server. One bot serves one league."

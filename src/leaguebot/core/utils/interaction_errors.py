@@ -58,7 +58,7 @@ from leaguebot.core.utils.member_names import interaction_member
 log = logging.getLogger(__name__)
 
 #: What the member who ran a failed command, button or form is told; `{what}` is `describe`'s,
-#: and `{outcome}` what became of the change.
+#: `{outcome}` what became of the change, and `{recorded}` where the fault was recorded.
 FAILURE_REPLY = (
     "❌ {what} stopped on a fault in the bot, not on anything you entered, and did not "
     "finish. {outcome} The fault is recorded in {recorded}."
