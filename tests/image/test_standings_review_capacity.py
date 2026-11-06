@@ -1,8 +1,8 @@
-"""The standings row and round ceilings at the season review — 040, US4 (FR-043, FR-045).
+"""The image module's answer to core's standings question at season review: can the two standings
+templates draw the season? (040 US4, FR-043, FR-045, #283)
 
-Both standings catalogues declare ``capacity=None``: their rows are counted from the
-template file, not from a number in the catalogue, so ``declared_capacities()`` cannot see
-them.
+Both standings catalogues declare ``capacity=None``: their rows are counted from the template
+file, not from a number in the catalogue, so ``declared_capacities()`` cannot see them.
 
 Two ceilings, caught at two moments, as Constitution XIV.12 requires:
 
@@ -14,6 +14,17 @@ Two ceilings, caught at two moments, as Constitution XIV.12 requires:
   whole: the drivers rows, the constructors rows, and each template's round columns against
   the longest calendar. It is the only moment the *constructors* ceiling can be caught at
   all, because seating a driver adds no team. That half is this file's.
+
+Core counts what the season holds and asks: the division seating the most drivers, the one
+fielding the most race teams (the reserve team is no constructor, and is not counted) and the one
+holding the most rounds. It words each answer as a ⚠️ line of the review and lets the review
+through where the check cannot run (`tests/core/test_season_review_capacity.py`). Here the image
+module measures the configured templates and answers the problems and their remedies, in the
+order drivers rows, drivers round columns, constructors rows, constructors round columns.
+
+**An aspect that is off is not checked,** and a template that is missing or invalid is Layer 2's
+to report. A template that cannot be counted is skipped on its own, and the other is still
+answered. Nothing here rasterises.
 """
 from __future__ import annotations
 
@@ -25,15 +36,19 @@ from lxml import etree
 
 pytestmark = pytest.mark.asyncio
 
+NOT_YET = "#283: the image module answers no standings question of the season review"
 SVG_NS = "http://www.w3.org/2000/svg"
 DRIVERS = "standings_drivers_template"
 CONSTRUCTORS = "standings_constructors_template"
+REMEDY = "Enlarge the template to draw it."
 
 _ROW_SUFFIXES = ("position", "driver_name", "team_name", "points")
 
 
-def _template_file(tmp_path, name, *, rows: int, rounds: int = 0):
-    """A standings template declaring *rows* rows, each carrying *rounds* round cells."""
+def _template_file(tmp_path, name, *, rows, rounds: int = 0):
+    """A standings template declaring *rows* rows, each carrying *rounds* round cells. *rows* is
+    a count, or the row numbers themselves where a gap is wanted."""
+    numbers = range(1, rows + 1) if isinstance(rows, int) else rows
     root = etree.Element(f"{{{SVG_NS}}}svg")
     root.set("width", "1200")
     root.set("height", "675")
@@ -41,7 +56,7 @@ def _template_file(tmp_path, name, *, rows: int, rounds: int = 0):
         etree.SubElement(root, f"{{{SVG_NS}}}text").set("id", field)
     for ordinal in range(1, rounds + 1):
         etree.SubElement(root, f"{{{SVG_NS}}}text").set("id", f"round_{ordinal}_number")
-    for index in range(1, rows + 1):
+    for index in numbers:
         group = etree.SubElement(root, f"{{{SVG_NS}}}g")
         group.set("id", f"row_{index}_group")
         for suffix in _ROW_SUFFIXES:
@@ -60,182 +75,170 @@ def _template_file(tmp_path, name, *, rows: int, rounds: int = 0):
     return path
 
 
-async def _seed(
-    tmp_path, *, drivers: int, teams: int = 1, rounds: int = 1, reserves: int = 0
-):
-    """A season holding one division of *drivers* classified drivers and *teams* real teams.
-
-    *reserves* seats that many drivers in the reserve team besides. They are assignments of
-    the division like any other, but they are **not** entries of its classification, so the
-    standings ceiling must not count them.
-    """
-    from leaguebot.core.db.database import get_connection, run_migrations
-
-    db_path = str(tmp_path / "capacity.db")
-    await run_migrations(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
-        )
-        cursor = await db.execute(
-            "INSERT INTO seasons (start_date, status, season_number) "
-            "VALUES ('2026-01-01', 'SETUP', 5)"
-        )
-        season_id = cursor.lastrowid
-        cursor = await db.execute(
-            "INSERT INTO divisions (season_id, name, mention_role_id) "
-            "VALUES (?, 'Alpha', 777)",
-            (season_id,),
-        )
-        division_id = cursor.lastrowid
-
-        for number in range(1, rounds + 1):
-            await db.execute(
-                "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-                "VALUES (?, ?, 'STANDARD', '2026-06-01T18:00:00')",
-                (division_id, number),
-            )
-
-        # One real team carrying every seat, plus a reserve that must not be counted.
-        cursor = await db.execute(
-            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
-            "VALUES (?, 'Reserve', 'Reserve', 0, 1)",
-            (division_id,),
-        )
-        reserve_instance_id = cursor.lastrowid
-        for index in range(teams):
-            cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
-                "VALUES (?, ?, ?, 2, 0)",
-                (division_id, f"Team {index + 1}", f"Team {index + 1}"),
-            )
-        instance_id = cursor.lastrowid
-
-        async def seat(team_instance_id: int, seat_number: int, user_id: int) -> None:
-            cursor = await db.execute(
-                "INSERT INTO driver_profiles (discord_user_id, current_state) "
-                "VALUES (?, 'ACTIVE')",
-                (user_id,),
-            )
-            profile_id = cursor.lastrowid
-            cursor = await db.execute(
-                "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
-                "VALUES (?, ?, ?)",
-                (team_instance_id, seat_number, profile_id),
-            )
-            await db.execute(
-                "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-                "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
-                (profile_id, season_id, division_id, cursor.lastrowid),
-            )
-
-        for index in range(drivers):
-            await seat(instance_id, index + 1, 1000 + index)
-        for index in range(reserves):
-            await seat(reserve_instance_id, index + 1, 2000 + index)
-        await db.commit()
-
-    return db_path, season_id, division_id
+def _report(path, key, *, valid=True):
+    return MagicMock(
+        valid=valid, resolved_path=str(path) if valid else None, template_key=key
+    )
 
 
-def _bot(db_path, reports, *, toggle=True):
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    bot.image_config_service.get_toggles = AsyncMock(return_value={"standings": toggle})
-    bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=toggle)
-    bot.image_validity_service.template_reports = AsyncMock(return_value=reports)
-    return bot
+def _drawing(reports, *, toggle=True):
+    """The image module's implementation of core's protocol, over stand-ins for its own
+    services: the `standings` aspect *toggle*, and *reports* as the templates in force."""
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    modules = MagicMock()
+    modules.is_images_enabled = AsyncMock(return_value=True)
+    config = MagicMock()
+    config.get_config = AsyncMock(return_value=MagicMock())
+    config.get_toggles = AsyncMock(return_value={"standings": toggle})
+    config.is_aspect_enabled = AsyncMock(side_effect=lambda aspect: toggle and aspect == "standings")
+    validity = MagicMock()
+    validity.template_reports = AsyncMock(return_value=reports)
+    return ImageDrawing(
+        modules=modules, config=config, validity=validity,
+        renderer=MagicMock(), post_log=AsyncMock(), db_path="",
+    )
+
+
+def _held(name, count):
+    from leaguebot.core.services.image_drawing import Held
+
+    return Held(name, count)
+
+
+def _answers(problems):
+    return [(answer.problem, answer.remedy) for answer in problems]
+
+
+def _rows(label, name, rows, held):
+    return (
+        f"**{label}** draws {rows} row(s); `{name}` holds {held}. That division's standings "
+        f"cannot be drawn as an image and will be posted as text",
+        REMEDY,
+    )
+
+
+def _columns(label, name, columns, held):
+    return (
+        f"**{label}** draws {columns} round column(s); `{name}` holds {held}. That division's "
+        f"standings cannot be drawn as an image and will be posted as text",
+        REMEDY,
+    )
 
 
 # ── At the season review (FR-043, FR-045) ─────────────────────────────────
 
 
-def _cog(bot):
-    from leaguebot.core.cogs.season_cog import SeasonCog
-
-    cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = bot
-    return cog
-
-
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_review_names_the_two_templates_apart_never_as_one_pair(tmp_path):
-    """FR-045 — a manager told 'the standings template' would not know which to enlarge."""
-    db_path, season_id, _division_id = await _seed(tmp_path, drivers=6, teams=4)
-    reports = {
-        DRIVERS: MagicMock(
-            valid=True,
-            resolved_path=str(_template_file(tmp_path, DRIVERS, rows=2)),
-            template_key=DRIVERS,
+    """FR-045 — a manager told 'the standings template' would not know which to enlarge. Each
+    ceiling reports its own template, its own count and the division it was counted in: the
+    drivers rows against the division seating the most drivers, the constructors rows against
+    the one fielding the most race teams, and each template's round columns against the one
+    holding the most rounds."""
+    drawing = _drawing({
+        DRIVERS: _report(_template_file(tmp_path, DRIVERS, rows=2, rounds=2), DRIVERS),
+        CONSTRUCTORS: _report(
+            _template_file(tmp_path, CONSTRUCTORS, rows=3, rounds=3), CONSTRUCTORS
         ),
-        CONSTRUCTORS: MagicMock(
-            valid=True,
-            resolved_path=str(_template_file(tmp_path, CONSTRUCTORS, rows=2)),
-            template_key=CONSTRUCTORS,
+    })
+
+    problems = await drawing.standings_review_problems(
+        _held("Elite", 6), _held("Pro", 4), _held("Am", 5)
+    )
+
+    assert _answers(problems) == [
+        _rows("Standings — drivers", "Elite", 2, 6),
+        _columns("Standings — drivers", "Am", 2, 5),
+        _rows("Standings — constructors", "Pro", 3, 4),
+        _columns("Standings — constructors", "Am", 3, 5),
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_counts_the_templates_hold_exactly_are_no_problem(tmp_path):
+    """A template drawing as many rows and round columns as the season holds draws it whole."""
+    drawing = _drawing({
+        DRIVERS: _report(_template_file(tmp_path, DRIVERS, rows=2, rounds=3), DRIVERS),
+        CONSTRUCTORS: _report(
+            _template_file(tmp_path, CONSTRUCTORS, rows=2, rounds=3), CONSTRUCTORS
         ),
-    }
-    cog = _cog(_bot(db_path, reports))
+    })
 
-    lines = await cog._standings_capacity_lines(season_id, reports)
-
-    text = "\n".join(lines)
-    assert "Standings — drivers" in text
-    assert "Standings — constructors" in text
-    assert "6" in text and "4" in text, "each ceiling reports its own count"
+    assert await drawing.standings_review_problems(
+        _held("Alpha", 2), _held("Alpha", 2), _held("Alpha", 3)
+    ) == []
 
 
-async def test_the_reserve_team_is_not_counted_against_the_constructors_rows(tmp_path):
-    """The classification draws the real constructors; the reserve is not one of them."""
-    db_path, season_id, _division_id = await _seed(tmp_path, drivers=1, teams=2)
-    reports = {
-        CONSTRUCTORS: MagicMock(
-            valid=True,
-            resolved_path=str(_template_file(tmp_path, CONSTRUCTORS, rows=2)),
-            template_key=CONSTRUCTORS,
-        )
-    }
-    cog = _cog(_bot(db_path, reports))
-
-    assert await cog._standings_capacity_lines(season_id, reports) == []
-
-
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_calendar_longer_than_the_round_columns_is_reported(tmp_path):
-    db_path, season_id, _division_id = await _seed(tmp_path, drivers=1, rounds=5)
-    reports = {
-        DRIVERS: MagicMock(
-            valid=True,
-            resolved_path=str(_template_file(tmp_path, DRIVERS, rows=5, rounds=2)),
-            template_key=DRIVERS,
-        )
-    }
-    cog = _cog(_bot(db_path, reports))
+    drawing = _drawing(
+        {DRIVERS: _report(_template_file(tmp_path, DRIVERS, rows=5, rounds=2), DRIVERS)}
+    )
 
-    lines = await cog._standings_capacity_lines(season_id, reports)
+    problems = await drawing.standings_review_problems(
+        _held("Alpha", 1), _held("Alpha", 1), _held("Alpha", 5)
+    )
 
-    assert len(lines) == 1
-    assert "2 round column(s)" in lines[0]
-    assert "holds 5" in lines[0]
+    assert _answers(problems) == [_columns("Standings — drivers", "Alpha", 2, 5)]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_template_drawing_no_grid_at_all_is_not_an_overflow(tmp_path):
     """XIV.3 — a template that draws the classification alone is a legitimate choice."""
-    db_path, season_id, _division_id = await _seed(tmp_path, drivers=1, rounds=20)
-    reports = {
-        DRIVERS: MagicMock(
-            valid=True,
-            resolved_path=str(_template_file(tmp_path, DRIVERS, rows=5, rounds=0)),
-            template_key=DRIVERS,
-        )
-    }
-    cog = _cog(_bot(db_path, reports))
+    drawing = _drawing(
+        {DRIVERS: _report(_template_file(tmp_path, DRIVERS, rows=5, rounds=0), DRIVERS)}
+    )
 
-    assert await cog._standings_capacity_lines(season_id, reports) == []
+    assert await drawing.standings_review_problems(
+        _held("Alpha", 1), _held("Alpha", 1), _held("Alpha", 20)
+    ) == []
 
 
-async def test_an_invalid_template_is_left_to_the_layer_that_reports_it(tmp_path):
-    db_path, season_id, _division_id = await _seed(tmp_path, drivers=99)
-    reports = {DRIVERS: MagicMock(valid=False, resolved_path=None, template_key=DRIVERS)}
-    cog = _cog(_bot(db_path, reports))
+@pytest.mark.parametrize("valid", [None, False], ids=["missing", "invalid"])
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_an_invalid_template_is_left_to_the_layer_that_reports_it(tmp_path, valid):
+    """Layer 2 reports a template missing or invalid, and reporting it here too would say it
+    twice."""
+    template = _template_file(tmp_path, DRIVERS, rows=1)
+    report = None if valid is None else _report(template, DRIVERS, valid=False)
+    drawing = _drawing({DRIVERS: report})
 
-    assert await cog._standings_capacity_lines(season_id, reports) == []
+    assert await drawing.standings_review_problems(
+        _held("Alpha", 99), _held("Alpha", 1), _held("Alpha", 1)
+    ) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_the_standings_are_not_checked_with_their_aspect_off(tmp_path):
+    """No standings are drawn as images, so there is nothing for the templates to fall short
+    of."""
+    drawing = _drawing(
+        {
+            DRIVERS: _report(_template_file(tmp_path, DRIVERS, rows=1, rounds=1), DRIVERS),
+            CONSTRUCTORS: _report(
+                _template_file(tmp_path, CONSTRUCTORS, rows=1, rounds=1), CONSTRUCTORS
+            ),
+        },
+        toggle=False,
+    )
+
+    assert await drawing.standings_review_problems(
+        _held("Alpha", 9), _held("Alpha", 9), _held("Alpha", 9)
+    ) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET)
+async def test_an_uncountable_template_is_skipped_and_the_other_still_answered(tmp_path):
+    """A gap in the drivers template's row numbering cannot be counted: Layer 2 reports it, and
+    the constructors template is still measured."""
+    drawing = _drawing({
+        DRIVERS: _report(_template_file(tmp_path, DRIVERS, rows=(1, 3)), DRIVERS),
+        CONSTRUCTORS: _report(_template_file(tmp_path, CONSTRUCTORS, rows=2), CONSTRUCTORS),
+    })
+
+    problems = await drawing.standings_review_problems(
+        _held("Alpha", 9), _held("Alpha", 4), _held("Alpha", 1)
+    )
+
+    assert _answers(problems) == [_rows("Standings — constructors", "Alpha", 2, 4)]

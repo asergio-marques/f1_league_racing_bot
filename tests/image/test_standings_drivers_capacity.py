@@ -8,8 +8,8 @@ race drivers are counted and a reserve placement never asks, is core's, and is
 `tests/core/test_placement_capacity_guards.py`'s. Here the real implementation is handed to
 `PlacementService` as well, so that the refusal a league reads is pinned word for word.
 
-The review's half of the standings ceilings, the constructors and the round columns, stays in
-`tests/core/test_image_standings_capacity.py`. Nothing here rasterises.
+The review's half of the standings ceilings, the constructors and the round columns, is
+`tests/image/test_standings_review_capacity.py`'s. Nothing here rasterises.
 """
 from __future__ import annotations
 
