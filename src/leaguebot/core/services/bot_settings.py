@@ -1,5 +1,5 @@
 """The four `/bot` repair settings — log channel, interaction channel, interaction role and
-league admin role — as core `Setting`s on the change queue (#283, S13a).
+league admin role — as core `Setting`s on the change queue.
 
 `/bot log-channel`, `interaction-channel`, `interaction-role` and `admin-role` each ask one
 change built from a `Setting` below by `setting_change` (`core/services/setting_change.py`,
@@ -9,8 +9,8 @@ single column of `server_configs`, so nothing else in the row — test mode, the
 other three settings — can be carried over stale from a half-built model.
 
 **Each runs on `REPAIR_LANE`, not the league's** (`setting_change.REPAIR_LANE`): these are a
-league's way back in when one of the four is wrong or gone, so they must still be askable, and
-run, while the league's own lane is stopped on an unrelated job.
+league's way back in when one of the four is wrong or gone, so they run beside the league's own
+lane, never waiting behind it, stopped or not.
 
 **The two channels refuse a collision at the ask; the two roles judge "already held" in the
 save.** A channel already doing another job is refused outright, and one already holding this
@@ -18,7 +18,7 @@ very setting is refused too, "Nothing was changed" — re-running the command is
 with something else. A role given the one it already holds is not a collision at all, so it is
 answered "Nothing changed" by `setting_change`'s own rule for a value already held, once the
 change has run: no refusal, no write, no audit entry, and the hub's permissions are not set
-again (decided for #283: a role re-set to itself changes nothing, so nothing follows from it).
+again, a role re-set to itself changing nothing and so leaving nothing to follow from it.
 
 **A role setting sets the hub's permissions again as its own follow-on**
 (`hub_service.hub_refresh_after` does not fit here: it asks the hub's *panel* to be refreshed,
