@@ -675,7 +675,10 @@ def hub_channel_setting(*, config: "ConfigService") -> Setting:
     def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
         value = int(payload["value"])
         if not results[_SAVE_STEP]["changed"]:
-            return f"ℹ️ <#{value}> is already the hub channel. Nothing was changed."
+            # `check`'s own refusal catches a value already held before the save ever runs
+            # (it is judged at the ask, never here); what reaches this branch is the server
+            # having come unclaimed since `check` last ran.
+            return "ℹ️ Nothing was changed: the server is not configured."
         text = f"✅ **Hub channel** set to <#{value}>. Its panel follows on the change queue."
         restyled = results.get(RESTYLE_HUB)
         if restyled is not None:
