@@ -13,8 +13,8 @@ check which cannot run lets the season and the round through.
 
 Here the image module measures the configured template and answers the problem and its remedy,
 or nothing. It answers nothing where the template is not drawn or cannot be trusted: the module
-off (for the round), the `calendar` aspect off, no valid template, a template declaring no
-rounds. A fault reading the template or the reports is let out, for core's one catch.
+off (for the round), the `calendar` aspect off, no valid template. A fault reading the template
+or the reports, a template declaring no rounds among them, is let out, for core's one catch.
 
 **It counts rounds, not drivers.** The placement questions count seated drivers against the
 lineup and attendance templates; a calendar's collection is rounds. The two guard different
@@ -179,32 +179,31 @@ async def test_a_missing_or_invalid_template_is_not_used_to_refuse(tmp_path, rep
     assert await _ask(_drawing(tmp_path, report=report), question, 100) is None
 
 
-@QUESTIONS
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
-async def test_a_template_reporting_no_capacity_is_not_used_to_refuse(tmp_path, question):
-    """Nought means the reading found nothing rather than that the template draws nothing — a
-    template that genuinely drew no rounds would be invalid."""
-    assert await _ask(_drawing(tmp_path, rounds=0), question, 100) is None
-
-
 # ── A fault is core's to catch ────────────────────────────────────────────
 
 
 @QUESTIONS
-@pytest.mark.parametrize("fault", ["unreadable template", "reports down"])
+@pytest.mark.parametrize("fault", ["unreadable template", "no rounds declared", "reports down"])
 @pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_fault_reading_the_template_is_let_out_for_core_s_catch(
     tmp_path, fault, question
 ):
     """The image module does not decide that a fault lets the round through: it lets the
-    fault out, and core's one catch logs it and lets the season and the round through."""
+    fault out, and core's one catch logs it and lets the season and the round through. A
+    template declaring no rounds cannot be counted, which is a fault like any other: a template
+    that genuinely drew no rounds would be invalid."""
+    from leaguebot.image.models.image_catalogues import CapacityError
     from leaguebot.image.utils.svg_document import SvgError
 
+    expected: type[Exception]
     if fault == "unreadable template":
         drawing = _drawing(tmp_path, report=SimpleNamespace(
             valid=True, resolved_path=tmp_path / "missing.svg", template_key=CALENDAR,
         ))
-        expected: type[Exception] = SvgError
+        expected = SvgError
+    elif fault == "no rounds declared":
+        drawing = _drawing(tmp_path, rounds=0)
+        expected = CapacityError
     else:
         drawing = _drawing(tmp_path, reports_error=RuntimeError("template service down"))
         expected = RuntimeError
