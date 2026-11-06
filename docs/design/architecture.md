@@ -408,7 +408,7 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
 - **A job that fails stops its lane.** A lane is a list of jobs carried out in order, one at a
   time, and a job that fails, whether from Discord or from the bot (a post refused, a fault in the
   bot's own code, a check that raises as a change starts), stops that lane there until the job is
-  cleared, save for the three exceptions to this rule below. Nothing behind it on the lane runs: a
+  cleared, save for the four exceptions to this rule below. Nothing behind it on the lane runs: a
   change that makes the stopped job's work no longer due cannot overtake it either. The other lanes
   carry on, a stop in one holding only that one. The change keeps its state and the stop is the
   job's own record (when it first failed, how often it has been tried, when it is next due), so it
@@ -419,13 +419,13 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   for meanwhile is acknowledged as usual, joins the back of its lane and says that the lane is
   stopped; one that overtakes a stop says it runs past it, the stop standing (`held_behind_text`).
 
-  **Three exceptions: a league's settings, roles moved after a driver's or team's change, and the
-  four settings a league repairs itself with.** A change to one of a league's settings is one
-  atomic save of its value and its audit record (its line with them, or in the save of the step
-  after it that carries the line — the arming of the daily portrait job, a role's grant to every
-  driver where it replaces one gone from the server while the season's configuration is fixed, or
-  the old hub stood down and the new one's permissions set once its channel is moved; see "The
-  record is the queue's"), and the work after it that the setting does not need (checking it
+  **Four exceptions: a league's settings, roles moved after a driver's or team's change, the four
+  settings a league repairs itself with, and `/bot init`.** A change to one of a league's settings
+  is one atomic save of its value and its audit record (its line with them, or in the save of the
+  step after it that carries the line — the arming of the daily portrait job, a role's grant to
+  every driver where it replaces one gone from the server while the season's configuration is
+  fixed, or the old hub stood down and the new one's permissions set once its channel is moved; see
+  "The record is the queue's"), and the work after it that the setting does not need (checking it
   against the templates, arming or removing a timed job, granting a role to every driver, asking
   the hub's panel to be posted again as the bot's own change) is work nothing later depends on. A
   fault in either leaves nothing half-done and nothing behind it on the lane waits on it. A fault
@@ -441,11 +441,17 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   either is the core specification's "How a change is carried out"; the full detail goes to the
   host's log. A step that is `undiscardable` may not carry `on_fault`, since it is a step a stop
   must hold. `core/services/setting_change.py` builds both callbacks for every settings command
-  once. *Rejected:* a step that catches its own fault, which would leave its partial writes on the
-  save's connection and could not catch what fails after it returns, the queue's own audit and line
-  writes and the commit; and stopping the lane for a setting, which would hold every other change
-  for a fault that either the member cures by asking again (a save rolled back) or that nothing
-  later on the lane depends on (a step after it).
+  once. `/bot init` is not a setting — it claims the league's server, which no setting does — but
+  its one save ends on a fault for the same reason a setting's does: no league admin role exists
+  until a first `/bot init` has claimed one, so nobody could clear a stop on it if it held the lane
+  (`core/services/bot_init_change.py`). *Rejected:* a step that catches its own fault, which would
+  leave its partial writes on the save's connection and could not catch what fails after it
+  returns, the queue's own audit and line writes and the commit; stopping the lane for a setting or
+  for `/bot init`, which would hold every other change for a fault that either the member cures by
+  asking again (a save rolled back) or that nothing later on the lane depends on (a step after
+  it); and a bespoke change type for every settings command, which forms the line, the audit and
+  the fault answer a score of ways — the reason `/bot init` is one, and no settings command is,
+  is that it alone claims the server rather than writing a column of one already claimed.
 
   The same holds for a member's roles moved after their driver's or their team's change. A `/driver`
   or `/team` change saves the driver's or the team's rows and their audit record in one step, and
@@ -456,7 +462,7 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   check raises, keeps the rule. *Rejected:* stopping the lane on a refused role, as other jobs do,
   which would hold every change behind one lost permission until Retry or Discard was pressed.
 
-  **A third exception: the four settings a league repairs itself with overtake a stopped head on
+  **A fourth exception: the four settings a league repairs itself with overtake a stopped head on
   the league lane.** `/bot log-channel`, `interaction-channel`, `interaction-role` and
   `admin-role` are the repair the core specification's "How a change is carried out" and "Setting
   the bot up" name as a league's way back in when one of the four is wrong or gone, and that rule
@@ -549,9 +555,9 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   second rule beside "every failure stops its lane", which is the rule the core specification's
   "How a change is carried out" records. A conversation runs apart from a stop on the league lane,
   or on another conversation's, only because its work is its own, and what a conversation hands
-  the league goes to the league lane's back. The first two exceptions (above) are not a job
+  the league goes to the league lane's back. The first three exceptions (above) are not a job
   stepping aside either: the job is ended, not stopped, and nothing it leaves undone is waited on.
-  The third exception is the one true overtake: the four settings a league repairs itself with run
+  The fourth exception is the one true overtake: the four settings a league repairs itself with run
   ahead of their own lane's stopped head, by design, because a league locked out of the bot has no
   other lane to wait apart on. It is kept narrow: `ChangeType.overtakes_a_stop` is read once from `Setting.repairs_the_bot` for four kinds
   alone, the stopped head stays stopped, and everything else on the lane still waits behind it.
@@ -568,8 +574,9 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
 - **The record is the queue's.** The queue writes the records the specifications ask of a change:
   for every change to the league's configuration, an audit record and a log-channel line (the core
   specification's "The record of what changed"), and for any other change, whatever log line its own
-  specification asks for. No command writes them itself, but for `/bot pack` and the factory reset
-  (above). A log line is put on the log line's own retry queue in the same save as the step it
+  specification asks for. No command writes them itself, but for `/bot pack`, the factory reset
+  (above), and `/division lineup-channel` and `calendar-channel`, which still write their own. A
+  log line is put on the log line's own retry queue in the same save as the step it
   records (`OutputRouter.queue_log_on`), so a stop cannot lose it, and is delivered once the save
   has committed (`OutputRouter.deliver_queued`), under the lock the retry loop shares, so the queue
   and the retry loop never both send it. The queue is handed the router and writes through it, not
