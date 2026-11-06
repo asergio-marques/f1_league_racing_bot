@@ -857,7 +857,9 @@ class SeasonCog(commands.Cog):
         bot. The image module measures its own template and answers each problem as a
         sentence, unchanged.
 
-        Never raises for its own reasons: a fault in this reader must not block a season.
+        A check that cannot run lets the approval through, with the full error in the
+        host's log (`PlacementService._ask_drawing`'s stated exception, architecture.md, "A
+        catch-all error handler").
         """
         try:
             divisions = await self.bot.season_service.get_divisions(season_id)
@@ -878,7 +880,7 @@ class SeasonCog(commands.Cog):
                 held.append(DivisionTeams(division.name, teams))
 
             return await self.bot.image_drawing.lineup_review_problems(held)
-        except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
+        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
             log.error("season: lineup capacity check could not run: %s", exc, exc_info=True)
             return []
 
@@ -888,8 +890,10 @@ class SeasonCog(commands.Cog):
         """The rejection message where *would_hold* rounds outgrow the calendar template.
 
         None where the guard does not apply — the module off, the aspect off, no valid
-        template, or room to spare. Never raises for its own reasons: a fault in this
-        check must not block a round, only a genuine over-capacity may.
+        template, or room to spare. A check that cannot run lets the round through, with
+        the full error in the host's log (`PlacementService._ask_drawing`'s stated
+        exception, architecture.md, "A catch-all error handler"); only a genuine
+        over-capacity refuses the round.
 
         Separate from ``placement_service._guard_image_capacity``, which counts seated
         **drivers**. A calendar's collection is **rounds**, so the two guard different
