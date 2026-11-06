@@ -4,9 +4,10 @@ Not a `Setting` (`setting_change.py`): a setting writes one column of a server a
 claimed, where `/bot init` claims the server itself, which no setting does. One SAVE step
 claims it, writes the four settings and the `BOT_INITIALISED` audit entry in one save
 (`ConfigService.claim_on`, on the save's own connection), stamped with the queue's clock. A
-fault in it ends the change on a fault rather than stopping the lane (`Step.on_fault`,
-`NOTHING_SAVED`, as `setting_change` reuses them): no league admin role exists yet, before a
-first `/bot init`, for anyone to clear a stop with.
+fault in it, or a check that raises as the change starts, ends the change on a fault rather
+than stopping the lane (`Step.on_fault`, `ChangeType.on_check_fault`, `NOTHING_SAVED`, as
+`setting_change` reuses them): no league admin role exists yet, before a first `/bot init`,
+for anyone to clear a stop with.
 
 **Three refusals are the save's to judge, not the check's:**
 
@@ -222,6 +223,14 @@ def _on_fault(ctx: StepContext, error: BaseException) -> StepResult:
     return StepResult(result={"outcome": "faulted"})
 
 
+def _check_fault_reply(what: str, _payload: dict[str, Any], _error: BaseException) -> str:
+    """A check that raises as the change starts ends it the same way a fault in the save does
+    (`ChangeType.on_check_fault`): nothing is saved, and the member is told to run `/bot init`
+    again. Without this, a raised check would stop the league lane with no league admin role yet
+    to clear it (see the module docstring)."""
+    return failure_reply(what, NOTHING_SAVED.format(command=COMMAND))
+
+
 def _outcome(ctx: Any) -> str:
     results = {view.name: dict(view.result) for view in ctx.steps if view.result is not None}
     saved = results.get(SAVE, {})
@@ -251,6 +260,7 @@ def bot_init_change(*, config: "ConfigService") -> ChangeType:
         outcome=_outcome,
         lane=lambda _payload: LEAGUE_LANE,
         writes=("server_configs",),
+        on_check_fault=_check_fault_reply,
     )
 
 
