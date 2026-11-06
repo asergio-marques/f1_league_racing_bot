@@ -91,6 +91,13 @@ class LeagueBot(commands.Bot):
     #: or weather (architecture.md, "A hook core declares is a list of subscribers");
     #: `read_round_windows` gathers what they hand back.
     round_windows_read: AwaitedHook
+    #: The base role changed (`/bot base-role`), awaited from an `After` step once the queue has
+    #: saved it, given the server, the role replaced and the role now set, and handing no
+    #: connection: each subscriber opens its own (signup's move of the signup channel's overwrite
+    #: from the one role to the other). The builder makes it and signs signup up, so core never
+    #: reaches into the signup module itself (architecture.md, "A hook core declares is a list of
+    #: subscribers").
+    base_role_changed: AwaitedHook
     #: The moments of a round amended, each module signing up its part: inside the save, each
     #: module's part of the amendment on the save's connection (each hands back what the arming
     #: reads of it, kept in the save's result), then, as the round is armed again, the posts each

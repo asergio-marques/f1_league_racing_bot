@@ -78,9 +78,6 @@ NAMED = "Manager (`<@77>`)"
 #: Passed as *signup_channel* for a league whose signup module is not enabled at all.
 NO_SIGNUP = object()
 
-#: Why a test below fails until the build.
-QUEUED = "#283: /bot base-role and /bot driver-role do not yet ask the change queue"
-
 #: The command as its line names it, and the label its reply gives the role, by column.
 _WORDS = {
     "base_role_id": ("/bot base-role", "Base role"),
@@ -700,7 +697,6 @@ async def test_a_permissions_failure_does_not_fail_the_command(tmp_path):
     assert _reply(asked) == f"✅ **Base role** set to <@&{NEW_ROLE}>."
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_a_changed_base_role_is_handed_to_the_base_role_changed_hook(tmp_path):
     """The league's base role is 3001 and its signup channel 700; the manager sets it to 3002 and
     the queue runs the change. Core hands the change to the "base role changed" hook the builder

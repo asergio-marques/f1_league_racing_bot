@@ -324,9 +324,6 @@ def _success(command: str, column: str) -> str:
     return f"{NAMED} | {command} | Success\n  {column}: `<@&{NEW_ROLE}>`"
 
 
-#: Why a base-role case below fails until the build.
-BASE_ROLE_QUEUED = "#283: /bot base-role does not yet ask the change queue"
-
 #: The base role's success line: it names the role, as its log line always has.
 _BASE_ROLE_SET = f"{NAMED} | /bot base-role | Success\n  role: Members (`<@&{NEW_ROLE}>`)"
 
@@ -385,8 +382,7 @@ async def test_the_driver_role_leaves_the_hub_s_permissions_alone(db_path):
                      id="interaction-role"),
         pytest.param("handle_admin_role", "league_admin_role_id", "bot admin-role",
                      id="admin-role"),
-        pytest.param("handle_base_role", "base_role_id", "bot base-role", id="base-role",
-                     marks=pytest.mark.xfail(strict=True, reason=BASE_ROLE_QUEUED)),
+        pytest.param("handle_base_role", "base_role_id", "bot base-role", id="base-role"),
     ],
 )
 async def test_a_role_setting_sets_the_hub_s_permissions_again_as_its_follow_on(
@@ -427,10 +423,8 @@ _BASE_ROLE = ("handle_base_role", "base_role_id", "/bot base-role", "Base role",
     [
         pytest.param(_INTERACTION_ROLE, _REFUSED, False, id="refused"),
         pytest.param(_INTERACTION_ROLE, RuntimeError("x"), True, id="raises"),
-        pytest.param(_BASE_ROLE, _REFUSED, False, id="base-role-refused",
-                     marks=pytest.mark.xfail(strict=True, reason=BASE_ROLE_QUEUED)),
-        pytest.param(_BASE_ROLE, RuntimeError("x"), True, id="base-role-raises",
-                     marks=pytest.mark.xfail(strict=True, reason=BASE_ROLE_QUEUED)),
+        pytest.param(_BASE_ROLE, _REFUSED, False, id="base-role-refused"),
+        pytest.param(_BASE_ROLE, RuntimeError("x"), True, id="base-role-raises"),
     ],
 )
 async def test_hub_permissions_that_fail_after_a_role_setting_leave_it_saved(

@@ -351,20 +351,16 @@ def _league_role_setting(
 
 
 def _move_signup_overwrite() -> After:
-    """The `After` step the base role's save plans: move the signup channel's overwrite from
-    the old role to the new (issue #276).
-
-    Reaches `bot.signup_module_service` directly today (`KNOWN_MODULE_LOOKUPS_IN_CORE`): a
-    "base role changed" hook replaces this once the builder signs signup's own subscriber up to
-    it (#283, S13b commit 2). `move_base_role_overwrite` never raises, logging its own faults, so
-    this step never fails.
+    """The `After` step the base role's save plans: call the "base role changed" hook the
+    builder makes, with the server, the role replaced and the role now set, handing no
+    connection (signup's subscriber opens its own). Core never reaches `bot.signup_module_service`
+    itself (#283, S13b). The hook's subscribers never raise, each logging its own faults, so this
+    step never fails.
     """
 
     async def run(ctx: StepContext) -> StepResult:
         guild, role = _guild_and_role(ctx)
-        await ctx.bot.signup_module_service.move_base_role_overwrite(
-            guild, ctx.payload.get("old_role_id"), role
-        )
+        await ctx.bot.base_role_changed.call(guild, ctx.payload.get("old_role_id"), role)
         return StepResult()
 
     return After(step=Step(MOVE_SIGNUP_OVERWRITE, StepKind.ACT, run), fault_reply=lambda _p, r: r)

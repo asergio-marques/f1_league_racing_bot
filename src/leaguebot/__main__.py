@@ -155,6 +155,14 @@ def _sign_up_to_round_windows(bot: LeagueBot) -> None:
     ))
 
 
+def _sign_up_to_base_role_changed(bot: LeagueBot) -> None:
+    """Make the hook the base role changed declares, and sign signup's move of the signup
+    channel's overwrite up to it, so core never reaches into the signup module itself
+    (#283, S13b)."""
+    bot.base_role_changed = AwaitedHook()
+    bot.base_role_changed.subscribe(bot.signup_module_service.move_base_role_overwrite)
+
+
 def _sign_up_to_amendments(bot: LeagueBot) -> None:
     """Make the hooks an amended round declares, and sign each module's part up to them, in the
     order core calls them: inside the save, weather's withdrawal of the forecasts the amendment
@@ -1344,6 +1352,7 @@ async def build(settings: Settings) -> LeagueBot:
     # through; results' change types reach attendance through it alone (#439).
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
     _sign_up_to_round_windows(bot)
+    _sign_up_to_base_role_changed(bot)
     _sign_up_to_amendments(bot)
 
     _sign_up_to_cancellations(bot)
