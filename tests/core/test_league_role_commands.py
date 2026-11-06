@@ -639,7 +639,7 @@ async def test_a_fault_giving_the_replacement_leaves_the_role_saved(
     saved and audited, and the queue is not stopped. The reply says the role is set and replaced,
     then that it could not be given to the drivers, for the league to give it by hand, a base role
     still reminding the league that its other members need it too; the log channel gets the
-    queue's failure line, and no success line, the grants carrying it (decision 169)."""
+    queue's failure line, and no success line, the grants carrying it."""
     from leaguebot.core.services.placement_service import PlacementService
     from tests.support.change_queue import stopped_job
 

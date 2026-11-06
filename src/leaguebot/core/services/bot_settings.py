@@ -435,8 +435,9 @@ def _move_signup_overwrite() -> After:
     builder makes, with the server, the role the save actually replaced (`_replaced_role_id`,
     never the role the ask saw) and the role now set, handing no connection
     (signup's subscriber opens its own). Core never reaches `bot.signup_module_service`
-    itself. The hook's subscribers never raise, each logging its own faults, so this
-    step never fails.
+    itself. The hook's subscribers never raise, each logging its own faults; the step itself
+    can fail only finding the server or the role gone, and then the role stays saved and the
+    log takes the failure line, as for any step after a setting's save.
     """
 
     async def run(ctx: StepContext) -> StepResult:
