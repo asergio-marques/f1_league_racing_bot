@@ -470,13 +470,15 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   league's — it would let two lanes write the league's configuration at once, each save
   re-judging the other's collisions, for no gain once overtaking a stop does the same job on the
   one lane. A channel setting's save re-checks nothing even though an overtaking change runs ahead
-  of its stopped head's remaining jobs: every write to `server_configs` is a `Setting`, and a
-  `Setting` never stops a lane, ending on a fault instead (`setting_change.py`'s own docstring says
-  so) — so no stoppable job is ever still waiting to write a channel behind the head that an
-  overtaker runs past. A channel setting's check as the change starts is therefore still the
-  save's last judgement of the state. That constraint is the one a later reader could tune away:
-  a non-setting change that both stops its lane and writes a channel would need the save to
-  re-check, or would need to be barred from overtaking.
+  of its stopped head's remaining jobs, because no change that can stop a lane gives a channel a
+  job: on the queue only a `Setting` claims one of the channels a channel setting's check reads
+  (`channel_registry_service.find_channel_use`'s sources), and a `Setting` never stops a lane,
+  ending on a fault instead (`setting_change.py`'s own docstring says so). So no stopped head ever
+  has a remaining job that claims a channel, an overtaking change runs to its own end before the
+  head is tried again, and a channel setting's check as the change starts is still the save's last
+  judgement of the state. That invariant is the one a later reader could tune away: a change that
+  can stop its lane and claims a channel would need the save to re-check, or would need to be
+  barred from being overtaken.
 
   Nothing else overtakes the stopped job, so whatever runs outside the queue leaves alone what a
   change is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core
