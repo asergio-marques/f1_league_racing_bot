@@ -31,7 +31,8 @@ or when the next try falls due and starts one task per lane that has something t
 `_workers`: `ALWAYS_RUN_LANES`' always (the league's own changes), and at most
 `CONVERSATION_LANES_AT_ONCE` conversations' besides, the oldest change first, the rest waiting for
 a slot. A league's four repair settings run on the league lane too, and may overtake a stopped
-head there — see "A job that fails stops its lane". A lane's task holds that lane's `_working` lock while it drains the lane, and has a
+head there — see `docs/design/architecture.md`, "A job that fails stops its lane". A lane's task
+holds that lane's `_working` lock while it drains the lane, and has a
 catch-all of its own, so that a fault outside any change pauses only its lane
 (`WORKER_PAUSE_AFTER_FAULT`); the dispatcher holds no lane's lock. The league lane's task runs
 once when the queue starts, so that a fault there is met at once.
@@ -86,11 +87,18 @@ carry the numbering on: `highest_job_number`, `carry_job_numbering`) and shown w
 named. A member's
 request is acknowledged once and is made of jobs that run one after another: `_choose` takes, of
 each lane, the RUNNING change, or else the QUEUED change with the lowest id, and nothing on that
-lane overtakes it; of the lanes that can run, the head asked first goes first.
+lane overtakes it — save a queued or already-running change of a kind marked
+`ChangeType.overtakes_a_stop` (`_heads`), which `_choose` takes instead of a stopped head and
+runs to its own end before the head is tried again, every ordinary change still waiting behind
+the head. Whether a kind overtakes a stop is read from the kind itself, `Setting.repairs_the_bot`
+set once by `setting_change`, and the queue keeps no list of kinds of its own. Of the lanes that
+can run, the head asked first goes first.
 
-**A job that fails stops the queue,** but for the jobs of a settings change (below). Whatever the
+**A job that fails stops the queue,** but for the jobs of a settings change (below), and an
+overtaking change still runs past its lane's own stopped head. Whatever the
 failure, from Discord or from the bot, and whether in a job or in a bot change's check as it starts
-(`_stop`), nothing behind the job runs on its lane until it is cleared: `_choose` runs nothing of a lane while its head's next job is
+(`_stop`), nothing behind the job runs on its lane until it is cleared, save such an overtaking
+change: `_choose` runs nothing else of a lane while its head's next job is
 stopped and not yet due, and the other lanes carry on. A stop
 is the job's own record (`failing_since`, `tries`, `last_failure`, `next_try_at`), the change's
 state staying as it was. The bot tries a stopped job again on `RETRY_AFTER`, counted from the first
