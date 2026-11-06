@@ -3031,6 +3031,12 @@ CATCH_ALLS_ALLOWED = {
     ("core/cogs/season_cog.py", "SeasonCog._ask_drawing"):
         "a stated exception: a capacity check that cannot run lets the round or the season "
         "through",
+    ("core/cogs/season_cog.py", "SeasonCog._image_configuration_faults"):
+        "a stated exception: templates that cannot be read refuse the season, and a per-tier "
+        "colour or portrait check that cannot be read stands aside",
+    ("core/cogs/season_cog.py", "SeasonCog._build_image_review_section"):
+        "a stated exception: an image section that cannot be read is stated as such, and the "
+        "review goes on",
     ("core/services/calendar_post_service.py", "post_division_calendar"):
         "place 5, a calendar that cannot be drawn is posted as text and its fault is the job's line",
     ("core/services/calendar_post_service.py", "render_for_command"):
@@ -3104,9 +3110,7 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/bot_cog.py", "_reapply_hub_permissions"): (1, PASS["core"]),
     ("core/cogs/driver_cog.py", "DriverCog.reassign"): (2, PASS["core"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
-    ("core/cogs/season_cog.py", "SeasonCog._build_image_review_section"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._colour_shortfall_problems"): (1, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog._image_configuration_faults"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._portrait_configuration_blocker"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._portrait_review_lines"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._review_picture_gates"): (1, PASS["core"]),
