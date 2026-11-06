@@ -322,7 +322,7 @@ class BotCog(commands.Cog):
         kind: str,
     ) -> None:
         """Shared body of `/bot base-role` and `/bot driver-role`: ask the change queue for one
-        of `bot_settings`'s two league role `Setting`s (#283, S13b).
+        of `bot_settings`'s two league role `Setting`s (#283).
 
         Not `_set_one`, whose commands repair the settings the guards read and so run from
         any channel on the Administrator permission. These are ordinary league manager

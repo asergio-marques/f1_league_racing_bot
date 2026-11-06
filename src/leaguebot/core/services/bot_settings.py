@@ -7,7 +7,7 @@ which holds what every settings change does with a value already held and with a
 weather's switch (`weather/services/module_switch_settings.py`) is the model. Each writes a
 single column of `server_configs`, so nothing else in the row — test mode, the module flags, the
 other three settings — can be carried over stale from a half-built model. `/bot base-role` and
-`/bot driver-role` (issue #276, #283 S13b) are `Setting`s too, built by `_league_role_setting`
+`/bot driver-role` (issue #276, #283) are `Setting`s too, built by `_league_role_setting`
 below: unlike the four, they are a league manager's ordinary commands, so they wait their turn
 on the league lane like any other change rather than overtaking a stop, and the command itself
 judges the refusals that have nothing to do with a value already held — the season's
@@ -207,7 +207,7 @@ def admin_role_setting(*, config: "ConfigService") -> Setting:
 
 
 # ----------------------------------------------------------------------------
-# The league's two roles (issue #276, #283 S13b) — not repair settings
+# The league's two roles (issue #276, #283) — not repair settings
 # ----------------------------------------------------------------------------
 
 #: The command as its line names it, and the label its reply gives the role, by column.
@@ -354,7 +354,7 @@ def _move_signup_overwrite() -> After:
     """The `After` step the base role's save plans: call the "base role changed" hook the
     builder makes, with the server, the role replaced and the role now set, handing no
     connection (signup's subscriber opens its own). Core never reaches `bot.signup_module_service`
-    itself (#283, S13b). The hook's subscribers never raise, each logging its own faults, so this
+    itself (#283). The hook's subscribers never raise, each logging its own faults, so this
     step never fails.
     """
 
