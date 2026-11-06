@@ -575,8 +575,7 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   for every change to the league's configuration, an audit record and a log-channel line (the core
   specification's "The record of what changed"), and for any other change, whatever log line its own
   specification asks for. No command writes them itself, but for `/bot pack` and the factory reset
-  (above). A
-  log line is put on the log line's own retry queue in the same save as the step it
+  (above). A log line is put on the log line's own retry queue in the same save as the step it
   records (`OutputRouter.queue_log_on`), so a stop cannot lose it, and is delivered once the save
   has committed (`OutputRouter.deliver_queued`), under the lock the retry loop shares, so the queue
   and the retry loop never both send it. The queue is handed the router and writes through it, not
