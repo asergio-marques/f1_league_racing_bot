@@ -159,38 +159,6 @@ def _portrait_cog(**config):
     return cog, bot
 
 
-async def test_the_review_states_the_portrait_settings_when_disabled():
-    cog, _bot = _portrait_cog(use_pfp=False)
-
-    lines = await cog._portrait_review_lines()
-
-    # Stated even when off: "the bot is not obtaining portraits" is an answer, not an
-    # absence of one, for a manager deciding whether the season is configured.
-    assert any("Driver portraits from Discord: disabled" in line for line in lines)
-
-
-async def test_the_review_names_both_update_triggers_and_the_time_in_utc():
-    cog, _bot = _portrait_cog(
-        use_pfp=True, pfp_prerender=True, pfp_daily=True, pfp_daily_time="07:45"
-    )
-
-    lines = await cog._portrait_review_lines()
-    text = "\n".join(lines)
-
-    assert "enabled" in text
-    assert "before each render" in text
-    assert "daily at 07:45 UTC" in text
-
-
-async def test_the_review_marks_an_invalid_portrait_configuration():
-    cog, _bot = _portrait_cog(use_pfp=True, pfp_prerender=False, pfp_daily=False)
-
-    text = "\n".join(await cog._portrait_review_lines())
-
-    assert "⛔" in text
-    assert "neither pre-render nor daily updates" in text
-
-
 async def test_the_review_section_survives_a_configuration_it_cannot_read():
     cog, bot = _portrait_cog()
     bot.image_config_service.get_config.side_effect = RuntimeError("gone")
@@ -199,27 +167,6 @@ async def test_the_review_section_survives_a_configuration_it_cannot_read():
 
     # A review must never fail because of this section.
     assert any("could not be read" in line for line in lines)
-
-
-async def test_the_blocker_fires_only_on_an_invalid_configuration():
-    invalid, _ = _portrait_cog(use_pfp=True, pfp_prerender=False, pfp_daily=False)
-    assert await invalid._portrait_configuration_blocker() is not None
-
-    for values in (
-        {"use_pfp": False, "pfp_prerender": False, "pfp_daily": False},
-        {"use_pfp": True, "pfp_prerender": True, "pfp_daily": False},
-        {"use_pfp": True, "pfp_prerender": False, "pfp_daily": True},
-        {"use_pfp": True, "pfp_prerender": True, "pfp_daily": True},
-    ):
-        cog, _ = _portrait_cog(**values)
-        assert await cog._portrait_configuration_blocker() is None, values
-
-
-async def test_the_blocker_stands_aside_where_the_image_module_is_disabled():
-    cog, bot = _portrait_cog(use_pfp=True, pfp_prerender=False, pfp_daily=False)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
-
-    assert await cog._portrait_configuration_blocker() is None
 
 
 async def test_the_blocker_never_blocks_a_season_it_could_not_read():

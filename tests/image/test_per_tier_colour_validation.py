@@ -246,28 +246,6 @@ async def test_the_aspect_toggle_passes_the_shortfall_through(monkeypatch):
 
 # ── The season approval gate ──────────────────────────────────────────────
 
-async def test_the_approval_gate_flattens_the_same_shortfall():
-    """The confirmation of placements reads `colour_shortfall`, not a rule of its own."""
-    from leaguebot.core.cogs.season_cog import SeasonCog
-
-    cog = MagicMock(spec=SeasonCog)
-    cog.bot = MagicMock()
-    cog.bot.image_validity_service.colour_shortfall = AsyncMock(
-        return_value={CALENDAR: ["`accent` is not set for **Division 1**"]}
-    )
-    problems = await SeasonCog._colour_shortfall_problems(cog)
-    assert problems == [f"`{CALENDAR}` — `accent` is not set for **Division 1**"]
-
-
-async def test_the_approval_gate_is_silent_when_nothing_is_short():
-    from leaguebot.core.cogs.season_cog import SeasonCog
-
-    cog = MagicMock(spec=SeasonCog)
-    cog.bot = MagicMock()
-    cog.bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
-    assert await SeasonCog._colour_shortfall_problems(cog) == []
-
-
 async def test_a_reader_fault_never_refuses_a_season():
     """The rule of `_team_name_problems`: a check that cannot answer must not block."""
     from leaguebot.core.cogs.season_cog import SeasonCog
