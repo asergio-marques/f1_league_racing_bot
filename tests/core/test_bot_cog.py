@@ -1917,6 +1917,8 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
         await _seed_config(db_path)
     queued = case.startswith(("log-channel", "interaction-channel")) or case in (
         "base-role fixed for the season", "driver-role cannot be granted",
+        "hub-channel already another job", "hub-channel already this setting",
+        "hub-channel lacks permissions",
     )
     if queued:
         # A setting asks the change queue, whose check refuses at the ask: the bot the entry
@@ -1988,12 +1990,26 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
         )
     if case == "hub-channel already another job":
         await _unwrap(cog.handle_hub_channel)(cog, interaction, _unconfigured_channel(CONFIGURED_LOG))
-        return bot, interaction, command, "log channel"
+        return bot, interaction, command, (
+            f"❌ <#{CONFIGURED_LOG}> is already the bot log channel. A channel does one job — "
+            f"pick one that is not in use, or clear the other setting first."
+        )
+    if case == "hub-channel already this setting":
+        async with get_connection(db_path) as db:
+            await db.execute("UPDATE server_configs SET hub_channel_id = 905")
+            await db.commit()
+        await _unwrap(cog.handle_hub_channel)(cog, interaction, _unconfigured_channel(905))
+        return bot, interaction, command, (
+            "ℹ️ <#905> is already the hub channel. Nothing was changed."
+        )
     if case == "hub-channel lacks permissions":
         channel = _unconfigured_channel()
         channel.permissions_for.return_value = MagicMock(manage_channels=False, manage_roles=True)
         await _unwrap(cog.handle_hub_channel)(cog, interaction, channel)
-        return bot, interaction, command, "Manage Channel"
+        return bot, interaction, command, (
+            "❌ The bot needs **Manage Channel** on <#905> to set who may see the hub. Nothing "
+            "was changed."
+        )
     if case == "factory-reset without the word":
         await _unwrap(cog.handle_factory_reset)(cog, interaction, "yes")
         return bot, interaction, command, "CONFIRM"
@@ -2050,6 +2066,7 @@ def _replied(interaction: MagicMock) -> str:
         "base-role fixed for the season",
         "driver-role cannot be granted",
         "hub-channel already another job",
+        "hub-channel already this setting",
         "hub-channel lacks permissions",
         "factory-reset without the word",
     ],
