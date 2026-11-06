@@ -9,8 +9,8 @@ calls these methods and the image module implements them
 `bot.image_drawing` and declared on `LeagueBot`, as results declares `AttendanceAfterReview` for
 attendance (architecture.md, "How modules and core fit together").
 
-It holds the four placement capacity questions, the calendar, the lineup and the artwork
-signature. Each capacity question answers a `CapacityProblem` — the problem as a sentence with
+It holds the four placement capacity questions, the calendar, the lineup (of record, and as a
+command's output), the portrait discard and the artwork signature. Each capacity question answers a `CapacityProblem` — the problem as a sentence with
 no final stop, and the image module's own words for what to do about it — or `None` where
 nothing is wrong. Core joins the two into its own refusal, adding what is core's own to say.
 The calendar's `draw_calendar` and the lineup's `draw_lineup` answer a `CalendarPicture` or
@@ -114,8 +114,7 @@ class ImageDrawing(Protocol):
 
     async def draw_lineup_for_command(self, guild: Any, division_id: int) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild*, as a command's own output rather than the
-        lineup of record: not written to the lineup of record, and drawn as it will stand
-        where the caller asks (`/season placements-review` alone). Hands back the picture
+        lineup of record: not written to the lineup of record. Hands back the picture
         drawn, or the problem naming why it could not be — worded for the command's own
         refusal rather than the text fallback's — and the notices it survived, already
         reported to the log channel in one message. A fault reading the division itself (the
@@ -123,8 +122,8 @@ class ImageDrawing(Protocol):
         rather than turned into refusal words."""
 
     def discard_picture(self, path: Path | None) -> None:
-        """Release a path `draw_calendar` or `draw_lineup` handed back, whichever way its
-        posting ended. A path of None is a no-op, covering a picture that was never drawn."""
+        """Release a path `draw_calendar`, `draw_lineup` or `draw_lineup_for_command` handed
+        back, whichever way its posting ended. A path of None is a no-op, covering a picture that was never drawn."""
 
     async def discard_portraits(self, user_ids: Any) -> int:
         """Remove the portraits obtained for *user_ids*, accounts no driver is drawn under any

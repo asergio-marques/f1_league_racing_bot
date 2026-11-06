@@ -272,8 +272,8 @@ async def discard_portraits(
     Returns how many were removed. Two paths want this, both through core's drawing protocol
     (`ImageDrawing.discard_portraits`, `core/services/image_drawing.py`): `/driver reassign`
     discards the portrait of the account a driver has just replaced, everything being drawn
-    under their current account (issues #222 and #243). The driver pass that ends a season
-    discards those of every driver it deletes, past accounts and current alike (issue #235).
+    under their current account. The driver pass that ends a season discards those of every
+    driver it deletes, past accounts and current alike.
     Either account has its picture obtained afresh should it be drawn again, as any driver's is.
 
     Each goes through :func:`remove_portrait`, which leaves a portrait the league placed itself

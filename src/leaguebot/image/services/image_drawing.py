@@ -3,14 +3,15 @@
 `ImageDrawing` implements `leaguebot.core.services.image_drawing.ImageDrawing`: the builder
 makes one, attaches it to the bot as `bot.image_drawing`, and hands it to `PlacementService`, to
 every change that posts a division's calendar, and to the season approval and mid-season
-confirmation; the season fingerprint (`take_fingerprint`) is handed it by its callers, the cogs
-included. So core never imports this module. The capacity questions ask whether the aspect is drawn at
-all, whether the template is valid, and whether it holds that many — answered off the event
+confirmation; the season fingerprint (`take_fingerprint`) is handed it by its callers, and
+`/driver reassign` and `/team lineup` reach it on the bot. So core never imports this module.
+The capacity questions ask whether the aspect is drawn at all, whether the template is valid, and whether it holds that many — answered off the event
 loop, since parsing and measuring a template takes real time. ``calendar_wanted``/
 ``draw_calendar`` and ``lineup_wanted``/``draw_lineup`` answer in the same shape: the two gates,
 the asset directories resolved absolutely, the file named, the render, and the notices reported
 to the log channel in one message. ``artwork_signature`` answers what the league's artwork
-looks like now, for the fingerprint to digest.
+looks like now, for the fingerprint to digest. ``draw_lineup_for_command`` draws a lineup as a
+command's output, and ``discard_portraits`` removes the portraits of accounts no longer drawn.
 """
 from __future__ import annotations
 
