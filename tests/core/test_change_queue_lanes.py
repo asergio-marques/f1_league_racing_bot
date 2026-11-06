@@ -65,9 +65,10 @@ def _api() -> SimpleNamespace:
 
 
 def _type(kind: str = "dummy", *, steps, lane=None, check=None, key=None,
-          repeatable: bool = False) -> Any:
+          repeatable: bool = False, overtakes: bool = False) -> Any:
     """A change type running *steps* in order; on *lane* where given (a callable of the
-    payload), else on the league lane by default. Its key is the kind and payload, or *key*."""
+    payload), else on the league lane by default. Its key is the kind and payload, or *key*.
+    With *overtakes*, it runs past its lane's stopped head, as the four /bot repair settings do."""
     api = _api()
 
     async def _go(_ctx):
@@ -83,6 +84,7 @@ def _type(kind: str = "dummy", *, steps, lane=None, check=None, key=None,
         doing=lambda _payload: DOING,
         outcome=lambda _ctx: "✅ Done.",
         repeatable=repeatable,
+        overtakes_a_stop=overtakes,
         **lanes,
     )
 
@@ -498,6 +500,94 @@ async def test_a_lane_s_retry_falls_due_on_its_own_schedule(env):
     assert [turn["tries"], league["tries"]] == [2, 2]
     assert datetime.fromisoformat(turn["next_try_at"]) == NOW + timedelta(minutes=5)
     assert datetime.fromisoformat(league["next_try_at"]) == NOW + timedelta(minutes=5, seconds=30)
+
+
+# ---------------------------------------------------------------------------
+# L4b: a change that overtakes a stop runs past a stopped head, and past nothing else
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("ahead", ["queued", "running"])
+async def test_an_overtaking_change_waits_behind_a_league_change_that_has_not_stopped(env, ahead):
+    """A league change of two jobs is asked, and has not stopped: it is still waiting to run, or
+    it has run its first job and has its second left. A change that overtakes a stop, as a /bot
+    repair setting does, is asked behind it. Nothing has stopped, so it overtakes nothing: the
+    league change runs to its end first, and only then the overtaking change."""
+    ran: list[str] = []
+    _queue(env, _type("dummy", steps=[_act("o1", ran), _act("o2", ran)]),
+           _type("repair", steps=[_act("r", ran)], overtakes=True))
+    await _ask(env, "dummy")
+    if ahead == "running":
+        await run_queue(env.bot, steps=1)
+        assert ran == ["o1"]
+
+    await _ask(env, "repair")
+    await run_queue(env.bot)
+
+    assert ran == ["o1", "o2", "r"]
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+@pytest.mark.parametrize("cleared_by", ["retry", "schedule"])
+async def test_an_ordinary_change_behind_a_stop_still_waits_once_an_overtaking_change_has_run(
+    env, cleared_by
+):
+    """A league change stops at a job Discord refuses. An ordinary league change is asked behind
+    it, then a change that overtakes a stop. The overtaking change runs and finishes past the
+    stop; the ordinary change is still waiting and the stopped job still stopped. Only once the
+    stopped job goes through, on Retry or on its own schedule, does the ordinary change run."""
+    ran: list[str] = []
+    holder = {"fail": True}
+    _queue(env, _type("stuck", steps=[_flaky("h", holder, ran)]),
+           _type("dummy", steps=[_act("o", ran)]),
+           _type("repair", steps=[_act("r", ran)], overtakes=True))
+    await _ask(env, "stuck")
+    await run_queue(env.bot)
+    await _ask(env, "dummy")
+    await _ask(env, "repair")
+    await run_queue(env.bot)
+
+    assert ran == ["r"]
+    assert await _states(env) == ["RUNNING", "QUEUED", "DONE"]
+    assert (await stopped_job(env.db_path))["name"] == "h"
+
+    holder["fail"] = False
+    if cleared_by == "retry":
+        await retry_job(env.bot)
+    else:
+        env.clock.advance(minutes=1)
+        await run_queue(env.bot)
+
+    assert ran == ["r", "h", "o"]
+    assert await _states(env) == ["DONE", "DONE", "DONE"]
+
+
+@pytest.mark.parametrize("head_due_by", ["retry", "schedule"])
+async def test_a_running_overtake_finishes_before_its_stopped_head_is_tried_again(env, head_due_by):
+    """A league change stops at a job Discord refuses. A change of two jobs that overtakes a stop
+    is asked, and runs its first job past the stop. Between its two jobs the stopped job falls due
+    again, by Retry pressed on its notice or by its own schedule. The overtaking change runs its
+    second job first, and only then is the stopped job tried again: the two changes' jobs are
+    never interleaved."""
+    ran: list[str] = []
+    holder = {"fail": True}
+    _queue(env, _type("stuck", steps=[_flaky("h", holder, ran)]),
+           _type("repair", steps=[_act("r1", ran), _act("r2", ran)], overtakes=True))
+    await _ask(env, "stuck")
+    await run_queue(env.bot)
+    await _ask(env, "repair")
+    await run_queue(env.bot, steps=1)
+    assert ran == ["r1"]
+
+    holder["fail"] = False
+    if head_due_by == "retry":
+        await retry_job(env.bot, run=False)
+    else:
+        env.clock.advance(minutes=1)
+    await run_queue(env.bot)
+
+    assert ran == ["r1", "r2", "h"]
+    assert await _states(env) == ["DONE", "DONE"]
 
 
 # ---------------------------------------------------------------------------
