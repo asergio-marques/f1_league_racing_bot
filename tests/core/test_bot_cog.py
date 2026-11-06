@@ -1910,12 +1910,15 @@ async def _init(cog, interaction):
 
 async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str, str]:
     """Set up the refusal *case* and run it: the bot, the interaction, the command as the log
-    names it, and a phrase of today's reply: for a channel setting's refusal, the whole of it."""
+    names it, and a phrase of today's reply: for a setting's refusal, the whole of it."""
     db_path = await _make_db(tmp_path)
     # Every case but these runs on the league's configured server.
     if not (case.endswith("before init") or case == "init lost race to the same server"):
         await _seed_config(db_path)
-    if case.startswith(("log-channel", "interaction-channel")):
+    queued = case.startswith(("log-channel", "interaction-channel")) or case in (
+        "base-role fixed for the season", "driver-role cannot be granted",
+    )
+    if queued:
         # A setting asks the change queue, whose check refuses at the ask: the bot the entry
         # point builds, its log channel's lines read where every refusal records one.
         bot = await _queued_bot(db_path)
@@ -1929,6 +1932,13 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
         "driver": "bot driver-role", "hub": "bot hub-channel", "factory": "bot factory-reset",
     }[case.split("-")[0].split(" ")[0]]
     interaction = _refusable(bot, _owner_interaction(), command)
+    if queued:
+        # The league's server, found by the bot and the interaction alike, finds the role a
+        # league role case sets, 903.
+        role = _grantable_role(managed=case == "driver-role cannot be granted")
+        interaction.guild.id = SERVER_ID
+        interaction.guild.get_role = MagicMock(side_effect={role.id: role}.get)
+        bot.get_guild = MagicMock(return_value=interaction.guild)
 
     if case == "init already configured":
         await _init(cog, interaction)
@@ -1963,11 +1973,19 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
         )
     if case == "base-role fixed for the season":
         await _seed_ongoing_season(db_path)
-        await _unwrap(cog.handle_base_role)(cog, interaction, _grantable_role())
-        return bot, interaction, command, "fixed for Season 3"
+        await _unwrap(cog.handle_base_role)(cog, interaction, role)
+        return bot, interaction, command, (
+            "❌ The league's roles are fixed for Season 3 now that its configuration has been "
+            "confirmed. `/bot base-role` is available again once the season has ended, or while "
+            "a new season is in configuration — or at once, should the role be deleted from the "
+            "server."
+        )
     if case == "driver-role cannot be granted":
-        await _unwrap(cog.handle_driver_role)(cog, interaction, _grantable_role(managed=True))
-        return bot, interaction, command, "❌"
+        await _unwrap(cog.handle_driver_role)(cog, interaction, role)
+        return bot, interaction, command, (
+            "❌ <@&903> is managed by an integration — a bot, a subscription or a linked role — "
+            "so Discord will not let me grant it. Choose a role of the drivers' own."
+        )
     if case == "hub-channel already another job":
         await _unwrap(cog.handle_hub_channel)(cog, interaction, _unconfigured_channel(CONFIGURED_LOG))
         return bot, interaction, command, "log channel"
