@@ -229,23 +229,30 @@ async def test_a_round_past_the_calendar_is_refused_in_core_s_words(tmp_path, fo
     pytest.param(("Short", "Long"), "Long", id="longest sorts first"),
 ])
 @pytest.mark.xfail(strict=True, reason=NOT_YET)
-async def test_the_calendar_warning_asks_of_the_division_holding_the_most_rounds(
+async def test_the_calendar_and_the_sheet_ask_of_the_division_holding_the_most_rounds(
     tmp_path, names, longest
 ):
-    """Which division is drawn is decided later, so the review asks of the longest calendar
-    alone: the second division made, with twenty-five rounds against the first's ten, whether
-    its name sorts after the other's or before it. The answer is a warning, never a refusal."""
+    """Which division is drawn is decided later, so the review asks the calendar and the
+    attendance sheet of the longest calendar alone: the second division made, with twenty-five
+    rounds against the first's ten, whether its name sorts after the other's or before it. Each
+    answer is a warning, never a refusal."""
     from leaguebot.core.services.image_drawing import Held
 
     shorter, _ = names
-    drawing = _Drawing({"calendar_review_problem": _problem()})
+    drawing = _Drawing({
+        "calendar_review_problem": _problem(), "sheet_review_problem": _problem(),
+    })
     cog = _cog(
         await _seed(tmp_path, [(shorter, 1, ["NORMAL"] * 10, []), (longest, 2, ["NORMAL"] * 25, [])]),
         drawing,
     )
 
     assert await cog._calendar_capacity_warning(SEASON_ID) == [WARNING, ""]
-    assert drawing.asked == [("calendar_review_problem", Held(longest, 25))]
+    assert await cog._attendance_capacity_warning(SEASON_ID) == [WARNING, ""]
+    assert drawing.asked[:2] == [
+        ("calendar_review_problem", Held(longest, 25)),
+        ("sheet_review_problem", Held(longest, 25)),
+    ]
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_YET)
