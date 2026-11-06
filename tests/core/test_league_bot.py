@@ -140,11 +140,12 @@ def test_the_season_s_end_is_registered():
 
 
 #: The settings commands of results, weather and images as the builder registers them (#439,
-#: slice 7), and core's four `/bot` settings (#283, S13a): one change type per setting, every one
-#: built by `setting_change`.
+#: slice 7), and core's six `/bot` settings (#283): one change type per setting,
+#: every one built by `setting_change`.
 SETTING_KINDS = (
     *(f"core.setting.{name}" for name in (
         "log_channel", "interaction_channel", "interaction_role", "admin_role",
+        "base_role_id", "driver_role_id",
     )),
     "weather.setting.deadline",
     *(f"results.setting.{name}" for name in (
@@ -161,8 +162,8 @@ SETTING_KINDS = (
 
 
 def test_the_settings_changes_are_registered():
-    """The builder registers the twenty-eight settings changes of core, results, weather and
-    images, once each, and no other kind carrying ".setting." (#439, slice 7; #283, S13a): the
+    """The builder registers the thirty settings changes of core, results, weather and images,
+    once each, and no other kind carrying ".setting." (#439, slice 7; #283): the
     attendance settings stay off the queue until attendance's design pass."""
     from leaguebot.__main__ import register_change_types
 
@@ -172,7 +173,7 @@ def test_the_settings_changes_are_registered():
     kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
     settings = sorted(kind for kind in kinds if ".setting." in kind)
     assert settings == sorted(SETTING_KINDS)
-    assert len(SETTING_KINDS) == 28
+    assert len(SETTING_KINDS) == 30
 
 
 @pytest.mark.parametrize(
