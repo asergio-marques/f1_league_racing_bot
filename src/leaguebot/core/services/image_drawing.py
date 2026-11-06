@@ -116,6 +116,11 @@ class ImageDrawing(Protocol):
         """Release a path `draw_calendar` or `draw_lineup` handed back, whichever way its
         posting ended. A path of None is a no-op, covering a picture that was never drawn."""
 
+    async def discard_portraits(self, user_ids: Any) -> int:
+        """Remove the portraits obtained for *user_ids*, accounts no driver is drawn under any
+        longer: one `/driver reassign` has just replaced, or several a season's driver pass has
+        deleted. Hands back how many were removed. Never raises."""
+
     async def artwork_signature(self) -> list:
         """What the league's artwork looks like now: every configured template file, then every
         configured asset folder, each by name, size and modification time, never by content. A

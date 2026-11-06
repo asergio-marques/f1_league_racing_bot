@@ -403,7 +403,9 @@ def _sign_up_to_season_end(bot: LeagueBot) -> None:
     bot.test_mode_flushed = AwaitedHook()
     bot.test_mode_flushed.subscribe(partial(forecast_cleanup_service.forecast_deletes, bot.db_path))
     bot.drivers_deleted = AwaitedHook()
-    bot.drivers_deleted.subscribe(partial(driver_portrait_service.discard_portraits, bot))
+    bot.drivers_deleted.subscribe(
+        partial(driver_portrait_service.discard_portraits, bot.db_path, bot.image_config_service)
+    )
 
 
 async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "Path":

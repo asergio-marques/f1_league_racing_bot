@@ -205,10 +205,9 @@ class DriverCog(commands.Cog):
         await interaction.followup.send(reply, ephemeral=True)
         # After the reply, so that reading the image configuration and touching the league's
         # directory can never eat into Discord's three seconds. The replaced account is drawn
-        # by nothing now, so the portrait obtained for it goes (issue #222).
-        from leaguebot.image.services.driver_portrait_service import discard_portraits
-
-        await discard_portraits(self.bot, [replaced])
+        # by nothing now, so the portrait obtained for it goes (issue #222), asked of the image
+        # module through the drawing the builder hands the bot rather than imported directly.
+        await self.bot.image_drawing.discard_portraits([replaced])
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reassign | Success\n"
             f"  replaced: <@{replaced}>\n"

@@ -359,6 +359,13 @@ class ImageDrawing:
         """Release a drawn calendar's or lineup's file, whichever way its posting ended."""
         discard_render(path)
 
+    async def discard_portraits(self, user_ids: Any) -> int:
+        """Remove the portraits obtained for *user_ids*, through
+        `driver_portrait_service.discard_portraits`."""
+        from leaguebot.image.services.driver_portrait_service import discard_portraits
+
+        return await discard_portraits(self._db_path, self._config, user_ids)
+
     async def artwork_signature(self) -> list:
         """What the league's artwork looks like now, for the season fingerprint's "artwork" area
         (core/services/image_drawing.py).

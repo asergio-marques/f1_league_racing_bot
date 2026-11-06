@@ -287,7 +287,6 @@ async def test_a_refused_reassignment_is_reported_not_raised(tmp_path):
 # never raises, is the image module's, tested under `tests/image/test_driver_portrait_service.py`.
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /driver reassign discards the portrait through the image module, not the drawing it is handed")
 async def test_reassign_removes_the_portrait_of_the_account_left_behind():
     """Account 4242 is replaced by the new account 2 in a season whose drivers are being placed.
     The command asks the image module's drawing to discard 4242's portrait, once and for 4242
