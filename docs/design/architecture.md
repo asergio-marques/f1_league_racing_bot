@@ -453,10 +453,10 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   a member's `/bot init` starts (`ChangeType.on_check_fault`): no league admin role is set while no
   server holds the league, before a first `/bot init` or after a pack, so nobody could clear a stop
   on it if it held the lane (`core/services/bot_init_change.py`). A fault in its save writes no
-  line, its claim rolled back with it, and the host's log holds it alone; a fault in its check
-  writes the failure line where a server holds the league, and while none does there is no log
-  channel to take it and the host's log holds it alone. *Rejected:* stopping the lane on a fault in
-  `/bot init`, as any other job does, which would leave a stop nobody yet holds the role to clear.
+  line, its claim rolled back with it; a fault in its check writes the failure line where a server
+  holds the league. While none does, there is no log channel, and the host's log holds either
+  alone. *Rejected:* stopping the lane on a fault in `/bot init`, as any other job does, which
+  would leave a stop nobody yet holds the role to clear.
 
   The same holds for a member's roles moved after their driver's or their team's change. A `/driver`
   or `/team` change saves the driver's or the team's rows and their audit record in one step, and
@@ -682,11 +682,11 @@ mark, its audit records, its log lines and the changes it asks for), so the mark
 follow-on pass, and an empty `writes` allows those alone. A write the authoriser refuses raises in
 the step, rolls its save back whole and stops the lane at that job, so it never lands; in a
 league's setting, `/bot init`'s save or a role move, whose steps end on a fault (see "A job that
-fails stops its lane"), it ends the job instead and the lane goes on. A change type whose `writes` is `None`, the default,
-is not restricted; most league change types leave it so, and a league change type may declare the
-tables it writes and be confined to them likewise, as replacing a round's results with its
-resubmission drafts does. What a conversation hands the league, it asks of the league lane (see "How
-a change is carried out").
+fails stops its lane"), it ends the job instead and the lane goes on. A change type whose `writes`
+is `None`, the default, is not restricted; most league change types leave it so, and a league
+change type may declare the tables it writes and be confined to them likewise, as replacing a
+round's results with its resubmission drafts does. What a conversation hands the league, it asks
+of the league lane (see "How a change is carried out").
 
 *Rejected:* trusting each step to keep to its tables, which a lane's own tests would never catch
 once the flows are many; and a separate connection for each lane, which SQLite would not make a

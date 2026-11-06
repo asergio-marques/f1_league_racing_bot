@@ -107,23 +107,23 @@ on its own. A request made while the queue is stopped is queued at the back and 
 queue is stopped.
 
 **A job that ends on a fault does not stop it** (`Step.on_fault`, `ChangeType.on_check_fault`). A
-settings change, or `/bot init`'s claim, is one atomic save, and the work after it that the setting does not need (checking
-it against the templates, arming or removing a timed job) is work nothing later depends on: a fault
-leaves nothing half-done, nothing behind it waits on it, and the member can simply ask again. Where
-a step sets `on_fault`, `_step_failed` marks the job done with the result `on_fault` returns, in a
-save of its own, its lines written and delivered, and the change carries on to its next step or
-finishes, its outcome reading the failed step's result; there is no stop notice, no Retry or
-Discard and no try schedule, and the traceback still goes to the host's log. A save that faults has
-been rolled back whole before that, so nothing but the mark and `on_fault`'s lines is written.
-*Rejected:* a step that catches its own fault, which would leave its partial writes on the save's
-connection and could not catch what fails after it returns, the queue's own audit and line writes
-and the commit. A check that raises as a **member's** change starts, where its type sets
-`on_check_fault`, ends the change as REFUSED in one save with the failure line (`failure_line`, a
-`❌ … failed` line, never a refusal's) and the acknowledgement updated with the reply the hook
-returns, and the lane goes on. A bot's change whose check raises still stops its lane, and every
-other step and type keeps the rule above. A step that ends on a fault cannot be `undiscardable`,
-since it never stops a lane to be discarded: `register` refuses one that is both. Pinned by the
-tests under "A job that ends on a fault".
+settings change, or `/bot init`'s claim, is one atomic save, and the work after it that the setting
+does not need (checking it against the templates, arming or removing a timed job) is work nothing
+later depends on: a fault leaves nothing half-done, nothing behind it waits on it, and the member
+can simply ask again. Where a step sets `on_fault`, `_step_failed` marks the job done with the
+result `on_fault` returns, in a save of its own, its lines written and delivered, and the change
+carries on to its next step or finishes, its outcome reading the failed step's result; there is no
+stop notice, no Retry or Discard and no try schedule, and the traceback still goes to the host's
+log. A save that faults has been rolled back whole before that, so nothing but the mark and
+`on_fault`'s lines is written. *Rejected:* a step that catches its own fault, which would leave its
+partial writes on the save's connection and could not catch what fails after it returns, the queue's
+own audit and line writes and the commit. A check that raises as a **member's** change starts, where
+its type sets `on_check_fault`, ends the change as REFUSED in one save with the failure line
+(`failure_line`, a `❌ … failed` line, never a refusal's) and the acknowledgement updated with the
+reply the hook returns, and the lane goes on. A bot's change whose check raises still stops its
+lane, and every other step and type keeps the rule above. A step that ends on a fault cannot be
+`undiscardable`, since it never stops a lane to be discarded: `register` refuses one that is both.
+Pinned by the tests under "A job that ends on a fault".
 
 **A stop is cleared in three ways:** a try that goes through (the bot's own, or Retry), which
 writes one line saying so, or finds the job no longer due, or the change's request refused at its
