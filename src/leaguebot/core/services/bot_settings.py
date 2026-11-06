@@ -11,18 +11,19 @@ other three settings — can be carried over stale from a half-built model.
 **Each overtakes a stop on the league lane, instead of waiting behind it**
 (`Setting.repairs_the_bot`, read by `setting_change`): these are a league's way back in when one
 of the four is wrong or gone, so a stop on an unrelated job cannot hold one up. The lane still
-runs one change at a time — an overtaking change runs alone, never beside the job it overtakes —
-so nothing else writes `server_configs` while one of these four does.
+runs one change at a time — the queue runs an overtaking change to its own end before its
+lane's stopped head is tried again, never beside it — so nothing else writes `server_configs`
+while one of these four does.
 
 **The two channels refuse a collision at the ask; the two roles judge "already held" in the save
 alone.** A channel already doing another job is refused outright, and one already holding this
 very setting is refused too, "Nothing was changed" — re-running the command is not a collision
 with something else. Nothing runs beside the save to land a second writer between the check and
-it, so the check made at the ask stands. A role given the one it already holds is not a collision
-at all, so it is answered "Nothing changed" by `setting_change`'s own rule for a value already
-held, once the change has run: no refusal, no write, no audit entry, and the hub's permissions
-are not set again, a role re-set to itself changing nothing and so leaving nothing to follow from
-it.
+it, so the check made as the change starts stands. A role given the one it already holds is not a
+collision at all, so it is answered "Nothing changed" by `setting_change`'s own rule for a value
+already held, once the change has run: no refusal, no write, no audit entry, and the hub's
+permissions are not set again, a role re-set to itself changing nothing and so leaving nothing to
+follow from it.
 
 **A role setting sets the hub's permissions again as its own follow-on**
 (`hub_service.hub_refresh_after` does not fit here: it asks the hub's *panel* to be refreshed,

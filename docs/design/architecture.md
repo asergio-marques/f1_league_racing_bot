@@ -469,10 +469,14 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   every other pair of changes on a lane. *Rejected:* a lane of the four settings' own, beside the
   league's — it would let two lanes write the league's configuration at once, each save
   re-judging the other's collisions, for no gain once overtaking a stop does the same job on the
-  one lane. Because an overtaking change never runs beside another
-  write to `server_configs` — the lane runs one change at a time regardless of which change that
-  is — a channel setting's check at the ask is still the save's last judgement of the state, and
-  the save re-checks nothing (`bot_settings.py`'s own docstring says so).
+  one lane. A channel setting's save re-checks nothing even though an overtaking change runs ahead
+  of its stopped head's remaining jobs: every write to `server_configs` is a `Setting`, and a
+  `Setting` never stops a lane, ending on a fault instead (`setting_change.py`'s own docstring says
+  so) — so no stoppable job is ever still waiting to write a channel behind the head that an
+  overtaker runs past. A channel setting's check as the change starts is therefore still the
+  save's last judgement of the state. That constraint is the one a later reader could tune away:
+  a non-setting change that both stops its lane and writes a channel would need the save to
+  re-check, or would need to be barred from overtaking.
 
   Nothing else overtakes the stopped job, so whatever runs outside the queue leaves alone what a
   change is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core

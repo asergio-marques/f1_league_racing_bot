@@ -13,11 +13,12 @@ change waiting ahead may set the value or move it away. A request for a value al
 acknowledged and then answered "Nothing changed", with a line saying so and no audit entry; it is
 never refused.
 
-**The check at the start is the last judgement of the state against queued writers.** Settings are
-written only on the league lane, one change at a time, and conversation lanes may not write these
-tables. Nothing else runs beside it: a setting that overtakes a stop (below) still runs alone,
-never beside the job it overtakes, so no second writer can land between a check and its save. The
-save judges only held or not.
+**The check as the change starts is the last judgement of the state against queued writers.**
+Settings are written only on the league lane, one change at a time, and conversation lanes may not
+write these tables. No other setting ever runs beside it: an overtaking setting (below) runs ahead
+of its lane's stopped head, never beside it, and the queue keeps that overtaking change running to
+the end before the head is tried again, so no second writer can land between a check and its save.
+The save judges only held or not.
 
 **A setting that repairs the bot's own way in overtakes a stop on the league lane.**
 `Setting.repairs_the_bot` is read once, here, to set the change type's `overtakes_a_stop` — never a
@@ -26,10 +27,10 @@ interaction role and the league admin role: the core specification calls these o
 way back in when one is wrong or gone, and a league locked out by a stopped job on the league lane
 would have no way to clear it. The queue (`_heads`, `_choose`) lets such a change run ahead of its
 lane's stopped head, which stays stopped, while every ordinary change still waits behind it: the
-lane still runs one change at a time, in the order asked, no two jobs interleaved — a repair simply
-jumps the queue behind a stop, never beside it. *Rejected:* a lane of the four settings' own,
-beside the league's, which would let two lanes write the league's configuration at once, each
-save re-judging the other's.
+lane still runs one change at a time, never two of its jobs interleaved — a repair simply jumps the
+queue behind a stop, runs to its own end, and only then is the stopped head tried again.
+*Rejected:* a lane of the four settings' own, beside the league's, which would let two lanes write
+the league's configuration at once, each save re-judging the other's.
 
 **The line is formed here and nowhere else:** `{member} | {command} | {outcome}`, the values
 beneath it, saved in the same save as the value and its audit entry. A save is handed only the
