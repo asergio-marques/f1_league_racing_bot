@@ -240,7 +240,8 @@ module offers the others is public, and its docstring says what it promises.
 
 **Every change goes through one queue.** Every change to the bot's data is put on one queue, one
 durable list of jobs, and carried out in order within its lane, save the one overtake (below),
-whoever or whatever asks for it: a person (a command, a button, a form, a typed answer), a timer, a Discord event (a member
+whoever or whatever asks for it: a person (a command, a button, a form, a typed answer), a timer, a
+Discord event (a member
 leaving), or a handler or start step the start-up sweep calls. Commands that only read do not use it. Carrying out changes on the spot is what left
 data half-changed when two presses overlapped, the bot stopped part-way or a step failed, and what
 let a success be reported over a change only half done.
@@ -458,7 +459,8 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   list of kinds kept by the queue). Where a lane's head is stopped and not yet due for a try, and a
   queued change behind it is of such a kind, `_heads` and `_choose` take that change instead: the
   lane still works one change at a time, and the choice is still deterministic, but a repair jumps
-  the queue behind a stop rather than wait with everything else — the stopped head itself stays stopped, and every
+  the queue behind a stop rather than wait with everything else — the stopped head itself stays
+  stopped, and every
   ordinary change still waits its turn behind it. Every other setting, the module switches and
   `/bot base-role`, `driver-role` and `hub-channel` among them, keeps the plain rule, one change at
   a time in the order asked.
@@ -466,7 +468,8 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   An overtaking change and its lane's stopped head are both RUNNING at once, which the schema's
   one-RUNNING-per-lane rule (`queued_changes_one_running`) would otherwise refuse: `queued_changes`
   marks every change of such a kind `overtook_a_stop` as it starts, and the index excludes it, so
-  the rule still holds between every other pair of changes on a lane. *Rejected:* a lane of the four settings' own, beside the
+  the rule still holds between every other pair of changes on a lane. *Rejected:* a lane of the
+  four settings' own, beside the
   league's — it would let two lanes write the league's configuration at once, each save
   re-judging the other's collisions, for no gain once overtaking a stop does the same job on the
   one lane. A channel setting's save re-checks nothing even though an overtaking change runs ahead
