@@ -187,9 +187,9 @@ imports no other module. Every other module may call the image module without an
 table. Core reaches it through a protocol it declares, which the image module implements and the
 builder hands in, as results reaches attendance (below). Core's own graphics (the calendar, the
 lineup) are asked for through it, with the capacity guards, the artwork signature and the checks
-that a calendar or a lineup is wanted, and the season review's image section is asked for through
-it too, with the faults that refuse an approval (the rasteriser, the templates, the per-tier
-colours, the portrait settings), rather than drawn or read by importing the module. That is not the
+that a calendar or a lineup is wanted, and both season reviews' image section is asked for through
+it too, with the faults that refuse a confirmation or an approval (the rasteriser, the templates,
+the per-tier colours, the portrait settings), rather than drawn or read by importing the module. That is not the
 rejected object of named operations above: a hook is a moment several modules take part in, and
 this is a question one module answers. Where a module must let one that depends on it act (results
 after a round, for attendance), it does so through what the builder hands it, never by importing
@@ -1093,10 +1093,11 @@ to it would switch off the one failure path for every command.
    lets the round or the season through as if no problem were found, because a capacity check
    that cannot run must not block a round or a season (its docstring says so); the season cog's
    reading of the image module's configuration faults (`SeasonCog._image_configuration_faults`)
-   is a stated exception too: a fault reading the templates is a fault of their own and is let
-   through to refuse the season, while a fault reading the per-tier colours or the portrait
-   settings stands aside instead, because a reader that cannot answer must not be the thing that
-   refuses a season (its docstring says so); the season cog's own image review section
+   is a stated exception too: each of its catch-alls puts the error in the host's log; a fault
+   reading the templates is stated as a fault of its own, which refuses the season, because a
+   check that never ran is not a pass, while a fault reading the per-tier colours or the portrait
+   settings stands aside and lets the season through, because a reader that cannot answer must
+   not be the thing that refuses a season (its docstring says so); the season cog's own image review section
    (`SeasonCog._build_image_review_section`) is a stated exception beside it: its catch-all puts
    the error in the host's log and states the section as unreadable in the review, because a
    review must never fail for this (its docstring says so); and the image module's artwork
