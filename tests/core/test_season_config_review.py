@@ -806,69 +806,105 @@ async def test_the_followup_is_restored_after_the_report(monkeypatch):
 # ── The image module's checks ──────────────────────────────────────────────────────
 
 
-def _image_cog(*, converter=True, reports=None, reports_raise=False, colours=(), portrait=None):
-    import leaguebot.image.services.image_render_service as render
-    import leaguebot.image.services.image_validity_service as validity
+#: Why the image-fault tests fail until the build: the faults are not yet asked of the drawing.
+ASKS_THE_DRAWING = "#283: the image configuration's faults are not yet asked of the image module's drawing"
 
+_RASTERISER = "Inkscape is not installed on this host."
+_PORTRAIT = "Driver portraits are fetched from a folder that does not exist."
+
+
+def _image_cog(
+    *, rasteriser=None, templates=(), colours=(), portrait=None, unreadable=(),
+):
+    """A cog whose drawing answers the image configuration's four questions as given; each
+    question named in *unreadable* raises instead, as a check that cannot be read does."""
     bot = _bot(images=True)
-    if reports_raise:
-        bot.image_validity_service.template_reports = AsyncMock(side_effect=OSError("gone"))
-    else:
-        bot.image_validity_service.template_reports = AsyncMock(return_value=reports or {})
-    bot.image_config_service.get_toggles = AsyncMock(return_value={})
-    cog = _cog(bot)
-    cog._colour_shortfall_problems = AsyncMock(return_value=list(colours))
-    cog._portrait_configuration_blocker = AsyncMock(return_value=portrait)
-    patches = [
-        (render, "converter_available", lambda: converter),
-        (validity, "templates_of_enabled_aspects", lambda toggles: {"lineup", "calendar"}),
-        (validity, "plain_reason", lambda report: "it has no driver name field"),
-    ]
-    return cog, patches
+    drawing = MagicMock()
+    drawing.rasteriser_fault = MagicMock(return_value=rasteriser)
+    answers = {
+        "template_faults": list(templates),
+        "colour_shortfall_problems": list(colours),
+        "portrait_fault": portrait,
+    }
+    for name, answer in answers.items():
+        if name in unreadable:
+            setattr(drawing, name, AsyncMock(side_effect=OSError("gone")))
+        else:
+            setattr(drawing, name, AsyncMock(return_value=answer))
+    bot.image_drawing = drawing
+    return _cog(bot)
 
 
-def _apply(monkeypatch, patches):
-    for module, name, value in patches:
-        monkeypatch.setattr(module, name, value)
-
-
-async def test_a_sound_image_configuration_has_no_faults(monkeypatch):
-    cog, patches = _image_cog(reports={"lineup": SimpleNamespace(valid=True)})
-    _apply(monkeypatch, patches)
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
+async def test_a_sound_image_configuration_has_no_faults():
+    cog = _image_cog()
 
     assert await cog._image_configuration_faults() == []
+    cog.bot.image_drawing.template_faults.assert_awaited_once_with()
 
 
-async def test_every_image_fault_that_needs_no_division_is_named(monkeypatch):
-    cog, patches = _image_cog(
-        converter=False,
-        reports={
-            "lineup": SimpleNamespace(valid=False),
-            # A broken template no switched-on output draws stops nothing.
-            "verdict": SimpleNamespace(valid=False),
-        },
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
+async def test_every_image_fault_that_needs_no_division_is_named():
+    """The drawing program, a broken template a switched-on output draws, a per-tier colour and
+    the portrait settings, each in the image module's words, in that order; core adds the
+    colour's own label. Which templates are drawn is the image module's to say
+    (`tests/image/test_image_drawing_review.py`)."""
+    cog = _image_cog(
+        rasteriser=_RASTERISER,
+        templates=["Template **Lineup**: it has no driver name field."],
         colours=["tier 2 has no colour for slot accent"],
-        portrait="Driver portraits are fetched from a folder that does not exist.",
+        portrait=_PORTRAIT,
     )
-    _apply(monkeypatch, patches)
+
+    assert await cog._image_configuration_faults() == [
+        _RASTERISER,
+        "Template **Lineup**: it has no driver name field.",
+        "Tier colour: tier 2 has no colour for slot accent",
+        _PORTRAIT,
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
+async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass():
+    cog = _image_cog(
+        rasteriser=_RASTERISER,
+        colours=["tier 2 has no colour for slot accent"],
+        portrait=_PORTRAIT,
+        unreadable=("template_faults",),
+    )
 
     faults = await cog._image_configuration_faults()
 
-    assert faults[0].endswith("is not installed on this host.")
-    assert any("it has no driver name field" in f for f in faults)
-    assert not any("erdict" in f for f in faults)
-    assert "Tier colour: tier 2 has no colour for slot accent" in faults
-    assert faults[-1] == "Driver portraits are fetched from a folder that does not exist."
+    assert faults == [_RASTERISER, "The image templates could not be read."]
 
 
-async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass(monkeypatch):
-    cog, patches = _image_cog(converter=False, reports_raise=True)
-    _apply(monkeypatch, patches)
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_DRAWING)
+@pytest.mark.parametrize(
+    ("unreadable", "kept"),
+    [
+        pytest.param(
+            "colour_shortfall_problems", [_RASTERISER, _PORTRAIT], id="colours",
+        ),
+        pytest.param(
+            "portrait_fault",
+            [_RASTERISER, "Tier colour: tier 2 has no colour for slot accent"],
+            id="portraits",
+        ),
+    ],
+)
+async def test_an_unreadable_colour_or_portrait_check_stands_aside(unreadable, kept):
+    """A per-tier colour check, or a portrait settings check, that cannot be read never refuses
+    a season: it is dropped, and every other fault is still named. Takes the place of
+    `test_per_tier_colour_validation.py::test_a_reader_fault_never_refuses_a_season` and
+    `test_season_review_images.py::test_the_blocker_never_blocks_a_season_it_could_not_read`."""
+    cog = _image_cog(
+        rasteriser=_RASTERISER,
+        colours=["tier 2 has no colour for slot accent"],
+        portrait=_PORTRAIT,
+        unreadable=(unreadable,),
+    )
 
-    faults = await cog._image_configuration_faults()
-
-    assert faults[-1] == "The image templates could not be read."
-    assert len(faults) == 2
+    assert await cog._image_configuration_faults() == kept
 
 
 # ── The button, on a season unchanged since the report, and what comes next ────────

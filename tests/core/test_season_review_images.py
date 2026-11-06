@@ -134,46 +134,52 @@ def test_the_review_and_the_approval_read_the_same_evaluation():
     assert "_image_configuration_faults" in approve
 
 
-# ── The driver portrait settings in the review, and at approval ───────────
+# ── The image section of both reviews ─────────────────────────────────────
+
+#: Why the section's tests fail until the build: the section is not yet asked of the drawing.
+SECTION_ASKS_THE_DRAWING = "#283: the review's image section is not yet asked of the image module's drawing"
 
 
-def _portrait_cog(**config):
-    from unittest.mock import AsyncMock, MagicMock
-    from types import SimpleNamespace
+def _section_cog(section):
+    """A cog whose drawing answers the image section's lines with *section*, or raises it where
+    it is an exception."""
     from leaguebot.core.cogs.season_cog import SeasonCog
 
-    values = {
-        "use_pfp": False,
-        "pfp_prerender": True,
-        "pfp_daily": False,
-        "pfp_daily_time": "03:00",
-    }
-    values.update(config)
     bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    bot.image_config_service.get_config = AsyncMock(
-        return_value=None if values.get("_absent") else SimpleNamespace(**values)
-    )
+    if isinstance(section, Exception):
+        bot.image_drawing.review_section = AsyncMock(side_effect=section)
+    else:
+        bot.image_drawing.review_section = AsyncMock(return_value=list(section))
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot
-    return cog, bot
+    return cog
+
+
+@pytest.mark.xfail(strict=True, reason=SECTION_ASKS_THE_DRAWING)
+async def test_the_image_section_is_the_drawings_lines_beneath_cores_heading():
+    """Both reviews head the image module's section **Image output**, place its lines beneath
+    unchanged, and close it with a blank line. What the lines say is the image module's
+    (`tests/image/test_image_drawing_review.py`)."""
+    cog = _section_cog(["  Templates: 0/0 resolve", "  _No templates were checked._"])
+
+    assert await cog._build_image_review_section() == [
+        "**Image output**",
+        "  Templates: 0/0 resolve",
+        "  _No templates were checked._",
+        "",
+    ]
 
 
 async def test_the_review_section_survives_a_configuration_it_cannot_read():
-    cog, bot = _portrait_cog()
-    bot.image_config_service.get_config.side_effect = RuntimeError("gone")
+    """A review must never fail because of this section: where the image module cannot read its
+    configuration, the section says so and the review goes on."""
+    cog = _section_cog(RuntimeError("gone"))
 
-    lines = await cog._portrait_review_lines()
-
-    # A review must never fail because of this section.
-    assert any("could not be read" in line for line in lines)
-
-
-async def test_the_blocker_never_blocks_a_season_it_could_not_read():
-    cog, bot = _portrait_cog()
-    bot.image_config_service.get_config.side_effect = RuntimeError("gone")
-
-    assert await cog._portrait_configuration_blocker() is None
+    assert await cog._build_image_review_section() == [
+        "**Image output**",
+        "  ⚠️ Could not be read.",
+        "",
+    ]
 
 
 def test_the_approval_gate_returns_rather_than_merely_reporting():

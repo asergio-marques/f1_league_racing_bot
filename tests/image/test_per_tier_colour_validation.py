@@ -246,18 +246,6 @@ async def test_the_aspect_toggle_passes_the_shortfall_through(monkeypatch):
 
 # ── The season approval gate ──────────────────────────────────────────────
 
-async def test_a_reader_fault_never_refuses_a_season():
-    """The rule of `_team_name_problems`: a check that cannot answer must not block."""
-    from leaguebot.core.cogs.season_cog import SeasonCog
-
-    cog = MagicMock(spec=SeasonCog)
-    cog.bot = MagicMock()
-    cog.bot.image_validity_service.colour_shortfall = AsyncMock(
-        side_effect=RuntimeError("db is gone")
-    )
-    assert await SeasonCog._colour_shortfall_problems(cog) == []
-
-
 def test_approval_is_gated_on_it():
     """The gate must actually be wired into `_do_approve`, not merely available.
 
