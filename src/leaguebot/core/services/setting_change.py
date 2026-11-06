@@ -118,13 +118,22 @@ class Saved:
     then: tuple[PlannedStep, ...] = ()
 
 
+#: The key, in a carrying step's own result, of the outcome word it reports in place of
+#: "Success" — "Success, with faults" where the step has something Discord refused to report
+#: without raising (the hub's permissions, #283): the step still succeeded, so the line is
+#: still written, but not as a plain success.
+RENAMED_OUTCOME = "renamed_outcome"
+
+
 @dataclass(frozen=True)
 class After:
     """A step after the save that the setting does not need: it may fail without holding the lane.
 
     *step* is an `ACT` step; *fault_reply* takes the payload and the reply so far and returns the
     reply that says what was not done; *carries_line* makes the success line wait for the step
-    and be written by it once it succeeds.
+    and be written by it once it succeeds. A carrying step may rename the outcome word itself
+    (`"Success, with faults"`) by putting it under `RENAMED_OUTCOME` in its own result, for a
+    fault it reports rather than raises.
     """
 
     step: Step
@@ -212,6 +221,11 @@ def _after_step(after: After) -> Step:
         )
         if kept is None:
             return result
+        renamed = result.result.get(RENAMED_OUTCOME)
+        if renamed is not None:
+            first, _sep, rest = kept.partition("\n")
+            before, _sep, _old_outcome = first.rpartition(" | ")
+            kept = "\n".join((f"{before} | {renamed}", rest)) if rest else f"{before} | {renamed}"
         return dataclasses.replace(result, lines=("\n".join((kept, *result.lines)),))
 
     return dataclasses.replace(inner, run=run, on_fault=_failed)
@@ -276,6 +290,6 @@ def setting_change(setting: Setting) -> ChangeType:
 
 
 __all__ = [
-    "After", "NOTHING_SAVED", "SAVE", "Saved", "Setting",
+    "After", "NOTHING_SAVED", "RENAMED_OUTCOME", "SAVE", "Saved", "Setting",
     "setting_change",
 ]

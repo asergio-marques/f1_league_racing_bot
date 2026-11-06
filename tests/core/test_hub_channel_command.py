@@ -65,9 +65,6 @@ NAMED = "Manager (`<@77>`)"
 #: What the manager is told once the hub is set, before any fault after the save is added.
 SET = f"✅ **Hub channel** set to <#{HUB}>. Its panel follows on the change queue."
 
-#: Why a step after the save is xfailed until the build.
-NOT_YET = "#283: /bot hub-channel is not yet a core Setting on the change queue"
-
 
 @pytest.fixture(autouse=True)
 def empty_registry(monkeypatch):
@@ -201,7 +198,6 @@ async def test_the_hub_is_set_permissioned_and_given_its_panel(db_path):
     assert "Nothing is offered here yet." in channel.send.await_args.args[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_reply_says_the_hub_was_set_and_its_panel_follows_on_the_queue(db_path):
     """Core spec :135: a change asked of the queue is acknowledged at once, and its reply says
     what it did once it has run, the post following on the queue. The manager points the hub at
@@ -228,7 +224,6 @@ async def test_the_reply_says_the_hub_was_set_and_its_panel_follows_on_the_queue
     assert await _stored(db_path) == {"hub_channel_id": HUB, "hub_message_id": NEW_PANEL}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_change_is_audited_and_logged(db_path):
     """The hub moves from 7921 to 7920. One audit entry names the old hub and the new, the
     manager who ran it, and the queue's clock, never the host's; the log channel takes today's
@@ -248,7 +243,6 @@ async def test_the_change_is_audited_and_logged(db_path):
     assert _lines(cog) == [f"{NAMED} | /bot hub-channel | Success\n  channel: <#{HUB}>"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_hub_and_its_audit_entry_are_one_save_before_any_step_after_it(db_path):
     """The hub is 7921, its panel 7930 standing; the manager points it at 7920, and the queue
     runs the change's first step alone. That one save has written the hub 7920, cleared the old
@@ -272,7 +266,6 @@ async def test_the_hub_and_its_audit_entry_are_one_save_before_any_step_after_it
     assert [row["kind"] for row in await change_rows(db_path)] == ["core.setting.hub_channel_id"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_fault_in_the_save_saves_neither_the_hub_nor_its_audit_entry(
     db_path, monkeypatch
 ):
@@ -314,7 +307,6 @@ async def test_a_fault_in_the_save_saves_neither_the_hub_nor_its_audit_entry(
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_stand_down_the_permissions_and_the_refresh_follow_the_save_as_its_steps(
     db_path,
 ):
@@ -396,7 +388,6 @@ async def test_a_fault_after_the_save_leaves_the_hub_saved_and_is_reported_in_to
     assert _lines(cog) == [_with_faults(*faults)]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_a_step_after_the_save_that_raises_leaves_the_hub_saved_and_records_no_success(
     db_path,
 ):

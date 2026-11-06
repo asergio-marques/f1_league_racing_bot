@@ -40,7 +40,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import LEAGUE_LANE, ChangeOrigin
+from leaguebot.core.models.change import LEAGUE_LANE
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.services import backup_service, factory_reset_service, pack_service
 from leaguebot.core.utils.channel_guard import (
@@ -455,26 +455,16 @@ class BotCog(commands.Cog):
     async def handle_hub_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
-        """Point the hub at *channel*: set who may see it, and post its panel there.
+        """Point the hub at *channel*: ask the change queue for `bot_settings.hub_channel_setting`
+        (#283).
 
-        Moving the hub deletes the panel from the old channel and clears the permissions the
-        bot set on it, as moving the signup channel does. Everything that fails after the
-        write — a permission Discord refuses, a panel it will not post — is reported in the
-        reply and the log rather than undoing the setting: the channel is the right one, and
-        the repair is in Discord's settings.
+        The missing-permission refusal has nothing to do with a value already held, so it is
+        judged here, before the change is even asked for, as a driver role Discord will not
+        let the bot grant is judged before `/bot driver-role` asks for its own. The channel
+        already doing another job, or already the hub, is the setting's own `check`, run as
+        the change starts: the write, the audit entry and the line, and what follows the save,
+        are `setting_change`'s and `bot_settings`'s.
         """
-        from leaguebot.core.services import hub_service
-        from leaguebot.core.services.channel_registry_service import ChannelUse, find_channel_use, refusal
-
-        use = await find_channel_use(self.bot.db_path, channel.id)
-        if use is not None:
-            await refuse(
-                interaction,
-                refusal(channel.mention, use, same_setting=(use == ChannelUse("hub"))),
-                what=describe(interaction),
-            )
-            return
-
         guild = guild_of(interaction)
         perms = channel.permissions_for(guild.me)
         missing = [
@@ -494,59 +484,17 @@ class BotCog(commands.Cog):
             )
             return
 
-        config = await self.bot.config_service.get_server_config()
-        if config is None:
+        if await self.bot.config_service.get_server_config() is None:
             await _refuse_on_host(
                 interaction, "⛔ This server is not configured yet — run `/bot init` first."
             )
             return
-        old_channel_id, old_message_id = config.hub_channel_id, config.hub_message_id
 
-        # Permission edits and a post on two channels outrun Discord's three seconds.
-        await interaction.response.defer(ephemeral=True)
-
-        await self.bot.config_service.set_core_setting("hub_channel_id", channel.id)
-        await self.bot.config_service.set_core_setting("hub_message_id", None)
-
-        faults: list[str] = []
-        moved = old_channel_id is not None and old_channel_id != channel.id
-        if old_channel_id is not None and moved:
-            faults += await _stand_down_old_hub(guild, old_channel_id)
-        fault = await hub_service.apply_hub_permissions(self.bot.config_service, guild, channel)
-        if fault is not None:
-            faults.append(fault)
-        # The panel is posted by the change queue, which stops for a refusal.
         await self.bot.change_queue.ask(
-            hub_service.HUB_REFRESH,
-            {"command": describe(interaction)}
-            | (
-                {"old_channel_id": old_channel_id, "old_message_id": old_message_id}
-                if moved and old_message_id is not None else {}
-            ),
-            actor=interaction.user,
-            what="posting the hub panel",
-            origin=ChangeOrigin.BOT,
+            "core.setting.hub_channel_id",
+            {"value": channel.id, "guild_id": interaction.guild_id},
+            interaction=interaction, what=describe(interaction),
         )
-
-        await _audit(
-            self.bot,
-            interaction.user,
-            "HUB_CHANNEL_SET",
-            {"channel_id": old_channel_id},
-            {"channel_id": channel.id},
-        )
-
-        reply = f"✅ **Hub channel** set to {channel.mention}. Its panel follows on the change queue."
-        if faults:
-            reply += "\n⚠️ " + "\n⚠️ ".join(faults)
-        await interaction.followup.send(reply, ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot hub-channel | "
-            f"{'Success' if not faults else 'Success, with faults'}\n"
-            f"  channel: <#{channel.id}>"
-            + "".join(f"\n  {fault}" for fault in faults),
-        )
-        log.info("%s set the hub channel", interaction.user)
 
     # ------------------------------------------------------------------
     # /bot pack — ready the bot for another server
@@ -792,22 +740,6 @@ async def _audit(bot: LeagueBot, user, change_type: str, old: dict, new: dict) -
             ),
         )
         await db.commit()
-
-
-async def _stand_down_old_hub(guild: discord.Guild, channel_id: int) -> list[str]:
-    """Clear what the bot set on the hub's old channel: its permission overwrites.
-
-    The old panel is not deleted here: the refresh deletes it as a job of its own, once the new one
-    is up. A channel already gone is not a fault: there is nothing left to stand down.
-    """
-    old = guild.get_channel(channel_id)
-    if not isinstance(old, discord.TextChannel):
-        return []
-    try:
-        await old.edit(overwrites={})
-    except discord.HTTPException as exc:
-        return [f"The permissions on the old hub <#{channel_id}> could not be cleared: {exc}"]
-    return []
 
 
 async def _clean_up(guild, bot_user_id: int, targets, report, close) -> None:

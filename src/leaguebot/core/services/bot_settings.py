@@ -37,6 +37,22 @@ follow from it.
 never its permissions). The hub is seen by the interaction role, the league admin role and the
 base role (`hub_service.apply_hub_permissions`), so changing any of the three sets them again
 once the role is saved, from an `After` step the save plans, never from the command.
+
+**`/bot hub-channel` (issue #279, #283) is a `Setting` too, built by `hub_channel_setting`
+below, but not a repair setting: it waits its turn on the league lane like the two roles.** The
+channel-in-use check, the manage-permission check and the already-this-channel refusal are all
+judged once, at the ask, before the change is even asked for — `Setting.check` here repeats only
+the channel-in-use and unconfigured judgements, as the four repair settings' `check` does, since
+a change queued ahead of this one might have claimed the channel for something else since it was
+asked; a collision with the hub's own value cannot arise there; the save never reaches it, since
+`check` would already have refused it. **The old hub's permissions cleared, the new hub's
+permissions set, and the panel's refresh asked, are one `After` step after the save**
+(`_restyle_hub`), which `carries_line`: the two permission edits are each Discord's to refuse
+without raising, so both faults, where either or both happen, sit beneath the save's own line
+in one post, word for word as the four repair settings' hub follow-on already read (owner
+decision 169). A fault of the bot's own — not a refusal of Discord's — makes the step raise, and
+leaves the setting saved with no success line, as any other step after a save does; the panel's
+refresh is asked by a step of its own straight after, so it still follows even then.
 """
 
 from __future__ import annotations
@@ -47,15 +63,22 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.core.models.change import (
+    AuditRecord,
+    FollowOn,
+    PlannedStep,
+    StepKind,
+    StepResult,
+    Verdict,
+)
 from leaguebot.core.services.change_queue import CheckContext, Step, StepContext
 from leaguebot.core.services.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,
 )
-from leaguebot.core.services.hub_service import reapply_hub_permissions
-from leaguebot.core.services.setting_change import After, Saved, Setting
+from leaguebot.core.services.hub_service import HUB_REFRESH, apply_hub_permissions, reapply_hub_permissions
+from leaguebot.core.services.setting_change import After, RENAMED_OUTCOME, Saved, Setting
 
 if TYPE_CHECKING:
     from leaguebot.core.services.config_service import ConfigService
@@ -515,6 +538,165 @@ def driver_role_setting(*, config: "ConfigService", placement: "PlacementService
     return _league_role_setting("driver_role_id", config=config, placement=placement)
 
 
+# ----------------------------------------------------------------------------
+# The hub channel (issue #279, #283) — not a repair setting
+# ----------------------------------------------------------------------------
+
+#: The name of the step, after the hub channel's save, that stands the old hub down, sets the
+#: new one's permissions, and asks for the panel's refresh.
+RESTYLE_HUB = "restyle_hub"
+
+
+def _restyle_hub(config: "ConfigService") -> After:
+    """The `After` step the hub channel's save plans: stand the old hub down, set the new
+    hub's permissions, and ask for the panel's refresh.
+
+    Both permission edits report a Discord refusal rather than raising
+    (`apply_hub_permissions`, and the clearing below), so both faults, where either or both
+    happen, sit beneath the save's own line in one post (`carries_line=True`), word for word
+    as the four repair settings' own hub follow-on (`_reapply_hub`) already reads. A fault of
+    the bot's own makes this step raise instead, caught by `setting_change`'s `on_fault`, which
+    leaves the setting saved with no success line; the refresh is still asked, from the step
+    straight after, which cannot itself fail since it only asks for a change.
+    """
+
+    async def run(ctx: StepContext) -> StepResult:
+        guild = ctx.bot.get_guild(int(ctx.payload["guild_id"]))
+        if guild is None:
+            raise RuntimeError(f"guild {ctx.payload['guild_id']} is gone")
+        channel = guild.get_channel(int(ctx.payload["value"]))
+        if not isinstance(channel, discord.TextChannel):
+            raise RuntimeError(f"channel {ctx.payload['value']} is gone from guild {guild.id}")
+
+        faults: list[str] = []
+        old_channel_id = next(
+            (view.result or {}).get("old_channel_id") for view in ctx.steps
+            if view.name == _SAVE_STEP
+        )
+        if old_channel_id is not None:
+            old = guild.get_channel(old_channel_id)
+            if isinstance(old, discord.TextChannel):
+                try:
+                    await old.edit(overwrites={})
+                except discord.HTTPException as exc:
+                    faults.append(
+                        f"The permissions on the old hub <#{old_channel_id}> could not be "
+                        f"cleared: {exc}"
+                    )
+        fault = await apply_hub_permissions(config, guild, channel)
+        if fault is not None:
+            faults.append(fault)
+        result: dict[str, Any] = {"faults": faults}
+        if faults:
+            result[RENAMED_OUTCOME] = "Success, with faults"
+        return StepResult(
+            result=result,
+            lines=("\n".join(f"  {fault}" for fault in faults),) if faults else (),
+        )
+
+    def fault_reply(_payload: dict[str, Any], reply: str) -> str:
+        return f"{reply}\n{_HUB_NOT_UPDATED}"
+
+    return After(
+        step=Step(RESTYLE_HUB, StepKind.ACT, run), fault_reply=fault_reply, carries_line=True
+    )
+
+
+#: The name of the step, after `RESTYLE_HUB`, that asks the queue for the panel's refresh.
+REFRESH_HUB_PANEL = "refresh_hub_panel"
+
+
+def _ask_hub_refresh(command: str) -> After:
+    """The `After` step straight after `RESTYLE_HUB` that asks `HUB_REFRESH`, naming *command*
+    and the panel the hub leaves where it has moved, so the refresh deletes it once the new
+    one is up (`hub_refresh_change`'s `DELETE_OLD`). It does no work of its own, so it cannot
+    fail, and runs whether or not `RESTYLE_HUB` did (`hub_service.hub_refresh_after` is the
+    same shape for a module switch).
+    """
+
+    async def run(ctx: StepContext) -> StepResult:
+        saved = next(view.result or {} for view in ctx.steps if view.name == _SAVE_STEP)
+        old_channel_id, old_message_id = saved.get("old_channel_id"), saved.get("old_message_id")
+        payload = {"command": command} | (
+            {"old_channel_id": old_channel_id, "old_message_id": old_message_id}
+            if old_channel_id is not None and old_message_id is not None else {}
+        )
+        return StepResult(follow_ons=(
+            FollowOn(HUB_REFRESH, payload, "posting the hub panel"),
+        ))
+
+    def fault_reply(_payload: dict[str, Any], reply: str) -> str:
+        return reply
+
+    return After(step=Step(REFRESH_HUB_PANEL, StepKind.ACT, run), fault_reply=fault_reply)
+
+
+def hub_channel_setting(*, config: "ConfigService") -> Setting:
+    """`/bot hub-channel`: the channel every member of the league uses the bot from."""
+    command = "/bot hub-channel"
+
+    async def check(ctx: CheckContext) -> Verdict:
+        value = int(ctx.payload["value"])
+        use = await find_channel_use(ctx.db_path, value)
+        if use is not None:
+            return Verdict.refuse(
+                refusal(f"<#{value}>", use, same_setting=(use == ChannelUse("hub")))
+            )
+        if await config.get_server_config() is None:
+            return Verdict.refuse(_UNCONFIGURED)
+        return Verdict.go()
+
+    async def save(db: aiosqlite.Connection, payload: dict[str, Any]) -> Saved:
+        value = int(payload["value"])
+        cursor = await db.execute(
+            "SELECT hub_channel_id, hub_message_id FROM server_configs "
+            "WHERE server_id IS NOT NULL"
+        )
+        row = await cursor.fetchone()
+        old_channel_id = None if row is None else row["hub_channel_id"]
+        old_message_id = None if row is None else row["hub_message_id"]
+        if old_channel_id == value:
+            return Saved(changed=False, details=(f"channel: <#{value}>",))
+        if not await config.set_core_setting_on(db, "hub_channel_id", value):
+            return Saved(changed=False)
+        await config.set_core_setting_on(db, "hub_message_id", None)
+        return Saved(
+            changed=True,
+            audits=(AuditRecord("HUB_CHANNEL_SET", {"channel_id": old_channel_id}, {"channel_id": value}),),
+            details=(f"channel: <#{value}>",),
+            result={"old_channel_id": old_channel_id, "old_message_id": old_message_id},
+            then=(PlannedStep(RESTYLE_HUB), PlannedStep(REFRESH_HUB_PANEL)),
+        )
+
+    def doing(payload: dict[str, Any]) -> str:
+        return f"Setting **Hub channel** to <#{int(payload['value'])}>"
+
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        value = int(payload["value"])
+        if not results[_SAVE_STEP]["changed"]:
+            return f"ℹ️ <#{value}> is already the hub channel. Nothing was changed."
+        text = f"✅ **Hub channel** set to <#{value}>. Its panel follows on the change queue."
+        restyled = results.get(RESTYLE_HUB)
+        if restyled is not None:
+            for fault in restyled.get("faults", ()):
+                text += f"\n⚠️ {fault}"
+        return text
+
+    return Setting(
+        kind="core.setting.hub_channel_id",
+        command=lambda _payload: command,
+        doing=doing,
+        check=check,
+        save=save,
+        reply=reply,
+        writes=("server_configs",),
+        after={
+            RESTYLE_HUB: _restyle_hub(config),
+            REFRESH_HUB_PANEL: _ask_hub_refresh(command),
+        },
+    )
+
+
 __all__ = [
     "GRANT_TO_DRIVERS",
     "BASE_ROLE_CHANGED",
@@ -522,6 +704,7 @@ __all__ = [
     "admin_role_setting",
     "base_role_setting",
     "driver_role_setting",
+    "hub_channel_setting",
     "interaction_channel_setting",
     "interaction_role_setting",
     "log_channel_setting",
