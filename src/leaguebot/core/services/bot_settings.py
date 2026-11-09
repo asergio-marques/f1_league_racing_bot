@@ -336,8 +336,9 @@ async def _season_fixed_on(db: aiosqlite.Connection) -> int | None:
 def _league_role_setting(
     column: str, *, config: "ConfigService", placement: "PlacementService"
 ) -> Setting:
-    """`/bot base-role` or `/bot driver-role` on *column*: a league manager's own command, not
-    one of the four repair settings above, so it waits its turn on the league lane.
+    """`/bot base-role` or `/bot driver-role` on *column*: a league manager's own command,
+    neither one of the four that let a league back into the bot nor a channel setting, so it
+    waits its turn on the league lane.
 
     The payload carries the role asked for (*value*, *role_name*, *role_mention*) and *guild_id*,
     and no judgement of the ask's: `check` and `save` judge the season and the role they replace
