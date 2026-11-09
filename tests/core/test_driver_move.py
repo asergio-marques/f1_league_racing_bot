@@ -391,3 +391,338 @@ async def test_a_role_discord_refuses_is_logged_and_the_move_still_saved(db_path
     assert member.add_roles.await_count + member.remove_roles.await_count > 0
     assert any("failed to" in r.getMessage() for r in caplog.records)
     assert await _where(db_path) == [(PRO, "Reserve")]
+
+
+# ---------------------------------------------------------------------------
+# /driver move, on the change queue (#283)
+# ---------------------------------------------------------------------------
+#
+# The command asks the change queue for a change of its own on the league's lane, the driver and
+# both divisions named at the ask by their ids. The queue's acknowledgement is its reply. One save,
+# stamped with the queue's clock, moves the driver (`move_on`) and writes the `DRIVER_MOVE` audit
+# entry and the log channel's line; then a step moves the member's roles, which ends on a fault
+# rather than stopping the lane (architecture.md, "A job that fails stops its lane"), a role
+# Discord refuses being reported in the reply and the line; then the lineup of each division
+# touched is posted. These run on `ongoing_league`'s season: Pro (role 801, lineup channel 600)
+# holds Lewis (101) and Max (102) at Ferrari (role 811), Am (role 802, lineup channel 700) holds
+# Charles (103) at McLaren (role 812, one seat of three taken), every placement confirmed; Lewis
+# and Max hold Pro's role and Ferrari's on the server.
+
+#: Why each test below fails until `/driver move` is a change on the queue.
+_MOVE_NOT_QUEUED = "#283: /driver move is not yet a change on the queue"
+
+#: The command as the log channel names it in a refusal.
+_MOVE = "`/driver move`"
+
+
+async def _ongoing(tmp_path):
+    """`ongoing_league`'s season, Lewis and Max holding Pro's role and Ferrari's on the server,
+    and McLaren's second and third seats free."""
+    from tests.support.season_league import (
+        FERRARI_ROLE, LEWIS, MAX, MCLAREN, PRO_ROLE, ongoing_league,
+    )
+
+    league = await ongoing_league(tmp_path)
+    for user_id in (LEWIS, MAX):
+        league.roles_held[user_id] = {PRO_ROLE, FERRARI_ROLE}
+    for seat in (2, 3):
+        await league.write(
+            "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, ?)", MCLAREN, seat
+        )
+    return league
+
+
+async def _ask_move(league, user_id, from_division="Pro", team="McLaren", to_division="Am"):
+    """`/driver move` of the driver *user_id* from *from_division* into *team* of *to_division*,
+    as the league admin Admin (77) runs it: the interaction. The queue is not run."""
+    from leaguebot.core.cogs.driver_cog import DriverCog
+    from tests.support.change_queue import tier_member
+    from tests.support.season_league import ADMIN_ID
+    from tests.support.settings_league import interaction
+    from tests.support.undecorate import undecorate
+
+    asked = interaction(
+        league.bot, "driver move",
+        user=tier_member("admin", member_id=ADMIN_ID, display_name="Admin"),
+    )
+    asked.guild = league.guild
+    await undecorate(DriverCog.move)(
+        DriverCog(league.bot), asked, league._member(user_id), from_division, team, to_division
+    )
+    return asked
+
+
+async def _seated(league):
+    """Where each driver sits: (division, team, whether confirmed) by Discord id."""
+    rows = await league.rows(
+        "SELECT dp.discord_user_id AS user_id, d.name AS division, ti.name AS team, "
+        "dsa.committed FROM driver_season_assignments dsa "
+        "JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
+        "JOIN divisions d ON d.id = dsa.division_id "
+        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+        "JOIN team_instances ti ON ti.id = ts.team_instance_id"
+    )
+    return {int(r["user_id"]): (r["division"], r["team"], bool(r["committed"])) for r in rows}
+
+
+#: Where every driver sits before anything is moved.
+_STANDING = {101: ("Pro", "Ferrari", True), 102: ("Pro", "Ferrari", True),
+             103: ("Am", "McLaren", True)}
+
+_ADMIN = "Admin (`<@77>`)"
+
+
+def _moving(name: str, team: str = "McLaren F1 Team", division: str = "Am") -> str:
+    """How the queue words `/driver move` of *name* into *team* of *division*."""
+    return f"Moving **{name}** to **{team}** in **{division}**"
+
+
+def _moved(name: str) -> str:
+    """`/driver move`'s reply once saved, word for word, as today."""
+    return (
+        f"✅ Moved **{name}** from **Scuderia Ferrari** in **Pro** to **McLaren F1 Team** in "
+        "**Am**."
+    )
+
+
+def _move_line(name: str, user_id: int) -> str:
+    """`/driver move`'s line in the log channel, word for word: today's, the member asking named
+    as every change on the queue names them."""
+    return (
+        f"{_ADMIN} | /driver move | Success\n"
+        f"  user: {name} (<@{user_id}>)\n"
+        "  from: Scuderia Ferrari, Pro\n"
+        "  to: McLaren F1 Team, Am"
+    )
+
+
+def _refusal(reply: str) -> str:
+    from leaguebot.core.utils.log_lines import reply_reason
+
+    return f"⛔ {_MOVE} refused for {_ADMIN} — {reply_reason(reply)}"
+
+
+def _move_lines(lines):
+    return [line for line in lines if "/driver move" in line]
+
+
+@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
+async def test_a_driver_move_and_its_audit_entry_and_line_are_one_save_then_roles_and_lineups(
+    tmp_path,
+):
+    """The core specification's placements and its record of what changed. The season is
+    ongoing; Lewis sits at Ferrari in Pro, holding Pro's role and Ferrari's. The league admin
+    Admin (77) runs `/driver move` of Lewis from Pro into McLaren in Am. They are answered at once
+    with the queue's acknowledgement, "Moving **Lewis** to **McLaren F1 Team** in **Am**", naming
+    its first job, and nothing is moved, no role touched and no lineup posted until the queue runs
+    the change, of kind `core.driver_move`. Once it has, Lewis sits at McLaren in Am, still
+    confirmed, and every other driver where they sat; one audit entry, `DRIVER_MOVE`, by Admin, on
+    Am, stamped with the queue's clock, records Pro and Ferrari before and Am and McLaren after;
+    the log channel holds today's success line once; Lewis has Pro's role and Ferrari's taken and
+    Am's and McLaren's given; the lineups of Pro and of Am are each posted once in their lineup
+    channel; and the acknowledgement is updated to today's reply, word for word."""
+    from tests.support.change_queue import change_rows, run_queue, step_rows
+    from tests.support.season_league import (
+        AM, AM_ROLE, DIVISIONS, FERRARI_ROLE, LEWIS, MCLAREN_ROLE, PRO, PRO_ROLE,
+    )
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+    from tests.support.setup_rounds import acknowledged
+
+    league = await _ongoing(tmp_path)
+    asked = await _ask_move(league, LEWIS)
+
+    first_job = (await step_rows(league.db_path))[0]["id"]
+    assert said(asked)[0] == f"{acknowledged(_moving('Lewis'))} It begins with job #{first_job}."
+    assert [row["kind"] for row in await change_rows(league.db_path)] == ["core.driver_move"]
+    assert await _seated(league) == _STANDING
+    assert league.revoked == {} and league.granted == {}
+    assert league.texts(DIVISIONS[PRO][3].lineup) == []
+    await run_queue(league.bot)
+
+    assert await _seated(league) == {**_STANDING, LEWIS: ("Am", "McLaren", True)}
+    [entry] = await audit_rows(league.db_path)
+    assert (entry["change_type"], entry["actor_id"], entry["division_id"]) == (
+        "DRIVER_MOVE", 77, AM
+    )
+    assert entry["old_value"] == {"division": "Pro", "team": "Ferrari"}
+    assert entry["new_value"] == {"division": "Am", "team": "McLaren"}
+    assert entry["timestamp"] == league.clock.now.isoformat()
+    assert _move_lines(await log_lines(league)) == [_move_line("Lewis", LEWIS)]
+    assert sorted(league.revoked[LEWIS]) == [PRO_ROLE, FERRARI_ROLE]
+    assert sorted(league.granted[LEWIS]) == [AM_ROLE, MCLAREN_ROLE]
+    assert len(league.texts(DIVISIONS[PRO][3].lineup)) == 1
+    assert len(league.texts(DIVISIONS[AM][3].lineup)) == 1
+    assert last_said(asked) == _moved("Lewis")
+
+
+@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
+async def test_a_refused_role_move_is_reported_and_the_queue_goes_on(tmp_path):
+    """architecture.md, "A job that fails stops its lane": a member's roles moved after their
+    driver's change end on a fault rather than stopping the lane. The season is ongoing; Lewis and
+    Max sit at Ferrari in Pro. The league admin runs `/driver move` of Lewis into McLaren in Am,
+    then of Max likewise, before the queue runs; Discord refuses to give Lewis any role (403
+    Missing Permissions). The queue runs both. Lewis's move stands, saved before his roles were
+    asked of Discord: he sits at McLaren in Am, his Pro and Ferrari roles are taken, and nothing
+    is given him. His reply is today's, then "⚠️ Done, but on Discord:" and the bullet "the roles
+    could not be given to <@101>:" with Discord's words; his success line carries a "not done:"
+    line with the same words. The lane is not stopped, and Max's move, asked after, is made in
+    full: he sits at McLaren in Am, given Am's and McLaren's roles, his reply today's alone."""
+    import discord
+
+    from tests.support.change_queue import http_error, run_queue, stopped_job
+    from tests.support.season_league import AM_ROLE, LEWIS, MAX, MCLAREN_ROLE
+    from tests.support.settings_league import last_said, log_lines
+
+    league = await _ongoing(tmp_path)
+    refused = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    league.grant_fails[LEWIS] = refused
+    lewis = await _ask_move(league, LEWIS)
+    max_ = await _ask_move(league, MAX)
+    await run_queue(league.bot)
+
+    problem = f"the roles could not be given to <@{LEWIS}>: {refused}"
+    assert await _seated(league) == {
+        **_STANDING, LEWIS: ("Am", "McLaren", True), MAX: ("Am", "McLaren", True),
+    }
+    assert LEWIS in league.revoked and LEWIS not in league.granted
+    assert last_said(lewis) == f"{_moved('Lewis')}\n⚠️ Done, but on Discord:\n• {problem}"
+    assert _move_lines(await log_lines(league)) == [
+        f"{_move_line('Lewis', LEWIS)}\n  not done: {problem}", _move_line("Max", MAX),
+    ]
+    assert await stopped_job(league.db_path) is None
+    assert sorted(league.granted[MAX]) == [AM_ROLE, MCLAREN_ROLE]
+    assert last_said(max_) == _moved("Max")
+
+
+@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
+async def test_a_failed_driver_move_moves_nothing(tmp_path):
+    """The season is ongoing; Lewis sits at Ferrari in Pro. The league admin runs `/driver move`
+    of Lewis into McLaren in Am, and as the queue runs it the database fails writing the audit
+    entry. Nothing of the move is saved, the move, its audit entry and its line being one save:
+    every driver sits where they sat, no audit entry is written, the log channel holds no success
+    line, no role is touched on Discord and no lineup posted. The league's lane stops at the job.
+    Once a league admin discards the stopped job, the reply says "Nothing was moved: **Lewis**
+    stays where they were. Run `/driver move` again."; and the lane is clear."""
+    from tests.support.change_queue import discard_job, run_queue, stopped_job
+    from tests.support.season_league import DIVISIONS, LEWIS, PRO
+    from tests.support.settings_league import audit_rows, fault_in, last_said, log_lines
+
+    league = await _ongoing(tmp_path)
+    asked = await _ask_move(league, LEWIS)
+    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+        await run_queue(league.bot)
+
+    assert await _seated(league) == _STANDING
+    assert await audit_rows(league.db_path) == []
+    assert not any("| Success" in line for line in await log_lines(league))
+    assert league.revoked == {} and league.granted == {}
+    assert league.texts(DIVISIONS[PRO][3].lineup) == []
+    assert await stopped_job(league.db_path) is not None
+
+    await discard_job(league.bot)
+
+    assert last_said(asked) == (
+        "Nothing was moved: **Lewis** stays where they were. Run `/driver move` again."
+    )
+    assert await stopped_job(league.db_path) is None
+
+
+async def _end_the_races(league):
+    await league.write("UPDATE seasons SET stage = 'PENDING_COMPLETION'")
+
+
+async def _unconfirm_lewis(league):
+    await league.write(
+        "UPDATE driver_season_assignments SET committed = 0 WHERE driver_profile_id = 41"
+    )
+
+
+async def _seat_lewis_in_am(league):
+    """Lewis takes McLaren's third seat in Am as well, as a release-and-move would leave him."""
+    await league.write(
+        "UPDATE team_seats SET driver_profile_id = 41 WHERE team_instance_id = 32 "
+        "AND seat_number = 3"
+    )
+    await league.write(
+        "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+        "team_seat_id, committed) SELECT 41, 7, 22, id, 1 FROM team_seats "
+        "WHERE team_instance_id = 32 AND seat_number = 3"
+    )
+
+
+@pytest.mark.parametrize(
+    "meanwhile, reply, lewis_after",
+    [
+        pytest.param(
+            _end_the_races, "⛔ `/driver move` is available only while the season is ongoing.",
+            ("Pro", "Ferrari", True), id="the-races-ended",
+            marks=pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED),
+        ),
+        pytest.param(
+            _unconfirm_lewis,
+            "⛔ That placement is not yet confirmed. Change it with `/driver unassign` and "
+            "`/driver assign`.",
+            ("Pro", "Ferrari", False), id="the-placement-unconfirmed",
+            marks=pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED),
+        ),
+        pytest.param(
+            _seat_lewis_in_am,
+            "⛔ Driver already holds a seat in the division they would move into.",
+            ("Pro", "Ferrari", True), id="a-seat-taken-in-the-division-moved-into",
+            marks=pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED),
+        ),
+    ],
+)
+async def test_a_driver_move_is_judged_again_as_it_starts(tmp_path, meanwhile, reply, lewis_after):
+    """The season is ongoing; Lewis sits at Ferrari in Pro. The league admin runs `/driver move`
+    of Lewis into McLaren in Am and is acknowledged; before the queue runs it, the season's races
+    end (Pending completion), Lewis's placement in Pro is made unconfirmed, or Lewis takes a seat
+    in Am as well. The queue runs. The move is refused as it starts, in the words it would meet
+    at the ask, its acknowledgement updated to them. Lewis's Pro placement stands as the meanwhile
+    left it, no audit entry is written, the log channel holds the refusal alone, no role is
+    touched, no lineup posted, and the queue is not stopped."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.season_league import DIVISIONS, LEWIS, PRO
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await _ongoing(tmp_path)
+    refused = await _ask_move(league, LEWIS)
+    await meanwhile(league)
+    await run_queue(league.bot)
+
+    assert last_said(refused) == reply
+    assert (await _seated(league))[LEWIS] == lewis_after
+    assert await audit_rows(league.db_path) == []
+    assert await log_lines(league) == [_refusal(reply)]
+    assert league.revoked == {} and league.granted == {}
+    assert league.texts(DIVISIONS[PRO][3].lineup) == []
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
+async def test_a_driver_move_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
+    """The core specification's "How a change is carried out": a request repeating a change that
+    has not started, with nothing else asked for since on its lane, is refused, saying so. The
+    season is ongoing; Lewis sits at Ferrari in Pro. The league admin runs `/driver move` of Lewis
+    into McLaren in Am and is acknowledged; before the queue runs it, they run it again. The
+    second is refused at once, in the queue's words, and the log channel takes that refusal as a
+    line; only the one change is queued. The queue runs it: Lewis sits at McLaren in Am, with one
+    audit entry, and the log channel holds the refusal and then the success line."""
+    from tests.support.change_queue import change_rows, run_queue
+    from tests.support.season_league import LEWIS
+    from tests.support.settings_league import audit_rows, log_lines, said
+    from tests.support.setup_rounds import acknowledged, repeated
+
+    league = await _ongoing(tmp_path)
+    first, repeat = await _ask_move(league, LEWIS), await _ask_move(league, LEWIS)
+
+    assert said(first)[0].startswith(acknowledged(_moving("Lewis")))
+    assert said(repeat) == [repeated(_moving("Lewis"))]
+    assert len(await change_rows(league.db_path)) == 1
+    await run_queue(league.bot)
+
+    assert (await _seated(league))[LEWIS] == ("Am", "McLaren", True)
+    assert len(await audit_rows(league.db_path)) == 1
+    assert _move_lines(await log_lines(league)) == [
+        _refusal(repeated(_moving("Lewis"))), _move_line("Lewis", LEWIS),
+    ]
