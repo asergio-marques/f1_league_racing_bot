@@ -13,7 +13,8 @@ anyway.
 
 The gate is checked **before** the parameters, so a manager running it in the wrong stage is
 told the rule rather than told they mis-typed a snowflake. `test_the_stage_is_read_before_the
-_parameters` pins that ordering.
+_parameters` pins that ordering. A reassign the stage and the parameters allow is asked of the
+change queue, which judges the rest; one they refuse is never asked.
 """
 from __future__ import annotations
 
@@ -31,6 +32,8 @@ from leaguebot.core.utils.season_gate import LIVE_STAGES, PLACEMENT_STAGES
 #: stages rather than listed, so a stage added to the lifecycle is covered without an edit.
 REFUSED_STAGES = sorted(LIVE_STAGES - PLACEMENT_STAGES, key=lambda s: s.value)
 
+_ON_THE_QUEUE = "#283: /driver reassign is not yet asked of the change queue"
+
 
 def _bot(stage: SeasonStage | None) -> MagicMock:
     season = (
@@ -43,24 +46,8 @@ def _bot(stage: SeasonStage | None) -> MagicMock:
     bot = MagicMock()
     bot.season_service = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
-    bot.driver_service = MagicMock()
-    bot.driver_service.reassign_user_id = AsyncMock(
-        return_value=SimpleNamespace(
-            profile=SimpleNamespace(
-                id=5, former_driver=False, current_state=SimpleNamespace(value="Assigned")
-            ),
-            replaced_account="111",
-            accounts=["222"],
-            switched_back=False,
-            merged_accounts=[],
-        )
-    )
-    bot.placement_service = MagicMock()
-    bot.placement_service.move_driver_roles = AsyncMock(return_value=[])
-    bot.wizard_service = MagicMock()
-    bot.wizard_service.move_held_channel = AsyncMock(return_value=[])
-    # The replaced account's portrait is discarded through the image module's drawing.
-    bot.image_drawing.discard_portraits = AsyncMock(return_value=0)
+    bot.change_queue = MagicMock()
+    bot.change_queue.ask = AsyncMock(return_value=1)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
     return bot
@@ -99,19 +86,28 @@ async def _run(bot, interaction, *, old_user_id: str | None = "111"):
     )
 
 
+def _asked(bot) -> tuple[str, str]:
+    """The accounts of the one reassign asked of the queue: the old and the new."""
+    bot.change_queue.ask.assert_awaited_once()
+    kind, payload = bot.change_queue.ask.await_args.args[:2]
+    assert kind == "core.driver_reassign"
+    return str(payload["old_user_id"]), str(payload["new_user_id"])
+
+
 # ---------------------------------------------------------------------------
 # Permitted
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize("stage", sorted(PLACEMENT_STAGES, key=lambda s: s.value))
 async def test_a_reassign_runs_while_drivers_are_being_placed(stage):
+    """In each placing stage the reassign of 111's driver onto 222 is asked of the queue."""
     bot = _bot(stage)
     interaction = _interaction()
 
     await _run(bot, interaction)
 
-    bot.driver_service.reassign_user_id.assert_awaited_once()
-    assert "✅" in _said(interaction)
+    assert _asked(bot) == ("111", "222")
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +121,7 @@ async def test_a_reassign_is_refused_in_every_other_live_stage(stage):
 
     await _run(bot, interaction)
 
-    bot.driver_service.reassign_user_id.assert_not_awaited()
+    bot.change_queue.ask.assert_not_awaited()
     said = _said(interaction)
     assert "drivers are being placed" in said, said
     assert "/driver move" in said
@@ -140,7 +136,7 @@ async def test_a_reassign_is_refused_with_no_live_season():
 
     await _run(bot, interaction)
 
-    bot.driver_service.reassign_user_id.assert_not_awaited()
+    bot.change_queue.ask.assert_not_awaited()
     said = _said(interaction)
     assert "drivers are being placed" in said, said
     assert "no season" not in said.lower()
@@ -183,15 +179,16 @@ async def test_reassign_refuses_a_non_numeric_old_user_id(typed):
 
     await _run(bot, interaction, old_user_id=typed)
 
-    bot.driver_service.reassign_user_id.assert_not_awaited()
+    bot.change_queue.ask.assert_not_awaited()
     assert "numeric Discord user ID" in _said(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_reassign_still_takes_a_numeric_old_user_id_with_space_around_it():
     bot = _bot(SeasonStage.PLACEMENTS)
     interaction = _interaction()
 
     await _run(bot, interaction, old_user_id=" 111 ")
 
-    bot.driver_service.reassign_user_id.assert_awaited_once()
+    assert _asked(bot) == ("111", "222")
 
