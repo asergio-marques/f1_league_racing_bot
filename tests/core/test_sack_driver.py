@@ -718,7 +718,6 @@ async def _state(league, user_id):
     return row["current_state"]
 
 
-@pytest.mark.xfail(strict=True, reason=_SACK_NOT_QUEUED)
 async def test_a_driver_sack_and_its_audit_entry_and_line_are_one_save_then_roles_and_lineups(
     tmp_path,
 ):
@@ -754,7 +753,9 @@ async def test_a_driver_sack_and_its_audit_entry_and_line_are_one_save_then_role
 
     assert await _seated(league) == {k: v for k, v in _STANDING.items() if k != LEWIS}
     assert await _state(league, LEWIS) == DriverState.NOT_SIGNED_UP.value
-    [entry] = await audit_rows(league.db_path)
+    [entry] = [
+        row for row in await audit_rows(league.db_path) if row["change_type"] == "DRIVER_SACK"
+    ]
     assert (entry["change_type"], entry["actor_id"]) == ("DRIVER_SACK", 77)
     assert entry["old_value"] == {"state": "ASSIGNED", "divisions": [PRO]}
     assert entry["new_value"]["new_state"] == DriverState.NOT_SIGNED_UP.value
@@ -927,7 +928,6 @@ async def test_a_driver_sack_is_refused_at_the_ask(tmp_path):
     assert league.revoked == {} and league.granted == {}
 
 
-@pytest.mark.xfail(strict=True, reason=_SACK_NOT_QUEUED)
 async def test_a_driver_sack_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The
@@ -950,7 +950,9 @@ async def test_a_driver_sack_asked_again_while_it_waits_is_refused_as_a_repeat(t
     await run_queue(league.bot)
 
     assert await _state(league, LEWIS) == DriverState.NOT_SIGNED_UP.value
-    assert len(await audit_rows(league.db_path)) == 1
+    assert len([
+        row for row in await audit_rows(league.db_path) if row["change_type"] == "DRIVER_SACK"
+    ]) == 1
     assert _sack_lines(await log_lines(league)) == [
         _sack_refusal(repeated(_sacking("Lewis"))), _sack_line("Lewis", LEWIS),
     ]

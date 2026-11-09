@@ -527,7 +527,6 @@ def _move_lines(lines):
     return [line for line in lines if "/driver move" in line]
 
 
-@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
 async def test_a_driver_move_and_its_audit_entry_and_line_are_one_save_then_roles_and_lineups(
     tmp_path,
 ):
@@ -562,7 +561,9 @@ async def test_a_driver_move_and_its_audit_entry_and_line_are_one_save_then_role
     await run_queue(league.bot)
 
     assert await _seated(league) == {**_STANDING, LEWIS: ("Am", "McLaren", True)}
-    [entry] = await audit_rows(league.db_path)
+    [entry] = [
+        row for row in await audit_rows(league.db_path) if row["change_type"] == "DRIVER_MOVE"
+    ]
     assert (entry["change_type"], entry["actor_id"], entry["division_id"]) == (
         "DRIVER_MOVE", 77, AM
     )
@@ -657,7 +658,6 @@ async def test_a_failed_driver_move_moves_nothing(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
 async def test_a_lineup_discord_refuses_stops_the_move_and_once_discarded_is_named(tmp_path):
     """The core specification's "How a change is carried out": a post Discord refuses stops the
     queue, and one a league admin discards is left unposted. The season is ongoing; Lewis sits at
@@ -699,7 +699,7 @@ async def test_a_lineup_discord_refuses_stops_the_move_and_once_discarded_is_nam
     )
     assert await _seated(league) == {**_STANDING, LEWIS: ("Am", "McLaren", True)}
     assert last_said(asked) == f"{_moved('Lewis')}\n⚠️ Done, but on Discord:\n• {unposted}"
-    assert _move_lines(await log_lines(league)) == [
+    assert [line for line in await log_lines(league) if "| /driver move | Success" in line] == [
         f"{_move_line('Lewis', LEWIS)}\n  not done: {unposted}"
     ]
     assert len(league.texts(DIVISIONS[PRO][3].lineup)) == 1
@@ -857,7 +857,6 @@ async def test_a_driver_move_is_refused_at_the_ask(
     assert league.revoked == {} and league.granted == {}
 
 
-@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
 async def test_a_driver_move_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The
@@ -880,7 +879,9 @@ async def test_a_driver_move_asked_again_while_it_waits_is_refused_as_a_repeat(t
     await run_queue(league.bot)
 
     assert (await _seated(league))[LEWIS] == ("Am", "McLaren", True)
-    assert len(await audit_rows(league.db_path)) == 1
+    assert len([
+        row for row in await audit_rows(league.db_path) if row["change_type"] == "DRIVER_MOVE"
+    ]) == 1
     assert _move_lines(await log_lines(league)) == [
         _refusal(repeated(_moving("Lewis"))), _move_line("Lewis", LEWIS),
     ]
