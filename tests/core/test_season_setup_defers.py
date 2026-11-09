@@ -1,8 +1,7 @@
 """The season-setup commands defer before they do their work.
 
-`/round amend` writes the SETUP season through `_snapshot_pending`, and `/round add` asks the
-change queue for its change, whose check, judged at the ask, loads and parses the calendar
-template to check its capacity (#283). Until issue #147 the write rebuilt the whole
+`/round add` and `/round amend` each ask the change queue for its change, judged at the ask, and
+`/round add`'s check loads and parses the calendar template to check its capacity (#283). Until issue #147 the write rebuilt the whole
 season, and on a season holding more than one division that work outlasted Discord's
 three-second window: the interaction token expired, and the reply raised `404 Unknown
 interaction` *after* the round had already been written. What a league manager saw was a
@@ -32,11 +31,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog, PendingConfig, PendingDivision
+from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.models.server_config import ServerConfig
-from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.models.season import SeasonStage
-from tests.support.setup_reads import hold_setup
 
 CHANNEL = 111
 MANAGER_ROLE = 222
@@ -95,36 +92,15 @@ def _bot() -> MagicMock:
     bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     bot.season_service.get_setup_season = AsyncMock(return_value=None)
     bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
-    bot.season_service.sync_pending_config = AsyncMock(return_value=(42, 1, []))
     bot.season_service.get_divisions = AsyncMock(return_value=[])
     bot.team_service.seed_division_teams = AsyncMock()
     bot.output_router.post_log = AsyncMock()
     return bot
 
 
-def _pending(server_id: int = 1) -> PendingConfig:
-    div = PendingDivision(
-        name="Pro",
-        role_id=10,
-        channel_id=20,
-        tier=1,
-        rounds=[
-            {
-                "round_number": 1,
-                "format": RoundFormat.NORMAL,
-                "track_name": "United Kingdom",
-                "scheduled_at": datetime(2026, 5, 1, 14, 0, 0),
-            }
-        ],
-    )
-    return PendingConfig(divisions=[div], season_id=7)
-
-
-def _cog(pending: PendingConfig | None) -> SeasonCog:
-    bot = _bot()
-    # The season being set up, read from the database (#283).
-    hold_setup(bot.season_service, pending)
-    return SeasonCog(bot)
+def _cog() -> SeasonCog:
+    """A cog on `_bot()`'s league, which holds no season being set up."""
+    return SeasonCog(_bot())
 
 
 async def _call(coro_method, interaction, **kwargs):
@@ -137,7 +113,7 @@ async def test_round_add_defers_before_touching_the_database(monkeypatch):
     runs `/round add` for Pro, a NORMAL round at "14 – Hungaroring" on 22 October 2026 at 18:00:
     the command defers before anything else, then asks the change queue for the round, whose
     check, judged at the ask, may load the calendar template (#283)."""
-    cog = _cog(_pending())
+    cog = _cog()
     interaction = _interaction()
 
     order: list[str] = []

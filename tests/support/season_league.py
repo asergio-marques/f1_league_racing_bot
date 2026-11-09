@@ -355,17 +355,8 @@ class SeasonLeague:
     @staticmethod
     def _hold_setup(cog: Any) -> None:
         """The cog's checks of team names, lineups and image configuration, stubbed to find
-        nothing; and the season's setup held in memory, as the setup commands leave it, while the
-        cog keeps one. The setup is the database's, read whenever a command asks for it (#283),
-        and once the cog holds no `_pending` nothing of it is put on the cog: as
-        `_attach_amendment_service` does, the fixture serves the code on either side of the
-        change, so that the tests reading it need no marker for it."""
-        if hasattr(cog, "_pending"):
-            from leaguebot.core.cogs.season_cog import PendingConfig
-
-            cog._pending = {
-                ADMIN_ID: PendingConfig(season_id=SEASON_ID, season_number=SEASON_NUMBER)
-            }
+        nothing. The season's setup is the database's, read whenever a command asks for it (#283),
+        so nothing of it is put on the cog."""
         cog._team_name_problems = AsyncMock(return_value=[])
         cog._lineup_problems = AsyncMock(return_value=[])
         cog._image_configuration_faults = AsyncMock(return_value=[])

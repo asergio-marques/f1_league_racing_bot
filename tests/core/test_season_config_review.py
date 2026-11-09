@@ -12,11 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import (
-    PendingConfig,
-    SeasonCog,
-    _ConfirmConfigurationView,
-)
+from leaguebot.core.cogs.season_cog import SeasonCog, _ConfirmConfigurationView
 from leaguebot.core.models.season import InvalidStageTransition, SeasonStage
 from leaguebot.core.models.server_config import ServerConfig
 from tests.support.setup_reads import hold_setup
@@ -81,9 +77,7 @@ def _bot(
 def _cog(bot: MagicMock) -> SeasonCog:
     cog = SeasonCog(bot)
     # The season being set up, read from the database (#283).
-    hold_setup(bot.season_service, PendingConfig(
-        season_id=SEASON_ID, season_number=4, game_edition=25
-    ))
+    hold_setup(bot.season_service, season_id=SEASON_ID, season_number=4, game_edition=25)
     # The team names are checked by a helper of their own, pinned elsewhere.
     cog._team_name_problems = AsyncMock(return_value=[])
     return cog
@@ -477,13 +471,9 @@ async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, 
     view, cog = _confirm_view(env)
     # The real confirmation, on a cog whose gates pass: the season in configuration, no fault.
     hold_setup(
-        cog.bot.season_service,
-        PendingConfig(season_id=1, season_number=4, game_edition=25),
-        divisions=False,
+        cog.bot.season_service, season_id=1, season_number=4, game_edition=25, divisions=False
     )
     cog._configuration_faults = AsyncMock(return_value=[])
-    # The cog's own read of the setup, so that the season above is found through it.
-    cog._get_pending = MethodType(SeasonCog._get_pending, cog)
     cog._do_confirm_configuration = MethodType(SeasonCog._do_confirm_configuration, cog)
     env.bot.module_service.is_signup_enabled = AsyncMock(return_value=False)
     asked_before: list[dict] = []

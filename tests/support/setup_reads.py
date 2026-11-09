@@ -28,11 +28,11 @@ def hold_setup(
     """Make *season_service*'s three reads answer with the season being set up that *cfg*
     describes, or with no season being set up where *cfg* is None.
 
-    *cfg* is a `PendingConfig`, or anything carrying its `season_id`, `season_number`,
-    `game_edition`, `start_date` and `divisions`; the keywords override what it carries. Each
-    division is numbered from 1 in the order given, and each of its rounds from the division's
-    number times 100. With *divisions* false, `get_divisions` and `get_division_rounds` are
-    left as the test set them, for a test whose divisions are its own.
+    *cfg* is anything carrying a `season_id`, `season_number`, `game_edition`, `start_date` and
+    `divisions`, each division carrying a `name`, `role_id`, `channel_id`, `tier` and `rounds`; the
+    keywords override what it carries. Each division is numbered from 1 in the order given, and each
+    of its rounds from the division's number times 100. With *divisions* false, `get_divisions` and
+    `get_division_rounds` are left as the test set them, for a test whose divisions are its own.
     """
     if cfg is None and season_id is None:
         season_service.get_setup_season = AsyncMock(return_value=None)
