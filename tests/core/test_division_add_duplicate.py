@@ -775,7 +775,7 @@ async def test_add_refuses_a_bad_tier_in_todays_words_and_records_it(tmp_path, t
     """Season #1 is being set up, in placements, and holds Pro at tier 2; the league manager Admin
     (4242) adds Am at tier 0, -1 or 2. They get today's reply word for word and nothing else,
     nothing is asked of the change queue, the season still holds Pro alone, and the log channel
-    gets exactly one line, "⛔ `/division add` refused for Admin (<@4242>) — " and the reply's
+    gets exactly one line, "⛔ `/division add` refused for Admin (`<@4242>`) — " and the reply's
     words."""
     from tests.support.change_queue import change_rows
     from tests.support.settings_league import log_lines, said
