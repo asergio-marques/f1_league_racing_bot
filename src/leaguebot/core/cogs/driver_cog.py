@@ -11,10 +11,13 @@ from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.services.driver_changes import (
     DRIVER_ASSIGN,
     DRIVER_MOVE,
+    DRIVER_REJECT,
     DRIVER_RELEASE,
     DRIVER_SACK,
     DRIVER_UNASSIGN,
     NOT_PLACING_REFUSAL,
+    NOT_UNASSIGNED_REFUSAL,
+    PAST_ACCOUNT_REFUSAL,
 )
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
@@ -70,8 +73,7 @@ class DriverCog(commands.Cog):
         if member is None:
             await refuse(
                 interaction,
-                f"⛔ <@{user.id}> is a past account of a driver whose current account, "
-                f"<@{current}>, is not in the server.",
+                PAST_ACCOUNT_REFUSAL.format(account=user.id, current=current),
                 what=describe(interaction),
             )
         return member
@@ -613,39 +615,23 @@ class DriverCog(commands.Cog):
         if profile is None or profile.current_state is not DriverState.UNASSIGNED:
             await refuse(
                 interaction,
-                f"⛔ **{user.display_name}** is not an Unassigned driver. A placed driver is "
-                "unassigned first; a signup still in review is rejected from its panel.",
+                NOT_UNASSIGNED_REFUSAL.format(driver_name=user.display_name),
                 what=describe(interaction),
             )
             return
 
-        await self.bot.driver_service.transition(
-            str(user.id), DriverState.NOT_SIGNED_UP
-        )
-        await self.bot.signup_module_service.withdraw_approval(
-            profile.id
-        )
-
-        server_cfg = await self.bot.config_service.get_server_config()
-        role_id = server_cfg.driver_role_id if server_cfg is not None else None
-        problems: list[str] = []
-        if role_id and interaction.guild is not None:
-            role = interaction.guild.get_role(role_id)
-            if role is not None:
-                try:
-                    await user.remove_roles(role, reason="Driver rejected")
-                except discord.HTTPException as exc:
-                    log.warning("reject: could not remove the driver role: %s", exc)
-                    problems.append(f"the driver role could not be removed: {exc}")
-
-        reply = f"✅ Turned down **{user.display_name}**. They are no longer signed up."
-        if problems:
-            reply += "\n⚠️ Done, but on Discord:\n" + "\n".join(f"• {p}" for p in problems)
-        await interaction.followup.send(reply, ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reject | Success\n"
-            f"  user: {user.display_name} (<@{user.id}>)"
-            + "".join(f"\n  not done: {p}" for p in problems),
+        # The turn-down, its approval's withdrawal, its audit entry and the driver role are a
+        # change on the queue, which refuses again as it starts what is refused here
+        # (`core/services/driver_changes.py`).
+        await self.bot.change_queue.ask(
+            DRIVER_REJECT,
+            {
+                "driver_profile_id": profile.id,
+                "discord_user_id": str(user.id),
+                "driver_name": user.display_name,
+                "season_id": season.id,
+            },
+            interaction=interaction, what=describe(interaction),
         )
 
     # ------------------------------------------------------------------

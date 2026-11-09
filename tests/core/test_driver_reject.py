@@ -18,8 +18,6 @@ import pytest
 
 from tests.core.test_driver_move import _ADMIN, _as_logged
 
-_NOT_YET = "#283: /driver reject is not yet a change on the queue"
-
 _NOT_PLACING = (
     "⛔ `/driver reject` is available only while the season is in placements, or mid-season "
     "while the drivers of a closed signup window are being placed."
@@ -197,7 +195,6 @@ async def _valtteri_on_an_account_gone_from_the_server(league):
         pytest.param(_placing_mid_season, id="mid-season-placements"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_driver_rejection_its_withdrawal_audit_entry_and_line_are_one_save_then_the_role(
     tmp_path, build,
 ):
@@ -282,7 +279,6 @@ async def test_a_driver_rejection_is_refused_at_the_ask(tmp_path, setup, user_id
     assert league.revoked == {} and league.granted == {}
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_failed_driver_rejection_changes_nothing(tmp_path):
     """The season is in Placements; Valtteri is Unassigned and approved. The league admin runs
     `/driver reject` of Valtteri, and as the queue runs it the database fails writing the audit
@@ -332,7 +328,6 @@ async def test_a_failed_driver_rejection_changes_nothing(tmp_path):
         ),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_driver_rejection_is_judged_again_as_it_starts(
     tmp_path, meanwhile, reply, standing,
 ):
@@ -361,7 +356,6 @@ async def test_a_driver_rejection_is_judged_again_as_it_starts(
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_driver_rejection_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The
@@ -392,7 +386,6 @@ async def test_a_driver_rejection_asked_again_while_it_waits_is_refused_as_a_rep
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_driver_role_goes_after_the_rejection_is_saved_and_a_refusal_is_reported(
     tmp_path,
 ):

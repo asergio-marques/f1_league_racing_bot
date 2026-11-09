@@ -1,6 +1,6 @@
-"""`core.driver_move`, `core.driver_sack`, `core.driver_release`, `core.driver_assign` and
-`core.driver_unassign`: `/driver move`, `sack`, `release`, `assign` and `unassign`, on the change
-queue.
+"""`core.driver_move`, `core.driver_sack`, `core.driver_release`, `core.driver_assign`,
+`core.driver_unassign` and `core.driver_reject`: `/driver move`, `sack`, `release`, `assign`,
+`unassign` and `reject`, on the change queue.
 
 Each is a change type of its own on the league lane, registered by the builder. Move, sack and
 release are for a committed driver while the season is ongoing: moved to a team of the same
@@ -22,6 +22,13 @@ job, in this order:
 3. **Each lineup** (`lineup_posting.lineup_step`), which stops the lane where Discord refuses it,
    as every post does, and says what it left undone where a league admin discards it.
 4. **The line** that records the change, written last so that it carries what was not done.
+
+A rejection is for a driver approved and not yet placed (Unassigned), while drivers are being
+placed: the one save turns them down (`write_transition`), calls the *driver_turned_down* hook
+each module signs up to (signup withdraws the approval of their signup), and writes the
+`DRIVER_REJECT` audit entry, shaped as a sack's; the one job after it takes the driver role. It
+is judged again as it starts for the stage, a driver no longer Unassigned, and a driver whose
+current account is not the one asked for and has left the server.
 
 An assignment and an unassignment have no job after the save: the placement they write or remove
 is never confirmed, so it holds no role and posts no lineup, which follow when placements are
@@ -49,6 +56,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import aiosqlite
+import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
@@ -59,6 +67,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
+from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.services import lineup_posting, standing_posts
 from leaguebot.core.services.change_queue import (
@@ -69,9 +78,12 @@ from leaguebot.core.services.change_queue import (
     StepContext,
     StepView,
 )
+from leaguebot.core.services.driver_service import write_transition
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.services.role_moves import MOVE_ROLES, role_move_step
 from leaguebot.core.services.season_approval_change import unposted_lineup_line
+from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.season_gate import PLACEMENT_STAGES
 
 DRIVER_MOVE = "core.driver_move"
@@ -79,6 +91,7 @@ DRIVER_SACK = "core.driver_sack"
 DRIVER_RELEASE = "core.driver_release"
 DRIVER_ASSIGN = "core.driver_assign"
 DRIVER_UNASSIGN = "core.driver_unassign"
+DRIVER_REJECT = "core.driver_reject"
 
 #: The names of the jobs, as the stop notice, the outcome and the tests know them.
 SAVE = "save"
@@ -108,6 +121,27 @@ NOBODY_SACKED = (
 NOTHING_RELEASED = (
     "Nothing was released: **{driver_name}** keeps their seat in **{division}**. "
     "Run `/driver release` again."
+)
+
+#: `/driver reject` as the line names it.
+REJECT_COMMAND = "/driver reject"
+
+#: The reply once a league admin has discarded the stopped save: nobody was turned down.
+NOBODY_TURNED_DOWN = (
+    "Nothing was turned down: **{driver_name}** is still an Unassigned driver. "
+    "Run `/driver reject` again."
+)
+
+#: What `/driver reject` answers a driver who is not Unassigned.
+NOT_UNASSIGNED_REFUSAL = (
+    "⛔ **{driver_name}** is not an Unassigned driver. A placed driver is unassigned first; a "
+    "signup still in review is rejected from its panel."
+)
+
+#: What a command answers for a past account of a driver whose current account has left the server.
+PAST_ACCOUNT_REFUSAL = (
+    "⛔ <@{account}> is a past account of a driver whose current account, <@{current}>, is not "
+    "in the server."
 )
 
 #: `/driver assign` as the line names it.
@@ -726,9 +760,118 @@ def driver_unassign_change(*, placement: PlacementService) -> ChangeType:
     )
 
 
+# ── /driver reject ────────────────────────────────────────────────────────────────────
+
+
+async def _account_gone_refusal(ctx: CheckContext) -> Verdict | None:
+    """The refusal of a driver whose current account is not the one the change was asked for and
+    is not in the server, else None: the driver role could not be taken from a member who is not
+    there, and the command names the account in use."""
+    payload = ctx.payload
+    async with get_connection(ctx.db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id FROM driver_profiles WHERE id = ?",
+            (int(payload["driver_profile_id"]),),
+        )
+        row = await cursor.fetchone()
+    if row is None or str(row["discord_user_id"]) == str(payload["discord_user_id"]):
+        return None
+    current = int(row["discord_user_id"])
+    guild = await league_guild(ctx.bot)
+    if guild is None or guild.get_member(current) is not None:
+        return None
+    try:
+        await guild.fetch_member(current)
+    except discord.HTTPException:
+        return Verdict.refuse(
+            PAST_ACCOUNT_REFUSAL.format(account=payload["discord_user_id"], current=current)
+        )
+    return None
+
+
+def driver_reject_change(
+    *, placement: PlacementService, driver_turned_down: AwaitedHook
+) -> ChangeType:
+    """The `core.driver_reject` change type, for the builder to register: *placement* is what the
+    job after the save takes the driver role through, and *driver_turned_down* the hook the save
+    calls, given its connection and the driver's profile id, for each module to let go of what it
+    holds for them.
+
+    The payload names the driver (`driver_profile_id`, `discord_user_id`, `driver_name`) and the
+    season (`season_id`). The driver role is read inside the save and taken after it, from the
+    account the save read from the driver's profile.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        """The refusals, in the order they come, each read from the database."""
+        payload = ctx.payload
+        refused = await profile_refusal(ctx.db_path, payload) or await _account_gone_refusal(ctx)
+        if refused is None:
+            refused = await placing_refusal(
+                ctx.db_path, int(payload["season_id"]), REJECT_COMMAND
+            )
+        if refused is not None:
+            return refused
+        async with get_connection(ctx.db_path) as db:
+            cursor = await db.execute(
+                "SELECT current_state FROM driver_profiles WHERE id = ?",
+                (int(payload["driver_profile_id"]),),
+            )
+            row = await cursor.fetchone()
+        if row is None or DriverState(row["current_state"]) is not DriverState.UNASSIGNED:
+            return Verdict.refuse(NOT_UNASSIGNED_REFUSAL.format(**payload))
+        return Verdict.go()
+
+    async def apply(db: aiosqlite.Connection, ctx: StepContext) -> _Saved:
+        profile_id = int(ctx.payload["driver_profile_id"])
+        cursor = await db.execute(
+            "SELECT discord_user_id, current_state FROM driver_profiles WHERE id = ?",
+            (profile_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise ValueError(f"no driver profile {profile_id}")
+        state = DriverState(row["current_state"])
+        await write_transition(db, profile_id, state, DriverState.NOT_SIGNED_UP)
+        await driver_turned_down.call(db, profile_id)
+        cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+        config = await cursor.fetchone()
+        role_id = config["driver_role_id"] if config is not None else None
+        return _Saved(
+            result={},
+            audit=AuditRecord(
+                "DRIVER_REJECT",
+                {"state": state.value},
+                {"new_state": DriverState.NOT_SIGNED_UP.value},
+                None,
+            ),
+            user_id=int(row["discord_user_id"]),
+            revoke=[int(role_id)] if role_id else (),
+        )
+
+    def doing(payload: dict[str, Any]) -> str:
+        return f"Turning down **{payload['driver_name']}**"
+
+    def done(payload: dict[str, Any], _saved: dict[str, Any], _roles_refused: bool) -> str:
+        return f"✅ Turned down **{payload['driver_name']}**. They are no longer signed up."
+
+    def details(payload: dict[str, Any], _saved: dict[str, Any]) -> str:
+        return f"\n  user: {payload['driver_name']} (<@{payload['discord_user_id']}>)"
+
+    return _change(
+        _Kind(
+            kind=DRIVER_REJECT, command=REJECT_COMMAND, doing=doing,
+            nothing_done=NOBODY_TURNED_DOWN, done=done, details=details, check=check, apply=apply,
+        ),
+        placement,
+    )
+
+
 __all__ = [
-    "DRIVER_ASSIGN", "DRIVER_MOVE", "DRIVER_RELEASE", "DRIVER_SACK", "DRIVER_UNASSIGN",
-    "NOBODY_SACKED", "NOT_PLACING_REFUSAL", "NOTHING_ASSIGNED", "NOTHING_MOVED",
+    "DRIVER_ASSIGN", "DRIVER_MOVE", "DRIVER_REJECT", "DRIVER_RELEASE", "DRIVER_SACK",
+    "DRIVER_UNASSIGN", "NOBODY_SACKED", "NOBODY_TURNED_DOWN", "NOT_PLACING_REFUSAL",
+    "NOT_UNASSIGNED_REFUSAL", "PAST_ACCOUNT_REFUSAL", "NOTHING_ASSIGNED", "NOTHING_MOVED",
     "NOTHING_RELEASED", "NOTHING_UNASSIGNED", "driver_assign_change", "driver_move_change",
-    "driver_release_change", "driver_sack_change", "driver_unassign_change",
+    "driver_reject_change", "driver_release_change", "driver_sack_change",
+    "driver_unassign_change",
 ]
