@@ -38,7 +38,6 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
-from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
@@ -170,22 +169,6 @@ async def _get_setup_season_id(bot: LeagueBot) -> int | None:
         )
         row = await cursor.fetchone()
     return row[0] if row else None
-
-
-def _pending_to_division_models(cfg: PendingConfig) -> list[Division]:
-    """Convert PendingDivision entries to Division model objects for formatting."""
-    return [
-        Division(
-            id=0,
-            season_id=0,
-            name=d.name,
-            mention_role_id=d.role_id,
-            forecast_channel_id=d.channel_id,
-            tier=d.tier,
-        )
-        for d in cfg.divisions
-        if d.name
-    ]
 
 
 # ---------------------------------------------------------------------------
