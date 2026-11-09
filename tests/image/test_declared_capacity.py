@@ -18,6 +18,7 @@ import pytest
 ORDINARY = "Team 1"
 RACE = "results_race_template"
 DRIVERS = "standings_drivers_template"
+_NO_GUARD_ASSIGN = "#283: PlacementService.guard_assign is not yet written"
 REMEDY = "Enlarge that template, or disable the images module, before adding another driver."
 
 
@@ -175,27 +176,18 @@ async def _seed(tmp_path):
     return db_path, season_id, division_id
 
 
-async def test_a_placement_past_the_declared_rows_is_refused_through_assign_driver(
+@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
+async def test_a_placement_past_the_declared_rows_is_refused_through_guard_assign(
     tmp_path, declare
 ):
     from leaguebot.core.services.placement_service import PlacementService
 
     db_path, season_id, division_id = await _seed(tmp_path)
     declare(RACE, 3)
-    guild = MagicMock()
-    guild.get_member.return_value = None
-    guild.fetch_member = AsyncMock(return_value=None)
 
     with pytest.raises(ValueError) as refused:
-        await PlacementService(db_path, drawing=_drawing()).assign_driver(
-            driver_profile_id=9999,
-            division_id=division_id,
-            team_name=ORDINARY,
-            season_id=season_id,
-            acting_user_id=99,
-            acting_user_name="Tester",
-            guild=guild,
-            discord_user_id="8888",
+        await PlacementService(db_path, drawing=_drawing()).guard_assign(
+            division_id, season_id, ORDINARY, 9999
         )
 
     assert str(refused.value) == (

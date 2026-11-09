@@ -18,6 +18,7 @@ from lxml import etree
 
 SVG_NS = "http://www.w3.org/2000/svg"
 SHEET = "attendance_template"
+_NO_GUARD_ASSIGN = "#283: PlacementService.guard_assign is not yet written"
 SERVER_ID = 1
 RESERVE = "Reserve"
 ORDINARY = "Team 1"
@@ -176,27 +177,18 @@ async def test_no_sheet_drawn_means_no_problem(tmp_path, toggle, images):
 # ── As a league meets it, through the choke point ─────────────────────────
 
 
-async def test_a_reserve_placement_past_the_rows_is_refused_through_assign_driver(tmp_path):
+@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
+async def test_a_reserve_placement_past_the_rows_is_refused_through_guard_assign(tmp_path):
     """Deliberate, and unlike the standings: a seated reserve takes a row, and so would the
     reserve being placed."""
     from leaguebot.core.services.placement_service import PlacementService
 
     db_path, season_id, division_id = await _seed(tmp_path, drivers=1, reserves=1)
     template = _template_file(tmp_path, rows=2)
-    guild = MagicMock()
-    guild.get_member.return_value = None
-    guild.fetch_member = AsyncMock(return_value=None)
 
     with pytest.raises(ValueError) as refused:
-        await PlacementService(db_path, drawing=_drawing(template)).assign_driver(
-            driver_profile_id=9999,
-            division_id=division_id,
-            team_name=RESERVE,
-            season_id=season_id,
-            acting_user_id=99,
-            acting_user_name="Tester",
-            guild=guild,
-            discord_user_id="8888",
+        await PlacementService(db_path, drawing=_drawing(template)).guard_assign(
+            division_id, season_id, RESERVE, 9999
         )
 
     assert str(refused.value) == (

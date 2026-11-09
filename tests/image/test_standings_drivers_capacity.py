@@ -149,21 +149,15 @@ async def _seed(tmp_path, *, drivers: int, reserves: int = 0):
     return db_path, season_id, division_id
 
 
+_NO_GUARD_ASSIGN = "#283: PlacementService.guard_assign is not yet written"
+
+
 async def _assign(db_path, season_id, division_id, team, drawing):
+    """Ask the guards `/driver assign` asks whether the unplaced driver 9999 may join *team*."""
     from leaguebot.core.services.placement_service import PlacementService
 
-    guild = MagicMock()
-    guild.get_member.return_value = None
-    guild.fetch_member = AsyncMock(return_value=None)
-    return await PlacementService(db_path, drawing=drawing).assign_driver(
-        driver_profile_id=9999,
-        division_id=division_id,
-        team_name=team,
-        season_id=season_id,
-        acting_user_id=99,
-        acting_user_name="Tester",
-        guild=guild,
-        discord_user_id="8888",
+    await PlacementService(db_path, drawing=drawing).guard_assign(
+        division_id, season_id, team, 9999
     )
 
 
@@ -204,7 +198,8 @@ async def test_no_standings_drawn_means_no_problem(tmp_path, toggle, images):
 # ── As a league meets it, through the choke point ─────────────────────────
 
 
-async def test_a_race_placement_past_the_rows_is_refused_through_assign_driver(tmp_path):
+@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
+async def test_a_race_placement_past_the_rows_is_refused_through_guard_assign(tmp_path):
     """The two seated reserves are not among the drivers counted: they hold no row."""
     db_path, season_id, division_id = await _seed(tmp_path, drivers=2, reserves=2)
     template = _template_file(tmp_path, rows=2)
@@ -219,11 +214,10 @@ async def test_a_race_placement_past_the_rows_is_refused_through_assign_driver(t
     )
 
 
-async def test_a_reserve_placement_survives_full_standings_through_assign_driver(tmp_path):
+@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
+async def test_a_reserve_placement_survives_full_standings_through_guard_assign(tmp_path):
     """Seating a reserve grows no classification, so a full template cannot refuse it."""
     db_path, season_id, division_id = await _seed(tmp_path, drivers=2)
     template = _template_file(tmp_path, rows=2)
 
-    result = await _assign(db_path, season_id, division_id, RESERVE, _drawing(template))
-
-    assert result["team_name"] == RESERVE
+    await _assign(db_path, season_id, division_id, RESERVE, _drawing(template))

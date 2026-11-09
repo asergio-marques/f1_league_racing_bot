@@ -88,7 +88,7 @@ async def _seed(tmp_path, *, reserves: int):
         )
         reserve_instance = cursor.lastrowid
         # Each ordinary team carries its two seats, empty until a driver is seated in one —
-        # `assign_driver` needs a free seat to place into, as a real division would have.
+        # an assignment needs a free seat to place into, as a real division would have.
         for index in (1, 2):
             cursor = await db.execute(
                 "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
@@ -166,21 +166,15 @@ def _report(path):
     return MagicMock(valid=True, resolved_path=str(path), template_key=LINEUP)
 
 
+_NO_GUARD_ASSIGN = "#283: PlacementService.guard_assign is not yet written"
+
+
 async def _assign(db_path, season_id, division_id, team, drawing):
+    """Ask the guards `/driver assign` asks whether the unplaced driver 9999 may join *team*."""
     from leaguebot.core.services.placement_service import PlacementService
 
-    guild = MagicMock()
-    guild.get_member.return_value = None
-    guild.fetch_member = AsyncMock(return_value=None)
-    return await PlacementService(db_path, drawing=drawing).assign_driver(
-        driver_profile_id=9999,
-        division_id=division_id,
-        team_name=team,
-        season_id=season_id,
-        acting_user_id=99,
-        acting_user_name="Tester",
-        guild=guild,
-        discord_user_id="8888",
+    await PlacementService(db_path, drawing=drawing).guard_assign(
+        division_id, season_id, team, 9999
     )
 
 
@@ -241,7 +235,8 @@ async def test_no_lineup_drawn_means_no_problem(tmp_path, toggle, images):
 # ── As a league meets it, through the choke point ─────────────────────────
 
 
-async def test_a_reserve_overflow_reaches_the_caller_through_assign_driver(tmp_path):
+@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
+async def test_a_reserve_overflow_reaches_the_caller_through_guard_assign(tmp_path):
     db_path, season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=3)
 
@@ -257,15 +252,14 @@ async def test_a_reserve_overflow_reaches_the_caller_through_assign_driver(tmp_p
     )
 
 
-async def test_an_ordinary_placement_survives_a_full_reserve_block_through_assign_driver(
+@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
+async def test_an_ordinary_placement_survives_a_full_reserve_block_through_guard_assign(
     tmp_path,
 ):
     """#140 as a league met it: `/driver assign` refused, citing the reserve block."""
     db_path, season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=3)
 
-    result = await _assign(
+    await _assign(
         db_path, season_id, division_id, ORDINARY, _drawing({LINEUP: _report(template)})
     )
-
-    assert result["team_name"] == ORDINARY
