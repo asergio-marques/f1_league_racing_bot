@@ -306,3 +306,60 @@ async def test_a_second_press_while_the_confirmation_is_in_hand_is_refused_and_i
     assert len(await _audits(league)) == 1
     assert len(_confirmed_lines(league)) == 1
 
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_a_role_asked_ahead_of_the_confirmation_is_saved_before_the_season_is_fixed(
+    tmp_path, monkeypatch,
+):
+    """The signup module is on, the league's driver role 820 on the server. Season 3's review
+    stands. Admin runs `/bot driver-role` for role 821 and, while that change waits, presses ✅
+    Confirm configuration. The queue runs them in the order asked: the role is saved and audited
+    as an ordinary change of a season still in configuration, with no "replaced" detail and given
+    to nobody; then the confirmation, judged as it starts, finds the league's roles changed since
+    the review and is refused in the press's words, the season left in configuration with nothing
+    kept or audited. Nothing lands between the role's check and its save (S13b's gap)."""
+    from leaguebot.core.cogs.bot_cog import BotCog
+    from leaguebot.core.services.season_review_changes import TAKE_DOWN
+    from tests.support.change_queue import tier_member
+    from tests.support.settings_league import interaction, last_said, unruled
+    from tests.support.undecorate import undecorate
+
+    league = await configuring_league(tmp_path, signup=True, monkeypatch=monkeypatch)
+    review = await post_config_review(league)
+    role = league._role(821)
+    role.name, role.mention = "Stewards", "<@&821>"
+    role.managed = False
+    role.is_default.return_value = False
+    role.guild.me.guild_permissions.manage_roles = True
+    role.guild.me.top_role.__gt__ = lambda _self, _other: True
+    asked = interaction(league.bot, "bot driver-role",
+                        user=tier_member("admin", member_id=ADMIN_ID, display_name="Admin"))
+    asked.guild_id, asked.guild = league.guild.id, league.guild
+
+    await undecorate(BotCog.handle_driver_role)(BotCog(league.bot), asked, role)
+    press = await _pressed(league, review)
+    kinds = [row["kind"] for row in await change_rows(league.db_path)]
+    assert kinds[1:] == [TAKE_DOWN, KIND]
+
+    await run_queue(league.bot)
+
+    [server] = await league.rows("SELECT driver_role_id FROM server_configs")
+    assert server["driver_role_id"] == 821
+    assert len(await league.rows(
+        "SELECT * FROM audit_entries WHERE change_type = 'DRIVER_ROLE_SET'")) == 1
+    [role_line] = [unruled(line) for line in league.bot.log_channel.sent
+                   if "| /bot driver-role | Success" in line]
+    assert role_line == "Admin (`<@77>`) | /bot driver-role | Success\n  role: Stewards (`<@&821>`)"
+    assert league.granted == {}
+    assert last_said(asked) == "✅ **Driver role** set to <@&821>."
+    assert await _stage(league) == "CONFIGURATION"
+    assert await _kept(league) == []
+    assert await _audits(league) == []
+    assert _confirmed_lines(league) == []
+    assert (
+        "⛔ The season has changed since this review:\n• the league's base role and driver role\n"
+        "Run `/season config-review` again and confirm from the fresh report. "
+        "**Nothing has been confirmed.**"
+    ) in reply(press)
+    assert await stopped_job(league.db_path) is None
