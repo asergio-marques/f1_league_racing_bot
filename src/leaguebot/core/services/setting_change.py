@@ -25,7 +25,10 @@ The save judges only held or not.
 list of kinds kept in the queue itself. It marks the log channel, the interaction channel, the
 interaction role and the league admin role: the core specification calls these out as a league's
 way back in when one is wrong or gone, and a league locked out by a stopped job on the league lane
-would have no way to clear it. The queue (`_heads`, `_choose`) lets such a change run ahead of its
+would have no way to clear it. It marks as well a division's results, standings and verdicts
+channels (`results/services/channel_settings.py`): a stop notice for a channel gone tells the league
+to set the channel and press Retry, and a setting waiting behind the stop it is meant to clear could
+never do it, a stopped results post not being one a league can discard. The queue (`_heads`, `_choose`) lets such a change run ahead of its
 lane's stopped head, which stays stopped, while every ordinary change still waits behind it: the
 lane still runs one change at a time, never two of its jobs interleaved — a repair simply jumps the
 queue behind a stop, runs to its own end, and only then is the stopped head tried again.
@@ -153,8 +156,8 @@ class Setting:
     *not_saved* is what a fault's reply says became of the change, or a function of the payload
     that returns it, for a setting whose command is a paste as well as a single value (the reply
     to a check that raises as the change starts is formed from the payload, as the outcome is);
-    *after* are the steps that may follow the save, by name. *repairs_the_bot* makes the change
-    type `overtakes_a_stop`, so that it can still be asked for, and run, while the league's lane is
+    *after* are the steps that may follow the save, by name. *repairs_the_bot*, set on a setting that points the
+    bot at a channel or a role it works through, makes the change type `overtakes_a_stop`, so that it can still be asked for, and run, while the league's lane is
     stopped on something else — see the module docstring.
     """
 

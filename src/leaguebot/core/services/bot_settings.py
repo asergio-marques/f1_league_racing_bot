@@ -16,8 +16,9 @@ there too, for the member's prompt reply, and again by the setting's own `check`
 starts, since a confirmation queued ahead of it may have fixed the season since it was asked.
 
 **Each of the four repair settings overtakes a stop on the league lane, instead of waiting
-behind it** (`Setting.repairs_the_bot`, read by `setting_change`): these are a league's way back
-in when one of the four is wrong or gone, so a stop on an unrelated job cannot hold one up. The
+behind it** (`Setting.repairs_the_bot`, read by `setting_change`, which says what else it marks):
+these are a league's way back in when one of the four is wrong or gone, so a stop on an unrelated
+job cannot hold one up. The
 lane still runs one change at a time — the queue runs an overtaking change to its own end before
 its lane's stopped head is tried again, never beside it — so nothing else writes `server_configs`
 while one of these four does.
