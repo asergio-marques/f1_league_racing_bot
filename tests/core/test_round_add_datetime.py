@@ -400,6 +400,11 @@ _OVERFLOW = (
             id="no_season_being_set_up",
         ),
         pytest.param(
+            {"stage": "SIGNUPS"}, {},
+            "❌ Division `Pro` not found in pending setup.",
+            id="a_season_still_in_signups",
+        ),
+        pytest.param(
             {}, {"format": "WET"},
             "❌ Invalid format `WET`. Choose from: NORMAL, SPRINT, MYSTERY, ENDURANCE.",
             id="an_invalid_format",
@@ -445,20 +450,22 @@ async def test_every_round_add_refusal_is_recorded(tmp_path, monkeypatch, arrang
     what was refused and why. Season #1 is being set up, in Placements, holding division Pro with
     one mystery round on 14 June 2026 at 18:00 UTC, unless the case says otherwise. The league
     manager Admin (4242) runs /round add for Pro, a mystery round on 21 June 2026 at 18:00, but
-    with one thing wrong: no season being set up; format WET; a NORMAL round with no track; track
+    with one thing wrong: no season being set up; the season still in Signups, before any
+    division exists, which no stage check refuses but the division not being found does (the
+    owner's decision on #283: no stage check now); format WET; a NORMAL round with no track; track
     Atlantis, which the bot does not know; a moment typed 14/06/2026 18:00; division Am, which
     does not exist; the moment Pro's round 1 already holds; or a round the calendar template has
     no room for, the image module's drawing saying it draws one. The manager gets today's reply
-    word for word and nothing else, nothing is asked of the change queue, Pro holds its one round,
-    and the log channel gets exactly one line, "⛔ `/round add` refused for Admin (`<@4242>`) — "
+    word for word and nothing else, nothing is asked of the change queue, Pro holds its one round
+    where it was set up and there is no round where it was not, and the log channel gets exactly one line, "⛔ `/round add` refused for Admin (`<@4242>`) — "
     and the reply's first line."""
     from tests.support.change_queue import change_rows
     from tests.support.settings_league import log_lines, said
 
-    has_setup = arranged.get("setup", True)
+    stage = arranged.get("stage", "PLACEMENTS") if arranged.get("setup", True) else None
+    has_pro = stage == "PLACEMENTS"
     league = await setup_league(
-        tmp_path, stage="PLACEMENTS" if has_setup else None,
-        divisions=(("Pro", 1, 10, (_PRO_14,)),),
+        tmp_path, stage=stage, divisions=(("Pro", 1, 10, (_PRO_14,)),) if has_pro else (),
     )
     if "overflow" in arranged:
         monkeypatch.setattr(
@@ -477,5 +484,5 @@ async def test_every_round_add_refusal_is_recorded(tmp_path, monkeypatch, arrang
 
     assert said(interaction) == [reply]
     assert await change_rows(league.db_path) == []
-    assert len(await round_rows(league.db_path, "Pro")) == (1 if has_setup else 0)
+    assert len(await round_rows(league.db_path, "Pro")) == (1 if has_pro else 0)
     assert await log_lines(league) == [refusal_line(WHAT, reply)]
