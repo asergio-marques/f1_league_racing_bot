@@ -1873,8 +1873,8 @@ class ResultsCog(commands.Cog):
         **Verdicts' channel is one the bot must be able to post in**, refused before the season
         is read, and its division is refused in words of its own.
 
-        Every refusal is recorded (#482): `refuse` answers and writes one line naming the
-        command, which is read from the interaction.
+        Every refusal is recorded: `refuse` answers and writes one line naming the command,
+        which is read from the interaction.
         """
         if not await self.bot.module_service.is_results_enabled():
             await refuse(interaction, NOT_ENABLED, what=describe(interaction))

@@ -15,13 +15,12 @@ to do with a value already held or the season; the season's configuration being 
 there too, for the member's prompt reply, and again by the setting's own `check` as the change
 starts, since a confirmation queued ahead of it may have fixed the season since it was asked.
 
-**Each of the four repair settings overtakes a stop on the league lane, instead of waiting
-behind it** (`Setting.repairs_the_bot`, read by `setting_change`, which says what else it marks):
-these are a league's way back in when one of the four is wrong or gone, so a stop on an unrelated
-job cannot hold one up. The
-lane still runs one change at a time — the queue runs an overtaking change to its own end before
-its lane's stopped head is tried again, never beside it — so nothing else writes `server_configs`
-while one of these four does.
+**Each of the four repair settings overtakes a stop on the league lane, instead of waiting behind
+it** (`Setting.repairs_the_bot`, read by `setting_change`, which says what else it marks): these are
+a league's way back in when one of the four is wrong or gone, so a stop on an unrelated job cannot
+hold one up. The lane still runs one change at a time — the queue runs an overtaking change to its
+own end before its lane's stopped head is tried again, never beside it — so nothing else writes
+`server_configs` while one of these four does.
 
 **The two channels refuse a collision at the ask; the four roles judge "already held" in the save
 alone.** A channel already doing another job is refused outright, and one already holding this

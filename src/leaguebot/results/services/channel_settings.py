@@ -80,10 +80,10 @@ def _channel_setting(
     channel_of: Callable[[int], object] | None,
 ) -> Setting:
     """The setting of the *key* channel (the channel registry's key and the word the command and
-    its replies use), *write* its column's upsert, *audit*
-    the entry of the channel moving from one to another in a division, *said* the reply's words
-    for a verb, the division as typed, the channel's id and its name. *channel_of*, verdicts' alone, finds a
-    channel by its id, for the bot's access to it to be judged."""
+    its replies use), *write* its column's upsert, *audit* the entry of the channel moving from
+    one to another in a division, *said* the reply's words for a verb, the division as typed, the
+    channel's id and its name. *channel_of*, verdicts' alone, finds a channel by its id, for the
+    bot's access to it to be judged."""
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
