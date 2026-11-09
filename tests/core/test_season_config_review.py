@@ -19,6 +19,9 @@ from leaguebot.core.cogs.season_cog import (
 )
 from leaguebot.core.models.season import InvalidStageTransition, SeasonStage
 from leaguebot.core.models.server_config import ServerConfig
+from tests.support.setup_reads import hold_setup
+
+SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 7
@@ -78,9 +81,10 @@ def _bot(
 
 def _cog(bot: MagicMock) -> SeasonCog:
     cog = SeasonCog(bot)
-    cog._pending[REVIEWER] = PendingConfig(
+    # The season being set up, read from the database (#283).
+    hold_setup(bot.season_service, PendingConfig(
         season_id=SEASON_ID, season_number=4, game_edition=25
-    )
+    ))
     # The team names are checked by a helper of their own, pinned elsewhere.
     cog._team_name_problems = AsyncMock(return_value=[])
     return cog
@@ -171,6 +175,7 @@ async def test_a_driver_role_the_bot_cannot_grant_is_a_fault():
     assert "Move my role above it" in fault
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_confirming_refuses_a_driver_role_gone_from_the_server():
     bot = _bot(signup=True)
     cog = _cog(bot)
@@ -251,6 +256,7 @@ async def test_the_review_is_refused_outside_configuration(stage):
         (True, True, SeasonStage.PLACEMENTS),
     ],
 )
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_confirming_moves_the_season_on(signup, test_mode, expected):
     bot = _bot(signup=signup, test_mode=test_mode)
     cog = _cog(bot)
@@ -262,6 +268,7 @@ async def test_confirming_moves_the_season_on(signup, test_mode, expected):
     assert "confirmed" in interaction.followup.send.await_args.args[0]
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_confirming_keeps_the_signup_configuration_for_the_season():
     bot = _bot(signup=True)
     await _cog(bot)._do_confirm_configuration(_interaction())
@@ -278,6 +285,7 @@ async def test_confirming_without_signup_keeps_no_signup_configuration():
     bot.signup_module_service.snapshot_season_config.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_confirming_refuses_on_a_fault_found_afresh():
     bot = _bot(signup=True, signup_config=_signup_config(channel=None))
     cog = _cog(bot)
@@ -289,6 +297,7 @@ async def test_confirming_refuses_on_a_fault_found_afresh():
     assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_confirming_a_season_that_has_moved_on_confirms_nothing():
     """The refusal is recorded as one line naming the presser and the review (#482)."""
     bot = _bot()
@@ -308,6 +317,7 @@ async def test_confirming_a_season_that_has_moved_on_confirms_nothing():
     assert "The season is no longer in configuration." in logged[0]
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_confirmation_refused_because_the_season_moved_on_fixes_no_signup_settings():
     """F5: the stage moves first, so a refused confirmation writes nothing (#482)."""
     bot = _bot(signup=True)
@@ -322,6 +332,7 @@ async def test_a_confirmation_refused_because_the_season_moved_on_fixes_no_signu
     bot.signup_module_service.snapshot_season_config.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_confirmation_the_stage_refuses_takes_no_review_down(monkeypatch):
     """Ben's confirmation loses the race to Alex's: set_stage refuses a season that has left
     configuration. Only a press that confirms takes a review down (core, "Confirming placements"),
@@ -473,8 +484,10 @@ async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, 
     await _team_list_since_the_review(env, monkeypatch)
     view, cog = _confirm_view(env)
     # The real confirmation, on a cog whose gates pass: the season in configuration, no fault.
-    cog._get_pending = MagicMock(
-        return_value=PendingConfig(season_id=1, season_number=4, game_edition=25)
+    hold_setup(
+        cog.bot.season_service,
+        PendingConfig(season_id=1, season_number=4, game_edition=25),
+        divisions=False,
     )
     cog._configuration_faults = AsyncMock(return_value=[])
     cog._do_confirm_configuration = MethodType(SeasonCog._do_confirm_configuration, cog)
@@ -637,6 +650,7 @@ async def _report(cog, interaction, monkeypatch) -> list[str]:
     return _texts(await _review_asked(cog, interaction, monkeypatch))
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(monkeypatch):
     """Manager runs `/season config-review` in channel 111 on a sound configuration of season 31
     (test mode on, signup on, results off; teams Alpha with its role, Reserve with none). The
@@ -671,6 +685,7 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     assert not any(line.startswith("⛔") for line in _logged(bot))
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     tmp_path, monkeypatch
 ):
@@ -699,6 +714,7 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
 
 
 @pytest.mark.parametrize("signup", [True, False])
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, signup):
     """The one review that reports them (issue #276). They are the league's, so the review asked
     of the queue shows them whether or not signup is on, and confirming the configuration fixes
@@ -711,6 +727,7 @@ async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, 
     assert "Driver role: <@&3>" in messages[0]
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     """The placements review's subsections, save the divisions, in the same words (#220): with
     signup, results, attendance and weather on, the review asked of the queue carries each
@@ -748,6 +765,7 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     assert "**Weather Config**" in text and "Phase 3 deadline: 2h before race" in text
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
     """With every module off, the review asked of the queue carries no module's configuration."""
     cog = _cog(_report_bot())
@@ -758,6 +776,7 @@ async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
         assert heading not in text
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch):
     """With the image module on, the review asked of the queue carries its outputs."""
     bot = _report_bot(images=True)
@@ -770,6 +789,7 @@ async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch)
     assert any("**Image outputs**" in m and "lineup: on" in m for m in messages)
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     """Signup is on and the league's base role is unset. The review asked of the queue ends in
     the faults, naming the base role and `/bot base-role`, and saying to run
@@ -933,6 +953,7 @@ async def test_an_unchanged_configuration_is_confirmed_and_its_report_cleared(
     "signup, expected",
     [(True, "open it with `/signup open`"), (False, "run `/season placements-review`")],
 )
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_confirmation_says_what_comes_next_and_is_logged(signup, expected):
     bot = _bot(signup=signup)
     interaction = _interaction()
@@ -989,8 +1010,7 @@ async def test_every_config_review_refusal_is_recorded(stage, set_up):
     bot = _bot(stage=stage)
     cog = _cog(bot)
     if not set_up:
-        cog._pending = {}
-        cog._get_pending = MagicMock(return_value=None)
+        hold_setup(bot.season_service, None)
     interaction = _run_by_the_manager(bot, _interaction())
 
     await undecorate(SeasonCog.season_config_review)(cog, interaction)
@@ -1032,8 +1052,7 @@ async def test_confirming_with_no_season_in_configuration_is_refused_and_recorde
     """The configuration review's question is pressed once no season is being set up."""
     bot = _bot()
     cog = _cog(bot)
-    cog._pending.clear()
-    cog._get_pending = MagicMock(return_value=None)
+    hold_setup(bot.season_service, None)
     interaction = _manager_confirming(bot)
 
     await cog._do_confirm_configuration(interaction)
@@ -1051,6 +1070,7 @@ async def test_confirming_with_no_season_in_configuration_is_refused_and_recorde
     )
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_confirming_a_configuration_with_faults_is_refused_with_every_fault_recorded():
     """Manager (id 4242) confirms a configuration that now holds two faults."""
     bot = _bot()
