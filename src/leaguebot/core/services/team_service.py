@@ -384,20 +384,14 @@ class TeamService:
     # Division seeding (US4/US6)
     # ------------------------------------------------------------------
 
-    async def seed_division_teams(self, division_id: int) -> None:
-        """Copy default_teams into team_instances and pre-create seats for the division.
+    async def seed_division_teams_on(self, db: aiosqlite.Connection, division_id: int) -> None:
+        """Copy the league's list of teams into team_instances and pre-create seats for the
+        division, on *db*, a connection the caller holds, the list read there too: commits
+        nothing.
 
         Both names are copied, so the division keeps the names its season ran under whatever
-        becomes of the server's list afterwards (#381).
+        becomes of the server's list afterwards.
         """
-        defaults = await self.get_default_teams()
-        async with get_connection(self._db_path) as db:
-            await self._seed_teams(db, division_id, defaults)
-            await db.commit()
-
-    async def seed_division_teams_on(self, db: aiosqlite.Connection, division_id: int) -> None:
-        """`seed_division_teams` on *db*, a connection the caller holds, the list of teams read
-        there too: commits nothing."""
         await self._seed_teams(db, division_id, await self.get_default_teams_on(db))
 
     @staticmethod
