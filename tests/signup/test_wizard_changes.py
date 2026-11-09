@@ -112,11 +112,17 @@ async def _league(tmp_path: Any, *, manage_channels: bool = True,
     league.guild.create_text_channel = AsyncMock(side_effect=_create)
     category.create_text_channel = league.guild.create_text_channel
     # The league's default teams, which the wizard's team buttons offer (the Reserve team apart).
+    from leaguebot.core.db.database import get_connection
     from leaguebot.core.services.team_service import TeamService
 
     league.bot.team_service = TeamService(league.db_path)
-    await league.bot.team_service.add_default_team("FER", full_name="Scuderia Ferrari")
-    await league.bot.team_service.add_default_team("MCL", full_name="McLaren Racing")
+    async with get_connection(league.db_path) as db:
+        await db.executemany(
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, 2, 0)",
+            [("FER", "Scuderia Ferrari"), ("MCL", "McLaren Racing")],
+        )
+        await db.commit()
     # Today's handlers off the queue, reached by the presses until the changes replace them.
     league.bot.wizard_service.start_wizard = AsyncMock(return_value=None)
     league.bot.wizard_service.withdraw = AsyncMock(return_value=None)

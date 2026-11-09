@@ -31,10 +31,7 @@ def _cog() -> MagicMock:
 
     bot = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=None)
-    bot.team_service.add_default_team = AsyncMock()
-    bot.team_service.remove_default_team = AsyncMock()
     bot.placement_service.team_holding_role = AsyncMock(return_value=None)
-    bot.placement_service.set_team_role_config = AsyncMock()
     bot.output_router.post_log = AsyncMock()
     cog = TeamCog.__new__(TeamCog)
     cog.bot = bot
@@ -74,7 +71,8 @@ async def test_the_command_opens_the_form_and_writes_nothing_itself():
 
     modal = interaction.response.send_modal.await_args.args[0]
     assert isinstance(modal, _TeamAddModal)
-    cog.bot.team_service.add_default_team.assert_not_awaited()
+    assert cog.bot.team_service.mock_calls == []
+    cog.bot.change_queue.ask.assert_not_called()
 
 
 async def test_the_form_bounds_both_names_as_they_are_typed():

@@ -123,9 +123,6 @@ async def _bot(db_path: str, stage: SeasonStage | None):
             team={"name": "Red", "full_name": "Red Racing", "role_id": 900, "is_reserve": False}
         )
     )
-    bot.placement_service.set_team_role_config = AsyncMock()
-    bot.placement_service.delete_team_role_config = AsyncMock()
-    bot.placement_service.swap_team_role = AsyncMock(return_value=0)
     bot.placement_service.team_holding_role = AsyncMock(return_value=None)
     return bot
 
