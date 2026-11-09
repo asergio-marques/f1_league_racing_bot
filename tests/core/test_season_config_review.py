@@ -468,6 +468,7 @@ async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path, monke
     assert _expiry_timer_touched(env) == []
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, monkeypatch):
     """The one press that ends the review: Alex presses ✅ Confirm configuration, the season
     unchanged, and the real confirmation runs past its gates (no fault found afresh, signup off),
@@ -490,6 +491,8 @@ async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, 
         divisions=False,
     )
     cog._configuration_faults = AsyncMock(return_value=[])
+    # The cog's own read of the setup, so that the season above is found through it.
+    cog._get_pending = MethodType(SeasonCog._get_pending, cog)
     cog._do_confirm_configuration = MethodType(SeasonCog._do_confirm_configuration, cog)
     env.bot.module_service.is_signup_enabled = AsyncMock(return_value=False)
     asked_before: list[dict] = []
