@@ -405,7 +405,7 @@ class TestModeCog(commands.Cog):
         if config is None or not config.test_mode_active:
             await refuse(
                 interaction,
-                "⛔ This command is only available when test mode is enabled.",
+                NOT_IN_TEST_MODE,
                 what=describe(interaction),
             )
             return
@@ -707,7 +707,7 @@ class TestModeCog(commands.Cog):
         if config is None or not config.test_mode_active:
             await refuse(
                 interaction,
-                "⛔ This command is only available when test mode is enabled.",
+                NOT_IN_TEST_MODE,
                 what=describe(interaction),
             )
             return
@@ -795,7 +795,7 @@ class TestModeCog(commands.Cog):
         if config is None or not config.test_mode_active:
             await refuse(
                 interaction,
-                "⛔ This command is only available when test mode is enabled.",
+                NOT_IN_TEST_MODE,
                 what=describe(interaction),
             )
             return
@@ -823,7 +823,7 @@ class TestModeCog(commands.Cog):
         if config is None or not config.test_mode_active:
             await refuse(
                 interaction,
-                "⛔ This command is only available when test mode is enabled.",
+                NOT_IN_TEST_MODE,
                 what=describe(interaction),
             )
             return
@@ -886,7 +886,7 @@ class TestModeCog(commands.Cog):
         )
         if config is None or not config.test_mode_active:
             await interaction.followup.send(
-                "⛔ This command is only available when test mode is enabled.",
+                NOT_IN_TEST_MODE,
                 ephemeral=True,
             )
             return
@@ -946,7 +946,7 @@ class TestModeCog(commands.Cog):
         if config is None or not config.test_mode_active:
             await refuse(
                 interaction,
-                "⛔ This command is only available when test mode is enabled.",
+                NOT_IN_TEST_MODE,
                 what=describe(interaction),
             )
             return
