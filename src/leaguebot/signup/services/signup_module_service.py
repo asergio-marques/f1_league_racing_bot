@@ -877,6 +877,14 @@ class SignupModuleService:
         }
 
 
+async def signup_enabled_on(db: aiosqlite.Connection) -> bool:
+    """Whether the signup module is on, read on *db*, as `ModuleService.is_signup_enabled`
+    reads it."""
+    cursor = await db.execute("SELECT signup_module_enabled FROM server_configs")
+    row = await cursor.fetchone()
+    return row is not None and bool(row["signup_module_enabled"])
+
+
 async def configuration_confirmed_on(
     db: aiosqlite.Connection, season_id: int, now: datetime
 ) -> None:
@@ -888,8 +896,11 @@ async def configuration_confirmed_on(
     settings kept or not at all (architecture.md, "How modules and core fit together"). From that
     moment the module's settings are fixed until the season ends, so the snapshot is exactly what
     every signup of the season answered. Called again for the season it replaces the snapshot,
-    never duplicating it.
+    never duplicating it. While the signup module is off it keeps nothing, the hook being called
+    whatever the modules' switches say.
     """
+    if not await signup_enabled_on(db):
+        return
     cursor = await db.execute(
         "SELECT nationality_required, time_type, time_image_required FROM signup_module_settings"
     )

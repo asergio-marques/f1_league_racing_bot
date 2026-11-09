@@ -2245,6 +2245,10 @@ READS_OF_OWN_COLUMNS: dict[tuple[str, str], tuple[str, str]] = {
         "server_configs",
         "reads `server_configs.weather_module_enabled`, the weather module's own column",
     ),
+    ("signup/services/signup_module_service.py", "signup_enabled_on"): (
+        "server_configs",
+        "reads `server_configs.signup_module_enabled`, the signup module's own column",
+    ),
     ("weather/services/forecast_channel.py", "set_division_forecast_channel"): (
         "divisions",
         "reads `divisions.forecast_channel_id`, the weather module's own column",

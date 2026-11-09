@@ -1,11 +1,10 @@
-"""Confirming a season's configuration, carried out on the change queue (#283, S15d).
+"""Confirming a season's configuration, carried out on the change queue.
 
 ✅ Confirm configuration on `/season config-review` gates the press in the season cog and asks the
 queue for this change, the review taken down ahead of it, as ✅ Confirm placements does
-mid-season (`mid_season_confirm_change`). The stage, signup's settings and the confirmation's own
-record used to be written in turn off the queue, each with its commit, so a fault after the first
-left the season moved on with nothing kept and nothing recorded. This module holds the change; the
-cog holds the press.
+mid-season (`mid_season_confirm_change`). The stage, the modules' kept settings and the
+confirmation's own record are one save, so a fault leaves the season in Configuration with nothing
+kept and nothing recorded. This module holds the change; the cog holds the press.
 
 **The check, at the press and again when the change runs** (`check`), refuses in this order, the
 first that fails being the refusal: another confirmation of the season in hand, queued, running or
@@ -206,9 +205,8 @@ def configuration_confirm_change(
         test_mode = server is not None and bool(server["test_mode_active"])
         target = SeasonStage.WAITING if signup_on and not test_mode else SeasonStage.PLACEMENTS
         await confirm_configuration_on(db, season_id, target)
-        if signup_on:
-            # The season's signups are made under what the modules keep now, fixed from here.
-            await configuration_confirmed.call(db, season_id, now())
+        # Every subscriber is called, each checking its own module's switch on *db*.
+        await configuration_confirmed.call(db, season_id, now())
 
         audit = AuditRecord(
             "CONFIGURATION_CONFIRMED",
