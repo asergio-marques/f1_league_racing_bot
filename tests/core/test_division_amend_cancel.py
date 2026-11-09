@@ -130,7 +130,6 @@ def _make_cog(
         return_value=rounds if rounds is not None else []
     )
     bot.season_service.delete_division = AsyncMock(return_value=None)
-    bot.season_service.rename_division = AsyncMock(return_value=None)
     bot.season_service.cancel_division = AsyncMock(return_value=None)
     bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
     bot.scheduler_service = MagicMock()
