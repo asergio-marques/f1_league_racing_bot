@@ -148,11 +148,6 @@ async def test_a_second_restart_leaves_a_lapse_in_hand_alone(tmp_path):
     assert len(_amend_lines(league)) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: SeasonService.delete_round_on, the delete on a save's connection, is not yet "
-    "written",
-)
 async def test_an_amendment_cannot_outlive_its_round(tmp_path):
     """A round deleted while an amendment was open, as `/round delete` deletes it, takes the
     amendment's row with it: the results module deletes its own rows through the round's delete

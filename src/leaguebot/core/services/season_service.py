@@ -712,45 +712,61 @@ class SeasonService:
         rounds_deleted: AwaitedHook,
         divisions_deleted: AwaitedHook,
     ) -> None:
-        """Delete a division with its rounds, teams and seats, in one transaction.
+        """`delete_division_on` on a connection of its own, committed once it is done."""
+        async with get_connection(self._db_path) as db:
+            await self.delete_division_on(
+                db, division_id, rounds_deleted=rounds_deleted,
+                divisions_deleted=divisions_deleted,
+            )
+            await db.commit()
 
-        Each module deletes its own rows through a hook on the transaction's connection:
-        *rounds_deleted* with the division's round ids (none, no call), then *divisions_deleted*
-        with the division's id. Core then deletes its own rows.
+    @staticmethod
+    async def delete_division_on(
+        db: aiosqlite.Connection,
+        division_id: int,
+        *,
+        rounds_deleted: AwaitedHook,
+        divisions_deleted: AwaitedHook,
+    ) -> None:
+        """Delete a division with its rounds, teams and seats, on the connection handed to it.
+
+        It writes on *db* and commits nothing, for the delete's one save to commit. Each module
+        deletes its own rows through a hook on that connection: *rounds_deleted* with the
+        division's round ids (none, no call), then *divisions_deleted* with the division's id.
+        Core then deletes its own rows.
 
         Fails while a driver is placed in it: the seat the placement points at has no delete
-        action, so removing the seats breaks the placement's foreign key, the whole deletion
-        rolls back and the error reaches the caller.
+        action, so removing the seats breaks the placement's foreign key and the error reaches
+        the caller, whose save rolls all of it back. The check that refuses such a division
+        first is the caller's, the schema the backstop.
         """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id FROM rounds WHERE division_id = ?", (division_id,)
-            )
-            round_rows = await cursor.fetchall()
-            round_ids = [r[0] for r in round_rows]
+        cursor = await db.execute(
+            "SELECT id FROM rounds WHERE division_id = ?", (division_id,)
+        )
+        round_rows = await cursor.fetchall()
+        round_ids = [r[0] for r in round_rows]
 
-            if round_ids:
-                await rounds_deleted.call(db, round_ids)
-            await divisions_deleted.call(db, [division_id])
+        if round_ids:
+            await rounds_deleted.call(db, round_ids)
+        await divisions_deleted.call(db, [division_id])
 
-            if round_ids:
-                ph = ",".join("?" * len(round_ids))
-                await db.execute(f"DELETE FROM sessions WHERE round_id IN ({ph})", round_ids)
-                await db.execute(f"DELETE FROM rounds WHERE division_id = ?", (division_id,))
+        if round_ids:
+            ph = ",".join("?" * len(round_ids))
+            await db.execute(f"DELETE FROM sessions WHERE round_id IN ({ph})", round_ids)
+            await db.execute("DELETE FROM rounds WHERE division_id = ?", (division_id,))
 
-            # team_seats → team_instances: no cascade, must be deleted manually
-            await db.execute(
-                "DELETE FROM team_seats WHERE team_instance_id IN "
-                "(SELECT id FROM team_instances WHERE division_id = ?)",
-                (division_id,),
-            )
-            await db.execute("DELETE FROM team_instances WHERE division_id = ?", (division_id,))
-            # driver_season_assignments.division_id has no cascade
-            await db.execute(
-                "DELETE FROM driver_season_assignments WHERE division_id = ?", (division_id,)
-            )
-            await db.execute("DELETE FROM divisions WHERE id = ?", (division_id,))
-            await db.commit()
+        # team_seats → team_instances: no cascade, must be deleted manually
+        await db.execute(
+            "DELETE FROM team_seats WHERE team_instance_id IN "
+            "(SELECT id FROM team_instances WHERE division_id = ?)",
+            (division_id,),
+        )
+        await db.execute("DELETE FROM team_instances WHERE division_id = ?", (division_id,))
+        # driver_season_assignments.division_id has no cascade
+        await db.execute(
+            "DELETE FROM driver_season_assignments WHERE division_id = ?", (division_id,)
+        )
+        await db.execute("DELETE FROM divisions WHERE id = ?", (division_id,))
 
     async def duplicate_division_on(
         self,
@@ -840,28 +856,36 @@ class SeasonService:
         return inserted_id(cursor)
 
     async def delete_round(self, round_id: int, *, rounds_deleted: AwaitedHook) -> None:
-        """Delete a round and renumber siblings.
-
-        Each module deletes its own rows of the round through *rounds_deleted*, on the
-        transaction's connection; core then deletes the round's sessions and the round,
-        and renumbers the division's remaining rounds. One save: all of it commits once,
-        so a fault part-way leaves the round, its siblings' numbers and the modules' rows
-        as they were.
-        """
+        """`delete_round_on` on a connection of its own, committed once it is done."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT division_id FROM rounds WHERE id = ?", (round_id,)
-            )
-            row = await cursor.fetchone()
-            if row is None:
-                return
-            division_id: int = row[0]
-
-            await rounds_deleted.call(db, [round_id])
-            await db.execute("DELETE FROM sessions WHERE round_id = ?", (round_id,))
-            await db.execute("DELETE FROM rounds WHERE id = ?", (round_id,))
-            await renumber_rounds_on(db, division_id)
+            await self.delete_round_on(db, round_id, rounds_deleted=rounds_deleted)
             await db.commit()
+
+    @staticmethod
+    async def delete_round_on(
+        db: aiosqlite.Connection, round_id: int, *, rounds_deleted: AwaitedHook
+    ) -> None:
+        """Delete a round and renumber siblings, on the connection handed to it.
+
+        It writes on *db* and commits nothing, for the delete's one save to commit. Each module
+        deletes its own rows of the round through *rounds_deleted*, on that connection; core
+        then deletes the round's sessions and the round, and renumbers the division's remaining
+        rounds. A fault part-way leaves, once the save is rolled back, the round, its siblings'
+        numbers and the modules' rows as they were. A round that is not there is left alone,
+        and no division is renumbered on its account.
+        """
+        cursor = await db.execute(
+            "SELECT division_id FROM rounds WHERE id = ?", (round_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return
+        division_id: int = row[0]
+
+        await rounds_deleted.call(db, [round_id])
+        await db.execute("DELETE FROM sessions WHERE round_id = ?", (round_id,))
+        await db.execute("DELETE FROM rounds WHERE id = ?", (round_id,))
+        await renumber_rounds_on(db, division_id)
 
     # ------------------------------------------------------------------
     # Session

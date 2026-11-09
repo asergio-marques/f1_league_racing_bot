@@ -41,12 +41,6 @@ from tests.support.delete_hooks import DIVISION_HOOKS, delete_hooks
 
 SERVER_ID = 9808
 
-#: Why the deletes below fail until the build: they call the form that does not exist yet.
-_XFAIL_ON = (
-    "#283: SeasonService.delete_division_on, the delete on a save's connection, is not yet written"
-)
-
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
@@ -352,7 +346,6 @@ async def test_divisions_are_returned_in_tier_order(tmp_path):
     assert [d.name for d in divisions] == ["First", "Second"]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_division_with_a_driver_placed_in_it_is_not_deleted(tmp_path):
     """A division is deleted only once every driver placed in it has been unassigned
     (core specification, Divisions; decided 2026-09-25, #282). The deletion is destructive
@@ -391,7 +384,6 @@ async def test_a_division_with_a_driver_placed_in_it_is_not_deleted(tmp_path):
     assert await _count(db_path, "session_results", "round_id = ?", (110,)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_deleting_one_division_leaves_its_neighbours_alone(tmp_path):
     """The deletes are all keyed on the division, and a missing `WHERE` would take the
     whole season's lineup with it."""
@@ -408,7 +400,6 @@ async def test_deleting_one_division_leaves_its_neighbours_alone(tmp_path):
     assert await _count(db_path, "team_seats", "team_instance_id = ?", (120,)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_deleting_a_division_with_no_rounds_is_not_an_error(tmp_path):
     """A division added during setup and removed before any round was scheduled."""
     db_path = await _make_db(tmp_path)

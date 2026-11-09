@@ -323,16 +323,8 @@ _LET_GO = {
 
 @pytest.mark.parametrize("deleted", [
     pytest.param("season"),
-    pytest.param("division", marks=pytest.mark.xfail(
-        strict=True,
-        reason="#283: SeasonService.delete_division_on, the delete on a save's connection, is not "
-        "yet written",
-    )),
-    pytest.param("round", marks=pytest.mark.xfail(
-        strict=True,
-        reason="#283: SeasonService.delete_round_on, the delete on a save's connection, is not "
-        "yet written",
-    )),
+    pytest.param("division"),
+    pytest.param("round"),
     pytest.param(_DRIVER_KEEPING_HISTORY),
     pytest.param(_DRIVER_LOSING_HISTORY),
 ])

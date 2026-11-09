@@ -47,12 +47,6 @@ SEASON_ID = 1
 DIVISION_ID = 11
 ACTOR_ID = 77
 
-#: Why the deletes below fail until the build: they call the form that does not exist yet.
-_XFAIL_ON = (
-    "#283: SeasonService.delete_round_on, the delete on a save's connection, is not yet written"
-)
-
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
@@ -170,7 +164,6 @@ async def _delete_round(db_path: str, round_id: int) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 @pytest.mark.parametrize(
     "rounds, expected",
     [
@@ -207,7 +200,6 @@ async def test_renumbering_follows_the_calendar_not_the_old_numbers(tmp_path):
     assert await _numbers(db_path) == [(1, 1), (3, 2), (2, 3)]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_deleting_a_round_that_does_not_exist_is_a_no_op(tmp_path):
     """Two managers deleting the same round; the second must not renumber a division on
     the strength of a round that has already gone."""
@@ -218,7 +210,6 @@ async def test_deleting_a_round_that_does_not_exist_is_a_no_op(tmp_path):
     assert await _numbers(db_path) == [(1, 1)]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_round_delete_that_fails_part_way_leaves_everything_as_it_was(tmp_path):
     """Rounds 1, 2 and 3; round 2 has a session and a drawn weather phase. Deleting round 2
     fails in the renumbering. It is one save, so nothing of it is kept: every round is there
