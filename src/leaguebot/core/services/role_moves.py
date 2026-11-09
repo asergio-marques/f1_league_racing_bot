@@ -13,7 +13,8 @@ member carries `{"user_id", "revoke", "grant"}`, the roles' ids as the change re
 save. A member Discord cannot find has left the server, and their roles went with them: the step
 completes, nothing taken or given. A refusal ends the job with `{"problem": ...}`, in plain words
 and naming the roles and the kind of fault, never Discord's own message, for the change's reply and
-line to carry (`not_done`). Where taking is refused, nothing is given, and the problem names both.
+line to carry (`not_done`). Where taking is refused, nothing is given, and the problem names both. A role no longer on the server is, for a change that asks it
+(`give_what_remains`), passed over and named, the roles still there given.
 """
 
 from __future__ import annotations
@@ -84,10 +85,17 @@ def problem_of(
 
 
 def role_move_step(
-    placement: "PlacementService", name: str = MOVE_ROLES, *, reason: str = PLACEMENT_REASON
+    placement: "PlacementService",
+    name: str = MOVE_ROLES,
+    *,
+    reason: str = PLACEMENT_REASON,
+    give_what_remains: bool = False,
 ) -> Step:
     """The job that takes a member's roles and then gives theirs; see the module. *reason* is what
     Discord's audit log is given for taking them and for giving them.
+
+    A role no longer on the server stops the giving of all of them, unless *give_what_remains*: the
+    roles still on the server are given, and the job ends with a problem naming those that are not.
 
     It raises where Discord will not (`PlacementService.revoke_roles`, `grant_roles`), and
     `on_fault` ends the job on it with the problem named, so the queue goes on.
@@ -108,6 +116,10 @@ def role_move_step(
                 raise _RoleMoveFault(taken=False) from error
             if not found:
                 return StepResult(result={"gone": True})
+        missing: list[int] = []
+        if grant and give_what_remains:
+            missing = [role for role in grant if guild.get_role(role) is None]
+            grant = [role for role in grant if role not in missing]
         if grant:
             try:
                 found = await placement.grant_roles(guild, user_id, *grant, reason=reason)
@@ -115,6 +127,11 @@ def role_move_step(
                 raise _RoleMoveFault(taken=True) from error
             if not found:
                 return StepResult(result={"gone": True})
+        if missing:
+            problem = problem_of(
+                user_id, (), missing, taken=True, kind="it is no longer on the server"
+            )
+            return StepResult(result={"problem": problem})
         return StepResult(result={})
 
     def on_fault(ctx: StepContext, error: BaseException) -> StepResult:

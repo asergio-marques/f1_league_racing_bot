@@ -1051,7 +1051,7 @@ def driver_reassign_change(
     steps = {
         SAVE: Step(SAVE, StepKind.SAVE, save),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
-        MOVE_ROLES: role_move_step(placement, reason=REASSIGN_REASON),
+        MOVE_ROLES: role_move_step(placement, reason=REASSIGN_REASON, give_what_remains=True),
         DISCARD_PORTRAIT: Step(
             DISCARD_PORTRAIT, StepKind.ACT, discard_portrait, describe=describe_discard
         ),
