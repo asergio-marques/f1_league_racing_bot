@@ -28,6 +28,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
+from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.models.season import (
     ALLOWED_STAGE_TRANSITIONS,
     ONGOING_STAGES,
@@ -62,6 +63,10 @@ UNSETTLED_STATES: tuple[str, ...] = (
     "AWAITING_CORRECTION_PARAMETER",
     "PENDING_DRIVER_CORRECTION",
 )
+
+#: The states of a driver whose signup was approved and who is not committed to a season: the ones
+#: the wind-down's turn-down withdraws an approval for.
+_APPROVED_STATES = frozenset({DriverState.UNASSIGNED, DriverState.ASSIGNED})
 
 #: The stages a signup window may be opened from, and the stage opening it moves to.
 WINDOW_OPENS_FROM: dict[SeasonStage, SeasonStage] = {
@@ -226,9 +231,19 @@ async def _pending_placement_drivers_on(db: aiosqlite.Connection, season_id: int
     return [dict(r) for r in await cursor.fetchall()]
 
 
-async def _turn_down_on(db: aiosqlite.Connection, season_id: int, drivers: list[dict]) -> None:
-    """Write the turn-down of *drivers*' placements on *db*, committing nothing."""
-    from leaguebot.core.models.driver_profile import DriverState
+async def _turn_down_on(
+    db: aiosqlite.Connection,
+    season_id: int,
+    drivers: list[dict],
+    driver_turned_down: AwaitedHook,
+) -> None:
+    """Write the turn-down of *drivers*' placements on *db*, committing nothing.
+
+    Each driver approved (Unassigned, or Assigned by a placement never committed) is handed to
+    *driver_turned_down* as `/driver reject` hands it, so that each module lets go of what it holds
+    for them; a driver whose signup is still in review is not, there being no approval to
+    withdraw.
+    """
     from leaguebot.core.services.driver_service import write_transition
 
     await db.execute(
@@ -242,9 +257,10 @@ async def _turn_down_on(db: aiosqlite.Connection, season_id: int, drivers: list[
         (season_id,),
     )
     for driver in drivers:
-        await write_transition(
-            db, driver["id"], DriverState(driver["current_state"]), DriverState.NOT_SIGNED_UP
-        )
+        state = DriverState(driver["current_state"])
+        await write_transition(db, driver["id"], state, DriverState.NOT_SIGNED_UP)
+        if state in _APPROVED_STATES:
+            await driver_turned_down.call(db, driver["id"])
     if drivers:
         await db.execute(
             "INSERT INTO audit_entries "
@@ -257,19 +273,22 @@ async def _turn_down_on(db: aiosqlite.Connection, season_id: int, drivers: list[
         )
 
 
-async def turn_down_pending_placements_on(db: aiosqlite.Connection, season_id: int) -> list[dict]:
+async def turn_down_pending_placements_on(
+    db: aiosqlite.Connection, season_id: int, driver_turned_down: AwaitedHook
+) -> list[dict]:
     """Turn down every placement of *season_id* still pending, as the reject command would, on *db*.
 
     The database side of the wind-down, committing nothing: it is part of the save that also
     moves the season on (#439). Each pending placement is discarded and its seat vacated, and
-    each such driver returns to Not Signed Up through the transition table. A driver without the
-    former-driver flag is thereby pending deletion. Gives each driver turned down as ``id``,
+    each such driver returns to Not Signed Up through the transition table, and each approved one
+    is handed to *driver_turned_down*. A driver without the former-driver flag is thereby pending
+    deletion. Gives each driver turned down as ``id``,
     ``user_id``, ``state`` (the one they were in) and ``is_test_driver``, for the jobs that follow
     the save: a signup in review has its channel told and closed, an approved driver loses the
     driver role.
     """
     drivers = await _pending_placement_drivers_on(db, season_id)
-    await _turn_down_on(db, season_id, drivers)
+    await _turn_down_on(db, season_id, drivers, driver_turned_down)
     return [
         {
             "id": d["id"],
@@ -470,6 +489,7 @@ def wind_down_change(
     placement: PlacementService,
     season_end_closes: Hook,
     drivers_returned: AwaitedHook,
+    driver_turned_down: AwaitedHook,
     driver_returned_jobs: Hook,
     season_end_steps: Hook,
 ) -> ChangeType:
@@ -490,7 +510,7 @@ def wind_down_change(
        or `take_driver_role` for an approved driver.
 
     *placement* and the hooks the modules sign up to (*season_end_closes*, *drivers_returned*,
-    *driver_returned_jobs*, *season_end_steps*) are what the jobs reach Discord and the other
+    *driver_turned_down*, *driver_returned_jobs*, *season_end_steps*) are what the jobs reach Discord and the other
     modules through, handed by the builder.
     """
 
@@ -514,7 +534,10 @@ def wind_down_change(
                     + "".join(f"\n  not done: {text}" for text in left),)
         return ()
 
-    steps = wind_down_steps(drivers_returned=drivers_returned, driver_returned_jobs=driver_returned_jobs)
+    steps = wind_down_steps(
+        drivers_returned=drivers_returned, driver_turned_down=driver_turned_down,
+        driver_returned_jobs=driver_returned_jobs,
+    )
     steps.update(
         close_signup_steps(
             placement, season_end_steps=season_end_steps,
@@ -537,6 +560,7 @@ def wind_down_change(
 def wind_down_steps(
     *,
     drivers_returned: AwaitedHook,
+    driver_turned_down: AwaitedHook,
     driver_returned_jobs: Hook,
 ) -> dict[str, Step]:
     """The job that takes a season whose every division is done out of its ongoing stages.
@@ -547,8 +571,8 @@ def wind_down_steps(
     its line. The jobs that close what the modules hold open come before it
     (`close_jobs`), and the jobs that tell and close each driver's signup
     (`close_signup_steps`) are the change's own to carry. The modules' parts of the `turn_down`
-    save are its hooks: the drivers returned (*drivers_returned*) and the jobs planned for each
-    (*driver_returned_jobs*).
+    save are its hooks: the drivers returned (*drivers_returned*), each approved one turned down
+    (*driver_turned_down*) and the jobs planned for each (*driver_returned_jobs*).
     """
 
     async def turn_down(db: aiosqlite.Connection, _ctx: StepContext) -> StepResult:
@@ -564,7 +588,7 @@ def wind_down_steps(
             return StepResult(result={"moved": False})
         drivers: list[dict] = []
         if stage != SeasonStage.ONGOING.value:
-            drivers = await turn_down_pending_placements_on(db, season_id)
+            drivers = await turn_down_pending_placements_on(db, season_id, driver_turned_down)
             await drivers_returned.call(db, drivers)
             current, _ = await _stage_and_whether_done_on(db, season_id)
             if current in (SeasonStage.ONGOING_SIGNUPS.value, SeasonStage.ONGOING_PLACEMENTS.value):
@@ -816,7 +840,6 @@ async def run_driver_pass_on(
     cfg_row = await cursor.fetchone()
     driver_role_id = cfg_row["driver_role_id"] if cfg_row else None
 
-    from leaguebot.core.models.driver_profile import DriverState
     from leaguebot.core.services.driver_service import write_transition
 
     # Through the transition table, as every change of a driver's state is.

@@ -218,9 +218,6 @@ async def _approved(league: Any, user_id: int) -> int:
     return rows[0]["n"]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the wind-down does not yet call core's driver-turned-down hook"
-)
 async def test_the_wind_down_withdraws_the_approval_of_each_approved_driver_it_turns_down(tmp_path):
     """The core specification: the wind-down turns each pending placement down as the reject
     command would; and the signup specification: a signup ceases to be approved when the approved

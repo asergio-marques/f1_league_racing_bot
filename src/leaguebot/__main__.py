@@ -986,6 +986,7 @@ def register_change_types(bot: LeagueBot) -> None:
             placement=bot.placement_service,
             season_end_closes=bot.season_end_closes,
             drivers_returned=bot.drivers_returned,
+            driver_turned_down=bot.driver_turned_down,
             driver_returned_jobs=bot.driver_returned_jobs,
             season_end_steps=bot.season_end_steps,
         )
@@ -1001,6 +1002,7 @@ def register_change_types(bot: LeagueBot) -> None:
             season_end_refused=bot.season_end_refused,
             season_end_closes=bot.season_end_closes,
             drivers_returned=bot.drivers_returned,
+            driver_turned_down=bot.driver_turned_down,
             driver_returned_jobs=bot.driver_returned_jobs,
             season_end_steps=bot.season_end_steps,
             test_mode_flushed=bot.test_mode_flushed,

@@ -500,6 +500,7 @@ def season_complete_change(
     season_end_refused: AwaitedHook,
     season_end_closes: Hook,
     drivers_returned: AwaitedHook,
+    driver_turned_down: AwaitedHook,
     driver_returned_jobs: Hook,
     season_end_steps: Hook,
     test_mode_flushed: AwaitedHook,
@@ -512,9 +513,9 @@ def season_complete_change(
     (whose season-end job `settle` removes), the *placement* service (which takes back roles), the
     hooks the modules sign up to
     (*final_round_read*, *season_completed*, *season_completed_steps*, *season_end_refused*,
-    *season_end_closes*, *drivers_returned*, *driver_returned_jobs*, *season_end_steps*,
-    *test_mode_flushed*, *drivers_deleted*) and the hook each driver deleted calls
-    (*profiles_deleted*).
+    *season_end_closes*, *drivers_returned*, *driver_turned_down*, *driver_returned_jobs*,
+    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*) and the hook each driver deleted
+    calls (*profiles_deleted*).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -757,7 +758,8 @@ def season_complete_change(
         return "recording the completion of the season"
 
     winding = wind_down_steps(
-        drivers_returned=drivers_returned, driver_returned_jobs=driver_returned_jobs,
+        drivers_returned=drivers_returned, driver_turned_down=driver_turned_down,
+        driver_returned_jobs=driver_returned_jobs,
     )
     turn_down = winding[TURN_DOWN_STEP]
 
