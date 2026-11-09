@@ -389,10 +389,10 @@ class TestTheNationalityCommand:
     @pytest.mark.parametrize("configured", [True, False], ids=["test_mode_off", "unconfigured"])
     async def test_it_is_refused_while_test_mode_is_off(self, league, configured):
         """Admin (77) runs the command with test mode off, or on a server with no configuration
-        at all. They are refused at once, in one reply seen by them alone, in the words the command
-        has always used; nothing is queued, the switch is not touched and nothing is audited; where the server is configured
-        its log channel takes the standard refusal line, and where it is not there is no log
-        channel to take one."""
+        at all. They are refused at once, in one reply seen by them alone, in the words the
+        command has always used; nothing is queued, the switch is not touched and nothing is
+        audited; where the server is configured its log channel takes the standard refusal line,
+        and where it is not there is no log channel to take one."""
         async with get_connection(league.db_path) as db:
             if configured:
                 await db.execute("UPDATE server_configs SET test_mode_active = 0")
@@ -415,6 +415,7 @@ class TestTheNationalityCommand:
             ]
         else:
             assert await _flags(league.db_path) is None
+            assert _lines(league) == []
 
     @pytest.mark.xfail(strict=True, reason=_NOT_A_SETTING)
     async def test_it_is_refused_as_it_starts_where_test_mode_was_turned_off(self, league):
