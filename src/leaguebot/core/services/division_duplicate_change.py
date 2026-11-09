@@ -19,6 +19,9 @@ Placements, a tier below 1, the source not found, a name the league's rules refu
 season holds already and a tier it holds already. A name or a tier taken by a copy asked just
 before is thus refused as it starts, in the words it would have met at the ask, rather than
 reaching the schema's rule that holds each once per season (`001_baseline.sql`).
+An offset that moves a round of the source beyond the dates a datetime holds is no refusal: the
+check works the shifted moments out, so it raises at the ask, to the general failure reply, with
+nothing queued and the lane running, rather than faulting the save and stopping the lane.
 
 **The warnings are the reply's, never a refusal:** a shifted moment in the past, judged against the
 queue's clock as the copy is saved, and rounds shifted onto one moment, each given once.
@@ -77,6 +80,11 @@ COMMAND = "/division duplicate"
 DISCARDED = "Nothing was duplicated: no division was created. Run `/division duplicate` again."
 
 
+def _delta(payload: dict[str, Any]) -> timedelta:
+    """The offset as the time each round of the source is moved by."""
+    return timedelta(days=payload["day_offset"], hours=payload["hour_offset"])
+
+
 def _offset(payload: dict[str, Any]) -> str:
     """The offset as the reply and the line give it."""
     return f"{payload['day_offset']:+}d {payload['hour_offset']:+}h"
@@ -106,6 +114,11 @@ def _check(seasons: "SeasonService") -> Callable[[CheckContext], Awaitable[Verdi
         refusal = validate_division_tier(tier, [d.tier for d in held], within="season")
         if refusal is not None:
             return Verdict.refuse(f"⛔ {refusal}")
+        # An offset that moves a round beyond the dates a datetime holds raises here, at the ask,
+        # as it always has, rather than in the save, where a fault stops the lane.
+        delta = _delta(payload)
+        for rnd in await seasons.get_division_rounds(payload["division_id"]):
+            rnd.scheduled_at + delta
         return Verdict.go()
 
     return check
@@ -143,7 +156,7 @@ def _save(
         division = await seasons.duplicate_division_on(
             db, source.id, name=str(payload["new_name"]), role_id=int(payload["role_id"]),
             tier=int(payload["tier"]),
-            offset=timedelta(days=payload["day_offset"], hours=payload["hour_offset"]),
+            offset=_delta(payload),
         )
         await teams.seed_division_teams_on(db, division.id)
         rounds = await seasons.get_division_rounds_on(db, division.id)
