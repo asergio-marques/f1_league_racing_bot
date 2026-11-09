@@ -6,7 +6,8 @@ About record nothing. Each case below turns a league admin away at one of the te
 checks, and expects today's reply, seen by them alone, and exactly one standard refusal line; a
 refusal on the roster import form names the form. The refusal to change the roster outside
 placements is recorded already and is not a case; the restore confirmation is tested in
-`test_test_mode_backup.py`.
+`test_test_mode_backup.py`. `/test-mode nationality` is refused by its setting's check, which the
+change queue makes (#283), and is tested with the command in `test_test_mode_cog_roster.py`.
 
 `/test-mode backup status` is a view, so its refusal outside test mode records nothing.
 """
@@ -265,12 +266,6 @@ _CASES = {
         _command("toggle"),
         _real_drivers,
         "cannot be enabled while this server has **2** real driver(s)",
-    ),
-    "nationality outside test mode": (
-        "test-mode nationality",
-        _command("nationality"),
-        _not_in_test_mode,
-        "only available when test mode is enabled",
     ),
     "advance outside test mode": (
         "test-mode advance",

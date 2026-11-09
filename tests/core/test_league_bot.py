@@ -140,13 +140,13 @@ def test_the_season_s_end_is_registered():
 
 
 #: The settings commands of results, weather and images as the builder registers them (#439,
-#: slice 7), core's seven `/bot` settings and its two division channels (#283): one change type
-#: per setting, every one built by `setting_change`.
+#: slice 7), core's seven `/bot` settings, its two division channels and its test-mode nationality
+#: switch (#283): one change type per setting, every one built by `setting_change`.
 SETTING_KINDS = (
     *(f"core.setting.{name}" for name in (
         "log_channel", "interaction_channel", "interaction_role", "admin_role",
         "base_role_id", "driver_role_id", "hub_channel_id", "lineup_channel_id",
-        "calendar_channel_id",
+        "calendar_channel_id", "test_mode_nationality_required",
     )),
     "weather.setting.deadline",
     *(f"results.setting.{name}" for name in (
@@ -162,8 +162,11 @@ SETTING_KINDS = (
 )
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the test-mode nationality switch is not a registered setting"
+)
 def test_the_settings_changes_are_registered():
-    """The builder registers the thirty-three settings changes of core, results, weather and images,
+    """The builder registers the thirty-four settings changes of core, results, weather and images,
     once each, and no other kind carrying ".setting." (#439, slice 7; #283): the
     attendance settings stay off the queue until attendance's design pass."""
     from leaguebot.__main__ import register_change_types
@@ -174,7 +177,7 @@ def test_the_settings_changes_are_registered():
     kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
     settings = sorted(kind for kind in kinds if ".setting." in kind)
     assert settings == sorted(SETTING_KINDS)
-    assert len(SETTING_KINDS) == 33
+    assert len(SETTING_KINDS) == 34
 
 
 @pytest.mark.parametrize(

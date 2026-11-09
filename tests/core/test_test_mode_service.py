@@ -15,7 +15,6 @@ from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.services.test_mode_service import (
     turn_test_mode_off,
-    toggle_test_mode_nationality,
     count_live_real_drivers,
     get_next_pending_phase,
     build_review_summary,
@@ -299,7 +298,8 @@ async def test_fake_drivers_do_not_count(tmp_path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# toggle_test_mode_nationality
+# The test-mode nationality switch. `/test-mode nationality` flips it through the change
+# queue, and its tests are the command's, in `test_test_mode_cog_roster.py`.
 # ---------------------------------------------------------------------------
 
 async def test_nationality_toggle_starts_on(tmp_path) -> None:
@@ -315,39 +315,6 @@ async def test_nationality_toggle_starts_on(tmp_path) -> None:
             )
         ).fetchone()
     assert row["test_mode_nationality_required"] == 1
-
-
-async def test_nationality_toggle_disables_then_enables(tmp_path) -> None:
-    """First toggle flips 1 → 0, the second back again."""
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)
-    await _seed(db_path, [])
-    assert await toggle_test_mode_nationality(db_path) is False
-    assert await toggle_test_mode_nationality(db_path) is True
-
-
-async def test_nationality_toggle_leaves_test_mode_itself_alone(tmp_path) -> None:
-    """Two switches, not one: flipping nationality must not disturb test mode."""
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)
-    await _seed(db_path, [])
-    async with get_connection(db_path) as db:
-        await db.execute("UPDATE server_configs SET test_mode_active = 1")  # enable test mode
-        await db.commit()
-    await toggle_test_mode_nationality(db_path)
-    async with get_connection(db_path) as db:
-        row = await (
-            await db.execute(
-                "SELECT test_mode_active FROM server_configs WHERE server_id = 1"
-            )
-        ).fetchone()
-    assert row["test_mode_active"] == 1
-
-
-async def test_nationality_toggle_missing_config_returns_false(tmp_path) -> None:
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)  # no seed — no server_config row
-    assert await toggle_test_mode_nationality(db_path) is False
 
 
 # ---------------------------------------------------------------------------
