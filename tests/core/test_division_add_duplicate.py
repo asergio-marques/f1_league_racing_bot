@@ -12,16 +12,18 @@ commands therefore refuse it at the point it is typed. Each refusal's wording is
 word by a case of its own, because a reader tidying near-identical branches into one loses the
 wording that tells a manager which of them they hit.
 
-**`/division add` writes through the setup's snapshot, `/division duplicate` writes the rows
-directly.** Add edits the season being set up and saves it whole; duplicate copies rounds that
-are already rows, so it goes through `season_service.duplicate_division`. Neither leaves a copy of
-the setup to bring up to date: the setup is read from the database whenever a command asks for it
-(#283), so the review the manager sees next holds the division just created.
+**`/division add` is a change on the queue, `/division duplicate` writes the rows directly**
+(#283). Add asks the change queue for `core.division_add`, whose one save inserts the division,
+seeds its teams and records it; duplicate copies rounds that are already rows, so it goes through
+`season_service.duplicate_division`. Neither leaves a copy of the setup to bring up to date: the
+setup is read from the database whenever a command asks for it, so the review the manager sees
+next holds the division just created.
 
-**An empty division slot is filled before a new one is appended.** `/season setup` lays out
-blank slots for the number of divisions a league said it wanted, and adding must consume one
-rather than growing the list past it — otherwise a league that asked for three divisions and
-added three has six, half of them nameless.
+**The schema backs the name rule up for ASCII letters alone.** `divisions` holds a name once per
+season without regard to ASCII case (`test_schema_rules.py`); SQLite folds no other letter, so
+two names differing only in an accented letter's case are refused by the check alone, which the
+queue runs as the change starts, on the league's lane, so that no add can slip between it and the
+save.
 
 **Duplicate warns rather than refuses.** A shifted calendar landing in the past, or two rounds
 landing on the same datetime, is a mistake a manager makes with the offset arguments and is
@@ -44,7 +46,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
+from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.setup_reads import hold_setup
 from tests.support.undecorate import undecorate
@@ -77,10 +79,6 @@ async def _make_db(tmp_path, *, status: str = "SETUP", name: str = "division_add
     return db_path
 
 
-def _pending(*divisions: PendingDivision) -> PendingConfig:
-    return PendingConfig(divisions=list(divisions), season_id=7)
-
-
 def _division(name="Pro", tier=1, *, id=11):
     return SimpleNamespace(
         id=id, name=name, tier=tier, mention_role_id=555, forecast_channel_id=None
@@ -104,7 +102,6 @@ def _round(offset_days: int = 7, *, id=1, at=None, number=1):
 def _make_cog(
     db_path: str,
     *,
-    cfg: PendingConfig | None = None,
     divisions=None,
     rounds=None,
     duplicate_error: Exception | None = None,
@@ -132,22 +129,16 @@ def _make_cog(
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
-    # The season being set up, read from the database (#283): its divisions are *cfg*'s unless
-    # the test gives its own.
-    hold_setup(bot.season_service, cfg, divisions=cfg is not None and divisions is None)
+    # No season being set up in the season service's reads: `/division duplicate` reads the
+    # database itself (#283).
+    hold_setup(bot.season_service, None, divisions=False)
 
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot
     if hasattr(SeasonCog, "clear_pending"):
         # While the cog still keeps a setup in memory, it keeps none here.
         cog._pending = {}
-    cog._snapshot_pending = AsyncMock(return_value=None)
     return cog
-
-
-def _saved(cog):
-    """The setup as the command wrote it to the season."""
-    return cog._snapshot_pending.await_args.args[0]
 
 
 def _interaction():
@@ -204,11 +195,6 @@ def _role(role_id: int = 555):
     return role
 
 
-async def _add(cog, interaction, *, name="Am", tier=2, role=None):
-    body = undecorate(SeasonCog.division_add)
-    return await body(cog, interaction, name, role or _role(), tier)
-
-
 async def _duplicate(
     cog,
     interaction,
@@ -234,171 +220,296 @@ async def _duplicate(
 
 
 # ---------------------------------------------------------------------------
-# /division add
+# /division add on the change queue (#283, S14c)
 # ---------------------------------------------------------------------------
+#
+# `/division add` asks the change queue for the change type `core.division_add`, and the queue's
+# acknowledgement is its response. One save inserts the division on the season being set up, seeds
+# its teams from the league's list, the Reserve team included, and writes its audit entry and its
+# log line, stamped with the queue's clock. Every refusal is judged at the ask and again as the
+# change starts, in the same words.
+
+#: The reason each test of a part not yet built is expected to fail.
+NOT_QUEUED = "#283: /division add is not yet the change type core.division_add on the change queue"
+
+#: "Now", as the change queue's clock gives it.
+NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
+
+#: The log channel's name for the member asking: `member()`'s Admin (4242).
+NAMED = "Admin (`<@4242>`)"
+
+#: The reply once a league admin has discarded the stopped save: nothing was added.
+ADD_DISCARDED = "Nothing was added: no division was created. Run `/division add` again."
 
 
-async def test_a_division_is_added_to_the_pending_setup(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cfg = _pending(PendingDivision(name="Pro", role_id=1, tier=1))
-    cog = _make_cog(db_path, cfg=cfg)
-    interaction = _interaction()
-
-    await _add(cog, interaction)
-
-    saved = _saved(cog)
-    assert [d.name for d in saved.divisions] == ["Pro", "Am"]
-    assert saved.divisions[1].tier == 2
-    assert saved.divisions[1].role_id == 555
-    assert "Am" in _replied(interaction)
-
-
-async def test_adding_defers_before_any_work(tmp_path):
-    """Every season-setup command defers first, so no reply lands on an expired token."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, cfg=_pending())
-    interaction = _interaction()
-
-    await _add(cog, interaction)
-
-    interaction.response.defer.assert_awaited_once()
-    interaction.response.send_message.assert_not_awaited()
-
-
-async def test_an_empty_slot_is_filled_before_a_new_one_is_appended(tmp_path):
-    """`/season setup` lays out blank slots for the number of divisions a league asked for.
-    Appending past them would give a league that wanted three and added three six, half of
-    them nameless."""
-    db_path = await _make_db(tmp_path)
-    cfg = _pending(
-        PendingDivision(name="Pro", role_id=1, tier=1),
-        PendingDivision(),
+def _acknowledged(name: str, tier: int) -> str:
+    """The queue's acknowledgement of `/division add` for *name* at *tier*, before its first job."""
+    return (
+        f"⏳ Adding division **{name}** (Tier {tier}). This message will be updated when it is "
+        "done; if it takes longer, the log channel will say so."
     )
-    cog = _make_cog(db_path, cfg=cfg)
-
-    await _add(cog, _interaction())
-
-    assert [d.name for d in _saved(cog).divisions] == ["Pro", "Am"]
 
 
-async def test_the_first_empty_slot_is_the_one_filled(tmp_path):
-    """So divisions come out in the order the slots were laid down, not in the order a
-    manager happened to name them."""
-    db_path = await _make_db(tmp_path)
-    cfg = _pending(PendingDivision(), PendingDivision())
-    cog = _make_cog(db_path, cfg=cfg)
-
-    await _add(cog, _interaction())
-
-    assert [d.name for d in _saved(cog).divisions] == ["Am", ""]
+def _repeated(name: str, tier: int) -> str:
+    """The queue's refusal of a `/division add` asked again while the first waits, word for word."""
+    return (
+        f"⚠️ Adding division **{name}** (Tier {tier}) has already been asked for and has not "
+        "started yet, so it was not asked for again."
+    )
 
 
-@pytest.mark.parametrize("stage_name", ["CONFIGURATION", "WAITING", "SIGNUPS"])
-async def test_adding_before_placements_is_refused(tmp_path, stage_name):
-    """Issue #220: divisions are built only once the signups are in."""
-    from leaguebot.core.models.season import SeasonStage
-
-    db_path = await _make_db(tmp_path)
-    cfg = _pending()
-    cog = _make_cog(db_path, cfg=cfg, stage=SeasonStage(stage_name))
-    interaction = _interaction()
-
-    await _add(cog, interaction)
-
-    assert "only be added while the season is in placements" in _replied(interaction)
-    cog._snapshot_pending.assert_not_awaited()
+def _added(name: str, tier: int, role_id: int, listed: list[tuple[str, int, int]]) -> str:
+    """`/division add`'s reply once the division is saved, word for word: the setup's divisions,
+    *listed* as (name, tier, role id), follow."""
+    return (
+        f"✅ Division **{name}** (Tier {tier}) added.\nRole: <@&{role_id}>\n\n**Divisions:**\n"
+        + "\n".join(f"  📂 **{n}** (Tier {t}) | <@&{r}>" for n, t, r in listed)
+    )
 
 
-async def test_adding_without_a_setup_is_refused(tmp_path):
-    """There is nothing to add the division to, and creating one would leave it orphaned
-    from any season."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, cfg=None)
-    interaction = _interaction()
-
-    await _add(cog, interaction)
-
-    assert "/season setup" in _replied(interaction)
-    cog._snapshot_pending.assert_not_awaited()
+def _success_line(name: str, tier: int) -> str:
+    """`/division add`'s line in the log channel, word for word."""
+    return f"{NAMED} | /division add | Success\n  division: {name}, tier: {tier}"
 
 
-@pytest.mark.parametrize("tier", [0, -1])
-async def test_a_tier_below_one_is_refused(tmp_path, tier):
-    """Tier 1 is the top division and the sequence is what the approval validates; a zero
-    or a negative would pass setup and fail at the gate, after the calendar is built."""
-    db_path = await _make_db(tmp_path)
-    cfg = _pending()
-    cog = _make_cog(db_path, cfg=cfg)
-    interaction = _interaction()
+def _refusal_line(reply: str) -> str:
+    """The log channel's line for `/division add` refused with *reply*."""
+    from leaguebot.core.utils.log_lines import reply_reason
 
-    await _add(cog, interaction, tier=tier)
-
-    assert "Tier must be 1 or higher" in _replied(interaction)
-    cog._snapshot_pending.assert_not_awaited()
+    return f"⛔ `/division add` refused for {NAMED} — {reply_reason(reply)}"
 
 
-async def test_a_duplicate_name_is_refused(tmp_path):
-    """Every later command resolves a division by name, because a slash command takes a
-    name and not an id — two divisions called the same thing make all of them ambiguous."""
-    db_path = await _make_db(tmp_path)
-    cfg = _pending(PendingDivision(name="Am", role_id=1, tier=1))
-    cog = _make_cog(db_path, cfg=cfg)
-    interaction = _interaction()
+async def _setup_league(tmp_path, *, stage: str | None = "PLACEMENTS",
+                        divisions: tuple[tuple[str, int, int], ...] = (("Pro", 1, 10),)):
+    """`settings_league`'s league, no module on, its queue's clock `NOW`, whose list of teams holds
+    Alpha (full name Alpha Racing, two seats). With *stage*, season #1 is being set up, in that
+    stage, holding *divisions* as (name, tier, role id), as the database alone holds it after a
+    restart; with None, no season is being set up."""
+    from tests.support.settings_league import settings_league
 
-    await _add(cog, interaction, name="Am", tier=2)
-
-    assert "already exists" in _replied(interaction)
-    cog._snapshot_pending.assert_not_awaited()
-
-
-async def test_a_duplicate_tier_is_refused(tmp_path):
-    """Refused where it is typed rather than at approval, which is after the whole calendar
-    has been built."""
-    db_path = await _make_db(tmp_path)
-    cfg = _pending(PendingDivision(name="Pro", role_id=1, tier=2))
-    cog = _make_cog(db_path, cfg=cfg)
-    interaction = _interaction()
-
-    await _add(cog, interaction, name="Am", tier=2)
-
-    assert "tier **2** already exists" in _replied(interaction)
-    cog._snapshot_pending.assert_not_awaited()
-
-
-async def test_an_empty_slot_holds_neither_a_name_nor_a_tier(tmp_path):
-    """The uniqueness checks skip unnamed slots; a slot left at tier 0 must not block the
-    first real division a manager adds."""
-    db_path = await _make_db(tmp_path)
-    cfg = _pending(PendingDivision(), PendingDivision())
-    cog = _make_cog(db_path, cfg=cfg)
-    interaction = _interaction()
-
-    await _add(cog, interaction, tier=1)
-
-    assert "already exists" not in _replied(interaction)
-    assert _saved(cog).divisions[0].tier == 1
+    league = await settings_league(tmp_path, modules=(), now=NOW)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO default_teams (name, full_name, max_seats) VALUES ('Alpha', 'Alpha Racing', 2)"
+        )
+        if stage is not None:
+            cursor = await db.execute(
+                "INSERT INTO seasons (start_date, status, season_number, game_edition, stage) "
+                "VALUES ('2026-10-01', 'SETUP', 1, 25, ?)",
+                (stage,),
+            )
+            for name, tier, role_id in divisions:
+                await db.execute(
+                    "INSERT INTO divisions (season_id, name, mention_role_id, tier) "
+                    "VALUES (?, ?, ?, ?)",
+                    (cursor.lastrowid, name, role_id, tier),
+                )
+        await db.commit()
+    return league
 
 
-async def test_the_addition_is_snapshotted(tmp_path):
-    """The division is written to the season being set up, which is where every later command
-    reads it from."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, cfg=_pending())
+async def _ask_add(league, name: str, tier: int, role_id: int = 555):
+    """`/division add` of *name* at *tier*, mentioning role *role_id*, run by the league manager
+    Admin (4242): the interaction."""
+    from tests.support.settings_league import interaction
 
-    await _add(cog, _interaction())
+    asked = interaction(league.bot, "division add")
+    await undecorate(SeasonCog.division_add)(
+        SeasonCog(league.bot), asked, name=name, role=_role(role_id), tier=tier
+    )
+    return asked
 
-    cog._snapshot_pending.assert_awaited_once()
+
+async def _division_rows(db_path: str) -> list[tuple[str, int, int]]:
+    """Every division, as (name, tier, role id), in the order inserted."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT name, tier, mention_role_id FROM divisions ORDER BY id")
+        return [tuple(row) for row in await cursor.fetchall()]
 
 
-async def test_the_addition_is_logged(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, cfg=_pending())
+async def _team_rows(db_path: str, division: str) -> list[tuple]:
+    """The teams of the division named *division*, as (name, full name, seats, reserve, the driver
+    in each seat), by name."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT t.id, t.name, t.full_name, t.max_seats, t.is_reserve FROM team_instances t "
+            "JOIN divisions d ON d.id = t.division_id WHERE d.name = ? ORDER BY t.name",
+            (division,),
+        )
+        teams = [tuple(row) for row in await cursor.fetchall()]
+        rows = []
+        for team_id, *team in teams:
+            cursor = await db.execute(
+                "SELECT driver_profile_id FROM team_seats WHERE team_instance_id = ? "
+                "ORDER BY seat_number",
+                (team_id,),
+            )
+            rows.append((*team, [row[0] for row in await cursor.fetchall()]))
+        return rows
 
-    await _add(cog, _interaction())
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[0])
-    assert "/division add" in logged
-    assert "Am" in logged
+@pytest.mark.xfail(strict=True, reason=NOT_QUEUED)
+async def test_a_division_its_teams_audit_entry_and_line_are_one_save(tmp_path):
+    """The core specification's record of what changed. Season #1 is being set up, in Placements,
+    holding Pro at tier 1 (role 10), as the database alone holds it after a restart: nothing of it
+    is in memory. The league's list of teams holds Alpha (Alpha Racing, two seats). The league
+    manager Admin (4242) runs `/division add` for Am at tier 2, mentioning role 555. They are
+    answered at once with the queue's acknowledgement, naming its first job, and nothing is saved
+    until the queue runs the change. Once it has, the season holds Pro and Am (tier 2, role 555);
+    Am has the teams Alpha (Alpha Racing, two empty seats) and Reserve, with no seats; one audit
+    entry, `DIVISION_ADDED`, by Admin, on Am, stamped with the queue's clock, records Am as
+    replacing nothing; the log channel holds the success line alone; and the acknowledgement is
+    updated to today's reply, word for word, the divisions listed by tier."""
+    from tests.support.change_queue import run_queue, step_rows
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+
+    league = await _setup_league(tmp_path)
+    asked = await _ask_add(league, "Am", 2)
+
+    first_job = (await step_rows(league.db_path))[0]["id"]
+    assert said(asked)[0] == f"{_acknowledged('Am', 2)} It begins with job #{first_job}."
+    assert await _division_rows(league.db_path) == [("Pro", 1, 10)]
+    await run_queue(league.bot)
+
+    assert await _division_rows(league.db_path) == [("Pro", 1, 10), ("Am", 2, 555)]
+    assert await _team_rows(league.db_path, "Am") == [
+        ("Alpha", "Alpha Racing", 2, 0, [None, None]),
+        ("Reserve", "Reserve", -1, 1, []),
+    ]
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute("SELECT id, season_id FROM divisions WHERE name = 'Am'")
+        division_id, season_id = tuple(await cursor.fetchone())
+    new = {
+        "division_id": division_id,
+        "season_id": season_id,
+        "name": "Am",
+        "tier": 2,
+        "mention_role_id": 555,
+    }
+    [entry] = await audit_rows(league.db_path)
+    assert (entry["change_type"], entry["actor_id"], entry["division_id"]) == (
+        "DIVISION_ADDED", 4242, division_id
+    )
+    assert entry["new_value"] == new
+    assert entry["old_value"] == dict.fromkeys(new)
+    assert entry["timestamp"] == NOW.isoformat()
+    assert await log_lines(league) == [_success_line("Am", 2)]
+    assert last_said(asked) == _added("Am", 2, 555, [("Pro", 1, 10), ("Am", 2, 555)])
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_QUEUED)
+async def test_a_failed_division_save_adds_nothing(tmp_path):
+    """Season #1 is being set up, in Placements, holding Pro. The manager runs `/division add` for
+    Am at tier 2, and as the queue runs it the database fails writing the audit entry. Nothing of
+    the change is saved, the division, its teams and its audit entry being one save: the season
+    holds Pro alone, no team is seeded, and the log channel holds no success line. The league's
+    lane stops at the job, as any failed job stops it. Once a league admin discards the stopped
+    job, the manager's reply says that nothing was added and to run the command again, and the lane
+    is clear."""
+    from tests.support.change_queue import discard_job, run_queue, stopped_job
+    from tests.support.settings_league import audit_rows, fault_in, last_said, log_lines
+
+    league = await _setup_league(tmp_path)
+    asked = await _ask_add(league, "Am", 2)
+    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+        await run_queue(league.bot)
+
+    assert await _division_rows(league.db_path) == [("Pro", 1, 10)]
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM team_instances")
+        assert (await cursor.fetchone())[0] == 0
+    assert await audit_rows(league.db_path) == []
+    assert _success_line("Am", 2) not in await log_lines(league)
+    assert await stopped_job(league.db_path) is not None
+
+    await discard_job(league.bot)
+
+    assert last_said(asked) == ADD_DISCARDED
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.parametrize(
+    "meanwhile, reply",
+    [
+        pytest.param(
+            ("am", 3), "❌ A division named **am** already exists in this setup.",
+            id="a-second-add-of-the-same-name",
+        ),
+        pytest.param(
+            ("Rookie", 2), "⛔ A division with tier **2** already exists in this setup.",
+            id="a-second-add-at-the-same-tier",
+        ),
+        pytest.param(
+            None, "❌ No pending season setup. Run `/season setup` first.",
+            id="the-setup-gone-by-the-time-it-runs",
+        ),
+    ],
+)
+@pytest.mark.xfail(strict=True, reason=NOT_QUEUED)
+async def test_a_division_add_is_judged_again_as_it_starts(tmp_path, meanwhile, reply):
+    """Season #1 is being set up, in Placements, holding Pro at tier 1. The manager runs
+    `/division add` for Am at tier 2, and nothing is saved at the ask. Before the queue runs it,
+    either the manager runs `/division add` again, for am at tier 3 or for Rookie at tier 2, which
+    is acknowledged too, or the season being set up is deleted. The queue runs. The refused add,
+    the second or the only one, is refused as it starts, in the words it would meet at the ask, its
+    acknowledgement updated to them; the log channel records the refusal, beneath the first's
+    success line where the first added Am. The division added meanwhile by the first is what the
+    second is refused on: Am stands once, with its one audit entry, or nothing stands and nothing
+    is recorded; the schema's rule is never reached by an insert, and the queue is not stopped."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+
+    league = await _setup_league(tmp_path)
+    first = await _ask_add(league, "Am", 2)
+    if meanwhile is not None:
+        refused = await _ask_add(league, *meanwhile)
+        assert said(refused)[0].startswith(_acknowledged(*meanwhile))
+        added = [("Pro", 1, 10), ("Am", 2, 555)]
+    else:
+        refused = first
+        async with get_connection(league.db_path) as db:
+            await db.execute("DELETE FROM divisions")
+            await db.execute("DELETE FROM seasons")
+            await db.commit()
+        added = []
+    await run_queue(league.bot)
+
+    assert last_said(refused) == reply
+    assert await _division_rows(league.db_path) == added
+    assert len(await audit_rows(league.db_path)) == (1 if added else 0)
+    successes = [_success_line("Am", 2)] if added else []
+    assert await log_lines(league) == [*successes, _refusal_line(reply)]
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_QUEUED)
+async def test_a_division_add_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
+    """The core specification's "How a change is carried out": a request repeating a change that
+    has not started, with nothing else asked for since on its lane, is refused, saying so. Season #1
+    is being set up, in Placements, holding Pro. The manager runs `/division add` for Am at tier 2,
+    mentioning role 555, and is acknowledged; before the queue runs it, they run the same command
+    again. The second is refused at once, in the queue's words, as a change already asked for and
+    not yet started, and the log channel takes that refusal as a line; only the one change is
+    queued. The queue runs it: Am stands once, with its one audit entry, the log channel holds the
+    refusal and then the success line, and the first is told Am was added."""
+    from tests.support.change_queue import change_rows, run_queue
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+
+    league = await _setup_league(tmp_path)
+    first = await _ask_add(league, "Am", 2)
+    repeat = await _ask_add(league, "Am", 2)
+
+    assert said(first)[0].startswith(_acknowledged("Am", 2))
+    assert said(repeat) == [_repeated("Am", 2)]
+    assert len(await change_rows(league.db_path)) == 1
+    await run_queue(league.bot)
+
+    assert await _division_rows(league.db_path) == [("Pro", 1, 10), ("Am", 2, 555)]
+    assert len(await audit_rows(league.db_path)) == 1
+    assert await log_lines(league) == [
+        _refusal_line(_repeated("Am", 2)), _success_line("Am", 2)
+    ]
+    assert last_said(first) == _added("Am", 2, 555, [("Pro", 1, 10), ("Am", 2, 555)])
 
 
 # ---------------------------------------------------------------------------
@@ -621,34 +732,6 @@ async def test_a_naive_round_datetime_is_read_as_utc(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_division_name_with_an_emoji_is_refused(tmp_path):
-    """It heads every posting and every graphic of the division, and a graphic cannot draw
-    an emoji."""
-    db_path = await _make_db(tmp_path)
-    cfg = _pending()
-    cog = _make_cog(db_path, cfg=cfg)
-    interaction = _interaction()
-
-    await _add(cog, interaction, name="Pro \U0001F3C6")
-
-    assert "division name" in _replied(interaction)
-    cog._snapshot_pending.assert_not_awaited()
-
-
-async def test_a_division_name_with_a_member_mention_is_refused(tmp_path):
-    """It heads every posting of the division, so the member would be notified by each (#388)."""
-    db_path = await _make_db(tmp_path)
-    cfg = _pending()
-    cog = _make_cog(db_path, cfg=cfg)
-    interaction = _interaction()
-
-    await _add(cog, interaction, name="<@123456789012345678>")
-
-    assert "division name" in _replied(interaction)
-    assert "member" in _replied(interaction)
-    cog._snapshot_pending.assert_not_awaited()
-
-
 async def test_a_duplicated_division_named_with_markup_is_refused(tmp_path):
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
@@ -670,27 +753,29 @@ async def test_a_duplicated_division_named_with_markup_is_refused(tmp_path):
 @pytest.mark.parametrize(
     "tier,reply",
     [
-        pytest.param(0, "\u26d4 Tier must be 1 or higher.", id="zero"),
-        pytest.param(-1, "\u26d4 Tier must be 1 or higher.", id="negative"),
+        pytest.param(0, "⛔ Tier must be 1 or higher.", id="zero"),
+        pytest.param(-1, "⛔ Tier must be 1 or higher.", id="negative"),
         pytest.param(
-            2, "\u26d4 A division with tier **2** already exists in this setup.", id="taken"
+            2, "⛔ A division with tier **2** already exists in this setup.", id="taken"
         ),
     ],
 )
 async def test_add_refuses_a_bad_tier_in_todays_words_and_records_it(tmp_path, tier, reply):
-    """The season is in placements and holds Pro at tier 2; the manager adds Am."""
-    db_path = await _make_db(tmp_path)
-    cfg = _pending(PendingDivision(name="Pro", role_id=1, tier=2))
-    cog = _make_cog(db_path, cfg=cfg)
-    interaction = _run_by_the_manager(cog, "division add")
+    """Season #1 is being set up, in placements, and holds Pro at tier 2; the league manager Admin
+    (4242) adds Am at tier 0, -1 or 2. They get today's reply word for word and nothing else,
+    nothing is asked of the change queue, the season still holds Pro alone, and the log channel
+    gets exactly one line, "⛔ `/division add` refused for Admin (<@4242>) — " and the reply's
+    words."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import log_lines, said
 
-    await _add(cog, interaction, name="Am", tier=tier)
+    league = await _setup_league(tmp_path, divisions=(("Pro", 2, 10),))
+    asked = await _ask_add(league, "Am", tier)
 
-    assert _replied(interaction) == reply
-    cog._snapshot_pending.assert_not_awaited()
-    assert _logged(cog) == [
-        f"\u26d4 `/division add` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
-    ]
+    assert said(asked) == [reply]
+    assert await change_rows(league.db_path) == []
+    assert await _division_rows(league.db_path) == [("Pro", 2, 10)]
+    assert await log_lines(league) == [_refusal_line(reply)]
 
 
 @pytest.mark.parametrize(
@@ -785,15 +870,18 @@ _MENTION = "<@123456789012345678>"
     "arranged, asked, reply",
     [
         pytest.param(
-            {"setup": False}, {},
+            {"stage": None}, {},
             "❌ No pending season setup. Run `/season setup` first.",
             id="no_season_being_set_up",
         ),
-        pytest.param(
-            {"stage": "CONFIGURATION"}, {},
-            "⛔ Divisions can only be added while the season is in placements — once "
-            "its configuration is confirmed and its signup window has closed.",
-            id="before_placements",
+        *(
+            pytest.param(
+                {"stage": stage}, {},
+                "⛔ Divisions can only be added while the season is in placements — once "
+                "its configuration is confirmed and its signup window has closed.",
+                id=f"before_placements_{stage.lower()}",
+            )
+            for stage in ("CONFIGURATION", "WAITING", "SIGNUPS")
         ),
         pytest.param(
             {}, {"name": _MENTION},
@@ -802,41 +890,49 @@ _MENTION = "<@123456789012345678>"
             id="a_mention_in_the_name",
         ),
         pytest.param(
+            {}, {"name": "Pro \U0001F3C6"},
+            "❌ The emoji 🏆 in the division name cannot be drawn on a graphic. Remove it, "
+            "then try again.",
+            id="an_emoji_in_the_name",
+        ),
+        pytest.param(
             {}, {"name": "pRO"},
             "❌ A division named **pRO** already exists in this setup.",
             id="a_name_already_taken",
         ),
+        pytest.param(
+            {"divisions": (("Élite", 1, 10),)}, {"name": "éLITE"},
+            "❌ A division named **éLITE** already exists in this setup.",
+            id="a_name_already_taken_but_for_the_case_of_an_accented_letter",
+        ),
     ],
 )
 async def test_every_other_division_add_refusal_is_recorded(tmp_path, arranged, asked, reply):
-    """A season in placements whose setup holds division Pro at tier 1, unless the case says
-    otherwise. The manager (id 77) adds division Am at tier 2, but with one thing wrong: no season
-    being set up; the season still in configuration; a member's mention as the name; or the name
-    pRO, which Pro already holds (division lookup is case-insensitive everywhere else, so "pRO"
-    and "Pro" would be the same ambiguity with none of the refusal). The manager gets today's
-    reply word for word and nothing else, no division is added, and the log channel gets exactly
-    one line, "⛔ `/division add` refused for Manager (<@77>) — " and the reply's words."""
-    from leaguebot.core.models.season import SeasonStage
+    """Season #1 is being set up, in placements, holding division Pro at tier 1, unless the case
+    says otherwise. The league manager Admin (4242) adds division Am at tier 2, but with one thing
+    wrong: no season being set up; the season still in configuration, waiting or signups; a
+    member's mention as the name; an emoji in the name; the name pRO, which Pro already holds
+    (division lookup is case-insensitive everywhere else, so "pRO" and "Pro" would be the same
+    ambiguity with none of the refusal); or, the season holding Élite in place of Pro, the name
+    éLITE, which differs from it only in the case of letters, an accented one among them. They get
+    today's reply word for word and nothing else, nothing is asked of the change queue, no
+    division is added, and the log channel gets exactly one line, "⛔ `/division add` refused for
+    Admin (<@4242>) — " and the reply's words."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import log_lines, said
 
-    db_path = await _make_db(tmp_path)
-    cfg = None if arranged.get("setup") is False else _pending(
-        PendingDivision(name="Pro", role_id=1, tier=1)
+    divisions = arranged.get("divisions", (("Pro", 1, 10),))
+    league = await _setup_league(
+        tmp_path, stage=arranged.get("stage", "PLACEMENTS"), divisions=divisions
     )
-    cog = _make_cog(
-        db_path,
-        cfg=cfg,
-        stage=SeasonStage(arranged["stage"]) if "stage" in arranged else None,
-    )
-    interaction = _run_by_the_manager(cog, "division add")
+    asked_for = {"name": "Am", "tier": 2, **asked}
+    interaction = await _ask_add(league, asked_for["name"], asked_for["tier"])
 
-    await _add(cog, interaction, **{"name": "Am", "tier": 2, **asked})
-
-    interaction.followup.send.assert_awaited_once_with(reply, ephemeral=True)
-    interaction.response.send_message.assert_not_awaited()
-    cog._snapshot_pending.assert_not_awaited()
-    assert _logged(cog) == [
-        f"⛔ `/division add` refused for Manager (<@{ACTOR_ID}>) — {reply[2:]}"
-    ]
+    assert said(interaction) == [reply]
+    assert await change_rows(league.db_path) == []
+    held = list(divisions) if arranged.get("stage", "PLACEMENTS") is not None else []
+    assert await _division_rows(league.db_path) == held
+    assert await log_lines(league) == [_refusal_line(reply)]
 
 
 @pytest.mark.parametrize(
