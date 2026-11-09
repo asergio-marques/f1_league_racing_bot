@@ -189,11 +189,10 @@ def module_off(module: str) -> str:
 
 #: The kinds of weather's forecast changes. Core names them to read what is still unfinished of
 #: each (test mode's choice of the next step), never to ask for them: `/test-mode advance` runs
-#: weather's own step, and `/test-mode toggle` asks only the flush. They stay here until test mode
-#: reads weather's changes through weather's own functions.
+#: weather's own step. They stay here until test mode reads weather's changes through weather's own
+#: functions.
 FORECAST = "weather.forecast"
 FORECAST_CLEAN_UP = "weather.forecast.clean_up"
-FORECAST_FLUSH = "weather.forecast.flush"
 
 #: The kinds of attendance's four check-in changes, named here for the same reason as the
 #: forecast's: test mode reads what is unfinished of each, and asks for none.

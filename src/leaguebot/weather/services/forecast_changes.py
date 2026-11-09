@@ -43,7 +43,6 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     FORECAST,
     FORECAST_CLEAN_UP,
-    FORECAST_FLUSH,
     ChangeOrigin,
     GuildUnavailable,
     PlannedStep,
@@ -594,36 +593,6 @@ def forecast_clean_up_change(*, now: Callable[[], datetime]) -> ChangeType:
     )
 
 
-def forecast_flush_change(*, now: Callable[[], datetime]) -> ChangeType:
-    """`weather.forecast.flush`: the bot's change that clears every recorded forecast, when test
-    mode is switched off, one `delete_forecast` job for each.
-
-    Repeatable: two switch-offs in a row are two requests, the second finding less. It is not
-    gated on the weather module, a forecast withdrawn being deleted whatever the module's state
-    (weather spec :153).
-    """
-
-    async def check(ctx: CheckContext) -> Verdict:
-        async with get_connection(ctx.db_path) as db:
-            cursor = await db.execute("SELECT 1 FROM forecast_messages LIMIT 1")
-            found = await cursor.fetchone()
-        return Verdict.go() if found is not None else Verdict.not_due("no forecast is recorded")
-
-    def outcome(_ctx: OutcomeContext) -> str:
-        return ""
-
-    return ChangeType(
-        kind=FORECAST_FLUSH,
-        opening=(PlannedStep(PLAN_FORECAST_DELETES),),
-        steps=forecast_steps(now=now),
-        check=check,
-        key=lambda _payload: FORECAST_FLUSH,
-        doing=lambda _payload: "clearing the forecasts posted under test mode",
-        outcome=outcome,
-        repeatable=True,
-    )
-
-
 async def _recorded(db: aiosqlite.Connection, round_id: int, phase: int) -> bool:
     """Whether a forecast of *phase* is recorded for *round_id*."""
     cursor = await db.execute(
@@ -673,12 +642,6 @@ async def ask_forecast_clean_up(
     change = await queue.ask(FORECAST_CLEAN_UP, payload, what=_clean_up_doing(payload),
                              origin=ChangeOrigin.BOT)
     return CleanUpAsked(standing, change)
-
-
-async def ask_forecast_flush(queue: ChangeQueue) -> None:
-    """Ask the queue to delete every recorded forecast, as test mode being switched off does."""
-    await queue.ask(FORECAST_FLUSH, {}, what="clearing the forecasts posted under test mode",
-                    origin=ChangeOrigin.BOT)
 
 
 @dataclass(frozen=True)

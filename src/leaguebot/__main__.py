@@ -605,7 +605,6 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.weather.services.forecast_changes import (
         forecast_change,
         forecast_clean_up_change,
-        forecast_flush_change,
     )
     from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
     from leaguebot.results.services.appeals_approval_change import appeals_approval_change
@@ -952,7 +951,6 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(forecast_clean_up_change(now=lambda: bot.change_queue.now()))
-    bot.change_queue.register(forecast_flush_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(
         wind_down_change(
             placement=bot.placement_service,

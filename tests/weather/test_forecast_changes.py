@@ -37,7 +37,6 @@ from tests.support.change_queue import (
     updated_reply,
 )
 from tests.support.season_league import (
-    AM,
     DIVISIONS,
     PRO,
     PRO_ROLE,
@@ -659,15 +658,11 @@ async def test_a_forecast_failing_after_its_first_part_removes_it_before_its_nex
 
 
 # ---------------------------------------------------------------------------
-# The deletion of forecasts a day after the round, and their clearing, as jobs
+# The deletion of forecasts a day after the round, as jobs
 # ---------------------------------------------------------------------------
 
-#: The kinds of the clean-up a day after a round and of the clearing of every forecast.
+#: The kind of the clean-up a day after a round.
 CLEAN_UP_KIND = "weather.forecast.clean_up"
-FLUSH_KIND = "weather.forecast.flush"
-#: Am's forecast channel, and its round 3.
-AM_FORECAST = DIVISIONS[AM][3].forecast
-AM_ROUND = round_id(AM, 3)
 
 
 async def _deletes_of(league: Any, kind: str) -> list[dict[str, Any]]:
@@ -778,28 +773,6 @@ async def test_a_clean_up_leaves_a_mystery_round_s_notice_standing(tmp_path):
     assert notice in league.channel(FORECAST).messages
     assert await _forecasts(league) == {0: notice}
     assert await _deletes_of(league, CLEAN_UP_KIND) == []
-
-
-async def test_a_flush_deletes_every_forecast_each_by_a_job_of_its_own(tmp_path):
-    """Test mode switched off with three forecasts standing (Pro's Phase 1 and 2 of round 3,
-    9301 and 9302, and Am's Phase 1 of round 3, 9401): the flush deletes each by a
-    `delete_forecast` job of its own, and no forecast record is left."""
-    league = await _league(tmp_path)
-    await posted_forecast(league, ROUND, 1, 9301)
-    await posted_forecast(league, ROUND, 2, 9302)
-    await posted_forecast(league, AM_ROUND, 1, 9401)
-
-    from leaguebot.weather.services.forecast_changes import ask_forecast_flush
-
-    await ask_forecast_flush(league.bot.change_queue)
-    await run_queue(league.bot)
-
-    assert await stopped_job(league.db_path) is None
-    deleted = {mid for kind, cid, mid in league.events
-               if kind == "delete" and cid in (FORECAST, AM_FORECAST)}
-    assert deleted == {9301, 9302, 9401}
-    assert len(await _deletes_of(league, FLUSH_KIND)) == 3
-    assert await league.rows("SELECT * FROM forecast_messages") == []
 
 
 @pytest.mark.parametrize("gone", ["message gone", "row already gone"])
