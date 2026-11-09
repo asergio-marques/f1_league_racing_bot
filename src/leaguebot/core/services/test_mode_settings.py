@@ -11,10 +11,11 @@ like any other change rather than overtaking a stop.
 **The change carries the state it sets, never a flip.** The command reads the switch once, to
 say which way it goes, and carries the opposite in the payload as every other toggle on the queue
 does, so that the acknowledgement names the direction and a second press while the first waits,
-asking the same, is refused by the queue as a repeat. Two changes that ask for opposite states
-cannot be waiting together. The value the save replaces is read in the save, never at the ask, so
-a change that finds the switch already where it was asked is answered "Nothing changed" and its
-audit entry is never written; one that moves it records what it truly replaced.
+asking the same with nothing else asked on the lane since, is refused by the queue as a repeat.
+Where something else was asked between, the second press waits its turn instead. The value the
+save replaces is read in the save, never at the ask, so a change that finds the switch already
+where it was asked is answered "Nothing changed" and its audit entry is never written; one that
+moves it records what it truly replaced.
 
 **Test mode is judged at the ask and again as the change starts** (the setting's `check`, in the
 command's own words), since test mode may be turned off while the change waits: a server with no
