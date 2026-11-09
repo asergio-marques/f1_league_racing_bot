@@ -437,61 +437,6 @@ class SeasonService:
 
         return season_id, season_number, unseeded
 
-    async def load_all_setup_seasons(self) -> list[dict]:
-        """Return raw data for every SETUP-status season."""
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id, start_date, season_number, game_edition "
-                "FROM seasons WHERE status = 'SETUP'"
-            )
-            season_rows = await cursor.fetchall()
-
-            result: list[dict] = []
-            for s_row in season_rows:
-                season_id = s_row["id"]
-
-                cursor = await db.execute(
-                    "SELECT id, name, mention_role_id, forecast_channel_id, tier "
-                    "FROM divisions WHERE season_id = ?",
-                    (season_id,),
-                )
-                div_rows = await cursor.fetchall()
-
-                divisions: list[dict] = []
-                for d_row in div_rows:
-                    cursor2 = await db.execute(
-                        "SELECT round_number, format, track_name, scheduled_at "
-                        "FROM rounds WHERE division_id = ? ORDER BY round_number",
-                        (d_row["id"],),
-                    )
-                    round_rows = await cursor2.fetchall()
-                    rounds = [
-                        {
-                            "round_number": r["round_number"],
-                            "format": RoundFormat(r["format"]),
-                            "track_name": r["track_name"],
-                            "scheduled_at": datetime.fromisoformat(r["scheduled_at"]),
-                        }
-                        for r in round_rows
-                    ]
-                    divisions.append({
-                        "name": d_row["name"],
-                        "role_id": d_row["mention_role_id"],
-                        "channel_id": d_row["forecast_channel_id"],
-                        "tier": d_row["tier"] if "tier" in d_row.keys() else 0,
-                        "rounds": rounds,
-                    })
-
-                result.append({
-                    "season_id": season_id,
-                    "start_date": date.fromisoformat(s_row["start_date"]),
-                    "season_number": s_row["season_number"] if "season_number" in s_row.keys() else 0,
-                    "game_edition": s_row["game_edition"] if "game_edition" in s_row.keys() else 0,
-                    "divisions": divisions,
-                })
-
-        return result
-
     async def validate_division_tiers(self, season_id: int) -> None:
         """Validate division tiers form a gapless sequence 1..N.
 
