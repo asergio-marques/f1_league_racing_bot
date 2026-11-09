@@ -748,6 +748,65 @@ async def post_mid_season_review(league: SeasonLeague) -> Review:
     return Review(view=view, prompt=prompt, report=report)
 
 
+#: The kind of a season's configuration confirmation on the change queue (#283, S15d).
+CONFIGURATION_CONFIRM_KIND = "season.configuration.confirm"
+#: The league's base role, stored by `configuring_league` with *signup*.
+BASE_ROLE = 819
+
+
+async def configuring_league(
+    tmp_path: Any, *, signup: bool = False, test_mode: bool = False, monkeypatch: Any = None,
+) -> SeasonLeague:
+    """`season_league`'s season 3 before its configuration is confirmed: status SETUP, stage
+    Configuration, the results module on with its points configuration attached, no other module
+    on, test mode as *test_mode*. With *signup*, the signup module on, its signup channel 620
+    set, and the league's base role (819) and driver role (820) stored, both on the server and
+    the driver role one the bot can grant."""
+    league = await season_league(tmp_path, test_mode=test_mode, monkeypatch=monkeypatch)
+    await league.write("UPDATE seasons SET stage = 'CONFIGURATION' WHERE id = ?", SEASON_ID)
+    if signup:
+        await league.switch("signup", True)
+        await league.write(
+            "INSERT OR REPLACE INTO signup_module_config (id, signup_channel_id) VALUES (1, ?)",
+            SIGNUP_CHANNEL,
+        )
+        await league.write(
+            "UPDATE server_configs SET base_role_id = ?, driver_role_id = ?",
+            BASE_ROLE, DRIVER_ROLE,
+        )
+        driver_role = league._role(DRIVER_ROLE)
+        driver_role.managed = False
+        driver_role.is_default.return_value = False
+        driver_role.guild.me.guild_permissions.manage_roles = True
+        driver_role.guild.me.top_role.__gt__ = lambda _self, _other: True
+    return league
+
+
+async def post_config_review(league: SeasonLeague) -> Review:
+    """Post a `/season config-review` report and its ✅ Confirm configuration prompt in channel
+    610, by the admin (77), recorded as `post_review` records an approval's."""
+    from leaguebot.core.cogs.season_cog import _ConfirmConfigurationView
+    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    from tests.support.review_prompts import store_review_prompt
+
+    view = _ConfirmConfigurationView(league.cog, ADMIN_ID)
+    report = [await league.review_channel.send("📋 Season 3 configuration review")]
+    prompt = await league.review_channel.send("Do you confirm this season's configuration?",
+                                              view=view)
+    evidence = (
+        await take_fingerprint(league.db_path, SEASON_ID, drawing=league.bot.image_drawing)
+    ).areas
+    async with get_connection(league.db_path) as db:
+        await store_review_prompt(
+            db, season_id=SEASON_ID, channel_id=REVIEW_CHANNEL, message_id=prompt.id,
+            reviewer_id=ADMIN_ID, posted_at=datetime.now(timezone.utc).isoformat(),
+            report_message_ids=[message.id for message in report], evidence=evidence,
+            review="/season config-review", verb="confirmed",
+        )
+        await db.commit()
+    return Review(view=view, prompt=prompt, report=report)
+
+
 # ---------------------------------------------------------------------------
 # An ongoing season, and its cancels (slice 4b)
 # ---------------------------------------------------------------------------
