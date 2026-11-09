@@ -262,7 +262,12 @@ def _save(
             raise ValueError(refusal)
 
         before = _standing(rnd)
-        if amendment_changes_nothing(before, asked):
+        after = {**before, **asked}
+        if after["format"] is RoundFormat.MYSTERY:
+            after["track_name"] = None
+        # Judged on the round as it would stand, so that a track given to a mystery round with
+        # none, which is cleared again, changes nothing.
+        if asked and amendment_changes_nothing(before, after):
             line = (
                 f"{ctx.named} | {COMMAND} | Nothing changed\n"
                 f"  division: {division.name}\n"
@@ -276,9 +281,6 @@ def _save(
                 lines=(line,),
             )
 
-        after = {**before, **asked}
-        if after["format"] is RoundFormat.MYSTERY:
-            after["track_name"] = None
         await db.execute(
             "UPDATE rounds SET format = ?, track_name = ?, scheduled_at = ? WHERE id = ?",
             (
