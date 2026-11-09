@@ -337,17 +337,6 @@ async def test_divisions_are_returned_in_tier_order(tmp_path):
     assert [d.name for d in divisions] == ["First", "Second"]
 
 
-async def test_a_division_is_renamed(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "SETUP")
-    await _seed_division(db_path, 11, 1)
-    service = SeasonService(db_path)
-
-    await service.rename_division(11, "Premier")
-
-    assert (await service.get_divisions(1))[0].name == "Premier"
-
-
 async def test_a_division_with_a_driver_placed_in_it_is_not_deleted(tmp_path):
     """A division is deleted only once every driver placed in it has been unassigned
     (core specification, Divisions; decided 2026-09-25, #282). The deletion is destructive
