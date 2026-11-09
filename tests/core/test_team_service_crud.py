@@ -47,6 +47,13 @@ RESERVE = "Reserve"
 _SEEDED = "#283: a new database does not yet hold the Reserve team"
 #: Why the test of a read writing nothing fails until the build.
 _READ_WRITES = "#283: reading the team list still writes the Reserve team back"
+#: Why the tests of the server list's writers fail until the build.
+_ON_FORMS = "#283: the team list's writers have no _on forms yet"
+#: Why the test of the Reserve row renamed by hand fails until the build.
+_SEEDED_ON = (
+    "#283: a new database does not yet hold the Reserve team, and the team list's writers have "
+    "no _on forms yet"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +86,35 @@ async def _make_db(tmp_path, *, season_status: str | None = None, divisions: int
                 )
         await db.commit()
     return db_path
+
+
+async def _add_team(
+    db_path: str, name: str, *, full_name: str | None = None, max_seats: int = 2
+) -> None:
+    """Team *name* on the server's list, written straight into it: the Reserve team is the new
+    database's own. The tests that are not of the list's writers place their teams here."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, ?, 0)",
+            (name, full_name or name, max_seats),
+        )
+        await db.commit()
+
+
+async def _write(db_path: str, write):
+    """Run one of the list's writers in its `_on` form on a connection of its own and commit it,
+    as a `/team` change's save runs it: *write* takes the service and the connection."""
+    async with get_connection(db_path) as db:
+        result = await write(TeamService(db_path), db)
+        await db.commit()
+    return result
+
+
+async def _audit_rows(db_path: str) -> list[str]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT change_type FROM audit_entries")
+        return [r["change_type"] for r in await cursor.fetchall()]
 
 
 async def _names(db_path: str) -> list[str]:
@@ -184,39 +220,41 @@ async def test_reading_the_team_list_writes_nothing(tmp_path, read):
 async def test_the_reserve_team_sorts_last(tmp_path):
     """It is a configuration listing, ordered non-reserve alphabetically then Reserve, so a
     league reads its own teams first."""
-    service = TeamService(await _make_db(tmp_path))
+    db_path = await _make_db(tmp_path)
     for name in ("Zeta", "Alpha"):
-        await service.add_default_team(name, full_name=name)
+        await _add_team(db_path, name)
 
-    teams = await service.get_default_teams()
+    teams = await TeamService(db_path).get_default_teams()
 
     assert [t.name for t in teams] == ["Alpha", "Zeta", RESERVE]
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 @pytest.mark.parametrize(
     "call",
     [
-        lambda s: s.add_default_team(RESERVE, full_name=RESERVE),
-        lambda s: s.modify_default_team(RESERVE, shorthand="Something"),
-        lambda s: s.remove_default_team(RESERVE),
+        lambda s, db: s.add_default_team_on(db, RESERVE, full_name=RESERVE),
+        lambda s, db: s.modify_default_team_on(db, RESERVE, shorthand="Something"),
+        lambda s, db: s.remove_default_team_on(db, RESERVE),
     ],
     ids=["add", "modify", "remove"],
 )
 async def test_no_team_command_may_manage_the_reserve_team(tmp_path, call):
-    service = TeamService(await _make_db(tmp_path))
+    """Adding a team named Reserve, changing the Reserve team's shorthand and removing it are
+    each refused as protected by the list's writers, as a `/team` change's save calls them."""
+    db_path = await _make_db(tmp_path)
 
     with pytest.raises(ValueError, match="protected"):
-        await call(service)
+        await _write(db_path, call)
 
 
-@pytest.mark.xfail(strict=True, reason=_SEEDED)
+@pytest.mark.xfail(strict=True, reason=_SEEDED_ON)
 async def test_a_reserve_team_cannot_be_renamed_by_its_row_either(tmp_path):
     """The name check catches the usual case; the `is_reserve` check behind it catches a
     Reserve team that was somehow stored under another name. The Reserve team's row, the one
     a new database holds, is renamed Standbys by hand; changing Standbys's shorthand, and
     removing it, are each refused as protected."""
     db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE default_teams SET name = 'Standbys', full_name = 'Standbys' "
@@ -225,9 +263,11 @@ async def test_a_reserve_team_cannot_be_renamed_by_its_row_either(tmp_path):
         await db.commit()
 
     with pytest.raises(ValueError, match="protected"):
-        await service.modify_default_team("Standbys", shorthand="Reserves")
+        await _write(db_path, lambda s, db: s.modify_default_team_on(
+            db, "Standbys", shorthand="Reserves"
+        ))
     with pytest.raises(ValueError, match="protected"):
-        await service.remove_default_team("Standbys")
+        await _write(db_path, lambda s, db: s.remove_default_team_on(db, "Standbys"))
 
 
 # ---------------------------------------------------------------------------
@@ -235,135 +275,145 @@ async def test_a_reserve_team_cannot_be_renamed_by_its_row_either(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_team_is_added_with_its_seat_count(tmp_path):
-    service = TeamService(await _make_db(tmp_path))
+    """Alpha is added with three seats, as a `/team add` change's save adds it. The team the
+    writer returns, and the list, carry it as a team of three seats that is not the Reserve; the
+    writer leaves the audit entry to the change, writing none itself."""
+    db_path = await _make_db(tmp_path)
 
-    team = await service.add_default_team("Alpha", full_name="Alpha", max_seats=3)
+    team = await _write(db_path, lambda s, db: s.add_default_team_on(
+        db, "Alpha", full_name="Alpha", max_seats=3
+    ))
 
     assert team.name == "Alpha"
     assert team.max_seats == 3
     assert team.is_reserve is False
+    listed = next(t for t in await TeamService(db_path).get_default_teams() if t.name == "Alpha")
+    assert (listed.max_seats, listed.is_reserve) == (3, False)
+    assert await _audit_rows(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_duplicate_team_name_is_refused(tmp_path):
-    service = TeamService(await _make_db(tmp_path))
-    await service.add_default_team("Alpha", full_name="Alpha")
+    db_path = await _make_db(tmp_path)
+    await _add_team(db_path, "Alpha")
 
     with pytest.raises(ValueError, match="already exists"):
-        await service.add_default_team("Alpha", full_name="Alpha")
+        await _write(db_path, lambda s, db: s.add_default_team_on(db, "Alpha", full_name="Alpha"))
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_name_colliding_once_normalised_is_refused(tmp_path):
     """The normalised name is a lineup template's field identifier, so two teams that
     normalise alike cannot both be drawn. The collision is invisible in the raw names,
     which is why this is checked rather than left to the UNIQUE constraint."""
-    service = TeamService(await _make_db(tmp_path))
-    await service.add_default_team("Red Bull", full_name="Red Bull")
+    db_path = await _make_db(tmp_path)
+    await _add_team(db_path, "Red Bull")
 
     with pytest.raises(ValueError):
-        await service.add_default_team("red-bull", full_name="red-bull")
+        await _write(db_path, lambda s, db: s.add_default_team_on(
+            db, "red-bull", full_name="red-bull"
+        ))
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_team_s_shorthand_is_changed(tmp_path):
     db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha Racing")
+    await _add_team(db_path, "Alpha", full_name="Alpha Racing")
 
-    result = await service.modify_default_team("Alpha", shorthand="Beta")
+    result = await _write(db_path, lambda s, db: s.modify_default_team_on(
+        db, "Alpha", shorthand="Beta"
+    ))
 
-    assert result == {"name": "Beta", "full_name": "Alpha Racing"}
+    assert (result["name"], result["full_name"]) == ("Beta", "Alpha Racing")
     assert "Beta" in await _names(db_path)
     assert "Alpha" not in await _names(db_path)
 
 
-async def test_a_change_of_name_is_recorded_in_the_audit_log(tmp_path):
-    """Either name may change without the other (#381): the full name changes on its own."""
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
+async def test_a_team_s_full_name_is_changed_on_its_own(tmp_path):
+    """Either name may change without the other (#381): Alpha's full name, "Alpha Racing", is
+    changed to "Alpha Grand Prix" and its shorthand left as it was. The writer leaves the
+    `TEAM_NAMES` entry to the `/team modify` change, which `test_team_changes.py` pins, and
+    writes none itself."""
     db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha Racing")
+    await _add_team(db_path, "Alpha", full_name="Alpha Racing")
 
-    result = await service.modify_default_team(
-        "Alpha", full_name="Alpha Grand Prix", actor_id=7, actor_name="Manager"
-    )
+    result = await _write(db_path, lambda s, db: s.modify_default_team_on(
+        db, "Alpha", full_name="Alpha Grand Prix"
+    ))
 
-    assert result == {"name": "Alpha", "full_name": "Alpha Grand Prix"}
-
-    async with get_connection(db_path) as db:
-        rows = await (
-            await db.execute(
-                "SELECT actor_name, old_value, new_value FROM audit_entries "
-                "WHERE change_type = 'TEAM_NAMES'"
-            )
-        ).fetchall()
-    assert len(rows) == 1
-    assert rows[0]["actor_name"] == "Manager"
-    assert "Alpha Racing" in rows[0]["old_value"]
-    assert "Alpha Grand Prix" in rows[0]["new_value"]
+    assert (result["name"], result["full_name"]) == ("Alpha", "Alpha Grand Prix")
+    listed = next(t for t in await TeamService(db_path).get_default_teams() if t.name == "Alpha")
+    assert listed.full_name == "Alpha Grand Prix"
+    assert await _audit_rows(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_modifying_a_team_that_does_not_exist_says_so(tmp_path):
-    service = TeamService(await _make_db(tmp_path))
+    db_path = await _make_db(tmp_path)
 
     with pytest.raises(ValueError, match="No default team"):
-        await service.modify_default_team("Ghost", shorthand="Beta")
+        await _write(db_path, lambda s, db: s.modify_default_team_on(db, "Ghost", shorthand="Beta"))
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_shorthand_already_taken_is_refused(tmp_path):
-    service = TeamService(await _make_db(tmp_path))
+    db_path = await _make_db(tmp_path)
     for name in ("Alpha", "Beta"):
-        await service.add_default_team(name, full_name=f"{name} Racing")
+        await _add_team(db_path, name, full_name=f"{name} Racing")
 
     with pytest.raises(ValueError, match="already exists"):
-        await service.modify_default_team("Alpha", shorthand="Beta")
+        await _write(db_path, lambda s, db: s.modify_default_team_on(db, "Alpha", shorthand="Beta"))
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_full_name_already_taken_is_refused_and_nothing_is_written(tmp_path):
     db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
     for name in ("Alpha", "Beta"):
-        await service.add_default_team(name, full_name=f"{name} Racing")
+        await _add_team(db_path, name, full_name=f"{name} Racing")
 
     with pytest.raises(ValueError, match="already the full name"):
-        await service.modify_default_team(
-            "Alpha", shorthand="Gamma", full_name="beta racing"
-        )
+        await _write(db_path, lambda s, db: s.modify_default_team_on(
+            db, "Alpha", shorthand="Gamma", full_name="beta racing"
+        ))
 
     assert "Alpha" in await _names(db_path)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_team_whose_existing_name_breaks_the_rule_can_still_be_changed(tmp_path):
     """Only the *new* names are validated, deliberately. A team named before the naming rule
     existed must remain fixable — validating the current name would refuse the very command
     that puts it right, and the team could then be neither renamed nor removed."""
     db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
-            "VALUES ('???', '???', 2, 0)"
-        )
-        await db.commit()
+    await _add_team(db_path, "???")
 
-    await service.modify_default_team("???", shorthand="Alpha")
+    await _write(db_path, lambda s, db: s.modify_default_team_on(db, "???", shorthand="Alpha"))
 
     assert "Alpha" in await _names(db_path)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_team_is_removed(tmp_path):
+    """Alpha is removed from the list, as a `/team remove` change's save removes it; the writer
+    leaves the audit entry to the change, writing none itself."""
     db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha")
+    await _add_team(db_path, "Alpha")
 
-    await service.remove_default_team("Alpha")
+    await _write(db_path, lambda s, db: s.remove_default_team_on(db, "Alpha"))
 
     assert "Alpha" not in await _names(db_path)
+    assert await _audit_rows(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_removing_a_team_that_does_not_exist_says_so(tmp_path):
-    service = TeamService(await _make_db(tmp_path))
+    db_path = await _make_db(tmp_path)
 
     with pytest.raises(ValueError, match="No default team"):
-        await service.remove_default_team("Ghost")
+        await _write(db_path, lambda s, db: s.remove_default_team_on(db, "Ghost"))
 
 
 # ---------------------------------------------------------------------------
@@ -373,10 +423,9 @@ async def test_removing_a_team_that_does_not_exist_says_so(tmp_path):
 
 async def test_a_team_with_no_role_mapping_reads_as_none(tmp_path):
     db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha")
+    await _add_team(db_path, "Alpha")
 
-    entries = await service.get_teams_with_roles()
+    entries = await TeamService(db_path).get_teams_with_roles()
 
     alpha = next(e for e in entries if e["name"] == "Alpha")
     assert alpha["role_id"] is None
@@ -384,8 +433,7 @@ async def test_a_team_with_no_role_mapping_reads_as_none(tmp_path):
 
 async def test_a_mapped_role_is_carried_through(tmp_path):
     db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha")
+    await _add_team(db_path, "Alpha")
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
@@ -393,7 +441,7 @@ async def test_a_mapped_role_is_carried_through(tmp_path):
         )
         await db.commit()
 
-    entries = await service.get_teams_with_roles()
+    entries = await TeamService(db_path).get_teams_with_roles()
 
     assert next(e for e in entries if e["name"] == "Alpha")["role_id"] == 12345
 
@@ -414,7 +462,7 @@ async def _seed(service: TeamService, db_path: str, division_id: int) -> None:
 async def test_seeding_a_division_copies_the_server_s_teams(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha")
+    await _add_team(db_path, "Alpha")
 
     await _seed(service, db_path, 1)
 
@@ -424,38 +472,40 @@ async def test_seeding_a_division_copies_the_server_s_teams(tmp_path):
 async def test_seeding_pre_creates_a_seat_for_every_place_in_a_team(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha", max_seats=3)
+    await _add_team(db_path, "Alpha", max_seats=3)
 
     await _seed(service, db_path, 1)
 
     assert await _seat_count(db_path, 1, "Alpha") == 3
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_team_is_added_with_its_full_name_beside_its_shorthand(tmp_path):
     """A team's shorthand is typed and names its artwork; its full name is what is shown
     (#381). Both are kept, and neither stands in for the other."""
     db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
 
-    added = await service.add_default_team("RBR", full_name="Oracle Red Bull Racing")
+    added = await _write(db_path, lambda s, db: s.add_default_team_on(
+        db, "RBR", full_name="Oracle Red Bull Racing"
+    ))
 
     assert (added.name, added.full_name) == ("RBR", "Oracle Red Bull Racing")
-    listed = next(t for t in await service.get_default_teams() if t.name == "RBR")
+    listed = next(t for t in await TeamService(db_path).get_default_teams() if t.name == "RBR")
     assert listed.full_name == "Oracle Red Bull Racing"
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 @pytest.mark.parametrize("full_name", ["oracle RED BULL racing", "reserve"])
 async def test_a_team_is_refused_a_full_name_another_team_shows(tmp_path, full_name):
     """Full names are unique across the server's list ignoring case, the Reserve team's
     included, and nothing is added when one is taken (#381)."""
     db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
-    await service.add_default_team("RBR", full_name="Oracle Red Bull Racing")
+    await _add_team(db_path, "RBR", full_name="Oracle Red Bull Racing")
 
     with pytest.raises(ValueError, match="already the full name"):
-        await service.add_default_team("RB2", full_name=full_name)
+        await _write(db_path, lambda s, db: s.add_default_team_on(db, "RB2", full_name=full_name))
 
-    assert [t.name for t in await service.get_default_teams()] == ["RBR", RESERVE]
+    assert [t.name for t in await TeamService(db_path).get_default_teams()] == ["RBR", RESERVE]
 
 
 async def test_seeding_a_division_copies_each_team_s_full_name(tmp_path):
@@ -463,7 +513,7 @@ async def test_seeding_a_division_copies_each_team_s_full_name(tmp_path):
     list afterwards, so the full name is copied with the shorthand (#381)."""
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
-    await service.add_default_team("RBR", full_name="Oracle Red Bull Racing")
+    await _add_team(db_path, "RBR", full_name="Oracle Red Bull Racing")
 
     await _seed(service, db_path, 1)
 
@@ -490,7 +540,7 @@ async def test_the_season_s_team_names_are_reported_without_the_reserve(tmp_path
     """Used to offer a driver their team preferences, where Reserve is not a choice."""
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=2)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha")
+    await _add_team(db_path, "Alpha")
     await _seed(service, db_path, 1)
 
     names = await service.get_setup_season_team_names(SEASON_ID)
@@ -502,7 +552,7 @@ async def test_the_season_s_team_names_are_reported_without_the_reserve(tmp_path
 async def test_a_name_in_two_divisions_is_reported_once(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=2)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha")
+    await _add_team(db_path, "Alpha")
     await _seed(service, db_path, 1)
     await _seed(service, db_path, 2)
 
@@ -543,7 +593,7 @@ async def test_a_division_s_reserve_team_comes_last(tmp_path):
 async def test_an_empty_seat_is_reported_with_no_driver(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha", max_seats=2)
+    await _add_team(db_path, "Alpha", max_seats=2)
     await _seed(service, db_path, 1)
 
     teams = await service.get_division_teams(1)
@@ -556,7 +606,7 @@ async def test_an_empty_seat_is_reported_with_no_driver(tmp_path):
 async def test_a_filled_seat_carries_its_driver(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha", max_seats=2)
+    await _add_team(db_path, "Alpha", max_seats=2)
     await _seed(service, db_path, 1)
     async with get_connection(db_path) as db:
         await db.execute(
