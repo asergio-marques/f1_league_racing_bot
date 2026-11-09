@@ -2030,9 +2030,7 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/driver_service.py", "DriverService.transition"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.assign_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.delete_team_role_config"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.move_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.rename_team_role_config"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.sack_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.set_team_role_config"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.unassign_driver"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.add_default_team"): (1, PASS["core"]),
@@ -2050,6 +2048,8 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "AttendanceService.set_setting"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
+    ("core/services/placement_service.py", "PlacementService.move_driver"): (1, PASS["attendance"]),
+    ("core/services/placement_service.py", "PlacementService.sack_driver"): (1, PASS["attendance"]),
     # Signup's pass
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
