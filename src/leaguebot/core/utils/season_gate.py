@@ -62,8 +62,7 @@ async def _reply(interaction: discord.Interaction, message: str) -> None:
     """Answer *interaction* whichever state it is already in.
 
     Some commands defer before reaching their gate and some do not, so a bare
-    ``response.send_message`` would 404 on half of them. The same reasoning as
-    ``SeasonCog._refuse_channel_in_use``.
+    ``response.send_message`` would 404 on half of them.
     """
     if interaction.response.is_done():
         await interaction.followup.send(message, ephemeral=True)

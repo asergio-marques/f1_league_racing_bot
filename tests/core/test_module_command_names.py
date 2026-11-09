@@ -221,13 +221,7 @@ def test_no_old_name_is_left(old):
 @pytest.mark.parametrize(
     "name,description",
     [
-        pytest.param(
-            "division lineup-channel", "Set the lineup posting channel for a division.",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#283: /division lineup-channel's description still says (signup module)",
-            ),
-        ),
+        ("division lineup-channel", "Set the lineup posting channel for a division."),
         ("division calendar-channel", "Set the calendar posting channel for a division."),
     ],
     ids=CORE_CHANNEL_COMMANDS,

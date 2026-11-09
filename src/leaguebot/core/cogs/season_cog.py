@@ -3191,7 +3191,7 @@ class SeasonCog(commands.Cog):
 
     @division.command(
         name="lineup-channel",
-        description="Set the lineup posting channel for a division (signup module).",
+        description="Set the lineup posting channel for a division.",
     )
     @app_commands.describe(name="Division name", channel="Lineup channel")
     @league_manager_only
