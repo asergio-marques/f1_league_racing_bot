@@ -624,6 +624,39 @@ async def test_a_driver_reassign_is_judged_again_as_it_starts(
     assert await stopped_job(league.db_path) is None
 
 
+async def _kimi_approved_too(league):
+    """Kimi (105) is approved for the season and never placed, as Valtteri is: Unassigned."""
+    from tests.support.season_league import SIGNING_UP, approved_unplaced
+
+    await approved_unplaced(league, SIGNING_UP)
+
+
+async def _valtteri_a_test_mode_driver(league):
+    from tests.support.season_league import UNASSIGNED, profile_id
+
+    await league.write(
+        "UPDATE driver_profiles SET is_test_driver = 1 WHERE id = ?", profile_id(UNASSIGNED)
+    )
+
+
+async def _the_new_account_a_test_mode_driver(league):
+    """9001 is the current account of a test-mode driver, Not Signed Up."""
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver) "
+        "VALUES (?, 'NOT_SIGNED_UP', 1)",
+        str(_NEW),
+    )
+
+
+async def _the_new_account_signing_up(league):
+    """9001 is the current account of a driver whose signup awaits approval."""
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state) "
+        "VALUES (?, 'PENDING_ADMIN_APPROVAL')",
+        str(_NEW),
+    )
+
+
 @pytest.mark.parametrize(
     "before, old, new, reply",
     [
@@ -636,6 +669,36 @@ async def test_a_driver_reassign_is_judged_again_as_it_starts(
             id="the-account-already-current",
         ),
         pytest.param(_valtteri_begins_a_signup, 106, _NEW, _IN_PROGRESS, id="a-signup-in-progress"),
+        pytest.param(
+            _kimi_approved_too, 106, 105,
+            "⛔ This driver and <@105> both hold a seat or a signup in the live season, so they "
+            "cannot be merged into one driver.",
+            id="a-merge-of-two-in-the-live-season",
+        ),
+        pytest.param(
+            _the_new_account_a_past_one_of_another, 106, _NEW,
+            f"⛔ <@{_NEW}> is a past account of another driver in this league, and an account "
+            "belongs to one driver.",
+            id="a-past-account-of-another-driver",
+        ),
+        pytest.param(
+            _valtteri_a_test_mode_driver, 106, _NEW,
+            "⛔ That driver was created by test mode. A test-mode driver cannot be given a real "
+            "account, nor a real driver a test-mode one.",
+            id="a-test-mode-driver",
+        ),
+        pytest.param(
+            _the_new_account_a_test_mode_driver, 106, _NEW,
+            f"⛔ <@{_NEW}> is a test-mode driver. A test-mode driver cannot be merged with a real "
+            "one.",
+            id="the-new-account-a-test-mode-driver",
+        ),
+        pytest.param(
+            _the_new_account_signing_up, 106, _NEW,
+            f"⛔ <@{_NEW}> has a signup in progress. Finish it — approve or reject it — or have it "
+            "withdrawn first.",
+            id="a-signup-in-progress-on-the-new-account",
+        ),
     ],
 )
 async def test_a_driver_reassign_is_refused_at_the_ask(
@@ -644,10 +707,17 @@ async def test_a_driver_reassign_is_refused_at_the_ask(
     """The core specification's change of a driver's account. The season is in Placements;
     Valtteri (106) is Unassigned. The league manager Admin runs `/driver reassign` naming 9999,
     an account no driver holds, onto 9001; or of Valtteri onto 106, his own current account; or,
-    Valtteri having begun a signup, of Valtteri onto 9001. They are refused at once, in today's
-    words: "⛔ No driver profile found for user 9999 on this server.", "⛔ <@106> is already this
-    driver's current account." or "⛔ This driver has a signup in progress. …", and the log channel
-    takes the refusal as its one line. Nothing is asked of the queue, no account changes, no audit
+    Valtteri having begun a signup, of Valtteri onto 9001; or, Kimi (105) Unassigned too, of
+    Valtteri onto 105, a merge of two drivers both in the live season; or of Valtteri onto 9001
+    where 9001 is a past account of another driver, where Valtteri is a test-mode driver, where
+    9001 is a test-mode driver's account, or where 9001 is a driver's whose signup awaits
+    approval. They are refused at once, in today's words for each ("⛔ No driver profile found
+    for user 9999 on this server.", "⛔ <@106> is already this driver's current account.", "⛔
+    This driver has a signup in progress. …", "⛔ This driver and <@105> both hold a seat or a
+    signup in the live season, so they cannot be merged into one driver.", "⛔ <@9001> is a past
+    account of another driver in this league, …", "⛔ That driver was created by test mode. …",
+    "⛔ <@9001> is a test-mode driver. …", "⛔ <@9001> has a signup in progress. …"), and the log
+    channel takes the refusal as its one line. Nothing is asked of the queue, no account changes, no audit
     entry is written, no role is moved and no portrait discarded. Takes the place of
     `test_driver_cog_refusals.py`'s "reassign refused by the service" case and
     `test_driver_cog.py`'s `test_a_refused_reassignment_is_reported_not_raised`, which mocked the
