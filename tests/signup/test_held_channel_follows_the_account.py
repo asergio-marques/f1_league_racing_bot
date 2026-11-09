@@ -144,6 +144,22 @@ async def test_a_held_channel_moves_with_its_deletion_still_due_when_it_was(
     assert last_said(asked) == _reassigned("given a new account", _NEW, "<@106>")
 
 
+async def test_a_held_channel_moved_again_after_its_timer_moved_keeps_the_time_it_was_due(
+    tmp_path, monkeypatch,
+):
+    """The move's job runs afresh where it was not marked done (a restart, a Retry), after it had
+    already moved the deletion timer: Valtteri's (106) is gone and 9001's is due in six hours. Once
+    the queue has run the reassign, 9001's timer is armed again at that same moment, not a day on."""
+    from tests.support.change_queue import run_queue
+
+    league, _asked, _held_channel, _theirs = await _reassign(tmp_path, monkeypatch)
+    soon = league.clock.now + timedelta(hours=6)
+    _due(league, {str(_NEW): soon})
+    await run_queue(league.bot)
+
+    assert _armed(league) == [(str(_NEW), soon)]
+
+
 async def test_a_held_channel_on_the_new_account_is_kept_and_the_other_deleted(
     tmp_path, monkeypatch,
 ):

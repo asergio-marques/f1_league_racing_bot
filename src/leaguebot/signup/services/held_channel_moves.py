@@ -9,8 +9,9 @@ the jobs, which core runs after the save; the steps here, handed back through th
   was already due (a day after the change where none stands), and the channel's permissions: the
   new account may read it and not write, and the replaced account's own permission is removed. A
   timer is moved before the permissions, so that the channel is never left with nothing to delete
-  it; Discord refusing the permissions ends the job with the problem named, for the change's reply
-  and line, and the queue goes on. Any other fault stops the lane.
+  it; run again after the timer has moved, it keeps the new account's. Discord refusing the
+  permissions ends the job with the problem named, for the change's reply and line, and the queue
+  goes on. Any other fault stops the lane.
 - `DELETE_REPLACED_CHANNEL` deletes the replaced account's channel where the new account holds
   one of its own, its wizard record with it, and takes the replaced account's timer away.
 """
@@ -23,7 +24,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord, StepKind, StepResult
+from leaguebot.core.models.change import GuildUnavailable, StepKind, StepResult
 from leaguebot.core.services.change_queue import Step, StepContext
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.utils.interaction_errors import describe_fault
@@ -40,10 +41,6 @@ if TYPE_CHECKING:
 
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
-
-
-class _PermissionsRefused(Exception):
-    """Discord refused to move a held channel's permissions."""
 
 
 def held_channel_steps(
@@ -63,9 +60,12 @@ def held_channel_steps(
         if guild is None:
             raise GuildUnavailable("the league's server is not in the cache")
         scheduler = scheduler_service()
-        scheduler.arm_once(
-            DELETE_TIMER, new, scheduler.timer_due(DELETE_TIMER, replaced) or now() + HOLD
+        due = (
+            scheduler.timer_due(DELETE_TIMER, replaced)
+            or scheduler.timer_due(DELETE_TIMER, new)
+            or now() + HOLD
         )
+        scheduler.arm_once(DELETE_TIMER, new, due)
         scheduler.disarm(DELETE_TIMER, replaced)
         channel = as_text_channel(guild.get_channel(int(each["channel_id"])))
         if channel is None:
@@ -83,16 +83,10 @@ def held_channel_steps(
                     old_member, overwrite=None, reason="Driver's current account changed"
                 )
         except discord.HTTPException as error:
-            raise _PermissionsRefused from error
+            return StepResult(result={"problem": (
+                f"the signup channel's permissions could not be moved: {describe_fault(error)}"
+            )})
         return StepResult(result={})
-
-    def on_fault(_ctx: StepContext, error: BaseException) -> StepResult:
-        if not isinstance(error, _PermissionsRefused):
-            raise error
-        return StepResult(result={"problem": (
-            "the signup channel's permissions could not be moved: "
-            f"{describe_fault(error.__cause__ or error)}"
-        )})
 
     async def describe_move(ctx: StepContext) -> str:
         return f"moving the signup channel of <@{ctx.step_payload['from_account']}>"
@@ -114,7 +108,7 @@ def held_channel_steps(
 
     return {
         MOVE_HELD_CHANNEL: Step(
-            MOVE_HELD_CHANNEL, StepKind.ACT, move, describe=describe_move, on_fault=on_fault
+            MOVE_HELD_CHANNEL, StepKind.ACT, move, describe=describe_move
         ),
         DELETE_REPLACED_CHANNEL: Step(
             DELETE_REPLACED_CHANNEL, StepKind.DELETE, delete, still_due=held,
