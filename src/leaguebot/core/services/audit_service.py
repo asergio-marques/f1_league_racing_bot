@@ -18,9 +18,8 @@ saved by the service that makes it. Where a change and its record must land toge
 service making the change calls **`record_change_on`** instead, on the connection it is already
 writing on: the row joins the caller's transaction and is not committed here, so a fault before
 the caller commits takes the change and its record back together. The points writers — a bulk
-paste, an XML import and a bulk amendment — record each position they change so. Where the
-command writes both in a transaction of its own, it keeps doing so: `/division lineup-channel`
-and `/division calendar-channel` do, and are not moved onto this.
+paste, an XML import and a bulk amendment — record each position they change so. A change run
+on the change queue records through the queue's own save instead.
 """
 from __future__ import annotations
 

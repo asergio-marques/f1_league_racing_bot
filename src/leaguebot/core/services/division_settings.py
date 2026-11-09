@@ -127,7 +127,10 @@ def _division_channel(column: str, seasons: "SeasonService") -> Setting:
         mention = f"<#{int(payload['value'])}>"
         name = payload["division_name"]
         if not saved["changed"]:
-            return f"ℹ️ Nothing changed: {label} for **{name}** is already {mention}."
+            # `check` refuses a channel the division already holds before the save runs, at the
+            # ask and as the change starts, with nothing able to write between; this guard
+            # answers in the same words should the save ever find it so.
+            return f"ℹ️ {mention} is already the {key} channel for **{name}**. Nothing was changed."
         verb = "set" if saved["replaced"] is None else "updated"
         return f"✅ {label} for **{name}** {verb} to {mention}."
 
