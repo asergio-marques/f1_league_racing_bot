@@ -860,6 +860,23 @@ async def run_attendance_channel_command(league: SeasonLeague, which: str, chann
     return interaction
 
 
+async def run_division_channel_command(
+    league: SeasonLeague, cog_class: Any, command: Any, name: str, channel_id: int,
+) -> Any:
+    """Run the division channel command *command*, of *cog_class* and named *name* as Discord
+    gives it (`division lineup-channel`, `weather channel`), for Pro with channel *channel_id*,
+    as the league manager Alex, through the command's body on the league's builder-built bot;
+    the queue is not run. Gives Alex's interaction."""
+    cog = cog_class.__new__(cog_class)
+    cog.bot = league.bot
+    interaction = member_interaction(league.bot)
+    interaction.guild = league.guild
+    interaction.command = SimpleNamespace(qualified_name=name)
+    interaction.user.display_name = "Alex"
+    await undecorate(command)(cog, interaction, "Pro", league.channel(channel_id))
+    return interaction
+
+
 def attendance_from_the_database(league: SeasonLeague) -> None:
     """The league's attendance service reading its configuration from the database, in place of
     the league's stub, and held by the check-in's change types: the builder's own service with

@@ -18,6 +18,7 @@ import pytest
 
 from leaguebot.core.models.change import ChangeOrigin
 from tests.support.change_queue import (
+    acknowledgement,
     change_rows,
     discard_job,
     http_error,
@@ -27,8 +28,15 @@ from tests.support.change_queue import (
     run_queue,
     step_rows,
     stopped_job,
+    updated_reply,
 )
-from tests.support.season_league import AM, DIVISIONS, PRO, ongoing_league
+from tests.support.season_league import (
+    AM,
+    DIVISIONS,
+    PRO,
+    ongoing_league,
+    run_division_channel_command,
+)
 
 
 KIND = "lineup.post"
@@ -197,6 +205,45 @@ async def test_two_commands_in_a_row_each_ask_for_the_lineup(tmp_path):
 
     rows = [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
     assert [row["state"] for row in rows] == ["QUEUED", "QUEUED"]
+
+
+@pytest.mark.xfail(strict=True, reason="#283: /division lineup-channel waits behind a stopped job")
+async def test_a_stopped_lineup_lands_once_the_lineup_channel_is_set_and_retried(tmp_path):
+    """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
+
+    Pro's lineup channel is unset, and Pro's lineup stops the queue at its post, its notice
+    naming `/division lineup-channel`. Alex runs `/division lineup-channel` for Pro with channel
+    600 and is acknowledged; the queue runs. The setting does not wait behind the stopped
+    lineup: it runs past it, saves 600 as Pro's lineup channel and tells Alex the channel was
+    set, while the lineup still stops the league's lane. Alex presses Retry: the lineup lands
+    once in 600, and nothing stops the queue."""
+    from leaguebot.core.cogs.season_cog import SeasonCog
+
+    league = await ongoing_league(tmp_path)
+    await league.write("UPDATE divisions SET lineup_channel_id = NULL WHERE id = ?", PRO)
+    before = len(league.texts(LINEUP[PRO]))
+    await _ask(league, PRO)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "post_lineup"
+    assert "`/division lineup-channel`" in await _said(league)
+
+    manager = await run_division_channel_command(
+        league, SeasonCog, SeasonCog.division_lineup_channel, "division lineup-channel",
+        LINEUP[PRO],
+    )
+    assert acknowledgement(manager).startswith("⏳ ")
+    await run_queue(league.bot)
+
+    assert updated_reply(manager) == f"✅ Lineup channel for **Pro** set to <#{LINEUP[PRO]}>."
+    [row] = await league.rows("SELECT lineup_channel_id FROM divisions WHERE id = ?", PRO)
+    assert int(row["lineup_channel_id"]) == LINEUP[PRO]
+    assert (await stopped_job(league.db_path))["name"] == "post_lineup", (
+        "setting the channel ran the job"
+    )
+    await retry_job(league.bot)
+
+    assert len(league.texts(LINEUP[PRO])) == before + 1
+    assert await stopped_job(league.db_path) is None
 
 
 async def test_a_lineup_for_a_division_with_no_lineup_channel_stops_the_queue_naming_the_command(

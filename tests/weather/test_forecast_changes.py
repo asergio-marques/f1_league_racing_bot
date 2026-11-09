@@ -26,6 +26,7 @@ import discord
 import pytest
 
 from tests.support.change_queue import (
+    acknowledgement,
     change_rows,
     http_error,
     in_a_job,
@@ -33,6 +34,7 @@ from tests.support.change_queue import (
     run_queue,
     step_rows,
     stopped_job,
+    updated_reply,
 )
 from tests.support.season_league import (
     AM,
@@ -42,6 +44,7 @@ from tests.support.season_league import (
     ongoing_league,
     posted_forecast,
     round_id,
+    run_division_channel_command,
 )
 
 #: The kind of a forecast's change.
@@ -399,6 +402,47 @@ async def test_a_forecast_for_a_division_with_no_forecast_channel_is_drawn_and_i
     assert await stopped_job(league.db_path) is None
     [new] = _ids(_events(league), "send")
     assert await _forecasts(league) == {1: new}
+
+
+@pytest.mark.xfail(strict=True, reason="#283: /weather channel waits behind a stopped job")
+async def test_a_stopped_forecast_lands_once_the_forecast_channel_is_set_and_retried(tmp_path):
+    """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
+
+    Pro's forecast channel is unset, and round 3's phase 1 is drawn and stops the queue at its
+    post, its notice naming `/weather channel`. Alex runs `/weather channel` for Pro with channel
+    605 and is acknowledged; the queue runs. The setting does not wait behind the stopped
+    forecast: it runs past it, saves 605 as Pro's forecast channel and tells Alex the channel was
+    set, while the forecast still stops the league's lane. Alex presses Retry: the forecast lands
+    once in 605 and is recorded as phase 1's, its draw made once, and nothing stops the queue."""
+    from leaguebot.weather.cogs.weather_cog import WeatherCog
+
+    league = await _league(tmp_path)
+    await league.write("UPDATE divisions SET forecast_channel_id = NULL WHERE id = ?", PRO)
+    await _ask(league, 1)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "post_forecast"
+    assert "`/weather channel`" in await _said(league)
+
+    manager = await run_division_channel_command(
+        league, WeatherCog, WeatherCog.channel, "weather channel", FORECAST,
+    )
+    assert acknowledgement(manager).startswith("⏳ ")
+    await run_queue(league.bot)
+
+    assert updated_reply(manager) == (
+        f"✅ Weather forecast channel for **Pro** set to <#{FORECAST}>."
+    )
+    [row] = await league.rows("SELECT forecast_channel_id FROM divisions WHERE id = ?", PRO)
+    assert int(row["forecast_channel_id"]) == FORECAST
+    assert (await stopped_job(league.db_path))["name"] == "post_forecast", (
+        "setting the channel ran the job"
+    )
+    await retry_job(league.bot)
+
+    [new] = _ids(_events(league), "send")
+    assert await _forecasts(league) == {1: new}
+    assert await _draws(league, 1) == 1
+    assert await stopped_job(league.db_path) is None
 
 
 async def test_a_phase_whose_race_passed_while_it_waited_is_dropped_at_its_draw(tmp_path):

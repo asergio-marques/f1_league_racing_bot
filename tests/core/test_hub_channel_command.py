@@ -43,6 +43,7 @@ from tests.support.change_queue import (
     league_queue,
     PAST_THE_STOP,
     member,
+    retry_job,
     run_queue,
     step_rows,
     stop_the_league_lane,
@@ -626,6 +627,47 @@ async def test_the_hub_is_set_while_the_queue_is_stopped_on_another_job(db_path)
     still = await stopped_job(db_path)
     assert still is not None
     assert (still["id"], still["change_id"]) == (stopped["id"], stopped["change_id"])
+
+
+@pytest.mark.xfail(strict=True, reason="#283: /bot hub-channel waits behind a stopped job")
+async def test_a_stopped_hub_panel_lands_once_the_hub_is_set_and_retried(db_path):
+    """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
+
+    The hub is set to 7921, which has since been deleted from the server, and no panel stands.
+    The bot's refresh of the hub panel stops the queue, its notice naming `/bot hub-channel`. The
+    manager (77) runs `/bot hub-channel` for 7920 and is acknowledged; the queue runs. The
+    setting does not wait behind the stopped refresh: it runs past it, saves 7920 as the hub,
+    sets its permissions and tells the manager it was set, while the refresh still stops the
+    league's lane and no panel is posted. The manager presses Retry: the stopped refresh posts
+    the panel in 7920 and keeps its id, and the refresh the setting asked for runs after it and
+    edits that panel in place, so one panel stands and nothing stops the queue."""
+    from leaguebot.core.models.change import ChangeOrigin
+
+    channel = _channel(HUB)
+    cog, interaction = await _setup(db_path, channel)
+    await _configure(db_path, hub_channel_id=OLD_HUB)
+    await cog.bot.change_queue.ask(
+        hub_service.HUB_REFRESH, {"command": "/module enable weather"},
+        what="refreshing the hub panel", origin=ChangeOrigin.BOT,
+    )
+    await run_queue(cog.bot)
+    assert await stopped_job(db_path) is not None
+    assert any("`/bot hub-channel`" in line for line in _lines(cog))
+
+    await undecorate(BotCog.handle_hub_channel)(cog, interaction, channel)
+    assert acknowledgement(interaction).startswith("⏳ ")
+    await run_queue(cog.bot)
+
+    assert _replied(interaction) == SET
+    assert await _stored(db_path) == {"hub_channel_id": HUB, "hub_message_id": None}
+    channel.edit.assert_awaited()
+    channel.send.assert_not_awaited()
+    assert await stopped_job(db_path) is not None, "setting the channel ran the job"
+    await retry_job(cog.bot)
+
+    channel.send.assert_awaited_once()
+    assert await _stored(db_path) == {"hub_channel_id": HUB, "hub_message_id": NEW_PANEL}
+    assert await stopped_job(db_path) is None
 
 
 # ── Its tier ──────────────────────────────────────────────────────────────
