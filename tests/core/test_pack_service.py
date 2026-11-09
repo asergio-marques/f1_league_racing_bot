@@ -346,12 +346,16 @@ async def test_pack_keeps_the_past_season_whole(db_path):
     assert await _count(db_path, "audit_entries WHERE change_type = 'X'") == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#283: a new database does not yet hold the Reserve team")
 async def test_pack_keeps_the_teams_points_and_module_settings(db_path):
+    """The server's team list travels with the league: Ferrari, and the Reserve team a new
+    database holds."""
     await _seed(db_path)
 
     await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
 
-    assert await _count(db_path, "default_teams") == 1
+    teams = await _all(db_path, "SELECT name FROM default_teams ORDER BY name")
+    assert [row["name"] for row in teams] == ["Ferrari", "Reserve"]
     assert await _count(db_path, "points_config_store") == 1
     row = await _one(db_path, "SELECT * FROM server_configs")
     assert (row["weather_module_enabled"], row["signup_module_enabled"]) == (1, 1)

@@ -21,11 +21,12 @@ async def db_path(tmp_path):
     return path
 
 
-async def _add_default_team(db_path: str, name: str, is_reserve: int = 0) -> None:
+async def _add_default_team(db_path: str, name: str) -> None:
+    """Team *name* on the server's list: the Reserve team is the new database's own."""
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) VALUES (?, ?, 2, ?)",
-            (name, name, is_reserve),
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) VALUES (?, ?, 2, 0)",
+            (name, name),
         )
         await db.commit()
 
@@ -72,7 +73,7 @@ async def _add_team_instance(db_path: str, season_id: int, team_name: str, is_re
 
 class TestGetTeamsWithRoles:
     async def test_an_empty_list_reads_as_the_reserve_team_alone(self, db_path):
-        """The Reserve team always exists, so a read restores it (issue #146)."""
+        """The Reserve team always exists: a new database holds it (issue #146)."""
         from leaguebot.core.services.team_service import TeamService
         svc = TeamService(db_path)
         result = await svc.get_teams_with_roles()
@@ -111,7 +112,6 @@ class TestGetTeamsWithRoles:
 
     async def test_reserve_team_included_last(self, db_path):
         await _add_default_team(db_path, "Alpine")
-        await _add_default_team(db_path, "Reserve", is_reserve=1)
         from leaguebot.core.services.team_service import TeamService
         svc = TeamService(db_path)
         result = await svc.get_teams_with_roles()

@@ -71,8 +71,10 @@ async def _league(tmp_path) -> tuple[str, dict[str, int]]:
         for name, role, is_reserve in (
             ("Ferrari", OLD_ROLE, 0), ("Rival", RIVAL_ROLE, 0), ("Reserve", RESERVE_ROLE, 1),
         ):
+            # The Reserve team's row is the new database's own, where it already holds one.
             await db.execute(
-                "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) VALUES (?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO default_teams (name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, ?)",
                 (name, name, -1 if is_reserve else 2, is_reserve),
             )
             await db.execute(

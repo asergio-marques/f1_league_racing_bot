@@ -8,11 +8,10 @@ alike.
 
 Three rules are pinned here, each of which a reader could undo without any other test noticing.
 
-**The Reserve team is protected, and is conjured whenever it is missing.** `_ensure_reserve`
-runs on every read and write of the server's list, not only on first setup — the older seeding
-fired only when the server had *no* team at all, so a configuration that lost its Reserve row,
-or predates the rule, never regained one. `test_reading_the_team_list_restores_a_lost_reserve`
-holds that. No `/team` command may add, rename or remove it.
+**The Reserve team is protected, and a new database already holds it.** The baseline migration
+seeds its row, so the list ships holding the Reserve team alone and every read of the list only
+reads (`test_a_new_server_s_team_list_is_the_reserve_team_alone`,
+`test_reading_the_team_list_writes_nothing`). No `/team` command may add, rename or remove it.
 
 **Only the new names are validated when a team is changed.** Deliberately, per the method's own
 comment: a team named before the naming rule existed would otherwise be impossible to rename *or*
@@ -43,6 +42,11 @@ SEASON_ID = 1
 
 #: The protected name, as the service spells it.
 RESERVE = "Reserve"
+
+#: Why the tests of the Reserve team's seeded row fail until the build.
+_SEEDED = "#283: a new database does not yet hold the Reserve team"
+#: Why the test of a read writing nothing fails until the build.
+_READ_WRITES = "#283: reading the team list still writes the Reserve team back"
 
 
 # ---------------------------------------------------------------------------
@@ -133,33 +137,48 @@ async def _insert_division_team(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_SEEDED)
 async def test_a_new_server_s_team_list_is_the_reserve_team_alone(tmp_path):
-    service = TeamService(await _make_db(tmp_path))
+    """The core specification: the list ships holding the Reserve team alone. A database just
+    built by the migrations, before anything has read or written the list, holds one team: the
+    Reserve team, its shorthand and full name "Reserve", with no fixed seats (-1). Reading the
+    list gives that team alone."""
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        rows = await (
+            await db.execute("SELECT name, full_name, max_seats, is_reserve FROM default_teams")
+        ).fetchall()
+    assert [tuple(row) for row in rows] == [(RESERVE, RESERVE, -1, 1)]
 
-    teams = await service.get_default_teams()
+    teams = await TeamService(db_path).get_default_teams()
 
     assert [t.name for t in teams] == [RESERVE]
     assert teams[0].is_reserve is True
     assert teams[0].full_name == RESERVE
 
 
-async def test_reading_the_team_list_restores_a_lost_reserve(tmp_path):
-    """The rule the older seeding got wrong. It fired only when the server had no team at
-    all, so a configuration that lost its Reserve row never regained one — and every
-    division seeded from it would then have no reserve team to distribute into."""
+@pytest.mark.xfail(strict=True, reason=_READ_WRITES)
+@pytest.mark.parametrize("read", ["get_default_teams", "get_teams_with_roles"])
+async def test_reading_the_team_list_writes_nothing(tmp_path, read):
+    """Reading the team list commits nothing: every change is made through the change queue,
+    and the Reserve team's row is the baseline's. The server's list holds Alpha, and its Reserve
+    row has been taken out by hand. Reading the list, as `/team list`, the team autocomplete and
+    the signup wizard do, lists Alpha alone and leaves the list as it found it: no Reserve row is
+    written back. Takes the place of `test_reading_the_team_list_restores_a_lost_reserve` and
+    `test_listing_teams_with_roles_restores_a_lost_reserve`."""
     db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha")
     async with get_connection(db_path) as db:
         await db.execute(
-            "DELETE FROM default_teams WHERE is_reserve = 1"
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+            "VALUES ('Alpha', 'Alpha', 2, 0)"
         )
+        await db.execute("DELETE FROM default_teams WHERE is_reserve = 1")
         await db.commit()
-    assert RESERVE not in await _names(db_path)
 
-    await service.get_default_teams()
+    listed = await getattr(TeamService(db_path), read)()
 
-    assert RESERVE in await _names(db_path)
+    assert [t["name"] if isinstance(t, dict) else t.name for t in listed] == ["Alpha"]
+    assert await _names(db_path) == ["Alpha"]
 
 
 async def test_the_reserve_team_sorts_last(tmp_path):
@@ -190,15 +209,18 @@ async def test_no_team_command_may_manage_the_reserve_team(tmp_path, call):
         await call(service)
 
 
+@pytest.mark.xfail(strict=True, reason=_SEEDED)
 async def test_a_reserve_team_cannot_be_renamed_by_its_row_either(tmp_path):
     """The name check catches the usual case; the `is_reserve` check behind it catches a
-    Reserve team that was somehow stored under another name."""
+    Reserve team that was somehow stored under another name. The Reserve team's row, the one
+    a new database holds, is renamed Standbys by hand; changing Standbys's shorthand, and
+    removing it, are each refused as protected."""
     db_path = await _make_db(tmp_path)
     service = TeamService(db_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
-            "VALUES ('Standbys', 'Standbys', -1, 1)"
+            "UPDATE default_teams SET name = 'Standbys', full_name = 'Standbys' "
+            "WHERE is_reserve = 1"
         )
         await db.commit()
 
@@ -374,23 +396,6 @@ async def test_a_mapped_role_is_carried_through(tmp_path):
     entries = await service.get_teams_with_roles()
 
     assert next(e for e in entries if e["name"] == "Alpha")["role_id"] == 12345
-
-
-async def test_listing_teams_with_roles_restores_a_lost_reserve(tmp_path):
-    """`/team list`, `/team reserve-role` and team autocomplete read the list through here, so the
-    Reserve team must be restored on this read as on every other (issue #146). `/bot init`
-    no longer seeds it, and a server whose Reserve row was lost would otherwise list none."""
-    db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha")
-    async with get_connection(db_path) as db:
-        await db.execute("DELETE FROM default_teams WHERE is_reserve = 1")
-        await db.commit()
-
-    entries = await service.get_teams_with_roles()
-
-    assert [e["name"] for e in entries] == ["Alpha", RESERVE]
-    assert entries[-1]["is_reserve"] is True
 
 
 # ---------------------------------------------------------------------------
