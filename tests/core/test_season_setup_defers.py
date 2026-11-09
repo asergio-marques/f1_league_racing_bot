@@ -403,10 +403,6 @@ async def test_season_setup_begins_the_season_in_configuration(tmp_path):
     assert last_said(asked) == _started(4, 25)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the start date is the host's local date, not the UTC date of the queue's now",
-)
 async def test_the_start_date_is_the_utc_date(tmp_path):
     """The owner's decision (9): a season's start date is the UTC date. The queue's clock reads
     01:30 on 3 January 2031 at UTC+5, which is 20:30 on 2 January in UTC, a date the host's own

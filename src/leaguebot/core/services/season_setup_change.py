@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
@@ -88,7 +88,7 @@ def _save(
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """Insert the season being set up, its audit entry and its line, one save."""
         season = await seasons.begin_setup_on(
-            db, start_date=now().date(), game_edition=int(ctx.payload["game_edition"]),
+            db, start_date=now().astimezone(timezone.utc).date(), game_edition=int(ctx.payload["game_edition"]),
         )
         stage = season.stage
         assert stage is not None  # `begin_setup_on` begins every season in a stage
