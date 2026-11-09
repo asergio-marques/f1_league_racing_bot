@@ -1,7 +1,7 @@
 """The season-setup commands defer before they do their work.
 
-Each of `/season setup`, `/division add`, `/round add` and `/round amend` writes the SETUP
-season through `_snapshot_pending`, and `/round add` and `/round amend` also load and parse
+Each of `/division add`, `/round add` and `/round amend` writes the SETUP season through
+`_snapshot_pending`, and `/round add` and `/round amend` also load and parse
 the calendar template to check its capacity. Until issue #147 the write rebuilt the whole
 season, and on a season holding more than one division that work outlasted Discord's
 three-second window: the interaction token expired, and the reply raised `404 Unknown
@@ -13,6 +13,10 @@ Deferring first buys fifteen minutes, so these pin two things: that the deferral
 before any of that work, and that every reply thereafter goes to `followup` — a
 `response.send_message` after a defer is itself a 404.
 
+**`/season setup` is not in this list** (#283): it asks the change queue for the season, and the
+queue's acknowledgement is its response, as every command on the queue has it. Its own tests,
+through the queue, are at the end of this file.
+
 **`/round add-bulk` and `/round add-xml` are deliberately not in this list.** They open a
 modal, and `send_modal` must be an interaction's *first* response — a deferred interaction
 cannot open one. They defer inside the modal's `on_submit` instead, where the work
@@ -21,7 +25,7 @@ would be a plausible-looking change that breaks both commands.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -168,7 +172,6 @@ async def test_round_add_defers_before_touching_the_database(monkeypatch):
 @pytest.mark.parametrize(
     "command, kwargs",
     [
-        ("season_setup", {"game_edition": 2026}),
         ("division_add", {}),
         ("round_add", {}),
         ("round_amend", {}),
@@ -177,7 +180,7 @@ async def test_round_add_defers_before_touching_the_database(monkeypatch):
 def test_every_setup_command_defers_first(command, kwargs):
     """A source-level check: the defer is the first statement that awaits anything.
 
-    Driving all four through their real bodies would need four different sets of
+    Driving all three through their real bodies would need three different sets of
     stubs; what actually regresses is someone adding a query above the defer, and
     that is visible here without pretending to exercise the command.
     """
@@ -194,7 +197,7 @@ def test_every_setup_command_defers_first(command, kwargs):
 
 
 @pytest.mark.parametrize(
-    "command", ["season_setup", "division_add", "round_add", "round_amend"]
+    "command", ["division_add", "round_add", "round_amend"]
 )
 def test_no_setup_command_replies_through_response(command):
     """After a defer the only valid reply is a followup; send_message would 404."""
@@ -204,69 +207,6 @@ def test_no_setup_command_replies_through_response(command):
     assert "interaction.response.send_message" not in src, (
         f"{command} still replies via response.send_message after deferring"
     )
-
-
-async def test_season_setup_begins_the_season_in_configuration():
-    """Issue #220: a season is set up in Configuration, before any division exists."""
-    from leaguebot.core.models.season import SeasonStage
-
-    cog = _cog(None)
-    interaction = _interaction()
-
-    from tests.support.undecorate import undecorate
-
-    await undecorate(SeasonCog.season_setup)(cog, interaction, game_edition=2026)
-
-    kwargs = cog.bot.season_service.sync_pending_config.await_args.kwargs
-    assert kwargs["initial_stage"] is SeasonStage.CONFIGURATION
-
-
-@pytest.mark.parametrize(
-    "standing, reply",
-    [
-        pytest.param(
-            "pending",
-            "\u274c A season setup is already in progress for this server. Use "
-            "`/season placements-review` to approve, or `/season abort` to cancel it first.",
-            id="setup-while-one-is-in-progress",
-        ),
-        pytest.param(
-            "raced",
-            "\u274c A season is currently active for this server. Complete it before starting a "
-            "new one.",
-            id="setup-while-a-season-is-being-raced",
-        ),
-    ],
-)
-async def test_every_season_setup_refusal_is_recorded(standing, reply):
-    """The core specification's record of what changed: a refusal is one line naming the member,
-    what was refused and why. The manager (id 42) runs /season setup while a setup is in
-    progress, as the database holds it, or while a season is being raced: they get today's
-    reply word for word and nothing else, no season is begun,
-    and the log channel gets exactly one line, "⛔ `/season setup` refused for Manager (<@42>) — "
-    and the reply's words."""
-    from tests.support.undecorate import undecorate
-
-    cog = _cog(_pending() if standing == "pending" else None)
-    if standing == "raced":
-        cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=SimpleNamespace(id=3))
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "season setup"
-    answered = {"done": False}
-
-    async def _defer(*_args, **_kwargs):
-        answered["done"] = True
-
-    interaction.response.defer = AsyncMock(side_effect=_defer)
-    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
-
-    await undecorate(SeasonCog.season_setup)(cog, interaction, game_edition=2026)
-
-    assert [call.args[0] for call in interaction.followup.send.await_args_list] == [reply]
-    cog.bot.season_service.sync_pending_config.assert_not_awaited()
-    logged = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
-    assert logged == [f"\u26d4 `/season setup` refused for Manager (<@42>) \u2014 {reply[2:]}"]
 
 
 # ---------------------------------------------------------------------------
@@ -288,50 +228,45 @@ async def _bot_on(tmp_path) -> MagicMock:
     return bot
 
 
-async def _setup_seasons(db_path: str) -> list[int]:
+async def _seed_season(db_path: str, *, status: str, number: int, stage: str | None,
+                       edition: int = 24) -> None:
+    """A season numbered *number*, for F1 *edition*, in *status* and *stage*, started on
+    1 March 2025."""
     from leaguebot.core.db.database import get_connection
 
     async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT id FROM seasons WHERE status = 'SETUP'")
-        return [row["id"] for row in await cursor.fetchall()]
+        await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number, game_edition, stage) "
+            "VALUES ('2025-03-01', ?, ?, ?, ?)",
+            (status, number, edition, stage),
+        )
+        await db.commit()
 
 
-async def test_a_failed_first_setup_save_leaves_no_setup_behind(tmp_path):
-    """The manager runs `/season setup` for F1 25 on a league with no season, and the save fails
-    (the database is locked). Nothing of the setup is left: the manager's next `/season setup`
-    is not refused as a setup in progress, it starts the season afresh, and the database then
-    holds that one season being set up."""
-    from tests.support.undecorate import undecorate
+async def _setup_rows(db_path: str) -> list[dict]:
+    """Every season being set up, as the database holds it."""
+    from leaguebot.core.db.database import get_connection
 
-    bot = await _bot_on(tmp_path)
-    cog = SeasonCog(bot)
-    bot.season_service.sync_pending_config = AsyncMock(side_effect=RuntimeError("database is locked"))
-    with pytest.raises(RuntimeError):
-        await undecorate(SeasonCog.season_setup)(cog, _interaction(), game_edition=25)
-    assert await _setup_seasons(bot.db_path) == []
-    del bot.season_service.sync_pending_config
-
-    again = _interaction()
-    await undecorate(SeasonCog.season_setup)(cog, again, game_edition=25)
-
-    assert "Season setup started" in again.followup.send.await_args.args[0]
-    assert len(await _setup_seasons(bot.db_path)) == 1
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id, start_date, status, season_number, game_edition, stage FROM seasons "
+            "WHERE status = 'SETUP' ORDER BY id"
+        )
+        return [dict(row) for row in await cursor.fetchall()]
 
 
 async def test_a_setup_begun_before_a_restart_is_found_by_the_next_setup_command(tmp_path):
-    """The manager runs `/season setup` for F1 25 and the season is taken to placements. The bot
-    then restarts, and nothing recovers the setup at start-up. The manager's `/division add` of
-    Pro, tier 1, finds the season being set up in the database: it is not refused for want of a
-    setup, and Pro is saved on that season."""
+    """A season is being set up for F1 25, taken to placements, as `/season setup` and the
+    confirmation of its configuration leave it in the database. The bot then restarts, and nothing
+    recovers the setup at start-up. The manager's `/division add` of Pro, tier 1, finds the season
+    being set up in the database: it is not refused for want of a setup, and Pro is saved on that
+    season."""
     from leaguebot.core.db.database import get_connection
     from tests.support.undecorate import undecorate
 
     bot = await _bot_on(tmp_path)
-    await undecorate(SeasonCog.season_setup)(SeasonCog(bot), _interaction(), game_edition=25)
-    [season_id] = await _setup_seasons(bot.db_path)
-    async with get_connection(bot.db_path) as db:
-        await db.execute("UPDATE seasons SET stage = 'PLACEMENTS' WHERE id = ?", (season_id,))
-        await db.commit()
+    await _seed_season(bot.db_path, status="SETUP", number=0, stage="PLACEMENTS", edition=25)
+    [season] = await _setup_rows(bot.db_path)
     role = MagicMock()
     role.id = 10
     role.mention = "<@&10>"
@@ -343,5 +278,243 @@ async def test_a_setup_begun_before_a_restart_is_found_by_the_next_setup_command
     assert "Division **Pro** (Tier 1) added" in interaction.followup.send.await_args.args[0]
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute("SELECT name, tier FROM divisions WHERE season_id = ?",
-                                  (season_id,))
+                                  (season["id"],))
         assert [tuple(row) for row in await cursor.fetchall()] == [("Pro", 1)]
+
+
+# ---------------------------------------------------------------------------
+# `/season setup` on the change queue (#283, S14b)
+# ---------------------------------------------------------------------------
+
+#: "Now", as the change queue's clock gives it.
+NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
+
+#: `/season setup` refused while a season is being set up, word for word.
+IN_PROGRESS = (
+    "❌ A season setup is already in progress for this server. Use "
+    "`/season placements-review` to approve, or `/season abort` to cancel it first."
+)
+
+#: `/season setup` refused while a season is being raced, word for word.
+RACED = (
+    "❌ A season is currently active for this server. Complete it before starting a new one."
+)
+
+#: The queue's acknowledgement of `/season setup`, before anything is saved; the job it begins
+#: with follows.
+ACKNOWLEDGED = (
+    "⏳ Starting the season setup. This message will be updated when it is done; if it "
+    "takes longer, the log channel will say so."
+)
+
+#: The log channel's name for the member asking: `member()`'s Admin (4242).
+NAMED = "Admin (`<@4242>`)"
+
+
+def _started(number: int, edition: int) -> str:
+    """`/season setup`'s reply once the season is saved, word for word."""
+    return (
+        f"✅ Season setup started. **Season #{number} (F1 {edition})** is being configured.\n\n"
+        "Use `/division add` for each division, then `/round add` for each round.\n"
+        "When done, run `/season placements-review` to review and approve."
+    )
+
+
+def _success_line(number: int, edition: int) -> str:
+    """`/season setup`'s line in the log channel, word for word."""
+    return f"{NAMED} | /season setup | Success\n  season: Season #{number} (F1 {edition})"
+
+
+def _refusal_line(reply: str) -> str:
+    """The log channel's line for `/season setup` refused with *reply*."""
+    return f"⛔ `/season setup` refused for {NAMED} — {reply[2:]}"
+
+
+async def _league(tmp_path, *, now: datetime = NOW):
+    """`settings_league`'s league, no module on, its change queue's clock *now*."""
+    from tests.support.settings_league import settings_league
+
+    return await settings_league(tmp_path, modules=(), now=now)
+
+
+async def _ask_setup(league, edition: int) -> MagicMock:
+    """`/season setup` for F1 *edition*, run by the league manager Admin (4242): the interaction."""
+    from tests.support.settings_league import interaction
+    from tests.support.undecorate import undecorate
+
+    asked = interaction(league.bot, "season setup")
+    await undecorate(SeasonCog.season_setup)(SeasonCog(league.bot), asked, game_edition=edition)
+    return asked
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: /season setup saves the season itself, off the queue, with no audit entry",
+)
+async def test_season_setup_begins_the_season_in_configuration(tmp_path):
+    """Issue #220, and the core specification's record of what changed (#283). The league's last
+    season, #3, is completed. The league manager Admin (4242) runs `/season setup` for F1 25. They
+    are answered at once with the queue's acknowledgement, and nothing is saved until the queue
+    runs the change. Once it has, season #4 is being set up for F1 25, in Configuration, started on
+    the queue's date; one audit entry, `SEASON_SETUP_STARTED`, by Admin and stamped with the
+    queue's clock, records the season as replacing nothing; the log channel holds the success line
+    alone; and the acknowledgement is updated to today's reply, word for word."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+
+    league = await _league(tmp_path)
+    await _seed_season(league.db_path, status="COMPLETED", number=3, stage="COMPLETED")
+    asked = await _ask_setup(league, 25)
+
+    assert said(asked)[0].startswith(ACKNOWLEDGED)
+    assert await _setup_rows(league.db_path) == []
+    await run_queue(league.bot)
+
+    [season] = await _setup_rows(league.db_path)
+    season_id = season.pop("id")
+    new = {
+        "season_id": season_id,
+        "season_number": 4,
+        "game_edition": 25,
+        "start_date": "2026-10-22",
+        "status": "SETUP",
+        "stage": "CONFIGURATION",
+    }
+    assert {**season, "season_id": season_id} == new
+    [entry] = await audit_rows(league.db_path)
+    assert (entry["change_type"], entry["actor_id"], entry["division_id"]) == (
+        "SEASON_SETUP_STARTED", 4242, None
+    )
+    assert entry["new_value"] == new
+    assert entry["old_value"] == dict.fromkeys(new)
+    assert entry["timestamp"] == NOW.isoformat()
+    assert await log_lines(league) == [_success_line(4, 25)]
+    assert last_said(asked) == _started(4, 25)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the start date is the host's local date, not the UTC date of the queue's now",
+)
+async def test_the_start_date_is_the_utc_date(tmp_path):
+    """The owner's decision (9): a season's start date is the UTC date. The queue's clock reads
+    01:30 on 3 January 2031 at UTC+5, which is 20:30 on 2 January in UTC, a date the host's own
+    clock cannot give. The manager runs `/season setup` for F1 25 and the queue runs it: the season
+    being set up started on 2 January 2031."""
+    from tests.support.change_queue import run_queue
+
+    league = await _league(
+        tmp_path, now=datetime(2031, 1, 3, 1, 30, tzinfo=timezone(timedelta(hours=5)))
+    )
+    await _ask_setup(league, 25)
+    await run_queue(league.bot)
+
+    assert [season["start_date"] for season in await _setup_rows(league.db_path)] == ["2031-01-02"]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: /season setup is not on the change queue, so a fault in its save stops no lane",
+)
+async def test_a_failed_first_setup_save_leaves_no_setup_behind(tmp_path):
+    """The manager runs `/season setup` for F1 25 on a league with no season, and as the queue runs
+    it the database fails writing the audit entry. Nothing of the setup is saved, the season and
+    its audit entry being one save, and the league's lane stops at the job, as any failed job stops
+    it. The manager's next `/season setup`, for F1 26, is not refused as a setup in progress: it is
+    acknowledged, behind the stop. Once a league admin discards the stopped job, it runs and starts
+    the season afresh: the database then holds that one season being set up, and its
+    acknowledgement is updated to today's reply."""
+    from tests.support.change_queue import discard_job, run_queue, stopped_job
+    from tests.support.settings_league import audit_rows, fault_in, last_said, said
+
+    league = await _league(tmp_path)
+    await _ask_setup(league, 25)
+    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+        await run_queue(league.bot)
+
+    assert await _setup_rows(league.db_path) == []
+    assert await audit_rows(league.db_path) == []
+    assert await stopped_job(league.db_path) is not None
+
+    again = await _ask_setup(league, 26)
+    assert said(again)[0].startswith(ACKNOWLEDGED)
+    await discard_job(league.bot)
+
+    assert [(s["season_number"], s["game_edition"]) for s in await _setup_rows(league.db_path)] == [
+        (1, 26)
+    ]
+    assert last_said(again) == _started(1, 26)
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.parametrize(
+    "standing, stage, reply",
+    [
+        pytest.param("SETUP", "PLACEMENTS", IN_PROGRESS, id="setup-while-one-is-in-progress"),
+        pytest.param("ACTIVE", "ONGOING", RACED, id="setup-while-a-season-is-being-raced"),
+    ],
+)
+async def test_every_season_setup_refusal_is_recorded(tmp_path, standing, stage, reply):
+    """The core specification's record of what changed: a refusal is one line naming the member,
+    what was refused and why. The manager Admin (4242) runs `/season setup` for F1 25 while season
+    #3 is being set up, in Placements, or while season #3 is being raced: they get today's reply
+    word for word and nothing else, nothing is asked of the change queue, no season is begun, and
+    the log channel gets exactly one line, "⛔ `/season setup` refused for Admin (<@4242>) — " and
+    the reply's words."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import log_lines, said
+
+    league = await _league(tmp_path)
+    await _seed_season(league.db_path, status=standing, number=3, stage=stage)
+    asked = await _ask_setup(league, 25)
+
+    assert said(asked) == [reply]
+    assert await change_rows(league.db_path) == []
+    held = [season["season_number"] for season in await _setup_rows(league.db_path)]
+    assert held == ([3] if standing == "SETUP" else [])
+    assert await log_lines(league) == [_refusal_line(reply)]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: /season setup is judged only at the ask, and saves the season there",
+)
+@pytest.mark.parametrize(
+    "meanwhile, reply",
+    [
+        pytest.param("second setup", IN_PROGRESS, id="a-second-setup-asked-before-the-first-ran"),
+        pytest.param("season raced", RACED, id="a-season-raced-by-the-time-it-runs"),
+    ],
+)
+async def test_a_season_setup_is_judged_again_as_it_starts(tmp_path, meanwhile, reply):
+    """A league with no season. The manager runs `/season setup` for F1 25, and nothing is saved
+    at the ask. Before the queue runs it, either the manager runs `/season setup` again, for F1 26,
+    which is acknowledged too (*second setup*), or season #1 comes to be raced (*season raced*).
+    The queue runs. The refused setup, the second or the only one, is refused as it starts, in the
+    words it would meet at the ask, its acknowledgement updated to them; the log channel records
+    the refusal, beneath the first's success line where the first set season #1 up for F1 25.
+    Exactly that one season is being set up, with its one audit entry, or none and none; no insert
+    breaks the rule of one live season, and the queue is not stopped."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+
+    league = await _league(tmp_path)
+    first = await _ask_setup(league, 25)
+    assert await _setup_rows(league.db_path) == []
+    if meanwhile == "second setup":
+        refused = await _ask_setup(league, 26)
+        assert said(refused)[0].startswith(ACKNOWLEDGED)
+        set_up = [(1, 25)]
+    else:
+        refused = first
+        await _seed_season(league.db_path, status="ACTIVE", number=1, stage="ONGOING")
+        set_up = []
+    await run_queue(league.bot)
+
+    assert last_said(refused) == reply
+    held = [(s["season_number"], s["game_edition"]) for s in await _setup_rows(league.db_path)]
+    assert held == set_up
+    assert len(await audit_rows(league.db_path)) == len(set_up)
+    successes = [_success_line(number, edition) for number, edition in set_up]
+    assert await log_lines(league) == [*successes, _refusal_line(reply)]
+    assert await stopped_job(league.db_path) is None
