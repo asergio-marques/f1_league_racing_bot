@@ -2785,7 +2785,6 @@ def _wall_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
 KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
-    ("core/services/driver_service.py", "_merge"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.rename_team_role_config"):
         (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.set_team_role_config"):

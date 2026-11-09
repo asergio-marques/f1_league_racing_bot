@@ -13,11 +13,6 @@ from tests.support.driver_transitions import reassigned
 
 SERVER_ID = 22120
 
-#: Why a reassign through the save's own form fails until the build.
-_ON_FORM = (
-    "#283: DriverService.reassign_user_id_on, the reassign's save on the connection handed, "
-    "is not yet written"
-)
 
 
 @pytest.fixture
@@ -132,7 +127,6 @@ async def _seed_a_finished_season(db_path: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORM)
 async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path):
     """Issue #222, as a league sees it: the season ends and the driver's history is right."""
     from leaguebot.core.services.season_end_service import write_driver_history_entries_on

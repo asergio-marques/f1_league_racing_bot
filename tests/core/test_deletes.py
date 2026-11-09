@@ -90,11 +90,6 @@ HISTORY = ("driver_history_entries", "driver_profile_id")
 
 _IN_LIST = r"\b{column}\b[^,]*?\bIN\s*\(\s*('(?:[^']*)'|-?\d+)"
 
-#: Why a reassign through the save's own form fails until the build.
-_ON_FORM = (
-    "#283: DriverService.reassign_user_id_on, the reassign's save on the connection handed, "
-    "is not yet written"
-)
 
 
 async def _tables(db) -> list[str]:
@@ -361,7 +356,6 @@ async def test_every_delete_leaves_no_orphan(tmp_path, deleted):
     assert left == {}, f"tables not as the delete should leave them: {sorted(left)}"
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORM)
 async def test_a_merge_leaves_nothing_naming_the_driver_absorbed(tmp_path):
     """A row in every table under two seasons, each season's rows naming its own driver. The
     first season's driver is given the second's account, as `/driver reassign` gives it, which

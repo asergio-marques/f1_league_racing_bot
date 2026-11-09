@@ -4,10 +4,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.db.database import get_connection, inserted_id, sole_row
 from leaguebot.core.models.driver_profile import DriverProfile, DriverState
 from leaguebot.core.utils.hooks import AwaitedHook
 
@@ -371,7 +373,8 @@ async def _refuse_a_shared_division(
 
 
 async def _merge(
-    db, kept, absorbed, actor_id: int, actor_name: str, *, profiles_merged: AwaitedHook
+    db, kept, absorbed, actor_id: int, actor_name: str, *, profiles_merged: AwaitedHook,
+    now: datetime,
 ) -> None:
     """Fold the *absorbed* profile into the *kept* one, within the caller's transaction.
 
@@ -380,7 +383,7 @@ async def _merge(
     profile is deleted. The modules re-point their own rows through *profiles_merged*, called
     on this connection with the kept and absorbed ids before core's own five tables, which keep
     their order. The refusals before this guarantee no two rows collide on a key. Nothing
-    naming a driver by account is touched.
+    naming a driver by account is touched. The merge's audit entry is stamped *now*.
     """
     await profiles_merged.call(db, kept["id"], absorbed["id"])
     moved = (kept["id"], absorbed["id"])
@@ -414,8 +417,8 @@ async def _merge(
         "INSERT INTO audit_entries "
         "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
         "timestamp) VALUES (?, ?, NULL, "
-        "'DRIVER_PROFILES_MERGED', ?, ?, datetime('now'))",
-        (actor_id, actor_name, str(absorbed["id"]), str(kept["id"])),
+        "'DRIVER_PROFILES_MERGED', ?, ?, ?)",
+        (actor_id, actor_name, str(absorbed["id"]), str(kept["id"]), now.isoformat()),
     )
 
 
@@ -425,6 +428,75 @@ def _refuse_a_signup_in_progress(row, who: str) -> None:
             f"{who[0].upper()}{who[1:]} has a signup in progress. Finish it — approve or reject "
             "it — or have it withdrawn first."
         )
+
+
+@dataclass
+class _Judged:
+    """What a reassign was judged against: the driver the old account names, the profile holding
+    the new account (None where no driver holds it), the account replaced, whether the new account
+    is one of the driver's own, and the accounts of each profile."""
+
+    driver: Any
+    owner: Any
+    replaced: str
+    switched_back: bool
+    driver_accounts: list[str]
+    owner_accounts: list[str] | None
+
+
+async def _judge_reassign(db, old_user_id: str, new_user_id: str) -> _Judged:
+    """Judge a reassign on *db*, writing nothing; raises ValueError for each refusal in the order
+    `DriverService.reassign_user_id_on` documents."""
+    driver = await _profile_holding(db, old_user_id)
+    if driver is None:
+        raise ValueError(f"No driver profile found for user {old_user_id} on this server.")
+    if driver["is_test_driver"]:
+        raise ValueError(
+            "That driver was created by test mode. A test-mode driver cannot be "
+            "given a real account, nor a real driver a test-mode one."
+        )
+    replaced = str(driver["discord_user_id"])
+    if replaced == str(new_user_id):
+        raise ValueError(f"<@{new_user_id}> is already this driver's current account.")
+
+    owner = await _profile_holding(db, new_user_id)
+    switched_back = owner is not None and owner["id"] == driver["id"]
+    if owner is not None and not switched_back:
+        if str(owner["discord_user_id"]) != str(new_user_id):
+            raise ValueError(
+                f"<@{new_user_id}> is a past account of another driver in this "
+                "league, and an account belongs to one driver."
+            )
+        if owner["is_test_driver"]:
+            raise ValueError(
+                f"<@{new_user_id}> is a test-mode driver. A test-mode driver cannot "
+                "be merged with a real one."
+            )
+    _refuse_a_signup_in_progress(driver, "this driver")
+    driver_accounts = await accounts_of_profile(db, driver["id"])
+    owner_accounts: list[str] | None = None
+    if owner is not None and not switched_back:
+        _refuse_a_signup_in_progress(owner, f"<@{new_user_id}>")
+        if driver["current_state"] in _HOLDS_THE_LIVE_SEASON and (
+            owner["current_state"] in _HOLDS_THE_LIVE_SEASON
+        ):
+            raise ValueError(
+                f"This driver and <@{new_user_id}> both hold a seat or a signup in "
+                "the live season, so they cannot be merged into one driver."
+            )
+        owner_accounts = await accounts_of_profile(db, owner["id"])
+        await _refuse_a_shared_division(
+            db, await divisions_taken_part_in(db, driver["id"], driver_accounts),
+            await divisions_taken_part_in(db, owner["id"], owner_accounts),
+            f"<@{new_user_id}>",
+        )
+    elif owner is None:
+        await _refuse_a_shared_division(
+            db, await divisions_taken_part_in(db, driver["id"], driver_accounts),
+            await divisions_taken_part_in(db, None, [str(new_user_id)]),
+            f"<@{new_user_id}>",
+        )
+    return _Judged(driver, owner, replaced, switched_back, driver_accounts, owner_accounts)
 
 
 @dataclass
@@ -526,6 +598,89 @@ class DriverService:
     # Reassign user ID (US2)
     # ------------------------------------------------------------------
 
+    async def judge_reassign_on(
+        self, db: aiosqlite.Connection, old_user_id: str, new_user_id: str
+    ) -> None:
+        """Judge a reassign on *db*, writing nothing: raises ValueError, in the words a league is
+        told, for what `reassign_user_id_on` would refuse."""
+        await _judge_reassign(db, old_user_id, new_user_id)
+
+    async def reassign_user_id_on(
+        self,
+        db: aiosqlite.Connection,
+        old_user_id: str,
+        new_user_id: str,
+        actor_id: int,
+        actor_name: str,
+        *,
+        profiles_merged: AwaitedHook,
+        now: datetime,
+    ) -> ReassignOutcome:
+        """Make *new_user_id* the current account of the driver *old_user_id* names, on the
+        connection handed, committing nothing.
+
+        A person changing Discord account keeps their history because a driver owns every
+        account they have held (issue #243): the profile's current account changes, the
+        `driver_account_on_current_change` trigger lists the new one beside the old, and **no
+        record is rewritten**. A result, a standing, a signup or a history entry keeps the account
+        it was written under, and an archived season stays exactly as it was. Everything read
+        from then on maps the old account to the new one.
+
+        *old_user_id* may be any account of the driver's, current or past. Naming one of the
+        driver's own past accounts as *new_user_id* makes it current again.
+
+        Where *new_user_id* is another profile's current account, the two are **merged** into
+        one driver owning both lists of accounts. The profile holding the live season's seat
+        or signup is the one kept, the driver named otherwise; the other's links — seats,
+        placements, attendance, history, results — move onto it, as does its former-driver
+        flag, and it is deleted. The merge's audit entry is stamped *now*; the reassign's own is
+        its change's to write.
+
+        Refused with ValueError, having written nothing, when: no driver holds *old_user_id*;
+        *new_user_id* is already the driver's current account; it is a past account of another
+        driver; either side is a test-mode driver; either side has a signup in progress; both
+        sides hold a seat or a signup in the live season; or both took part in one division —
+        one season's division, by a confirmed seat or by results. That last applies as much to an
+        account no driver holds whose leftover results sit in such a division: one person would
+        stand twice in one season's standings.
+
+        Every refusal is judged before the first write, on the connection the caller's save
+        holds, so a signup begun or a second reassign given in between cannot slip past a check
+        that has already passed. The Discord side — roles, a held signup channel, a portrait — is
+        the change's, in jobs after the save.
+        """
+        judged = await _judge_reassign(db, old_user_id, new_user_id)
+        driver, owner = judged.driver, judged.owner
+        kept = driver
+        merged_accounts: list[str] | None = None
+        if owner is not None and not judged.switched_back:
+            kept, absorbed = (
+                (owner, driver) if owner["current_state"] in _HOLDS_THE_LIVE_SEASON
+                else (driver, owner)
+            )
+            await _merge(
+                db, kept, absorbed, actor_id, actor_name, profiles_merged=profiles_merged,
+                now=now,
+            )
+            merged_accounts = judged.owner_accounts
+        await db.execute(
+            "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
+            (str(new_user_id), kept["id"]),
+        )
+        accounts = await accounts_of_profile(db, kept["id"])
+        cursor = await db.execute(
+            "SELECT id, discord_user_id, current_state, former_driver "
+            "FROM driver_profiles WHERE id = ?",
+            (kept["id"],),
+        )
+        return ReassignOutcome(
+            profile=_row_to_profile(await cursor.fetchone()),
+            replaced_account=judged.replaced,
+            accounts=accounts,
+            switched_back=judged.switched_back,
+            merged_accounts=merged_accounts,
+        )
+
     async def reassign_user_id(
         self,
         old_user_id: str,
@@ -535,134 +690,30 @@ class DriverService:
         *,
         profiles_merged: AwaitedHook,
     ) -> ReassignOutcome:
-        """Make *new_user_id* the current account of the driver *old_user_id* names.
-
-        A person changing Discord account keeps their history because a driver owns every
-        account they have held (issue #243): the profile's current account changes, the
-        `driver_account_on_current_change` trigger lists the new one beside the old, and **no
-        record is rewritten**. A result, a standing, a signup or a history entry keeps the account
-        it was written under, and an archived season stays exactly as it was. Everything read
-        from then on maps the old account to the new one. This replaced the re-key of issue
-        #222, which rewrote every such record onto the new account, completed seasons
-        included, against the rule that one is immutable.
-
-        *old_user_id* may be any account of the driver's, current or past. Naming one of the
-        driver's own past accounts as *new_user_id* makes it current again.
-
-        Where *new_user_id* is another profile's current account, the two are **merged** into
-        one driver owning both lists of accounts. The profile holding the live season's seat
-        or signup is the one kept, the driver named otherwise; the other's links — seats,
-        placements, attendance, history, results — move onto it, as does its former-driver
-        flag, and it is deleted.
-
-        Refused, with nothing changed, when: no driver holds *old_user_id*; *new_user_id* is
-        already the driver's current account; it is a past account of another driver; either
-        side is a test-mode driver; either side has a signup in progress; both sides hold a
-        seat or a signup in the live season; or both took part in one division — one
-        season's division, by a confirmed seat or by results. That last applies as much to an
-        account no driver holds whose leftover results sit in such a division: one person
-        would stand twice in one season's standings (decided 2026-09-18).
-
-        The checks and the write share one `BEGIN IMMEDIATE` transaction, so a signup begun or
-        a second reassign given in between cannot slip past a check that has already passed.
-        The Discord side — roles, a held signup channel, a portrait — is the caller's, after
-        this returns; nothing there can undo it.
-        """
+        """`reassign_user_id_on` in a transaction of its own, with its audit entry."""
         async with get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
             try:
-                driver = await _profile_holding(db, old_user_id)
-                if driver is None:
-                    raise ValueError(
-                        f"No driver profile found for user {old_user_id} on this server."
-                    )
-                if driver["is_test_driver"]:
-                    raise ValueError(
-                        "That driver was created by test mode. A test-mode driver cannot be "
-                        "given a real account, nor a real driver a test-mode one."
-                    )
-                replaced = str(driver["discord_user_id"])
-                if replaced == str(new_user_id):
-                    raise ValueError(f"<@{new_user_id}> is already this driver's current account.")
-
-                owner = await _profile_holding(db, new_user_id)
-                switched_back = owner is not None and owner["id"] == driver["id"]
-                if owner is not None and not switched_back:
-                    if str(owner["discord_user_id"]) != str(new_user_id):
-                        raise ValueError(
-                            f"<@{new_user_id}> is a past account of another driver in this "
-                            "league, and an account belongs to one driver."
-                        )
-                    if owner["is_test_driver"]:
-                        raise ValueError(
-                            f"<@{new_user_id}> is a test-mode driver. A test-mode driver cannot "
-                            "be merged with a real one."
-                        )
-                _refuse_a_signup_in_progress(driver, "this driver")
-                driver_accounts = await accounts_of_profile(db, driver["id"])
-                merged_accounts: list[str] | None = None
-                kept = driver
-                if owner is not None and not switched_back:
-                    _refuse_a_signup_in_progress(owner, f"<@{new_user_id}>")
-                    if driver["current_state"] in _HOLDS_THE_LIVE_SEASON and (
-                        owner["current_state"] in _HOLDS_THE_LIVE_SEASON
-                    ):
-                        raise ValueError(
-                            f"This driver and <@{new_user_id}> both hold a seat or a signup in "
-                            "the live season, so they cannot be merged into one driver."
-                        )
-                    owner_accounts = await accounts_of_profile(db, owner["id"])
-                    await _refuse_a_shared_division(
-                        db, await divisions_taken_part_in(db, driver["id"], driver_accounts),
-                        await divisions_taken_part_in(db, owner["id"], owner_accounts),
-                        f"<@{new_user_id}>",
-                    )
-                    kept, absorbed = (
-                        (owner, driver)
-                        if owner["current_state"] in _HOLDS_THE_LIVE_SEASON
-                        else (driver, owner)
-                    )
-                    await _merge(
-                        db, kept, absorbed, actor_id, actor_name,
-                        profiles_merged=profiles_merged,
-                    )
-                    merged_accounts = owner_accounts
-                elif owner is None:
-                    await _refuse_a_shared_division(
-                        db, await divisions_taken_part_in(db, driver["id"], driver_accounts),
-                        await divisions_taken_part_in(db, None, [str(new_user_id)]),
-                        f"<@{new_user_id}>",
-                    )
-
-                await db.execute(
-                    "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
-                    (str(new_user_id), kept["id"]),
+                cursor = await db.execute("SELECT datetime('now')")
+                row = await sole_row(cursor)
+                now = datetime.fromisoformat(str(row[0])).replace(tzinfo=timezone.utc)
+                outcome = await self.reassign_user_id_on(
+                    db, old_user_id, new_user_id, actor_id, actor_name,
+                    profiles_merged=profiles_merged, now=now,
                 )
                 await db.execute(
                     "INSERT INTO audit_entries "
                     "(actor_id, actor_name, division_id, change_type, old_value, "
                     "new_value, timestamp) "
-                    "VALUES (?, ?, NULL, 'DRIVER_USER_ID_REASSIGN', ?, ?, datetime('now'))",
-                    (actor_id, actor_name, replaced, str(new_user_id)),
+                    "VALUES (?, ?, NULL, 'DRIVER_USER_ID_REASSIGN', ?, ?, ?)",
+                    (actor_id, actor_name, outcome.replaced_account, str(new_user_id),
+                     now.isoformat()),
                 )
-                accounts = await accounts_of_profile(db, kept["id"])
-                cursor = await db.execute(
-                    "SELECT id, discord_user_id, current_state, former_driver "
-                    "FROM driver_profiles WHERE id = ?",
-                    (kept["id"],),
-                )
-                profile = _row_to_profile(await cursor.fetchone())
                 await db.commit()
             except BaseException:
                 await db.rollback()
                 raise
-        return ReassignOutcome(
-            profile=profile,
-            replaced_account=replaced,
-            accounts=accounts,
-            switched_back=switched_back,
-            merged_accounts=merged_accounts,
-        )
+        return outcome
 
     # ------------------------------------------------------------------
     # Former-driver flag override (US3)
