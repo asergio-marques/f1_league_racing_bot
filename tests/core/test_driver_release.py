@@ -88,7 +88,7 @@ def _release_line(name: str, user_id: int, division: str = "Am") -> str:
     named as every change on the queue names them."""
     return (
         f"{_ADMIN} | /driver release | Success\n"
-        f"  user: {name} (<@{user_id}>)\n"
+        f"  user: {name} (`<@{user_id}>`)\n"
         f"  division: {division}"
     )
 

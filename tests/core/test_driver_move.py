@@ -490,10 +490,17 @@ def _move_line(name: str, user_id: int) -> str:
     as every change on the queue names them."""
     return (
         f"{_ADMIN} | /driver move | Success\n"
-        f"  user: {name} (<@{user_id}>)\n"
+        f"  user: {name} (`<@{user_id}>`)\n"
         "  from: Scuderia Ferrari, Pro\n"
         "  to: McLaren F1 Team, Am"
     )
+
+
+def _as_logged(text: str) -> str:
+    """*text* as the log channel writes it: every mention in code, so it names nobody."""
+    import re
+
+    return re.sub(r"(<@&?\d+>)", r"`\1`", text)
 
 
 def _refusal(reply: str) -> str:
@@ -566,8 +573,10 @@ async def test_a_refused_role_move_is_reported_and_the_queue_goes_on(tmp_path):
     is given him. His reply is today's, then "⚠️ Done, but on Discord:" and a bullet naming the
     roles refused, Am's and McLaren's, then the kind of fault in plain words, never Discord's own:
     "the roles <@&802> and <@&812> could not be given to <@101>: Discord refused or failed a
-    request from the bot"; his success line carries a "not done:" line in the same words. The lane is not stopped, and Max's move, asked after, is made in
-    full: he sits at McLaren in Am, given Am's and McLaren's roles, his reply today's alone."""
+    request from the bot"; his success line carries a "not done:" line in the same words, its
+    mentions written in code as the log channel writes every mention. The lane is not stopped,
+    and Max's move, asked after, is made in full: he sits at McLaren in Am, given Am's and
+    McLaren's roles, his reply today's alone."""
     import discord
 
     from tests.support.change_queue import http_error, run_queue, stopped_job
@@ -591,7 +600,7 @@ async def test_a_refused_role_move_is_reported_and_the_queue_goes_on(tmp_path):
     assert LEWIS in league.revoked and LEWIS not in league.granted
     assert last_said(lewis) == f"{_moved('Lewis')}\n⚠️ Done, but on Discord:\n• {problem}"
     assert _move_lines(await log_lines(league)) == [
-        f"{_move_line('Lewis', LEWIS)}\n  not done: {problem}", _move_line("Max", MAX),
+        f"{_move_line('Lewis', LEWIS)}\n  not done: {_as_logged(problem)}", _move_line("Max", MAX),
     ]
     assert await stopped_job(league.db_path) is None
     assert sorted(league.granted[MAX]) == [AM_ROLE, MCLAREN_ROLE]

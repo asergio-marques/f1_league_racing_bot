@@ -695,7 +695,7 @@ def _sack_line(name: str, user_id: int) -> str:
     as every change on the queue names them."""
     from tests.core.test_driver_move import _ADMIN
 
-    return f"{_ADMIN} | /driver sack | Success\n  user: {name} (<@{user_id}>)"
+    return f"{_ADMIN} | /driver sack | Success\n  user: {name} (`<@{user_id}>`)"
 
 
 def _sack_refusal(reply: str) -> str:
@@ -778,11 +778,12 @@ async def test_the_roles_go_after_the_sack_is_saved_and_a_refused_one_is_reporte
     is today's, then "⚠️ Done, but on Discord:" and a bullet naming the roles refused, then the
     kind of fault in plain words: "the roles <@&801>, <@&811> and <@&820> could not be taken from
     <@101>: Discord refused or failed a request from the bot"; his success line carries a "not
-    done:" line in the same words. The lane is not stopped, and Max's sack, asked after, is made
+    done:" line in the same words, its mentions written in code as the log channel writes every
+    mention. The lane is not stopped, and Max's sack, asked after, is made
     in full: his three roles taken, his reply today's alone."""
     import discord
 
-    from tests.core.test_driver_move import _seated
+    from tests.core.test_driver_move import _as_logged, _seated
     from tests.support.change_queue import http_error, run_queue, stopped_job
     from tests.support.season_league import (
         DRIVER_ROLE as LEAGUE_DRIVER_ROLE, FERRARI_ROLE, LEWIS, MAX, PRO_ROLE,
@@ -805,7 +806,7 @@ async def test_the_roles_go_after_the_sack_is_saved_and_a_refused_one_is_reporte
     assert league.roles_held[LEWIS] == {PRO_ROLE, FERRARI_ROLE, LEAGUE_DRIVER_ROLE}
     assert last_said(lewis) == f"{_sacked('Lewis')}\n⚠️ Done, but on Discord:\n• {problem}"
     assert _sack_lines(await log_lines(league)) == [
-        f"{_sack_line('Lewis', LEWIS)}\n  not done: {problem}", _sack_line("Max", MAX),
+        f"{_sack_line('Lewis', LEWIS)}\n  not done: {_as_logged(problem)}", _sack_line("Max", MAX),
     ]
     assert await stopped_job(league.db_path) is None
     assert sorted(league.revoked[MAX]) == [PRO_ROLE, FERRARI_ROLE, LEAGUE_DRIVER_ROLE]
