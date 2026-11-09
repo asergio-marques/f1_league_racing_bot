@@ -853,12 +853,6 @@ class SeasonService:
         )
         return inserted_id(cursor)
 
-    async def delete_round(self, round_id: int, *, rounds_deleted: AwaitedHook) -> None:
-        """`delete_round_on` on a connection of its own, committed once it is done."""
-        async with get_connection(self._db_path) as db:
-            await self.delete_round_on(db, round_id, rounds_deleted=rounds_deleted)
-            await db.commit()
-
     @staticmethod
     async def delete_round_on(
         db: aiosqlite.Connection, round_id: int, *, rounds_deleted: AwaitedHook

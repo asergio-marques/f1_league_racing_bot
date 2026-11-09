@@ -138,7 +138,7 @@ async def _asked(
     return asked, None
 
 
-def _values(rnd: Round) -> dict[str, Any]:
+def round_values(rnd: Round) -> dict[str, Any]:
     """*rnd* as the audit entry holds it."""
     return {
         "round_id": rnd.id,
@@ -306,7 +306,8 @@ def _save(
             },
             audits=(
                 AuditRecord(
-                    "ROUND_AMENDED", _values(rnd), _values(placed), division_id=division.id
+                    "ROUND_AMENDED", round_values(rnd), round_values(placed),
+                    division_id=division.id,
                 ),
             ),
             lines=(line,),
@@ -358,4 +359,4 @@ def setup_round_amend_change(*, seasons: SeasonService) -> ChangeType:
     )
 
 
-__all__ = ["ROUND_AMEND_SETUP", "amend_payload", "setup_round_amend_change"]
+__all__ = ["ROUND_AMEND_SETUP", "amend_payload", "round_values", "setup_round_amend_change"]

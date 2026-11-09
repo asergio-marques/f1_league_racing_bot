@@ -70,6 +70,7 @@ from leaguebot.core.services.round_add_changes import (
     import_payload,
 )
 from leaguebot.core.services.season_setup_change import KIND as SEASON_SETUP
+from leaguebot.core.services.round_delete_change import ROUND_DELETE
 from leaguebot.core.services.setup_round_amend_change import (
     ROUND_AMEND_SETUP,
     amend_payload as amend_setup_payload,
@@ -2895,61 +2896,13 @@ class SeasonCog(commands.Cog):
         division_name: str,
         round_number: int,
     ) -> None:
-        season_id = await self._season_in_placements()
-        if season_id is None:
-            await refuse(
-                interaction,
-                "\u274c `/round delete` can only be used while the season is in placements.",
-                what=describe(interaction),
-            )
-            return
-
-        setup_season = await self.bot.season_service.get_setup_season()
-        if setup_season is not None:
-            try:
-                await self.bot.season_service.assert_season_mutable(setup_season)
-            except SeasonImmutableError:
-                await refuse(
-                    interaction,
-                    "\u274c This season is archived (COMPLETED) and cannot be modified.",
-                    what=describe(interaction),
-                )
-                return
-
-        divisions = await self.bot.season_service.get_divisions(season_id)
-        div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
-        if div is None:
-            await refuse(
-                interaction,
-                f"\u274c Division `{division_name}` not found.",
-                what=describe(interaction),
-            )
-            return
-
-        rounds = await self.bot.season_service.get_division_rounds(div.id)
-        rnd = next((r for r in rounds if r.round_number == round_number), None)
-        if rnd is None:
-            await refuse(
-                interaction,
-                f"\u274c Round {round_number} not found in division `{div.name}`.",
-                what=describe(interaction),
-            )
-            return
-
-        await self.bot.season_service.delete_round(
-            rnd.id, rounds_deleted=self.bot.rounds_deleted
-        )
-
-        remaining = await self.bot.season_service.get_division_rounds(div.id)
-        await interaction.response.send_message(
-            f"\u2705 Round **{round_number}** deleted from **{div.name}** and rounds renumbered.\n\n"
-            + format_round_list(remaining),
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round delete | Success\n"
-            f"  division: {div.name}\n"
-            f"  round: {round_number}",
+        """Delete a round: ask the change queue for it, which refuses what the command has
+        always refused at the ask and again as the change starts, and deletes the round, renumbers
+        its division and writes its audit entry in one save
+        (`core/services/round_delete_change.py`)."""
+        await self.bot.change_queue.ask(
+            ROUND_DELETE, {"division_name": division_name, "round_number": round_number},
+            interaction=interaction, what=describe(interaction),
         )
 
     @round.command(

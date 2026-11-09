@@ -350,9 +350,6 @@ async def test_a_round_cancelled_in_a_division_typed_in_another_case_names_it_as
 # `setup_league` gives, its season being set up, in Placements, holding Pro (tier 1, role 10) with
 # three rounds and Am (tier 2, role 20) with one, as the database alone holds them after a restart.
 
-#: Why each test of `/round delete` on the queue fails until the build.
-_XFAIL_DELETE = "#283: /round delete is not yet a change on the queue"
-
 #: The command as the log channel names it in a refusal.
 _DELETE = "`/round delete`"
 
@@ -470,7 +467,6 @@ async def _delete_round_2(db) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
 async def test_a_round_delete_its_hook_renumbering_audit_entry_and_line_are_one_save(tmp_path):
     """The core specification's Rounds and its record of what changed. Season #1 is being set up,
     in Placements, holding Pro with rounds 1 (14 June, Mystery), 2 (21 June, Normal at the
@@ -525,7 +521,6 @@ async def test_a_round_delete_its_hook_renumbering_audit_entry_and_line_are_one_
     assert last_said(asked) == _deleted(2, "Pro", _PRO_AFTER)
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
 async def test_a_failed_round_delete_deletes_nothing(tmp_path):
     """Season #1 is being set up, in Placements, holding Pro with rounds 1, 2 and 3 and Am with
     round 1, every round with a drawn weather phase. The league admin runs `/round delete` of
@@ -559,7 +554,6 @@ async def test_a_failed_round_delete_deletes_nothing(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
 @pytest.mark.parametrize(
     "meanwhile, reply, pro_after",
     [
@@ -604,7 +598,6 @@ async def test_a_round_delete_is_judged_again_as_it_starts(tmp_path, meanwhile, 
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
 async def test_a_round_delete_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. Season #1
@@ -632,7 +625,6 @@ async def test_a_round_delete_asked_again_while_it_waits_is_refused_as_a_repeat(
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
 async def test_a_second_round_delete_asked_after_another_change_spares_the_renumbered_round(
     tmp_path
 ):
