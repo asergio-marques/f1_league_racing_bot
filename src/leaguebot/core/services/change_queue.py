@@ -31,7 +31,7 @@ or when the next try falls due and starts one task per lane that has something t
 `_workers`: `ALWAYS_RUN_LANES`' always (the league's own changes), and at most
 `CONVERSATION_LANES_AT_ONCE` conversations' besides, the oldest change first, the rest waiting for
 a slot. A league's repair settings (the four `/bot` settings `setting_change` names, and a
-division's results, standings and verdicts channels) run on the league lane too, and may overtake
+division's results, standings, verdicts, RSVP and attendance channels) run on the league lane too, and may overtake
 a stopped head there — see `docs/design/architecture.md`, "A job that fails stops its lane". A
 lane's task
 holds that lane's `_working` lock while it drains the lane, and has a

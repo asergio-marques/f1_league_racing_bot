@@ -26,9 +26,11 @@ list of kinds kept in the queue itself. It marks the log channel, the interactio
 interaction role and the league admin role: the core specification calls these out as a league's
 way back in when one is wrong or gone, and a league locked out by a stopped job on the league lane
 would have no way to clear it. It marks as well a division's results, standings and verdicts
-channels (`results/services/channel_settings.py`): a stop notice for a channel gone tells the
-league to set the channel and press Retry, and a setting waiting behind the stop it is meant to
-clear could never do it, a stopped results post not being one a league can discard. The queue
+channels (`results/services/channel_settings.py`) and its RSVP and attendance channels
+(`attendance/services/channel_settings.py`): a stop notice for a channel gone tells the league to
+set the channel and press Retry, and a setting waiting behind the stop it is meant to clear could
+never do it, a stopped results post, check-in call or attendance sheet not being one a league can
+discard. The queue
 (`_heads`, `_choose`) lets such a change run ahead of its lane's stopped head, which stays
 stopped, while every ordinary change still waits behind it: the lane still runs one change at a
 time, never two of its jobs interleaved — a repair simply jumps the queue behind a stop, runs to
