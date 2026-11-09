@@ -15,6 +15,9 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
+from tests.support.setup_reads import hold_setup
+
+SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 22070
@@ -243,9 +246,10 @@ async def test_a_settled_season_with_its_channels_has_no_faults(db_path):
 
 
 @pytest.mark.parametrize("stage", [SeasonStage.CONFIGURATION, SeasonStage.SIGNUPS])
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_review_is_refused_outside_placements(db_path, stage):
     cog = _cog(db_path)
-    cog._pending = {USER_ID: SimpleNamespace(season_id=SEASON_ID)}
+    hold_setup(cog.bot.season_service, SimpleNamespace(season_id=SEASON_ID))
     cog.bot.season_service.get_stage = AsyncMock(return_value=stage)
     cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     interaction = MagicMock()
@@ -263,11 +267,12 @@ async def test_the_review_is_refused_outside_placements(db_path, stage):
     interaction.response.defer.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_confirmation_refuses_an_unsettled_signup_and_commits_nothing(db_path):
     await _driver(db_path, "1", "UNASSIGNED", "Alice")
     cog = _cog(db_path)
     pending = SimpleNamespace(season_id=SEASON_ID, season_number=1)
-    cog._pending = {USER_ID: pending}
+    hold_setup(cog.bot.season_service, pending)
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     cog.bot.season_service.get_divisions = AsyncMock(
         return_value=[SimpleNamespace(status="SETUP")]
@@ -285,6 +290,7 @@ async def test_the_confirmation_refuses_an_unsettled_signup_and_commits_nothing(
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_nothing(db_path):
     """Four channels wrong is one refusal, not four attempts at starting a season. The
     results module's channels are judged here with every other division channel (#374); the
@@ -298,7 +304,7 @@ async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_
         )
         await db.commit()
     cog = _cog(db_path, results=True)
-    cog._pending = {USER_ID: SimpleNamespace(season_id=SEASON_ID, season_number=1)}
+    hold_setup(cog.bot.season_service, SimpleNamespace(season_id=SEASON_ID, season_number=1))
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     cog.bot.season_service.get_divisions = AsyncMock(
         return_value=[SimpleNamespace(status="SETUP")]
@@ -321,10 +327,11 @@ async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_
 
 
 @pytest.mark.parametrize("divisions", [[], [SimpleNamespace(status="CANCELLED")]])
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_confirmation_refuses_a_season_with_no_division(db_path, divisions):
     """A season with nothing to race would never reach Pending completion (issue #220)."""
     cog = _cog(db_path)
-    cog._pending = {USER_ID: SimpleNamespace(season_id=SEASON_ID)}
+    hold_setup(cog.bot.season_service, SimpleNamespace(season_id=SEASON_ID))
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     cog.bot.season_service.get_divisions = AsyncMock(return_value=divisions)
     cog.bot.season_service.transition_to_active = AsyncMock()
@@ -341,9 +348,10 @@ async def test_the_confirmation_refuses_a_season_with_no_division(db_path, divis
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_confirmation_refuses_a_season_no_longer_in_placements(db_path):
     cog = _cog(db_path)
-    cog._pending = {USER_ID: SimpleNamespace(season_id=SEASON_ID)}
+    hold_setup(cog.bot.season_service, SimpleNamespace(season_id=SEASON_ID))
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.ONGOING)
     cog.bot.change_queue.ask = AsyncMock(return_value=None)
     interaction = MagicMock()

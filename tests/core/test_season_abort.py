@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import PendingConfig, SeasonCog
+from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.models.season import SeasonStage
 from tests.support.undecorate import undecorate
 
@@ -26,7 +26,6 @@ def _cog(stage: SeasonStage | None) -> SeasonCog:
     )
     cog.bot.change_queue.ask = AsyncMock(return_value=1)
     cog.bot.output_router.post_log = AsyncMock()
-    cog._pending = {42: PendingConfig(season_id=7)}
     return cog
 
 

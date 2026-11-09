@@ -20,6 +20,7 @@ from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.placement_service import PlacementService
 from tests.support.change_queue import acknowledgement
 from tests.support.season_league import PLACEMENTS_CONFIRM_KIND as KIND
+from tests.support.setup_reads import hold_setup
 from tests.support.undecorate import undecorate
 from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     DIVISION_ID,
@@ -53,7 +54,7 @@ def _cog(db_path, stage: SeasonStage) -> SeasonCog:
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = MagicMock()
     cog.bot.db_path = db_path
-    cog._pending = {}
+    hold_setup(cog.bot.season_service, None)
     season = SimpleNamespace(id=1, season_number=1, stage=stage)
     cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
     cog.bot.output_router.post_log = AsyncMock()
