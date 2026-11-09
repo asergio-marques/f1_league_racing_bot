@@ -303,29 +303,8 @@ async def _claim(db_path: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# The module, and the channel the bot must be able to post in
+# Another module's state
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("which", BOTH)
-async def test_a_disabled_module_refuses_the_assignment(tmp_path, which):
-    """Attendance is off. Assigning a channel to a module that is not running configures
-    something no code reads, and the notices the manager is expecting would never arrive. The
-    manager runs `/attendance channel rsvp` (or `attendance`) for Division 1 and #notices: the
-    reply is the refusal word for word (the attendance cog's own gate is worded differently, and
-    the command keeps the words it had before it moved), nothing is deferred, no change is asked
-    of the queue, nothing is audited, and Division 1 keeps neither channel."""
-    db_path = await _make_db(tmp_path, attendance=False)
-    cog = await _make_cog(db_path)
-    interaction = _interaction(cog, which)
-
-    await _run(cog, interaction, which)
-
-    assert last_said(interaction) == _OFF
-    interaction.response.defer.assert_not_awaited()
-    assert await change_rows(db_path) == []
-    assert await _audit(db_path) == []
-    assert await _channels(db_path) == _none_set()
 
 
 @pytest.mark.parametrize("which", BOTH)
@@ -341,70 +320,9 @@ async def test_another_modules_state_does_not_refuse_the_assignment(tmp_path, wh
     assert len(await _audit(db_path)) == 1
 
 
-@pytest.mark.parametrize("which", BOTH)
-async def test_a_channel_the_bot_cannot_post_in_is_refused(tmp_path, which):
-    """The bot may not post in #notices. Checked before the write rather than discovered at the
-    first notice, when the round it was meant to announce has already started: the reply is the
-    channel-access refusal word for word, no change is asked of the queue, and nothing is
-    audited."""
-    db_path = await _make_db(tmp_path)
-    cog = await _make_cog(db_path)
-    interaction = _interaction(cog, which)
-
-    await _run(cog, interaction, which, channel=_channel(cog, may_post=False))
-
-    assert last_said(interaction) == _NO_ACCESS
-    assert await change_rows(db_path) == []
-    assert await _audit(db_path) == []
-
-
-@pytest.mark.parametrize("which", BOTH)
-async def test_a_command_outside_a_guild_is_refused(tmp_path, which):
-    """The manager's interaction carries no server. `permissions_for(guild.me)` needs one, so
-    the absence is answered rather than raising an `AttributeError` at a manager: the reply is
-    the channel-access refusal, and no change is asked of the queue."""
-    db_path = await _make_db(tmp_path)
-    cog = await _make_cog(db_path)
-    interaction = _interaction(cog, which)
-    interaction.guild = None
-
-    await _run(cog, interaction, which)
-
-    assert last_said(interaction) == _NO_ACCESS
-    assert await change_rows(db_path) == []
-
-
 # ---------------------------------------------------------------------------
-# The season, the division, and a channel doing one job
+# The division as typed, and the channel it already has
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("which", BOTH)
-async def test_a_server_with_no_season_is_refused(tmp_path, which):
-    """The only season is Season 1, completed. There is no division to hang the setting on: the
-    reply is the no-season refusal word for word, and nothing is audited."""
-    db_path = await _make_db(tmp_path, status="COMPLETED")
-    cog = await _make_cog(db_path)
-    interaction = _interaction(cog, which)
-
-    await _run(cog, interaction, which)
-
-    assert last_said(interaction) == _NO_SEASON
-    assert await _audit(db_path) == []
-
-
-@pytest.mark.parametrize("which", BOTH)
-async def test_an_unknown_division_is_refused_by_name(tmp_path, which):
-    """Season 1 is being set up with Division 1 alone. The manager names Division 9: the reply
-    names Division 9 as not found, word for word, and nothing is audited."""
-    db_path = await _make_db(tmp_path)
-    cog = await _make_cog(db_path)
-    interaction = _interaction(cog, which)
-
-    await _run(cog, interaction, which, name="Division 9")
-
-    assert last_said(interaction) == _not_found("Division 9")
-    assert await _audit(db_path) == []
 
 
 @pytest.mark.parametrize("which", BOTH)
@@ -421,25 +339,6 @@ async def test_the_division_is_matched_regardless_of_case(tmp_path, which):
     assert await _channels(db_path) == {**_none_set(), which: CHANNEL_ID}
     assert len(await _audit(db_path)) == 1
     assert last_said(interaction) == _reply(which, "set", name="dIvIsIoN 1")
-
-
-@pytest.mark.parametrize("which", BOTH)
-async def test_a_channel_already_doing_another_job_is_refused(tmp_path, which):
-    """#notices (780001) is already Division 2's results channel. A channel serves one purpose
-    across the whole server (decided 2026-09-06), and the check runs before the write: the reply
-    is the clash refusal word for word, Division 1 keeps neither channel, no change is asked of
-    the queue, and nothing is audited."""
-    db_path = await _make_db(tmp_path)
-    await _claim(db_path)
-    cog = await _make_cog(db_path)
-    interaction = _interaction(cog, which)
-
-    await _run(cog, interaction, which)
-
-    assert last_said(interaction) == _clash()
-    assert await _channels(db_path) == _none_set()
-    assert await change_rows(db_path) == []
-    assert await _audit(db_path) == []
 
 
 @pytest.mark.parametrize("which", BOTH)
@@ -570,12 +469,25 @@ REFUSAL_CASES = [
 @pytest.mark.parametrize("case,reply", REFUSAL_CASES, ids=[c[0] for c in REFUSAL_CASES])
 @pytest.mark.parametrize("which", BOTH)
 async def test_every_refusal_of_a_channel_command_is_recorded(tmp_path, which, case, reply):
-    """A7: the manager runs `/attendance channel rsvp` (or `attendance`) and is turned away:
-    attendance is off, the bot may not post in the channel, the interaction carries no server,
-    no season is live, the division is not in the season, or the channel is already Division 2's
-    results channel. Each refusal is answered once, in its words, asks no change of the queue,
-    writes and audits nothing, and records one "⛔ … refused for Manager … — …" line naming the
-    command and the reason."""
+    """A7: the manager runs `/attendance channel rsvp` (or `attendance`) for Division 1 and
+    #notices and is turned away. Each refusal is answered once, in its words, asks no change of
+    the queue, writes and audits nothing, and records one "⛔ … refused for Manager … — …" line
+    naming the command and the reason.
+
+    - **module-disabled**: attendance is off. A channel for a module that is not running
+      configures something no code reads. The words are the command's own, not the attendance
+      cog's gate, which is worded differently: the command keeps the words it had before it
+      moved, and refuses before anything is deferred.
+    - **cannot-post**: the bot may not post in #notices, checked before the write rather than
+      discovered at the first notice, when the round it was meant to announce has started.
+    - **no-guild**: the interaction carries no server. `permissions_for(guild.me)` needs one, so
+      the absence is answered rather than raising an `AttributeError` at a manager.
+    - **no-season**: the only season, Season 1, is completed, so there is no division to hang the
+      setting on.
+    - **unknown-division**: Season 1 has Division 1 alone and the manager names Division 9,
+      refused by the name typed.
+    - **in-use**: #notices is already Division 2's results channel. A channel serves one purpose
+      across the whole server (decided 2026-09-06), checked before the write."""
     db_path = await _make_db(
         tmp_path, attendance=case != "module-disabled",
         status="COMPLETED" if case == "no-season" else "SETUP",
@@ -594,6 +506,8 @@ async def test_every_refusal_of_a_channel_command_is_recorded(tmp_path, which, c
     )
 
     assert said(interaction) == [reply]
+    if case == "module-disabled":
+        interaction.response.defer.assert_not_awaited()
     assert await change_rows(db_path) == []
     assert await _audit(db_path) == []
     assert await _channels(db_path) == _none_set()
