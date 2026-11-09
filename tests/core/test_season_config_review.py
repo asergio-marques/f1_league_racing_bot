@@ -21,8 +21,8 @@ from leaguebot.core.models.season import InvalidStageTransition, SeasonStage
 from leaguebot.core.models.server_config import ServerConfig
 from tests.support.setup_reads import hold_setup
 
-SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 from tests.support.undecorate import undecorate
+SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 
 SERVER_ID = 7
 SEASON_ID = 31

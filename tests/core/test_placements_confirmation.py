@@ -17,8 +17,8 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
 from tests.support.setup_reads import hold_setup
 
-SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 from tests.support.undecorate import undecorate
+SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 
 SERVER_ID = 22070
 SEASON_ID = 7

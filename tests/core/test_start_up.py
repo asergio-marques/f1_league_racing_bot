@@ -127,7 +127,7 @@ async def test_no_job_runs_until_start_up_has_ended():
     the last thing start-up does; it is never started unpaused."""
     module = _fresh_start_up()
     record = _Recorder()
-    steps = (record.step("amendment sweep"), record.step("pending setups"))
+    steps = (record.step("amendment sweep"), record.step("hub"))
 
     await module.start_up(steps=steps, change_queue=record.queue, scheduler=record.scheduler)
 
