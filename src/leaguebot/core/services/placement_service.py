@@ -682,8 +682,9 @@ class PlacementService:
 
         The capacity guards below measure two different populations — the reserve block and
         the classification — and a driver joins exactly one of them. Neither guard can tell
-        which without this, and both run in the assignment's check, before its save opens a transaction,
-        where the same flag is read again from the row it needs in hand anyway.
+        which without this, and both run in a change's check (`guard_assign`, `guard_move`),
+        before its save opens a transaction, where the same flag is read again from the row it
+        needs in hand anyway.
         """
         async with get_connection(self._db_path) as db:
             row = await (
