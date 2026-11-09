@@ -361,10 +361,6 @@ async def _ask_setup(league, edition: int) -> MagicMock:
     return asked
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: /season setup saves the season itself, off the queue, with no audit entry",
-)
 async def test_season_setup_begins_the_season_in_configuration(tmp_path):
     """Issue #220, and the core specification's record of what changed (#283). The league's last
     season, #3, is completed. The league manager Admin (4242) runs `/season setup` for F1 25. They
@@ -427,10 +423,6 @@ async def test_the_start_date_is_the_utc_date(tmp_path):
     assert [season["start_date"] for season in await _setup_rows(league.db_path)] == ["2031-01-02"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: /season setup is not on the change queue, so a fault in its save stops no lane",
-)
 async def test_a_failed_first_setup_save_leaves_no_setup_behind(tmp_path):
     """The manager runs `/season setup` for F1 25 on a league with no season, and as the queue runs
     it the database fails writing the audit entry. Nothing of the setup is saved, the season and
@@ -493,10 +485,6 @@ async def test_every_season_setup_refusal_is_recorded(tmp_path, standing, stage,
     assert await log_lines(league) == [_refusal_line(reply)]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: /season setup is judged only at the ask, and saves the season there",
-)
 @pytest.mark.parametrize(
     "meanwhile, reply",
     [
@@ -538,11 +526,6 @@ async def test_a_season_setup_is_judged_again_as_it_starts(tmp_path, meanwhile, 
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: /season setup is not on the change queue, so a repeat is refused as a setup in "
-    "progress, not as a repeat",
-)
 async def test_a_season_setup_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. A league

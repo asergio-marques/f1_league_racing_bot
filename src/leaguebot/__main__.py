@@ -507,6 +507,7 @@ def register_change_types(bot: LeagueBot) -> None:
         season_cancel_change,
     )
     from leaguebot.core.services.bot_init_change import bot_init_change
+    from leaguebot.core.services.season_setup_change import season_setup_change
     from leaguebot.core.services.bot_settings import (
         admin_role_setting,
         base_role_setting,
@@ -1066,6 +1067,9 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(bot_init_change(config=bot.config_service))
+    bot.change_queue.register(
+        season_setup_change(seasons=bot.season_service, now=lambda: bot.change_queue.now())
+    )
     for setting in (
         log_channel_setting(config=bot.config_service),
         interaction_channel_setting(config=bot.config_service),

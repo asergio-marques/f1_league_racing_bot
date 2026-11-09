@@ -61,6 +61,7 @@ from leaguebot.core.services.mid_season_confirm_change import (
 )
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.round_moments import read_round_windows
+from leaguebot.core.services.season_setup_change import KIND as SEASON_SETUP
 from leaguebot.core.services.season_review_changes import (
     CONFIRMED,
     EXPIRED,
@@ -577,41 +578,12 @@ class SeasonCog(commands.Cog):
         interaction: discord.Interaction,
         game_edition: app_commands.Range[int, 1, 9999],
     ) -> None:
-        """Begin season setup."""
-        # Deferred before any work, as every season-setup command is: a reply after
-        # Discord's three-second window lands on an expired token.
-        await interaction.response.defer(ephemeral=True)
-
-        if await self.bot.season_service.get_setup_season() is not None:
-            await refuse(
-                interaction,
-                "\u274c A season setup is already in progress for this server. "
-                "Use `/season placements-review` to approve, or `/season abort` to cancel it first.",
-                what=describe(interaction),
-            )
-            return
-
-        if await self.bot.season_service.get_confirmed_season() is not None:
-            await refuse(
-                interaction,
-                "\u274c A season is currently active for this server. "
-                "Complete it before starting a new one.",
-                what=describe(interaction),
-            )
-            return
-
-        cfg = PendingConfig(game_edition=game_edition)
-        await self._snapshot_pending(cfg, initial_stage=SeasonStage.CONFIGURATION)
-
-        await interaction.followup.send(
-            f"\u2705 Season setup started. **Season #{cfg.season_number} (F1 {cfg.game_edition})** is being configured.\n\n"
-            "Use `/division add` for each division, then `/round add` for each round.\n"
-            "When done, run `/season placements-review` to review and approve.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season setup | Success\n"
-            f"  season: Season #{cfg.season_number} (F1 {cfg.game_edition})",
+        """Begin season setup: ask the change queue for the season, which refuses a setup in
+        progress or a season being raced at the ask and again as it starts
+        (`core/services/season_setup_change.py`)."""
+        await self.bot.change_queue.ask(
+            SEASON_SETUP, {"game_edition": game_edition}, interaction=interaction,
+            what=describe(interaction),
         )
 
     async def _points_ordering_problems(self, season_id: int) -> list[str]:

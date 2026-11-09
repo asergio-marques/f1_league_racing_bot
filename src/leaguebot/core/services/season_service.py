@@ -210,14 +210,44 @@ class SeasonService:
         use (issue #153).
         """
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT MAX(season_number) AS highest FROM seasons "
-                "WHERE status != 'SETUP'",
-            )
-            row = await cursor.fetchone()
+            return await self.previous_season_number_on(db)
+
+    async def previous_season_number_on(self, db: aiosqlite.Connection) -> int:
+        """`get_previous_season_number` on *db*, a connection the caller holds: a save numbers the
+        season it inserts from what its own connection reads, never from a second one."""
+        cursor = await db.execute(
+            "SELECT MAX(season_number) AS highest FROM seasons WHERE status != 'SETUP'",
+        )
+        row = await cursor.fetchone()
         if row is None or row["highest"] is None:
             return 0
         return int(row["highest"])
+
+    async def begin_setup_on(
+        self, db: aiosqlite.Connection, *, start_date: date, game_edition: int
+    ) -> Season:
+        """Insert the SETUP season, in Configuration, on *db*, a connection the caller holds, and
+        return it: numbered one above the highest the league has committed, read on *db* itself,
+        so that the number and the row are one save's. Commits nothing."""
+        season_number = await self.previous_season_number_on(db) + 1
+        cursor = await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number, game_edition, stage) "
+            "VALUES (?, 'SETUP', ?, ?, ?)",
+            (
+                start_date.isoformat(),
+                season_number,
+                game_edition,
+                SeasonStage.CONFIGURATION.value,
+            ),
+        )
+        return Season(
+            id=inserted_id(cursor),
+            start_date=start_date,
+            status=SeasonStatus.SETUP,
+            season_number=season_number,
+            game_edition=game_edition,
+            stage=SeasonStage.CONFIGURATION,
+        )
 
     async def get_setup_season(self) -> Season | None:
         """Return the SETUP season, with its game edition, or None."""
