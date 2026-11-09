@@ -151,7 +151,9 @@ def _audit(placed: Round, division: Division) -> AuditRecord:
 # ---------------------------------------------------------------------------
 
 
-def _add_check(seasons: "SeasonService") -> Callable[[CheckContext], Awaitable[Verdict]]:
+def _add_check(
+    seasons: "SeasonService", drawing: "ImageDrawing"
+) -> Callable[[CheckContext], Awaitable[Verdict]]:
     async def check(ctx: CheckContext) -> Verdict:
         """The refusals, in the order they come, each read from the database."""
         payload = ctx.payload
@@ -207,7 +209,7 @@ def _add_check(seasons: "SeasonService") -> Callable[[CheckContext], Awaitable[V
 
         # Overflow is refused at the earliest moment it can be detected, which for rounds is the
         # change that would cause it, not a render days later.
-        overflow = await calendar_round_refusal(ctx.bot.image_drawing, len(held) + 1)
+        overflow = await calendar_round_refusal(drawing, len(held) + 1)
         if overflow is not None:
             return Verdict.refuse(overflow)
         return Verdict.go()
@@ -287,15 +289,16 @@ def _add_outcome(ctx: OutcomeContext) -> str:
     )
 
 
-def round_add_change(*, seasons: "SeasonService") -> ChangeType:
+def round_add_change(*, seasons: "SeasonService", drawing: "ImageDrawing") -> ChangeType:
     """The `core.round_add` change type, for the builder to register: *seasons* is what the check
     reads the season being set up, its divisions and their rounds through, and the save writes
-    the round and renumbers its division through."""
+    the round and renumbers its division through; *drawing* is the image module's, which the
+    check asks whether the calendar would hold the round."""
     return ChangeType(
         kind=ADD,
         opening=(PlannedStep(SAVE),),
         steps={SAVE: Step(SAVE, StepKind.SAVE, _add_save(seasons))},
-        check=_add_check(seasons),
+        check=_add_check(seasons, drawing),
         key=lambda payload: f"{ADD}|{json.dumps(payload, sort_keys=True)}",
         doing=_add_doing,
         outcome=_add_outcome,
@@ -369,7 +372,9 @@ def _duplicate_datetime_errors(
     return errors
 
 
-def _import_check(seasons: "SeasonService") -> Callable[[CheckContext], Awaitable[Verdict]]:
+def _import_check(
+    seasons: "SeasonService", drawing: "ImageDrawing"
+) -> Callable[[CheckContext], Awaitable[Verdict]]:
     async def check(ctx: CheckContext) -> Verdict:
         """The import, or every fault it holds: each division validated in full, so that a manager
         fixes the paste and submits the same text again rather than working out which half of it
@@ -422,9 +427,7 @@ def _import_check(seasons: "SeasonService") -> Callable[[CheckContext], Awaitabl
                 # Last, because it loads and parses the calendar template. Asked of the whole
                 # batch: each round of a dozen can clear a `+ 1` check while the dozen together
                 # outgrow the template.
-                overflow = await calendar_round_refusal(
-                    ctx.bot.image_drawing, len(held) + added
-                )
+                overflow = await calendar_round_refusal(drawing, len(held) + added)
                 if overflow is not None:
                     errors.append(f"[{division.name}]: {overflow}")
 
@@ -509,15 +512,16 @@ def _import_outcome(ctx: OutcomeContext) -> str:
     return "\n".join(lines)
 
 
-def round_import_change(*, seasons: "SeasonService") -> ChangeType:
+def round_import_change(*, seasons: "SeasonService", drawing: "ImageDrawing") -> ChangeType:
     """The `core.round_import` change type, for the builder to register: *seasons* is what the
     check reads the season being set up, its divisions and their rounds through, and the save
-    writes the rounds and renumbers their divisions through."""
+    writes the rounds and renumbers their divisions through; *drawing* is the image module's,
+    which the check asks whether the calendar would hold the rounds."""
     return ChangeType(
         kind=IMPORT,
         opening=(PlannedStep(SAVE),),
         steps={SAVE: Step(SAVE, StepKind.SAVE, _import_save(seasons))},
-        check=_import_check(seasons),
+        check=_import_check(seasons, drawing),
         key=lambda payload: f"{IMPORT}|{json.dumps(payload, sort_keys=True)}",
         doing=_import_doing,
         outcome=_import_outcome,

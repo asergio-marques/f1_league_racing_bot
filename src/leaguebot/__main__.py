@@ -1075,8 +1075,12 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         division_add_change(seasons=bot.season_service, teams=bot.team_service)
     )
-    bot.change_queue.register(round_add_change(seasons=bot.season_service))
-    bot.change_queue.register(round_import_change(seasons=bot.season_service))
+    bot.change_queue.register(
+        round_add_change(seasons=bot.season_service, drawing=bot.image_drawing)
+    )
+    bot.change_queue.register(
+        round_import_change(seasons=bot.season_service, drawing=bot.image_drawing)
+    )
     for setting in (
         log_channel_setting(config=bot.config_service),
         interaction_channel_setting(config=bot.config_service),
