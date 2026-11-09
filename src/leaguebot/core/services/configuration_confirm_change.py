@@ -19,10 +19,10 @@ imports no module and no cog; `ctx.bot` is used for the server alone.
 architecture.md, "All or nothing in one step"): saved together or not at all, reading nothing but
 the connection it is handed, so a fault leaves the season in Configuration with nothing kept and
 the queue stops at it to retry. The season moves to Waiting where the signup module is on and test
-mode is off, test mode never opening a signup window, and to Placements otherwise; where the signup
-module is on, the "configuration confirmed" hook then hands each subscriber the save's connection,
-the season and the queue's clock, so that signup keeps its settings for the season with the stage
-that fixes them. A retry judges the confirmation again before it saves (`judge`), the
+mode is off, test mode never opening a signup window, and to Placements otherwise; the
+"configuration confirmed" hook then hands each subscriber the save's connection, the season and the
+queue's clock, each checking its own module's switch, so that signup keeps its settings for the
+season with the stage that fixes them. A retry judges the confirmation again before it saves (`judge`), the
 configuration being open meanwhile.
 
 **A discarded save leaves the season in Configuration**, and the manager reviews it again.
