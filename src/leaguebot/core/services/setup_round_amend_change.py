@@ -2,13 +2,13 @@
 
 A change type of its own on the league lane, registered by the builder, beside the amendment of a
 round of a season being raced (`round_amend_change`), which it shares nothing with but the Discard
-reply (`NOTHING_AMENDED`): a setup round has no timed work, no results and no confirmation. One
-SAVE step changes the round's track, moment or format, clearing the track of a mystery round,
-renumbers its division by moment, and writes a `ROUND_AMENDED` audit entry (the round as it stood and as it stands) and the log channel's line,
-stamped with the queue's clock, all on the save's own connection. No other division's rounds are
-touched, and a round given the values it already holds is answered as such, recording that nothing
-was changed and writing no audit entry. An amendment adds no round, so the calendar's room is not
-asked.
+reply (`NOTHING_AMENDED`): a setup round has no timed work, no results and no confirmation. One SAVE
+step changes the round's track, moment or format, clearing the track of a mystery round, renumbers
+its division by moment, and writes a `ROUND_AMENDED` audit entry (the round as it stood and as it
+stands) and the log channel's line, stamped with the queue's clock, all on the save's own
+connection. No other division's rounds are touched, and a round given the values it already holds is
+answered as such, recording that nothing was changed and writing no audit entry. An amendment adds
+no round, so the calendar's room is not asked.
 
 **A fault in the save stops the lane**, as a failed job does, for the reason `/season setup`'s does
 (`season_setup_change.py`): a league admin exists to discard the job and clear the stop.
