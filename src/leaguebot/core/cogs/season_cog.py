@@ -4079,30 +4079,6 @@ class SeasonCog(commands.Cog):
         for division_id in unseeded_division_ids:
             await self.bot.team_service.seed_division_teams(division_id)
 
-    async def recover_pending_setups(self) -> None:
-        """Restore in-memory _pending from DB SETUP seasons on bot startup."""
-        for s in await self.bot.season_service.load_all_setup_seasons():
-            if self._get_pending() is not None:
-                continue
-            cfg = PendingConfig(
-                start_date=s["start_date"],
-                season_id=s["season_id"],
-                season_number=s.get("season_number", 0),
-                game_edition=s.get("game_edition", 0),
-                divisions=[
-                    PendingDivision(
-                        name=d["name"],
-                        role_id=d["role_id"],
-                        channel_id=d["channel_id"],
-                        tier=d.get("tier", 0),
-                        rounds=d["rounds"],
-                    )
-                    for d in s["divisions"]
-                ],
-            )
-            self._pending[_RECOVERED] = cfg
-        log.info("Recovered %d pending setup(s) from DB", len(self._pending))
-
     async def _offer_backup_before_approving(
         self, interaction, deadline: datetime
     ) -> bool:

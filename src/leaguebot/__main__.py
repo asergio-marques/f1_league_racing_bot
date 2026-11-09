@@ -1508,8 +1508,7 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
     The order is today's and is load-bearing where a comment says so. The scheduler is started
     paused before the first step and resumed after the last, so no scheduled job runs while these
     do; each recovery is looked up when its step runs, so a step stands for that function and no
-    other. The modules' recoveries stay steps as they stand; the pending setups stay one until
-    they go.
+    other. The modules' recoveries stay steps as they stand.
     """
 
     async def arm_the_amendment_sweep() -> None:
@@ -1561,8 +1560,6 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
         ("missed clean-ups", lambda: _recover_missed_cleanups(bot)),
         ("hub", recover_the_hub),
         ("wizards", recover_the_wizards),
-        # In-memory pending setups restored from the DB SETUP seasons.
-        ("pending setups", lambda: _recover_pending_setups(bot)),
     )
 
 
@@ -2217,14 +2214,6 @@ async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
             await ask_lapse(bot.change_queue, bot.db_path, amend_id, cause=RESTART)
         except Exception:
             log.exception("Recovery: could not ask the lapse of amendment %s", amend_id)
-
-
-async def _recover_pending_setups(bot: LeagueBot) -> None:
-    """Restore in-memory pending season configs from DB SETUP seasons."""
-    from leaguebot.core.cogs.season_cog import SeasonCog
-    season_cog = cast("SeasonCog | None", bot.get_cog("SeasonCog"))
-    if season_cog is not None:
-        await season_cog.recover_pending_setups()
 
 
 if __name__ == "__main__":
