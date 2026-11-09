@@ -966,6 +966,38 @@ async def test_the_setup_held_in_memory_is_let_go_of_once_the_season_is_saved(
     assert league.cog._get_pending() is None
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the approval still defines its forget_setup job")
+async def test_a_stored_job_letting_go_of_the_setup_stops_the_queue_until_discarded(
+    tmp_path, monkeypatch,
+):
+    """Season 3's approval was stored by a bot from before the setup was read from the database:
+    its save has run, and its next job is the `forget_setup` the bot no longer defines. The queue
+    stops at that job; a league admin's Discard drops it, and the approval goes on: the season's
+    timed work is armed, nothing is left stopped, and the manager is told the season is
+    approved."""
+    league = await _league_for(tmp_path, monkeypatch, results=True)
+    press = await _pressed(league)
+    await _run_through(league, "apply")
+    change_id = (await _approval(league))["id"]
+    [apply_at] = [job["position"] for job in await _jobs(league) if job["name"] == "apply"]
+    await league.write("UPDATE queued_change_steps SET position = -position - 1 "
+                       "WHERE change_id = ? AND position > ?", change_id, apply_at)
+    await league.write("UPDATE queued_change_steps SET position = -position "
+                       "WHERE change_id = ? AND position < 0", change_id)
+    await league.write("INSERT INTO queued_change_steps (change_id, position, name) "
+                       "VALUES (?, ?, 'forget_setup')", change_id, apply_at + 1)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "forget_setup"
+
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert any(job["name"] == "arm" and job["done_at"] for job in await _jobs(league))
+    assert APPROVED in reply(press)
+
+
 async def test_a_round_amended_while_the_posts_wait_is_amended_on_the_ongoing_season(
     tmp_path, monkeypatch,
 ):

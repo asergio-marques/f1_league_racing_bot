@@ -274,3 +274,83 @@ async def test_every_season_setup_refusal_is_recorded(standing, reply):
     cog.bot.season_service.sync_pending_config.assert_not_awaited()
     logged = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
     assert logged == [f"\u26d4 `/season setup` refused for Manager (<@42>) \u2014 {reply[2:]}"]
+
+
+# ---------------------------------------------------------------------------
+# The setup is read from the database whenever a command asks for it (#283, S14a)
+# ---------------------------------------------------------------------------
+
+
+async def _bot_on(tmp_path) -> MagicMock:
+    """`_bot()` with the real season service on a migrated database under *tmp_path*, which holds
+    no season yet."""
+    from leaguebot.core.db.database import run_migrations
+    from leaguebot.core.services.season_service import SeasonService
+
+    db_path = str(tmp_path / "league.db")
+    await run_migrations(db_path)
+    bot = _bot()
+    bot.db_path = db_path
+    bot.season_service = SeasonService(db_path)
+    return bot
+
+
+async def _setup_seasons(db_path: str) -> list[int]:
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT id FROM seasons WHERE status = 'SETUP'")
+        return [row["id"] for row in await cursor.fetchall()]
+
+
+@pytest.mark.xfail(strict=True, reason="#283: a failed first save leaves the setup held in memory")
+async def test_a_failed_first_setup_save_leaves_no_setup_behind(tmp_path):
+    """The manager runs `/season setup` for F1 25 on a league with no season, and the save fails
+    (the database is locked). Nothing of the setup is left: the manager's next `/season setup`
+    is not refused as a setup in progress, it starts the season afresh, and the database then
+    holds that one season being set up."""
+    from tests.support.undecorate import undecorate
+
+    bot = await _bot_on(tmp_path)
+    cog = SeasonCog(bot)
+    bot.season_service.sync_pending_config = AsyncMock(side_effect=RuntimeError("database is locked"))
+    with pytest.raises(RuntimeError):
+        await undecorate(SeasonCog.season_setup)(cog, _interaction(), game_edition=25)
+    assert await _setup_seasons(bot.db_path) == []
+    del bot.season_service.sync_pending_config
+
+    again = _interaction()
+    await undecorate(SeasonCog.season_setup)(cog, again, game_edition=25)
+
+    assert "Season setup started" in again.followup.send.await_args.args[0]
+    assert len(await _setup_seasons(bot.db_path)) == 1
+
+
+@pytest.mark.xfail(strict=True, reason="#283: a setup command reads the setup held in memory")
+async def test_a_setup_begun_before_a_restart_is_found_by_the_next_setup_command(tmp_path):
+    """The manager runs `/season setup` for F1 25 and the season is taken to placements. The bot
+    then restarts, and nothing recovers the setup at start-up. The manager's `/division add` of
+    Pro, tier 1, finds the season being set up in the database: it is not refused for want of a
+    setup, and Pro is saved on that season."""
+    from leaguebot.core.db.database import get_connection
+    from tests.support.undecorate import undecorate
+
+    bot = await _bot_on(tmp_path)
+    await undecorate(SeasonCog.season_setup)(SeasonCog(bot), _interaction(), game_edition=25)
+    [season_id] = await _setup_seasons(bot.db_path)
+    async with get_connection(bot.db_path) as db:
+        await db.execute("UPDATE seasons SET stage = 'PLACEMENTS' WHERE id = ?", (season_id,))
+        await db.commit()
+    role = MagicMock()
+    role.id = 10
+    role.mention = "<@&10>"
+
+    restarted = SeasonCog(bot)
+    interaction = _interaction()
+    await undecorate(SeasonCog.division_add)(restarted, interaction, name="Pro", role=role, tier=1)
+
+    assert "Division **Pro** (Tier 1) added" in interaction.followup.send.await_args.args[0]
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute("SELECT name, tier FROM divisions WHERE season_id = ?",
+                                  (season_id,))
+        assert [tuple(row) for row in await cursor.fetchall()] == [("Pro", 1)]
