@@ -376,6 +376,15 @@ _CONFIGURATION_CONFIRMED_PARTS = (
      "signup's season settings"),
 )
 
+#: Each module's part of a driver turned down, as the module names it: the module, the
+#: subscriber, and what the test calls it, in the order the builder signs them up. Each lets go of
+#: what the module holds as the driver's approval, on the connection of the save that turns them
+#: down.
+_DRIVER_TURNED_DOWN_PARTS = (
+    ("leaguebot.signup.services.signup_module_service", "driver_turned_down_on",
+     "signup's withdrawal of the approval"),
+)
+
 #: The steps of an amendment attendance defines, by name, as the amendment names them today.
 _ATTENDANCE_AMENDMENT_STEPS = [
     "announce", "clean_up_check_in", "close_without_call", "delete_message", "distribute",
@@ -383,6 +392,10 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the builder declares no driver-turned-down hook, nor signs signup up to it",
+)
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -426,7 +439,8 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     final standings, then attendance's for its final sheet; and the steps each defines, results'
     final standings, then attendance's final sheet. A season's configuration confirmed, handed the
     confirmation's save's connection, the season's id and the queue's clock: signup's keeping of
-    its settings for the season."""
+    its settings for the season. A driver turned down, handed the save's connection and the
+    driver's profile id: signup's withdrawal of their signup's approval."""
     import importlib
 
     import leaguebot.__main__ as entry_point
@@ -479,6 +493,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         *_FINAL_ROUND_PARTS,
         *_SEASON_COMPLETED_PARTS,
         *_CONFIGURATION_CONFIRMED_PARTS,
+        *_DRIVER_TURNED_DOWN_PARTS,
     ):
         async def delete_spy(*args, part=part, **_kwargs):
             called.append(part)
@@ -607,6 +622,12 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     assert called == [part for _module, _name, part in _CONFIGURATION_CONFIRMED_PARTS]
     # Each part is handed the save's connection, then the season's id and the queue's clock.
     assert handed == [(None, 0, _NOW)] * len(called)
+    called.clear()
+    handed.clear()
+    await bot.driver_turned_down.call(None, 0)
+    assert called == [part for _module, _name, part in _DRIVER_TURNED_DOWN_PARTS]
+    # Each part is handed the save's connection, then the driver's profile id.
+    assert handed == [(None, 0)] * len(called)
 
 
 #: The windows the league configures in the pair test: attendance's three lead times, and

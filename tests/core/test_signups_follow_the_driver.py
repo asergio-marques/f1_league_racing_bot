@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 
+import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.image.services.image_verdict_post import _driver_nationality
@@ -111,18 +112,85 @@ async def test_an_approved_signup_outranks_a_later_one_that_was_not(tmp_path):
     assert await _driver_nationality(db_path, int(B)) == "PT"
 
 
-async def test_a_turned_down_signup_no_longer_outranks_the_others(tmp_path):
-    db_path, profile_id = await _make_db(tmp_path)
-    service = SignupModuleService(db_path)
-    await _mark_approved(service, db_path, A)
-    await _newer_rejected_signup_on_b(db_path)
+_TURNED_DOWN_NOT_YET = "#283: signup's withdrawal is not yet a subscriber to core's driver-turned-down hook"
 
-    await service.withdraw_approval(profile_id)
 
-    assert await _driver_nationality(db_path, int(A)) == "BR"
+async def _signup_on(db_path: str) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET signup_module_enabled = 1")
+        await db.commit()
+
+
+async def _approvals(db_path: str) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT SUM(approved) FROM signup_records")
-        assert (await cursor.fetchone())[0] == 0
+        return (await cursor.fetchone())[0]
+
+
+@pytest.mark.xfail(strict=True, reason=_TURNED_DOWN_NOT_YET)
+async def test_a_turned_down_signup_no_longer_outranks_the_others(tmp_path):
+    """The signup specification: a signup ceases to be approved when the approved driver is turned
+    down. The signup module is on; the driver's signup on their past account A is approved, and a
+    later one on their current account B was rejected. Core turns the driver down, calling its
+    driver-turned-down hook on the save's connection; signup's part, `driver_turned_down_on`,
+    withdraws the approval there, and the save commits. A's signup no longer outranks B's: the
+    driver's nationality is read from B's (BR), and no signup of theirs is approved."""
+    from leaguebot.signup.services.signup_module_service import driver_turned_down_on
+
+    db_path, profile_id = await _make_db(tmp_path)
+    await _signup_on(db_path)
+    await _mark_approved(SignupModuleService(db_path), db_path, A)
+    await _newer_rejected_signup_on_b(db_path)
+
+    async with get_connection(db_path) as db:
+        await driver_turned_down_on(db, profile_id)
+        await db.commit()
+
+    assert await _driver_nationality(db_path, int(A)) == "BR"
+    assert await _approvals(db_path) == 0
+
+
+async def _rolled_back(db_path: str, profile_id: int) -> None:
+    """The save the hook is called in fails after it: signup's part, then a rollback."""
+    from leaguebot.signup.services.signup_module_service import driver_turned_down_on
+
+    await _signup_on(db_path)
+    async with get_connection(db_path) as db:
+        await driver_turned_down_on(db, profile_id)
+        await db.rollback()
+
+
+async def _while_signup_is_off(db_path: str, profile_id: int) -> None:
+    """The signup module off: signup's part, in a save that commits."""
+    from leaguebot.signup.services.signup_module_service import driver_turned_down_on
+
+    async with get_connection(db_path) as db:
+        await driver_turned_down_on(db, profile_id)
+        await db.commit()
+
+
+@pytest.mark.parametrize(
+    "turn_down",
+    [
+        pytest.param(_rolled_back, id="the-save-rolled-back"),
+        pytest.param(_while_signup_is_off, id="signup-off"),
+    ],
+)
+@pytest.mark.xfail(strict=True, reason=_TURNED_DOWN_NOT_YET)
+async def test_a_turned_down_signup_keeps_its_approval_unless_the_save_holds_and_signup_is_on(
+    tmp_path, turn_down
+):
+    """Signup's part of a driver turned down writes on the connection of core's save, committing
+    nothing, and does nothing while the signup module is off, the hook being called whatever the
+    modules' switches say. The driver's signup on A is approved. Signup's part is called in a save
+    that then rolls back, the module on; or in a save that commits, the module off. Either way the
+    signup stays approved."""
+    db_path, profile_id = await _make_db(tmp_path)
+    await _mark_approved(SignupModuleService(db_path), db_path, A)
+
+    await turn_down(db_path, profile_id)
+
+    assert await _approvals(db_path) == 1
 
 
 async def test_approval_marks_only_the_latest_signup_of_the_account(tmp_path):
