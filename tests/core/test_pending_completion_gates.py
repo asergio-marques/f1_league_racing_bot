@@ -27,7 +27,6 @@ that the refusal is the same whether the command or the change's check gives it.
 """
 from __future__ import annotations
 
-from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -411,17 +410,16 @@ async def test_the_bulk_amend_modal_is_not_shown_in_pending_completion(tmp_path)
 # The three things that stay open
 # ---------------------------------------------------------------------------
 
-#: Each module channel command, the service holding the setter it reaches, and that setter. A
-#: command asked of the change queue (weather's and results', #283) names neither: its change is
-#: run, and the channel read back (`QUEUED_CHANNELS`). The cog is named with each so that the
-#: command can follow its code to another one.
+#: Each module channel command, on its cog: every one is asked of the change queue (#283), its
+#: change run, and the channel read back (`QUEUED_CHANNELS`). The cog is named with each so that
+#: the command can follow its code to another one.
 MODULE_CHANNEL_COMMANDS = {
-    "weather": (WeatherCog, "channel", None, None),
-    "results": (ResultsCog, "channel_results", None, None),
-    "standings": (ResultsCog, "channel_standings", None, None),
-    "verdicts": (ResultsCog, "channel_verdicts", None, None),
-    "rsvp": (AttendanceCog, "channel_rsvp", "attendance_service", "set_rsvp_channel"),
-    "attendance": (AttendanceCog, "channel_attendance", "attendance_service", "set_attendance_channel"),
+    "weather": (WeatherCog, "channel"),
+    "results": (ResultsCog, "channel_results"),
+    "standings": (ResultsCog, "channel_standings"),
+    "verdicts": (ResultsCog, "channel_verdicts"),
+    "rsvp": (AttendanceCog, "channel_rsvp"),
+    "attendance": (AttendanceCog, "channel_attendance"),
 }
 
 #: Each command asked of the change queue: the kind of change it asks, and the query reading back
@@ -446,38 +444,54 @@ QUEUED_CHANNELS = {
         "SELECT penalty_channel_id AS channel_id FROM division_results_config "
         "WHERE division_id = ?",
     ),
+    "rsvp": (
+        "attendance.setting.rsvp_channel",
+        "SELECT rsvp_channel_id AS channel_id FROM attendance_division_config "
+        "WHERE division_id = ?",
+    ),
+    "attendance": (
+        "attendance.setting.attendance_channel",
+        "SELECT attendance_channel_id AS channel_id FROM attendance_division_config "
+        "WHERE division_id = ?",
+    ),
 }
 
+#: The commands not yet asked of the change queue, each failing until it is.
+_NOT_YET_QUEUED = {
+    "rsvp": "#283: /attendance channel rsvp is not yet an attendance setting on the change queue",
+    "attendance": (
+        "#283: /attendance channel attendance is not yet an attendance setting on the change queue"
+    ),
+}
 
-@pytest.mark.parametrize("which", sorted(MODULE_CHANNEL_COMMANDS))
+#: Each module channel command as a case, those not yet asked of the change queue marked.
+_CHANNEL_CASES = [
+    pytest.param(which, marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_QUEUED[which]))
+    if which in _NOT_YET_QUEUED else which
+    for which in sorted(MODULE_CHANNEL_COMMANDS)
+]
+
+
+@pytest.mark.parametrize("which", _CHANNEL_CASES)
 async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_path, which):
     """Completing posts the final classification and the final attendance sheet to those
     channels, so one deleted before completion has to be repointed. Each of the six is run
     through its own command body, not through a helper some of them share, so a gate added to
-    any one body is exercised. A command asked of the change queue is asked as its setting's
-    kind, its change run, and the channel it sets read back from the division.
+    any one body is exercised. Each is asked as its setting's kind, its change run, and the
+    channel it sets read back from the division.
     """
-    cog_class, command, service, setter = MODULE_CHANNEL_COMMANDS[which]
+    cog_class, command = MODULE_CHANNEL_COMMANDS[which]
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
     bot = await _bot(db_path, SeasonStage.PENDING_COMPLETION)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.attendance_service = MagicMock()
     bot.attendance_service.get_division_config = AsyncMock(return_value=None)
-    stub = AsyncMock(return_value=None)
     interaction = _interaction()
-    queued = setter is None
-    if queued:
-        _attach_the_queue(bot, interaction)
-        interaction.edit_original_response = AsyncMock()
-        bot.season_service.get_division = AsyncMock(
-            return_value=SimpleNamespace(id=DIVISION_ID, name="Pro", tier=1, season_id=SEASON_ID)
-        )
-        stub_setter = nullcontext()
-    elif service is None:
-        stub_setter = patch(f"{cog_class.__module__}.{setter}", new=stub)
-    else:
-        setattr(getattr(bot, service), setter, stub)
-        stub_setter = nullcontext()
+    _attach_the_queue(bot, interaction)
+    interaction.edit_original_response = AsyncMock()
+    bot.season_service.get_division = AsyncMock(
+        return_value=SimpleNamespace(id=DIVISION_ID, name="Pro", tier=1, season_id=SEASON_ID)
+    )
     cog = _cog(cog_class, bot)
     channel = MagicMock(spec=discord.TextChannel, id=808, mention="<#808>")
     channel.name = which
@@ -486,27 +500,23 @@ async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_pa
     found = bot.get_channel
     bot.get_channel = MagicMock(side_effect=lambda cid: channel if cid == 808 else found(cid))
 
-    with stub_setter, patch(
+    with patch(
         "leaguebot.core.services.channel_registry_service.find_channel_use", new=AsyncMock(return_value=None)
     ):
         await undecorate(getattr(cog_class, command))(cog, interaction, "Pro", channel)
-        if queued:
-            await run_queue(bot)
+        await run_queue(bot)
 
     said = "\n".join(
         (_said(interaction), *(str(call.kwargs.get("content", ""))
                                 for call in interaction.edit_original_response.await_args_list))
-    ) if queued else _said(interaction)
+    )
     assert "✅" in said, said
     assert "❌" not in said, said
-    if queued:
-        kind, read_back = QUEUED_CHANNELS[which]
-        assert [row["kind"] for row in await change_rows(db_path)] == [kind]
-        async with get_connection(db_path) as db:
-            row = await (await db.execute(read_back, (DIVISION_ID,))).fetchone()
-        assert int(row["channel_id"]) == 808
-    else:
-        stub.assert_awaited_once()
+    kind, read_back = QUEUED_CHANNELS[which]
+    assert [row["kind"] for row in await change_rows(db_path)] == [kind]
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(read_back, (DIVISION_ID,))).fetchone()
+    assert int(row["channel_id"]) == 808
 
 
 async def test_results_rounds_amend_is_not_turned_away_by_the_stage(tmp_path):
