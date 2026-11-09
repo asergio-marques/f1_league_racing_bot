@@ -510,6 +510,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.division_add_change import division_add_change
     from leaguebot.core.services.round_add_changes import round_add_change, round_import_change
     from leaguebot.core.services.season_setup_change import season_setup_change
+    from leaguebot.core.services.setup_round_amend_change import setup_round_amend_change
     from leaguebot.core.services.bot_settings import (
         admin_role_setting,
         base_role_setting,
@@ -1081,6 +1082,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         round_import_change(seasons=bot.season_service, drawing=bot.image_drawing)
     )
+    bot.change_queue.register(setup_round_amend_change(seasons=bot.season_service))
     for setting in (
         log_channel_setting(config=bot.config_service),
         interaction_channel_setting(config=bot.config_service),

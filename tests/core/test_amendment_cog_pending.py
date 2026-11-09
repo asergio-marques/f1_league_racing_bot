@@ -36,12 +36,6 @@ from tests.support.undecorate import undecorate
 #: The command as the log channel names it.
 WHAT = "`/round amend`"
 
-#: Why a test of the queued amendment fails until it is built.
-QUEUED = "#283: /round amend of a setup round is not yet a change on the queue"
-
-#: Why the clash refusal fails until it is built.
-NO_CLASH_CHECK = "#283: /round amend of a setup round has no clash check yet"
-
 #: Pro's three standing rounds and Am's one, as the database alone holds them after a restart:
 #: a mystery round with no track, a normal round at the Hungaroring, and a mystery round that
 #: holds a track.
@@ -114,7 +108,6 @@ def _clash(number: int, at: datetime) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_one_save(
     tmp_path,
 ):
@@ -189,7 +182,6 @@ async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_
     assert last_said(asked) == _updated(3, "Pro", rows)
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 @pytest.mark.parametrize(
     "number, asked, after, changed",
     [
@@ -256,7 +248,6 @@ async def test_each_field_of_a_setup_round_is_amended_as_asked(
     assert last_said(asked_) == _updated(number, "Pro", rows)
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_a_failed_setup_round_amendment_changes_nothing(tmp_path):
     """Season #1 is being set up, in Placements, Pro holding its rounds of 14, 21 and 28 June. The
     manager runs `/round amend` for Pro's round 1, moving it to 5 July at 18:00, and as the queue
@@ -287,7 +278,6 @@ async def test_a_failed_setup_round_amendment_changes_nothing(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 @pytest.mark.parametrize(
     "meanwhile, reply",
     [
@@ -367,7 +357,6 @@ async def test_a_setup_round_amendment_is_judged_again_as_it_starts(tmp_path, me
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_a_setup_round_amendment_asked_again_while_it_waits_is_refused_as_a_repeat(
     tmp_path,
 ):
@@ -509,7 +498,6 @@ async def test_a_setup_round_amended_to_what_stands_changes_nothing(tmp_path, fi
         pytest.param(
             {"scheduled_at": "2026-06-21T18:00:00"}, _clash(2, datetime(2026, 6, 21, 18, 0)),
             id="a-moment-another-round-holds",
-            marks=pytest.mark.xfail(strict=True, reason=NO_CLASH_CHECK),
         ),
     ],
 )

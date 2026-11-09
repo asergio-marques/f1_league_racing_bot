@@ -183,7 +183,7 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog._team_name_problems"): (3, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._track_autocomplete"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_amend"): (3, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog.round_amend"): (2, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog.round_amend"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "_get_setup_season_id"): (2, PASS["core"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (2, PASS["signup"]),

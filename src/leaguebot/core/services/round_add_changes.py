@@ -104,7 +104,7 @@ async def calendar_round_refusal(drawing: "ImageDrawing", would_hold: int) -> st
     return f"❌ {problem.problem}. The round was **not** added.\n{problem.remedy}"
 
 
-def _models(rounds: list[dict[str, Any]]) -> list[Round]:
+def round_models(rounds: list[dict[str, Any]]) -> list[Round]:
     """The rounds a result holds, as the list a reply formats."""
     return [
         Round(
@@ -115,7 +115,7 @@ def _models(rounds: list[dict[str, Any]]) -> list[Round]:
     ]
 
 
-def _held(rounds: list[Round]) -> list[dict[str, Any]]:
+def held_rounds(rounds: list[Round]) -> list[dict[str, Any]]:
     """The rounds a division holds, as a result keeps them."""
     return [
         {
@@ -126,7 +126,7 @@ def _held(rounds: list[Round]) -> list[dict[str, Any]]:
     ]
 
 
-def _saved(ctx: OutcomeContext) -> dict[str, Any]:
+def saved_result(ctx: OutcomeContext) -> dict[str, Any]:
     """What the save returned, or nothing where it did not finish."""
     return next(
         (view.result for view in ctx.steps if view.name == SAVE and view.result is not None), {}
@@ -262,7 +262,7 @@ def _add_save(
                 "format": fmt.value,
                 "track": track_name,
                 "at": moment.isoformat(),
-                "rounds": _held(rounds),
+                "rounds": held_rounds(rounds),
             },
             audits=(_audit(placed, division),),
             lines=(line,),
@@ -278,14 +278,14 @@ def _add_doing(payload: dict[str, Any]) -> str:
 
 
 def _add_outcome(ctx: OutcomeContext) -> str:
-    saved = _saved(ctx)
+    saved = saved_result(ctx)
     if saved.get("outcome") != "added":
         return ADD_DISCARDED
     return (
         f"✅ Round **{saved['number']}** added to **{saved['division']}**.\n"
         f"Format: {saved['format']} | Track: {saved['track'] or 'Mystery'} | "
         f"{discord_ts(datetime.fromisoformat(saved['at']))}\n\n"
-        + format_round_list(_models(saved["rounds"]))
+        + format_round_list(round_models(saved["rounds"]))
     )
 
 
@@ -473,7 +473,7 @@ def _import_save(
             await renumber_rounds_on(db, division.id)
             rounds = await seasons.get_division_rounds_on(db, division.id)
             audits += [_audit(r, division) for r in rounds if r.id in added]
-            held.append({"division": division.name, "rounds": _held(rounds)})
+            held.append({"division": division.name, "rounds": held_rounds(rounds)})
 
         source = str(ctx.payload["source"])
         line = f"{ctx.named} | {source} | Success\n" + "\n".join(
@@ -496,7 +496,7 @@ def _import_doing(payload: dict[str, Any]) -> str:
 
 
 def _import_outcome(ctx: OutcomeContext) -> str:
-    saved = _saved(ctx)
+    saved = saved_result(ctx)
     if saved.get("outcome") != "added":
         return (
             "Nothing was added: no round was imported. "
@@ -508,7 +508,7 @@ def _import_outcome(ctx: OutcomeContext) -> str:
         lines.append(f"  **{d['division']}**: {len(d['rounds'])} round(s) in total")
     if len(divisions) == 1:
         lines.append("")
-        lines.append(format_round_list(_models(divisions[0]["rounds"])))
+        lines.append(format_round_list(round_models(divisions[0]["rounds"])))
     return "\n".join(lines)
 
 
@@ -537,7 +537,10 @@ __all__ = [
     "NO_SETUP",
     "add_payload",
     "calendar_round_refusal",
+    "held_rounds",
     "import_payload",
     "round_add_change",
     "round_import_change",
+    "round_models",
+    "saved_result",
 ]

@@ -29,8 +29,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
-from types import EllipsisType
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Mapping, TypeVar
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, TypeVar
 
 import discord
 from discord import app_commands
@@ -67,6 +66,10 @@ from leaguebot.core.services.round_add_changes import (
     import_payload,
 )
 from leaguebot.core.services.season_setup_change import KIND as SEASON_SETUP
+from leaguebot.core.services.setup_round_amend_change import (
+    ROUND_AMEND_SETUP,
+    amend_payload as amend_setup_payload,
+)
 from leaguebot.core.services.season_review_changes import (
     CONFIRMED,
     EXPIRED,
@@ -3046,10 +3049,8 @@ class SeasonCog(commands.Cog):
         scheduled_at: str = "",
         format: str = "",
     ) -> None:
-        # Deferred before any work: the calendar capacity guard below loads and parses
-        # the calendar template, which can outlast Discord's three-second window, and the
-        # reply then lands on an expired token (404 Unknown interaction) while the round
-        # itself has already been written.
+        # Deferred before any work: the reads below can outlast Discord's three-second window,
+        # and the reply then lands on an expired token (404 Unknown interaction).
         await interaction.response.defer(ephemeral=True)
 
         if not any([track, scheduled_at, format]):
@@ -3060,140 +3061,13 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        # Pending-config path
-        pending_cfg = await self._get_pending()
-        if pending_cfg is not None:
-            pend_div = next(
-                (d for d in pending_cfg.divisions if d.name.lower() == division_name.lower()),
-                None,
-            )
-            if pend_div is None:
-                await refuse(
-                    interaction,
-                    f"\u274c Division `{division_name}` not found in pending setup.",
-                    what=describe(interaction),
-                )
-                return
-
-            pend_rnd = next(
-                (r for r in pend_div.rounds if r["round_number"] == round_number),
-                None,
-            )
-            if pend_rnd is None:
-                await refuse(
-                    interaction,
-                    f"\u274c Round {round_number} not found in division `{division_name}` of the pending setup.",
-                    what=describe(interaction),
-                )
-                return
-
-            new_track: str | None | EllipsisType = ...
-            if track:
-                async with get_connection(self.bot.db_path) as _tdb:
-                    _resolved = await track_service.resolve_track_name(_tdb, track)
-                if _resolved is None:
-                    await refuse(
-                        interaction,
-                        f"\u274c Unknown track `{track}`. Use autocomplete to pick a valid track.",
-                        what=describe(interaction),
-                    )
-                    return
-                new_track = _resolved
-
-            new_dt: datetime | None | EllipsisType = ...
-            if scheduled_at:
-                new_dt = parse_datetime(scheduled_at)
-                if new_dt is None:
-                    await refuse(
-                        interaction,
-                        "\u274c Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.",
-                        what=describe(interaction),
-                    )
-                    return
-
-            new_fmt: RoundFormat | EllipsisType = ...
-            if format:
-                try:
-                    new_fmt = RoundFormat(format.upper())
-                except ValueError:
-                    await refuse(
-                        interaction,
-                        f"\u274c Invalid format `{format}`. Use NORMAL, SPRINT, MYSTERY, or ENDURANCE.",
-                        what=describe(interaction),
-                    )
-                    return
-
-            effective_fmt = new_fmt if new_fmt is not ... else pend_rnd["format"]
-            effective_track = new_track if new_track is not ... else pend_rnd["track_name"]
-            if effective_fmt != RoundFormat.MYSTERY and not effective_track:
-                await refuse(
-                    interaction,
-                    f"\u274c Format `{effective_fmt.value}` requires a track. "
-                    "Supply a `track` value or change format to MYSTERY.",
-                    what=describe(interaction),
-                )
-                return
-
-            # What each field was, for the log line's "from what to what".
-            before = {
-                "format": pend_rnd["format"],
-                "scheduled_at": pend_rnd["scheduled_at"],
-                "track_name": pend_rnd["track_name"],
-            }
-            asked = {
-                field: value
-                for field, value in (
-                    ("track_name", new_track),
-                    ("scheduled_at", new_dt),
-                    ("format", new_fmt),
-                )
-                if value is not ...
-            }
-            if amendment_changes_nothing(before, asked):
-                await self._record_round_unchanged(
-                    interaction, "/round amend (pending)", pend_div.name, round_number
-                )
-                return
-            if new_fmt is not ...:
-                pend_rnd["format"] = new_fmt
-            if new_dt is not ...:
-                pend_rnd["scheduled_at"] = new_dt
-            if new_track is not ...:
-                pend_rnd["track_name"] = new_track
-            if pend_rnd["format"] == RoundFormat.MYSTERY:
-                pend_rnd["track_name"] = None
-
-            # Re-sort rounds by scheduled_at and renumber
-            pend_div.rounds.sort(key=lambda r: r["scheduled_at"])
-            for i, r in enumerate(pend_div.rounds, start=1):
-                r["round_number"] = i
-
-            await self._snapshot_pending(pending_cfg)
-
-            from leaguebot.core.models.round import Round as RoundModel
-            round_models = [
-                RoundModel(
-                    id=0,
-                    division_id=0,
-                    round_number=r["round_number"],
-                    format=r["format"],
-                    track_name=r["track_name"],
-                    scheduled_at=r["scheduled_at"],
-                )
-                for r in pend_div.rounds
-            ]
-            await interaction.followup.send(
-                f"\u2705 Round {round_number} in **{pend_div.name}** updated and saved to the "
-                f"season being set up. Its sessions are created when placements are confirmed "
-                f"from `/season placements-review`.\n\n"
-                + format_round_list(round_models),
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round amend (pending) | Success\n"
-                f"  division: {pend_div.name}\n"
-                f"  round: {round_number}"
-                + _changed_values(before, pend_rnd),
+        # A season being set up: the change queue judges and amends its round, at the ask and
+        # again as the change starts (`core/services/setup_round_amend_change.py`).
+        if await self.bot.season_service.get_setup_season() is not None:
+            await self.bot.change_queue.ask(
+                ROUND_AMEND_SETUP,
+                amend_setup_payload(division_name, round_number, track, scheduled_at, format),
+                interaction=interaction, what=describe(interaction),
             )
             return
 
@@ -4603,31 +4477,6 @@ def _round_amend_named(round_number: int | None, division_name: str | None = Non
         return "`/round amend`"
     where = f" in {division_name}" if division_name else ""
     return f"`/round amend` of round {round_number}{where}"
-
-
-def _field_text(value: object) -> str:
-    """A round's field as a log line states it."""
-    if value is None:
-        return "none"
-    return str(getattr(value, "value", value))
-
-
-#: A round's field as `/round amend` names it, where its column is named otherwise.
-_AMEND_PARAMETER_OF = {"track_name": "track"}
-
-
-def _changed_values(before: Mapping[str, object], after: Mapping[str, object]) -> str:
-    """Each field of *before* whose value *after* differs, from what to what, one per line.
-
-    Each is named as the command's parameter is — `track`, `scheduled_at`, `format` — and not
-    by its column.
-    """
-    return "".join(
-        f"\n  {_AMEND_PARAMETER_OF.get(field, field)}: {_field_text(old)} "
-        f"\u2192 {_field_text(after[field])}"
-        for field, old in before.items()
-        if after[field] != old
-    )
 
 
 class _ConfirmView(LeagueView):
