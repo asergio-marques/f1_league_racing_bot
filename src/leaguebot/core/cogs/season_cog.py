@@ -49,6 +49,7 @@ from leaguebot.core.services.cancellation_changes import (
     SEASON_CANCEL,
     cancellation_holding_amendment,
 )
+from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL, division_not_found
 from leaguebot.core.services.image_drawing import DivisionTeams, Held, TeamSeats
 from leaguebot.core.services.mid_season_confirm_change import (
     ALREADY_BEING_CONFIRMED,
@@ -3152,38 +3153,41 @@ class SeasonCog(commands.Cog):
     # Division channel assignment
     # ------------------------------------------------------------------
 
-    async def _refuse_channel_in_use(
+    async def _ask_division_channel(
         self,
         interaction: discord.Interaction,
+        kind: str,
+        name: str,
         channel: discord.TextChannel,
-        setting: str,
-        *,
-        division_name: str | None = None,
-        what: str | None = None,
-    ) -> bool:
-        """Reply, record the refusal and return True where *channel* is already doing another job.
+    ) -> None:
+        """Ask the change queue to give the division *name* of the live season *channel* as the
+        channel *kind* (`division_settings`) names.
 
-        A channel serves one purpose across the whole server (decided 2026-09-06): two
-        settings sharing one interleave two kinds of posting, and several posting paths
-        edit or delete their last message by an id stored against the channel, so sharing
-        is how one output comes to delete another's. The rule, and the words for the value
-        the setting already holds, are `channel_refusal`'s; this sends its refusal for the
-        channel commands of this cog, through `refuse`, so the log channel holds one line for it.
-        *what* names the refused command as the log reads it; it defaults to the interaction's own
-        command. Both branches of the guard, another job and the same one, are refusals.
+        The season and the division are found here, since the change is for the division by its
+        id; the channel's use is the setting's own `check`, made as the queue is asked and again
+        as the change starts. The queue's acknowledgement is the command's response, so nothing
+        is deferred.
         """
-        from leaguebot.core.services.channel_registry_service import channel_refusal
-
-        message = await channel_refusal(
-            self.bot.db_path, channel, setting, division_name=division_name
+        season = await self.bot.season_service.get_setup_or_active_season()
+        if season is None:
+            await refuse(interaction, NO_SEASON_REFUSAL, what=describe(interaction))
+            return
+        divisions = await self.bot.season_service.get_divisions(season.id)
+        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
+        if div is None:
+            await refuse(interaction, division_not_found(name), what=describe(interaction))
+            return
+        await self.bot.change_queue.ask(
+            kind,
+            {
+                "division_id": div.id,
+                "division_name": name,
+                "value": channel.id,
+                "channel_name": channel.name,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
-        if message is None:
-            return False
-
-        # Both callers answer before any defer. `refuse` follows whichever state the interaction
-        # is in, so a later caller that defers first is answered by a follow-up, not a 404.
-        await refuse(interaction, message, what=what or describe(interaction))
-        return True
 
     @division.command(
         name="lineup-channel",
@@ -3197,66 +3201,8 @@ class SeasonCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
-        import json as _json
-        season = await self.bot.season_service.get_setup_or_active_season()
-        if season is None:
-            await refuse(
-                interaction,
-                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                what=describe(interaction),
-            )
-            return
-        divisions = await self.bot.season_service.get_divisions(season.id)
-        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
-        if div is None:
-            await refuse(
-                interaction,
-                f"\u274c Division **{name}** not found in the current season.",
-                what=describe(interaction),
-            )
-            return
-        if await self._refuse_channel_in_use(
-            interaction, channel, "lineup", division_name=div.name
-        ):
-            return
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            # Read the channel being replaced first, so the audit says what it moved from
-            # (issue #212).
-            old_row = await (
-                await db.execute(
-                    "SELECT lineup_channel_id FROM divisions WHERE id = ?", (div.id,)
-                )
-            ).fetchone()
-            old_id = old_row["lineup_channel_id"] if old_row else None
-            await db.execute(
-                "UPDATE divisions SET lineup_channel_id = ? WHERE id = ?",
-                (channel.id, div.id),
-            )
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, 'SIGNUP_LINEUP_CHANNEL_SET', ?, ?, ?)",
-                (
-                    interaction.user.id,
-                    str(interaction.user),
-                    div.id,
-                    _json.dumps({"channel_id": old_id}),
-                    _json.dumps({"channel_id": channel.id}),
-                    now,
-                ),
-            )
-            await db.commit()
-        verb = "set" if old_id is None else "updated"
-        await interaction.response.send_message(
-            f"\u2705 Lineup channel for **{name}** {verb} to {channel.mention}.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division lineup-channel | Success\n"
-            f"  division: {name}\n"
-            f"  channel: #{channel.name}",
+        await self._ask_division_channel(
+            interaction, "core.setting.lineup_channel_id", name, channel
         )
 
     @division.command(
@@ -3271,66 +3217,8 @@ class SeasonCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
-        import json as _json
-        season = await self.bot.season_service.get_setup_or_active_season()
-        if season is None:
-            await refuse(
-                interaction,
-                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                what=describe(interaction),
-            )
-            return
-        divisions = await self.bot.season_service.get_divisions(season.id)
-        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
-        if div is None:
-            await refuse(
-                interaction,
-                f"\u274c Division **{name}** not found in the current season.",
-                what=describe(interaction),
-            )
-            return
-        if await self._refuse_channel_in_use(
-            interaction, channel, "calendar", division_name=div.name
-        ):
-            return
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            # Read the channel being replaced first, so the audit says what it moved from
-            # (issue #212).
-            old_row = await (
-                await db.execute(
-                    "SELECT calendar_channel_id FROM divisions WHERE id = ?", (div.id,)
-                )
-            ).fetchone()
-            old_id = old_row["calendar_channel_id"] if old_row else None
-            await db.execute(
-                "UPDATE divisions SET calendar_channel_id = ? WHERE id = ?",
-                (channel.id, div.id),
-            )
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, 'DIVISION_CALENDAR_CHANNEL_SET', ?, ?, ?)",
-                (
-                    interaction.user.id,
-                    str(interaction.user),
-                    div.id,
-                    _json.dumps({"channel_id": old_id}),
-                    _json.dumps({"channel_id": channel.id}),
-                    now,
-                ),
-            )
-            await db.commit()
-        verb = "set" if old_id is None else "updated"
-        await interaction.response.send_message(
-            f"\u2705 Calendar channel for **{name}** {verb} to {channel.mention}.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division calendar-channel | Success\n"
-            f"  division: {name}\n"
-            f"  channel: #{channel.name}",
+        await self._ask_division_channel(
+            interaction, "core.setting.calendar_channel_id", name, channel
         )
 
     @division.command(

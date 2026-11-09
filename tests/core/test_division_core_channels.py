@@ -245,7 +245,6 @@ _NO_SEASON = (
 
 
 @pytest.mark.parametrize("which", ALL)
-@pytest.mark.xfail(strict=True, reason="#283: the audit entry is stamped by the host's clock, not the queue's")
 async def test_the_assignment_is_audited(tmp_path, which):
     """A channel change nobody recorded cannot be explained afterwards, and these are exactly
     the settings a league argues about when a post lands in the wrong place. The entry is
@@ -340,7 +339,6 @@ async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path, 
 
 
 @pytest.mark.parametrize("which", ALL)
-@pytest.mark.xfail(strict=True, reason=_NOT_QUEUED_YET)
 async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
     tmp_path, which, monkeypatch
 ):
@@ -409,7 +407,6 @@ async def _claim_the_channel(db_path: str) -> None:
         pytest.param("channel_claimed", _claim_the_channel, _IN_USE, id="channel_claimed"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=_NOT_QUEUED_YET)
 async def test_a_change_is_refused_as_it_starts_where_its_ask_no_longer_holds(
     tmp_path, which, case, meanwhile, refused
 ):

@@ -525,6 +525,7 @@ def register_change_types(bot: LeagueBot) -> None:
         log_channel_setting,
     )
     from leaguebot.core.services.channel_tell_change import channel_tell_change
+    from leaguebot.core.services.division_settings import division_channel_settings
     from leaguebot.core.services.clean_change import clean_change
     from leaguebot.core.services.hub_service import hub_refresh_change
     from leaguebot.core.services.lineup_posting import lineup_post_change
@@ -1073,6 +1074,7 @@ def register_change_types(bot: LeagueBot) -> None:
         base_role_setting(config=bot.config_service, placement=bot.placement_service),
         driver_role_setting(config=bot.config_service, placement=bot.placement_service),
         hub_channel_setting(config=bot.config_service),
+        *division_channel_settings(seasons=bot.season_service),
         *points_settings(modules=bot.module_service, seasons=bot.season_service),
         *amendment_settings(modules=bot.module_service, seasons=bot.season_service),
         *image_settings(
