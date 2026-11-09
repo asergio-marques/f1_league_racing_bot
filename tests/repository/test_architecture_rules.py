@@ -2833,10 +2833,10 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/placement_service.py", "PlacementService.assign_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.delete_team_role_config"):
         (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.move_on"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.move_on"): (1, PASS["attendance"]),
     ("core/services/placement_service.py", "PlacementService.rename_team_role_config"):
         (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.sack_on"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.sack_on"): (1, PASS["attendance"]),
     ("core/services/placement_service.py", "PlacementService.set_team_role_config"):
         (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.unassign_driver"): (1, PASS["core"]),
