@@ -27,8 +27,8 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, TypeVar
 
 import discord
@@ -140,29 +140,6 @@ log = logging.getLogger(__name__)
 #: drawing, and what it hands back once asked (or where there is nothing to ask).
 _T = TypeVar("_T")
 _R = TypeVar("_R")
-
-# ---------------------------------------------------------------------------
-# The season being set up, as the commands see it
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class PendingDivision:
-    name: str = ""
-    role_id: int = 0
-    channel_id: int | None = None
-    tier: int = 0
-    rounds: list[dict[str, Any]] = field(default_factory=list)
-
-
-@dataclass
-class PendingConfig:
-    start_date: date = field(default_factory=date.today)
-    divisions: list[PendingDivision] = field(default_factory=list)
-    season_id: int = 0  # set after first DB snapshot; 0 = not yet persisted
-    season_number: int = 0  # set after first DB snapshot
-    game_edition: int = 0  # positive integer (e.g. 25 for F1 25)
-
 
 # ---------------------------------------------------------------------------
 # Module-level helpers
