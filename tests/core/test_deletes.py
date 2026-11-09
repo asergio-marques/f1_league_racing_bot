@@ -290,9 +290,13 @@ async def _delete(db_path: str, deleted: str, row_id: int) -> None:
             await SeasonService.delete_season(db, row_id, **delete_hooks(*SEASON_HOOKS))
             await db.commit()
     elif deleted == "division":
-        await SeasonService(db_path).delete_division(row_id, **delete_hooks(*DIVISION_HOOKS))
+        async with get_connection(db_path) as db:
+            await SeasonService.delete_division_on(db, row_id, **delete_hooks(*DIVISION_HOOKS))
+            await db.commit()
     elif deleted == "round":
-        await SeasonService(db_path).delete_round(row_id, **delete_hooks(*ROUND_HOOKS))
+        async with get_connection(db_path) as db:
+            await SeasonService.delete_round_on(db, row_id, **delete_hooks(*ROUND_HOOKS))
+            await db.commit()
     else:
         async with get_connection(db_path) as db:
             await delete_driver_profiles(
@@ -319,8 +323,16 @@ _LET_GO = {
 
 @pytest.mark.parametrize("deleted", [
     pytest.param("season"),
-    "division",
-    "round",
+    pytest.param("division", marks=pytest.mark.xfail(
+        strict=True,
+        reason="#283: SeasonService.delete_division_on, the delete on a save's connection, is not "
+        "yet written",
+    )),
+    pytest.param("round", marks=pytest.mark.xfail(
+        strict=True,
+        reason="#283: SeasonService.delete_round_on, the delete on a save's connection, is not "
+        "yet written",
+    )),
     pytest.param(_DRIVER_KEEPING_HISTORY),
     pytest.param(_DRIVER_LOSING_HISTORY),
 ])

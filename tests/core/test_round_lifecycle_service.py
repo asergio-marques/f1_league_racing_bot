@@ -47,6 +47,11 @@ SEASON_ID = 1
 DIVISION_ID = 11
 ACTOR_ID = 77
 
+#: Why the deletes below fail until the build: they call the form that does not exist yet.
+_XFAIL_ON = (
+    "#283: SeasonService.delete_round_on, the delete on a save's connection, is not yet written"
+)
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -157,6 +162,15 @@ async def _cancel(db_path: str, round_id: int) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+async def _delete_round(db_path: str, round_id: int) -> None:
+    """Delete *round_id* as `/round delete`'s save deletes it: on one connection, with the
+    builder's delete hook, committed once it is done and rolled back where it raises."""
+    async with get_connection(db_path) as db:
+        await SeasonService.delete_round_on(db, round_id, **delete_hooks(*ROUND_HOOKS))
+        await db.commit()
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 @pytest.mark.parametrize(
     "rounds, expected",
     [
@@ -175,7 +189,7 @@ async def test_deleting_a_round_renumbers_the_rest(tmp_path, rounds, expected):
     the others untouched."""
     db_path = await _make_db(tmp_path, rounds=rounds)
 
-    await SeasonService(db_path).delete_round(2, **delete_hooks(*ROUND_HOOKS))
+    await _delete_round(db_path, 2)
 
     assert await _numbers(db_path) == expected
 
@@ -193,16 +207,18 @@ async def test_renumbering_follows_the_calendar_not_the_old_numbers(tmp_path):
     assert await _numbers(db_path) == [(1, 1), (3, 2), (2, 3)]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_deleting_a_round_that_does_not_exist_is_a_no_op(tmp_path):
     """Two managers deleting the same round; the second must not renumber a division on
     the strength of a round that has already gone."""
     db_path = await _make_db(tmp_path, rounds=((1, 1, 7, NOT_RUN),))
 
-    await SeasonService(db_path).delete_round(999, **delete_hooks(*ROUND_HOOKS))
+    await _delete_round(db_path, 999)
 
     assert await _numbers(db_path) == [(1, 1)]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_round_delete_that_fails_part_way_leaves_everything_as_it_was(tmp_path):
     """Rounds 1, 2 and 3; round 2 has a session and a drawn weather phase. Deleting round 2
     fails in the renumbering. It is one save, so nothing of it is kept: every round is there
@@ -223,7 +239,7 @@ async def test_a_round_delete_that_fails_part_way_leaves_everything_as_it_was(tm
         await db.commit()
 
     with pytest.raises(sqlite3.IntegrityError, match="renumbering failed"):
-        await SeasonService(db_path).delete_round(2, **delete_hooks(*ROUND_HOOKS))
+        await _delete_round(db_path, 2)
 
     assert await _numbers(db_path) == [(1, 1), (2, 2), (3, 3)]
     async with get_connection(db_path) as db:
