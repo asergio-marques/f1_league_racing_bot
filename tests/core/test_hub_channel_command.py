@@ -35,13 +35,13 @@ from leaguebot.core.cogs.bot_cog import BotCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services import hub_service
 from tests.support.change_queue import (
+    PAST_THE_STOP,
     Clock,
     acknowledgement,
     change_rows,
     http_error,
     league_bot,
     league_queue,
-    PAST_THE_STOP,
     member,
     retry_job,
     run_queue,
