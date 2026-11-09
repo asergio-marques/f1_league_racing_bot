@@ -41,7 +41,6 @@ from tests.support.season_league import (
     reply,
 )
 
-_XFAIL = "#283: the configuration confirmation is not yet a change on the queue"
 
 WAITING = (
     "✅ Season #3's configuration is confirmed. The season now waits for its signup window — "
@@ -116,7 +115,6 @@ def _as_naive(stamp: str) -> datetime:
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 @pytest.mark.parametrize(
     "signup, test_mode, stage, told",
     [
@@ -128,8 +126,8 @@ def _as_naive(stamp: str) -> datetime:
 async def test_the_stage_the_signup_settings_the_audit_entry_and_the_line_are_one_change(
     tmp_path, monkeypatch, signup, test_mode, stage, told,
 ):
-    """Admin presses ✅ Confirm configuration on season 3's review; the queue's clock is forty
-    days on from the host's when it runs. One confirmation is asked of the queue, and once it has
+    """Admin presses ✅ Confirm configuration on season 3's review; the queue's clock is five
+    minutes on from the host's when it runs, within the reply's reach. One confirmation is asked of the queue, and once it has
     run the season is at *stage*, still SETUP; the signup settings are kept for season 3 where
     the signup module is on, stamped with the queue's clock, and none where it is off; one
     CONFIGURATION_CONFIRMED entry names Admin, the season leaving Configuration for *stage*; one
