@@ -25,9 +25,8 @@ to Ongoing are one save, reading nothing but the connection it is handed, so a f
 season in Placements with nothing written and the queue stops at it to retry. A retry judges
 the approval again before it saves (`apply`, `judge`), the setup being open meanwhile.
 **Everything else
-follows the save as a job of its own**, each of which stops the queue where it fails: letting go of
-the setup held in memory (it cannot be discarded either: the bot would go on holding the season's
-setup, and `/round amend` would refuse its rounds until it restarts), arming the timed work (after the save, so that a stop before it leaves
+follows the save as a job of its own**, each of which stops the queue where it fails: arming the
+timed work (after the save, so that a stop before it leaves
 no job armed against a season still in Placements; it cannot be discarded, since without it no
 round would ever run, and only Retry moves the queue on), each driver's roles, the notice that the
 season's posts are being made, each division's lineup, calendar, opening standings and opening

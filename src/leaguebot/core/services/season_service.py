@@ -335,7 +335,7 @@ class SeasonService:
         divisions exist only in Placements, so that rebuild ran while the league was seating
         its grid: every `/round add` unseated every driver and seated them again from memory
         in a separate commit, and anything it did not know to save — a new setting, or a
-        weather channel set straight to the DB after the PendingConfig was loaded — was
+        weather channel set straight to the DB after the PendingConfig was read — was
         silently destroyed. What this writes instead is only what the config holds and the DB
         does not:
 
@@ -345,9 +345,9 @@ class SeasonService:
           written — no setup command changes its start date or game edition once it exists;
         - **a division named in the config and absent from the DB**, inserted. A division
           already in the DB is **never written**: its name, role, tier and channels are each
-          owned by a command that writes them directly and reloads the PendingConfig, which is
-          therefore never newer than the DB for them. One in the DB and missing from the
-          config is left alone and logged, not deleted — removal has its own command;
+          owned by a command that writes them directly, the PendingConfig being read from the DB
+          whenever a command asks for it and so never newer than the DB for them. One in the DB
+          and missing from the config is left alone and logged, not deleted — removal has its own command;
         - **rounds**, per division, matched on (format, track, scheduled time). A round the DB
           holds and the config does not is deleted, one the config holds and the DB does not
           is inserted, and a round number is updated only where it moved. A division whose
@@ -438,7 +438,7 @@ class SeasonService:
         return season_id, season_number, unseeded
 
     async def load_all_setup_seasons(self) -> list[dict]:
-        """Return raw data for every SETUP-status season to rebuild PendingConfig on startup."""
+        """Return raw data for every SETUP-status season."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, start_date, season_number, game_edition "
