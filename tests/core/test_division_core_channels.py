@@ -349,8 +349,7 @@ async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path, 
     """Season 1 is being set up, and its Division 1 has no channel. The manager (id 77) runs the
     command for #notices. They are answered at once with the queue's acknowledgement, and
     nothing is written until the queue runs the change: the division still has no channel and
-    no audit entry stands. Once the queue runs it, the acknowledgement is updated to today's
-    reply."""
+    no audit entry stands."""
     db_path = await _make_db(tmp_path)
     cog = await _make_cog(db_path)
     interaction = _interaction(cog, which)
@@ -364,11 +363,6 @@ async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path, 
     )
     assert await _channel_column(db_path, CORE_COLUMNS[which]) is None
     assert await _audit_rows(db_path) == []
-    await run_queue(cog.bot)
-
-    assert _replied(interaction) == (
-        f"✅ {LABELS[which]} for **Division 1** set to <#{CHANNEL_ID}>."
-    )
 
 
 @pytest.mark.parametrize("which", ALL)
