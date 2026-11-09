@@ -314,6 +314,9 @@ def driver_move_change(*, placement: PlacementService) -> ChangeType:
         if refused is not None:
             return refused
         try:
+            await placement.guard_move(
+                int(payload["to_division_id"]), season_id, str(payload["team_name"])
+            )
             async with get_connection(ctx.db_path) as db:
                 await placement.judge_move_on(
                     db, driver_profile_id=int(payload["driver_profile_id"]),
@@ -321,9 +324,6 @@ def driver_move_change(*, placement: PlacementService) -> ChangeType:
                     to_division_id=int(payload["to_division_id"]),
                     team_name=str(payload["team_name"]),
                 )
-            await placement.guard_move(
-                int(payload["to_division_id"]), season_id, str(payload["team_name"])
-            )
         except ValueError as refusal:
             return Verdict.refuse(f"⛔ {refusal}")
         return Verdict.go()
