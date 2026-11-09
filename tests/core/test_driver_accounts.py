@@ -29,6 +29,7 @@ from leaguebot.core.services.driver_service import (
 )
 from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
+from tests.support.driver_transitions import transitioned
 
 SERVER_ID = 2430
 A, B, C = "1111", "2222", "3333"
@@ -89,8 +90,8 @@ async def test_creating_a_profile_lists_its_account(tmp_path):
 async def test_a_profile_created_by_the_service_lists_its_account(tmp_path):
     """The service's own creation path, which a raw INSERT above does not exercise."""
     db_path = await _make_db(tmp_path)
-    profile = await DriverService(db_path).transition(
-        A, DriverState.PENDING_SIGNUP_COMPLETION
+    profile = await transitioned(
+        db_path, A, DriverState.PENDING_SIGNUP_COMPLETION
     )
     assert await _listed(db_path) == [(profile.id, A)]
 

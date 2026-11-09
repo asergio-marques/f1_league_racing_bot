@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.support.driver_transitions import transitioned
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -21,11 +23,6 @@ async def db_path(tmp_path):
         await db.execute("INSERT INTO server_configs (server_id) VALUES (1)")
         await db.commit()
     return path
-
-
-def _make_svc(db_path):
-    from leaguebot.core.services.driver_service import DriverService
-    return DriverService(db_path)
 
 
 async def _seed_driver(db_path, user_id: str, state: str) -> None:
@@ -80,8 +77,7 @@ async def test_an_allowed_transition_lands_on_its_target(db_path, from_state, to
                 "UPDATE driver_profiles SET former_driver = 1 WHERE discord_user_id = 'u1'"
             )
             await db.commit()
-    svc = _make_svc(db_path)
-    result = await svc.transition("u1", DriverState(to_state))
+    result = await transitioned(db_path, "u1", DriverState(to_state))
     assert result is not None
     assert result.current_state == DriverState(to_state)
 
@@ -100,9 +96,8 @@ async def test_a_transition_the_table_does_not_allow_raises(db_path, from_state,
     straight to Assigned."""
     from leaguebot.core.models.driver_profile import DriverState
     await _seed_driver(db_path, "u1", from_state)
-    svc = _make_svc(db_path)
     with pytest.raises(ValueError):
-        await svc.transition("u1", DriverState(to_state))
+        await transitioned(db_path, "u1", DriverState(to_state))
 
 
 # ---------------------------------------------------------------------------
@@ -135,8 +130,7 @@ class TestSignupDataClearing:
         import aiosqlite
         from leaguebot.core.models.driver_profile import DriverState
         await self._seed_former_driver_with_record(db_path, "fd1")
-        svc = _make_svc(db_path)
-        result = await svc.transition("fd1", DriverState.NOT_SIGNED_UP)
+        result = await transitioned(db_path, "fd1", DriverState.NOT_SIGNED_UP)
         assert result is not None  # former driver profile retained
         assert result.current_state == DriverState.NOT_SIGNED_UP
         # The signup is kept whole

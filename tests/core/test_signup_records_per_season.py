@@ -12,6 +12,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.signup.models.signup_module import SignupRecord
 from leaguebot.signup.services.signup_module_service import SignupModuleService
+from tests.support.driver_transitions import transitioned
 
 
 async def _save_record(svc, db_path, record):
@@ -127,15 +128,13 @@ async def test_a_driver_leaving_keeps_their_signups_under_the_season(db_path):
     """Signups are keyed by the Discord account, and survive the driver whatever becomes of
     the profile — deleted at the season's end where they never raced."""
     from leaguebot.core.models.driver_profile import DriverState
-    from leaguebot.core.services.driver_service import DriverService
 
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
     await _save_record(svc, db_path, _record())
-    drivers = DriverService(db_path)
-    await drivers.transition(USER, DriverState.PENDING_SIGNUP_COMPLETION)
+    await transitioned(db_path, USER, DriverState.PENDING_SIGNUP_COMPLETION)
 
-    await drivers.transition(USER, DriverState.NOT_SIGNED_UP)
+    await transitioned(db_path, USER, DriverState.NOT_SIGNED_UP)
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM driver_profiles")
         await db.commit()

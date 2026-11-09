@@ -36,6 +36,7 @@ from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.driver_service import DriverService
 from tests.support.teams import seed_team_instances
 from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
+from tests.support.driver_transitions import transitioned
 
 SERVER_ID = 9108
 OLD_USER = "4242"
@@ -232,9 +233,7 @@ async def test_an_ordinary_driver_is_kept_pending_deletion(tmp_path):
     pending deletion, and the season's end deletes them."""
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, state="UNASSIGNED", former=False)
-    service = DriverService(db_path)
-
-    result = await service.transition(OLD_USER, DriverState.NOT_SIGNED_UP)
+    result = await transitioned(db_path, OLD_USER, DriverState.NOT_SIGNED_UP)
 
     assert result is not None
     assert result.current_state is DriverState.NOT_SIGNED_UP
@@ -247,9 +246,7 @@ async def test_a_former_driver_is_kept_with_their_signup(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, state="UNASSIGNED", former=True)
     await _seed_signup_record(db_path)
-    service = DriverService(db_path)
-
-    result = await service.transition(OLD_USER, DriverState.NOT_SIGNED_UP)
+    result = await transitioned(db_path, OLD_USER, DriverState.NOT_SIGNED_UP)
 
     assert result is not None
     assert await _profile_count(db_path) == 1
@@ -266,10 +263,8 @@ async def test_a_transition_from_no_profile_creates_one(tmp_path):
     """An absent profile is NOT_SIGNED_UP, so a driver starting a signup has one made for
     them rather than being refused."""
     db_path = await _make_db(tmp_path)
-    service = DriverService(db_path)
-
-    profile = await service.transition(
-        OLD_USER, DriverState.PENDING_SIGNUP_COMPLETION
+    profile = await transitioned(
+        db_path, OLD_USER, DriverState.PENDING_SIGNUP_COMPLETION
     )
 
     assert profile is not None
@@ -280,10 +275,8 @@ async def test_a_transition_from_no_profile_creates_one(tmp_path):
 async def test_a_disallowed_transition_from_no_profile_names_what_is_allowed(tmp_path):
     """The caller is usually a command, and the message reaches a manager."""
     db_path = await _make_db(tmp_path)
-    service = DriverService(db_path)
-
     with pytest.raises(ValueError, match="Allowed targets"):
-        await service.transition(OLD_USER, DriverState.ASSIGNED)
+        await transitioned(db_path, OLD_USER, DriverState.ASSIGNED)
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +457,7 @@ async def test_the_flag_decides_whether_a_departure_destroys_the_profile(tmp_pat
     service = DriverService(db_path)
     await service.set_former_driver(OLD_USER, True, ACTOR_ID, "Manager")
 
-    await service.transition(OLD_USER, DriverState.NOT_SIGNED_UP)
+    await transitioned(db_path, OLD_USER, DriverState.NOT_SIGNED_UP)
 
     assert await _profile_count(db_path) == 1
 
