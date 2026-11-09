@@ -284,59 +284,64 @@ def test_a_long_list_of_faults_is_capped():
 # `/round add` now catches it at the command, so all three agree.
 
 
-async def _run_round_add(interaction, cog, **kwargs):
-    body = undecorate(SeasonCog.round_add)
-    await body(cog, interaction, **kwargs)
+async def _run_round_add(league, **kwargs):
+    """`/round add` as the league manager Admin (4242) runs it: the interaction."""
+    from tests.support.settings_league import interaction
+
+    asked = interaction(league.bot, "round add")
+    await undecorate(SeasonCog.round_add)(SeasonCog(league.bot), asked, **kwargs)
+    return asked
 
 
-async def test_round_add_refuses_a_datetime_the_division_already_holds(monkeypatch):
-    cfg = _pending()
-    cfg.divisions[0].rounds = [_round(14)]
-    cog = _cog_with(cfg)
-    interaction = _interaction()
-    monkeypatch.setattr(
-        season_cog.track_service,
-        "resolve_track_name",
-        AsyncMock(return_value="Hungaroring"),
-    )
+#: Pro, holding a round at the Hungaroring on 14 June 2026 at 18:00 UTC.
+_PRO_HOLDING_THE_14TH = (
+    ("Pro", 1, 10, (("NORMAL", "Hungaroring", datetime(2026, 6, 14, 18, 0)),)),
+)
 
-    await _run_round_add(
-        interaction,
-        cog,
-        division_name="Pro",
-        format="NORMAL",
-        scheduled_at="2026-06-14T18:00",
+
+async def test_round_add_refuses_a_datetime_the_division_already_holds(tmp_path):
+    """Season #1 is being set up, in Placements, Pro holding round 1 at the Hungaroring on 14 June
+    2026 at 18:00 UTC. The league manager runs `/round add` for Pro, a NORMAL round at track 14 on
+    14 June at 18:00. They are refused with the clash, saying the round was not added, nothing is
+    asked of the change queue, and Pro holds its one round."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import said
+    from tests.support.setup_rounds import round_rows, setup_league
+
+    league = await setup_league(tmp_path, divisions=_PRO_HOLDING_THE_14TH)
+
+    asked = await _run_round_add(
+        league, division_name="Pro", format="NORMAL", scheduled_at="2026-06-14T18:00",
         track="14",
     )
 
-    reply = interaction.followup.send.await_args.args[0]
+    [reply] = said(asked)
     assert "already holds round 1" in reply
     assert "not** added" in reply
-    cog._snapshot_pending.assert_not_awaited()
+    assert await change_rows(league.db_path) == []
+    assert len(await round_rows(league.db_path, "Pro")) == 1
 
 
-async def test_round_add_still_accepts_a_free_moment(monkeypatch):
-    cfg = _pending()
-    cfg.divisions[0].rounds = [_round(14)]
-    cog = _cog_with(cfg)
-    interaction = _interaction()
-    monkeypatch.setattr(
-        season_cog.track_service,
-        "resolve_track_name",
-        AsyncMock(return_value="Hungaroring"),
-    )
+async def test_round_add_still_accepts_a_free_moment(tmp_path):
+    """Season #1 is being set up, in Placements, Pro holding round 1 at the Hungaroring on 14 June
+    2026 at 18:00 UTC. The league manager runs `/round add` for Pro, a NORMAL round at track 14 on
+    21 June at 18:00, and the queue runs it. Pro holds two rounds, the new one round 2, its track
+    stored by the name the bot knows it by, the Hungaroring."""
+    from tests.support.change_queue import run_queue
+    from tests.support.setup_rounds import round_rows, setup_league
+
+    league = await setup_league(tmp_path, divisions=_PRO_HOLDING_THE_14TH)
 
     await _run_round_add(
-        interaction,
-        cog,
-        division_name="Pro",
-        format="NORMAL",
-        scheduled_at="2026-06-21T18:00",
+        league, division_name="Pro", format="NORMAL", scheduled_at="2026-06-21T18:00",
         track="14",
     )
+    await run_queue(league.bot)
 
-    assert len(_saved(cog).divisions[0].rounds) == 2
-    cog._snapshot_pending.assert_awaited_once()
+    assert await round_rows(league.db_path, "Pro") == [
+        (1, "NORMAL", "Hungaroring", "2026-06-14T18:00:00"),
+        (2, "NORMAL", "Hungaroring", "2026-06-21T18:00:00"),
+    ]
 
 
 # ── Discord's own limits on a modal ───────────────────────────────────────

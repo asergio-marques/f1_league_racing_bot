@@ -1,8 +1,8 @@
 """The season-setup commands defer before they do their work.
 
-Each of `/round add` and `/round amend` writes the SETUP season through
-`_snapshot_pending`, and `/round add` and `/round amend` also load and parse
-the calendar template to check its capacity. Until issue #147 the write rebuilt the whole
+`/round amend` writes the SETUP season through `_snapshot_pending`, and `/round add` asks the
+change queue for its change, whose check, judged at the ask, loads and parses the calendar
+template to check its capacity (#283). Until issue #147 the write rebuilt the whole
 season, and on a season holding more than one division that work outlasted Discord's
 three-second window: the interaction token expired, and the reply raised `404 Unknown
 interaction` *after* the round had already been written. What a league manager saw was a
@@ -132,23 +132,20 @@ async def _call(coro_method, interaction, **kwargs):
     await coro_method.callback(*coro_method.binding_args, interaction, **kwargs)
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: /round add does not yet ask the change queue for core.round_add"
+)
 async def test_round_add_defers_before_touching_the_database(monkeypatch):
-    """The reported bug: the round was written, then the reply hit an expired token."""
+    """The reported bug: the round was written, then the reply hit an expired token. The manager
+    runs `/round add` for Pro, a NORMAL round at "14 – Hungaroring" on 22 October 2026 at 18:00:
+    the command defers before anything else, then asks the change queue for the round, whose
+    check, judged at the ask, may load the calendar template (#283)."""
     cog = _cog(_pending())
     interaction = _interaction()
 
     order: list[str] = []
     interaction.response.defer = AsyncMock(side_effect=lambda **_: order.append("defer"))
-
-    async def _snapshot(cfg):
-        order.append("snapshot")
-
-    async def _overflow(would_hold):
-        order.append("overflow")
-        return None
-
-    monkeypatch.setattr(cog, "_snapshot_pending", _snapshot)
-    monkeypatch.setattr(cog, "_calendar_round_overflow", _overflow)
+    cog.bot.change_queue.ask = AsyncMock(side_effect=lambda *_a, **_k: order.append("ask"))
     monkeypatch.setattr(
         "leaguebot.core.services.track_service.resolve_track_name",
         AsyncMock(return_value="Hungaroring"),
@@ -166,8 +163,7 @@ async def test_round_add_defers_before_touching_the_database(monkeypatch):
     assert order and order[0] == "defer", (
         f"deferred too late: {order} — the slow work must not precede the defer"
     )
-    assert "snapshot" in order, f"the round was never written: {order}"
-    interaction.followup.send.assert_awaited()
+    assert "ask" in order, f"the round was never asked of the change queue: {order}"
 
 
 @pytest.mark.parametrize(
