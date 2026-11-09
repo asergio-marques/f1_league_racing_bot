@@ -558,6 +558,7 @@ async def test_a_driver_move_and_its_audit_entry_and_line_are_one_save_then_role
     assert await _seated(league) == _STANDING
     assert league.revoked == {} and league.granted == {}
     assert league.texts(DIVISIONS[PRO][3].lineup) == []
+    assert league.texts(DIVISIONS[AM][3].lineup) == []
     await run_queue(league.bot)
 
     assert await _seated(league) == {**_STANDING, LEWIS: ("Am", "McLaren", True)}
@@ -634,7 +635,7 @@ async def test_a_failed_driver_move_moves_nothing(tmp_path):
     Once a league admin discards the stopped job, the reply says "Nothing was moved: **Lewis**
     stays where they were. Run `/driver move` again."; and the lane is clear."""
     from tests.support.change_queue import discard_job, run_queue, stopped_job
-    from tests.support.season_league import DIVISIONS, LEWIS, PRO
+    from tests.support.season_league import AM, DIVISIONS, LEWIS, PRO
     from tests.support.settings_league import audit_rows, fault_in, last_said, log_lines
 
     league = await _ongoing(tmp_path)
@@ -647,6 +648,7 @@ async def test_a_failed_driver_move_moves_nothing(tmp_path):
     assert not any("| Success" in line for line in await log_lines(league))
     assert league.revoked == {} and league.granted == {}
     assert league.texts(DIVISIONS[PRO][3].lineup) == []
+    assert league.texts(DIVISIONS[AM][3].lineup) == []
     assert await stopped_job(league.db_path) is not None
 
     await discard_job(league.bot)
@@ -713,7 +715,7 @@ async def test_a_driver_move_is_judged_again_as_it_starts(tmp_path, meanwhile, r
     the meanwhile left them, no audit entry is written, the log channel holds the refusal alone, no role is
     touched, no lineup posted, and the queue is not stopped."""
     from tests.support.change_queue import run_queue, stopped_job
-    from tests.support.season_league import DIVISIONS, LEWIS, PRO
+    from tests.support.season_league import AM, DIVISIONS, LEWIS, PRO
     from tests.support.settings_league import audit_rows, last_said, log_lines
 
     league = await _ongoing(tmp_path)
@@ -727,6 +729,7 @@ async def test_a_driver_move_is_judged_again_as_it_starts(tmp_path, meanwhile, r
     assert await log_lines(league) == [_refusal(reply)]
     assert league.revoked == {} and league.granted == {}
     assert league.texts(DIVISIONS[PRO][3].lineup) == []
+    assert league.texts(DIVISIONS[AM][3].lineup) == []
     assert await stopped_job(league.db_path) is None
 
 
