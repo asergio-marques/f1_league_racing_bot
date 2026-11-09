@@ -462,25 +462,29 @@ def _shifted(rounds, **offset) -> list[tuple[int, str, str, datetime]]:
 async def test_a_duplicate_its_rounds_teams_audit_entry_and_line_are_one_save(tmp_path):
     """The core specification's record of what changed, and its rule that a duplicated division
     inherits none of its source's channels. Season #1 is being set up, in Placements, holding Pro
-    (tier 1, role 10, forecast channel 600) with a normal round at Silverstone on 1 November and a
-    sprint at Monza on 8 November, both at 18:00 UTC, as the database alone holds it after a
-    restart; the league's list of teams holds Alpha (Alpha Racing, two seats); the queue's clock
-    reads 22 October 2026. The league manager Admin (4242) runs `/division duplicate` of Pro as Am
-    at tier 2, mentioning role 556, shifted by one day and an hour and a half. They are answered at
-    once with the queue's acknowledgement, naming its first job, and nothing is saved until the
-    queue runs the change. Once it has, the season holds Pro and Am (tier 2, role 556, no forecast
-    channel); Am holds round 1, normal at Silverstone, on 2 November, and round 2, a sprint at
-    Monza, on 9 November, both at 19:30 UTC; Am has the teams Alpha (Alpha Racing, two empty seats)
-    and Reserve, with no seats; one audit entry, `DIVISION_DUPLICATED`, by Admin, on Am, stamped
-    with the queue's clock, records it as replacing nothing, with the source's id and the offset;
-    the log channel holds the success line alone; and the acknowledgement is updated to today's
-    reply, word for word, with no warning, the rounds lying after the queue's clock."""
+    (tier 1, role 10, forecast channel 600, lineup channel 601, calendar channel 602) with a normal
+    round at Silverstone on 1 November and a sprint at Monza on 8 November, both at 18:00 UTC, as
+    the database alone holds it after a restart; the league's list of teams holds Alpha (Alpha
+    Racing, two seats); the queue's clock reads 22 October 2026. The league manager Admin (4242)
+    runs `/division duplicate` of Pro as Am at tier 2, mentioning role 556, shifted by one day and
+    an hour and a half. They are answered at once with the queue's acknowledgement, naming its first
+    job, and nothing is saved until the queue runs the change. Once it has, the season holds Pro and
+    Am (tier 2, role 556, no forecast, lineup or calendar channel); Am holds round 1, normal at
+    Silverstone, on 2 November, and round 2, a sprint at Monza, on 9 November, both at 19:30 UTC; Am
+    has the teams Alpha (Alpha Racing, two empty seats) and Reserve, with no seats; one audit entry,
+    `DIVISION_DUPLICATED`, by Admin, on Am, stamped with the queue's clock, records it as replacing
+    nothing, with the source's id and the offset; the log channel holds the success line alone; and
+    the acknowledgement is updated to today's reply, word for word, with no warning, the rounds
+    lying after the queue's clock."""
     from tests.support.change_queue import run_queue, step_rows
     from tests.support.settings_league import audit_rows, last_said, log_lines, said
 
     league = await _duplicate_league(tmp_path)
     async with get_connection(league.db_path) as db:
-        await db.execute("UPDATE divisions SET forecast_channel_id = 600 WHERE name = 'Pro'")
+        await db.execute(
+            "UPDATE divisions SET forecast_channel_id = 600, lineup_channel_id = 601,"
+            " calendar_channel_id = 602 WHERE name = 'Pro'"
+        )
         await db.commit()
     asked = await ask_duplicate(league, "Pro", "Am", 2, role_id=556, day_offset=1, hour_offset=1.5)
 
@@ -501,12 +505,13 @@ async def test_a_duplicate_its_rounds_teams_audit_entry_and_line_are_one_save(tm
     ]
     async with get_connection(league.db_path) as db:
         cursor = await db.execute(
-            "SELECT id, season_id, forecast_channel_id FROM divisions WHERE name = 'Am'"
+            "SELECT id, season_id, forecast_channel_id, lineup_channel_id, calendar_channel_id"
+            " FROM divisions WHERE name = 'Am'"
         )
-        division_id, season_id, forecast_channel_id = tuple(await cursor.fetchone())
+        division_id, season_id, *channels = tuple(await cursor.fetchone())
         cursor = await db.execute("SELECT id FROM divisions WHERE name = 'Pro'")
         source_id = (await cursor.fetchone())[0]
-    assert forecast_channel_id is None
+    assert channels == [None, None, None]
     new = {
         "division_id": division_id,
         "season_id": season_id,
@@ -619,7 +624,7 @@ async def test_a_division_duplicate_is_judged_again_as_it_starts(
     """Season #1 is being set up, in Placements, holding Pro (tier 1, role 10) with its two rounds.
     The manager runs `/division duplicate` of Pro, and nothing is saved at the ask. Either it is
     asked second, after a duplicate of Pro as Am at tier 2 that it races to the same end, being
-    asked as am at tier 3 or as Rookie at tier 2, each acknowledged; or, asked as Am at tier 2,
+    asked as am at tier 3 or as Rookie at tier 2; or, asked as Am at tier 2,
     before the queue runs it Pro is deleted with its rounds, Pro is deleted and another division
     named Pro is added at tier 3 with role 11 and no rounds, or the season is approved and under
     way. The queue runs. The first duplicate, where there is one, goes through; the second, or the
@@ -710,9 +715,9 @@ async def test_a_shifted_round_landing_in_the_past_is_warned_about(tmp_path):
     refusing would make a manager delete the division and start again to correct an offset they
     can simply amend; and warned once, since a long calendar shifted backwards would otherwise
     post one identical warning a round. Season #1 is being set up, in Placements, holding Pro with
-    its rounds on 1 and 8 November, stored without their zone, as every round is; the queue's clock
-    reads 22 October 2026. The manager runs `/division duplicate` of Pro as Am at tier 2, shifted
-    back thirty days, and the queue runs it. Am is created, its rounds moved back thirty days, to 2
+    its rounds on 1 and 8 November, stored without their zone, as setup_league lays them down; the
+    queue's clock reads 22 October 2026. The manager runs `/division duplicate` of Pro as Am at tier
+    2, shifted back thirty days, and the queue runs it. Am is created, its rounds moved back thirty days, to 2
     and 9 October, both in the past; the reply is today's, word for word, ending in one warning
     alone, naming the first of them."""
     from tests.support.change_queue import run_queue
