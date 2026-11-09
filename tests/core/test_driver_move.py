@@ -594,7 +594,9 @@ async def test_a_refused_role_move_is_reported_and_the_queue_goes_on(tmp_path):
     import discord
 
     from tests.support.change_queue import http_error, run_queue, stopped_job
-    from tests.support.season_league import AM_ROLE, LEWIS, MAX, MCLAREN_ROLE
+    from tests.support.season_league import (
+        AM_ROLE, FERRARI_ROLE, LEWIS, MAX, MCLAREN_ROLE, PRO_ROLE,
+    )
     from tests.support.settings_league import last_said, log_lines
 
     league = await _ongoing(tmp_path)
@@ -611,7 +613,8 @@ async def test_a_refused_role_move_is_reported_and_the_queue_goes_on(tmp_path):
     assert await _seated(league) == {
         **_STANDING, LEWIS: ("Am", "McLaren", True), MAX: ("Am", "McLaren", True),
     }
-    assert LEWIS in league.revoked and LEWIS not in league.granted
+    assert sorted(league.revoked[LEWIS]) == [PRO_ROLE, FERRARI_ROLE]
+    assert LEWIS not in league.granted
     assert last_said(lewis) == f"{_moved('Lewis')}\n⚠️ Done, but on Discord:\n• {problem}"
     assert _move_lines(await log_lines(league)) == [
         f"{_move_line('Lewis', LEWIS)}\n  not done: {_as_logged(problem)}", _move_line("Max", MAX),
