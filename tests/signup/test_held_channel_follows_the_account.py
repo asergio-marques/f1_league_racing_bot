@@ -158,10 +158,10 @@ async def test_a_held_channel_on_the_new_account_is_kept_and_the_other_deleted(
     The league manager runs `/driver reassign` of Valtteri onto 9001. Nothing is deleted until the
     queue runs. Once it has, Valtteri's channel is deleted and its record with it; 9001 keeps its
     channel and its record, no timer is armed for it and its own is not disarmed, so it is still
-    deleted when it was due, and neither channel's permissions are edited. Was `move_held_channel` called directly, asserting that `signup.channel.delete` was
-    asked of the queue and the old record stood until it ran; `test_wizard_changes.py`'s "driver
-    reassign asks the held channel's deletion" ran that change to the channel's deletion, and is
-    folded in here."""
+    deleted when it was due, and neither channel's permissions are edited. Was `move_held_channel`
+    called directly, asserting that `signup.channel.delete` was asked of the queue and the old
+    record stood until it ran; `test_wizard_changes.py`'s "driver reassign asks the held channel's
+    deletion" ran that change to the channel's deletion, and is folded in here."""
     from tests.support.change_queue import run_queue
 
     league, _asked, held, theirs = await _reassign(tmp_path, monkeypatch, theirs=True)
@@ -275,11 +275,11 @@ async def test_permissions_discord_refuses_are_reported_and_the_reassign_stands(
 ):
     """Valtteri (106) holds his held channel, and Discord refuses to edit its permissions (403
     Missing Permissions). After `/driver reassign` of Valtteri onto 9001 has run, the reassign and
-    the record's move stand and the deletion timer names 9001; the reply is today's, then "⚠️
-    Done, but on Discord:" and a bullet, "the signup channel's permissions could not be moved:
-    Discord refused or failed a request from the bot", and the success line carries a "not done:"
-    line in the same words; the queue is not stopped. Until now the cog reported it with Discord's own
-    error text after the colon."""
+    the record's move stand and the deletion timer names 9001; the reply is today's, then "⚠️ Done,
+    but on Discord:" and a bullet, "the signup channel's permissions could not be moved: Discord
+    refused or failed a request from the bot", and the success line carries a "not done:" line in
+    the same words; the queue is not stopped. Until now the cog reported it with Discord's own error
+    text after the colon."""
     import discord
 
     from tests.core.test_driver_move import _as_logged

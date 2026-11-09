@@ -451,16 +451,15 @@ async def test_a_driver_merge_is_one_save_with_the_profiles_merged_hook(tmp_path
     """A merge, the core specification's joining of two drivers into one, with the modules' part in
     the same save. The season is in Placements; Valtteri (106) is Unassigned; a driver of past
     seasons, Not Signed Up and a former driver, has 9002 as his current account and 9006 as a past
-    one. The league
-    manager runs `/driver reassign` of Valtteri onto 9002, and the queue runs it. Valtteri, holding
-    the live season, is the driver kept: his current account is 9002 and he holds 106, 9002 and
-    9006, a former driver now; the other profile is gone. The profiles-merged hook is called once, with
-    Valtteri's profile and the other's, inside the save's transaction. Two audit entries, both by
-    Admin and stamped with the queue's clock: `DRIVER_PROFILES_MERGED`, the other profile's id
-    before and Valtteri's after, and `DRIVER_USER_ID_REASSIGN`, 106 before and 9002 after. The
-    reply is today's, "✅ Driver merged with the driver on <@9002>, <@9006>, and given that
-    account.", naming every account the other held, with 106 and 9006 his past accounts. Takes the place of `test_driver_cog.py`'s "a merge is reported as
-    one"."""
+    one. The league manager runs `/driver reassign` of Valtteri onto 9002, and the queue runs it.
+    Valtteri, holding the live season, is the driver kept: his current account is 9002 and he holds
+    106, 9002 and 9006, a former driver now; the other profile is gone. The profiles-merged hook is
+    called once, with Valtteri's profile and the other's, inside the save's transaction. Two audit
+    entries, both by Admin and stamped with the queue's clock: `DRIVER_PROFILES_MERGED`, the other
+    profile's id before and Valtteri's after, and `DRIVER_USER_ID_REASSIGN`, 106 before and 9002
+    after. The reply is today's, "✅ Driver merged with the driver on <@9002>, <@9006>, and given
+    that account.", naming every account the other held, with 106 and 9006 his past accounts. Takes
+    the place of `test_driver_cog.py`'s "a merge is reported as one"."""
     from tests.support.change_queue import run_queue
     from tests.support.season_league import UNASSIGNED, profile_id
     from tests.support.settings_league import last_said
@@ -777,29 +776,27 @@ _SHARED_PRO = (
 async def test_a_driver_reassign_is_refused_at_the_ask(
     tmp_path, monkeypatch, before, old, new, reply,
 ):
-    """The core specification's change of a driver's account. The season is in Placements;
-    Valtteri (106) is Unassigned. The league manager Admin runs `/driver reassign` naming 9999,
-    an account no driver holds, onto 9001; or of Valtteri onto 106, his own current account; or,
-    Valtteri having begun a signup, of Valtteri onto 9001; or, Kimi (105) Unassigned too, of
-    Valtteri onto 105, a merge of two drivers both in the live season; or of Valtteri onto 9001
-    where 9001 is a past account of another driver, where Valtteri is a test-mode driver, where
-    9001 is a test-mode driver's account, or where 9001 is a driver's whose signup awaits
-    approval; or, Valtteri having taken part in Pro of Season 1, a season gone by, of Valtteri
-    onto 9001 where 9001 is the account of a driver of past seasons who took part in it too, or
-    an account no driver holds that stands in its standings. They are refused at once, in
-    today's words for each ("⛔ No driver profile found for user 9999 on this server.", "⛔ <@106>
-    is already this driver's current account.", "⛔ This driver has a signup in progress. …", "⛔
-    This driver and <@105> both hold a seat or a signup in the live season, so they cannot be
-    merged into one driver.", "⛔ <@9001> is a past account of another driver in this league,
-    …", "⛔ That driver was created by test mode. …", "⛔ <@9001> is a test-mode driver. …", "⛔
-    <@9001> has a signup in progress. …", "⛔ This driver and <@9001> both took part in Season 1
-    Pro. One person cannot stand twice in one season's standings, so the accounts cannot be
-    joined."), and the log channel takes the refusal as its one line. Nothing is asked of the
-    queue, no account changes, no audit entry is written, no role is moved and no portrait
-    discarded. Takes the place of
-    `test_driver_cog_refusals.py`'s "reassign refused by the service" case and
-    `test_driver_cog.py`'s `test_a_refused_reassignment_is_reported_not_raised`, which mocked the
-    service."""
+    """The core specification's change of a driver's account. The season is in Placements; Valtteri
+    (106) is Unassigned. The league manager Admin runs `/driver reassign` naming 9999, an account no
+    driver holds, onto 9001; or of Valtteri onto 106, his own current account; or, Valtteri having
+    begun a signup, of Valtteri onto 9001; or, Kimi (105) Unassigned too, of Valtteri onto 105, a
+    merge of two drivers both in the live season; or of Valtteri onto 9001 where 9001 is a past
+    account of another driver, where Valtteri is a test-mode driver, where 9001 is a test-mode
+    driver's account, or where 9001 is the account of a driver whose signup awaits approval; or,
+    Valtteri having taken part in Pro of Season 1, a season gone by, of Valtteri onto 9001 where
+    9001 is the account of a driver of past seasons who took part in it too, or an account no driver
+    holds that stands in its standings. They are refused at once, in today's words for each ("⛔ No
+    driver profile found for user 9999 on this server.", "⛔ <@106> is already this driver's current
+    account.", "⛔ This driver has a signup in progress. …", "⛔ This driver and <@105> both hold a
+    seat or a signup in the live season, so they cannot be merged into one driver.", "⛔ <@9001> is a
+    past account of another driver in this league, …", "⛔ That driver was created by test mode. …",
+    "⛔ <@9001> is a test-mode driver. …", "⛔ <@9001> has a signup in progress. …", "⛔ This driver
+    and <@9001> both took part in Season 1 Pro. One person cannot stand twice in one season's
+    standings, so the accounts cannot be joined."), and the log channel takes the refusal as its one
+    line. Nothing is asked of the queue, no account changes, no audit entry is written, no role is
+    moved and no portrait discarded. Takes the place of `test_driver_cog_refusals.py`'s "reassign
+    refused by the service" case and `test_driver_cog.py`'s
+    `test_a_refused_reassignment_is_reported_not_raised`, which mocked the service."""
     from tests.support.change_queue import change_rows
     from tests.support.settings_league import audit_rows, last_said, log_lines
 
