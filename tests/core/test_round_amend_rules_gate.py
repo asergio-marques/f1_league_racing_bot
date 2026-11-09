@@ -13,9 +13,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import change_rows, league_bot, league_queue, run_queue
+from tests.support.setup_reads import hold_setup
+
+SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 
 SERVER_ID = 4400
 USER_ID = 88
@@ -91,8 +94,11 @@ async def _cog(db_path, *, attendance: bool = True):
     # A real change queue with the bot's own change types, so that Confirm asks it for the
     # amendment and its check judges it as it would in the league.
     league_queue(cog.bot, db_path, now=datetime.now(timezone.utc))
-    # No pending setup, so the command takes its active-season path.
-    cog._get_pending = MagicMock(return_value=None)
+    # No season being set up, so the command takes its active-season path.
+    hold_setup(cog.bot.season_service, None, divisions=False)
+    if hasattr(SeasonCog, "clear_pending"):
+        # While the cog still keeps a setup in memory, it keeps none here.
+        cog._pending = {}
     return cog
 
 
@@ -371,13 +377,17 @@ async def test_a_failed_round_amend_confirmation_goes_to_report_failure(tmp_path
     assert view.is_finished()
 
 
-def _pending(track: str | None = "Bahrain International Circuit"):
+def _pending(track: str | None = "Bahrain International Circuit") -> PendingConfig:
+    """Div A of the season being set up, holding round 1."""
     from leaguebot.core.models.round import RoundFormat
 
-    return SimpleNamespace(
+    return PendingConfig(
+        season_id=7,
         divisions=[
-            SimpleNamespace(
+            PendingDivision(
                 name=DIVISION,
+                role_id=1,
+                tier=1,
                 rounds=[
                     {
                         "round_number": 1,
@@ -405,16 +415,19 @@ ROUND_AMEND_REFUSALS = [
     pytest.param("command", {"format": "DRAG"}, "Invalid format", id="bad-format"),
     pytest.param("started", {"track": NEW_TRACK}, "already started", id="the-rules-refuse"),
     pytest.param("pending", {"division": "Nowhere", "track": NEW_TRACK}, "pending setup",
-                 id="pending-unknown-division"),
+                 id="pending-unknown-division",
+                 marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)),
     pytest.param("pending", {"round_number": 9, "track": NEW_TRACK}, "pending setup",
-                 id="pending-unknown-round"),
+                 id="pending-unknown-round",
+                 marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)),
     pytest.param("pending", {"track": "Nowhere Ring"}, "Unknown track",
                  id="pending-unknown-track"),
     pytest.param("pending", {"scheduled_at": "soon"}, "Invalid datetime",
                  id="pending-bad-datetime"),
     pytest.param("pending", {"format": "DRAG"}, "Invalid format", id="pending-bad-format"),
     pytest.param("pending no track", {"format": "NORMAL"}, "requires a track",
-                 id="pending-format-needs-a-track"),
+                 id="pending-format-needs-a-track",
+                 marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)),
     pytest.param("confirm by another", {}, "Not your action", id="confirm-not-your-action"),
     pytest.param("confirm round gone", {}, "no longer exists", id="confirm-round-gone"),
     pytest.param("confirm window passed", {}, "can no longer be amended",
@@ -448,8 +461,9 @@ async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case,
         if case == "no season":
             cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
         if case.startswith("pending"):
-            cog._get_pending = MagicMock(
-                return_value=_pending(track=None if case == "pending no track" else "Bahrain")
+            hold_setup(
+                cog.bot.season_service,
+                _pending(track=None if case == "pending no track" else "Bahrain"),
             )
             cog._snapshot_pending = AsyncMock()
         kwargs = dict(kwargs)
@@ -553,13 +567,14 @@ async def test_a_confirmed_round_amend_whose_reply_fails_still_records_what_chan
     assert f"  track: Bahrain International Circuit \u2192 {NEW_TRACK}" in success.splitlines()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
     """On a season still being set up, the success line likewise names the member and
     `/round amend`, and states beneath it each field changed, from its old value to its new
     one."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
     cog = await _cog(path)
-    cog._get_pending = MagicMock(return_value=_pending())
+    hold_setup(cog.bot.season_service, _pending())
     cog._snapshot_pending = AsyncMock()
     interaction = _interaction()
     _recording(cog, interaction)
@@ -702,8 +717,7 @@ async def test_a_pending_round_amended_to_what_stands_changes_nothing(tmp_path, 
     already holds. Nothing is saved to the season being set up."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
     cog = await _cog(path)
-    pending = _pending()
-    cog._get_pending = MagicMock(return_value=pending)
+    hold_setup(cog.bot.season_service, _pending())
     cog._snapshot_pending = AsyncMock()
     interaction = _interaction()
     _recording(cog, interaction)

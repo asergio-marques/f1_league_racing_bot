@@ -9,7 +9,10 @@ import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog, PendingConfig, PendingDivision
 from leaguebot.core.models.round import RoundFormat
+from tests.support.setup_reads import hold_setup
 from tests.support.undecorate import undecorate  # noqa: E402
+
+SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +43,7 @@ def _make_pending(server_id: int = 1) -> PendingConfig:
             _make_round(3, RoundFormat.MYSTERY, None),
         ],
     )
-    return PendingConfig(divisions=[div])
+    return PendingConfig(divisions=[div], season_id=7)
 
 
 def _make_interaction(guild_id: int = 1) -> MagicMock:
@@ -55,7 +58,8 @@ def _make_interaction(guild_id: int = 1) -> MagicMock:
 
 
 def _make_cog(pending_cfg: PendingConfig | None) -> tuple[SeasonCog, MagicMock]:
-    """Return (cog, bot_mock) with SeasonCog having *pending_cfg* in _pending."""
+    """Return (cog, bot_mock) with *pending_cfg* the season being set up, as the season service
+    reads it from the database (#283), and `_snapshot_pending` watched as it writes."""
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
@@ -64,16 +68,23 @@ def _make_cog(pending_cfg: PendingConfig | None) -> tuple[SeasonCog, MagicMock]:
     bot.team_service.seed_division_teams = AsyncMock()
     bot.output_router.post_log = AsyncMock()
 
+    hold_setup(bot.season_service, pending_cfg)
+
     cog = SeasonCog(bot)
-    if pending_cfg is not None:
-        cog._pending[0] = pending_cfg
+    cog._snapshot_pending = AsyncMock(wraps=cog._snapshot_pending)
     return cog, bot
+
+
+def _saved(cog: SeasonCog) -> PendingConfig:
+    """The setup as the command wrote it to the season."""
+    return cog._snapshot_pending.await_args.args[0]
 
 
 # ---------------------------------------------------------------------------
 # Tests — happy paths
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_pending_amend_track_change() -> None:
     """T006-1: Track amendment updates the round dict in-memory."""
     from unittest.mock import patch, AsyncMock, MagicMock
@@ -99,7 +110,7 @@ async def test_pending_amend_track_change() -> None:
             track="Australia",
         )
 
-    div = pending.divisions[0]
+    div = _saved(cog).divisions[0]
     rnd = next(r for r in div.rounds if r["round_number"] == 1)
     assert rnd["track_name"] == "Australia"
     # Confirm success message sent
@@ -109,6 +120,7 @@ async def test_pending_amend_track_change() -> None:
     assert kwargs.get("ephemeral") is True
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_pending_amend_reply_says_the_round_is_saved() -> None:
     """The amend is written to the season at once, through `_snapshot_pending`.
 
@@ -132,6 +144,7 @@ async def test_pending_amend_reply_says_the_round_is_saved() -> None:
     assert "no DB write" not in reply
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_pending_amend_scheduled_at_change() -> None:
     """T006-2: scheduled_at amendment updates the datetime in-memory and renumbers by date."""
     pending = _make_pending()
@@ -145,7 +158,7 @@ async def test_pending_amend_scheduled_at_change() -> None:
         scheduled_at=new_dt,
     )
 
-    div = pending.divisions[0]
+    div = _saved(cog).divisions[0]
     # After renumbering by scheduled_at, the amended round may have a different round_number;
     # verify that exactly one round now has the new scheduled_at.
     amended = [r for r in div.rounds if r["scheduled_at"] == datetime.fromisoformat(new_dt)]
@@ -153,6 +166,7 @@ async def test_pending_amend_scheduled_at_change() -> None:
     interaction.followup.send.assert_called_once()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_pending_amend_format_to_mystery_clears_track() -> None:
     """T006-3: Changing format to MYSTERY must clear track_name (FR-003)."""
     pending = _make_pending()
@@ -166,13 +180,14 @@ async def test_pending_amend_format_to_mystery_clears_track() -> None:
         format="MYSTERY",
     )
 
-    div = pending.divisions[0]
+    div = _saved(cog).divisions[0]
     rnd = next(r for r in div.rounds if r["round_number"] == 1)
     assert rnd["format"] == RoundFormat.MYSTERY
     assert rnd["track_name"] is None
     interaction.followup.send.assert_called_once()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_pending_amend_format_away_from_mystery_no_track_empty_stored_rejects() -> None:
     """T006-4: Format ← MYSTERY, no track supplied, stored track empty → rejected (FR-004)."""
     pending = _make_pending()
@@ -191,12 +206,11 @@ async def test_pending_amend_format_away_from_mystery_no_track_empty_stored_reje
     msg = args[0] if args else kwargs.get("content", "")
     assert "❌" in msg
     assert "track" in msg.lower()
-    # Round format must remain MYSTERY (unchanged)
-    div = pending.divisions[0]
-    rnd = next(r for r in div.rounds if r["round_number"] == 3)
-    assert rnd["format"] == RoundFormat.MYSTERY
+    # Round format must remain MYSTERY (unchanged): nothing is written
+    cog._snapshot_pending.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_pending_amend_format_away_from_mystery_preserves_existing_track() -> None:
     """T006-5: Format ← MYSTERY, no track supplied, stored track already has a value → succeeds."""
     pending = _make_pending()
@@ -220,6 +234,7 @@ async def test_pending_amend_format_away_from_mystery_preserves_existing_track()
     msg = args[0] if args else kwargs.get("content", "")
     assert "✅" in msg
     # Track preserved, format updated
+    rnd3 = next(r for r in _saved(cog).divisions[0].rounds if r["round_number"] == 3)
     assert rnd3["format"] == RoundFormat.NORMAL
     assert rnd3["track_name"] == "Australia"
 
@@ -228,6 +243,7 @@ async def test_pending_amend_format_away_from_mystery_preserves_existing_track()
 # Tests — error paths
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_pending_amend_division_not_found() -> None:
     """T006-6: Division name not in pending config → descriptive error."""
     pending = _make_pending()
@@ -246,6 +262,7 @@ async def test_pending_amend_division_not_found() -> None:
     assert "Nonexistent" in msg
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_pending_amend_round_not_found() -> None:
     """T006-7: Round number not in pending div → descriptive error."""
     pending = _make_pending()
