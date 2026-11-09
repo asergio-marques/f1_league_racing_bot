@@ -423,7 +423,6 @@ def _scheduler_reached_around() -> Counter[tuple[str, str]]:
 
 KNOWN_SCHEDULER_REACHED_AROUND: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/wizard_service.py", "WizardService.__init__"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.move_held_channel"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
 }
 
@@ -2024,7 +2023,6 @@ def _saves_outside_a_change() -> Counter[tuple[str, str]]:
 
 KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Core's pass
-    ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.delete_team_role_config"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.rename_team_role_config"): (1, PASS["core"]),
@@ -2055,7 +2053,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.add_slot"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.rekey_wizard"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.remove_slot_by_rank"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_config"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_settings"): (1, PASS["signup"]),
@@ -2782,7 +2779,6 @@ def _wall_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
 
 
 KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.rename_team_role_config"):
         (1, PASS["core"]),
@@ -2851,7 +2847,6 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/results_off_change.py", "results_off_change.switch_off"):
         (1, PASS["results"]),
     ("signup/services/wizard_service.py", "WizardService._lock_channel"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.move_held_channel"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
 }
 

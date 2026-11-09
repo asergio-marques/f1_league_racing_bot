@@ -4,12 +4,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, inserted_id, sole_row
+from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.driver_profile import DriverProfile, DriverState
 from leaguebot.core.utils.hooks import AwaitedHook
 
@@ -501,11 +501,11 @@ async def _judge_reassign(db, old_user_id: str, new_user_id: str) -> _Judged:
 
 @dataclass
 class ReassignOutcome:
-    """What a reassign did, for the command to act on and report."""
+    """What a reassign did, for the change's save to plan its jobs from and its reply to report."""
 
     #: The driver, standing on their new current account.
     profile: DriverProfile
-    #: The account that was current before, whose roles and signup channel move to the new one.
+    #: The account that was current before, whose roles and held signup channel move to the new one.
     replaced_account: str
     #: Every account the driver now holds, current included, sorted.
     accounts: list[str]
@@ -680,40 +680,6 @@ class DriverService:
             switched_back=judged.switched_back,
             merged_accounts=merged_accounts,
         )
-
-    async def reassign_user_id(
-        self,
-        old_user_id: str,
-        new_user_id: str,
-        actor_id: int,
-        actor_name: str,
-        *,
-        profiles_merged: AwaitedHook,
-    ) -> ReassignOutcome:
-        """`reassign_user_id_on` in a transaction of its own, with its audit entry."""
-        async with get_connection(self._db_path) as db:
-            await db.execute("BEGIN IMMEDIATE")
-            try:
-                cursor = await db.execute("SELECT datetime('now')")
-                row = await sole_row(cursor)
-                now = datetime.fromisoformat(str(row[0])).replace(tzinfo=timezone.utc)
-                outcome = await self.reassign_user_id_on(
-                    db, old_user_id, new_user_id, actor_id, actor_name,
-                    profiles_merged=profiles_merged, now=now,
-                )
-                await db.execute(
-                    "INSERT INTO audit_entries "
-                    "(actor_id, actor_name, division_id, change_type, old_value, "
-                    "new_value, timestamp) "
-                    "VALUES (?, ?, NULL, 'DRIVER_USER_ID_REASSIGN', ?, ?, ?)",
-                    (actor_id, actor_name, outcome.replaced_account, str(new_user_id),
-                     now.isoformat()),
-                )
-                await db.commit()
-            except BaseException:
-                await db.rollback()
-                raise
-        return outcome
 
     # ------------------------------------------------------------------
     # Former-driver flag override (US3)

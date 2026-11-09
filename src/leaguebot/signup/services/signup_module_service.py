@@ -679,28 +679,11 @@ class SignupModuleService:
             (total_ms, discord_user_id),
         )
 
-    async def rekey_wizard(self, from_account: str, to_account: str) -> None:
-        """Move a wizard record to another account of the same driver (issue #243).
-
-        A wizard record is the transient state of one signup and its channel, not a record of
-        the league's, so it follows the driver to their new current account. An abandoned
-        draft the new account holds (a signup never begun) is deleted in the same save, which
-        it would otherwise collide with.
-        """
-        async with get_connection(self._db_path) as db:
-            await self.delete_wizard_on(db, to_account)
-            await db.execute(
-                "UPDATE signup_wizard_records SET discord_user_id = ? "
-                "WHERE discord_user_id = ?",
-                (to_account, from_account),
-            )
-            await db.commit()
-
     async def delete_wizard_on(self, db: aiosqlite.Connection, discord_user_id: str) -> None:
         """Delete a driver's wizard record on the connection handed; commits nothing.
 
         For a change whose job records the deletion of the driver's channel in the save that
-        marks the job done, and for `rekey_wizard`, which clears the account a record moves to.
+        marks the job done.
         """
         await db.execute(
             "DELETE FROM signup_wizard_records WHERE discord_user_id = ?",

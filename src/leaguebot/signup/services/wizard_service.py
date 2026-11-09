@@ -2,9 +2,9 @@
 
 The wizard itself runs as changes on the change queue (`wizard_changes`, `wizard_answers`,
 `review_changes`, `closing_steps`), each answer a turn on the driver's lane. What is left here is
-what those changes and the commands outside signup still reach: the channel's making, its lock
-and its move to a driver's new account, the prompts and the review panel's text, the views a
-question carries, and the restart's recovery of the timers.
+what those changes and the commands outside signup still reach: the channel's making and its lock,
+the prompts and the review panel's text, the views a question carries, and the restart's recovery
+of the timers. A held channel's move to a driver's new account is `held_channel_moves`'s.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Any
 import discord
 
 from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverState
@@ -28,7 +27,6 @@ from leaguebot.results.utils.results_formatter import render_lap_time
 from leaguebot.signup.services.closing_steps import (
     DELETE_TIMER,
     INACTIVITY_TIMER,
-    ask_channel_delete,
     ask_expiry,
 )
 
@@ -267,75 +265,6 @@ class WizardService:
 
 
 
-
-    # ------------------------------------------------------------------
-    # A held channel follows the driver's current account (issue #243)
-    # ------------------------------------------------------------------
-
-    async def move_held_channel(
-        self, from_account: str, to_account: str, guild: discord.Guild
-    ) -> list[str]:
-        """Move the driver's held signup channel, and its deletion, to their new current account.
-
-        After an approval or a rejection the channel stays open, read-only, for 24 hours. A
-        reassign cannot happen while a signup is still in progress, so any channel the
-        replaced account holds is such a held one. It moves to the new account, and its
-        deletion is kept at the moment it was already due.
-
-        Where the new account holds a held channel of its own, that one is kept and the
-        replaced account's is deleted, by the `signup.channel.delete` change asked for it on the
-        command's lane: its final message has been posted, and the driver can keep only one
-        (decided 2026-09-18).
-
-        **The order is what survives a crash part-way.** The new deletion timer is armed first
-        (through `arm_once`, as the closing's `arm_deletion` arms the hold), then the record
-        re-keyed, then the old timer removed. At every point one job can find
-        the record — a job whose record has moved simply finds none — and the channel is
-        never left with nothing to delete it.
-
-        Returns what Discord would not allow, for the command to report.
-        """
-        svc = self._signup_svc
-        scheduler = self._scheduler
-        problems: list[str] = []
-        held = await svc.get_wizard(from_account)
-        if held is None or held.signup_channel_id is None:
-            return problems
-        theirs = await svc.get_wizard(to_account)
-
-        if theirs is not None and theirs.signup_channel_id is not None:
-            # The replaced account's channel is deleted by the change asked for it, on the
-            # command's lane; its timer goes once the change is saved, so that the channel is
-            # never left with nothing to delete it.
-            await ask_channel_delete(self._change_queue, self._db_path, from_account, own_lane=False)
-            scheduler.disarm(DELETE_TIMER, from_account)
-            return problems
-
-        fire_at = (
-            scheduler.timer_due(DELETE_TIMER, from_account)
-            or (datetime.now(timezone.utc) + timedelta(hours=24))
-        )
-        scheduler.arm_once(DELETE_TIMER, to_account, fire_at)
-        # An abandoned draft on the new account (the transient state of a signup never begun)
-        # goes in the same save as the move, which it would otherwise collide with.
-        await svc.rekey_wizard(from_account, to_account)
-        scheduler.disarm(DELETE_TIMER, from_account)
-
-        channel = as_text_channel(guild.get_channel(held.signup_channel_id))
-        if channel is None:
-            return problems
-        try:
-            new_member = guild.get_member(int(to_account))
-            if new_member is not None:
-                await self._revoke_driver_write(channel, new_member)
-            old_member = guild.get_member(int(from_account))
-            if old_member is not None:
-                await channel.set_permissions(
-                    old_member, overwrite=None, reason="Driver's current account changed"
-                )
-        except discord.HTTPException as exc:
-            problems.append(f"the signup channel's permissions could not be moved: {exc}")
-        return problems
 
     @posts_in_a_job
     async def trigger_channel_hold(

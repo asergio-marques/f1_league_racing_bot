@@ -30,8 +30,7 @@ Correction, an unsettled signup that refuses the season's placements, so a Disca
 and only a Retry moves it.
 
 A held channel's deletion asks `signup.channel.delete` (`channel_delete_change`): the hold's
-24-hour timer's own, on the driver's lane, and `/driver reassign`'s for the replaced account's channel, on
-the league's. The one job `delete_channel` deletes the channel, a channel already gone being
+24-hour timer's own, on the driver's lane. The one job `delete_channel` deletes the channel, a channel already gone being
 nothing to do, and its record deletes the wizard's row; Discord's refusal stops the lane that
 asked.
 
@@ -801,10 +800,10 @@ def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> Cha
 
     The payload is ``user_id`` (the account whose wizard holds the channel), ``channel_id`` (the
     channel held) and ``own_lane``. A hold's 24-hour timer asks it on the driver's own lane
-    (``channel:<id>``, `own_lane` true), where Discord's refusal stops that lane alone; the
-    channel of the account `/driver reassign` replaced is deleted on the league's, as the
-    command's change. It is not due, and is dropped, where the driver's wizard no longer names the
-    channel: a new signup, or a move to another account, has taken it over. Its one job
+    (``channel:<id>``, `own_lane` true), where Discord's refusal stops that lane alone; where
+    `own_lane` is not set it runs on the league's. It is not due, and is dropped, where the
+    driver's wizard no longer names the channel: a new signup, or a move to another account, has
+    taken it over. Its one job
     `delete_channel` deletes the channel, one already gone being nothing to do, and its record
     deletes the wizard's row in the save that marks the job done, so the row names a channel only
     while the channel may stand. *signup* is a getter, so that the service is the one the bot

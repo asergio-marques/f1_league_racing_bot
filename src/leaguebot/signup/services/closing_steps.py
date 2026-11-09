@@ -169,9 +169,8 @@ async def ask_channel_delete(
 ) -> int | None:
     """Ask the queue, as the bot, to delete the signup channel *user_id*'s wizard holds
     (`signup.channel.delete`): the hold's 24-hour timer's ask, on the driver's own lane
-    (*own_lane*, since a timer's deletion is the conversation's own), and `/driver reassign`'s for
-    the channel of the account it replaced, on the league's. Gives the change's id, or None where
-    the driver holds no channel."""
+    (*own_lane*, since a timer's deletion is the conversation's own; the league's lane otherwise).
+    Gives the change's id, or None where the driver holds no channel."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",

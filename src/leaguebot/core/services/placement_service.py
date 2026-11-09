@@ -1848,60 +1848,6 @@ class PlacementService:
                     roles.add(int(role_id))
         return roles
 
-    async def move_driver_roles(
-        self,
-        guild: discord.Guild,
-        driver_profile_id: int,
-        from_account: str,
-        to_account: str,
-    ) -> list[str]:
-        """Give the driver's roles to *to_account* and take them from *from_account*.
-
-        Called once a reassign has made *to_account* current. The roles are those the
-        driver's standing entitles them to (`driver_role_ids`), so a replaced account that
-        has already left the server costs nothing: its removal is skipped, and the new
-        account is granted from the league's record. Returns what could not be done, for the
-        command to report; the account change itself stands either way.
-        """
-        role_ids = await self.driver_role_ids(driver_profile_id)
-        if not role_ids:
-            return []
-        problems: list[str] = []
-        roles = []
-        for role_id in sorted(role_ids):
-            role = guild.get_role(role_id)
-            if role is None:
-                problems.append(f"role {role_id} no longer exists")
-            else:
-                roles.append(role)
-
-        async def _member(account: str):
-            member = guild.get_member(int(account))
-            if member is None:
-                try:
-                    member = await guild.fetch_member(int(account))
-                except discord.HTTPException:
-                    member = None
-            return member
-
-        new_member = await _member(to_account)
-        if new_member is None:
-            problems.append(f"<@{to_account}> is not in the server to receive the roles")
-        elif roles:
-            try:
-                await new_member.add_roles(*roles, reason="Driver's current account changed")
-            except discord.HTTPException as exc:
-                problems.append(f"the roles could not be given to <@{to_account}>: {exc}")
-        old_member = await _member(from_account)
-        if old_member is not None and roles:
-            held = [r for r in roles if r in getattr(old_member, "roles", [])]
-            if held:
-                try:
-                    await old_member.remove_roles(*held, reason="Driver's current account changed")
-                except discord.HTTPException as exc:
-                    problems.append(f"the roles could not be taken from <@{from_account}>: {exc}")
-        return problems
-
     # ------------------------------------------------------------------
     # Sack driver (T015)
     # ------------------------------------------------------------------
