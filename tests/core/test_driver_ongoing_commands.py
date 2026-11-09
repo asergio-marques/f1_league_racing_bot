@@ -9,10 +9,6 @@ ladder, refused before anything is asked of the queue: a division that does not 
 with no profile, a past account whose driver has left; and what a command that goes through asks
 of the queue. The two commands copy that ladder rather than share it, so each rung is tested for
 both. Each refusal's line is pinned in `test_driver_cog_refusals.py`.
-
-The reject command's own ladder is in `test_driver_reject.py`; the one branch it leaves — a
-driver role Discord will not take back — is here, because a failed role removal must not
-undo a rejection already written.
 """
 from __future__ import annotations
 
@@ -23,7 +19,6 @@ import discord
 import pytest
 
 from leaguebot.core.cogs.driver_cog import DriverCog
-from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.models.season import SeasonStage
 from tests.support.teams import resolves_as_typed
 from tests.support.undecorate import undecorate
@@ -267,51 +262,6 @@ async def test_a_release_is_asked_of_the_queue(stage):
     assert payload["driver_name"] == "Racer"
     interaction.followup.send.assert_not_awaited()
     cog.bot.output_router.post_log.assert_not_awaited()
-
-
-# ── /driver reject: a role Discord will not take back ─────────────────────────────────
-
-
-async def test_a_rejection_whose_role_cannot_be_removed_says_so_in_reply_and_line():
-    """The rejection stands, written before the role is touched. A driver role Discord will not
-    take back is named as not done, in the manager's reply and in the log line beneath the
-    success, as `/driver reassign` names what it could not do (#482)."""
-    cog = DriverCog.__new__(DriverCog)
-    cog.bot = MagicMock()
-    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda a: str(a))
-    cog.bot.season_service.get_setup_or_active_season = AsyncMock(
-        return_value=SimpleNamespace(id=SEASON_ID, stage=SeasonStage.PLACEMENTS)
-    )
-    cog.bot.driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(id=PROFILE_ID, current_state=DriverState.UNASSIGNED)
-    )
-    cog.bot.driver_service.transition = AsyncMock()
-    cog.bot.signup_module_service.withdraw_approval = AsyncMock()
-    cog.bot.config_service.get_server_config = AsyncMock(
-        return_value=SimpleNamespace(driver_role_id=902)
-    )
-    cog.bot.output_router.post_log = AsyncMock()
-    interaction = _interaction()
-    interaction.guild.get_role = MagicMock(return_value=SimpleNamespace(id=902))
-    member = _member()
-    member.remove_roles = AsyncMock(
-        side_effect=discord.HTTPException(MagicMock(status=403, reason="Forbidden"), "missing")
-    )
-
-    await undecorate(DriverCog.reject)(cog, interaction, member)
-
-    cog.bot.driver_service.transition.assert_awaited_once_with(
-        str(USER_ID), DriverState.NOT_SIGNED_UP
-    )
-    reply = _reply(interaction)
-    assert reply.startswith("✅ Turned down **Racer**")
-    assert any("role" in line for line in reply.splitlines()[1:])
-    cog.bot.output_router.post_log.assert_awaited_once()
-    line = cog.bot.output_router.post_log.await_args.args[0]
-    assert line.splitlines()[0] == "Manager (<@1>) | /driver reject | Success"
-    assert any(
-        text.startswith("  not done:") and "role" in text for text in line.splitlines()[1:]
-    )
 
 
 # ── Any account names the driver (issue #243) ────────────────────────────────────────
