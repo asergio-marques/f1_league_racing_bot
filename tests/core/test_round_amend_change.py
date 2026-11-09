@@ -471,7 +471,7 @@ async def test_the_success_line_is_saved_with_the_amendment(tmp_path):
 async def test_the_manager_is_told_at_once_naming_the_job_and_the_reply_is_updated_with_the_round_list(
     tmp_path,
 ):
-    from leaguebot.core.cogs.season_cog import format_round_list
+    from leaguebot.core.utils.formatting import format_round_list
 
     league = await ongoing_league(tmp_path)
     press = await _amended(league, scheduled_at=_at(league, days=91))

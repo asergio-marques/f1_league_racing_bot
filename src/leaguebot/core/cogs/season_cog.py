@@ -120,7 +120,7 @@ from leaguebot.core.utils.channel_guard import (
     changes_nothing,
 )
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
-from leaguebot.core.utils.formatting import discord_ts, format_division_list, format_round_list, format_roster_block
+from leaguebot.core.utils.formatting import discord_ts, format_roster_block
 from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
@@ -142,21 +142,6 @@ log = logging.getLogger(__name__)
 #: drawing, and what it hands back once asked (or where there is nothing to ask).
 _T = TypeVar("_T")
 _R = TypeVar("_R")
-
-# ---------------------------------------------------------------------------
-# Module-level helpers
-# ---------------------------------------------------------------------------
-
-
-async def _get_setup_season_id(bot: LeagueBot) -> int | None:
-    """Return the season_id for a SETUP-status season for the guild, or None."""
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "SELECT id FROM seasons WHERE status = 'SETUP' LIMIT 1",
-        )
-        row = await cursor.fetchone()
-    return row[0] if row else None
-
 
 # ---------------------------------------------------------------------------
 # Bulk round import
@@ -2188,20 +2173,6 @@ class SeasonCog(commands.Cog):
         guild_only=True,
         default_permissions=None,
     )
-
-    async def _season_in_placements(self) -> int | None:
-        """The id of the season being set up, where it is in Placements; None otherwise.
-
-        Divisions are created, deleted, renamed and amended, and rounds deleted, in Placements
-        alone (the core specification's "Building a season" and "Divisions"). A season being set
-        up but still in Configuration, Waiting or Signups is refused by each command in its own
-        words, as a season with none is.
-        """
-        season_id = await _get_setup_season_id(self.bot)
-        if season_id is None:
-            return None
-        stage = await self.bot.season_service.get_stage(season_id)
-        return season_id if stage is SeasonStage.PLACEMENTS else None
 
     @division.command(
         name="add",
