@@ -259,18 +259,31 @@ class TestTheNationalityCommand:
     @pytest.mark.xfail(strict=True, reason=_NOT_A_SETTING)
     async def test_it_toggles_off_and_back_on(self, league):
         """The server is in test mode with nationality on. Admin (77) runs the command, and runs
-        it again before the queue has run the first: both are acknowledged and both queued, a
-        toggle asked twice being two requests. The queue runs them in turn, each flipping what
-        it finds: the first records on → off, the second off → on, each in an audit entry of
-        its own; the switch ends on; the second reply and line read "ON" and "enabled" word for
-        word, the first reply "OFF"."""
-        first = _asks(league)
-        second = _asks(league)
+        it again before the queue has run the first: the first is acknowledged as turning it off,
+        the second asks the same thing and is refused as a repeat, seen by Admin alone, in the
+        queue's words, the log channel taking that refusal as a line, and only the one change is
+        queued. The queue runs it: the switch is saved off, with one audit entry recording
+        on → off. Admin runs the command once more: it is acknowledged as turning it back on, and
+        once the queue has run it the switch is on again, a second audit entry recording
+        off → on; the replies read "OFF" and then "ON", and the lines "disabled" and then
+        "enabled", word for word."""
+        first, repeat, again = _asks(league), _asks(league), _asks(league)
 
         await _ask_nationality(league, first)
-        await _ask_nationality(league, second)
-        assert acknowledgement(first).startswith("⏳ ")
-        assert acknowledgement(second).startswith("⏳ ")
+        await _ask_nationality(league, repeat)
+
+        assert acknowledgement(first).startswith("⏳ Turning test-mode nationality off. ")
+        [refusal] = repeat.response.send_message.await_args_list
+        assert refusal.args[0] == (
+            "⚠️ Turning test-mode nationality off has already been asked for and has not "
+            "started yet, so it was not asked for again."
+        )
+        assert refusal.kwargs.get("ephemeral") is True
+        assert len(await change_rows(league.db_path)) == 1
+        await run_queue(league.bot)
+
+        await _ask_nationality(league, again)
+        assert acknowledgement(again).startswith("⏳ Turning test-mode nationality on. ")
         await run_queue(league.bot)
 
         rows = await audit_rows(league.db_path)
@@ -282,14 +295,50 @@ class TestTheNationalityCommand:
             (_AUDIT_TYPE, {_FLAG: False}, {_FLAG: True}),
         ]
         assert await _flags(league.db_path) == {_FLAG: 1, "test_mode_active": 1}
-        assert "**OFF**" in last_said(first)
-        assert last_said(second) == (
+        assert last_said(first) == (
+            "✅ Test-mode nationality: **OFF**.\n"
+            "Mock drivers already holding one keep it, and graphics draw no flag at all."
+        )
+        assert last_said(again) == (
             "✅ Test-mode nationality: **ON**.\n"
             "Mock drivers may be given one with `/test-mode roster add`."
         )
-        assert _lines(league)[-1] == (
-            f"{_NAMED} | /test-mode nationality | Success\n  test_mode_nationality: enabled"
+        assert _lines(league) == [
+            f"⛔ `/test-mode nationality` refused for {_NAMED} — Turning test-mode nationality "
+            "off has already been asked for and has not started yet, so it was not asked for "
+            "again.",
+            f"{_NAMED} | /test-mode nationality | Success\n  test_mode_nationality: disabled",
+            f"{_NAMED} | /test-mode nationality | Success\n  test_mode_nationality: enabled",
+        ]
+
+    @pytest.mark.xfail(strict=True, reason=_NOT_A_SETTING)
+    async def test_a_switch_already_where_it_was_asked_to_go_is_answered_nothing_changed(
+        self, league
+    ):
+        """The server is in test mode with nationality on. Admin (77) runs the command, and is
+        acknowledged as turning it off; before the queue runs it, the switch is already turned
+        off, as a change of the same asked earlier would leave it. When the queue runs it, nothing
+        is saved and nothing audited: Admin's reply becomes "Nothing changed", word for word, and
+        the log channel takes a "Nothing changed" line in the place of a success line."""
+        interaction = _asks(league)
+
+        await _ask_nationality(league, interaction)
+        assert acknowledgement(interaction).startswith("⏳ Turning test-mode nationality off. ")
+        async with get_connection(league.db_path) as db:
+            await db.execute(f"UPDATE server_configs SET {_FLAG} = 0")
+            await db.commit()
+        await run_queue(league.bot)
+
+        assert last_said(interaction) == (
+            "ℹ️ Nothing changed: test-mode nationality is already **OFF**."
         )
+        assert await _flags(league.db_path) == {_FLAG: 0, "test_mode_active": 1}
+        assert await audit_rows(league.db_path) == []
+        assert _lines(league) == [
+            f"{_NAMED} | /test-mode nationality | Nothing changed\n"
+            "  test_mode_nationality: disabled"
+        ]
+        assert await stopped_job(league.db_path) is None
 
     @pytest.mark.xfail(strict=True, reason=_NOT_A_SETTING)
     async def test_the_flip_is_persisted(self, league):
@@ -320,8 +369,8 @@ class TestTheNationalityCommand:
 
         first_job = (await step_rows(league.db_path))[0]["id"]
         assert acknowledgement(interaction) == (
-            "⏳ Toggling test-mode nationality. This message will be updated when it is done; if "
-            "it takes longer, the log channel will say so. "
+            "⏳ Turning test-mode nationality off. This message will be updated when it is done; "
+            "if it takes longer, the log channel will say so. "
             f"It begins with job #{first_job}."
         )
         assert await _flags(league.db_path) == {_FLAG: 1, "test_mode_active": 1}
