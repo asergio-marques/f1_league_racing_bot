@@ -1,7 +1,7 @@
 """Moving a season through its lifecycle as the events that drive it happen (issue #220).
 
-``models.season.ALLOWED_STAGE_TRANSITIONS`` says which transitions are legal. This module decides which
-transition an event calls for — a signup window opening or closing, and later placements
+``models.season.ALLOWED_STAGE_TRANSITIONS`` says which transitions are legal. This module decides
+which transition an event calls for — a signup window opening or closing, and later placements
 being confirmed and a season ending — so that every path reaching the event (a command, a
 timer, a restart) moves the season the same way.
 
@@ -144,8 +144,8 @@ async def confirm_configuration_on(
     confirmation of its configuration keeps.
 
     The season must stand in Configuration and the move be one ``ALLOWED_STAGE_TRANSITIONS``
-    permits; anything else, or a season that does not exist, raises :class:`InvalidStageTransition` and
-    writes nothing. The write is conditioned on the stage that was read.
+    permits; anything else, or a season that does not exist, raises
+    :class:`InvalidStageTransition` and writes nothing. The write is conditioned on the stage that was read.
     """
     cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
     row = await cursor.fetchone()
