@@ -82,6 +82,42 @@ async def round_ids(db_path: str, division: str) -> dict[str, int]:
         return ids
 
 
+async def round_moments(db_path: str, division: str) -> list[tuple[int, str, str | None, datetime]]:
+    """The rounds of the division named *division*, as `round_rows` gives them, each moment read
+    as UTC, whether it is stored with its zone or without."""
+    moments = []
+    for number, fmt, track, at in await round_rows(db_path, division):
+        moment = datetime.fromisoformat(at)
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        moments.append((number, fmt, track, moment.astimezone(timezone.utc)))
+    return moments
+
+
+async def ask_duplicate(league: Any, source: str = "Pro", new_name: str = "Am", tier: int = 2, *,
+                        role_id: int = 556, day_offset: int = 0,
+                        hour_offset: float = 0.0) -> Any:
+    """`/division duplicate` of *source* as *new_name* at *tier*, mentioning role *role_id*, its
+    rounds shifted by *day_offset* days and *hour_offset* hours, as the league manager Admin
+    (4242) runs it: the interaction."""
+    from unittest.mock import MagicMock
+
+    import discord
+
+    from leaguebot.core.cogs.season_cog import SeasonCog
+    from tests.support.settings_league import interaction
+    from tests.support.undecorate import undecorate
+
+    role = MagicMock(spec=discord.Role)
+    role.id = role_id
+    role.mention = f"<@&{role_id}>"
+    asked = interaction(league.bot, "division duplicate")
+    await undecorate(SeasonCog.division_duplicate)(
+        SeasonCog(league.bot), asked, source, new_name, role, tier, day_offset, hour_offset
+    )
+    return asked
+
+
 def refusal_line(what: str, reply: str) -> str:
     """The log channel's line for *what* (a command or a form, as the log names it) refused for
     Admin with *reply*."""
