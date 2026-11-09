@@ -705,21 +705,6 @@ class SeasonService:
             longest_sessions=longest_sessions,
         )
 
-    async def delete_division(
-        self,
-        division_id: int,
-        *,
-        rounds_deleted: AwaitedHook,
-        divisions_deleted: AwaitedHook,
-    ) -> None:
-        """`delete_division_on` on a connection of its own, committed once it is done."""
-        async with get_connection(self._db_path) as db:
-            await self.delete_division_on(
-                db, division_id, rounds_deleted=rounds_deleted,
-                divisions_deleted=divisions_deleted,
-            )
-            await db.commit()
-
     @staticmethod
     async def delete_division_on(
         db: aiosqlite.Connection,
@@ -767,6 +752,19 @@ class SeasonService:
             "DELETE FROM driver_season_assignments WHERE division_id = ?", (division_id,)
         )
         await db.execute("DELETE FROM divisions WHERE id = ?", (division_id,))
+
+    async def division_holds_a_placed_driver(self, division_id: int) -> bool:
+        """Whether a driver is placed in *division_id*: whether a placement points at a seat of
+        one of its teams, the placement the schema's foreign key keeps the seat for."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT 1 FROM driver_season_assignments dsa "
+                "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+                "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+                "WHERE ti.division_id = ? LIMIT 1",
+                (division_id,),
+            )
+            return await cursor.fetchone() is not None
 
     async def duplicate_division_on(
         self,

@@ -225,9 +225,6 @@ _RENAME = "`/division rename`"
 _AMEND = "`/division amend`"
 _DELETE = "`/division delete`"
 
-#: Why each test of `/division delete` on the queue fails until the build.
-_XFAIL_DELETE = "#283: /division delete is not yet a change on the queue"
-
 
 async def _league(tmp_path, *, stage: str | None = "PLACEMENTS", raced: bool = False):
     """`setup_league`'s league, season #1 being set up in *stage* and holding Pro and Am; with
@@ -1091,7 +1088,6 @@ async def _placements(db_path: str) -> int:
         return (await cursor.fetchone())[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
 async def test_a_division_delete_its_hooks_audit_entry_and_line_are_one_save(tmp_path):
     """The core specification's Divisions and its record of what changed. Season #1 is being set
     up, in Placements, holding Pro (tier 1, role 555), with one round, and Am (tier 2, role 556),
@@ -1137,7 +1133,6 @@ async def test_a_division_delete_its_hooks_audit_entry_and_line_are_one_save(tmp
     assert last_said(asked) == _deleted("Pro", [("Am", 2, 556)])
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
 async def test_a_failed_division_delete_deletes_nothing(tmp_path):
     """Season #1 is being set up, in Placements, holding Pro, with one round, and Am; each
     division has an attendance configuration and Pro's round a drawn weather phase. The league
@@ -1171,7 +1166,6 @@ async def test_a_failed_division_delete_deletes_nothing(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
 @pytest.mark.parametrize(
     "meanwhile, reply, after",
     [
@@ -1216,7 +1210,6 @@ async def test_a_division_delete_is_judged_again_as_it_starts(tmp_path, meanwhil
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
 async def test_a_division_delete_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. Season #1
@@ -1244,7 +1237,6 @@ async def test_a_division_delete_asked_again_while_it_waits_is_refused_as_a_repe
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
 @pytest.mark.parametrize("when", ["at-the-ask", "as-it-starts"])
 async def test_deleting_a_division_with_a_placed_driver_is_refused(tmp_path, when):
     """The core specification's Divisions: a division in which a driver is placed shall not be

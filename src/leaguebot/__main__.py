@@ -508,6 +508,7 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     from leaguebot.core.services.bot_init_change import bot_init_change
     from leaguebot.core.services.division_add_change import division_add_change
+    from leaguebot.core.services.division_delete_change import division_delete_change
     from leaguebot.core.services.division_duplicate_change import division_duplicate_change
     from leaguebot.core.services.division_edit_changes import (
         division_amend_change,
@@ -1089,6 +1090,13 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(division_rename_change(seasons=bot.season_service))
     bot.change_queue.register(division_amend_change(seasons=bot.season_service))
+    bot.change_queue.register(
+        division_delete_change(
+            seasons=bot.season_service,
+            rounds_deleted=bot.rounds_deleted,
+            divisions_deleted=bot.divisions_deleted,
+        )
+    )
     bot.change_queue.register(
         round_add_change(seasons=bot.season_service, drawing=bot.image_drawing)
     )

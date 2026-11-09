@@ -61,6 +61,7 @@ from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_chan
 from leaguebot.core.services.round_moments import read_round_windows
 from leaguebot.core.services.division_add_change import KIND as DIVISION_ADD
 from leaguebot.core.services.division_duplicate_change import KIND as DIVISION_DUPLICATE
+from leaguebot.core.services.division_delete_change import DIVISION_DELETE
 from leaguebot.core.services.division_edit_changes import DIVISION_AMEND, DIVISION_RENAME
 from leaguebot.core.services.round_add_changes import (
     ADD as ROUND_ADD,
@@ -2272,40 +2273,13 @@ class SeasonCog(commands.Cog):
         interaction: discord.Interaction,
         name: str,
     ) -> None:
-        season_id = await self._season_in_placements()
-        if season_id is None:
-            await refuse(
-                interaction,
-                "\u274c `/division delete` can only be used while the season is in placements.",
-                what=describe(interaction),
-            )
-            return
-
-        divisions = await self.bot.season_service.get_divisions(season_id)
-        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
-        if div is None:
-            await refuse(
-                interaction,
-                f"\u274c Division `{name}` not found.",
-                what=describe(interaction),
-            )
-            return
-
-        await self.bot.season_service.delete_division(
-            div.id,
-            rounds_deleted=self.bot.rounds_deleted,
-            divisions_deleted=self.bot.divisions_deleted,
-        )
-
-        remaining = await self.bot.season_service.get_divisions(season_id)
-        await interaction.response.send_message(
-            f"\u2705 Division **{div.name}** deleted.\n\n"
-            + format_division_list(remaining),
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division delete | Success\n"
-            f"  division: {div.name}",
+        """Delete a division: ask the change queue for it, which refuses what the command has
+        always refused at the ask and again as the change starts, and deletes the division, its
+        rounds and every module's rows of them with its audit entry in one save
+        (`core/services/division_delete_change.py`)."""
+        await self.bot.change_queue.ask(
+            DIVISION_DELETE, {"name": name},
+            interaction=interaction, what=describe(interaction),
         )
 
     @division.command(
