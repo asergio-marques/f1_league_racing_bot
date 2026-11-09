@@ -10,6 +10,7 @@ call each on a connection of their own and commit, as the save's transaction doe
 """
 from __future__ import annotations
 
+import inspect
 import os
 
 import pytest
@@ -58,9 +59,18 @@ async def _make_db(tmp_path) -> str:
 _NOT_YET = "#283: the results channel setters do not yet write on the save's connection"
 
 
+def _on_a_connection(setter) -> None:
+    """Fail at once where *setter* still opens a database by the path it is given: handed a
+    connection, it would open one it never closes, at a file named for that connection in the
+    working directory, and the session could not end."""
+    if "db_path" in inspect.signature(setter).parameters:
+        pytest.fail(f"{setter.__name__} still opens its own connection")
+
+
 async def _set(db_path: str, setter, *values) -> list:
     """Call *setter* with each of *values* in turn for Division 11, on one connection, then
     commit; the values each call gave back."""
+    _on_a_connection(setter)
     async with get_connection(db_path) as db:
         replaced = [await setter(db, DIVISION_ID, value) for value in values]
         await db.commit()
@@ -158,6 +168,7 @@ async def test_a_results_channel_setter_leaves_the_commit_to_its_save(tmp_path, 
     is set to 700001 on a connection whose transaction is then rolled back, as a save's is when
     the audit entry beside it fails: the setter committed nothing, and Division 11 still has no
     such channel."""
+    _on_a_connection(setter)
     db_path = await _make_db(tmp_path)
 
     async with get_connection(db_path) as db:
