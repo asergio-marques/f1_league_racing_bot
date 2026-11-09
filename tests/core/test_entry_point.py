@@ -383,7 +383,6 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the configuration confirmed hook is not yet declared")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The

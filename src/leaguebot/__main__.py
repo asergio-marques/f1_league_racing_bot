@@ -315,6 +315,18 @@ def _sign_up_to_test_mode_turned_on(bot: LeagueBot) -> None:
     bot.test_mode_turned_on.subscribe(points_config_service.seed_test_configs_on)
 
 
+def _sign_up_to_configuration_confirmed(bot: LeagueBot) -> None:
+    """Make the hook a season's configuration confirmed declares, and sign each module's part up
+    to it: what a module keeps for the season from that moment, on the connection of the
+    confirmation's save, given the season's id and the queue's clock (architecture.md, "How
+    modules and core fit together"). Signup keeps its settings and slots. The builder hands it to
+    the confirmation."""
+    from leaguebot.signup.services import signup_module_service
+
+    bot.configuration_confirmed = AwaitedHook()
+    bot.configuration_confirmed.subscribe(signup_module_service.configuration_confirmed_on)
+
+
 def _sign_up_to_placements_confirmed(bot: LeagueBot) -> None:
     """Make the hooks placements confirmed (the season's approval) declares, and sign each
     module's opening post up to them: the jobs it plans for a division, handed the save's
@@ -1415,6 +1427,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_cancellations(bot)
     _sign_up_to_rounds_made_final(bot)
     _sign_up_to_test_mode_turned_on(bot)
+    _sign_up_to_configuration_confirmed(bot)
     _sign_up_to_placements_confirmed(bot)
     _sign_up_to_season_completed(bot)
     _sign_up_to_season_end(bot)

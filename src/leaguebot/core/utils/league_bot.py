@@ -153,6 +153,11 @@ class LeagueBot(commands.Bot):
     #: definitions each module hands back for its own job, by name.
     placements_confirmed: AwaitedHook
     placements_confirmed_steps: Hook
+    #: A season's configuration confirmed (the confirmation's save), given the save's connection,
+    #: the season's id and the queue's clock: each module signing up what it keeps for the season
+    #: from this moment (signup's settings and slots). The builder makes it and hands it to the
+    #: confirmation, which calls it inside its save.
+    configuration_confirmed: AwaitedHook
     #: A division's final round read (the completion's first save), given the connection and the
     #: division's id: each module signing up its own read, handing back the round its final
     #: classification is drawn against, or None (results' last round with results). The builder

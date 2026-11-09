@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterable
+from datetime import datetime
 from typing import Any
 
 import aiosqlite
@@ -908,6 +909,66 @@ class SignupModuleService:
                 for s in snapshot.slots
             ],
         }
+
+
+async def configuration_confirmed_on(
+    db: aiosqlite.Connection, season_id: int, now: datetime
+) -> None:
+    """Keep the signup configuration *season_id* is confirmed with, on *db*, committing nothing:
+    the module's settings and its availability slots, stamped *now*.
+
+    Core hands it the season's id and the queue's clock as the season's configuration is
+    confirmed, in the confirmation's own save, so that the season moves on with its signup
+    settings kept or not at all (architecture.md, "How modules and core fit together"). From that
+    moment the module's settings are fixed until the season ends, so the snapshot is exactly what
+    every signup of the season answered. Called again for the season it replaces the snapshot,
+    never duplicating it.
+    """
+    cursor = await db.execute(
+        "SELECT nationality_required, time_type, time_image_required FROM signup_module_settings"
+    )
+    row = await cursor.fetchone()
+    settings = (
+        SignupModuleSettings(
+            nationality_required=bool(row["nationality_required"]),
+            time_type=row["time_type"],
+            time_image_required=bool(row["time_image_required"]),
+        )
+        if row is not None
+        else SignupModuleSettings(
+            nationality_required=True, time_type="TIME_TRIAL", time_image_required=True
+        )
+    )
+    cursor = await db.execute(
+        "SELECT day_of_week, time_hhmm FROM signup_availability_slots "
+        "ORDER BY day_of_week ASC, time_hhmm ASC"
+    )
+    slots = [
+        {
+            "slot_id": AvailabilitySlot.make_slot_id(slot["day_of_week"], slot["time_hhmm"]),
+            "day_of_week": slot["day_of_week"],
+            "time_hhmm": slot["time_hhmm"],
+        }
+        for slot in await cursor.fetchall()
+    ]
+    await db.execute(
+        "INSERT INTO season_signup_config "
+        "(season_id, nationality_required, time_type, time_image_required, slots_json, "
+        "captured_at) VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(season_id) DO UPDATE SET "
+        "nationality_required = excluded.nationality_required, "
+        "time_type = excluded.time_type, "
+        "time_image_required = excluded.time_image_required, "
+        "slots_json = excluded.slots_json, captured_at = excluded.captured_at",
+        (
+            season_id,
+            int(settings.nationality_required),
+            settings.time_type,
+            int(settings.time_image_required),
+            json.dumps(slots),
+            now.isoformat(),
+        ),
+    )
 
 
 async def season_deleted_on(db: aiosqlite.Connection, season_id: int) -> None:

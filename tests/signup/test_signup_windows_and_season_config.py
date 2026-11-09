@@ -91,7 +91,6 @@ async def test_a_second_window_is_a_second_record(db_path):
     assert windows[1]["closed_at"] is None
 
 
-_SUBSCRIBER = "#283: signup's settings are not yet kept by a subscriber to the configuration's save"
 #: The queue's clock as the season's configuration is confirmed.
 _CONFIRMED_AT = datetime(2026, 3, 1, 12, 30, tzinfo=timezone.utc)
 
@@ -107,7 +106,6 @@ async def _confirmed(db_path, season_id: int, now: datetime = _CONFIRMED_AT) -> 
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=_SUBSCRIBER)
 async def test_the_season_config_snapshot_holds_settings_and_slots(db_path):
     """Signup asks for a short qualification time and no nationality, and offers one slot, Monday
     19:00. Season 5's configuration is confirmed: signup's subscriber, handed the save's
@@ -130,7 +128,6 @@ async def test_the_season_config_snapshot_holds_settings_and_slots(db_path):
     assert captured == _CONFIRMED_AT.replace(tzinfo=None)
 
 
-@pytest.mark.xfail(strict=True, reason=_SUBSCRIBER)
 async def test_the_snapshot_is_replaced_not_duplicated(db_path):
     """Season 5's configuration is confirmed with no slot offered; a Wednesday 20:00 slot is then
     added and it is confirmed again, a day on. Season 5 keeps one set of settings, the later:
