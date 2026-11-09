@@ -3378,45 +3378,6 @@ class SeasonCog(commands.Cog):
     # Shared instance methods
     # ------------------------------------------------------------------
 
-    async def _get_pending(self) -> PendingConfig | None:
-        """The season being set up, as the database holds it at this moment, or None.
-
-        Nothing of it is kept between one call and the next: it is put together from the
-        season service's reads of the SETUP season, its divisions and each division's rounds,
-        so that a setup begun before a restart, or changed by a command that writes the
-        database itself, is found as it stands. The season service's `get_divisions` orders
-        the divisions by tier, which is the order the commands list them in.
-        """
-        season_service = self.bot.season_service
-        season = await season_service.get_setup_season()
-        if season is None:
-            return None
-        divisions: list[PendingDivision] = []
-        for division in await season_service.get_divisions(season.id):
-            rounds = await season_service.get_division_rounds(division.id)
-            divisions.append(PendingDivision(
-                name=division.name,
-                role_id=division.mention_role_id,
-                channel_id=division.forecast_channel_id,
-                tier=division.tier,
-                rounds=[
-                    {
-                        "round_number": r.round_number,
-                        "format": r.format,
-                        "track_name": r.track_name,
-                        "scheduled_at": r.scheduled_at,
-                    }
-                    for r in rounds
-                ],
-            ))
-        return PendingConfig(
-            start_date=season.start_date,
-            divisions=divisions,
-            season_id=season.id,
-            season_number=season.season_number,
-            game_edition=season.game_edition,
-        )
-
     async def _offer_backup_before_approving(
         self, interaction, deadline: datetime
     ) -> bool:
