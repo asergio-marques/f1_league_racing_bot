@@ -197,24 +197,18 @@ class SeasonService:
             return None
         return _row_to_season(row)
 
-    async def get_previous_season_number(self) -> int:
-        """The highest season number the league has already committed, or 0.
-
-        "Committed" means the number has been issued and cannot be re-used — every status
-        but SETUP. A season still in setup holds a provisional number and is excluded, so
-        that a league drafting its next season does not push the count forward twice.
-
-        A new season is numbered one above it. The highest number, not a count of seasons:
-        a count agrees only while the numbers run from 1 without a gap, and falls behind
-        the highest number the moment one goes missing, handing out a number already in
-        use (issue #153).
-        """
-        async with get_connection(self._db_path) as db:
-            return await self.previous_season_number_on(db)
-
     async def previous_season_number_on(self, db: aiosqlite.Connection) -> int:
-        """`get_previous_season_number` on *db*, a connection the caller holds: a save numbers the
-        season it inserts from what its own connection reads, never from a second one."""
+        """The highest season number the league has already committed, or 0, read on *db*, a
+        connection the caller holds: a save numbers the season it inserts from what its own
+        connection reads, never from a second one.
+
+        "Committed" means the number has been issued and cannot be re-used — every status but
+        SETUP. A season still in setup holds a provisional number and is excluded, so that a league
+        drafting its next season does not push the count forward twice. A new season is numbered
+        one above it. The highest number, not a count of seasons: a count agrees only while the
+        numbers run from 1 without a gap, and falls behind the highest number the moment one goes
+        missing, handing out a number already in use.
+        """
         cursor = await db.execute(
             "SELECT MAX(season_number) AS highest FROM seasons WHERE status != 'SETUP'",
         )
