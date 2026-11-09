@@ -16,7 +16,6 @@ from tests.support.season_league import (
     AM_ROLE, DRIVER_ROLE, FERRARI_ROLE, LEWIS, MCLAREN_ROLE, PRO_ROLE, ongoing_league,
 )
 
-_ROLE_STEP_NOT_BUILT = "#283: no role step carrying Step.on_fault is built yet"
 _REFUSED = "Discord refused or failed a request from the bot"
 
 #: (what Discord does, the roles taken, the roles given, the problem the ended job reports or
@@ -51,7 +50,6 @@ _CASES = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_ROLE_STEP_NOT_BUILT)
 @pytest.mark.parametrize("discord_does, take, give, problem, taken, given", _CASES)
 async def test_the_role_step_takes_then_gives_and_a_refusal_ends_the_job(
     tmp_path, discord_does, take, give, problem, taken, given
