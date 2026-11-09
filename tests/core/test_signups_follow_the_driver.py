@@ -131,9 +131,9 @@ async def _approvals(db_path: str) -> int:
 async def test_a_turned_down_signup_no_longer_outranks_the_others(tmp_path):
     """The signup specification: a signup ceases to be approved when the approved driver is turned
     down. The signup module is on; the driver's signup on their past account A is approved, and a
-    later one on their current account B was rejected. Core turns the driver down, calling its
-    driver-turned-down hook on the save's connection; signup's part, `driver_turned_down_on`,
-    withdraws the approval there, and the save commits. A's signup no longer outranks B's: the
+    later one on their current account B was rejected. Signup's part of core's
+    driver-turned-down hook, `driver_turned_down_on`, is called on a connection, as core's save
+    would call it, and the connection commits. A's signup no longer outranks B's: the
     driver's nationality is read from B's (BR), and no signup of theirs is approved."""
     from leaguebot.signup.services.signup_module_service import driver_turned_down_on
 

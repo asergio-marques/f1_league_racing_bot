@@ -406,8 +406,8 @@ async def test_the_driver_role_goes_after_the_rejection_is_saved_and_a_refusal_i
     today's, then "⚠️ Done, but on Discord:" and a bullet, "the role <@&820> could not be taken
     from <@106>: Discord refused or failed a request from the bot"; his success line carries a
     "not done:" line in the same words, its mentions written in code as the log channel writes
-    every mention. The lane is not stopped, and Kimi's rejection, asked after, is made in full:
-    the driver role taken, his reply today's alone. Takes the place of
+    every mention. The lane is not stopped, and Kimi's rejection, asked after, goes through: his
+    success line written, the driver role taken, his reply today's alone. Takes the place of
     `test_driver_ongoing_commands.py`'s mocked "rejection whose role cannot be removed"."""
     import discord
 
