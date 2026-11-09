@@ -1,6 +1,9 @@
 """A lineup asked of the change queue (#439, slice 6): a command that changes the drivers makes
 its own change, then asks the queue, as the bot's and repeatably, to post each lineup it touched
-(`lineup.post`); its reply is unchanged and the post follows on the queue.
+(`lineup.post`); its reply is unchanged and the post follows on the queue. `/driver move`,
+`release` and `sack` ask no lineup: each is a change on the queue that posts its lineups as steps
+of its own (#283), pinned in `test_driver_move.py`, `test_driver_release.py` and
+`test_sack_driver.py`.
 
 The league is `ongoing_league`'s: season 3 being raced, Pro (21) with its lineup channel 600 and Am
 (22) with 700, images off. Where a command is run, its cog stands on a bot whose services are
@@ -115,42 +118,9 @@ async def _unassign(league: Any, lineups: list[int]) -> Any:
     return cog, _interaction(), _unassign
 
 
-async def _sack(league: Any, lineups: list[int]) -> Any:
-    from tests.core.test_driver_cog import _interaction, _make_cog, _sack, _season
-
-    cog = _make_cog(season=_season())
-    cog.bot.placement_service.sack_driver.return_value = lineups
-    return cog, _interaction(), _sack
-
-
-async def _move(league: Any, lineups: list[int]) -> Any:
-    from tests.core.test_driver_ongoing_commands import _cog, _interaction, _move
-
-    cog = _cog()
-    cog.bot.placement_service.move_driver.return_value = {
-        "from_division": "Am", "to_division": "Pro", "from_team": "Alpha", "to_team": "Reserve",
-        "lineups": lineups,
-    }
-    return cog, _interaction(), lambda c, i: _move(c, i, from_division="Pro",
-                                                   to_division="Academy")
-
-
-async def _release(league: Any, lineups: list[int]) -> Any:
-    from tests.core.test_driver_ongoing_commands import _cog, _interaction, _release
-
-    cog = _cog()
-    cog.bot.placement_service.release_driver.return_value = {
-        "division_name": "Pro", "lineups": lineups,
-    }
-    return cog, _interaction(), _release
-
-
 @pytest.mark.parametrize("command, lineups", [
     pytest.param(_assign, [PRO], id="assign"),
     pytest.param(_unassign, [PRO], id="unassign"),
-    pytest.param(_move, [AM, PRO], id="move to another division"),
-    pytest.param(_release, [PRO], id="release"),
-    pytest.param(_sack, [PRO], id="sack"),
 ])
 async def test_a_driver_command_asks_the_queue_for_each_lineup_it_touched(tmp_path, command,
                                                                          lineups):
