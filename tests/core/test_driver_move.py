@@ -563,9 +563,10 @@ async def test_a_refused_role_move_is_reported_and_the_queue_goes_on(tmp_path):
     then of Max likewise, before the queue runs; Discord refuses to give Lewis any role (403
     Missing Permissions). The queue runs both. Lewis's move stands, saved before his roles were
     asked of Discord: he sits at McLaren in Am, his Pro and Ferrari roles are taken, and nothing
-    is given him. His reply is today's, then "⚠️ Done, but on Discord:" and the bullet "the roles
-    could not be given to <@101>:" with Discord's words; his success line carries a "not done:"
-    line with the same words. The lane is not stopped, and Max's move, asked after, is made in
+    is given him. His reply is today's, then "⚠️ Done, but on Discord:" and a bullet naming the
+    roles refused, Am's and McLaren's, then the kind of fault in plain words, never Discord's own:
+    "the roles <@&802> and <@&812> could not be given to <@101>: Discord refused or failed a
+    request from the bot"; his success line carries a "not done:" line in the same words. The lane is not stopped, and Max's move, asked after, is made in
     full: he sits at McLaren in Am, given Am's and McLaren's roles, his reply today's alone."""
     import discord
 
@@ -580,7 +581,10 @@ async def test_a_refused_role_move_is_reported_and_the_queue_goes_on(tmp_path):
     max_ = await _ask_move(league, MAX)
     await run_queue(league.bot)
 
-    problem = f"the roles could not be given to <@{LEWIS}>: {refused}"
+    problem = (
+        f"the roles <@&{AM_ROLE}> and <@&{MCLAREN_ROLE}> could not be given to <@{LEWIS}>: "
+        "Discord refused or failed a request from the bot"
+    )
     assert await _seated(league) == {
         **_STANDING, LEWIS: ("Am", "McLaren", True), MAX: ("Am", "McLaren", True),
     }
