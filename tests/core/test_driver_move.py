@@ -296,28 +296,6 @@ async def test_a_member_who_left_the_server_is_moved_without_roles(db_path):
     assert result["lineups"] == [PRO]
 
 
-# ── A team's role repointed: its seated drivers follow ────────────────────────────
-
-
-def _role_guild(members: dict):
-    guild = MagicMock()
-    guild.get_member = MagicMock(side_effect=lambda uid: members.get(uid))
-    guild.fetch_member = AsyncMock(side_effect=lambda uid: members.get(uid))
-    return guild
-
-
-async def test_a_role_cleared_is_taken_and_nothing_granted(db_path):
-    await _seat(db_path, PRO, "Reserve")
-    service = _service(db_path)
-
-    await service.swap_team_role(
-        "Reserve", ROLES["Reserve"], None, _role_guild({4242: MagicMock()})
-    )
-
-    service._revoke_roles.assert_awaited_once()
-    service._grant_roles.assert_not_awaited()
-
-
 # ── A refused role change: the committing form attendance's sync moves through ──────────────
 
 

@@ -8,8 +8,8 @@ writing nothing, and the lane goes on.
 
 These run on `configuring_league`'s season 3, in Configuration, where the team list is open. The
 server's list holds Ferrari ("Scuderia Ferrari", role 811), McLaren ("McLaren F1 Team", role 812)
-and the Reserve team. Admin (77) asks every change, as a league manager for `/team add` and
-`/team modify` and as a league admin for `/team remove`. Alpine's role (813) and Haas's (814) are
+and the Reserve team. Admin (77) asks every change, as a league manager for `/team add`,
+`/team modify` and `/team reserve-role` and as a league admin for `/team remove`. Alpine's role (813) and Haas's (814) are
 on the server, held by no team, and the bot can grant all four roles. Where a team's role moves
 the drivers seated in it, they run on `ongoing_league`'s season instead, with the same list.
 """
@@ -274,8 +274,9 @@ async def test_a_team_add_is_refused_at_the_ask(tmp_path, setup, shorthand, full
     the server's list and its role mappings stand, and no audit entry is written. Takes the place
     of `test_team_cog.py`'s mocked "refused once the configuration is confirmed", "duplicate name"
     and "not added under a role another team holds" tests, `test_team_modals.py`'s "submitted after
-    the list was fixed" and `test_team_role_grantable.py`'s "adding a team refuses a role the bot
-    cannot grant"."""
+    the list was fixed", `test_team_role_grantable.py`'s "adding a team refuses a role the bot
+    cannot grant", and `test_team_cog_refusals.py`'s mocked "add form" cases: "team list fixed",
+    "role cannot be granted", "role held" and "refused by the service"."""
     from tests.support.change_queue import change_rows
     from tests.support.settings_league import last_said, log_lines
 
@@ -386,7 +387,8 @@ async def test_a_refusal_found_inside_the_save_ends_the_team_add_and_the_lane_go
     the log channel takes that refusal as a line: no Alpine row, no mapping of its own, no audit
     entry. The lane is not stopped, and Haas's add, asked after, goes through: Haas is on the list
     with 814, and its success line follows Alpine's refusal. Takes the place of `test_team_cog.py`'s
-    "a role taken at the last moment takes the new team away again"."""
+    "a role taken at the last moment takes the new team away again" and `test_team_cog_refusals.py`'s
+    mocked "add form role taken at the last moment"."""
     from tests.support.change_queue import run_queue, stopped_job
     from tests.support.settings_league import last_said, log_lines
 
@@ -537,7 +539,9 @@ async def test_a_team_remove_is_refused_at_the_ask(tmp_path, setup, name, reply)
     team is; or of the Reserve team. They are refused at once, in today's words, and the log
     channel takes the refusal as its one line. Nothing is asked of the queue, the server's list and
     its role mappings stand, and no audit entry is written. Takes the place of `test_team_cog.py`'s
-    mocked "refused once the configuration is confirmed" and "not found" remove tests."""
+    mocked "refused once the configuration is confirmed" and "not found" remove tests, and
+    `test_team_cog_refusals.py`'s mocked "remove team list fixed", "remove unknown team" and
+    "remove refused by the service"."""
     from tests.support.change_queue import change_rows
     from tests.support.settings_league import last_said, log_lines
 
@@ -1245,6 +1249,461 @@ async def test_a_role_refused_after_a_team_modify_is_reported_and_the_queue_goes
         _modify_line("Scuderia Ferrari", "Ferrari", "Alpine", ALPINE_ROLE, moved=1)
         + f"\n  not done: {_as_logged(problem)}",
         _modify_line("McLaren F1 Team", "McLaren", "Haas", HAAS_ROLE, moved=1),
+    ]
+    assert await stopped_job(league.db_path) is None
+    assert last_said(mclaren) == _modified(
+        "McLaren F1 Team", f"Role: <@&{HAAS_ROLE}>", "1 seated driver(s) moved to the new role.",
+    )
+
+
+# ── /team reserve-role ────────────────────────────────────────────────────────────────
+
+#: Why each `/team reserve-role` test below fails until the build.
+_RESERVE_ON_THE_QUEUE = "#283: /team reserve-role is not yet a change on the queue"
+
+#: The Reserve team's role where a test gives it one, and the role a test moves it to.
+RESERVE_ROLE, RESERVES_ROLE = 815, 816
+_RESERVE_ROLE_COMMAND = "`/team reserve-role`"
+#: The reason Discord's audit log is given for a seated driver's roles moved by
+#: `/team reserve-role`.
+_RESERVE_REASON = "Reserve team's role changed"
+
+
+async def _ask_reserve_role(league, role_id: int | None = RESERVES_ROLE, *, role=None):
+    """`/team reserve-role` run by Admin, as a league manager, with the role *role_id* (None:
+    cleared) or the double *role*: the interaction. The queue is not run."""
+    from leaguebot.core.cogs.team_cog import TeamCog
+    from tests.support.change_queue import tier_member
+    from tests.support.season_league import ADMIN_ID
+    from tests.support.settings_league import interaction
+    from tests.support.undecorate import undecorate
+
+    asked = interaction(
+        league.bot, "team reserve-role",
+        user=tier_member("manager", member_id=ADMIN_ID, display_name="Admin"),
+    )
+    asked.guild = league.guild
+    if role is None and role_id is not None:
+        role = league._role(role_id)
+    await undecorate(TeamCog.team_reserve_role)(TeamCog(league.bot), asked, role=role)
+    return asked
+
+
+def _setting(cleared: bool = False) -> str:
+    """How the queue words `/team reserve-role`, setting the role or clearing it."""
+    return f"{'Clearing' if cleared else 'Setting'} the Reserve team's role"
+
+
+def _reserve_set(role_id: int | None = RESERVES_ROLE, moved: int = 0) -> str:
+    """`/team reserve-role`'s reply once done, today's: the role set or cleared, and the count of
+    seated drivers moved where any were."""
+    said = (
+        "✅ Reserve team role cleared." if role_id is None
+        else f"✅ Reserve team role set to <@&{role_id}>."
+    )
+    return f"{said} {moved} seated driver(s) moved to the new role." if moved else said
+
+
+def _reserve_line(role_name: str | None = "Reserves", role_id: int = RESERVES_ROLE) -> str:
+    """`/team reserve-role`'s line, word for word: today's, the member named as the queue names
+    them."""
+    role = "cleared" if role_name is None else f"{role_name} (`<@&{role_id}>`)"
+    return f"{_ADMIN} | /team reserve-role | Success\n  role: {role}"
+
+
+async def _reserve_holds(league, role_id: int = RESERVE_ROLE):
+    """The Reserve team mapped to *role_id*, a role on the server named "Reserve" that the bot
+    can grant; the role `/team reserve-role` moves it to, 816, named "Reserves", grantable too."""
+    await league.write(
+        "INSERT INTO team_role_configs (team_name, role_id) VALUES ('Reserve', ?)", role_id
+    )
+    _grantable(league, role_id, "Reserve")
+    _grantable(league, RESERVES_ROLE, "Reserves")
+    return league
+
+
+async def _reserve_team_league(tmp_path):
+    """The module docstring's league, the Reserve team mapped to 815 (`_reserve_holds`)."""
+    return await _reserve_holds(await _team_league(tmp_path))
+
+
+_RESERVE_STANDING = {**_STANDING, "Reserve": ("Reserve", RESERVE_ROLE)}
+
+
+async def _role_held_meanwhile(league):
+    """Ferrari mapped to 816, the role the Reserve team is being given."""
+    await league.write("UPDATE team_role_configs SET role_id = ? WHERE team_name = 'Ferrari'",
+                       RESERVES_ROLE)
+
+
+async def _reserves_role_now_managed(league):
+    _grantable(league, RESERVES_ROLE, "Reserves").managed = True
+
+
+@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
+@pytest.mark.parametrize(
+    "role_id, role_name",
+    [pytest.param(RESERVES_ROLE, "Reserves", id="set"), pytest.param(None, None, id="cleared")],
+)
+async def test_a_team_reserve_role_its_mapping_audit_entry_and_line_are_one_save(
+    tmp_path, role_id, role_name,
+):
+    """The core specification's team list, and its record of what changed. The season is in
+    Configuration, and the Reserve team is mapped to the role 815. Admin runs
+    `/team reserve-role` with the role 816, "Reserves", or with no role, clearing it. They are
+    answered at once with the queue's acknowledgement, "Setting the Reserve team's role" or
+    "Clearing the Reserve team's role", naming its first job, and nothing is written until the
+    queue runs the change, of kind `core.team_reserve_role`. Once it has, the Reserve team is
+    mapped to 816, or to no role; one audit entry, by Admin, on no division, stamped with the
+    queue's clock, records it (`TEAM_ROLE_CONFIG`: Reserve, 815 to 816 or to none), the team's
+    row being unchanged; the log channel holds today's success line once, naming the role or
+    "cleared"; no role is given or taken on Discord, no driver being seated in the Reserve team;
+    no division's teams change; and the acknowledgement is updated to today's reply, "✅ Reserve
+    team role set to <@&816>." or "✅ Reserve team role cleared.". Takes the place of
+    `test_team_cog.py`'s mocked "set role calls set config" and "clear role calls delete config",
+    and `test_team_lineup_command.py`'s "setting the reserve role is logged with the role" and
+    "clearing the reserve role is logged as cleared"."""
+    from tests.support.change_queue import change_rows, run_queue, step_rows
+    from tests.support.settings_league import last_said, log_lines, said
+    from tests.support.setup_rounds import acknowledged
+
+    league = await _reserve_team_league(tmp_path)
+    divisions = await _division_teams(league)
+    asked = await _ask_reserve_role(league, role_id)
+
+    first_job = (await step_rows(league.db_path))[0]["id"]
+    cleared = role_id is None
+    assert said(asked)[0] == f"{acknowledged(_setting(cleared))} It begins with job #{first_job}."
+    assert [row["kind"] for row in await change_rows(league.db_path)] == [
+        "core.team_reserve_role",
+    ]
+    assert await _server_list(league) == _RESERVE_STANDING
+    await run_queue(league.bot)
+
+    assert await _server_list(league) == {**_STANDING, "Reserve": ("Reserve", role_id)}
+    [mapped] = await _team_audits(league)
+    assert (mapped["change_type"], mapped["actor_id"], mapped["division_id"]) == (
+        "TEAM_ROLE_CONFIG", 77, None,
+    )
+    assert mapped["old_value"] == {"team": "Reserve", "role_id": RESERVE_ROLE}
+    assert mapped["new_value"] == {"team": "Reserve", "role_id": role_id}
+    assert mapped["timestamp"] == league.clock.now.isoformat()
+    assert _team_lines(await log_lines(league), "/team reserve-role") == [
+        _reserve_line(role_name),
+    ]
+    assert league.granted == {} and league.revoked == {}
+    assert await _division_teams(league) == divisions
+    assert last_said(asked) == _reserve_set(role_id)
+
+
+@pytest.mark.parametrize(
+    "setup, role_id, reply",
+    [
+        pytest.param(
+            _pending_completion, RESERVES_ROLE, _SEASON_DONE.format(command="reserve-role"),
+            id="the-season-pending-completion",
+        ),
+        pytest.param(
+            _reserves_role_now_managed, RESERVES_ROLE,
+            "⛔ <@&816> is managed by an integration — a bot, a subscription or a linked role — "
+            "so Discord will not let me grant it. Choose a role of the team's own.",
+            id="a-role-the-bot-cannot-grant",
+        ),
+        pytest.param(None, 811, _held_by(811, "Ferrari"), id="a-role-another-team-holds"),
+    ],
+)
+async def test_a_team_reserve_role_is_refused_at_the_ask(tmp_path, setup, role_id, reply):
+    """The season is in Configuration, and the Reserve team is mapped to 815. Admin runs
+    `/team reserve-role` where it cannot be done: once every division is done (the season Pending
+    completion), with the role 816; with 816 once an integration manages it; or with Ferrari's
+    role, 811. They are refused at once, in today's words, and the log channel takes the refusal,
+    naming the command, as its one line. Nothing is asked of the queue, the Reserve team keeps 815,
+    no audit entry is written, and no role is given or taken on Discord. Takes the place of
+    `test_team_cog.py`'s mocked "the reserve is not given a role another team holds",
+    `test_team_role_grantable.py`'s `/team reserve-role` case of "a team command refuses a role
+    the bot cannot grant", and `test_team_cog_refusals.py`'s mocked "reserve-role season done"
+    and "reserve-role cannot be granted"."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said, log_lines
+
+    league = await _reserve_team_league(tmp_path)
+    if setup is not None:
+        await setup(league)
+    asked = await _ask_reserve_role(league, role_id)
+
+    assert last_said(asked) == reply
+    assert await log_lines(league) == [_refusal(_RESERVE_ROLE_COMMAND, reply)]
+    assert await change_rows(league.db_path) == []
+    assert await _server_list(league) == _RESERVE_STANDING
+    assert await _team_audits(league) == []
+    assert league.granted == {} and league.revoked == {}
+
+
+@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
+async def test_a_failed_team_reserve_role_changes_nothing(tmp_path):
+    """The season is in Configuration, and the Reserve team is mapped to 815. Admin runs
+    `/team reserve-role` with 816, and as the queue runs it the database fails writing the audit
+    entry. Nothing of it is saved, the mapping, the entry and the line being one save: the Reserve
+    team keeps 815, no audit entry is written and the log channel holds no success line. The
+    league's lane stops at the job. Once a league admin discards it, the reply says "Nothing was
+    changed: the Reserve team's role stands as it was. Run `/team reserve-role` again."; and the
+    lane is clear."""
+    from tests.support.change_queue import discard_job, run_queue, stopped_job
+    from tests.support.settings_league import fault_in, last_said, log_lines
+
+    league = await _reserve_team_league(tmp_path)
+    asked = await _ask_reserve_role(league)
+    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+        await run_queue(league.bot)
+
+    assert await _server_list(league) == _RESERVE_STANDING
+    assert await _team_audits(league) == []
+    assert not any("| Success" in line for line in await log_lines(league))
+    assert await stopped_job(league.db_path) is not None
+
+    await discard_job(league.bot)
+
+    assert last_said(asked) == (
+        "Nothing was changed: the Reserve team's role stands as it was. Run "
+        "`/team reserve-role` again."
+    )
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
+@pytest.mark.parametrize(
+    "meanwhile, reply, standing",
+    [
+        pytest.param(
+            _pending_completion, _SEASON_DONE.format(command="reserve-role"), _RESERVE_STANDING,
+            id="the-season-pending-completion",
+        ),
+        pytest.param(
+            _role_held_meanwhile, _held_by(RESERVES_ROLE, "Ferrari"),
+            {**_RESERVE_STANDING, "Ferrari": ("Scuderia Ferrari", RESERVES_ROLE)},
+            id="the-role-taken-by-another-team",
+        ),
+        pytest.param(
+            _reserves_role_now_managed,
+            "⛔ <@&816> is managed by an integration — a bot, a subscription or a linked role — "
+            "so Discord will not let me grant it. Choose a role of the team's own.",
+            _RESERVE_STANDING, id="the-role-no-longer-grantable",
+        ),
+    ],
+)
+async def test_a_team_reserve_role_is_judged_again_as_it_starts(tmp_path, meanwhile, reply,
+                                                               standing):
+    """The season is in Configuration, and the Reserve team is mapped to 815. Admin runs
+    `/team reserve-role` with 816 and is acknowledged; before the queue runs it, every division is
+    done (the season Pending completion), Ferrari is given 816, or an integration takes over 816.
+    The queue runs. The change is refused as it starts, in the words it would meet at the ask,
+    its acknowledgement updated to them. The server's list stands as the meanwhile left it, the
+    Reserve team keeping 815, no audit entry is written, no role is given or taken, the log
+    channel holds the refusal, naming the command, alone, and the queue is not stopped."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.settings_league import last_said, log_lines
+
+    league = await _reserve_team_league(tmp_path)
+    asked = await _ask_reserve_role(league)
+    await meanwhile(league)
+    await run_queue(league.bot)
+
+    assert last_said(asked) == reply
+    assert await _server_list(league) == standing
+    assert await _team_audits(league) == []
+    assert league.granted == {} and league.revoked == {}
+    assert await log_lines(league) == [_refusal(_RESERVE_ROLE_COMMAND, reply)]
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
+async def test_a_refusal_found_inside_the_save_ends_the_team_reserve_role_and_the_lane_goes_on(
+    tmp_path,
+):
+    """The one-save decision: the refusals are read again inside the save, so a role taken
+    between the check and the write is not given to two teams. The season is in Configuration,
+    and the Reserve team is mapped to 815. Admin runs `/team reserve-role` with 816, then submits
+    the "Add a team" form for Haas ("Haas F1 Team", 814), before the queue runs. As the Reserve
+    team's change starts its check passes, and Ferrari is then given 816 before its save. The
+    change ends in today's words, '⛔ <@&816> is already the role of "Ferrari". A role belongs to
+    one team only.', its acknowledgement updated to them, and the log channel takes that refusal
+    as a line: the Reserve team keeps 815, and no audit entry of it is written. The lane is not
+    stopped, and Haas's add, asked after, goes through: Haas is on the list with 814, and its
+    success line follows the refusal."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.settings_league import last_said, log_lines
+
+    league = await _reserve_team_league(tmp_path)
+    reserve = await _ask_reserve_role(league)
+    haas = await _ask_add(league, "Haas", "Haas F1 Team", HAAS_ROLE)
+    taken = _check_then(league, "core.team_reserve_role", _role_held_meanwhile)
+    await run_queue(league.bot)
+
+    assert taken == [True]
+    reply = _held_by(RESERVES_ROLE, "Ferrari")
+    assert last_said(reserve) == reply
+    assert await _server_list(league) == {
+        **_RESERVE_STANDING, "Ferrari": ("Scuderia Ferrari", RESERVES_ROLE),
+        "Haas": ("Haas F1 Team", HAAS_ROLE),
+    }
+    assert [row["new_value"] for row in await _team_audits(league)] == [
+        {"shorthand": "Haas", "full_name": "Haas F1 Team"}, {"team": "Haas", "role_id": HAAS_ROLE},
+    ]
+    assert [
+        line for line in await log_lines(league)
+        if "/team reserve-role" in line or "/team add" in line or _ADD_FORM in line
+    ] == [
+        _refusal(_RESERVE_ROLE_COMMAND, reply),
+        _add_line("Haas", "Haas F1 Team", HAAS_ROLE, "Haas"),
+    ]
+    assert await stopped_job(league.db_path) is None
+    assert last_said(haas) == _added("Haas", "Haas F1 Team", HAAS_ROLE)
+
+
+@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
+async def test_a_team_reserve_role_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
+    """The season is in Configuration, and the Reserve team is mapped to 815. Admin runs
+    `/team reserve-role` with 816 and is acknowledged; before the queue runs it, they run it again,
+    the same. The second is refused at once, in the queue's words; only the one change is queued.
+    The queue runs it: the Reserve team is mapped to 816, with one `TEAM_ROLE_CONFIG` entry."""
+    from tests.support.change_queue import change_rows, run_queue
+    from tests.support.settings_league import said
+    from tests.support.setup_rounds import repeated
+
+    league = await _reserve_team_league(tmp_path)
+    first = await _ask_reserve_role(league)
+    repeat = await _ask_reserve_role(league)
+
+    assert said(repeat) == [repeated(_setting())]
+    assert len(await change_rows(league.db_path)) == 1
+    await run_queue(league.bot)
+
+    assert (await _server_list(league))["Reserve"] == ("Reserve", RESERVES_ROLE)
+    assert [row["change_type"] for row in await _team_audits(league)] == ["TEAM_ROLE_CONFIG"]
+    assert said(first)[-1] == _reserve_set()
+
+
+async def _reserve_seated_league(tmp_path, *seated: int):
+    """`_seated_league`'s live season with a Reserve team in Pro and in Am, the Reserve team
+    mapped to 815 (`_reserve_holds`), and each driver of *seated* moved from their team into
+    their division's Reserve team, in the same seat, confirmed, holding their division's role and
+    815 in place of their team's."""
+    from tests.support.season_league import AM, AM_ROLE, PRO, PRO_ROLE, SEATS, TEAMS, profile_id
+
+    league = await _reserve_holds(await _seated_league(tmp_path))
+    reserves = {PRO: 33, AM: 34}
+    for division_id, instance_id in reserves.items():
+        await league.write(
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, 'Reserve', 'Reserve', -1, 1)",
+            instance_id, division_id,
+        )
+    for user_id in seated:
+        division_id = TEAMS[SEATS[user_id][0]][0]
+        await league.write(
+            "UPDATE team_seats SET team_instance_id = ? WHERE driver_profile_id = ?",
+            reserves[division_id], profile_id(user_id),
+        )
+        league.roles_held[user_id] = {PRO_ROLE if division_id == PRO else AM_ROLE, RESERVE_ROLE}
+    return league
+
+
+@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
+@pytest.mark.parametrize(
+    "role_id, role_name",
+    [pytest.param(RESERVES_ROLE, "Reserves", id="set"), pytest.param(None, None, id="cleared")],
+)
+async def test_a_team_reserve_role_moves_its_seated_drivers_roles_after_the_save(
+    tmp_path, role_id, role_name,
+):
+    """architecture.md, "A job that fails stops its lane": the roles of a team's members follow
+    its change, one job for each member. The season is ongoing, and the Reserve team is mapped to
+    815. Lewis sits in Pro's Reserve team and Charles in Am's, each placement confirmed and each
+    holding 815; Max stays at Ferrari. Admin runs `/team reserve-role` with 816, or with no role,
+    clearing it. The queue runs it. The Reserve team is mapped to 816, or to none, one
+    `TEAM_ROLE_CONFIG` entry recording it, and then the queue moves Lewis's roles and Charles's,
+    each in a job of its own: 815 taken from each and 816 given, or, cleared, nothing given,
+    Discord's audit log told "Reserve team's role changed" for each. Max is left alone and gets no
+    job. The reply is today's, naming the role or saying it is cleared, then "2 seated driver(s)
+    moved to the new role.", and the success line is today's. Takes the place of
+    `test_team_cog.py`'s mocked "the drivers seated in reserve follow its new role" and
+    `test_driver_move.py`'s "a role cleared is taken and nothing granted"."""
+    import json
+
+    from tests.support.change_queue import run_queue, step_rows
+    from tests.support.season_league import CHARLES, LEWIS
+    from tests.support.settings_league import last_said, log_lines
+
+    league = await _reserve_seated_league(tmp_path, LEWIS, CHARLES)
+    asked = await _ask_reserve_role(league, role_id)
+    await run_queue(league.bot)
+
+    assert (await _server_list(league))["Reserve"] == ("Reserve", role_id)
+    assert [
+        (row["change_type"], row["old_value"], row["new_value"])
+        for row in await _team_audits(league)
+    ] == [
+        ("TEAM_ROLE_CONFIG", {"team": "Reserve", "role_id": RESERVE_ROLE},
+         {"team": "Reserve", "role_id": role_id}),
+    ]
+    assert sorted(
+        json.loads(row["payload"])["user_id"]
+        for row in await step_rows(league.db_path) if row["name"] == "move_roles"
+    ) == [LEWIS, CHARLES]
+    assert league.revoked == {LEWIS: [RESERVE_ROLE], CHARLES: [RESERVE_ROLE]}
+    if role_id is None:
+        assert league.granted == {}
+    else:
+        assert league.granted == {LEWIS: [RESERVES_ROLE], CHARLES: [RESERVES_ROLE]}
+        assert league.grant_reasons[LEWIS] == league.grant_reasons[CHARLES] == [_RESERVE_REASON]
+    assert league.revoke_reasons[LEWIS] == league.revoke_reasons[CHARLES] == [_RESERVE_REASON]
+    assert last_said(asked) == _reserve_set(role_id, moved=2)
+    assert _team_lines(await log_lines(league), "/team reserve-role") == [
+        _reserve_line(role_name),
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
+async def test_a_role_refused_after_a_team_reserve_role_is_reported_and_the_queue_goes_on(
+    tmp_path,
+):
+    """Decision 5: a role Discord refuses after a team's change is reported, and the queue goes
+    on. The season is ongoing, and the Reserve team is mapped to 815. Lewis and Max sit in Pro's
+    Reserve team, each holding 815; Charles stays at McLaren. Admin runs `/team reserve-role` with
+    816, then submits the "Modify a team" form of McLaren with Haas's role, 814, before the queue
+    runs; Discord refuses to give Lewis any role (403 Missing Permissions). The queue runs both.
+    The Reserve team's change stands, saved before the roles were asked of Discord: it is mapped
+    to 816; Lewis has 815 taken and nothing given; Max has 815 taken and 816 given. Its reply is
+    today's, counting the one driver moved in full, then "⚠️ Done, but on Discord:" and a bullet,
+    "the role <@&816> could not be given to <@101>: Discord refused or failed a request from the
+    bot"; its success line carries a "not done:" line in the same words, its mentions in code.
+    The lane is not stopped, and McLaren's change, asked after, is made in full: McLaren is
+    mapped to 814, Charles has 812 taken and 814 given, and its reply is today's alone."""
+    import discord
+
+    from tests.support.change_queue import http_error, run_queue, stopped_job
+    from tests.support.season_league import CHARLES, LEWIS, MAX
+    from tests.support.settings_league import last_said, log_lines
+
+    league = await _reserve_seated_league(tmp_path, LEWIS, MAX)
+    league.grant_fails[LEWIS] = http_error(discord.Forbidden, status=403,
+                                           text="Missing Permissions")
+    reserve = await _ask_reserve_role(league)
+    mclaren = await _ask_modify(league, "McLaren", role_id=HAAS_ROLE)
+    await run_queue(league.bot)
+
+    problem = (
+        f"the role <@&{RESERVES_ROLE}> could not be given to <@{LEWIS}>: Discord refused or "
+        "failed a request from the bot"
+    )
+    assert await _mappings(league) == {
+        "Ferrari": 811, "McLaren": HAAS_ROLE, "Reserve": RESERVES_ROLE,
+    }
+    assert league.revoked == {LEWIS: [RESERVE_ROLE], MAX: [RESERVE_ROLE], CHARLES: [812]}
+    assert league.granted == {MAX: [RESERVES_ROLE], CHARLES: [HAAS_ROLE]}
+    assert last_said(reserve) == f"{_reserve_set(moved=1)}\n⚠️ Done, but on Discord:\n• {problem}"
+    assert _team_lines(await log_lines(league), "/team reserve-role") == [
+        f"{_reserve_line()}\n  not done: {_as_logged(problem)}",
     ]
     assert await stopped_job(league.db_path) is None
     assert last_said(mclaren) == _modified(

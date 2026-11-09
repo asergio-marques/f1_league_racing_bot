@@ -1,7 +1,7 @@
-"""`/team lineup` and `/team reserve-role`.
+"""`/team lineup`.
 
-Issue #208. `tests/core/test_team_cog.py` covers adding, removing and renaming teams; the
-lineup listing and the reserve-role mapping were unexecuted.
+Issue #208. `tests/core/test_team_changes.py` covers the commands that change the team list, and
+`/team reserve-role` with them.
 
 **`/team lineup` has two quite different outputs and the choice between them is a league
 setting.** Where the image module's lineup graphic is enabled the command sends pictures; where
@@ -31,8 +31,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-from leaguebot.core.models.season import SeasonStage
 
 from leaguebot.core.cogs.team_cog import TeamCog
 from tests.support.lineup_drawing import LineupDrawingStub
@@ -80,24 +78,12 @@ def _make_cog(
     bot.image_drawing = drawing if drawing is not None else LineupDrawingStub(wanted=False)
     bot.season_service = MagicMock()
     bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
-    # `/team reserve-role` is refused once the season is pending completion (issue #224), so
-    # it reads the live season for its stage. Ongoing: the mapping is repaired mid-season.
-    bot.season_service.get_setup_or_active_season = AsyncMock(
-        return_value=SimpleNamespace(
-            id=SEASON_ID, season_number=1, stage=SeasonStage.ONGOING
-        )
-    )
     bot.season_service.get_divisions = AsyncMock(
         return_value=divisions if divisions is not None else [_division(11, "Division 1", 1)]
     )
     bot.placement_service = MagicMock()
     bot.placement_service.resolve_division = AsyncMock(return_value=resolve)
-    bot.placement_service.set_team_role_config = AsyncMock(return_value=None)
-    bot.placement_service.delete_team_role_config = AsyncMock(return_value=None)
-    bot.placement_service.swap_team_role = AsyncMock(return_value=0)
-    bot.placement_service.team_holding_role = AsyncMock(return_value=None)
     bot.team_service = MagicMock()
-    bot.team_service.get_teams_with_roles = AsyncMock(return_value=[])
     bot.team_service.get_division_teams = AsyncMock(
         return_value=teams if teams is not None else []
     )
@@ -344,40 +330,6 @@ async def test_a_drawing_that_fails_fails_the_command_and_releases_what_it_drew(
     assert drawing.drawn_for_command == [11, 12]
     assert drawing.discarded == [png]
     interaction.followup.send.assert_not_awaited()
-
-
-# ---------------------------------------------------------------------------
-# /team reserve-role
-# ---------------------------------------------------------------------------
-
-
-async def test_setting_the_reserve_role_is_logged_with_the_role(tmp_path):
-    cog = _make_cog()
-    interaction = _interaction()
-    # A team's role must be one the bot can grant (#381), so the double answers that check.
-    role = MagicMock()
-    role.id = 4242
-    role.name = "Reserves"
-    role.mention = "@Reserves"
-    role.is_default.return_value = False
-    role.managed = False
-    role.guild.me.guild_permissions.manage_roles = True
-    role.guild.me.top_role.__gt__ = lambda _self, _other: True
-
-    await undecorate(TeamCog.team_reserve_role)(cog, interaction, role)
-
-    logged = cog.bot.output_router.post_log.await_args.args[0]
-    assert "/team reserve-role" in logged
-    assert "Reserves" in logged
-
-
-async def test_clearing_the_reserve_role_is_logged_as_cleared(tmp_path):
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await undecorate(TeamCog.team_reserve_role)(cog, interaction, None)
-
-    assert "cleared" in cog.bot.output_router.post_log.await_args.args[0]
 
 
 async def test_the_lineup_names_each_team_by_its_full_name():
