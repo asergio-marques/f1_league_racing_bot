@@ -223,7 +223,6 @@ async def test_the_command_is_refused_outside_the_ongoing_stages(stage_name):
     cog.bot.season_service.get_confirmed_season = AsyncMock(
         return_value=SimpleNamespace(id=1, stage=SeasonStage(stage_name))
     )
-    cog.bot.placement_service.move_driver = AsyncMock()
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.response.defer = AsyncMock()
@@ -232,7 +231,7 @@ async def test_the_command_is_refused_outside_the_ongoing_stages(stage_name):
     await undecorate(DriverCog.move)(cog, interaction, MagicMock(), "Pro", "Reserve")
 
     assert "only while the season is ongoing" in interaction.followup.send.await_args.args[0]
-    cog.bot.placement_service.move_driver.assert_not_awaited()
+    assert cog.bot.change_queue.method_calls == []
 
 
 async def test_a_move_for_a_profile_that_does_not_exist_is_refused(db_path):
@@ -353,13 +352,15 @@ async def test_the_same_role_or_no_guild_changes_nothing(db_path):
     assert await service.swap_team_role("Alpha", 5, 6, None) == 0
 
 
-# ── A refused role change: /driver move keeps today's behaviour (#439 slice 8, Part C) ───────
+# ── A refused role change: the committing form attendance's sync moves through ──────────────
 
 
 async def test_a_role_discord_refuses_is_logged_and_the_move_still_saved(db_path, caplog):
-    """`/driver move` keeps today's role behaviour until core's pass: the driver of Pro's Alpha
-    is moved to its Reserve team, Discord refuses every role change (Missing Permissions), each
-    refusal is logged on the host, and the move is saved all the same."""
+    """`move_driver`, the committing form `/attendance sync` moves a driver to Reserve through
+    until attendance's own pass (#285), `/driver move` being a change on the queue (#283): the
+    driver of Pro's Alpha is moved to its Reserve team, Discord refuses every role change
+    (Missing Permissions), each refusal is logged on the host, and the move is saved all the
+    same."""
     import discord
 
     await _seat(db_path, PRO, "Alpha")
@@ -793,3 +794,4 @@ async def test_a_driver_move_asked_again_while_it_waits_is_refused_as_a_repeat(t
     assert _move_lines(await log_lines(league)) == [
         _refusal(repeated(_moving("Lewis"))), _move_line("Lewis", LEWIS),
     ]
+
