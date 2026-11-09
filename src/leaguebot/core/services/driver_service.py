@@ -619,12 +619,12 @@ class DriverService:
         """Make *new_user_id* the current account of the driver *old_user_id* names, on the
         connection handed, committing nothing.
 
-        A person changing Discord account keeps their history because a driver owns every
-        account they have held (issue #243): the profile's current account changes, the
-        `driver_account_on_current_change` trigger lists the new one beside the old, and **no
-        record is rewritten**. A result, a standing, a signup or a history entry keeps the account
-        it was written under, and an archived season stays exactly as it was. Everything read
-        from then on maps the old account to the new one.
+        A person changing Discord account keeps their history because a driver owns every account
+        they have held: the profile's current account changes, the
+        `driver_account_on_current_change` trigger lists the new one beside the old, and **no record
+        is rewritten**. A result, a standing, a signup or a history entry keeps the account it was
+        written under, and an archived season stays exactly as it was. Everything read from then on
+        maps the old account to the new one.
 
         *old_user_id* may be any account of the driver's, current or past. Naming one of the
         driver's own past accounts as *new_user_id* makes it current again.

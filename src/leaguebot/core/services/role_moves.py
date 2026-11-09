@@ -8,13 +8,14 @@ lane", makes such a step end the job on its fault (`Step.on_fault`), so the chan
 goes on to its lineups and its line and reports what was not done, rather than the lane stopping
 for a Retry or a Discard that could change nothing a league sees.
 
-`role_move_step` takes a member's roles first and gives theirs after. A step planned for each
-member carries `{"user_id", "revoke", "grant"}`, the roles' ids as the change read them inside its
-save. A member Discord cannot find has left the server, and their roles went with them: the step
-completes, nothing taken or given. A refusal ends the job with `{"problem": ...}`, in plain words
-and naming the roles and the kind of fault, never Discord's own message, for the change's reply and
-line to carry (`not_done`). Where taking is refused, nothing is given, and the problem names both. A role no longer on the server is, for a change that asks it
-(`give_what_remains`), passed over and named, the roles still there given.
+`role_move_step` takes a member's roles first and gives theirs after. A step planned for each member
+carries `{"user_id", "revoke", "grant"}`, the roles' ids as the change read them inside its save. A
+member Discord cannot find has left the server, and their roles went with them: the step completes,
+nothing taken or given. A refusal ends the job with `{"problem": ...}`, in plain words and naming
+the roles and the kind of fault, never Discord's own message, for the change's reply and line to
+carry (`not_done`). Where taking is refused, nothing is given, and the problem names both. A role no
+longer on the server is, for a change that asks it (`give_what_remains`), passed over and named, the
+roles still there given.
 """
 
 from __future__ import annotations
