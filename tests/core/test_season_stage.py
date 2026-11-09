@@ -212,21 +212,30 @@ async def test_confirming_the_configuration_on_moves_the_stage_on_the_save_s_con
 
 
 @pytest.mark.xfail(strict=True, reason=_SAVE)
-@pytest.mark.parametrize("start", ["WAITING", "PLACEMENTS", None],
-                         ids=["waiting", "placements", "no_such_season"])
+@pytest.mark.parametrize(
+    "start, target",
+    [
+        ("WAITING", SeasonStage.WAITING),
+        ("PLACEMENTS", SeasonStage.WAITING),
+        (None, SeasonStage.WAITING),
+        ("CONFIGURATION", SeasonStage.SIGNUPS),
+    ],
+    ids=["waiting", "placements", "no_such_season", "a_target_the_lifecycle_forbids"],
+)
 async def test_confirming_the_configuration_on_from_another_stage_raises_and_writes_nothing(
-    db_path, start
+    db_path, start, target
 ):
     """A season that has left Configuration, for Waiting or Placements, or a season that does not
-    exist: `confirm_configuration_on` raises InvalidStageTransition, and the season, where there
-    is one, is left where it stood."""
+    exist, asked to move to Waiting; or a season in Configuration asked to move to Signups, which
+    the lifecycle forbids from Configuration: `confirm_configuration_on` raises
+    InvalidStageTransition, and the season, where there is one, is left where it stood."""
     from leaguebot.core.services.season_lifecycle_service import confirm_configuration_on
 
     season_id = await _insert(db_path, "SETUP", start) if start is not None else 9999
 
     async with get_connection(db_path) as db:
         with pytest.raises(InvalidStageTransition):
-            await confirm_configuration_on(db, season_id, SeasonStage.WAITING)
+            await confirm_configuration_on(db, season_id, target)
         await db.commit()
 
     if start is not None:
