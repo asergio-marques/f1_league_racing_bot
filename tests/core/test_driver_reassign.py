@@ -226,8 +226,6 @@ async def test_a_reassign_expires_an_open_placements_review(tmp_path):
 # signup module on, the league's driver role set, and Valtteri (106) approved for the season and
 # never placed: Unassigned, holding the driver role.
 
-_ON_THE_QUEUE = "#283: /driver reassign is not yet a change on the queue"
-
 #: The account Valtteri is given, which no driver holds, and Kimi's.
 _NEW, _KIMI_NEW = 9001, 9003
 #: The current account of a driver of past seasons, Not Signed Up, whom Valtteri is merged with.
@@ -293,8 +291,7 @@ def _reassign_line(replaced: int, new: int, accounts: str) -> str:
     named as every change on the queue names them, a member unnamed in the league shown by id."""
     from tests.core.test_driver_move import _ADMIN, _as_logged
 
-    return _as_logged(
-        f"{_ADMIN} | /driver reassign | Success\n"
+    return f"{_ADMIN} | /driver reassign | Success\n" + _as_logged(
         f"  replaced: <@{replaced}>\n"
         f"  current: {new} (<@{new}>)\n"
         f"  accounts: {accounts}"
@@ -348,7 +345,6 @@ def _portraits_discarded(league, monkeypatch):
     return asked
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_driver_reassign_its_audit_entry_and_line_are_one_save_then_roles_and_portrait(
     tmp_path, monkeypatch,
 ):
@@ -821,7 +817,6 @@ async def test_a_driver_switched_back_to_a_past_account_is_told_so(tmp_path, mon
     assert last_said(back) == _reassigned("switched back to a past account", 106, f"<@{_NEW}>")
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_refusal_found_inside_the_save_ends_the_reassign_and_the_lane_goes_on(
     tmp_path, monkeypatch,
 ):
@@ -877,7 +872,6 @@ async def test_a_refusal_found_inside_the_save_ends_the_reassign_and_the_lane_go
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_driver_reassign_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The
@@ -910,7 +904,6 @@ async def test_a_driver_reassign_asked_again_while_it_waits_is_refused_as_a_repe
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_role_discord_refuses_in_a_reassign_is_reported_and_the_queue_goes_on(
     tmp_path, monkeypatch,
 ):

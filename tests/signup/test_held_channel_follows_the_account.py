@@ -22,8 +22,6 @@ from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock
 
-import pytest
-
 from tests.core.test_driver_reassign import (
     _NEW,
     _ask_reassign,
@@ -32,10 +30,6 @@ from tests.core.test_driver_reassign import (
     _reassigned,
 )
 from tests.support.season_league import SIGNUP_CHANNEL_BASE, UNASSIGNED, signup_channel
-
-_THROUGH_THE_HOOK = (
-    "#283: the held signup channel is not yet moved through the hook a driver's account changed"
-)
 
 DELETE_TIMER = "signup_channel_delete"
 #: Valtteri's held channel, and the one 9001 holds of its own.
@@ -265,7 +259,6 @@ async def test_a_held_channel_stays_while_the_signup_module_is_off(tmp_path, mon
     assert _armed(league) == [] and _disarmed(league) == [] and _edits(held) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_THROUGH_THE_HOOK)
 async def test_permissions_discord_refuses_are_reported_and_the_reassign_stands(
     tmp_path, monkeypatch,
 ):
