@@ -2031,7 +2031,6 @@ def _saves_outside_a_change() -> Counter[tuple[str, str]]:
 KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Core's pass
     ("core/cogs/season_cog.py", "SeasonCog.division_amend"): (1, PASS["core"]),
-    ("core/services/audit_service.py", "record_change"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService._create_profile"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
