@@ -86,7 +86,6 @@ COMMAND_NAMES = {"lineup": "division lineup-channel", "calendar": "division cale
 LABELS = {"lineup": "Lineup channel", "calendar": "Calendar channel"}
 
 #: Why a test fails until the two commands are core `Setting`s asked of the change queue.
-_NOT_QUEUED_YET = "#283: /division lineup-channel and calendar-channel do not yet ask the change queue"
 
 
 # ---------------------------------------------------------------------------
@@ -317,22 +316,24 @@ async def test_the_manager_is_told_which_channel_was_assigned(tmp_path, which):
 
 
 @pytest.mark.parametrize("which", ALL)
-@pytest.mark.xfail(strict=True, reason=_NOT_QUEUED_YET)
 async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path, which):
     """Season 1 is being set up, and its Division 1 has no channel. The manager (id 77) runs the
-    command for #notices. They are answered at once with the queue's acknowledgement, and
-    nothing is written until the queue runs the change: the division still has no channel and
-    no audit entry stands."""
+    command for #notices. They are answered at once with the queue's acknowledgement, naming the
+    change's first job, and nothing is written until the queue runs the change: the division
+    still has no channel and no audit entry stands."""
+    from tests.support.change_queue import step_rows
+
     db_path = await _make_db(tmp_path)
     cog = await _make_cog(db_path)
     interaction = _interaction(cog, which)
 
     await _ask(cog, which, interaction)
 
+    first_job = (await step_rows(db_path))[0]["id"]
     assert acknowledgement(interaction) == (
         f"⏳ Setting the {LABELS[which].lower()} for **Division 1** to <#{CHANNEL_ID}>. This "
         f"message will be updated when it is done; if it takes longer, the log channel will say "
-        f"so."
+        f"so. It begins with job #{first_job}."
     )
     assert await _channel_column(db_path, CORE_COLUMNS[which]) is None
     assert await _audit_rows(db_path) == []
