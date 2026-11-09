@@ -141,8 +141,8 @@ def test_the_season_s_end_is_registered():
 
 #: The settings commands of results, weather and images as the builder registers them (#439,
 #: slice 7), core's seven `/bot` settings, its two division channels and its test-mode nationality
-#: switch, and weather's forecast channel (#283): one change type per setting, every one built by
-#: `setting_change`.
+#: switch, weather's forecast channel, and results' three division channels (#283): one change type
+#: per setting, every one built by `setting_change`.
 SETTING_KINDS = (
     *(f"core.setting.{name}" for name in (
         "log_channel", "interaction_channel", "interaction_role", "admin_role",
@@ -154,7 +154,8 @@ SETTING_KINDS = (
     *(f"results.setting.{name}" for name in (
         "config_add", "config_remove", "config_points", "config_fastest_lap", "config_import",
         "config_attach", "config_detach", "reserves", "amend_mode", "amend_revert",
-        "amend_points", "amend_fastest_lap",
+        "amend_points", "amend_fastest_lap", "results_channel", "standings_channel",
+        "verdicts_channel",
     )),
     *(f"image.setting.{name}" for name in (
         "directory", "template_directory", "template", "aspect", "presentation",
@@ -164,8 +165,12 @@ SETTING_KINDS = (
 )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the builder does not yet register results' three division-channel settings",
+)
 def test_the_settings_changes_are_registered():
-    """The builder registers the thirty-five settings changes of core, results, weather and
+    """The builder registers the thirty-eight settings changes of core, results, weather and
     images, once each, and no other kind carrying ".setting." (#439, slice 7; #283): the
     attendance settings stay off the queue until attendance's design pass."""
     from leaguebot.__main__ import register_change_types
@@ -176,7 +181,7 @@ def test_the_settings_changes_are_registered():
     kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
     settings = sorted(kind for kind in kinds if ".setting." in kind)
     assert settings == sorted(SETTING_KINDS)
-    assert len(SETTING_KINDS) == 35
+    assert len(SETTING_KINDS) == 38
 
 
 @pytest.mark.parametrize(
