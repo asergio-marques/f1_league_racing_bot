@@ -80,11 +80,23 @@ async def test_attendance_switches_off_on_a_handed_connection(db_path):
 
 
 class TestSetAttendanceChannel:
+    @pytest.mark.xfail(
+        strict=True,
+        reason="#283: set_attendance_channel is not yet a function of "
+        "attendance/services/division_channels.py writing on the save's connection",
+    )
     async def test_set_attendance_channel(self, db_path):
+        """Division 10 (Pro) has no channels set. Its attendance channel is set to 888 on a
+        connection, then committed: the division's config reads it back as the text "888", its
+        RSVP channel still unset, and the setter gives back no channel replaced."""
         from leaguebot.attendance.services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        await svc.set_attendance_channel(10, 888)
-        cfg = await svc.get_division_config(10)
+        from leaguebot.attendance.services.division_channels import set_attendance_channel
+        from leaguebot.core.db.database import get_connection
+
+        async with get_connection(db_path) as db:
+            assert await set_attendance_channel(db, 10, 888) is None
+            await db.commit()
+        cfg = await AttendanceService(db_path).get_division_config(10)
         assert cfg is not None
         assert cfg.attendance_channel_id == "888"
         assert cfg.rsvp_channel_id is None

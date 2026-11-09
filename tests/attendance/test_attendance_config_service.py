@@ -22,7 +22,11 @@ failure between them leaves neither.
 **The division channel setters are upserts.** `ON CONFLICT DO UPDATE` must update the one
 column named and leave the other as it was, and a second call must not insert a second row
 for the division — a league re-pointing its RSVP channel would otherwise lose its attendance
-channel, or end up with two rows and a non-deterministic read.
+channel, or end up with two rows and a non-deterministic read. Each is called by its setting's
+save on the save's own connection (#283) and never commits, the save owning the transaction; each
+gives back the channel it replaced as an integer, and writes nothing where the channel is already
+the one held. The tests call each on a connection of their own and commit, as the save's
+transaction does once it ends.
 
 The recalculation tests cover FR-028–FR-030 (`_recalculate_forward` with `recompute="round"`),
 the recalculation a points approval saves with its points through the attendance hook (#439).
@@ -303,11 +307,47 @@ async def test_a_change_whose_audit_entry_fails_leaves_the_setting_as_it_was(tmp
 # ---------------------------------------------------------------------------
 
 
+#: Why the division channel tests fail until the build.
+_ON_A_CONNECTION = (
+    "#283: the attendance channel setters are not yet functions of "
+    "attendance/services/division_channels.py writing on the save's connection"
+)
+
+#: The two division channel setters, each by its name in `division_channels`, with the column it
+#: writes.
+CHANNEL_SETTERS = [
+    ("set_rsvp_channel", "rsvp_channel_id"),
+    ("set_attendance_channel", "attendance_channel_id"),
+]
+
+
+def _channel_setter(name: str):
+    """The setter *name* of `attendance/services/division_channels.py`, imported as the test
+    runs so that this file collects before the build writes it."""
+    from leaguebot.attendance.services import division_channels
+
+    return getattr(division_channels, name)
+
+
+async def _set_channel(db_path: str, name: str, *values) -> list:
+    """Call the setter *name* with each of *values* in turn for Division 1, on one connection,
+    then commit; the values each call gave back."""
+    setter = _channel_setter(name)
+    async with get_connection(db_path) as db:
+        replaced = [await setter(db, DIVISION_ID, value) for value in values]
+        await db.commit()
+    return replaced
+
+
+@pytest.mark.xfail(strict=True, reason=_ON_A_CONNECTION)
 async def test_the_rsvp_channel_can_be_set_and_read_back(tmp_path):
+    """Division 1 has no channels set. Its RSVP channel is set to 777001: the division's config
+    reads it back as the text "777001", its attendance channel still unset, and the setter gives
+    back no channel replaced."""
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
 
-    await service.set_rsvp_channel(DIVISION_ID, 777001)
+    assert await _set_channel(db_path, "set_rsvp_channel", 777001) == [None]
 
     config = await service.get_division_config(DIVISION_ID)
     assert config is not None
@@ -315,13 +355,18 @@ async def test_the_rsvp_channel_can_be_set_and_read_back(tmp_path):
     assert config.attendance_channel_id is None
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_A_CONNECTION)
 async def test_repointing_the_rsvp_channel_updates_rather_than_duplicates(tmp_path):
+    """Division 1's RSVP channel is set to 777001, then moved to 777002: the division keeps one
+    config row, reading 777002, and the move gives back 777001, as an integer, as the channel it
+    replaced."""
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
 
-    await service.set_rsvp_channel(DIVISION_ID, 777001)
-    await service.set_rsvp_channel(DIVISION_ID, 777002)
+    replaced = await _set_channel(db_path, "set_rsvp_channel", 777001, 777002)
 
+    assert replaced == [None, 777001]
+    assert isinstance(replaced[1], int)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT COUNT(*) AS n FROM attendance_division_config WHERE division_id = ?",
@@ -332,19 +377,61 @@ async def test_repointing_the_rsvp_channel_updates_rather_than_duplicates(tmp_pa
     assert str(config.rsvp_channel_id) == "777002"
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_A_CONNECTION)
 async def test_setting_one_division_channel_leaves_the_other_alone(tmp_path):
     """The two upserts share a row. `DO UPDATE SET` naming both columns would blank whichever
-    the caller did not pass — a league setting its attendance channel would lose check-in."""
+    the caller did not pass — a league setting its attendance channel would lose check-in.
+    Division 1's RSVP channel is set to 777001, then its attendance channel to 888001: both
+    read back."""
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
 
-    await service.set_rsvp_channel(DIVISION_ID, 777001)
-    await service.set_attendance_channel(DIVISION_ID, 888001)
+    await _set_channel(db_path, "set_rsvp_channel", 777001)
+    await _set_channel(db_path, "set_attendance_channel", 888001)
 
     config = await service.get_division_config(DIVISION_ID)
     assert config is not None
     assert config.rsvp_channel_id == "777001"
     assert config.attendance_channel_id == "888001"
+
+
+@pytest.mark.xfail(strict=True, reason=_ON_A_CONNECTION)
+@pytest.mark.parametrize("name,column", CHANNEL_SETTERS, ids=[c for _n, c in CHANNEL_SETTERS])
+async def test_a_division_channel_setter_leaves_the_commit_to_its_save(tmp_path, name, column):
+    """Division 1 has no channels set. Its RSVP (attendance) channel is set to 777001 on a
+    connection whose transaction is then rolled back, as a save's is when the audit entry beside
+    it fails: the setter committed nothing, and Division 1 still has no such channel."""
+    setter = _channel_setter(name)
+    db_path = await _make_db(tmp_path)
+
+    async with get_connection(db_path) as db:
+        await setter(db, DIVISION_ID, 777001)
+        await db.rollback()
+
+    config = await AttendanceService(db_path).get_division_config(DIVISION_ID)
+    assert config is None or getattr(config, column) is None
+
+
+@pytest.mark.xfail(strict=True, reason=_ON_A_CONNECTION)
+@pytest.mark.parametrize("name,column", CHANNEL_SETTERS, ids=[c for _n, c in CHANNEL_SETTERS])
+async def test_a_division_channel_already_held_is_left_unwritten(tmp_path, name, column):
+    """Division 1's RSVP (attendance) channel is already 777001, and the setter is asked for
+    777001 again: it writes nothing, no row being changed on the connection, and gives back
+    777001, as an integer, as the channel it would have replaced, so its save can tell nothing
+    changed."""
+    db_path = await _make_db(tmp_path)
+    await _set_channel(db_path, name, 777001)
+    setter = _channel_setter(name)
+
+    async with get_connection(db_path) as db:
+        before = db.total_changes
+        replaced = await setter(db, DIVISION_ID, 777001)
+        changed = db.total_changes - before
+        await db.commit()
+
+    assert changed == 0
+    assert replaced == 777001
+    assert isinstance(replaced, int)
 
 
 async def test_a_division_with_no_config_reads_as_none(tmp_path):
