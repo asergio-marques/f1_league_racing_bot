@@ -411,10 +411,11 @@ async def test_the_bulk_amend_modal_is_not_shown_in_pending_completion(tmp_path)
 # ---------------------------------------------------------------------------
 
 #: Each module channel command, the service holding the setter it reaches, and that setter. A
-#: setter that is a function of its cog's own module (weather's and results') names no service.
-#: The cog is named with each so that the command can follow its code to another one.
+#: setter that is a function of its cog's own module (results') names no service. A command asked
+#: of the change queue (weather's, #283) names neither: its change is run, and the channel read
+#: back. The cog is named with each so that the command can follow its code to another one.
 MODULE_CHANNEL_COMMANDS = {
-    "weather": (WeatherCog, "channel", None, "set_division_forecast_channel"),
+    "weather": (WeatherCog, "channel", None, None),
     "results": (ResultsCog, "channel_results", None, "set_division_results_channel"),
     "standings": (ResultsCog, "channel_standings", None, "set_division_standings_channel"),
     "verdicts": (ResultsCog, "channel_verdicts", None, "set_division_penalty_channel"),
@@ -423,12 +424,27 @@ MODULE_CHANNEL_COMMANDS = {
 }
 
 
-@pytest.mark.parametrize("which", sorted(MODULE_CHANNEL_COMMANDS))
+#: The channel commands, weather's case failing until it is asked of the change queue.
+_CHANNEL_PARAMS = [
+    pytest.param(
+        which,
+        marks=pytest.mark.xfail(
+            strict=True,
+            reason="#283: /weather channel is not yet a weather Setting asked of the change queue",
+        ),
+    )
+    if which == "weather" else which
+    for which in sorted(MODULE_CHANNEL_COMMANDS)
+]
+
+
+@pytest.mark.parametrize("which", _CHANNEL_PARAMS)
 async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_path, which):
     """Completing posts the final classification and the final attendance sheet to those
     channels, so one deleted before completion has to be repointed. Each of the six is run
     through its own command body, not through a helper some of them share, so a gate added to
-    any one body is exercised.
+    any one body is exercised. A command asked of the change queue is asked as its setting's
+    kind, its change run, and the channel it sets read back from the division.
     """
     cog_class, command, service, setter = MODULE_CHANNEL_COMMANDS[which]
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
@@ -437,13 +453,21 @@ async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_pa
     bot.attendance_service = MagicMock()
     bot.attendance_service.get_division_config = AsyncMock(return_value=None)
     stub = AsyncMock(return_value=None)
-    if service is None:
+    interaction = _interaction()
+    queued = setter is None
+    if queued:
+        _attach_the_queue(bot, interaction)
+        interaction.edit_original_response = AsyncMock()
+        bot.season_service.get_division = AsyncMock(
+            return_value=SimpleNamespace(id=DIVISION_ID, name="Pro", tier=1, season_id=SEASON_ID)
+        )
+        stub_setter = nullcontext()
+    elif service is None:
         stub_setter = patch(f"{cog_class.__module__}.{setter}", new=stub)
     else:
         setattr(getattr(bot, service), setter, stub)
         stub_setter = nullcontext()
     cog = _cog(cog_class, bot)
-    interaction = _interaction()
     channel = MagicMock(id=808, mention="<#808>")
     channel.name = which
     channel.permissions_for = MagicMock(return_value=SimpleNamespace(send_messages=True))
@@ -452,11 +476,28 @@ async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_pa
         "leaguebot.core.services.channel_registry_service.find_channel_use", new=AsyncMock(return_value=None)
     ):
         await undecorate(getattr(cog_class, command))(cog, interaction, "Pro", channel)
+        if queued:
+            await run_queue(bot)
 
-    said = _said(interaction)
+    said = "\n".join(
+        (_said(interaction), *(str(call.kwargs.get("content", ""))
+                                for call in interaction.edit_original_response.await_args_list))
+    ) if queued else _said(interaction)
     assert "✅" in said, said
     assert "❌" not in said, said
-    stub.assert_awaited_once()
+    if queued:
+        assert [row["kind"] for row in await change_rows(db_path)] == [
+            "weather.setting.forecast_channel"
+        ]
+        async with get_connection(db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT forecast_channel_id FROM divisions WHERE id = ?", (DIVISION_ID,)
+                )
+            ).fetchone()
+        assert row["forecast_channel_id"] == 808
+    else:
+        stub.assert_awaited_once()
 
 
 async def test_results_rounds_amend_is_not_turned_away_by_the_stage(tmp_path):
