@@ -42,9 +42,6 @@ from tests.support.setup_rounds import (
     setup_league,
 )
 
-#: Why a test of an import on the change queue fails until the build.
-QUEUED = "#283: an import is not yet the change core.round_import on the change queue"
-
 #: Pro's rounds of 14 and 28 June and Am's of 21 June, mystery rounds all, at 18:00 UTC.
 _PRO_14 = ("MYSTERY", None, datetime(2026, 6, 14, 18, 0))
 _PRO_28 = ("MYSTERY", None, datetime(2026, 6, 28, 18, 0))
@@ -347,7 +344,6 @@ async def test_a_mystery_round_without_a_track_is_stored_with_none(tmp_path):
 # ── On the change queue (#283) ────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_an_import_is_one_save_across_its_divisions(tmp_path):
     """The core specification's record of what changed. Season #1 in Placements, as the database
     alone holds it: Pro holds mystery rounds on 14 and 28 June at 18:00 UTC, Am one on 21 June,
@@ -423,7 +419,6 @@ async def test_an_import_is_one_save_across_its_divisions(tmp_path):
     ("xml", calendar_xml(("Pro", (("2026-06-21T18:00", "UTC", "Normal", "14"),))),
      "/round add-xml"),
 ])
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_a_failed_import_save_adds_nothing(tmp_path, form, value, command):
     """Season #1 in Placements, Pro holding its rounds of 14 and 28 June. The manager imports,
     by `/round add-bulk` or by `/round add-xml`, a round for Pro on 21 June at 18:00, and as the
@@ -479,7 +474,6 @@ async def test_a_failed_import_save_adds_nothing(tmp_path, form, value, command)
         ),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_an_import_is_judged_again_as_it_starts(tmp_path, monkeypatch, meanwhile, problem):
     """Season #1 in Placements, Pro holding its rounds of 14 and 28 June. The manager pastes, in
     `/round add-bulk` for Pro, a round at the Hungaroring on 21 June at 18:00, and nothing is
@@ -549,7 +543,6 @@ async def test_an_import_is_judged_again_as_it_starts(tmp_path, monkeypatch, mea
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_an_import_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. Season

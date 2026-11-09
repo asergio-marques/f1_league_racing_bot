@@ -1,9 +1,13 @@
-"""`core.round_add`: `/round add`, on the change queue.
+"""`core.round_add` and `core.round_import`: `/round add`, `/round add-bulk` and `/round add-xml`,
+on the change queue.
 
-One SAVE step inserts the round into its division of the season being set up, renumbers that
-division's rounds by their moments, and writes a `ROUND_ADDED` audit entry (the division it is on,
-the round replacing nothing) and the log channel's line, stamped with the queue's clock, all on the
-save's own connection. No other division's rounds are touched, and none is deleted.
+Each is a change type of its own on the league lane, registered by the builder. One SAVE step adds
+the round or rounds to their divisions of the season being set up, renumbers each division it
+touches by the rounds' moments, and writes a `ROUND_ADDED` audit entry for each round (the
+division it is on, the round replacing nothing) and the log channel's line, stamped with the
+queue's clock, all on the save's own connection. No other division's rounds are touched, and none
+is deleted. `/round add-bulk` and `/round add-xml` are one change type, as the paste and the XML
+differ only in how they are read, and the whole import is one save: all of it lands or none.
 
 **A fault in the save stops the lane**, as a failed job does, for the reason `/season setup`'s does
 (`season_setup_change.py`): a league admin exists to discard the job and clear the stop.
@@ -11,10 +15,11 @@ save's own connection. No other division's rounds are touched, and none is delet
 **Every refusal is the check's**, judged at the ask and again as the change starts, in the league's
 log channel either time, so that a round added or a division deleted meanwhile is caught as the
 change starts, in the words it would have met at the ask. No stage is checked: before Placements
-there is no division to add a round to, and the division is not found. The refusals come in the
-order a manager has always met them: no season being set up, the format, a track where the format
-needs one, the track, the moment, the division, a round of the division already at that moment, and
-the calendar's room.
+there is no division to add a round to, and the division is not found. A division, a round's format,
+its track and its moment are read from what the member typed, in the order a manager has always met
+them: no season being set up, the format, a track where the format needs one, the track, the
+moment, the division, a round of the division already at that moment, and the calendar's room. An
+import is refused whole, with every fault it holds listed.
 
 **The calendar's room is asked by `calendar_round_refusal`,** for the rounds the division would
 hold: one catch, a stated exception (architecture.md, "A catch-all error handler"), stands aside
@@ -53,6 +58,7 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.services.season_service import renumber_rounds_on
 from leaguebot.core.utils.formatting import discord_ts, format_round_list
 from leaguebot.core.utils.input_validator import parse_datetime
+from leaguebot.core.utils.round_import import ParsedDivisionRounds, format_import_errors
 
 if TYPE_CHECKING:
     from leaguebot.core.services.image_drawing import ImageDrawing
@@ -61,6 +67,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 ADD = "core.round_add"
+IMPORT = "core.round_import"
 
 #: The name of the step that inserts the rounds, renumbers their divisions and writes the audit
 #: entries and the line.
@@ -309,11 +316,224 @@ def add_payload(
     }
 
 
+# ---------------------------------------------------------------------------
+# /round add-bulk and /round add-xml
+# ---------------------------------------------------------------------------
+
+
+def import_payload(source: str, parsed: list[ParsedDivisionRounds]) -> dict[str, Any]:
+    """The request an import form makes: *source* is the command it came from, *parsed* the
+    divisions and rounds it named, each round with where in the paste it stood."""
+    return {
+        "source": source,
+        "divisions": [
+            {
+                "name": entry.division_name.strip(),
+                "rounds": [
+                    {
+                        "location": r.location,
+                        "scheduled_at": r.scheduled_at.isoformat(),
+                        "format": r.format.value,
+                        "track": r.track_raw,
+                    }
+                    for r in entry.rounds
+                ],
+            }
+            for entry in parsed
+        ],
+    }
+
+
+def _duplicate_datetime_errors(
+    existing: list[datetime], incoming: list[dict[str, Any]]
+) -> list[str]:
+    """Every incoming round whose datetime is already taken, within the batch or before it.
+
+    The confirmation of placements refuses a season holding two rounds of one division at the same
+    moment, and it does so long after the calendar has been built and possibly posted. A repeated
+    line is the likeliest fault in a pasted calendar, so it is caught here instead, at the first
+    moment the whole batch can be seen.
+    """
+    errors: list[str] = []
+    seen: dict[datetime, str] = {at: "a round already in this division" for at in existing}
+    for parsed in incoming:
+        at = datetime.fromisoformat(parsed["scheduled_at"])
+        previous = seen.get(at)
+        if previous is not None:
+            errors.append(
+                f"{parsed['location']}: duplicate datetime {at.isoformat()} — already used "
+                f"by {previous}."
+            )
+            continue
+        seen[at] = parsed["location"]
+    return errors
+
+
+def _import_check(seasons: "SeasonService") -> Callable[[CheckContext], Awaitable[Verdict]]:
+    async def check(ctx: CheckContext) -> Verdict:
+        """The import, or every fault it holds: each division validated in full, so that a manager
+        fixes the paste and submits the same text again rather than working out which half of it
+        landed.
+
+        Rounds are *merged* with those a division already holds, never substituted for them:
+        these are add commands, and a calendar too long for one modal is imported in two passes.
+        """
+        season = await seasons.get_setup_season()
+        if season is None:
+            return Verdict.refuse(NO_SETUP)
+        divisions = await seasons.get_divisions(season.id)
+
+        errors: list[str] = []
+        seen: set[str] = set()
+        # One connection for every track in the payload, and for every division's rounds.
+        async with get_connection(ctx.db_path) as db:
+            for entry in ctx.payload["divisions"]:
+                wanted = str(entry["name"]).strip().casefold()
+                if wanted in seen:
+                    errors.append(f"[{entry['name']}]: named more than once in this import.")
+                    continue
+                seen.add(wanted)
+
+                division = next(
+                    (d for d in divisions if d.name.strip().casefold() == wanted), None
+                )
+                if division is None:
+                    errors.append(
+                        f"[{entry['name']}]: no division of that name in the pending setup."
+                    )
+                    continue
+                held = await seasons.get_division_rounds_on(db, division.id)
+
+                added = 0
+                for parsed in entry["rounds"]:
+                    if parsed["track"]:
+                        resolved = await track_service.resolve_track_name(db, parsed["track"])
+                        if resolved is None:
+                            errors.append(
+                                f"{parsed['location']}: unknown track `{parsed['track']}`."
+                            )
+                            continue
+                    added += 1
+
+                errors += _duplicate_datetime_errors(
+                    [r.scheduled_at for r in held], entry["rounds"]
+                )
+
+                # Last, because it loads and parses the calendar template. Asked of the whole
+                # batch: each round of a dozen can clear a `+ 1` check while the dozen together
+                # outgrow the template.
+                overflow = await calendar_round_refusal(
+                    ctx.bot.image_drawing, len(held) + added
+                )
+                if overflow is not None:
+                    errors.append(f"[{division.name}]: {overflow}")
+
+        if errors:
+            return Verdict.refuse(format_import_errors(errors), "\n".join(errors))
+        return Verdict.go()
+
+    return check
+
+
+def _import_save(
+    seasons: "SeasonService",
+) -> Callable[[aiosqlite.Connection, StepContext], Awaitable[StepResult]]:
+    async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Insert every round of the import, renumber each division it touches, and write an audit
+        entry for each round and the line, one save."""
+        season = await seasons.get_setup_season_on(db)
+        if season is None:
+            raise LookupError("no season is being set up")
+        divisions = await seasons.get_divisions_on(db, season.id)
+
+        audits: list[AuditRecord] = []
+        held: list[dict[str, Any]] = []
+        for entry in ctx.payload["divisions"]:
+            wanted = str(entry["name"]).strip().casefold()
+            division = next((d for d in divisions if d.name.strip().casefold() == wanted), None)
+            if division is None:
+                raise LookupError(f"no division named {entry['name']} is being set up")
+            added: list[int] = []
+            for parsed in entry["rounds"]:
+                track_name = None
+                if parsed["track"]:
+                    track_name = await track_service.resolve_track_name(db, parsed["track"])
+                added.append(
+                    await seasons.add_round_on(
+                        db,
+                        division.id,
+                        fmt=RoundFormat(parsed["format"]),
+                        track_name=track_name,
+                        scheduled_at=datetime.fromisoformat(parsed["scheduled_at"]),
+                    )
+                )
+            await renumber_rounds_on(db, division.id)
+            rounds = await seasons.get_division_rounds_on(db, division.id)
+            audits += [_audit(r, division) for r in rounds if r.id in added]
+            held.append({"division": division.name, "rounds": _held(rounds)})
+
+        source = str(ctx.payload["source"])
+        line = f"{ctx.named} | {source} | Success\n" + "\n".join(
+            f"  division: {d['division']}, now holds {len(d['rounds'])} round(s)" for d in held
+        )
+        return StepResult(
+            result={"outcome": "added", "divisions": held},
+            audits=tuple(audits),
+            lines=(line,),
+        )
+
+    return save
+
+
+def _import_doing(payload: dict[str, Any]) -> str:
+    count = sum(len(entry["rounds"]) for entry in payload["divisions"])
+    names = [f"**{entry['name']}**" for entry in payload["divisions"]]
+    named = names[0] if len(names) == 1 else ", ".join(names[:-1]) + f" and {names[-1]}"
+    return f"Adding {count} round{'' if count == 1 else 's'} to {named}"
+
+
+def _import_outcome(ctx: OutcomeContext) -> str:
+    saved = _saved(ctx)
+    if saved.get("outcome") != "added":
+        return (
+            "Nothing was added: no round was imported. "
+            f"Run `{ctx.payload['source']}` again."
+        )
+    divisions = saved["divisions"]
+    lines = [f"✅ Added rounds to {len(divisions)} division(s)."]
+    for d in divisions:
+        lines.append(f"  **{d['division']}**: {len(d['rounds'])} round(s) in total")
+    if len(divisions) == 1:
+        lines.append("")
+        lines.append(format_round_list(_models(divisions[0]["rounds"])))
+    return "\n".join(lines)
+
+
+def round_import_change(*, seasons: "SeasonService") -> ChangeType:
+    """The `core.round_import` change type, for the builder to register: *seasons* is what the
+    check reads the season being set up, its divisions and their rounds through, and the save
+    writes the rounds and renumbers their divisions through."""
+    return ChangeType(
+        kind=IMPORT,
+        opening=(PlannedStep(SAVE),),
+        steps={SAVE: Step(SAVE, StepKind.SAVE, _import_save(seasons))},
+        check=_import_check(seasons),
+        key=lambda payload: f"{IMPORT}|{json.dumps(payload, sort_keys=True)}",
+        doing=_import_doing,
+        outcome=_import_outcome,
+        lane=lambda _payload: LEAGUE_LANE,
+        writes=("rounds",),
+    )
+
+
 __all__ = [
     "ADD",
     "ADD_DISCARDED",
+    "IMPORT",
     "NO_SETUP",
     "add_payload",
     "calendar_round_refusal",
+    "import_payload",
     "round_add_change",
+    "round_import_change",
 ]

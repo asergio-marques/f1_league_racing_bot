@@ -29,9 +29,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
-from functools import partial
 from types import EllipsisType
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Mapping, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Mapping, TypeVar
 
 import discord
 from discord import app_commands
@@ -61,7 +60,12 @@ from leaguebot.core.services.mid_season_confirm_change import (
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.round_moments import read_round_windows
 from leaguebot.core.services.division_add_change import KIND as DIVISION_ADD
-from leaguebot.core.services.round_add_changes import ADD as ROUND_ADD, add_payload
+from leaguebot.core.services.round_add_changes import (
+    ADD as ROUND_ADD,
+    IMPORT as ROUND_IMPORT,
+    add_payload,
+    import_payload,
+)
 from leaguebot.core.services.season_setup_change import KIND as SEASON_SETUP
 from leaguebot.core.services.season_review_changes import (
     CONFIRMED,
@@ -119,7 +123,7 @@ from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.round_import import (
     ParsedDivisionRounds,
-    ParsedRound,
+    format_import_errors as _format_import_errors,
     parse_bulk_round_lines,
     parse_round_xml,
 )
@@ -175,150 +179,6 @@ async def _get_setup_season_id(bot: LeagueBot) -> int | None:
 # ---------------------------------------------------------------------------
 # Bulk round import
 # ---------------------------------------------------------------------------
-
-#: How many faults a rejection lists before it stops. A payload wrong in one systematic
-#: way — every format misspelled, every track unknown — produces one error per round, and
-#: a reply over 2000 characters is refused by Discord whole rather than truncated, which
-#: would lose the report entirely.
-_MAX_REPORTED_ERRORS = 25
-
-
-def _format_import_errors(errors: list[str]) -> str:
-    """The rejection a manager reads, capped so that the reply survives sending."""
-    shown = errors[:_MAX_REPORTED_ERRORS]
-    body = "\n".join(f"  • {error}" for error in shown)
-    if len(errors) > len(shown):
-        body += f"\n  …and {len(errors) - len(shown)} more."
-    return (
-        f"❌ Import rejected — {len(errors)} problem(s). "
-        f"**No rounds were added.**\n{body}"
-    )
-
-
-def _duplicate_datetime_errors(
-    existing: list[dict[str, Any]], incoming: list[ParsedRound]
-) -> list[str]:
-    """Every incoming round whose datetime is already taken, within the batch or before it.
-
-    The confirmation of placements refuses a season holding two rounds of one division at the same
-    moment (Gate 0b), and it does so long after the calendar has been built and possibly
-    posted. A repeated line is the likeliest fault in a pasted calendar, so it is caught
-    here instead — at the first moment the whole batch can be seen.
-    """
-    errors: list[str] = []
-    seen: dict[datetime, str] = {
-        round_["scheduled_at"]: "a round already in this division"
-        for round_ in existing
-    }
-    for parsed in incoming:
-        previous = seen.get(parsed.scheduled_at)
-        if previous is not None:
-            errors.append(
-                f"{parsed.location}: duplicate datetime "
-                f"{parsed.scheduled_at.isoformat()} — already used by {previous}."
-            )
-            continue
-        seen[parsed.scheduled_at] = parsed.location
-    return errors
-
-
-async def apply_round_import(
-    *,
-    cfg: PendingConfig,
-    parsed: list[ParsedDivisionRounds],
-    db_path: str,
-    overflow_check: Callable[[str, int], Awaitable[str | None]],
-) -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
-    """Merge *parsed* rounds into *cfg*, or refuse the lot.
-
-    Returns ``(applied, errors)``. Where *errors* is non-empty **nothing has been
-    changed** — every division is validated in full before any is written, so a manager
-    fixes their paste and submits the same text again rather than working out which half
-    of it landed.
-
-    Rounds are *merged* with those the division already holds, never substituted for
-    them: these are add commands, and a calendar too long for one modal is imported in
-    two passes.
-
-    Does not snapshot. The caller does that once, after every division has been applied,
-    so the whole import lands in one transaction.
-    """
-    errors: list[str] = []
-    staged: dict[str, list[dict[str, Any]]] = {}
-    divisions_seen: set[str] = set()
-
-    # One connection for every track in the payload. Opening one per round, as `/round
-    # add` does for its single round, is 72 connections on an SD card for a full season.
-    async with get_connection(db_path) as db:
-        for entry in parsed:
-            wanted = entry.division_name.strip().casefold()
-            if wanted in divisions_seen:
-                errors.append(
-                    f"[{entry.division_name}]: named more than once in this import."
-                )
-                continue
-            divisions_seen.add(wanted)
-
-            division = next(
-                (d for d in cfg.divisions if d.name.strip().casefold() == wanted), None
-            )
-            if division is None:
-                errors.append(
-                    f"[{entry.division_name}]: no division of that name in the "
-                    f"pending setup."
-                )
-                continue
-
-            new_rounds: list[dict[str, Any]] = []
-            for parsed_round in entry.rounds:
-                track_name: str | None = None
-                if parsed_round.track_raw:
-                    track_name = await track_service.resolve_track_name(
-                        db, parsed_round.track_raw
-                    )
-                    if track_name is None:
-                        errors.append(
-                            f"{parsed_round.location}: unknown track "
-                            f"`{parsed_round.track_raw}`."
-                        )
-                        continue
-
-                new_rounds.append(
-                    {
-                        "round_number": 0,
-                        "format": parsed_round.format,
-                        "track_name": track_name,
-                        "scheduled_at": parsed_round.scheduled_at,
-                    }
-                )
-
-            errors += _duplicate_datetime_errors(division.rounds, entry.rounds)
-
-            # Last, because it loads and parses the calendar template. Asked of the whole
-            # batch: each round of a dozen can clear a `+ 1` check while the dozen
-            # together outgrow the template.
-            overflow = await overflow_check(
-                division.name, len(division.rounds) + len(new_rounds)
-            )
-            if overflow is not None:
-                errors.append(f"[{division.name}]: {overflow}")
-                continue
-
-            staged[division.name] = sorted(
-                division.rounds + new_rounds, key=lambda r: r["scheduled_at"]
-            )
-
-    if errors:
-        return {}, errors
-
-    for name, merged in staged.items():
-        division = next(d for d in cfg.divisions if d.name == name)
-        for number, round_ in enumerate(merged, start=1):
-            round_["round_number"] = number
-        division.rounds = merged
-
-    return staged, []
-
 
 class BulkRoundModal(LeagueModal, title="Add rounds in bulk"):
     """The pasted calendar of one division, a round per line.
@@ -419,84 +279,17 @@ async def _run_round_import(
     source: str,
     what: str,
 ) -> None:
-    """Apply a parsed calendar and report it. Shared by both import modals.
+    """Ask the change queue for a parsed calendar. Shared by both import modals.
 
-    The interaction is already deferred. Everything here replies through ``followup``.
-    *what* names the form as the log channel should read a refusal of it, which the form
-    passes in (`describe_form`), this function holding no form.
+    The interaction is already deferred. The queue refuses what the import has always been refused
+    for, at the ask and again as the change starts, and adds every round across its divisions in
+    one save (`core/services/round_add_changes.py`). *what* names the form as the log channel
+    should read a refusal of it, which the form passes in (`describe_form`), this function holding
+    no form.
     """
-    cog = cast("SeasonCog | None", bot_of(interaction).get_cog("SeasonCog"))
-    if cog is None:  # pragma: no cover — the cog is loaded for the command to exist
-        await interaction.followup.send(
-            "❌ Season commands are unavailable.", ephemeral=True
-        )
-        return
-
-    cfg = await cog.resolve_pending(interaction)
-    if cfg is None:
-        await refuse(
-            interaction,
-            "❌ No pending season setup. Run `/season setup` first.",
-            what=what,
-        )
-        return
-
-    applied, errors = await apply_round_import(
-        cfg=cfg,
-        parsed=parsed,
-        db_path=cog.bot.db_path,
-        overflow_check=partial(_overflow_for, cog),
+    await bot_of(interaction).change_queue.ask(
+        ROUND_IMPORT, import_payload(source, parsed), interaction=interaction, what=what,
     )
-    if errors:
-        await refuse(
-            interaction,
-            _format_import_errors(errors),
-            what=what,
-            reason="\n".join(errors),
-        )
-        return
-
-    # Once, after every division: the import lands in one transaction.
-    await cog._snapshot_pending(cfg)
-
-    total = sum(len(rounds) for rounds in applied.values())
-    lines = [f"✅ Added rounds to {len(applied)} division(s)."]
-    for name, rounds in applied.items():
-        lines.append(f"  **{name}**: {len(rounds)} round(s) in total")
-    if len(applied) == 1:
-        name, rounds = next(iter(applied.items()))
-        lines.append("")
-        lines.append(
-            format_round_list(
-                [
-                    RoundModel(
-                        id=0,
-                        division_id=0,
-                        round_number=r["round_number"],
-                        format=r["format"],
-                        track_name=r["track_name"],
-                        scheduled_at=r["scheduled_at"],
-                    )
-                    for r in rounds
-                ]
-            )
-        )
-
-    for chunk in chunk_message("\n".join(lines)):
-        await interaction.followup.send(chunk, ephemeral=True)
-
-    await cog.bot.output_router.post_log(
-        f"{interaction.user.display_name} (<@{interaction.user.id}>) | {source} | Success\n"
-        + "\n".join(
-            f"  division: {name}, now holds {len(rounds)} round(s)"
-            for name, rounds in applied.items()
-        ),
-    )
-
-
-async def _overflow_for(cog, _division_name: str, would_hold: int):
-    """Bind the cog's capacity guard to the shape `apply_round_import` injects."""
-    return await cog._calendar_round_overflow(would_hold)
 
 
 # ---------------------------------------------------------------------------
@@ -836,31 +629,6 @@ class SeasonCog(commands.Cog):
             self.bot.image_drawing.lineup_review_problems,
             nothing=[],
         )
-
-    async def _calendar_round_overflow(
-        self, would_hold: int
-    ) -> str | None:
-        """The rejection message where *would_hold* rounds outgrow the calendar template.
-
-        None where the guard does not apply — the module off, the aspect off, no valid
-        template, or room to spare. A check that cannot run lets the round through
-        (`_ask_drawing`'s stated exception, architecture.md, "A catch-all error handler");
-        only a genuine over-capacity refuses the round.
-
-        Separate from ``placement_service._guard_image_capacity``, which counts seated
-        **drivers**. A calendar's collection is **rounds**, so the two guard different
-        commands and must not be merged (research.md § R3).
-        """
-        async def refusal(would_hold: int) -> str | None:
-            problem = await self.bot.image_drawing.round_capacity_problem(would_hold)
-            if problem is None:
-                return None
-            return f"❌ {problem.problem}. The round was **not** added.\n{problem.remedy}"
-
-        async def given() -> int:
-            return would_hold
-
-        return await self._ask_drawing("round add: calendar", given, refusal, nothing=None)
 
     async def _calendar_capacity_warning(
         self, season_id: int

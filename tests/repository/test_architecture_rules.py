@@ -186,7 +186,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog.round_amend"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "_get_setup_season_id"): (2, PASS["core"]),
-    ("core/cogs/season_cog.py", "apply_round_import"): (1, PASS["core"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (2, PASS["signup"]),

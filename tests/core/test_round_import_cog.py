@@ -23,9 +23,6 @@ from leaguebot.core.cogs.season_cog import BulkRoundModal, SeasonCog, XmlRoundMo
 from tests.support.setup_rounds import FORMS, NAMED, import_rounds, round_rows, setup_league
 from tests.support.undecorate import undecorate
 
-#: Why a test of an import on the change queue fails until the build.
-QUEUED = "#283: an import is not yet the change core.round_import on the change queue"
-
 #: Pro, holding no round, in season #1 being set up in Placements.
 _PRO = (("Pro", 1, 10, ()),)
 
@@ -146,7 +143,6 @@ async def test_no_pending_setup_refuses_without_writing(tmp_path):
 # ── The season is written once, not once per round ────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_a_twenty_round_import_is_one_queued_change(tmp_path):
     """One change for the whole paste. One per round would be twenty transactions, and a failure
     part-way would leave half a calendar written. Season #1 in Placements, Pro holding no round.
