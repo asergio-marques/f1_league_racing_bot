@@ -626,6 +626,37 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     assert handed == [(None, 0)] * len(called)
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: no hook is declared for a driver's account changed"
+)
+async def test_the_builder_signs_signup_up_to_a_driver_s_account_changed(tmp_path, monkeypatch):
+    """Straight after `build`, signup's part of a driver's account changed (`/driver reassign`'s
+    save) is signed up to the hook on the bot, and nothing has been called yet. Called, it is
+    handed the save's connection, then the account replaced and the new one, and what it hands
+    back is the jobs it plans; and the step definitions it hands back for those jobs, by name, are
+    signed up to the companion hook, one set, signup's."""
+    import importlib
+
+    handed: list[tuple] = []
+
+    async def _signup_s_part(*args, **_kwargs):
+        handed.append(args)
+        return ()
+
+    monkeypatch.setattr(
+        importlib.import_module("leaguebot.signup.services.signup_module_service"),
+        "driver_account_changed_on", _signup_s_part, raising=False,
+    )
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    assert handed == []
+
+    assert await bot.driver_account_changed.call(None, "106", "9001") == [()]
+    assert handed == [(None, "106", "9001")]
+    [steps] = bot.driver_account_changed_steps.call()
+    assert steps and all(isinstance(name, str) for name in steps)
+
+
 #: The windows the league configures in the pair test: attendance's three lead times, and
 #: weather's three horizons, each unlike its default.
 _ATTENDANCE_SET = (3, 12, 1)
