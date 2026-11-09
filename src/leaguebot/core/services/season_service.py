@@ -10,7 +10,7 @@ from datetime import date, datetime
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id, sole_row
-from leaguebot.core.models.division import Division
+from leaguebot.core.models.division import Division, DivisionStatus
 from leaguebot.core.models.round import (
     ROUND_AWAITING_RESULTS_MODULE,
     ROUND_CANCELLABLE,
@@ -247,6 +247,31 @@ class SeasonService:
             season_number=season_number,
             game_edition=game_edition,
             stage=SeasonStage.CONFIGURATION,
+        )
+
+    async def add_division_on(
+        self, db: aiosqlite.Connection, *, name: str, role_id: int, tier: int
+    ) -> Division:
+        """Insert a division, in Setup, into the season being set up, on *db*, a connection the
+        caller holds, and return it. Commits nothing. Raises LookupError where no season is being
+        set up, and the database's own error where the season already holds the name, in any
+        ASCII case: the check that refuses a duplicate is the caller's, the schema the backstop."""
+        cursor = await db.execute("SELECT id FROM seasons WHERE status = 'SETUP' LIMIT 1")
+        season = await cursor.fetchone()
+        if season is None:
+            raise LookupError("no season is being set up")
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id, tier) VALUES (?, ?, ?, ?)",
+            (season["id"], name, role_id, tier),
+        )
+        return Division(
+            id=inserted_id(cursor),
+            season_id=season["id"],
+            name=name,
+            mention_role_id=role_id,
+            forecast_channel_id=None,
+            status=DivisionStatus.SETUP.value,
+            tier=tier,
         )
 
     async def get_setup_season(self) -> Season | None:
@@ -697,15 +722,19 @@ class SeasonService:
     async def get_divisions(self, season_id: int) -> list[Division]:
         """Return all divisions for *season_id*."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier, "
-                "lineup_channel_id, calendar_channel_id, lineup_message_id, "
-                "calendar_message_id "
-                "FROM divisions WHERE season_id = ? ORDER BY tier",
-                (season_id,),
-            )
-            rows = await cursor.fetchall()
-        return [_row_to_division(r) for r in rows]
+            return await self.get_divisions_on(db, season_id)
+
+    async def get_divisions_on(self, db: aiosqlite.Connection, season_id: int) -> list[Division]:
+        """`get_divisions` on *db*, a connection the caller holds: what a save has written there
+        is read back with the rest."""
+        cursor = await db.execute(
+            "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier, "
+            "lineup_channel_id, calendar_channel_id, lineup_message_id, "
+            "calendar_message_id "
+            "FROM divisions WHERE season_id = ? ORDER BY tier",
+            (season_id,),
+        )
+        return [_row_to_division(r) for r in await cursor.fetchall()]
 
     async def get_division(self, division_id: int) -> Division | None:
         """Return the division *division_id*, or None where there is none."""

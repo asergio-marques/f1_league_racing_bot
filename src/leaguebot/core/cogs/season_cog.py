@@ -61,6 +61,7 @@ from leaguebot.core.services.mid_season_confirm_change import (
 )
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.round_moments import read_round_windows
+from leaguebot.core.services.division_add_change import KIND as DIVISION_ADD
 from leaguebot.core.services.season_setup_change import KIND as SEASON_SETUP
 from leaguebot.core.services.season_review_changes import (
     CONFIRMED,
@@ -2486,84 +2487,12 @@ class SeasonCog(commands.Cog):
         role: discord.Role,
         tier: int,
     ) -> None:
-        # Deferred before any work, as every season-setup command is: a reply after
-        # Discord's three-second window lands on an expired token.
-        await interaction.response.defer(ephemeral=True)
-
-        cfg = await self._get_pending()
-        if cfg is None:
-            await refuse(
-                interaction,
-                "\u274c No pending season setup. Run `/season setup` first.",
-                what=describe(interaction),
-            )
-            return
-
-        # Divisions are built only in Placements (issue #220): a league does not plan its
-        # divisions before it knows how many drivers signed up. Every other command that
-        # builds the season needs a division to act on, so this is the one door to guard.
-        stage = (
-            await self.bot.season_service.get_stage(cfg.season_id)
-            if cfg.season_id
-            else None
-        )
-        if stage is not SeasonStage.PLACEMENTS:
-            await refuse(
-                interaction,
-                "\u26d4 Divisions can only be added while the season is in placements — "
-                "once its configuration is confirmed and its signup window has closed.",
-                what=describe(interaction),
-            )
-            return
-
-        # The tier rule is asked twice, so that a tier below 1 is refused before the name and a
-        # taken tier after it, in the order the refusals have always come.
-        tier_refusal = validate_division_tier(tier, [])
-        if tier_refusal is not None:
-            await refuse(interaction, f"\u26d4 {tier_refusal}", what=describe(interaction))
-            return
-
-        refusal = validate_division_name(name)
-        if refusal is not None:
-            await refuse(
-                interaction,
-                f"\u274c {refusal}",
-                what=describe(interaction),
-            )
-            return
-
-        if any(d.name.lower() == name.lower() for d in cfg.divisions if d.name):
-            await refuse(
-                interaction,
-                f"\u274c A division named **{name}** already exists in this setup.",
-                what=describe(interaction),
-            )
-            return
-
-        tier_refusal = validate_division_tier(tier, [d.tier for d in cfg.divisions if d.name])
-        if tier_refusal is not None:
-            await refuse(interaction, f"\u26d4 {tier_refusal}", what=describe(interaction))
-            return
-
-        div = PendingDivision(name=name, role_id=role.id, channel_id=None, tier=tier)
-        empty = [d for d in cfg.divisions if not d.name]
-        if empty:
-            idx = cfg.divisions.index(empty[0])
-            cfg.divisions[idx] = div
-        else:
-            cfg.divisions.append(div)
-
-        await self._snapshot_pending(cfg)
-
-        await interaction.followup.send(
-            f"\u2705 Division **{name}** (Tier {tier}) added.\n"
-            f"Role: {role.mention}\n\n"
-            + format_division_list(_pending_to_division_models(cfg)),
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division add | Success\n"
-            f"  division: {name}, tier: {tier}",
+        """Add a division: ask the change queue for it, which refuses what the command has always
+        refused at the ask and again as the change starts, and adds the division with its teams
+        in one save (`core/services/division_add_change.py`)."""
+        await self.bot.change_queue.ask(
+            DIVISION_ADD, {"name": name, "role_id": role.id, "tier": tier},
+            interaction=interaction, what=describe(interaction),
         )
 
     @division.command(

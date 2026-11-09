@@ -220,12 +220,21 @@ class TeamService:
         async with get_connection(self._db_path) as db:
             if await self._ensure_reserve(db):
                 await db.commit()
-            cursor = await db.execute(
-                "SELECT id, name, full_name, max_seats, is_reserve "
-                "FROM default_teams ORDER BY is_reserve ASC, name ASC",
-            )
-            rows = await cursor.fetchall()
-        return [_row_to_default_team(r) for r in rows]
+            return await self._read_default_teams(db)
+
+    async def get_default_teams_on(self, db: aiosqlite.Connection) -> list[DefaultTeam]:
+        """`get_default_teams` on *db*, a connection the caller holds: a Reserve team it has to
+        restore is written there and left for the caller to commit."""
+        await self._ensure_reserve(db)
+        return await self._read_default_teams(db)
+
+    @staticmethod
+    async def _read_default_teams(db: aiosqlite.Connection) -> list[DefaultTeam]:
+        cursor = await db.execute(
+            "SELECT id, name, full_name, max_seats, is_reserve "
+            "FROM default_teams ORDER BY is_reserve ASC, name ASC",
+        )
+        return [_row_to_default_team(r) for r in await cursor.fetchall()]
 
     async def add_default_team(
         self, name: str, *, full_name: str, max_seats: int = 2
@@ -383,25 +392,36 @@ class TeamService:
         """
         defaults = await self.get_default_teams()
         async with get_connection(self._db_path) as db:
-            for team in defaults:
-                cursor = await db.execute(
-                    "INSERT INTO team_instances "
-                    "(division_id, name, full_name, max_seats, is_reserve) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (
-                        division_id, team.name, team.full_name, team.max_seats,
-                        int(team.is_reserve),
-                    ),
-                )
-                instance_id = cursor.lastrowid
-                if not team.is_reserve:
-                    for seat_num in range(1, team.max_seats + 1):
-                        await db.execute(
-                            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
-                            "VALUES (?, ?, NULL)",
-                            (instance_id, seat_num),
-                        )
+            await self._seed_teams(db, division_id, defaults)
             await db.commit()
+
+    async def seed_division_teams_on(self, db: aiosqlite.Connection, division_id: int) -> None:
+        """`seed_division_teams` on *db*, a connection the caller holds, the list of teams read
+        there too: commits nothing."""
+        await self._seed_teams(db, division_id, await self.get_default_teams_on(db))
+
+    @staticmethod
+    async def _seed_teams(
+        db: aiosqlite.Connection, division_id: int, defaults: list[DefaultTeam]
+    ) -> None:
+        for team in defaults:
+            cursor = await db.execute(
+                "INSERT INTO team_instances "
+                "(division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    division_id, team.name, team.full_name, team.max_seats,
+                    int(team.is_reserve),
+                ),
+            )
+            instance_id = cursor.lastrowid
+            if not team.is_reserve:
+                for seat_num in range(1, team.max_seats + 1):
+                    await db.execute(
+                        "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+                        "VALUES (?, ?, NULL)",
+                        (instance_id, seat_num),
+                    )
 
     # ------------------------------------------------------------------
     # Read helpers for /team list (016-team-cmd-qol)

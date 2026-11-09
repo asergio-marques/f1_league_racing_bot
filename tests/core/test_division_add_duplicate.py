@@ -229,9 +229,6 @@ async def _duplicate(
 # log line, stamped with the queue's clock. Every refusal is judged at the ask and again as the
 # change starts, in the same words.
 
-#: The reason each test of a part not yet built is expected to fail.
-NOT_QUEUED = "#283: /division add is not yet the change type core.division_add on the change queue"
-
 #: "Now", as the change queue's clock gives it.
 NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
 
@@ -355,7 +352,6 @@ async def _team_rows(db_path: str, division: str) -> list[tuple]:
         pytest.param((), "Pro", 1, 10, id="the-first-division-of-the-season"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=NOT_QUEUED)
 async def test_a_division_its_teams_audit_entry_and_line_are_one_save(
     tmp_path, held, name, tier, role_id
 ):
@@ -408,7 +404,6 @@ async def test_a_division_its_teams_audit_entry_and_line_are_one_save(
     assert last_said(asked) == _added(name, tier, role_id, listed)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_QUEUED)
 async def test_a_failed_division_save_adds_nothing(tmp_path):
     """Season #1 is being set up, in Placements, holding Pro. The manager runs `/division add` for
     Am at tier 2, and as the queue runs it the database fails writing the audit entry. Nothing of
@@ -456,7 +451,6 @@ async def test_a_failed_division_save_adds_nothing(tmp_path):
         ),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=NOT_QUEUED)
 async def test_a_division_add_is_judged_again_as_it_starts(tmp_path, meanwhile, reply):
     """Season #1 is being set up, in Placements, holding Pro at tier 1. The manager runs
     `/division add` for Am at tier 2, and nothing is saved at the ask. Before the queue runs it,
@@ -493,7 +487,6 @@ async def test_a_division_add_is_judged_again_as_it_starts(tmp_path, meanwhile, 
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_QUEUED)
 async def test_a_division_add_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. Season #1
