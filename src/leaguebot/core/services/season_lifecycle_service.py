@@ -279,13 +279,12 @@ async def turn_down_pending_placements_on(
     """Turn down every placement of *season_id* still pending, as the reject command would, on *db*.
 
     The database side of the wind-down, committing nothing: it is part of the save that also
-    moves the season on (#439). Each pending placement is discarded and its seat vacated, and
-    each such driver returns to Not Signed Up through the transition table, and each approved one
-    is handed to *driver_turned_down*. A driver without the former-driver flag is thereby pending
-    deletion. Gives each driver turned down as ``id``,
-    ``user_id``, ``state`` (the one they were in) and ``is_test_driver``, for the jobs that follow
-    the save: a signup in review has its channel told and closed, an approved driver loses the
-    driver role.
+    moves the season on. Each pending placement is discarded and its seat vacated, each such
+    driver returns to Not Signed Up through the transition table, and each approved one is handed
+    to *driver_turned_down*. A driver without the former-driver flag is thereby pending deletion.
+    Gives each driver turned down as ``id``, ``user_id``, ``state`` (the one they were in) and
+    ``is_test_driver``, for the jobs that follow the save: a signup in review has its channel told
+    and closed, an approved driver loses the driver role.
     """
     drivers = await _pending_placement_drivers_on(db, season_id)
     await _turn_down_on(db, season_id, drivers, driver_turned_down)
@@ -510,8 +509,8 @@ def wind_down_change(
        or `take_driver_role` for an approved driver.
 
     *placement* and the hooks the modules sign up to (*season_end_closes*, *drivers_returned*,
-    *driver_turned_down*, *driver_returned_jobs*, *season_end_steps*) are what the jobs reach Discord and the other
-    modules through, handed by the builder.
+    *driver_turned_down*, *driver_returned_jobs*, *season_end_steps*) are what the jobs reach
+    Discord and the other modules through, handed by the builder.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
