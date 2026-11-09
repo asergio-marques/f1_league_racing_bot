@@ -1345,8 +1345,9 @@ class PlacementService:
         driver maps to them, the roles of the seat taken granted, and the lineup of each
         division touched posted once. A driver moved to another division leaves the points they
         scored in the division they left, those being counted per division. The roles are
-        changed swallowing Discord's refusals: this is the `/driver` command's, which keeps
-        that until core's design pass; a sanction's own role change raises instead.
+        changed swallowing Discord's refusals: this is the committing form `/attendance sync`
+        moves a driver through, with no queue to report to. `/driver move` is a change on the
+        queue (`driver_changes`), and a sanction's own role change raises.
 
         Refused as `move_on` and `guard_move` refuse.
 
@@ -2158,8 +2159,10 @@ class PlacementService:
 
         The season's placements are removed (`sack_on`), so the driver holds no seat and gains
         no history entry for the season. The roles are revoked first, swallowing Discord's
-        refusals: this is the `/driver` command's, which keeps that until core's design pass;
-        a sanction's own role change raises instead. Raises ValueError for blocking conditions.
+        refusals: this is the committing form `/attendance sync` sacks a driver through, with no
+        queue to report to. `/driver sack` is a change on the queue (`driver_changes`), which
+        takes the roles after the save, and a sanction's own role change raises. Raises
+        ValueError for blocking conditions.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(

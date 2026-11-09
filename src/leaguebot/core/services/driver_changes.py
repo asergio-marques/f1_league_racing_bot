@@ -1,29 +1,34 @@
-"""`core.driver_move`: `/driver move`, on the change queue.
+"""`core.driver_move`, `core.driver_sack` and `core.driver_release`: `/driver move`, `sack` and
+`release`, on the change queue.
 
-A change type of its own on the league lane, registered by the builder, for a committed driver
-moved to a team of the same division or another while the season is ongoing. The driver, the
-season, both divisions and the team are named by their ids and shorthand at the ask. A change is
-five kinds of job, in this order:
+Each is a change type of its own on the league lane, registered by the builder, for a committed
+driver while the season is ongoing: moved to a team of the same division or another, sacked from
+every seat, or released from one division and keeping the rest. The driver, the season and the
+divisions are named by their ids at the ask, a team by its shorthand. A change is four kinds of
+job, in this order:
 
-1. **One save** moves the driver (`PlacementService.move_seat_on`) and writes its `DRIVER_MOVE`
-   audit entry, stamped with the queue's clock, and plans what follows from what it read inside
-   it: the roles to take and give, and the lineup of each division touched.
+1. **One save** changes the seats (`PlacementService.move_seat_on`, `sack_seats_on`,
+   `unassign_on`) and writes the audit entry (`DRIVER_MOVE`, `DRIVER_SACK`, `DRIVER_UNASSIGN`),
+   stamped with the queue's clock, and plans what follows from what it read inside it: the roles
+   to take and give, and the lineup of each division touched.
 2. **The member's roles** (`role_moves.role_move_step`), which end on a fault rather than stop the
    lane, since the seat is the league's record and a role Discord refuses is the member's to be
-   given by hand: it is reported in the reply and the line.
+   given or taken by hand: it is reported in the reply and the line. They come after the save,
+   a sack's too.
 3. **Each lineup** (`lineup_posting.lineup_step`), which stops the lane where Discord refuses it,
    as every post does, and says what it left undone where a league admin discards it.
-4. **The line** that records the move, written last so that it carries what was not done.
+4. **The line** that records the change, written last so that it carries what was not done.
 
 **A fault in the save stops the lane**, as a failed job does, for the reason `/division delete`'s
-does: a league admin exists to discard the job and clear the stop, and nothing of the move is
+does: a league admin exists to discard the job and clear the stop, and nothing of the change is
 kept. The roles and the lineups are planned by the save and so never follow a discarded one.
 
-**The move is judged by its ids** and every refusal is the check's, at the ask and again as the
-change starts, in the league's log channel either time: the season no longer ongoing, the driver
-without a profile, a division not in the season, and what the placement service refuses
-(`PlacementService.judge_move_on`, `guard_move`). The roles go to the account the save read from
-the driver's profile, so a driver given another account meanwhile is not left with the old one's.
+**The change is judged by its ids** and every refusal is the check's, at the ask and again as the
+change starts, in the league's log channel either time: the season no longer ongoing, a division
+not in the season, the driver without a profile, and what the placement service refuses
+(`PlacementService.judge_move_on`, `guard_move`, `judge_sack_on`, `judge_release_on`). The roles
+go to the account the save read from the driver's profile, so a driver given another account
+meanwhile is not left with the old one's.
 """
 
 from __future__ import annotations
