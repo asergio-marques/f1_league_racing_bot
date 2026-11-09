@@ -2,7 +2,7 @@
 
 `/bot pack` and `/bot factory-reset` (issue #247) change the database underneath a running
 process, and a store in memory that outlived them would act on a league the database no
-longer holds — a season setup resumed after a factory reset, a signup's timer firing
+longer holds — a held review press acted on after a factory reset, a signup's timer firing
 into a wizard that has gone. So both commands call `clear_in_memory_state`. It clears core's own
 stores itself, and each module's through the bot's hook for the moment, which the builder signs
 the module's clear up to.
