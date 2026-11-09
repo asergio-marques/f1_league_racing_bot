@@ -348,43 +348,54 @@ async def _team_rows(db_path: str, division: str) -> list[tuple]:
         return rows
 
 
+@pytest.mark.parametrize(
+    "held, name, tier, role_id",
+    [
+        pytest.param((("Pro", 1, 10),), "Am", 2, 555, id="beside-a-division-already-held"),
+        pytest.param((), "Pro", 1, 10, id="the-first-division-of-the-season"),
+    ],
+)
 @pytest.mark.xfail(strict=True, reason=NOT_QUEUED)
-async def test_a_division_its_teams_audit_entry_and_line_are_one_save(tmp_path):
+async def test_a_division_its_teams_audit_entry_and_line_are_one_save(
+    tmp_path, held, name, tier, role_id
+):
     """The core specification's record of what changed. Season #1 is being set up, in Placements,
-    holding Pro at tier 1 (role 10), as the database alone holds it after a restart: nothing of it
-    is in memory. The league's list of teams holds Alpha (Alpha Racing, two seats). The league
-    manager Admin (4242) runs `/division add` for Am at tier 2, mentioning role 555. They are
-    answered at once with the queue's acknowledgement, naming its first job, and nothing is saved
-    until the queue runs the change. Once it has, the season holds Pro and Am (tier 2, role 555);
-    Am has the teams Alpha (Alpha Racing, two empty seats) and Reserve, with no seats; one audit
-    entry, `DIVISION_ADDED`, by Admin, on Am, stamped with the queue's clock, records Am as
-    replacing nothing; the log channel holds the success line alone; and the acknowledgement is
-    updated to today's reply, word for word, the divisions listed by tier."""
+    holding Pro at tier 1 (role 10), or no division at all, as the database alone holds it after a
+    restart: nothing of it is in memory. The league's list of teams holds Alpha (Alpha Racing, two
+    seats). The league manager Admin (4242) runs `/division add` for Am at tier 2, mentioning role
+    555, or, in the season with none, for Pro at tier 1, mentioning role 10. They are answered at
+    once with the queue's acknowledgement, naming its first job, and nothing is saved until the
+    queue runs the change. Once it has, the season holds what it held and the new division; the new
+    division has the teams Alpha (Alpha Racing, two empty seats) and Reserve, with no seats; one
+    audit entry, `DIVISION_ADDED`, by Admin, on the new division, stamped with the queue's clock,
+    records it as replacing nothing; the log channel holds the success line alone; and the
+    acknowledgement is updated to today's reply, word for word, the divisions listed by tier."""
     from tests.support.change_queue import run_queue, step_rows
     from tests.support.settings_league import audit_rows, last_said, log_lines, said
 
-    league = await _setup_league(tmp_path)
-    asked = await _ask_add(league, "Am", 2)
+    league = await _setup_league(tmp_path, divisions=held)
+    asked = await _ask_add(league, name, tier, role_id)
 
     first_job = (await step_rows(league.db_path))[0]["id"]
-    assert said(asked)[0] == f"{_acknowledged('Am', 2)} It begins with job #{first_job}."
-    assert await _division_rows(league.db_path) == [("Pro", 1, 10)]
+    assert said(asked)[0] == f"{_acknowledged(name, tier)} It begins with job #{first_job}."
+    assert await _division_rows(league.db_path) == list(held)
     await run_queue(league.bot)
 
-    assert await _division_rows(league.db_path) == [("Pro", 1, 10), ("Am", 2, 555)]
-    assert await _team_rows(league.db_path, "Am") == [
+    listed = [*held, (name, tier, role_id)]
+    assert await _division_rows(league.db_path) == listed
+    assert await _team_rows(league.db_path, name) == [
         ("Alpha", "Alpha Racing", 2, 0, [None, None]),
         ("Reserve", "Reserve", -1, 1, []),
     ]
     async with get_connection(league.db_path) as db:
-        cursor = await db.execute("SELECT id, season_id FROM divisions WHERE name = 'Am'")
+        cursor = await db.execute("SELECT id, season_id FROM divisions WHERE name = ?", (name,))
         division_id, season_id = tuple(await cursor.fetchone())
     new = {
         "division_id": division_id,
         "season_id": season_id,
-        "name": "Am",
-        "tier": 2,
-        "mention_role_id": 555,
+        "name": name,
+        "tier": tier,
+        "mention_role_id": role_id,
     }
     [entry] = await audit_rows(league.db_path)
     assert (entry["change_type"], entry["actor_id"], entry["division_id"]) == (
@@ -393,8 +404,8 @@ async def test_a_division_its_teams_audit_entry_and_line_are_one_save(tmp_path):
     assert entry["new_value"] == new
     assert entry["old_value"] == dict.fromkeys(new)
     assert entry["timestamp"] == NOW.isoformat()
-    assert await log_lines(league) == [_success_line("Am", 2)]
-    assert last_said(asked) == _added("Am", 2, 555, [("Pro", 1, 10), ("Am", 2, 555)])
+    assert await log_lines(league) == [_success_line(name, tier)]
+    assert last_said(asked) == _added(name, tier, role_id, listed)
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_QUEUED)
