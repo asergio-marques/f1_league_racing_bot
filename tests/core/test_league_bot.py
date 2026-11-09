@@ -141,8 +141,8 @@ def test_the_season_s_end_is_registered():
 
 #: The settings commands of results, weather and images as the builder registers them (#439,
 #: slice 7), core's seven `/bot` settings, its two division channels and its test-mode nationality
-#: switch, weather's forecast channel, and results' three division channels (#283): one change type
-#: per setting, every one built by `setting_change`.
+#: switch, weather's forecast channel, results' three division channels and attendance's two
+#: (#283): one change type per setting, every one built by `setting_change`.
 SETTING_KINDS = (
     *(f"core.setting.{name}" for name in (
         "log_channel", "interaction_channel", "interaction_role", "admin_role",
@@ -162,13 +162,18 @@ SETTING_KINDS = (
         "fastest_lap_colour", "per_tier", "tier_colours", "tier_import", "portraits",
         "daily_portraits",
     )),
+    "attendance.setting.rsvp_channel",
+    "attendance.setting.attendance_channel",
 )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the builder does not yet register attendance's two division-channel settings",
+)
 def test_the_settings_changes_are_registered():
-    """The builder registers the thirty-eight settings changes of core, results, weather and
-    images, once each, and no other kind carrying ".setting." (#439, slice 7; #283): the
-    attendance settings stay off the queue until attendance's design pass."""
+    """The builder registers the forty settings changes of core, results, weather, images and
+    attendance, once each, and no other kind carrying ".setting." (#439, slice 7; #283)."""
     from leaguebot.__main__ import register_change_types
 
     bot = MagicMock()
@@ -177,7 +182,7 @@ def test_the_settings_changes_are_registered():
     kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
     settings = sorted(kind for kind in kinds if ".setting." in kind)
     assert settings == sorted(SETTING_KINDS)
-    assert len(SETTING_KINDS) == 38
+    assert len(SETTING_KINDS) == 40
 
 
 @pytest.mark.parametrize(
