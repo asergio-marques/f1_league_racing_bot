@@ -466,6 +466,19 @@ async def _seated(league):
     return {int(r["user_id"]): (r["division"], r["team"], bool(r["committed"])) for r in rows}
 
 
+async def _lewis_seats(league):
+    """Where Lewis sits: (division, team, whether confirmed), in division order."""
+    rows = await league.rows(
+        "SELECT d.name AS division, ti.name AS team, dsa.committed "
+        "FROM driver_season_assignments dsa "
+        "JOIN divisions d ON d.id = dsa.division_id "
+        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+        "WHERE dsa.driver_profile_id = 41 ORDER BY d.tier"
+    )
+    return [(r["division"], r["team"], bool(r["committed"])) for r in rows]
+
+
 #: Where every driver sits before anything is moved.
 _STANDING = {101: ("Pro", "Ferrari", True), 102: ("Pro", "Ferrari", True),
              103: ("Am", "McLaren", True)}
@@ -669,20 +682,21 @@ async def _seat_lewis_in_am(league):
     [
         pytest.param(
             _end_the_races, "⛔ `/driver move` is available only while the season is ongoing.",
-            ("Pro", "Ferrari", True), id="the-races-ended",
+            [("Pro", "Ferrari", True)], id="the-races-ended",
             marks=pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED),
         ),
         pytest.param(
             _unconfirm_lewis,
             "⛔ That placement is not yet confirmed. Change it with `/driver unassign` and "
             "`/driver assign`.",
-            ("Pro", "Ferrari", False), id="the-placement-unconfirmed",
+            [("Pro", "Ferrari", False)], id="the-placement-unconfirmed",
             marks=pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED),
         ),
         pytest.param(
             _seat_lewis_in_am,
             "⛔ Driver already holds a seat in the division they would move into.",
-            ("Pro", "Ferrari", True), id="a-seat-taken-in-the-division-moved-into",
+            [("Pro", "Ferrari", True), ("Am", "McLaren", True)],
+            id="a-seat-taken-in-the-division-moved-into",
             marks=pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED),
         ),
     ],
@@ -692,8 +706,8 @@ async def test_a_driver_move_is_judged_again_as_it_starts(tmp_path, meanwhile, r
     of Lewis into McLaren in Am and is acknowledged; before the queue runs it, the season's races
     end (Pending completion), Lewis's placement in Pro is made unconfirmed, or Lewis takes a seat
     in Am as well. The queue runs. The move is refused as it starts, in the words it would meet
-    at the ask, its acknowledgement updated to them. Lewis's Pro placement stands as the meanwhile
-    left it, no audit entry is written, the log channel holds the refusal alone, no role is
+    at the ask, its acknowledgement updated to them. Lewis's seats, in division order, stand as
+    the meanwhile left them, no audit entry is written, the log channel holds the refusal alone, no role is
     touched, no lineup posted, and the queue is not stopped."""
     from tests.support.change_queue import run_queue, stopped_job
     from tests.support.season_league import DIVISIONS, LEWIS, PRO
@@ -705,7 +719,7 @@ async def test_a_driver_move_is_judged_again_as_it_starts(tmp_path, meanwhile, r
     await run_queue(league.bot)
 
     assert last_said(refused) == reply
-    assert (await _seated(league))[LEWIS] == lewis_after
+    assert await _lewis_seats(league) == lewis_after
     assert await audit_rows(league.db_path) == []
     assert await log_lines(league) == [_refusal(reply)]
     assert league.revoked == {} and league.granted == {}

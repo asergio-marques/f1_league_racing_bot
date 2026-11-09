@@ -22,6 +22,7 @@ from tests.core.test_driver_move import (
     SERVER_ID,
     _ADMIN,
     _end_the_races,
+    _lewis_seats,
     _ongoing,
     _seat_lewis_in_am,
 )
@@ -59,19 +60,6 @@ async def _ask_release(league, user_id, division="Am"):
         DriverCog(league.bot), asked, league._member(user_id), division
     )
     return asked
-
-
-async def _lewis_seats(league):
-    """Where Lewis sits: (division, team, whether confirmed), in division order."""
-    rows = await league.rows(
-        "SELECT d.name AS division, ti.name AS team, dsa.committed "
-        "FROM driver_season_assignments dsa "
-        "JOIN divisions d ON d.id = dsa.division_id "
-        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
-        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
-        "WHERE dsa.driver_profile_id = 41 ORDER BY d.tier"
-    )
-    return [(r["division"], r["team"], bool(r["committed"])) for r in rows]
 
 
 #: Where Lewis sits before anything is released.
