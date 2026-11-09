@@ -626,9 +626,6 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     assert handed == [(None, 0)] * len(called)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: no hook is declared for a driver's account changed"
-)
 async def test_the_builder_signs_signup_up_to_a_driver_s_account_changed(tmp_path, monkeypatch):
     """Straight after `build`, signup's part of a driver's account changed (`/driver reassign`'s
     save) is signed up to the hook on the bot, and nothing has been called yet. Called, it is

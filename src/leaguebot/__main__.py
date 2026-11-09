@@ -340,6 +340,26 @@ def _sign_up_to_driver_turned_down(bot: LeagueBot) -> None:
     bot.driver_turned_down.subscribe(signup_module_service.driver_turned_down_on)
 
 
+def _sign_up_to_driver_account_changed(bot: LeagueBot) -> None:
+    """Make the hooks a driver's account changed declares, and sign each module's part up to
+    them: what a module moves from the account replaced to the new one on the connection of the
+    save that changes it, handing back the jobs it plans after the save, and the steps it defines
+    for them, by name (architecture.md, "How modules and core fit together"). Signup moves the
+    held signup channel. The builder hands them to `/driver reassign`'s change."""
+    from leaguebot.signup.services import signup_module_service
+    from leaguebot.signup.services.held_channel_moves import held_channel_steps
+
+    bot.driver_account_changed = AwaitedHook()
+    bot.driver_account_changed.subscribe(signup_module_service.driver_account_changed_on)
+    bot.driver_account_changed_steps = Hook()
+    bot.driver_account_changed_steps.subscribe(partial(
+        held_channel_steps,
+        scheduler_service=lambda: bot.scheduler_service,
+        signup=lambda: bot.signup_module_service,
+        now=lambda: bot.change_queue.now(),
+    ))
+
+
 def _sign_up_to_placements_confirmed(bot: LeagueBot) -> None:
     """Make the hooks placements confirmed (the season's approval) declares, and sign each
     module's opening post up to them: the jobs it plans for a division, handed the save's
@@ -1496,6 +1516,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_test_mode_turned_on(bot)
     _sign_up_to_configuration_confirmed(bot)
     _sign_up_to_driver_turned_down(bot)
+    _sign_up_to_driver_account_changed(bot)
     _sign_up_to_placements_confirmed(bot)
     _sign_up_to_season_completed(bot)
     _sign_up_to_season_end(bot)

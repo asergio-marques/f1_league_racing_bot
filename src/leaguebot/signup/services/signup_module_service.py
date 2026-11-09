@@ -11,6 +11,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.models.change import PlannedStep
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.driver_service import accounts_of_profile
 from leaguebot.core.services.pack_service import CLEARED_SIGNUP_CHANNEL_ID, CLEARED_WIZARDS
@@ -25,6 +26,12 @@ from leaguebot.signup.models.signup_module import (
 )
 
 log = logging.getLogger(__name__)
+
+#: The names of the jobs signup plans for a held signup channel as its driver's account changes:
+#: the channel's deletion timer and permissions moved to the new account, or the replaced
+#: account's channel deleted where the new account holds one of its own.
+MOVE_HELD_CHANNEL = "move_held_channel"
+DELETE_REPLACED_CHANNEL = "delete_replaced_channel"
 
 
 class SignupModuleService:
@@ -936,6 +943,55 @@ async def driver_turned_down_on(db: aiosqlite.Connection, driver_profile_id: int
         f"  AND discord_user_id IN ({', '.join('?' * len(accounts))})"
         "  ORDER BY id DESC LIMIT 1)",
         accounts,
+    )
+
+
+async def driver_account_changed_on(
+    db: aiosqlite.Connection, replaced: str, new: str
+) -> tuple[PlannedStep, ...]:
+    """Move the held signup channel of the driver whose current account changes from *replaced*
+    to *new*, on *db*, committing nothing, and hand back the jobs that follow it.
+
+    Core hands it the two accounts as it changes them, in the save that does it, so that the
+    wizard record moves with the change or not at all (architecture.md, "How modules and core fit
+    together"). After an approval or a rejection the channel stays open, read-only, for 24 hours,
+    and a reassign cannot happen while a signup is in progress, so any channel the replaced
+    account holds is such a held one. Its record is re-keyed here, an abandoned draft on the new
+    account (a signup never begun) deleted in the same save, which it would otherwise collide
+    with; the job `MOVE_HELD_CHANNEL` then moves the channel's deletion timer, kept at the moment
+    it was already due, and its permissions. Where the new account holds a held channel of its own
+    that one is kept, the replaced account's record is left for the job `DELETE_REPLACED_CHANNEL`
+    to delete with the channel, and nothing is re-keyed: the driver can keep only one. While the
+    signup module is off it moves nothing, the hook being called whatever the modules' switches
+    say.
+    """
+    if not await signup_enabled_on(db):
+        return ()
+    cursor = await db.execute(
+        "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
+        (replaced,),
+    )
+    held = await cursor.fetchone()
+    if held is None or held["signup_channel_id"] is None:
+        return ()
+    channel_id = int(held["signup_channel_id"])
+    cursor = await db.execute(
+        "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
+        (new,),
+    )
+    theirs = await cursor.fetchone()
+    if theirs is not None and theirs["signup_channel_id"] is not None:
+        return (PlannedStep(DELETE_REPLACED_CHANNEL, {"user_id": replaced, "channel_id": channel_id}),)
+    await db.execute("DELETE FROM signup_wizard_records WHERE discord_user_id = ?", (new,))
+    await db.execute(
+        "UPDATE signup_wizard_records SET discord_user_id = ? WHERE discord_user_id = ?",
+        (new, replaced),
+    )
+    return (
+        PlannedStep(
+            MOVE_HELD_CHANNEL,
+            {"from_account": replaced, "to_account": new, "channel_id": channel_id},
+        ),
     )
 
 

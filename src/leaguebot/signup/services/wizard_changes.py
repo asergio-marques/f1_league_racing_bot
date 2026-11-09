@@ -163,7 +163,7 @@ _GONE_SENTENCE = {
 __all__ = [
     "ANSWER", "Accepted", "Refused", "judge_answer",
     "ARM_INACTIVITY", "CHANNEL_GONE", "CREATE_CHANNEL", "DELETE_CHANNEL", "DELETE_KIND", "DELETE_OLD_CHANNEL", "DELETED", "END",
-    "END_JOB", "EXPIRED", "INACTIVITY", "NAME_JOB",
+    "END_JOB", "EXPIRED", "INACTIVITY", "NAME_JOB", "delete_signup_channel",
     "PANEL", "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "RESTART", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
     "WITHDRAWN_NOTICE",
     "LEAVE_JOB", "MEMBER_LEFT",
@@ -778,7 +778,7 @@ def end_change(
 
 
 @posts_in_a_job
-async def _delete_signup_channel(ctx: StepContext, reason: str) -> StepResult:
+async def delete_signup_channel(ctx: StepContext, reason: str) -> StepResult:
     """Delete the signup channel the step's payload names, for *reason*: a channel already gone is
     nothing to do (``gone``), and one Discord refuses fails the job, which stops the queue."""
     guild = await league_guild(ctx.bot)
@@ -822,7 +822,7 @@ def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> Cha
         return row is not None and row.signup_channel_id == int(ctx.step_payload["channel_id"])
 
     async def delete(ctx: StepContext) -> StepResult:
-        return await _delete_signup_channel(ctx, "Signup wizard channel hold expired")
+        return await delete_signup_channel(ctx, "Signup wizard channel hold expired")
 
     async def forget(db: aiosqlite.Connection, ctx: StepContext, _result: StepResult) -> None:
         await signup().delete_wizard_on(db, str(ctx.step_payload["user_id"]))
@@ -1031,7 +1031,7 @@ def member_left_change(
         )
 
     async def delete(ctx: StepContext) -> StepResult:
-        return await _delete_signup_channel(ctx, "Driver left the server")
+        return await delete_signup_channel(ctx, "Driver left the server")
 
     async def forget(db: aiosqlite.Connection, ctx: StepContext, _result: StepResult) -> None:
         await signup().delete_wizard_on(db, str(ctx.step_payload["user_id"]))

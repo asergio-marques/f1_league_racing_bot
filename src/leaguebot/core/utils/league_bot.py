@@ -165,6 +165,14 @@ class LeagueBot(commands.Bot):
     #: which calls it inside its save, and to the season's wind-down, which calls it for each
     #: approved driver it returns.
     driver_turned_down: AwaitedHook
+    #: A driver's current account changed (`/driver reassign`'s save), given the save's
+    #: connection, the account replaced and the new one: each module signing up what it moves
+    #: from the one to the other (signup's held signup channel), handing back the jobs it plans
+    #: after the save. The builder makes it and hands it to the change, which plans the jobs it is
+    #: handed, in the order the modules signed up. `driver_account_changed_steps` carries the step
+    #: definitions each module hands back for its own jobs, by name.
+    driver_account_changed: AwaitedHook
+    driver_account_changed_steps: Hook
     #: A division's final round read (the completion's first save), given the connection and the
     #: division's id: each module signing up its own read, handing back the round its final
     #: classification is drawn against, or None (results' last round with results). The builder
