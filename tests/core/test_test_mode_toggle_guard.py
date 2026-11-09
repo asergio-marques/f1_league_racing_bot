@@ -647,13 +647,13 @@ async def _a_driver_deletion_fails(cog) -> None:
 async def test_a_fault_in_the_save_leaves_test_mode_as_it_was(
     cog, db_path, test_mode, fault, nothing_changed
 ):
-    """Test mode is off, with results' part signed up to test mode turned on and a second part
-    after it that fails (*on*); or on, with one fake driver, and a part signed up to the bot's
-    delete hook that fails (*off*). Admin runs the command and the queue runs it: it stops at the
-    save, and test mode is as it was, nothing seeded or attached to season 3, the fake driver not
-    deleted, nothing audited and no success line written. A league admin presses Discard: Admin's reply says
-    nothing was changed and to run the command again, test mode is still as it was, and the queue
-    is no longer stopped."""
+    """Test mode is off, with results' part signed up to test mode turned on and a second part after it
+    that fails (*on*); or on, with one fake driver, and a part signed up to the bot's delete hook
+    that fails (*off*). Admin runs the command and the queue runs it: it stops at the save, and test
+    mode is as it was, nothing seeded or attached to season 3, the fake driver not deleted, nothing
+    audited and no success line written. A league admin presses Discard: Admin's reply says nothing
+    was changed and to run the command again, test mode is still as it was, and the queue is no
+    longer stopped."""
     if test_mode:
         await _in_test_mode(db_path)
         await _add_driver(db_path, FAKE_DRIVER, "UNASSIGNED", test=True)
