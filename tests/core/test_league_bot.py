@@ -162,9 +162,6 @@ SETTING_KINDS = (
 )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the test-mode nationality switch is not a registered setting"
-)
 def test_the_settings_changes_are_registered():
     """The builder registers the thirty-four settings changes of core, results, weather and images,
     once each, and no other kind carrying ".setting." (#439, slice 7; #283): the

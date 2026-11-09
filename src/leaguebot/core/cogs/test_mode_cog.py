@@ -32,10 +32,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from leaguebot.core.services.test_mode_settings import NOT_IN_TEST_MODE
 from leaguebot.core.services.test_mode_service import (
     turn_test_mode_on,
     turn_test_mode_off,
-    toggle_test_mode_nationality,
     count_live_real_drivers,
     PhaseEntry,
     build_review_summary,
@@ -214,32 +214,16 @@ class TestModeCog(commands.Cog):
         server under test may be seen with flags and without them without the setting real
         signups run on being touched.
         """
-        config = await self.bot.config_service.get_server_config(
-
-        )
+        config = await self.bot.config_service.get_server_config()
         if config is None or not config.test_mode_active:
-            await refuse(
-                interaction,
-                "⛔ This command is only available when test mode is enabled.",
-                what=describe(interaction),
-            )
+            await refuse(interaction, NOT_IN_TEST_MODE, what=describe(interaction))
             return
 
-        new_state = await toggle_test_mode_nationality(
-            self.bot.db_path,
-        )
-        note = (
-            "Mock drivers may be given one with `/test-mode roster add`."
-            if new_state
-            else "Mock drivers already holding one keep it, and graphics draw no flag at all."
-        )
-        await interaction.response.send_message(
-            f"✅ Test-mode nationality: **{'ON' if new_state else 'OFF'}**.\n{note}",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode nationality | Success\n"
-            f"  test_mode_nationality: {'enabled' if new_state else 'disabled'}",
+        await self.bot.change_queue.ask(
+            "core.setting.test_mode_nationality_required",
+            {"value": not config.test_mode_nationality_required},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ------------------------------------------------------------------

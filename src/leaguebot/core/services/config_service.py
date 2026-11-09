@@ -134,7 +134,8 @@ class ConfigService:
 
     #: The four settings `/bot init` establishes and the four commands beside it repair, the
     #: league's two roles, which `/bot base-role` and `/bot driver-role` set (issue #276), and
-    #: the hub's channel and the panel posted there (issue #279).
+    #: the hub's channel and the panel posted there (issue #279), and test mode's nationality
+    #: switch.
     #: Named here rather than interpolated from the caller so that no command can reach a
     #: column of its own choosing.
     _SETTABLE_COLUMNS = {
@@ -146,6 +147,7 @@ class ConfigService:
         "driver_role_id",
         "hub_channel_id",
         "hub_message_id",
+        "test_mode_nationality_required",
     }
 
     async def set_core_setting_on(

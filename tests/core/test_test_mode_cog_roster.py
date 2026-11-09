@@ -173,12 +173,6 @@ async def _add(cog, *, name="Mock Alpha", nationality=None):
 # ── /test-mode nationality ────────────────────────────────────────────────
 
 
-#: Why a test fails until `/test-mode nationality` is a core `Setting` asked of the change queue.
-_NOT_A_SETTING = (
-    "#283: /test-mode nationality flips its switch itself, unaudited, rather than asking the "
-    "change queue"
-)
-
 #: The switch the command flips, as its audit entry names it, and that entry's change type.
 _FLAG = "test_mode_nationality_required"
 _AUDIT_TYPE = "TEST_MODE_NATIONALITY_SET"
@@ -256,7 +250,6 @@ class TestTheNationalityCommand:
 
         assert config.test_mode_nationality_required is True
 
-    @pytest.mark.xfail(strict=True, reason=_NOT_A_SETTING)
     async def test_it_toggles_off_and_back_on(self, league):
         """The server is in test mode with nationality on. Admin (77) runs the command, and runs
         it again before the queue has run the first: the first is acknowledged as turning it off,
@@ -311,7 +304,6 @@ class TestTheNationalityCommand:
             f"{_NAMED} | /test-mode nationality | Success\n  test_mode_nationality: enabled",
         ]
 
-    @pytest.mark.xfail(strict=True, reason=_NOT_A_SETTING)
     async def test_a_switch_already_where_it_was_asked_to_go_is_answered_nothing_changed(
         self, league
     ):
@@ -340,7 +332,6 @@ class TestTheNationalityCommand:
         ]
         assert await stopped_job(league.db_path) is None
 
-    @pytest.mark.xfail(strict=True, reason=_NOT_A_SETTING)
     async def test_the_flip_is_persisted(self, league):
         """The server is in test mode with nationality on. Admin (77) runs the command and the
         queue runs it: the switch is saved off, with one audit entry beside it recording on →
@@ -357,7 +348,6 @@ class TestTheNationalityCommand:
             for row in rows
         ] == [(_AUDIT_TYPE, {_FLAG: True}, {_FLAG: False}, ACTOR_ID, None, NOW.isoformat())]
 
-    @pytest.mark.xfail(strict=True, reason=_NOT_A_SETTING)
     async def test_it_is_logged(self, league):
         """The server is in test mode with nationality on. Admin (77) runs the command: they are
         answered at once with the queue's acknowledgement, naming the change's first job, and
@@ -417,7 +407,6 @@ class TestTheNationalityCommand:
             assert await _flags(league.db_path) is None
             assert _lines(league) == []
 
-    @pytest.mark.xfail(strict=True, reason=_NOT_A_SETTING)
     async def test_it_is_refused_as_it_starts_where_test_mode_was_turned_off(self, league):
         """The server is in test mode with nationality on. Admin (77) runs the command and is
         acknowledged; before the queue runs it, test mode is switched off. The change judges again
@@ -441,7 +430,6 @@ class TestTheNationalityCommand:
         ]
         assert await stopped_job(league.db_path) is None
 
-    @pytest.mark.xfail(strict=True, reason=_NOT_A_SETTING)
     async def test_a_fault_in_the_save_saves_neither_the_flag_nor_its_audit(
         self, league, monkeypatch
     ):
