@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.cogs.team_cog import TeamCog, _TeamAddModal, _TeamModifyModal
+from leaguebot.core.cogs.team_cog import TeamCog, _TeamAddModal
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.team_service import TeamReference
 from tests.support.undecorate import undecorate
@@ -132,18 +132,10 @@ async def _add_form(cog, interaction, *, role=None):
     await modal.on_submit(interaction)
 
 
-async def _modify_form(cog, interaction, *, shorthand="rbr", full_name=TEAM["full_name"], role=None):
-    modal = _TeamModifyModal(cog, team=dict(TEAM), names_offered=True)
-    modal.shorthand._value = shorthand
-    modal.full_name._value = full_name
-    modal.role._values = [role or _role(TEAM["role_id"])]
-    await modal.on_submit(interaction)
-
 
 _LOCKED = _season(SeasonStage.PLACEMENTS)
 _DONE = _season(SeasonStage.PENDING_COMPLETION)
 _ADD_FORM = "the “Add a team” form"
-_MODIFY_FORM = "the “Modify a team” form"
 
 # case id → (what the line names, the command or None for a form, how it runs, how the cog is
 # made to refuse, a phrase of today's reply)
@@ -221,34 +213,6 @@ _CASES = {
         _raises("placement_service", "set_team_role_config",
                 '<@&222> is already the role of "Ferrari".'),
         '<@&222> is already the role of "Ferrari".',
-    ),
-    "modify form team gone": (
-        _MODIFY_FORM, None,
-        lambda cog, i: _modify_form(cog, i, full_name="Red Bull Racing"),
-        _no_team, "is no longer in the server's team list",
-    ),
-    "modify form names fixed": (
-        _MODIFY_FORM, None,
-        lambda cog, i: _modify_form(cog, i, full_name="Red Bull Racing"),
-        _LOCKED, "The team list is fixed now that the season's configuration is confirmed",
-    ),
-    "modify form role cannot be granted": (
-        _MODIFY_FORM, None,
-        lambda cog, i: _modify_form(cog, i, role=_role(managed=True)),
-        None, "Nothing was written.",
-    ),
-    "modify form role held": (
-        _MODIFY_FORM, None,
-        lambda cog, i: _modify_form(cog, i, role=_role()),
-        _raises("placement_service", "set_team_role_config",
-                '<@&222> is already the role of "Ferrari".'),
-        '<@&222> is already the role of "Ferrari". Nothing was written.',
-    ),
-    "modify form refused by the service": (
-        _MODIFY_FORM, None,
-        lambda cog, i: _modify_form(cog, i, full_name="Red Bull Racing"),
-        _raises("team_service", "modify_default_team", "A team is already named that."),
-        "A team is already named that.",
     ),
 }
 

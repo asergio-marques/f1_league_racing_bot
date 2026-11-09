@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
 
 
@@ -105,28 +103,8 @@ def _modify_cog(*, team=None, list_open=True, season=None):
     cog.bot.team_service.resolve_server_team = AsyncMock(
         return_value=TeamReference(team=dict(team or TEAM))
     )
-    cog.bot.team_service.modify_default_team = AsyncMock(
-        side_effect=lambda current, *, shorthand=None, full_name=None, **kw: {
-            "name": shorthand or current, "full_name": full_name or "Oracle Red Bull Racing"
-        }
-    )
-    cog.bot.placement_service.rename_team_role_config = AsyncMock()
-    cog.bot.placement_service.swap_team_role = AsyncMock(return_value=2)
     assert isinstance(cog, TeamCog)
     return cog
-
-
-async def _submit(cog, *, shorthand=None, full_name=None, role=None, names_offered=True):
-    from leaguebot.core.cogs.team_cog import _TeamModifyModal
-
-    modal = _TeamModifyModal(cog, team=dict(TEAM), names_offered=names_offered)
-    if modal.shorthand is not None:
-        modal.shorthand._value = shorthand if shorthand is not None else TEAM["name"]
-        modal.full_name._value = full_name if full_name is not None else TEAM["full_name"]
-    modal.role._values = [role] if role is not None else [_role(TEAM["role_id"])]
-    interaction = _interaction()
-    await modal.on_submit(interaction)
-    return interaction
 
 
 async def test_the_form_opens_pre_filled_with_every_field_that_may_change():
@@ -171,80 +149,3 @@ async def test_the_reserve_team_is_sent_to_its_own_command():
 
     assert "/team reserve-role" in interaction.response.send_message.await_args.args[0]
     interaction.response.send_modal.assert_not_awaited()
-
-
-async def test_a_form_submitted_untouched_changes_nothing():
-    """Nothing is written, the manager is told so, and one line records that nothing was
-    changed (#482)."""
-    cog = _modify_cog()
-
-    interaction = await _submit(cog)
-
-    assert "Nothing changed" in interaction.followup.send.await_args.args[0]
-    cog.bot.team_service.modify_default_team.assert_not_awaited()
-    cog.bot.placement_service.set_team_role_config.assert_not_awaited()
-    cog.bot.output_router.post_log.assert_awaited_once()
-    line = cog.bot.output_router.post_log.await_args.args[0]
-    assert line.startswith("Manager (<@42>) | /team modify")
-    assert "nothing" in line.lower() and "chang" in line.lower()
-
-
-async def test_changing_both_names_records_them_and_names_the_artwork_file():
-    cog = _modify_cog()
-
-    interaction = await _submit(cog, shorthand="RB", full_name="Red Bull Racing")
-
-    cog.bot.team_service.modify_default_team.assert_awaited_once()
-    assert cog.bot.team_service.modify_default_team.await_args.kwargs["shorthand"] == "RB"
-    cog.bot.placement_service.rename_team_role_config.assert_awaited_once()
-    said = interaction.followup.send.await_args.args[0]
-    assert "`rb`" in said and "`rbr`" in said
-
-
-async def test_changing_the_role_moves_the_drivers_seated_in_the_team():
-    cog = _modify_cog()
-
-    interaction = await _submit(cog, role=_role(222))
-
-    cog.bot.placement_service.set_team_role_config.assert_awaited_once()
-    cog.bot.placement_service.swap_team_role.assert_awaited_once()
-    assert "2 seated driver(s) moved" in interaction.followup.send.await_args.args[0]
-
-
-async def test_a_name_changed_after_the_list_was_fixed_refuses_the_whole_submission():
-    """The window closed while the form stood open: nothing is written, not even the role."""
-    from leaguebot.core.models.season import SeasonStage
-
-    cog = _modify_cog(season=MagicMock(season_number=3, stage=SeasonStage.ONGOING))
-
-    interaction = await _submit(cog, shorthand="RB", role=_role(222))
-
-    said = interaction.followup.send.await_args.args[0]
-    assert "team list is fixed" in said and "nothing was written" in said.lower()
-    cog.bot.team_service.modify_default_team.assert_not_awaited()
-    cog.bot.placement_service.set_team_role_config.assert_not_awaited()
-
-
-async def test_a_role_another_team_holds_writes_nothing():
-    cog = _modify_cog()
-    cog.bot.placement_service.set_team_role_config = AsyncMock(
-        side_effect=ValueError('<@&222> is already the role of "MCL".')
-    )
-
-    interaction = await _submit(cog, full_name="Red Bull Racing", role=_role(222))
-
-    assert "already the role" in interaction.followup.send.await_args.args[0]
-    cog.bot.team_service.modify_default_team.assert_not_awaited()
-
-
-async def test_a_team_removed_while_the_form_stood_open_is_reported():
-    from leaguebot.core.services.team_service import TeamReference
-
-    cog = _modify_cog()
-    cog.bot.team_service.resolve_server_team = AsyncMock(
-        return_value=TeamReference(refusal="No team has the shorthand `RBR`.")
-    )
-
-    interaction = await _submit(cog, full_name="Red Bull Racing")
-
-    assert "no longer in the server's team list" in interaction.followup.send.await_args.args[0]

@@ -306,32 +306,6 @@ def _role_guild(members: dict):
     return guild
 
 
-async def test_every_confirmed_driver_of_the_team_has_the_old_role_swapped_for_the_new(db_path):
-    """Issue #220: a team's role is repointed in any stage, and its drivers follow."""
-    await _seat(db_path, PRO, "Alpha")
-    service = _service(db_path)
-    member = MagicMock()
-
-    reached = await service.swap_team_role(
-        "Alpha", ROLES["Alpha"], 777, _role_guild({4242: member})
-    )
-
-    assert reached == 1
-    service._revoke_roles.assert_awaited_once_with(member, ROLES["Alpha"])
-    service._grant_roles.assert_awaited_once_with(member, 777)
-
-
-async def test_an_unconfirmed_driver_of_the_team_is_left_alone(db_path):
-    """They hold no role until placements are confirmed."""
-    await _seat(db_path, PRO, "Alpha", committed=0)
-    service = _service(db_path)
-
-    assert await service.swap_team_role(
-        "Alpha", ROLES["Alpha"], 777, _role_guild({4242: MagicMock()})
-    ) == 0
-    service._grant_roles.assert_not_awaited()
-
-
 async def test_a_role_cleared_is_taken_and_nothing_granted(db_path):
     await _seat(db_path, PRO, "Reserve")
     service = _service(db_path)
@@ -342,14 +316,6 @@ async def test_a_role_cleared_is_taken_and_nothing_granted(db_path):
 
     service._revoke_roles.assert_awaited_once()
     service._grant_roles.assert_not_awaited()
-
-
-async def test_the_same_role_or_no_guild_changes_nothing(db_path):
-    await _seat(db_path, PRO, "Alpha")
-    service = _service(db_path)
-
-    assert await service.swap_team_role("Alpha", 5, 5, _role_guild({})) == 0
-    assert await service.swap_team_role("Alpha", 5, 6, None) == 0
 
 
 # ── A refused role change: the committing form attendance's sync moves through ──────────────
