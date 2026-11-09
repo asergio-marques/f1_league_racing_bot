@@ -274,33 +274,6 @@ async def test_the_new_channel_is_recorded_in_the_audit(tmp_path, which):
 
 
 @pytest.mark.parametrize("which", ALL)
-async def test_a_server_with_no_season_is_refused(tmp_path, which):
-    """There is no division to hang the setting on, and the command would otherwise fail
-    somewhere deeper with nothing a manager could act on."""
-    db_path = await _make_db(tmp_path, season=False)
-    cog = await _make_cog(db_path)
-    interaction = _interaction(cog, which)
-
-    await _run(cog, which, interaction)
-
-    assert "No season is live" in _replied(interaction)
-    assert await _audit_rows(db_path) == []
-
-
-@pytest.mark.parametrize("which", ALL)
-async def test_an_unknown_division_is_refused_by_name(tmp_path, which):
-    db_path = await _make_db(tmp_path)
-    cog = await _make_cog(db_path)
-    interaction = _interaction(cog, which)
-
-    await _run(cog, which, interaction, name="Division 9")
-
-    assert "Division 9" in _replied(interaction)
-    assert "not found" in _replied(interaction)
-    assert await _audit_rows(db_path) == []
-
-
-@pytest.mark.parametrize("which", ALL)
 async def test_the_division_is_matched_regardless_of_case(tmp_path, which):
     """A manager typing a division name into a slash command is not copying it letter for
     letter, and refusing `division 1` for `Division 1` would be a puzzle."""
@@ -312,21 +285,6 @@ async def test_the_division_is_matched_regardless_of_case(tmp_path, which):
 
     assert "not found" not in _replied(interaction)
     assert len(await _audit_rows(db_path)) == 1
-
-
-@pytest.mark.parametrize("which", ALL)
-async def test_a_channel_already_doing_another_job_is_refused(tmp_path, which):
-    """A channel serves one purpose across the whole server (decided 2026-09-06). The guard
-    runs before the write, so a refusal leaves the configuration as it stood."""
-    db_path = await _make_db(tmp_path)
-    await _seed_other_division_lineup(db_path, CHANNEL_ID)
-    cog = await _make_cog(db_path)
-    interaction = _interaction(cog, which)
-
-    await _run(cog, which, interaction)
-
-    assert await _audit_rows(db_path) == []
-    assert f"<#{CHANNEL_ID}>" in _replied(interaction)
 
 
 @pytest.mark.parametrize("which", ALL)
@@ -476,6 +434,7 @@ async def test_a_change_is_refused_as_it_starts_where_its_ask_no_longer_holds(
     assert await _audit_rows(db_path) == []
     reason = refused.split(" ", 1)[1]
     assert _lines(cog) == [f"⛔ `/{COMMAND_NAMES[which]}` refused for {NAMED} — {reason}"]
+    assert await stopped_job(db_path) is None
 
 
 @pytest.mark.parametrize("which", ALL)
@@ -655,13 +614,14 @@ async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, w
 async def test_every_channel_command_refusal_is_recorded(tmp_path, which, case):
     """Division 1 of a season being set up, and a text channel #notices. The manager (id 77) runs
     /division lineup-channel or calendar-channel and is refused at the ask in five cases: with no
-    season live; naming Division 9, which does not exist; giving #notices while it is already
-    the lineup channel of Division 2; giving #notices while it is already the results channel of
-    Division 2, a setting of another kind and another module; and giving #notices while it is
-    already this very channel of Division 1. The manager gets today's reply word for word and nothing else, the setting is
-    not written and nothing is audited, and the log channel gets exactly one line, "⛔
-    `/division …-channel` refused for Manager (`<@77>`) — " and the reply's first line, without
-    its mark."""
+    season live, there being no division to hang the setting on; naming Division 9, which does not
+    exist; giving #notices while it is already the lineup channel of Division 2, a channel serving
+    one purpose across the whole server; giving #notices while it is already the results channel
+    of Division 2, a setting of another kind and another module; and giving #notices while it is
+    already this very channel of Division 1. The manager gets today's reply word for word and
+    nothing else, the setting is not written and nothing is audited, and the log channel gets
+    exactly one line, "⛔ `/division …-channel` refused for Manager (`<@77>`) — " and the reply's
+    first line, without its mark."""
     db_path = await _make_db(tmp_path, season=case != "no_season")
     name = "Division 9" if case == "an_unknown_division" else "Division 1"
     if case == "a_channel_doing_another_job":
