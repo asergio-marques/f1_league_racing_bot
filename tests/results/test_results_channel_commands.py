@@ -57,6 +57,7 @@ from tests.support.change_queue import (
     league_bot,
     league_queue,
     member,
+    register,
     run_queue,
     seed_server,
     step_rows,
@@ -853,6 +854,61 @@ async def test_the_same_change_asked_again_while_it_waits_is_refused_as_a_repeat
     assert len(await _audit(db_path)) == 1
     assert _replied(first) == _reply(which, "set")
     assert _lines(cog) == [_refusal_line(which, repeated), _success_line(which)]
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
+@pytest.mark.parametrize("which", sorted(COMMANDS))
+async def test_the_channel_is_set_while_the_queue_is_stopped_on_another_job(tmp_path, which):
+    """Season 1 is being set up, and its Division 1 has none of its results channels. The league's
+    queue is stopped on another job, which failed on a fault in the bot. The manager (id 77) runs
+    `/results channel results`, `standings` or `verdicts` for channel 770001, the remedy a stop
+    notice names for a channel gone. They are acknowledged at once and told the change runs at
+    once, past the stop, and that the stopped job stays stopped; nothing is written as they ask.
+    Once the queue runs, Division 1 has 770001, the manager is told the channel was set, and the
+    other job is still stopped where it was."""
+    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.core.services.change_queue import ChangeType, Step
+
+    async def fails(_ctx) -> StepResult:
+        raise RuntimeError("a fault in the bot")
+
+    async def go(_ctx):
+        return Verdict.go()
+
+    db_path = await _make_db(tmp_path)
+    cog = await _make_cog(db_path)
+    register(cog.bot, ChangeType(
+        kind="test.stopping",
+        opening=(PlannedStep("fail"),),
+        steps={"fail": Step("fail", StepKind.ACT, fails)},
+        check=go,
+        key=lambda _payload: "test.stopping",
+        doing=lambda _payload: "Doing another job",
+        outcome=lambda _ctx: "Done.",
+    ))
+    other = await cog.bot.change_queue.ask("test.stopping", {}, actor=member(), what="another job")
+    await run_queue(cog.bot)
+    stopped = await stopped_job(db_path)
+    assert stopped is not None and stopped["change_id"] == other
+    interaction = _interaction(cog, which)
+
+    await _ask(cog, interaction, which)
+
+    first_job = min(
+        row["id"] for row in await step_rows(db_path) if row["change_id"] != other
+    )
+    assert acknowledgement(interaction) == (
+        f"{_acknowledged(which, first_job)} The queue is stopped at job #{stopped['id']}, so "
+        f"this request runs at once, past the stop; that job stays stopped."
+    )
+    assert await _channels(db_path) == _none_set()
+    await run_queue(cog.bot)
+
+    assert (await _channels(db_path))[which] == CHANNEL_ID
+    assert _replied(interaction) == _reply(which, "set")
+    still = await stopped_job(db_path)
+    assert still is not None
+    assert (still["id"], still["change_id"]) == (stopped["id"], other)
 
 
 # ---------------------------------------------------------------------------
