@@ -114,11 +114,14 @@ def _check(seasons: "SeasonService") -> Callable[[CheckContext], Awaitable[Verdi
         refusal = validate_division_tier(tier, [d.tier for d in held], within="season")
         if refusal is not None:
             return Verdict.refuse(f"⛔ {refusal}")
-        # An offset that moves a round beyond the dates a datetime holds raises here, at the ask,
-        # as it always has, rather than in the save, where a fault stops the lane.
+        # The shifted moments are worked out here for the error they may raise: an offset that
+        # moves a round beyond the dates a datetime holds fails at the ask, rather than in the
+        # save, where a fault would stop the lane.
         delta = _delta(payload)
-        for rnd in await seasons.get_division_rounds(payload["division_id"]):
+        _shifted_moments = [
             rnd.scheduled_at + delta
+            for rnd in await seasons.get_division_rounds(payload["division_id"])
+        ]
         return Verdict.go()
 
     return check
