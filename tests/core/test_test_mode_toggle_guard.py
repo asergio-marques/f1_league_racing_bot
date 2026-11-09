@@ -603,6 +603,37 @@ async def test_a_second_press_while_the_first_waits_is_refused_as_a_repeat(
     assert len(await audit_rows(db_path)) == 1
 
 
+@pytest.mark.parametrize(
+    "test_mode, state",
+    [pytest.param(False, "on", id="on"), pytest.param(True, "off", id="off")],
+)
+async def test_a_toggle_that_finds_test_mode_already_set_says_nothing_changed(
+    cog, db_path, test_mode, state
+):
+    """Test mode is off (on, for *off*), and for *off* a saved backup is held. Admin runs the
+    command, which asks to turn test mode *state*; before the queue runs it, test mode is turned
+    *state* already, as a change asked between two presses would leave it. The change finds the
+    flag where it was asked and changes nothing: Admin is told test mode is already *state*, the
+    log channel takes one Nothing changed line, no audit entry is written, and for *off* no
+    forecast is cleared and the backup is still held."""
+    from leaguebot.core.services import backup_service
+
+    if test_mode:
+        await _in_test_mode(db_path)
+        _save_backup(db_path, cog.bot.scheduler_service.jobstore_path)
+    interaction = await _ask(cog)
+    await _write(db_path, f"UPDATE server_configs SET test_mode_active = {0 if test_mode else 1}")
+
+    await run_queue(cog.bot)
+
+    assert last_said(interaction) == f"ℹ️ Nothing changed: test mode is already **{state}**."
+    assert _lines(cog) == [f"{NAMED} | /test-mode toggle | Nothing changed"]
+    assert await audit_rows(db_path) == []
+    if test_mode:
+        assert backup_service.backup_path(db_path).exists()
+    assert await stopped_job(db_path) is None
+
+
 async def _a_module_part_fails(cog) -> None:
     async def failing(*_args: Any) -> None:
         raise RuntimeError("disk I/O error")
