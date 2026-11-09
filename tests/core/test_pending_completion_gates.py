@@ -31,6 +31,7 @@ from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 import pytest
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
@@ -411,20 +412,56 @@ async def test_the_bulk_amend_modal_is_not_shown_in_pending_completion(tmp_path)
 # ---------------------------------------------------------------------------
 
 #: Each module channel command, the service holding the setter it reaches, and that setter. A
-#: setter that is a function of its cog's own module (results') names no service. A command asked
-#: of the change queue (weather's, #283) names neither: its change is run, and the channel read
-#: back. The cog is named with each so that the command can follow its code to another one.
+#: command asked of the change queue (weather's and results', #283) names neither: its change is
+#: run, and the channel read back (`QUEUED_CHANNELS`). The cog is named with each so that the
+#: command can follow its code to another one.
 MODULE_CHANNEL_COMMANDS = {
     "weather": (WeatherCog, "channel", None, None),
-    "results": (ResultsCog, "channel_results", None, "set_division_results_channel"),
-    "standings": (ResultsCog, "channel_standings", None, "set_division_standings_channel"),
-    "verdicts": (ResultsCog, "channel_verdicts", None, "set_division_penalty_channel"),
+    "results": (ResultsCog, "channel_results", None, None),
+    "standings": (ResultsCog, "channel_standings", None, None),
+    "verdicts": (ResultsCog, "channel_verdicts", None, None),
     "rsvp": (AttendanceCog, "channel_rsvp", "attendance_service", "set_rsvp_channel"),
     "attendance": (AttendanceCog, "channel_attendance", "attendance_service", "set_attendance_channel"),
 }
 
+#: Each command asked of the change queue: the kind of change it asks, and the query reading back
+#: the division's channel it sets, as `channel_id`.
+QUEUED_CHANNELS = {
+    "weather": (
+        "weather.setting.forecast_channel",
+        "SELECT forecast_channel_id AS channel_id FROM divisions WHERE id = ?",
+    ),
+    "results": (
+        "results.setting.results_channel",
+        "SELECT results_channel_id AS channel_id FROM division_results_config "
+        "WHERE division_id = ?",
+    ),
+    "standings": (
+        "results.setting.standings_channel",
+        "SELECT standings_channel_id AS channel_id FROM division_results_config "
+        "WHERE division_id = ?",
+    ),
+    "verdicts": (
+        "results.setting.verdicts_channel",
+        "SELECT penalty_channel_id AS channel_id FROM division_results_config "
+        "WHERE division_id = ?",
+    ),
+}
 
-@pytest.mark.parametrize("which", sorted(MODULE_CHANNEL_COMMANDS))
+_RESULTS_NOT_QUEUED = (
+    "#283: /results channel results, standings and verdicts are not yet results settings on the "
+    "change queue"
+)
+
+
+@pytest.mark.parametrize(
+    "which",
+    [
+        pytest.param(which, marks=pytest.mark.xfail(strict=True, reason=_RESULTS_NOT_QUEUED))
+        if which in ("results", "standings", "verdicts") else which
+        for which in sorted(MODULE_CHANNEL_COMMANDS)
+    ],
+)
 async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_path, which):
     """Completing posts the final classification and the final attendance sheet to those
     channels, so one deleted before completion has to be repointed. Each of the six is run
@@ -454,9 +491,12 @@ async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_pa
         setattr(getattr(bot, service), setter, stub)
         stub_setter = nullcontext()
     cog = _cog(cog_class, bot)
-    channel = MagicMock(id=808, mention="<#808>")
+    channel = MagicMock(spec=discord.TextChannel, id=808, mention="<#808>")
     channel.name = which
     channel.permissions_for = MagicMock(return_value=SimpleNamespace(send_messages=True))
+    # The bot finds the channel by its id, as a change judging its access as it starts does.
+    found = bot.get_channel
+    bot.get_channel = MagicMock(side_effect=lambda cid: channel if cid == 808 else found(cid))
 
     with stub_setter, patch(
         "leaguebot.core.services.channel_registry_service.find_channel_use", new=AsyncMock(return_value=None)
@@ -472,16 +512,11 @@ async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_pa
     assert "✅" in said, said
     assert "❌" not in said, said
     if queued:
-        assert [row["kind"] for row in await change_rows(db_path)] == [
-            "weather.setting.forecast_channel"
-        ]
+        kind, read_back = QUEUED_CHANNELS[which]
+        assert [row["kind"] for row in await change_rows(db_path)] == [kind]
         async with get_connection(db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT forecast_channel_id FROM divisions WHERE id = ?", (DIVISION_ID,)
-                )
-            ).fetchone()
-        assert row["forecast_channel_id"] == 808
+            row = await (await db.execute(read_back, (DIVISION_ID,))).fetchone()
+        assert int(row["channel_id"]) == 808
     else:
         stub.assert_awaited_once()
 
