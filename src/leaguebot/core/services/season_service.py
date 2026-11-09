@@ -705,15 +705,6 @@ class SeasonService:
             longest_sessions=longest_sessions,
         )
 
-    async def rename_division(self, division_id: int, new_name: str) -> None:
-        """Update a division's name."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE divisions SET name = ? WHERE id = ?",
-                (new_name, division_id),
-            )
-            await db.commit()
-
     async def delete_division(
         self,
         division_id: int,

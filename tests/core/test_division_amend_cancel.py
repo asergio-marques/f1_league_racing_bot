@@ -449,7 +449,6 @@ async def _writes_of_the_change_queued(db_path: str) -> tuple[str, ...]:
     return change_type.writes
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_division_rename_its_audit_entry_and_line_are_one_save(tmp_path):
     """The core specification's record of what changed. Season #1 is being set up, in Placements,
     holding Pro (tier 1, role 555) and Am (tier 2, role 556). The league manager Admin (4242) runs
@@ -642,28 +641,24 @@ async def _approve_the_season(db) -> None:
             "❌ A division named **elite** already exists.",
             [("Pro", 1, 555), ("Elite", 2, 556)], [_rename_line("Am", "Elite")],
             id="rename-a-second-rename-onto-the-same-name",
-            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
         ),
         pytest.param(
             "rename", {}, None, _delete_pro,
             "❌ Division `Pro` not found.",
             [("Am", 2, 556)], [],
             id="rename-the-division-deleted",
-            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
         ),
         pytest.param(
             "rename", {}, None, _replace_pro,
             "❌ Division `Pro` not found.",
             [("Am", 2, 556), ("Pro", 3, 557)], [],
             id="rename-the-division-deleted-and-another-given-its-name",
-            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
         ),
         pytest.param(
             "rename", {}, None, _approve_the_season,
             "❌ `/division rename` can only be used while the season is in placements.",
             _STANDING, [],
             id="rename-the-season-approved",
-            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
         ),
         pytest.param(
             "amend", {"new_name": "elite"}, _amend_am_to_elite, None,
@@ -971,7 +966,6 @@ async def test_amending_to_a_tier_the_rule_refuses_is_refused_in_adds_words(tmp_
 # asked of the queue and acknowledged, and judged so as it runs.
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_renaming_a_division_to_its_own_name_changes_nothing(tmp_path):
     """Season #1 is being set up, in Placements, holding Pro and Am. The league manager Admin
     (4242) runs `/division rename` of Pro to Pro, is acknowledged, and the queue runs it. The
@@ -1081,9 +1075,6 @@ async def test_a_division_typed_in_another_case_is_named_as_it_is_named(tmp_path
     assert "pro" not in words
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: /division rename still describes itself as setup only"
-)
 def test_division_rename_describes_itself_as_a_placements_command():
     """`/division rename` runs in Placements alone, as `/division amend` does, and the description
     Discord shows a manager beside the command says so, as amend's does, rather than "(setup

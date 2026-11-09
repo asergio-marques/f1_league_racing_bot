@@ -59,6 +59,7 @@ from leaguebot.core.services.mid_season_confirm_change import (
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.round_moments import read_round_windows
 from leaguebot.core.services.division_add_change import KIND as DIVISION_ADD
+from leaguebot.core.services.division_edit_changes import DIVISION_RENAME
 from leaguebot.core.services.round_add_changes import (
     ADD as ROUND_ADD,
     IMPORT as ROUND_IMPORT,
@@ -2408,7 +2409,7 @@ class SeasonCog(commands.Cog):
 
     @division.command(
         name="rename",
-        description="Rename a division (setup only).",
+        description="Rename a division while the season is in placements.",
     )
     @app_commands.describe(
         current_name="Current name of the division",
@@ -2421,69 +2422,12 @@ class SeasonCog(commands.Cog):
         current_name: str,
         new_name: str,
     ) -> None:
-        season_id = await self._season_in_placements()
-        if season_id is None:
-            await refuse(
-                interaction,
-                "\u274c `/division rename` can only be used while the season is in placements.",
-                what=describe(interaction),
-            )
-            return
-
-        divisions = await self.bot.season_service.get_divisions(season_id)
-        div = next((d for d in divisions if d.name.lower() == current_name.lower()), None)
-        if div is None:
-            await refuse(
-                interaction,
-                f"\u274c Division `{current_name}` not found.",
-                what=describe(interaction),
-            )
-            return
-
-        if division_amendment_changes_nothing(div, new_name=new_name):
-            await interaction.response.send_message(
-                f"\u2139\ufe0f Division **{div.name}** is already named **{div.name}**. "
-                "Nothing was changed.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division rename | "
-                "Nothing changed\n"
-                f"  division: {div.name}\n"
-                "  reason: it already bears that name",
-            )
-            return
-
-        refusal = validate_division_name(new_name)
-        if refusal is not None:
-            await refuse(
-                interaction,
-                f"\u274c {refusal}",
-                what=describe(interaction),
-            )
-            return
-
-        if any(d.name.lower() == new_name.lower() for d in divisions if d.id != div.id):
-            await refuse(
-                interaction,
-                f"\u274c A division named **{new_name}** already exists.",
-                what=describe(interaction),
-            )
-            return
-
-        old_name = div.name
-        await self.bot.season_service.rename_division(div.id, new_name)
-
-        remaining = await self.bot.season_service.get_divisions(season_id)
-        await interaction.response.send_message(
-            f"\u2705 Division **{old_name}** renamed to **{new_name}**.\n\n"
-            + format_division_list(remaining),
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division rename | Success\n"
-            f"  old_name: {old_name}\n"
-            f"  new_name: {new_name}",
+        """Rename a division: ask the change queue for it, which refuses what the command has
+        always refused at the ask and again as the change starts, and renames the division with
+        its audit entry in one save (`core/services/division_edit_changes.py`)."""
+        await self.bot.change_queue.ask(
+            DIVISION_RENAME, {"current_name": current_name, "new_name": new_name},
+            interaction=interaction, what=describe(interaction),
         )
 
     @division.command(
