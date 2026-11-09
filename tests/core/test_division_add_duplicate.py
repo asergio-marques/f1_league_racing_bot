@@ -717,9 +717,9 @@ async def test_a_shifted_round_landing_in_the_past_is_warned_about(tmp_path):
     post one identical warning a round. Season #1 is being set up, in Placements, holding Pro with
     its rounds on 1 and 8 November, stored without their zone, as setup_league lays them down; the
     queue's clock reads 22 October 2026. The manager runs `/division duplicate` of Pro as Am at tier
-    2, shifted back thirty days, and the queue runs it. Am is created, its rounds moved back thirty days, to 2
-    and 9 October, both in the past; the reply is today's, word for word, ending in one warning
-    alone, naming the first of them."""
+    2, shifted back thirty days, and the queue runs it. Am is created, its rounds moved back thirty
+    days, to 2 and 9 October, both in the past; the reply is today's, word for word, ending in one
+    warning alone, naming the first of them."""
     from tests.support.change_queue import run_queue
     from tests.support.settings_league import last_said
 
