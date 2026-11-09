@@ -3417,37 +3417,6 @@ class SeasonCog(commands.Cog):
             game_edition=season.game_edition,
         )
 
-    async def _snapshot_pending(self, cfg: PendingConfig) -> None:
-        """Write the current PendingConfig to DB (status=SETUP) and update cfg.season_id.
-
-        Only what changed is written, in place; see ``SeasonService.sync_pending_config``.
-        """
-        divisions_data = [
-            {
-                "name": d.name,
-                "role_id": d.role_id,
-                "tier": d.tier,
-                "rounds": d.rounds,
-            }
-            for d in cfg.divisions
-            if d.name
-        ]
-        season_id, season_number, unseeded_division_ids = (
-            await self.bot.season_service.sync_pending_config(
-                cfg.start_date,
-                cfg.season_id,
-                divisions_data,
-                cfg.game_edition,
-            )
-        )
-        cfg.season_id = season_id
-        cfg.season_number = season_number
-
-        # A division with no teams yet — new, or one whose seeding a restart interrupted.
-        # Every other keeps the teams it has.
-        for division_id in unseeded_division_ids:
-            await self.bot.team_service.seed_division_teams(division_id)
-
     async def _offer_backup_before_approving(
         self, interaction, deadline: datetime
     ) -> bool:
