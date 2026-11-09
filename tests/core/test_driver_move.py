@@ -659,6 +659,56 @@ async def test_a_failed_driver_move_moves_nothing(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
+async def test_a_lineup_discord_refuses_stops_the_move_and_once_discarded_is_named(tmp_path):
+    """The core specification's "How a change is carried out": a post Discord refuses stops the
+    queue, and one a league admin discards is left unposted. The season is ongoing; Lewis sits at
+    Ferrari in Pro, holding Pro's role and Ferrari's. Discord refuses every post in Am's lineup
+    channel (403 Missing Access). The league admin runs `/driver move` of Lewis into McLaren in
+    Am, and the queue runs it. The move is saved and his roles moved: he sits at McLaren in Am,
+    Pro's and Ferrari's roles taken and Am's and McLaren's given; but the league's lane stops at
+    Am's lineup, nothing posted there. A league admin discards the stopped job. Lewis's move
+    stands; the reply is today's, then "⚠️ Done, but on Discord:" and a bullet, "**Am** — its
+    lineup could not be posted. No command posts it again; it is posted with the next change to
+    its drivers."; the log channel's success line carries a "not done:" line in the same words;
+    Pro's lineup is posted once and Am's not at all; and the lane is clear."""
+    import discord
+
+    from tests.support.change_queue import discard_job, http_error, run_queue, stopped_job
+    from tests.support.season_league import (
+        AM, AM_ROLE, DIVISIONS, FERRARI_ROLE, LEWIS, MCLAREN_ROLE, PRO, PRO_ROLE,
+    )
+    from tests.support.settings_league import last_said, log_lines
+
+    league = await _ongoing(tmp_path)
+    league.channel(DIVISIONS[AM][3].lineup).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Access"
+    )
+    asked = await _ask_move(league, LEWIS)
+    await run_queue(league.bot)
+
+    assert await _seated(league) == {**_STANDING, LEWIS: ("Am", "McLaren", True)}
+    assert sorted(league.revoked[LEWIS]) == [PRO_ROLE, FERRARI_ROLE]
+    assert sorted(league.granted[LEWIS]) == [AM_ROLE, MCLAREN_ROLE]
+    assert league.texts(DIVISIONS[AM][3].lineup) == []
+    assert await stopped_job(league.db_path) is not None
+
+    await discard_job(league.bot)
+
+    unposted = (
+        "**Am** — its lineup could not be posted. No command posts it again; it is posted with "
+        "the next change to its drivers."
+    )
+    assert await _seated(league) == {**_STANDING, LEWIS: ("Am", "McLaren", True)}
+    assert last_said(asked) == f"{_moved('Lewis')}\n⚠️ Done, but on Discord:\n• {unposted}"
+    assert _move_lines(await log_lines(league)) == [
+        f"{_move_line('Lewis', LEWIS)}\n  not done: {unposted}"
+    ]
+    assert len(league.texts(DIVISIONS[PRO][3].lineup)) == 1
+    assert league.texts(DIVISIONS[AM][3].lineup) == []
+    assert await stopped_job(league.db_path) is None
+
+
 async def _end_the_races(league):
     await league.write("UPDATE seasons SET stage = 'PENDING_COMPLETION'")
 
