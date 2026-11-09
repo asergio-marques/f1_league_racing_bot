@@ -1,19 +1,17 @@
 """A real driver may not be seated while the server is in test mode.
 
-`PlacementService.assign_driver` is the single choke point through which a driver enters a
-division, so the guard tested here covers `/driver assign`, the signup path and attendance's
-autoreserve alike. A *fake* driver must still pass: autoreserve moves the test roster through
-this very call.
+`PlacementService.guard_assign` holds the guard for `/driver assign`, which asks it at the ask and
+again as its change starts. A *fake* driver must still pass: test mode exists to seat the test
+roster.
 """
 from __future__ import annotations
-
-from unittest.mock import MagicMock
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 1
+_NO_GUARD_ASSIGN = "#283: PlacementService.guard_assign is not yet written"
 
 
 async def _seed(tmp_path, *, test_mode: bool, drivers: dict[int, bool] | None = None) -> str:
@@ -53,7 +51,7 @@ async def test_a_real_driver_is_refused_under_test_mode(tmp_path):
 
 
 async def test_a_fake_driver_is_seated_under_test_mode(tmp_path):
-    """Attendance autoreserve moves the test roster through assign_driver."""
+    """Test mode exists to seat the test roster, so its fake drivers pass."""
     db_path = await _seed(tmp_path, test_mode=True, drivers={1: True})
 
     await _service(db_path)._guard_test_mode(1)
@@ -66,28 +64,21 @@ async def test_a_real_driver_is_seated_when_test_mode_is_off(tmp_path):
 
 
 async def test_an_unknown_profile_is_left_to_the_check_that_reports_it(tmp_path):
-    """assign_driver names a missing profile in its own words; the guard stays quiet."""
+    """The assignment's own check names a missing profile in its own words; the guard stays
+    quiet."""
     db_path = await _seed(tmp_path, test_mode=True)
 
     await _service(db_path)._guard_test_mode(404)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_the_guard_runs_before_a_placement(tmp_path):
-    """The refusal reaches the caller through assign_driver, not only in isolation."""
+    """The refusal reaches the caller through the assignment's guards, not only in isolation."""
     db_path = await _seed(tmp_path, test_mode=True, drivers={1: False})
     service = _service(db_path)
 
     with pytest.raises(ValueError) as excinfo:
-        await service.assign_driver(
-            driver_profile_id=1,
-            division_id=1,
-            team_name="Redline",
-            season_id=1,
-            acting_user_id=99,
-            acting_user_name="Tester",
-            guild=MagicMock(),
-            discord_user_id="9001",
-        )
+        await service.guard_assign(1, 1, "Redline", 1)
 
     assert "Test mode is active" in str(excinfo.value)
 

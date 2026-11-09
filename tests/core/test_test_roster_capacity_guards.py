@@ -1,7 +1,7 @@
 """A test roster is held to the template capacities a real placement is — issue #150.
 
 Test mode exists so a league can rehearse a season and learn what would go wrong before it
-matters. It seats its fake drivers without passing through ``assign_driver``, where the three
+matters. It seats its fake drivers without passing through ``guard_assign``, where the three
 template capacity guards live — the lineup's reserve block, the attendance sheet and the
 driver standings — so a roster those templates could not hold was accepted, and the overflow
 surfaced only as a fallback at the first posting. A rehearsal that passes a configuration a

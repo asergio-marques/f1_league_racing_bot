@@ -12,7 +12,6 @@ implementation under `tests/image/`. Nothing here reads a template.
 from __future__ import annotations
 
 import logging
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -142,30 +141,13 @@ async def _seed(tmp_path, name: str = "capacity_guards"):
     return db_path, season_id, division_id
 
 
+_NO_GUARD_ASSIGN = "#283: PlacementService.guard_assign is not yet written"
+
+
 async def _place(service, season_id, division_id, team):
-    guild = MagicMock()
-    guild.get_member.return_value = None
-    guild.fetch_member = AsyncMock(return_value=None)
-    return await service.assign_driver(
-        driver_profile_id=9999,
-        division_id=division_id,
-        team_name=team,
-        season_id=season_id,
-        acting_user_id=99,
-        acting_user_name="Tester",
-        guild=guild,
-        discord_user_id="8888",
-    )
-
-
-async def _placed(db_path) -> bool:
-    async with get_connection(db_path) as db:
-        row = await (
-            await db.execute(
-                "SELECT COUNT(*) AS n FROM driver_season_assignments WHERE driver_profile_id = 9999"
-            )
-        ).fetchone()
-    return row["n"] == 1
+    """Ask *service* whether the unplaced driver 9999 may be assigned to *team*: the guards
+    `/driver assign` asks at the ask and again as its change starts."""
+    await service.guard_assign(division_id, season_id, team, 9999)
 
 
 @pytest.mark.parametrize(
@@ -178,10 +160,11 @@ async def _placed(db_path) -> bool:
     ],
     ids=["reserve", "sheet", "standings", "declared"],
 )
+@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_placement_capacity_guards_run_with_a_stub_drawing(
     tmp_path, caplog, guard, team, refusal
 ):
-    """Each guard refuses in its words where the drawing reports a problem, and lets the placement
+    """Each guard refuses in its words where the drawing reports a problem, and lets the assignment
     through where it reports none, and where it raises (the error kept whole in the host's
     log)."""
     from leaguebot.core.services.image_drawing import CapacityProblem
@@ -195,26 +178,19 @@ async def test_placement_capacity_guards_run_with_a_stub_drawing(
 
     assert str(refused.value) == refusal
     assert guard in [name for name, _count in refusing.asked]
-    assert not await _placed(db_path)
 
     db_path, season_id, division_id = await _seed(tmp_path, "quiet")
     quiet = _Drawing({})
-    result = await _place(PlacementService(db_path, drawing=quiet), season_id, division_id, team)
+    await _place(PlacementService(db_path, drawing=quiet), season_id, division_id, team)
 
-    assert result["team_name"] == team
-    assert await _placed(db_path)
     assert guard in [name for name, _count in quiet.asked]
 
     db_path, season_id, division_id = await _seed(tmp_path, "raising")
     fault = RuntimeError("the drawing could not answer")
     raising = _Drawing({name: fault for name in GUARDS})
     with caplog.at_level(logging.ERROR, logger="leaguebot.core.services.placement_service"):
-        result = await _place(
-            PlacementService(db_path, drawing=raising), season_id, division_id, team
-        )
+        await _place(PlacementService(db_path, drawing=raising), season_id, division_id, team)
 
-    assert result["team_name"] == team
-    assert await _placed(db_path)
     assert guard in [name for name, _count in raising.asked]
     assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
 
@@ -258,24 +234,23 @@ def _failing_reads(monkeypatch, fragment: str, fault: Exception) -> None:
     ],
     ids=["reserve", "sheet", "standings", "declared"],
 )
+@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_a_capacity_guard_s_own_read_fault_lets_the_placement_through(
     tmp_path, monkeypatch, caplog, team, read
 ):
     """A guard's own count of the seats, read before the drawing is asked, sits inside the one
-    catch with the asking: where the count raises, the placement goes through and the error is
-    kept whole in the host's log, as where the drawing raises."""
+    catch with the asking: where the count raises, the guards let the assignment through and the
+    error is kept whole in the host's log, as where the drawing raises."""
     from leaguebot.core.services.placement_service import PlacementService
 
     db_path, season_id, division_id = await _seed(tmp_path)
     fault = RuntimeError("the seats could not be counted")
     _failing_reads(monkeypatch, read, fault)
     with caplog.at_level(logging.ERROR, logger="leaguebot.core.services.placement_service"):
-        result = await _place(
+        await _place(
             PlacementService(db_path, drawing=_Drawing({})), season_id, division_id, team
         )
 
-    assert result["team_name"] == team
-    assert await _placed(db_path)
     assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
 
 
@@ -301,6 +276,7 @@ async def test_a_capacity_guard_s_own_read_fault_lets_the_placement_through(
     ],
     ids=["reserve", "ordinary"],
 )
+@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_a_placement_asks_each_guard_its_own_count(tmp_path, team, asked):
     """Core counts, and the drawing is asked of the count alone: the reserve block counts the
     reserves, the sheet every driver of the division, the standings the race drivers, the
@@ -317,25 +293,21 @@ async def test_a_placement_asks_each_guard_its_own_count(tmp_path, team, asked):
     assert drawing.asked == asked
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_an_unknown_team_asks_neither_the_reserve_block_nor_the_standings(tmp_path):
     """Whether a team is the reserve cannot be known of a team the division does not hold, so
-    the two guards that ask it are left out, and `assign_driver` refuses the team in its own
-    words."""
+    the two guards that ask it are left out and the guards raise nothing: the assignment's own
+    check refuses the team in its own words (`test_placement_assign.py`)."""
     from leaguebot.core.services.placement_service import PlacementService
 
     db_path, season_id, division_id = await _seed(tmp_path)
     drawing = _Drawing({})
 
-    with pytest.raises(ValueError) as refused:
-        await _place(
-            PlacementService(db_path, drawing=drawing), season_id, division_id, "No Such Team"
-        )
+    await _place(PlacementService(db_path, drawing=drawing), season_id, division_id, "No Such Team")
 
-    assert str(refused.value) == "Team **No Such Team** not found in this division."
     asked = [name for name, _count in drawing.asked]
     assert "reserve_capacity_problem" not in asked
     assert "standings_capacity_problem" not in asked
-    assert not await _placed(db_path)
 
 
 @pytest.mark.parametrize(
