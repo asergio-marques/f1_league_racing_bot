@@ -147,7 +147,7 @@ async def test_no_pending_setup_refuses_without_writing(tmp_path):
 
 
 @pytest.mark.xfail(strict=True, reason=QUEUED)
-async def test_a_twenty_round_import_snapshots_exactly_once(tmp_path):
+async def test_a_twenty_round_import_is_one_queued_change(tmp_path):
     """One change for the whole paste. One per round would be twenty transactions, and a failure
     part-way would leave half a calendar written. Season #1 in Placements, Pro holding no round.
     The manager pastes, in `/round add-bulk` for Pro, twenty rounds at the Hungaroring on 1 to 20

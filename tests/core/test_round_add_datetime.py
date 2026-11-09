@@ -218,7 +218,7 @@ async def test_a_round_add_is_judged_again_as_it_starts(tmp_path, monkeypatch, m
     """Season #1 is being set up, in Placements, Pro holding its rounds of 14 and 28 June. The
     manager runs `/round add` for Pro, a mystery round on 21 June at 18:00, and nothing is saved
     at the ask. Before the queue runs it: the manager asks again for a round on 21 June at 18:00,
-    a sprint at the Hungaroring, which is acknowledged too and runs first; Pro is deleted; the
+    a sprint at the Hungaroring, which is acknowledged too and runs second; Pro is deleted; the
     season being set up is deleted; or the image module's drawing comes to say the calendar
     template draws two rounds. The queue runs. The refused add, the second or the only one, is
     refused as it starts, in the words it would meet at the ask, its acknowledgement updated to
