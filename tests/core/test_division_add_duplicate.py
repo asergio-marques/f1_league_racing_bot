@@ -389,11 +389,6 @@ _PRO_ROUNDS = (
 #: `/division duplicate` as the log channel names it in a refusal.
 _DUPLICATE = "`/division duplicate`"
 
-#: The reply once a league admin has discarded the stopped save: nothing was duplicated.
-DUPLICATE_DISCARDED = (
-    "Nothing was duplicated: no division was created. Run `/division duplicate` again."
-)
-
 #: The sign each warning opens with.
 _WARNING = "\N{WARNING SIGN}\N{VARIATION SELECTOR-16}"
 
