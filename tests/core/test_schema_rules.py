@@ -247,6 +247,29 @@ async def test_a_team_name_is_unique_in_the_league(db_path):
     db.close()
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: divisions does not yet hold a name once per season, without regard to case"
+)
+async def test_a_second_division_of_the_same_name_is_refused_by_the_schema(db_path):
+    """The core specification's divisions: a division's name is unique within its season, without
+    regard to case. Season 1 holds Pro. An insert of a second Pro into season 1, or of PRO, is
+    refused by the schema itself, whatever a command checked first; Pro in season 2 is accepted.
+    SQLite folds the case of ASCII letters alone: a name differing in an accented letter's case is
+    the command's check to refuse (`test_division_add_duplicate.py`)."""
+    db = _connect(db_path)
+    for name in ("Pro", "PRO"):
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute(
+                "INSERT INTO divisions (season_id, name, mention_role_id) VALUES (1, ?, 6)", (name,)
+            )
+    db.execute(
+        "INSERT INTO seasons (id, start_date, status, season_number) "
+        "VALUES (2, '2027-01-01', 'COMPLETED', 2)"
+    )
+    db.execute("INSERT INTO divisions (season_id, name, mention_role_id) VALUES (2, 'Pro', 6)")
+    db.close()
+
+
 async def test_an_account_belongs_to_one_driver_across_the_league(db_path):
     db = _connect(db_path)
     db.execute(
