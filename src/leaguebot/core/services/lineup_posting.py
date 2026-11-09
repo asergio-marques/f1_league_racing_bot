@@ -1,11 +1,14 @@
-"""A division's lineup, asked of the change queue (#439, slice 6).
+"""A division's lineup, asked of the change queue.
 
-A command that changes the drivers (`/driver assign`, `unassign`, `move`, `release`, `sack`, the
-mid-season confirmation of placements) makes its own change and then asks the queue, as the bot's
-and repeatably, to post each lineup it touched (`lineup.post`): its reply says what the command
-did, and the post follows. A lineup Discord refuses stops the queue at the `post_lineup` job, to be
-tried again as text (Constitution XIV, rule 8) or discarded, instead of being lost. A division
-with no lineup channel set stops it too, naming the command that sets one.
+A change made outside the queue that moves or sacks a driver (attendance's sanctions) asks the
+queue, as the bot's and repeatably, to post each lineup it touched (`lineup.post`): its reply says
+what it did, and the post follows. A change on the queue plans the post as a job of its own
+(`lineup_step`), as `/driver move`, `release` and `sack` and the season's approval and the
+mid-season confirmation of placements do; `/driver assign` and `unassign` plan none, the
+placement they write or remove never being confirmed. A lineup Discord refuses stops the queue at
+the `post_lineup` job, to be tried again as text (Constitution XIV, rule 8) or discarded, instead
+of being lost. A division with no lineup channel set stops it too, naming the command that sets
+one.
 
 The post and the deletion of the lineup it replaces are two jobs (`standing_posts`): the post job
 saves the new id and the audit with its mark, and plans the deletion after it. The same job
@@ -208,10 +211,9 @@ async def ask_lineup_posts(
     """Ask the queue to post the lineup of each division in *division_ids*, in the order given and
     each once.
 
-    A command which makes its own change and wants a standing post after it asks the queue for
-    that post as a change of the bot's, of a kind that may be repeated (slice 6's decision 2); the
-    command's reply is unchanged and the post follows. The names are read here, on a connection of
-    its own.
+    A change made outside the queue that wants a standing post after it asks the queue for that
+    post as a change of the bot's, of a kind that may be repeated; its reply is unchanged and the
+    post follows. The names are read here, on a connection of its own.
     """
     wanted = list(dict.fromkeys(int(each) for each in division_ids))
     if not wanted:
