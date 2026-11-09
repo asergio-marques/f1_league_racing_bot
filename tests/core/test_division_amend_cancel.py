@@ -17,12 +17,14 @@ by name, since a slash command takes a name and not an id, so rename and amend b
 name another division already holds — and both exclude the division being renamed from that
 check, or renaming `Pro` to `PRO` would refuse itself.
 
-**Rename and amend are changes on the queue** (#283). Each asks the change queue for a change of
-its own, whose one save writes the division, its audit entry (the division as it stood and as it
-stands) and its line. Amend changes only what it was given, so a manager amending a tier does not
-have the role rewritten with a default. Every refusal is judged at the ask and again as the change
-starts, the division judged by the id it had at the ask, so that a name or a tier taken meanwhile
-is refused in the ask's words rather than reaching the schema's rule.
+**Delete, rename and amend are changes on the queue** (#283). Each asks the change queue for a
+change of its own, whose one save writes the division, its audit entry (the division as it stood
+and as it stands) and its line; a delete's save holds the modules' deletes, through the delete
+hooks, with it. Amend changes only what it was given, so a manager amending a tier does not have
+the role rewritten with a default. Every refusal is judged at the ask and again as the change
+starts, the division judged by the id it had at the ask, so that a name or a tier taken meanwhile,
+or a driver placed meanwhile, is refused in the ask's words rather than reaching the schema's
+rule.
 
 **Cancel asks for `CONFIRM` typed exactly.** It is irreversible and it stands down a division's
 whole calendar; a click-through would make it an accident rather than a decision.
@@ -36,6 +38,7 @@ it runs; it, and what the change does, are tested in `test_division_cancel_chang
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -105,23 +108,17 @@ def _make_cog(
     db_path: str,
     *,
     divisions=None,
-    remaining=None,
     season=SimpleNamespace(
         id=SEASON_ID, status="ACTIVE", stage=SeasonStage.ONGOING, season_number=4
     ),
     immutable: bool = False,
     rounds=None,
-    stage: SeasonStage = SeasonStage.PLACEMENTS,
 ) -> SeasonCog:
     bot = MagicMock()
     bot.db_path = db_path
     bot.season_service = MagicMock()
-    # The stage of the season being set up, which the setup commands ask before they act.
-    bot.season_service.get_stage = AsyncMock(return_value=stage)
     divisions = divisions if divisions is not None else [_division()]
-    bot.season_service.get_divisions = AsyncMock(
-        side_effect=[divisions, remaining if remaining is not None else divisions] * 4
-    )
+    bot.season_service.get_divisions = AsyncMock(return_value=divisions)
     bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
     bot.season_service.assert_season_mutable = AsyncMock(
         side_effect=SeasonImmutableError("archived") if immutable else None
@@ -129,7 +126,6 @@ def _make_cog(
     bot.season_service.get_division_rounds = AsyncMock(
         return_value=rounds if rounds is not None else []
     )
-    bot.season_service.delete_division = AsyncMock(return_value=None)
     bot.season_service.cancel_division = AsyncMock(return_value=None)
     bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
     bot.scheduler_service = MagicMock()
@@ -189,10 +185,6 @@ def _role(role_id: int = 999, name: str = "Am drivers"):
     return role
 
 
-async def _delete(cog, interaction, *, name="Pro"):
-    return await undecorate(SeasonCog.division_delete)(cog, interaction, name)
-
-
 async def _cancel(cog, interaction, *, name="Pro", confirm="CONFIRM"):
     """Run the command. What the change does once asked is the change queue's, and is tested in
     `test_division_cancel_change.py`; here the command is held to asking it, once, for the right
@@ -208,105 +200,6 @@ def _asked(cog) -> tuple[str, dict]:
     kind = call.args[0] if call.args else call.kwargs["kind"]
     payload = call.args[1] if len(call.args) > 1 else call.kwargs["payload"]
     return kind, payload
-
-
-async def _division_row(db_path: str) -> dict:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT name, tier, mention_role_id FROM divisions WHERE id = ?",
-            (DIVISION_ID,),
-        )
-        return dict(await cursor.fetchone())
-
-
-async def _audit_rows(db_path: str) -> list[dict]:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT change_type, old_value, new_value FROM audit_entries",
-        )
-        return [dict(r) for r in await cursor.fetchall()]
-
-# ---------------------------------------------------------------------------
-# Only during setup — and the command says its own name
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "run,fragment",
-    [
-        (_delete, "/division delete"),
-    ],
-)
-async def test_a_running_season_refuses_the_setup_commands(tmp_path, run, fragment):
-    """A SETUP season has nothing armed; an ACTIVE one has jobs scheduled, roles granted and
-    results pointing at these rows. Rename and amend are refused so as changes on the queue,
-    below."""
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="amend_active")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await run(cog, interaction)
-
-    assert fragment in _replied(interaction)
-    cog.bot.season_service.delete_division.assert_not_awaited()
-
-
-@pytest.mark.parametrize("run", [_delete])
-async def test_an_unknown_division_is_refused_by_name(tmp_path, run):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await run(cog, interaction, name="Rookie")
-
-    assert "Rookie" in _replied(interaction)
-    assert "not found" in _replied(interaction)
-
-
-# ---------------------------------------------------------------------------
-# /division delete
-# ---------------------------------------------------------------------------
-
-
-async def test_a_division_is_deleted(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _delete(cog, interaction)
-
-    cog.bot.season_service.delete_division.assert_awaited_once_with(
-        DIVISION_ID,
-        rounds_deleted=cog.bot.rounds_deleted,
-        divisions_deleted=cog.bot.divisions_deleted,
-    )
-    assert "deleted" in _replied(interaction)
-
-
-async def test_the_remaining_divisions_are_listed_after_a_delete(tmp_path):
-    """So a manager sees what the season now holds rather than having to ask for it — the
-    same reason `/division add` lists them."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(
-        db_path, divisions=[_division(), _division("Am", 2, id=12)],
-        remaining=[_division("Am", 2, id=12)],
-    )
-    interaction = _interaction()
-
-    await _delete(cog, interaction)
-
-    assert "Am" in _replied(interaction)
-
-
-async def test_the_delete_is_logged(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-
-    await _delete(cog, _interaction())
-
-    logged = str(cog.bot.output_router.post_log.await_args.args[0])
-    assert "/division delete" in logged
-    assert "Pro" in logged
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +223,10 @@ _STANDING = [("Pro", 1, 555), ("Am", 2, 556)]
 #: Each command as the log channel names it in a refusal.
 _RENAME = "`/division rename`"
 _AMEND = "`/division amend`"
+_DELETE = "`/division delete`"
+
+#: Why each test of `/division delete` on the queue fails until the build.
+_XFAIL_DELETE = "#283: /division delete is not yet a change on the queue"
 
 
 async def _league(tmp_path, *, stage: str | None = "PLACEMENTS", raced: bool = False):
@@ -363,6 +260,15 @@ async def _ask_amend(league, name: str = "Pro", *, new_name=None, tier=None, rol
     await undecorate(SeasonCog.division_amend)(
         SeasonCog(league.bot), asked, name, new_name, tier, role
     )
+    return asked
+
+
+async def _ask_delete(league, name: str = "Pro"):
+    """`/division delete` of *name*, as Admin (4242) runs it: the interaction."""
+    from tests.support.settings_league import interaction
+
+    asked = interaction(league.bot, "division delete")
+    await undecorate(SeasonCog.division_delete)(SeasonCog(league.bot), asked, name)
     return asked
 
 
@@ -406,8 +312,9 @@ def _amend_line(name: str, *given: str) -> str:
 
 def _discarded(command: str, name: str) -> str:
     """The reply once a league admin has discarded the stopped save of `/division <command>` of
-    *name*: nothing was done."""
-    done = {"rename": "renamed", "amend": "amended"}[command]
+    *name*: nothing was done. The delete's words are this slice's own (#283), in the pattern of
+    rename's and amend's."""
+    done = {"rename": "renamed", "amend": "amended", "delete": "deleted"}[command]
     return (
         f"Nothing was {done}: division **{name}** stands as it was. "
         f"Run `/division {command}` again."
@@ -1033,22 +940,26 @@ async def test_amending_a_division_to_the_values_that_stand_changes_nothing(tmp_
     [
         pytest.param("division rename", "renamed to", id="rename"),
         pytest.param("division amend", "amended", id="amend"),
+        pytest.param("division delete", "deleted", id="delete"),
     ],
 )
 async def test_a_division_typed_in_another_case_is_named_as_it_is_named(tmp_path, command, done):
     """Season #1 is being set up, in Placements, holding Pro and Am. The league manager Admin
-    (4242) runs `/division rename` of Pro to Elite, or `/division amend` of Pro to tier 3, typing
-    the division's name as `pro`, and the queue runs it. The acknowledgement names **Pro**; the
-    reply's first line says it was renamed, or amended, and names **Pro**; nothing the manager
-    sees holds the word `pro`; and the one log line names the command and Pro, never `pro`."""
+    (4242) runs `/division rename` of Pro to Elite, `/division amend` of Pro to tier 3, or
+    `/division delete` of Pro, typing the division's name as `pro`, and the queue runs it. The
+    acknowledgement names **Pro**; the reply's first line says it was renamed, amended or deleted,
+    and names **Pro**; nothing the manager sees holds the word `pro`; and the one log line names
+    the command and Pro, never `pro`."""
     from tests.support.change_queue import run_queue
     from tests.support.settings_league import last_said, log_lines, said
 
     league = await _league(tmp_path)
     if command == "division rename":
         asked = await _ask_rename(league, "pro", "Elite")
-    else:
+    elif command == "division amend":
         asked = await _ask_amend(league, "pro", tier=3)
+    else:
+        asked = await _ask_delete(league, "pro")
     await run_queue(league.bot)
 
     assert "**Pro**" in said(asked)[0]
@@ -1071,6 +982,350 @@ def test_division_rename_describes_itself_as_a_placements_command():
     assert SeasonCog.division_rename.description == (
         "Rename a division while the season is in placements."
     )
+
+
+# ---------------------------------------------------------------------------
+# /division delete, on the change queue (#283)
+# ---------------------------------------------------------------------------
+#
+# As rename and amend: the command asks the change queue for a change of its own on the league's
+# lane, the division named at the ask and judged by its id from then on, and the queue's
+# acknowledgement is its reply. One save, stamped with the queue's clock, deletes the division and
+# its rounds, hands their ids to the delete hooks so that each module deletes its own rows on the
+# save's connection, and writes the audit entry recording the division as it stood and the log
+# channel's line. The core specification's Divisions: a division in which a driver is placed is
+# not deleted until every driver placed in it has been unassigned; it is refused, at the ask and
+# again as the change starts, in the words the README and the guide give the rule, the schema's
+# rule standing behind the check.
+
+#: `/division delete`'s refusal of a division with a driver placed in it, in the README's words.
+_A_DRIVER_PLACED = (
+    "❌ A division with a driver placed in it cannot be deleted. Unassign its drivers first with "
+    "`/driver unassign`."
+)
+
+#: Pro, holding one round, and Am, holding none, as `setup_league` takes them.
+_PRO_WITH_A_ROUND = (
+    ("Pro", 1, 555, (("NORMAL", "Silverstone Circuit", datetime(2026, 11, 1, 14, 0)),)),
+    ("Am", 2, 556, ()),
+)
+
+
+def _deleting(name: str) -> str:
+    """How the queue words `/division delete` of *name*."""
+    return f"Deleting division **{name}**"
+
+
+def _deleted(name: str, rows: list[tuple[str, int, int]]) -> str:
+    """`/division delete`'s reply once saved, word for word: the divisions that remain listed."""
+    return f"✅ Division **{name}** deleted.\n\n" + _listed(rows)
+
+
+def _delete_line(name: str) -> str:
+    """`/division delete`'s line in the log channel, word for word."""
+    return f"{NAMED} | /division delete | Success\n  division: {name}"
+
+
+async def _give_the_modules_rows(db_path: str) -> None:
+    """Give each division an attendance configuration and each round a drawn weather phase: rows
+    of other modules', which the delete hooks delete."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, rsvp_channel_id) "
+            "SELECT id, '700' FROM divisions"
+        )
+        await db.execute(
+            "INSERT INTO phase_results (round_id, phase_number, payload, created_at) "
+            "SELECT id, 1, '{}', '2026-10-21T12:00:00' FROM rounds"
+        )
+        await db.commit()
+
+
+async def _modules_rows(db_path: str) -> tuple[list[int], list[int]]:
+    """The divisions holding an attendance configuration, and the rounds holding a drawn weather
+    phase, by id."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT division_id FROM attendance_division_config ORDER BY division_id"
+        )
+        configured = [row[0] for row in await cursor.fetchall()]
+        cursor = await db.execute("SELECT round_id FROM phase_results ORDER BY round_id")
+        drawn = [row[0] for row in await cursor.fetchall()]
+    return configured, drawn
+
+
+async def _round_count(db_path: str) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM rounds")
+        return (await cursor.fetchone())[0]
+
+
+async def _place_a_driver_in_pro(db) -> None:
+    """Place a driver in Pro, as a placement holds a seat: a team, its seat holding the driver,
+    and the driver's assignment to the division pointing at the seat."""
+    await db.execute(
+        "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+        "VALUES (6001, '6001', 'ACTIVE')"
+    )
+    cursor = await db.execute(
+        "INSERT INTO team_instances (division_id, name, full_name) "
+        "SELECT id, 'Alpha', 'Alpha Racing' FROM divisions WHERE name = 'Pro'"
+    )
+    team_id = cursor.lastrowid
+    cursor = await db.execute(
+        "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+        "VALUES (?, 1, 6001)",
+        (team_id,),
+    )
+    await db.execute(
+        "INSERT INTO driver_season_assignments "
+        "(driver_profile_id, season_id, division_id, team_seat_id) "
+        "SELECT 6001, season_id, id, ? FROM divisions WHERE name = 'Pro'",
+        (cursor.lastrowid,),
+    )
+
+
+async def _placements(db_path: str) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM driver_season_assignments")
+        return (await cursor.fetchone())[0]
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
+async def test_a_division_delete_its_hooks_audit_entry_and_line_are_one_save(tmp_path):
+    """The core specification's Divisions and its record of what changed. Season #1 is being set
+    up, in Placements, holding Pro (tier 1, role 555), with one round, and Am (tier 2, role 556),
+    with none; each division has an attendance configuration and Pro's round a drawn weather
+    phase. The league admin Admin (4242) runs `/division delete` of Pro. They are answered at once
+    with the queue's acknowledgement, "Deleting division **Pro**", naming its first job, and
+    nothing is deleted until the queue runs the change, whose kind declares no confinement of its
+    save, the delete hooks writing other modules' tables in it. Once it has, the season holds Am
+    alone and no round; Pro's attendance configuration and its round's weather phase are gone,
+    deleted by the hooks in the same save, and Am's configuration stands; one audit entry,
+    `DIVISION_DELETED`, by Admin, on Pro, stamped with the queue's clock, records the division as
+    it stood (Pro, tier 1, role 555) and nothing in its place; the log channel holds today's
+    success line alone, naming Pro; and the acknowledgement is updated to today's reply, word for
+    word, the remaining divisions listed."""
+    from tests.support.change_queue import run_queue, step_rows
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+
+    league = await setup_league(tmp_path, divisions=_PRO_WITH_A_ROUND)
+    await _give_the_modules_rows(league.db_path)
+    pro = await _division_id(league.db_path, "Pro")
+    am = await _division_id(league.db_path, "Am")
+    before = await _modules_rows(league.db_path)
+    asked = await _ask_delete(league)
+
+    first_job = (await step_rows(league.db_path))[0]["id"]
+    assert said(asked)[0] == f"{acknowledged(_deleting('Pro'))} It begins with job #{first_job}."
+    assert await _writes_of_the_change_queued(league.db_path) is None
+    assert await _divisions(league.db_path) == _STANDING
+    assert await _modules_rows(league.db_path) == before
+    await run_queue(league.bot)
+
+    assert await _divisions(league.db_path) == [("Am", 2, 556)]
+    assert await _round_count(league.db_path) == 0
+    assert await _modules_rows(league.db_path) == ([am], [])
+    [entry] = await audit_rows(league.db_path)
+    assert (entry["change_type"], entry["actor_id"], entry["division_id"]) == (
+        "DIVISION_DELETED", 4242, pro
+    )
+    assert entry["old_value"] == {"name": "Pro", "tier": 1, "mention_role_id": 555}
+    assert entry["new_value"] == {}
+    assert entry["timestamp"] == NOW.isoformat()
+    assert await log_lines(league) == [_delete_line("Pro")]
+    assert last_said(asked) == _deleted("Pro", [("Am", 2, 556)])
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
+async def test_a_failed_division_delete_deletes_nothing(tmp_path):
+    """Season #1 is being set up, in Placements, holding Pro, with one round, and Am; each
+    division has an attendance configuration and Pro's round a drawn weather phase. The league
+    admin runs `/division delete` of Pro, and as the queue runs it the database fails writing the
+    audit entry. Nothing of the change is saved, the delete, the hooks' deletes and the audit
+    entry being one save: Pro, Am and Pro's round stand, so do the attendance configurations and
+    the weather phase, no audit entry is written, and the log channel holds no success line. The
+    league's lane stops at the job, as any failed job stops it. Once a league admin discards the
+    stopped job, the reply says "Nothing was deleted: division **Pro** stands as it was. Run
+    `/division delete` again."; and the lane is clear."""
+    from tests.support.change_queue import discard_job, run_queue, stopped_job
+    from tests.support.settings_league import audit_rows, fault_in, last_said, log_lines
+
+    league = await setup_league(tmp_path, divisions=_PRO_WITH_A_ROUND)
+    await _give_the_modules_rows(league.db_path)
+    before = await _modules_rows(league.db_path)
+    asked = await _ask_delete(league)
+    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+        await run_queue(league.bot)
+
+    assert await _divisions(league.db_path) == _STANDING
+    assert await _round_count(league.db_path) == 1
+    assert await _modules_rows(league.db_path) == before
+    assert await audit_rows(league.db_path) == []
+    assert not any("| Success" in line for line in await log_lines(league))
+    assert await stopped_job(league.db_path) is not None
+
+    await discard_job(league.bot)
+
+    assert last_said(asked) == _discarded("delete", "Pro")
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
+@pytest.mark.parametrize(
+    "meanwhile, reply, after",
+    [
+        pytest.param(
+            _approve_the_season,
+            "❌ `/division delete` can only be used while the season is in placements.",
+            _STANDING, id="the-season-approved",
+        ),
+        pytest.param(
+            _delete_pro, "❌ Division `Pro` not found.", [("Am", 2, 556)],
+            id="the-division-deleted",
+        ),
+        pytest.param(
+            _replace_pro, "❌ Division `Pro` not found.", [("Am", 2, 556), ("Pro", 3, 557)],
+            id="the-division-deleted-and-another-given-its-name",
+        ),
+    ],
+)
+async def test_a_division_delete_is_judged_again_as_it_starts(tmp_path, meanwhile, reply, after):
+    """Season #1 is being set up, in Placements, holding Pro (tier 1, role 555) and Am (tier 2,
+    role 556). The league admin runs `/division delete` of Pro and is acknowledged; before the
+    queue runs it, the season is approved and under way, Pro is deleted, or Pro is deleted and
+    another division named Pro is added at tier 3 with role 557. The queue runs. The delete is
+    refused as it starts, in the words it would meet at the ask, its acknowledgement updated to
+    them; the division judged is the one named at the ask, so that a division given its name
+    since is never deleted in its place. The divisions stand as the meanwhile left them, no audit
+    entry is written, the log channel holds the refusal alone, and the queue is not stopped."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await _league(tmp_path)
+    refused = await _ask_delete(league)
+    async with get_connection(league.db_path) as db:
+        await meanwhile(db)
+        await db.commit()
+    await run_queue(league.bot)
+
+    assert last_said(refused) == reply
+    assert await _divisions(league.db_path) == after
+    assert await audit_rows(league.db_path) == []
+    assert await log_lines(league) == [refusal_line(_DELETE, reply)]
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
+async def test_a_division_delete_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
+    """The core specification's "How a change is carried out": a request repeating a change that
+    has not started, with nothing else asked for since on its lane, is refused, saying so. Season #1
+    is being set up, in Placements, holding Pro and Am. The league admin runs `/division delete`
+    of Pro and is acknowledged; before the queue runs it, they run it again. The second is refused
+    at once, in the queue's words, as a change already asked for and not yet started, and the log
+    channel takes that refusal as a line; only the one change is queued. The queue runs it: Pro is
+    deleted once, with its one audit entry, and the log channel holds the refusal and then the
+    success line."""
+    from tests.support.change_queue import change_rows, run_queue
+    from tests.support.settings_league import audit_rows, log_lines, said
+
+    league = await _league(tmp_path)
+    first, repeat = await _ask_delete(league), await _ask_delete(league)
+
+    assert said(first)[0].startswith(acknowledged(_deleting("Pro")))
+    assert said(repeat) == [repeated(_deleting("Pro"))]
+    assert len(await change_rows(league.db_path)) == 1
+    await run_queue(league.bot)
+
+    assert await _divisions(league.db_path) == [("Am", 2, 556)]
+    assert len(await audit_rows(league.db_path)) == 1
+    assert await log_lines(league) == [
+        refusal_line(_DELETE, repeated(_deleting("Pro"))), _delete_line("Pro")
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
+@pytest.mark.parametrize("when", ["at-the-ask", "as-it-starts"])
+async def test_deleting_a_division_with_a_placed_driver_is_refused(tmp_path, when):
+    """The core specification's Divisions: a division in which a driver is placed shall not be
+    deleted until every driver placed in it has been unassigned. Season #1 is being set up, in
+    Placements, holding Pro and Am. A driver is placed in Pro, in a seat of its team Alpha, either
+    before the league admin runs `/division delete` of Pro, or after they run it and before the
+    queue runs it. The delete is refused, saying why and what to do, in the README's words: at
+    once, nothing being asked of the queue, or as the change starts, its acknowledgement updated
+    to the refusal. It is a refusal, not the bot's fault reply: Pro, Am and the placement stand, no
+    audit entry is written, the log channel holds the refusal alone, and the queue is not
+    stopped."""
+    from tests.support.change_queue import change_rows, run_queue, stopped_job
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+
+    league = await _league(tmp_path)
+    if when == "at-the-ask":
+        async with get_connection(league.db_path) as db:
+            await _place_a_driver_in_pro(db)
+            await db.commit()
+        refused = await _ask_delete(league)
+        assert said(refused) == [_A_DRIVER_PLACED]
+        assert await change_rows(league.db_path) == []
+    else:
+        refused = await _ask_delete(league)
+        async with get_connection(league.db_path) as db:
+            await _place_a_driver_in_pro(db)
+            await db.commit()
+        await run_queue(league.bot)
+        assert last_said(refused) == _A_DRIVER_PLACED
+        assert await stopped_job(league.db_path) is None
+
+    assert await _divisions(league.db_path) == _STANDING
+    assert await _placements(league.db_path) == 1
+    assert await audit_rows(league.db_path) == []
+    assert await log_lines(league) == [refusal_line(_DELETE, _A_DRIVER_PLACED)]
+
+
+@pytest.mark.parametrize(
+    "arranged, name, reply",
+    [
+        pytest.param(
+            {"raced": True}, "Pro",
+            "❌ `/division delete` can only be used while the season is in placements.",
+            id="a_season_being_raced_and_none_being_set_up",
+        ),
+        *(
+            pytest.param(
+                {"stage": stage}, "Pro",
+                "❌ `/division delete` can only be used while the season is in placements.",
+                id=f"before_placements_{stage.lower()}",
+            )
+            for stage in ("CONFIGURATION", "WAITING", "SIGNUPS")
+        ),
+        pytest.param(
+            {}, "Elite", "❌ Division `Elite` not found.", id="an_unknown_division",
+        ),
+    ],
+)
+async def test_every_division_delete_refusal_is_recorded(tmp_path, arranged, name, reply):
+    """The core specification's record of what changed: a refusal is one line naming the member,
+    what was refused and why. Season #1 is being set up, in Placements, holding Pro (tier 1, role
+    555) and Am (tier 2, role 556), unless the case says otherwise. The league admin Admin (4242)
+    runs `/division delete` with one thing wrong: the season approved and under way, so that none
+    is being set up; the season still in configuration, waiting or signups; or naming division
+    Elite, which does not exist. The member gets today's reply word for word and nothing else,
+    nothing is asked of the change queue, Pro and Am stand as they were, no audit entry is written,
+    and the log channel gets exactly one line, "⛔ `/division delete` refused for Admin
+    (`<@4242>`) — " and the reply's words. A driver placed in the division is refused so too, and
+    is tested above."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import audit_rows, log_lines, said
+
+    league = await _league(tmp_path, **arranged)
+    replied = await _ask_delete(league, name)
+
+    assert said(replied) == [reply]
+    assert await change_rows(league.db_path) == []
+    assert await _divisions(league.db_path) == _STANDING
+    assert await audit_rows(league.db_path) == []
+    assert await log_lines(league) == [refusal_line(_DELETE, reply)]
+
 
 # ---------------------------------------------------------------------------
 # /division cancel
@@ -1161,62 +1416,6 @@ async def test_a_division_is_cancelled_only_while_the_season_is_ongoing(tmp_path
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-# ---------------------------------------------------------------------------
-# The setup commands run in Placements alone (#482, F4)
-# ---------------------------------------------------------------------------
-#
-# The core specification: "Divisions shall be created and deleted, and rounds added and deleted,
-# only while the season is in Placements". A season being set up but not yet in Placements is
-# refused in the words the command uses today, and the refusal is recorded. In Placements it still
-# works: every test above runs there.
-
-
-
-@pytest.mark.parametrize(
-    "stage",
-    [SeasonStage.CONFIGURATION, SeasonStage.WAITING, SeasonStage.SIGNUPS],
-    ids=lambda stage: stage.value.lower(),
-)
-@pytest.mark.parametrize(
-    "command, run, reply",
-    [
-        pytest.param(
-            "division delete",
-            _delete,
-            "\u274c `/division delete` can only be used while the season is in placements.",
-            id="delete",
-        ),
-    ],
-)
-async def test_a_setup_command_before_placements_is_refused_and_recorded(
-    tmp_path, command, run, reply, stage
-):
-    """A season being set up, still in configuration, waiting or signups, holds division Pro at
-    tier 1. The manager deletes Pro. It is refused in today's words and recorded, and Pro stands
-    as it was. Rename and amend are refused so as changes on the queue, above."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, stage=stage)
-    interaction = _run_by_the_manager(cog, command)
-
-    await run(cog, interaction)
-
-    assert _replied(interaction) == reply
-    cog.bot.season_service.delete_division.assert_not_awaited()
-    assert await _division_row(db_path) == {"name": "Pro", "tier": 1, "mention_role_id": 555}
-    assert await _audit_rows(db_path) == []
-    assert _logged(cog) == [
-        f"\u26d4 `/{command}` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
-    ]
-
-# ---------------------------------------------------------------------------
-# Every other refusal of /division delete is recorded (#482)
-# ---------------------------------------------------------------------------
-#
-# The core specification's "The record of what changed": a refusal is one line naming the
-# member, what was refused and why. Each reply stays word for word as today, and goes as today's
-# does, as the first answer to the interaction.
-
-
 def _as_discord(interaction):
     """Make *interaction* read as Discord's does: not answered until the command replies or
     defers, and answered from then on."""
@@ -1229,51 +1428,6 @@ def _as_discord(interaction):
     interaction.response.send_message = AsyncMock(side_effect=_answer)
     interaction.response.defer = AsyncMock(side_effect=_answer)
     return interaction
-
-
-async def _delete_elite(cog, interaction):
-    return await _delete(cog, interaction, name="Elite")
-
-
-@pytest.mark.parametrize(
-    "command, run, arranged, reply",
-    [
-        pytest.param(
-            "division delete", _delete, {"status": "ACTIVE"},
-            "❌ `/division delete` can only be used while the season is in placements.",
-            id="delete-no_season_being_set_up",
-        ),
-        pytest.param(
-            "division delete", _delete_elite, {},
-            "❌ Division `Elite` not found.",
-            id="delete-an_unknown_division",
-        ),
-    ],
-)
-async def test_every_other_division_delete_rename_and_amend_refusal_is_recorded(
-    tmp_path, command, run, arranged, reply
-):
-    """A season in placements holding division Pro at tier 1 with role 555, and division Am at
-    tier 2, unless the case says otherwise. The manager (id 77) is refused /division delete in two
-    cases: with no season being set up (the season is being raced), or naming division Elite,
-    which does not exist. The manager gets today's reply word for word and nothing else. Pro
-    stands as it was, nothing is deleted, and no audit entry is written. The log channel gets
-    exactly one line, "⛔ `/division delete` refused for Manager (<@77>) — " and the reply's
-    words. Rename and amend are refused so as changes on the queue, above."""
-    db_path = await _make_db(tmp_path, status=arranged.get("status", "SETUP"))
-    cog = _make_cog(db_path, divisions=[_division(), _division("Am", 2, id=12)])
-    interaction = _as_discord(_run_by_the_manager(cog, command))
-
-    await run(cog, interaction)
-
-    interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
-    interaction.followup.send.assert_not_awaited()
-    cog.bot.season_service.delete_division.assert_not_awaited()
-    assert await _division_row(db_path) == {"name": "Pro", "tier": 1, "mention_role_id": 555}
-    assert await _audit_rows(db_path) == []
-    assert _logged(cog) == [
-        f"⛔ `/{command}` refused for Manager (<@{ACTOR_ID}>) — {reply[2:]}"
-    ]
 
 
 async def _cancel_as_typed_lower(cog, interaction):
@@ -1376,37 +1530,3 @@ async def test_a_division_cancelled_as_typed_in_another_case_is_named_as_it_is_n
     _kind, payload = _asked(cog)
     assert payload["division_name"] == "Pro", payload
     assert "pro" not in {str(value) for value in payload.values()}, payload
-
-
-# ---------------------------------------------------------------------------
-# /division delete names the division as it is named (#482, F12)
-# ---------------------------------------------------------------------------
-#
-# As rename, amend and cancel: the division is found without regard to case, and the reply and
-# the log line name it as it stands, never as the manager typed it.
-
-
-async def test_a_division_deleted_as_typed_in_another_case_is_named_as_it_is_named(tmp_path):
-    """A season in placements holds divisions Pro and Am. The manager (id 77) runs /division
-    delete typing the division's name as 'pro'. Pro is deleted; the reply opens '✅ Division
-    **Pro** deleted.' and nowhere shows 'pro', and the one log line, naming /division delete,
-    names Pro and never 'pro'."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, remaining=[_division("Am", 2, id=DIVISION_ID + 1)])
-    interaction = _as_discord(_run_by_the_manager(cog, "division delete"))
-
-    await _delete(cog, interaction, name="pro")
-
-    cog.bot.season_service.delete_division.assert_awaited_once_with(
-        DIVISION_ID,
-        rounds_deleted=cog.bot.rounds_deleted,
-        divisions_deleted=cog.bot.divisions_deleted,
-    )
-    replied = _replied(interaction)
-    assert replied.startswith("✅ Division **Pro** deleted."), replied
-    assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}, replied
-    [line] = _logged(cog)
-    words = {word.strip("*`:,.()") for word in line.split()}
-    assert "/division delete" in line, line
-    assert "Pro" in words, line
-    assert "pro" not in words, line
