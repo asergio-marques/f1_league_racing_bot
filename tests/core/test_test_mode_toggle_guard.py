@@ -458,10 +458,14 @@ async def test_a_backup_that_cannot_be_deleted_stops_the_queue_after_test_mode_i
     """The server is in test mode with one fake driver and a saved backup, which the host refuses
     to delete. Admin turns test mode off: the queue stops at the backup's deletion, after the
     save, so test mode is already off, the fake driver deleted and the one TEST_MODE_SET entry
-    written, and the backup is still there. A league admin presses Discard: Admin's reply says
-    test mode is disabled and that the saved state could not be deleted, in the season end's
-    words, not that it was deleted; the backup stays, test mode stays off, and the queue is no
-    longer stopped."""
+    written, and the backup is still there. A league admin presses Discard: Admin's reply reads,
+    word for word, "✅ Test mode **disabled**. The scheduler will resume normal operation for any
+    remaining pending phases.", then "🗑️ Removed **1** fake driver(s).", then, after a blank line,
+    "⚠️ **Not everything could be done**" and "• The saved test-mode state could not be deleted.
+    It is deleted with the next `/test-mode toggle` that switches test mode off.", as the season
+    end words it; the log channel holds the toggle's one success line, naming Admin, test mode
+    disabled and the one fake driver removed, with no backup deleted; the backup stays, test mode
+    stays off, and the queue is no longer stopped."""
     from leaguebot.core.services import backup_service
 
     await _in_test_mode(db_path)
@@ -488,9 +492,15 @@ async def test_a_backup_that_cannot_be_deleted_stops_the_queue_after_test_mode_i
 
     await discard_job(cog.bot)
 
-    assert last_said(interaction).startswith(DISABLED)
-    assert BACKUP_KEPT in last_said(interaction)
-    assert "Deleted the saved test-mode backup" not in last_said(interaction)
+    assert last_said(interaction) == (
+        f"{DISABLED}\n🗑️ Removed **1** fake driver(s)."
+        f"\n\n⚠️ **Not everything could be done**\n• {BACKUP_KEPT}"
+    )
+    assert _success_lines(cog) == [
+        f"{NAMED} | /test-mode toggle | Success\n"
+        "  test_mode: disabled\n"
+        "  removed_fake_drivers: 1"
+    ]
     assert saved.exists()
     assert await _flag(db_path) is False
     assert await stopped_job(db_path) is None
