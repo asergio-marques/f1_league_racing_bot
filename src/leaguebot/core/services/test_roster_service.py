@@ -5,7 +5,8 @@ Provides helpers consumed by TestModeCog:
   - list_test_drivers:      retrieve all fake drivers in a division (for cheat sheet)
   - remove_test_driver:     remove one fake driver by their synthetic user ID
   - clear_test_drivers:     remove all fake drivers from a named division
-  - clear_all_test_drivers: remove all fake drivers from every division (toggle-off)
+  - clear_all_test_drivers_on: remove all fake drivers from every division, on a save's
+                            connection (toggle-off)
 
 Synthetic user IDs are guaranteed to be outside real Discord snowflake space by
 using a base of 9_000_000_000_000_000_000, well above any real snowflake value
@@ -630,17 +631,6 @@ async def clear_all_test_drivers_on(
         db, profile_ids, keep_history=True, profiles_deleted=profiles_deleted
     )
     return len(profile_ids)
-
-
-async def clear_all_test_drivers(db_path: str, *, profiles_deleted: AwaitedHook) -> int:
-    """:func:`clear_all_test_drivers_on` on a save of its own, for `/test-mode toggle`.
-
-    Returns the count removed.
-    """
-    async with get_connection(db_path) as db:
-        removed = await clear_all_test_drivers_on(db, profiles_deleted=profiles_deleted)
-        await db.commit()
-    return removed
 
 
 async def _delete_test_drivers_in_division(

@@ -47,9 +47,6 @@ from tests.support.settings_league import audit_rows, last_said, unruled
 from tests.support.settings_league import interaction as member_asks
 from tests.support.undecorate import undecorate
 
-#: Not yet true until the toggle is a change on the queue.
-ON_THE_QUEUE = "#283: /test-mode toggle is not yet a change on the change queue"
-
 #: The league admin who runs the command, as a log line names them; and the queue's "now".
 ACTOR_ID = 77
 NAMED = f"Admin (`<@{ACTOR_ID}>`)"
@@ -368,7 +365,6 @@ async def test_switching_test_mode_on_names_what_the_modules_handed_back(cog, db
 # ── Disabling ─────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_turning_test_mode_off_is_one_save_with_its_audit_entry_and_line(cog, db_path):
     """The server is in test mode with one fake driver, and the queue's clock is five minutes on
     from `NOW` when it runs. Admin runs the command: they are answered at once with the queue's
@@ -450,7 +446,6 @@ async def test_toggling_off_with_nothing_saved_says_nothing_about_a_backup(cog, 
     assert "backup" not in last_said(interaction).lower()
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_backup_that_cannot_be_deleted_stops_the_queue_after_test_mode_is_off(
     cog, db_path, monkeypatch
 ):
@@ -508,7 +503,6 @@ async def test_a_backup_that_cannot_be_deleted_stops_the_queue_after_test_mode_i
 # ── The forecasts posted under test mode are cleared after the save ───────────
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_switching_test_mode_off_clears_the_forecasts_once_the_flag_reads_off(cog, db_path):
     """The season is in Configuration, and a part is signed up to the bot's hook for clearing what
     test mode posted (weather's deletion of each forecast). Switching test mode on calls it not
@@ -547,8 +541,7 @@ async def _a_real_driver_signs_up(db_path: str) -> None:
     [
         pytest.param(False, _leave_configuration, NOT_IN_CONFIGURATION, id="on_moved_on"),
         pytest.param(False, _a_real_driver_signs_up, ONE_REAL_DRIVER, id="on_real_driver"),
-        pytest.param(True, _leave_configuration, NOT_IN_CONFIGURATION, id="off_moved_on",
-                     marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)),
+        pytest.param(True, _leave_configuration, NOT_IN_CONFIGURATION, id="off_moved_on"),
     ],
 )
 async def test_a_refusal_found_as_the_toggle_starts_changes_nothing(
@@ -584,8 +577,7 @@ async def test_a_refusal_found_as_the_toggle_starts_changes_nothing(
     "test_mode, doing",
     [
         pytest.param(False, "Turning test mode on", id="on"),
-        pytest.param(True, "Turning test mode off", id="off",
-                     marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)),
+        pytest.param(True, "Turning test mode off", id="off"),
     ],
 )
 async def test_a_second_press_while_the_first_waits_is_refused_as_a_repeat(
@@ -636,7 +628,7 @@ async def _a_driver_deletion_fails(cog) -> None:
         pytest.param(
             True, _a_driver_deletion_fails,
             "Nothing was changed: test mode is still **on**. Run `/test-mode toggle` again.",
-            id="off", marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE),
+            id="off",
         ),
     ],
 )

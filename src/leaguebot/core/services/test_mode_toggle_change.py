@@ -15,21 +15,32 @@ driver and while it is on the signup and placement paths refuse real drivers out
 
 **Turning test mode on is one SAVE**: the flag, the modules' part through the hook for test mode
 turned on (results seeds its points configurations), handed the save's own connection and the
-live season's id, and the `TEST_MODE_SET` audit entry, stamped by the queue's clock. A fault in a
-module's part rolls the whole save back and **stops the lane**, as a failed job does, for the
-reason `/season setup`'s does (`season_setup_change.py`): a league admin exists to discard the
-job and clear the stop, and test mode is left as it was, with nothing seeded.
+live season's id, and the `TEST_MODE_SET` audit entry, stamped by the queue's clock.
 
-**A save that finds the flag already where the change was asked to put it** writes nothing, and
-says so.
+**Turning it off is one SAVE too**: the flag and every fake driver (`switch_test_mode_off_on`, as
+a season's end does it), each module deleting its own rows of them through the delete hook, and the
+audit entry. Two jobs follow it, each stopping the queue where it fails: the clearing of the
+forecasts posted under test mode (`flush_forecasts`, which plans a job for each forecast, once the
+flag reads off) and the deletion of the saved test-mode backup, which the backup commands, running
+in test mode alone, could no longer restore (`discard_backup`). A job a league admin discards is
+dropped, and the reply says what was not done and what to do by hand, in the season end's words.
 
-**The log line is written as the change finishes**, from what the save recorded, so that it is
-one line and says what became of the change.
+**A fault in the save stops the lane**, as a failed job does, for the reason `/season setup`'s does
+(`season_setup_change.py`): a league admin exists to discard the job and clear the stop, and the
+save is rolled back whole, so test mode is left as it was, with nothing seeded or deleted. A
+backup that cannot be deleted leaves test mode already off.
+
+**A save that finds the flag already where the change was asked to put it** writes nothing, plans
+nothing after it, and says so.
+
+**The log line is written as the change finishes**, from what the save and the backup's deletion
+recorded, so that it is one line and says whether a backup was deleted.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 import aiosqlite
 
@@ -50,12 +61,34 @@ from leaguebot.core.services.change_queue import (
     StepContext,
 )
 from leaguebot.core.services.round_add_changes import saved_result
+from leaguebot.core.services import standing_posts
+from leaguebot.core.services.season_end_changes import (
+    BACKUP_KEPT,
+    anything_discarded,
+    discarded,
+    not_done_reply,
+    shared_not_done,
+    view_of,
+)
+from leaguebot.core.services.season_end_service import (
+    DISCARD_BACKUP,
+    FLUSH_FORECASTS,
+    discard_backup_step,
+    flush_forecasts_step,
+)
 from leaguebot.core.services.season_lifecycle_service import (
     live_season_stage,
     live_season_stage_on,
+    steps_of_the_modules,
 )
-from leaguebot.core.services.test_mode_service import count_live_real_drivers
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.core.services.test_mode_service import (
+    count_live_real_drivers,
+    switch_test_mode_off_on,
+)
+from leaguebot.core.utils.hooks import AwaitedHook, Hook
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.scheduler_service import SchedulerService
 
 TEST_MODE_TOGGLE = "core.test_mode_toggle"
 
@@ -78,6 +111,10 @@ REAL_DRIVERS = (
     "Test mode is for an empty league — disabling it deletes every fake "
     "driver, and while it is on no real driver may sign up or be placed."
 )
+DISABLED = (
+    "✅ Test mode **disabled**. "
+    "The scheduler will resume normal operation for any remaining pending phases."
+)
 ENABLED = (
     "✅ Test mode **enabled**. "
     "Use `/test-mode advance` to step through phases, "
@@ -90,6 +127,7 @@ NOT_CHANGED = "Nothing was changed: test mode is still **{state}**. Run `/test-m
 
 #: The save's results, as `outcome` and the line read them.
 ON = "on"
+OFF = "off"
 UNCHANGED = "unchanged"
 
 
@@ -110,15 +148,27 @@ async def _check(ctx: CheckContext) -> Verdict:
 
 
 def _save(
-    test_mode_turned_on: AwaitedHook,
+    test_mode_turned_on: AwaitedHook, profiles_deleted: AwaitedHook
 ) -> Callable[[aiosqlite.Connection, StepContext], Awaitable[StepResult]]:
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        """Set the flag, with the modules' part and the audit entry."""
+        """Set the flag, with the modules' part or the fake drivers' deletion, and the audit
+        entry."""
         on = bool(ctx.payload["on"])
         cursor = await db.execute("SELECT test_mode_active FROM server_configs")
         row = await cursor.fetchone()
         if row is None or bool(row["test_mode_active"]) == on:
             return StepResult(result={"outcome": UNCHANGED})
+        if not on:
+            removed = await switch_test_mode_off_on(db, profiles_deleted=profiles_deleted)
+            return StepResult(
+                result={"outcome": OFF, "removed": removed},
+                audits=(
+                    AuditRecord(
+                        AUDIT_TYPE, {"test_mode_active": True}, {"test_mode_active": False}
+                    ),
+                ),
+                then=(PlannedStep(FLUSH_FORECASTS), PlannedStep(DISCARD_BACKUP)),
+            )
         await db.execute("UPDATE server_configs SET test_mode_active = 1")
         live = await live_season_stage_on(db)
         handed_back = await test_mode_turned_on.call(db, live[0]) if live is not None else []
@@ -136,16 +186,9 @@ def _doing(payload: dict[str, object]) -> str:
     return f"Turning test mode {_words(bool(payload['on']))}"
 
 
-def _outcome(ctx: OutcomeContext) -> str:
-    saved = saved_result(ctx)
-    on = bool(ctx.payload["on"])
-    found = saved.get("outcome")
-    if found == UNCHANGED:
-        return NOTHING_CHANGED.format(state=_words(on))
-    if found != ON:
-        return NOT_CHANGED.format(state=_words(not on))
-    seeded = saved["seeded"]
-    return ENABLED + (f"\n📌 Added default point configs: **{', '.join(seeded)}**" if seeded else "")
+def _backup_deleted(ctx: OutcomeContext) -> bool:
+    view = view_of(ctx, DISCARD_BACKUP)
+    return view is not None and bool((view.result or {}).get("deleted"))
 
 
 def _finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
@@ -155,30 +198,80 @@ def _finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
     found = saved.get("outcome")
     if found == UNCHANGED:
         return (f"{ctx.named} | {COMMAND} | Nothing changed",)
-    if found != ON:
-        return ()
-    seeded = saved["seeded"]
-    return (
-        f"{ctx.named} | {COMMAND} | Success\n  test_mode: enabled"
-        + (f"\n  seeded_configs: {', '.join(seeded)}" if seeded else ""),
-    )
+    if found == ON:
+        seeded = saved["seeded"]
+        return (
+            f"{ctx.named} | {COMMAND} | Success\n  test_mode: enabled"
+            + (f"\n  seeded_configs: {', '.join(seeded)}" if seeded else ""),
+        )
+    if found == OFF:
+        return (
+            f"{ctx.named} | {COMMAND} | Success\n  test_mode: disabled"
+            + (f"\n  removed_fake_drivers: {saved['removed']}" if saved["removed"] else "")
+            + ("\n  backup: deleted" if _backup_deleted(ctx) else ""),
+        )
+    return ()
 
 
-def test_mode_toggle_change(*, test_mode_turned_on: AwaitedHook) -> ChangeType:
+def test_mode_toggle_change(
+    *,
+    test_mode_turned_on: AwaitedHook,
+    profiles_deleted: AwaitedHook,
+    test_mode_flushed: AwaitedHook,
+    season_end_steps: Hook,
+    scheduler: "SchedulerService",
+) -> ChangeType:
     """The `core.test_mode_toggle` change type, for the builder to register: *test_mode_turned_on*
-    is the hook each module's part of turning test mode on is signed up to."""
+    is the hook each module's part of turning test mode on is signed up to, *profiles_deleted* the
+    hook each module's rows of a fake driver are deleted through, *test_mode_flushed* the hook the
+    modules hand back the jobs that clear what test mode posted through, *season_end_steps* the
+    hook they define those jobs' steps through, and *scheduler* holds the job store the saved
+    backup sits beside."""
 
     async def describe(ctx: StepContext) -> str:
         return _doing(ctx.payload).lower()
 
+    steps: dict[str, Step] = {
+        SAVE: Step(
+            SAVE, StepKind.SAVE, _save(test_mode_turned_on, profiles_deleted), describe=describe
+        ),
+        FLUSH_FORECASTS: flush_forecasts_step(test_mode_flushed),
+        DISCARD_BACKUP: discard_backup_step(scheduler),
+        standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
+        **steps_of_the_modules(season_end_steps, line_prefix=None),
+    }
+
+    def outcome(ctx: OutcomeContext) -> str:
+        saved = saved_result(ctx)
+        on = bool(ctx.payload["on"])
+        found = saved.get("outcome")
+        if found == UNCHANGED:
+            return NOTHING_CHANGED.format(state=_words(on))
+        if found == ON:
+            seeded = saved["seeded"]
+            return ENABLED + (
+                f"\n📌 Added default point configs: **{', '.join(seeded)}**" if seeded else ""
+            )
+        if found != OFF:
+            return NOT_CHANGED.format(state=_words(not on))
+        reply = DISABLED
+        if saved["removed"]:
+            reply += f"\n🗑️ Removed **{saved['removed']}** fake driver(s)."
+        if _backup_deleted(ctx):
+            reply += "\n🗑️ Deleted the saved test-mode backup."
+        not_done = shared_not_done(ctx, steps)
+        if discarded(view_of(ctx, DISCARD_BACKUP)):
+            not_done.append(BACKUP_KEPT)
+        return reply + not_done_reply(not_done, discarded=anything_discarded(ctx))
+
     return ChangeType(
         kind=TEST_MODE_TOGGLE,
         opening=(PlannedStep(SAVE),),
-        steps={SAVE: Step(SAVE, StepKind.SAVE, _save(test_mode_turned_on), describe=describe)},
+        steps=steps,
         check=_check,
         key=lambda payload: f"{TEST_MODE_TOGGLE}|{payload['on']}",
         doing=_doing,
-        outcome=_outcome,
+        outcome=outcome,
         lane=lambda _payload: LEAGUE_LANE,
         finished_lines=_finished_lines,
     )

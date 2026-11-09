@@ -2040,11 +2040,9 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/team_service.py", "TeamService.get_teams_with_roles"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.modify_default_team"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.remove_default_team"): (1, PASS["core"]),
-    ("core/services/test_mode_service.py", "turn_test_mode_off"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_delete_test_drivers_in_division"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "add_test_driver"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "add_test_drivers_in_bulk"): (1, PASS["core"]),
-    ("core/services/test_roster_service.py", "clear_all_test_drivers"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "remove_test_driver"): (1, PASS["core"]),
     # Results' pass
     # Attendance's pass
@@ -3074,7 +3072,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/driver_cog.py", "DriverCog.reassign"): (2, PASS["core"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
     ("core/cogs/season_cog.py", "SeasonCog._team_name_problems"): (1, PASS["core"]),
-    ("core/cogs/test_mode_cog.py", "TestModeCog.toggle"): (1, PASS["core"]),
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
     ("core/services/approval_checks.py", "channel_on_server"): (1, PASS["core"]),
     ("core/services/change_queue.py", "ChangeQueue._acknowledge"): (1, PASS["core"]),

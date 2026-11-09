@@ -315,8 +315,8 @@ def discard(
     the run itself. The lock file goes too, so the next test season saves freely.
 
     Every file is tried whatever becomes of the others. By default a fault on one is logged and
-    passed over, as the toggle in Configuration wants. With *raise_on_failure*, as a season's
-    completion asks of it as a job on the change queue, the first fault met is raised once all
+    passed over. With *raise_on_failure*, as the toggle and a season's completion ask of it as a
+    job on the change queue, the first fault met is raised once all
     three have been tried, so the queue stops at it and a Retry finishes what is left.
     """
     removed = False

@@ -35,16 +35,10 @@ from discord.ext import commands
 from leaguebot.core.services.test_mode_settings import NOT_IN_TEST_MODE
 from leaguebot.core.services.test_mode_toggle_change import TEST_MODE_TOGGLE
 from leaguebot.core.services.test_mode_service import (
-    turn_test_mode_off,
-    count_live_real_drivers,
     PhaseEntry,
     build_review_summary,
     AdvanceStatus,
     advance_next_step,
-)
-from leaguebot.core.models.change import (
-    FORECAST_FLUSH,
-    ChangeOrigin,
 )
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import backup_service
@@ -86,100 +80,16 @@ class TestModeCog(commands.Cog):
     )
     @league_admin_only
     async def toggle(self, interaction: discord.Interaction) -> None:
-        """Flip test mode for the season in configuration.
+        """Ask the change that flips test mode for the season in configuration.
 
-        Refused outside Configuration, and refused to enable while the server holds real
-        drivers: disabling it again deletes every fake driver on the server without
-        confirmation, and while it is on the signup and placement paths refuse real drivers
-        outright.
+        The command reads test mode once, to say which way it goes, and the change carries that
+        state, judging it as it is asked and again as it starts (`test_mode_toggle_change`).
         """
-        # Test mode is chosen for a season, in its configuration (issue #220). Confirming
-        # the configuration fixes it, and the season's end switches it off. That is also what
-        # retired the two refusals this command used to make: no signup window is open in
-        # Configuration, and no season in Configuration has raced a fake driver.
-        from leaguebot.core.services.season_lifecycle_service import live_season_stage
-
-        live = await live_season_stage(self.bot.db_path)
-        if live is None or live[1] is not SeasonStage.CONFIGURATION:
-            await refuse(
-                interaction,
-                "⛔ Test mode can only be switched while a season is in configuration. "
-                "Start one with `/season setup`; a season whose configuration is confirmed "
-                "keeps test mode as it stands until the season ends.",
-                what=describe(interaction),
-            )
-            return
-
-        config = await self.bot.config_service.get_server_config(
-
-        )
-        if config is not None and not config.test_mode_active:
-            real_drivers = await count_live_real_drivers(
-                self.bot.db_path,
-            )
-            if real_drivers:
-                await refuse(
-                    interaction,
-                    f"⛔ Test mode cannot be enabled while this server has "
-                    f"**{real_drivers}** real driver(s).\n"
-                    "Test mode is for an empty league — disabling it deletes every fake "
-                    "driver, and while it is on no real driver may sign up or be placed.",
-                    what=describe(interaction),
-                )
-                return
-
+        config = await self.bot.config_service.get_server_config()
         entering = config is not None and not config.test_mode_active
-        if entering:
-            await self.bot.change_queue.ask(
-                TEST_MODE_TOGGLE, {"on": True}, interaction=interaction, what=describe(interaction)
-            )
-        else:
-            await turn_test_mode_off(
-                self.bot.db_path,
-            )
-            # Defer so the flush (multiple Discord API calls) has time to complete
-            await interaction.response.defer(ephemeral=True)
-            # The forecasts posted under test mode are deleted by the change queue, each by a
-            # job of its own, once the flag reads off.
-            await self.bot.change_queue.ask(
-                FORECAST_FLUSH,
-                {},
-                what="clearing the forecasts posted under test mode",
-                origin=ChangeOrigin.BOT,
-            )
-            from leaguebot.core.services.test_roster_service import clear_all_test_drivers
-            removed = await clear_all_test_drivers(
-                self.bot.db_path, profiles_deleted=self.bot.profiles_deleted
-            )
-            if removed:
-                log.info(
-                    "Test mode disabled: cleared %d fake driver(s)",
-                    removed,
-                )
-            # The saved state goes with test mode (decided 2026-09-17): the backup commands
-            # run in test mode alone, so a state kept past it is one nothing could restore.
-            discarded = False
-            try:
-                discarded = backup_service.discard(
-                    self.bot.db_path, self.bot.scheduler_service.jobstore_path
-                )
-            except Exception:  # noqa: BLE001 — a backup left behind is not worth the toggle
-                log.exception("test-mode toggle: could not discard the saved backup")
-            msg = (
-                "✅ Test mode **disabled**. "
-                "The scheduler will resume normal operation for any remaining pending phases."
-            )
-            if removed:
-                msg += f"\n🗑️ Removed **{removed}** fake driver(s)."
-            if discarded:
-                msg += "\n🗑️ Deleted the saved test-mode backup."
-            await interaction.followup.send(msg, ephemeral=True)
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode toggle | Success\n"
-                f"  test_mode: disabled"
-                + (f"\n  removed_fake_drivers: {removed}" if removed else "")
-                + ("\n  backup: deleted" if discarded else ""),
-            )
+        await self.bot.change_queue.ask(
+            TEST_MODE_TOGGLE, {"on": entering}, interaction=interaction, what=describe(interaction)
+        )
 
     # ------------------------------------------------------------------
     # /test-mode nationality

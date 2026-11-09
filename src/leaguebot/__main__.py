@@ -1149,7 +1149,13 @@ def register_change_types(bot: LeagueBot) -> None:
         round_delete_change(seasons=bot.season_service, rounds_deleted=bot.rounds_deleted)
     )
     bot.change_queue.register(
-        test_mode_toggle_change(test_mode_turned_on=bot.test_mode_turned_on)
+        test_mode_toggle_change(
+            test_mode_turned_on=bot.test_mode_turned_on,
+            profiles_deleted=bot.profiles_deleted,
+            test_mode_flushed=bot.test_mode_flushed,
+            season_end_steps=bot.season_end_steps,
+            scheduler=bot.scheduler_service,
+        )
     )
     for setting in (
         log_channel_setting(config=bot.config_service),

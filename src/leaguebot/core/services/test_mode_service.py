@@ -1,7 +1,8 @@
 """test_mode_service — Test mode state management and phase queue.
 
 Provides async functions consumed by TestModeCog, among them:
-  - turn_test_mode_off:           switch the test_mode_active flag off in server_configs
+  - switch_test_mode_off_on:      switch test mode off on a save's connection, deleting every fake
+                                  driver
   - count_live_real_drivers:      how many real drivers stand in the way of enabling test mode
   - get_next_pending_phase:       find the earliest un-executed phase across all rounds
   - register_advance, advance_next_step: the step `/test-mode advance` runs for each kind of a
@@ -205,46 +206,17 @@ async def advance_next_step(
 # Toggle
 # ---------------------------------------------------------------------------
 
-async def turn_test_mode_off(db_path: str) -> bool:
-    """Switch test_mode_active off absolutely, and return whether it changed anything.
-
-    `/test-mode toggle`'s off-path decides *that* it is turning test mode off from an earlier
-    read (`entering = ... not config.test_mode_active`), taken before this call; the write
-    itself must not depend on that same read again, or two presses racing each other could
-    both take the off-path and the second's relative flip put the flag back on under a reply
-    that said "disabled" (#283). So the UPDATE sets the flag to 0 outright, never `1 -
-    test_mode_active`, and is idempotent: a second call finds it already off and reports no
-    change.
-
-    Returns False if the server has no config row (bot not initialised) or test mode was
-    already off.
-    """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT test_mode_active FROM server_configs",
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            log.error("turn_test_mode_off: no server_config row")
-            return False
-        was_active = bool(row["test_mode_active"])
-        await db.execute(
-            "UPDATE server_configs SET test_mode_active = 0",
-        )
-        await db.commit()
-
-    return was_active
-
-
 async def switch_test_mode_off_on(
     db: aiosqlite.Connection, *, profiles_deleted: AwaitedHook
 ) -> int:
     """Switch test mode off on *db*, committing nothing, deleting every driver it created.
 
-    A season's end does it inside the save that records its end, just before the season itself
-    is written, so the test drivers, the flag and the season's archive land together or not at
-    all (decided 2026-10-09). The forecasts posted under test mode are not flushed here: that
-    is a job of its own before the save, and the saved backup's deletion one after it. Every
+    `/test-mode toggle` does it in its save, with the flag's audit entry. A season's end does it
+    inside the save that records its end, just before the season itself is written, so the test
+    drivers, the flag and the season's archive land together or not at all (decided 2026-10-09).
+    The forecasts posted under test mode are not flushed here: that is a job of its own, before
+    the save at a season's end and after it at the toggle, and the saved backup's deletion one
+    after it. Every
     fake driver is deleted and their history kept. A server not in test mode is left as it is.
 
     Returns the count of fake drivers removed.

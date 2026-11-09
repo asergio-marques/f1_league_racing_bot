@@ -257,6 +257,39 @@ async def season_role_targets_on(db: aiosqlite.Connection, season_id: int) -> li
     return targets
 
 
+def flush_forecasts_step(test_mode_flushed: "AwaitedHook") -> Step:
+    """The `flush_forecasts` job, an ACT: plans the jobs the modules signed up to
+    *test_mode_flushed* hand back for what test mode posted (weather's deletion of each forecast),
+    so that each deletion is a job of its own and a refusal stops the queue there. Every change
+    that switches test mode off asks it after the save that does."""
+
+    async def flush_forecasts(_ctx: StepContext) -> StepResult:
+        planned = tuple(step for found in await test_mode_flushed.call() for step in found)
+        return StepResult(result={"planned": len(planned)}, then=planned)
+
+    async def describe_flush(_ctx: StepContext) -> str:
+        return "clearing the forecasts posted under test mode"
+
+    return Step(FLUSH_FORECASTS, StepKind.ACT, flush_forecasts, describe=describe_flush)
+
+
+def discard_backup_step(scheduler: "SchedulerService") -> Step:
+    """The `discard_backup` job, an ACT: the saved test-mode state deleted, with the *scheduler*'s
+    job store, and `deleted` in its result where one was there. It raises where a file cannot be
+    deleted, for the queue to stop on."""
+
+    async def discard_backup(ctx: StepContext) -> StepResult:
+        removed = backup_service.discard(
+            ctx.db_path, scheduler.jobstore_path, raise_on_failure=True
+        )
+        return StepResult(result={"deleted": removed})
+
+    async def describe_backup(_ctx: StepContext) -> str:
+        return "deleting the saved test-mode state"
+
+    return Step(DISCARD_BACKUP, StepKind.ACT, discard_backup, describe=describe_backup)
+
+
 def shared_steps(
     placement: "PlacementService",
     scheduler: "SchedulerService",
@@ -296,13 +329,6 @@ def shared_steps(
         of = f" of season {number}" if number else ""
         return f"taking back <@{ctx.step_payload['user_id']}>'s roles{of}"
 
-    async def flush_forecasts(_ctx: StepContext) -> StepResult:
-        planned = tuple(step for found in await test_mode_flushed.call() for step in found)
-        return StepResult(result={"planned": len(planned)}, then=planned)
-
-    async def describe_flush(_ctx: StepContext) -> str:
-        return "clearing the forecasts posted under test mode"
-
     async def discard_portraits(ctx: StepContext) -> StepResult:
         removed = await drivers_deleted.call([str(a) for a in ctx.step_payload["accounts"]])
         # Not "discarded": that is the key a league admin's Discard leaves on a job's result.
@@ -311,24 +337,13 @@ def shared_steps(
     async def describe_portraits(_ctx: StepContext) -> str:
         return "discarding the portraits of the drivers deleted"
 
-    async def discard_backup(ctx: StepContext) -> StepResult:
-        backup_service.discard(ctx.db_path, scheduler.jobstore_path, raise_on_failure=True)
-        return StepResult()
-
-    async def describe_backup(_ctx: StepContext) -> str:
-        return "deleting the saved test-mode state"
-
     return {
         REVOKE_ROLES: Step(REVOKE_ROLES, StepKind.ACT, revoke_roles, describe=describe_revoke),
-        FLUSH_FORECASTS: Step(
-            FLUSH_FORECASTS, StepKind.ACT, flush_forecasts, describe=describe_flush
-        ),
+        FLUSH_FORECASTS: flush_forecasts_step(test_mode_flushed),
         DISCARD_PORTRAITS: Step(
             DISCARD_PORTRAITS, StepKind.ACT, discard_portraits, describe=describe_portraits
         ),
-        DISCARD_BACKUP: Step(
-            DISCARD_BACKUP, StepKind.ACT, discard_backup, describe=describe_backup
-        ),
+        DISCARD_BACKUP: discard_backup_step(scheduler),
         # A forecast posted in parts has `delete_forecast` plan a delete for each earlier part.
         standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
         **close_signup_steps(placement, season_end_steps=season_end_steps),
