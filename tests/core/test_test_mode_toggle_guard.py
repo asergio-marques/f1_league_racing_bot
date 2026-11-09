@@ -196,7 +196,6 @@ def _as_naive(stamp: str) -> datetime:
 
 
 class TestEnabling:
-    @pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
     async def test_a_clean_server_may_enter_test_mode(self, cog, db_path):
         """The server is not in test mode, season 3 is in Configuration with no points
         configuration, and the queue's clock is five minutes on from `NOW` when it runs. Admin
@@ -546,10 +545,8 @@ async def _a_real_driver_signs_up(db_path: str) -> None:
 @pytest.mark.parametrize(
     "test_mode, meanwhile, refusal",
     [
-        pytest.param(False, _leave_configuration, NOT_IN_CONFIGURATION, id="on_moved_on",
-                     marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)),
-        pytest.param(False, _a_real_driver_signs_up, ONE_REAL_DRIVER, id="on_real_driver",
-                     marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)),
+        pytest.param(False, _leave_configuration, NOT_IN_CONFIGURATION, id="on_moved_on"),
+        pytest.param(False, _a_real_driver_signs_up, ONE_REAL_DRIVER, id="on_real_driver"),
         pytest.param(True, _leave_configuration, NOT_IN_CONFIGURATION, id="off_moved_on",
                      marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)),
     ],
@@ -586,8 +583,7 @@ async def test_a_refusal_found_as_the_toggle_starts_changes_nothing(
 @pytest.mark.parametrize(
     "test_mode, doing",
     [
-        pytest.param(False, "Turning test mode on", id="on",
-                     marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)),
+        pytest.param(False, "Turning test mode on", id="on"),
         pytest.param(True, "Turning test mode off", id="off",
                      marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)),
     ],
@@ -635,7 +631,7 @@ async def _a_driver_deletion_fails(cog) -> None:
         pytest.param(
             False, _a_module_part_fails,
             "Nothing was changed: test mode is still **off**. Run `/test-mode toggle` again.",
-            id="on", marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE),
+            id="on",
         ),
         pytest.param(
             True, _a_driver_deletion_fails,

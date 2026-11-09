@@ -143,7 +143,8 @@ class LeagueBot(commands.Bot):
     rounds_made_final: AwaitedHook
     #: Test mode turned on, given the save's connection and the current season's id: each module
     #: signing up its part, seeding what it seeds for a season under test (results' points
-    #: configurations). The builder makes it and hands it to `turn_test_mode_on`.
+    #: configurations). The builder makes it and hands it to the toggle's change
+    #: (`test_mode_toggle_change`).
     test_mode_turned_on: AwaitedHook
     #: Placements confirmed (the season's approval), given the save's connection and a division's
     #: id and name: each module signing up its own opening post, handing back the jobs it plans

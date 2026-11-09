@@ -2041,7 +2041,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/team_service.py", "TeamService.modify_default_team"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.remove_default_team"): (1, PASS["core"]),
     ("core/services/test_mode_service.py", "turn_test_mode_off"): (1, PASS["core"]),
-    ("core/services/test_mode_service.py", "turn_test_mode_on"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_delete_test_drivers_in_division"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "add_test_driver"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "add_test_drivers_in_bulk"): (1, PASS["core"]),

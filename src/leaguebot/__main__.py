@@ -307,8 +307,9 @@ def _sign_up_to_test_mode_turned_on(bot: LeagueBot) -> None:
     """Make the hook test mode turned on declares, and sign each module's part up to it: what a
     module seeds for a season under test, on the connection of the save that turns test mode on,
     given the season's id (architecture.md, "How modules and core fit together"). The builder
-    hands it to `turn_test_mode_on`. Results' seeding runs whether or not the results module is
-    on, as the core specification's test mode section says without a condition."""
+    hands it to the toggle's change (`test_mode_toggle_change`). Results' seeding runs whether or
+    not the results module is on, as the core specification's test mode section says without a
+    condition."""
     from leaguebot.results.services import points_config_service
 
     bot.test_mode_turned_on = AwaitedHook()
@@ -557,6 +558,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.channel_tell_change import channel_tell_change
     from leaguebot.core.services.division_settings import division_channel_settings
     from leaguebot.core.services.test_mode_settings import test_mode_nationality_setting
+    from leaguebot.core.services.test_mode_toggle_change import test_mode_toggle_change
     from leaguebot.core.services.clean_change import clean_change
     from leaguebot.core.services.hub_service import hub_refresh_change
     from leaguebot.core.services.lineup_posting import lineup_post_change
@@ -1145,6 +1147,9 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(setup_round_amend_change(seasons=bot.season_service))
     bot.change_queue.register(
         round_delete_change(seasons=bot.season_service, rounds_deleted=bot.rounds_deleted)
+    )
+    bot.change_queue.register(
+        test_mode_toggle_change(test_mode_turned_on=bot.test_mode_turned_on)
     )
     for setting in (
         log_channel_setting(config=bot.config_service),

@@ -33,8 +33,8 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.services.test_mode_settings import NOT_IN_TEST_MODE
+from leaguebot.core.services.test_mode_toggle_change import TEST_MODE_TOGGLE
 from leaguebot.core.services.test_mode_service import (
-    turn_test_mode_on,
     turn_test_mode_off,
     count_live_real_drivers,
     PhaseEntry,
@@ -130,24 +130,8 @@ class TestModeCog(commands.Cog):
 
         entering = config is not None and not config.test_mode_active
         if entering:
-            await interaction.response.defer(ephemeral=True)
-            new_configs = await turn_test_mode_on(
-                self.bot.db_path, test_mode_turned_on=self.bot.test_mode_turned_on
-            )
-            config_note = (
-                f"\n📌 Added default point configs: **{', '.join(new_configs)}**"
-                if new_configs else ""
-            )
-            msg = (
-                "✅ Test mode **enabled**. "
-                "Use `/test-mode advance` to step through phases, "
-                f"or `/test-mode review` to inspect season status.{config_note}"
-            )
-            await interaction.followup.send(msg, ephemeral=True)
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode toggle | Success\n"
-                f"  test_mode: enabled"
-                + (f"\n  seeded_configs: {', '.join(new_configs)}" if new_configs else ""),
+            await self.bot.change_queue.ask(
+                TEST_MODE_TOGGLE, {"on": True}, interaction=interaction, what=describe(interaction)
             )
         else:
             await turn_test_mode_off(
