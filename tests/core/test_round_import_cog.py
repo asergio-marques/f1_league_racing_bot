@@ -24,7 +24,10 @@ from leaguebot.core.cogs.season_cog import (
     SeasonCog,
     XmlRoundModal,
 )
+from tests.support.setup_reads import hold_setup
 from tests.support.undecorate import undecorate
+
+SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 
 
 def _interaction() -> MagicMock:
@@ -41,10 +44,15 @@ def _interaction() -> MagicMock:
     return interaction
 
 
-def _cog_with(cfg: PendingConfig | None, db_path: str = ":memory:") -> MagicMock:
-    """A stub SeasonCog, registered so the modals can find it through the client."""
-    cog = MagicMock()
-    cog.resolve_pending = MagicMock(return_value=cfg)
+def _cog_with(cfg: PendingConfig | None, db_path: str = ":memory:") -> SeasonCog:
+    """A SeasonCog on a stub bot whose season service reads *cfg* as the season being set up
+    (#283), registered so the modals can find it through the client."""
+    cog = SeasonCog.__new__(SeasonCog)
+    cog.bot = MagicMock()
+    hold_setup(cog.bot.season_service, cfg)
+    if hasattr(SeasonCog, "clear_pending"):
+        # While the cog still keeps a setup in memory, it keeps none here.
+        cog._pending = {}
     cog.bot.db_path = db_path
     cog.bot.output_router.post_log = AsyncMock()
     cog._snapshot_pending = AsyncMock()
@@ -58,8 +66,13 @@ def _bind(interaction: MagicMock, cog: MagicMock) -> None:
 
 def _pending() -> PendingConfig:
     return PendingConfig(
-        divisions=[PendingDivision(name="Pro", role_id=1)]
+        divisions=[PendingDivision(name="Pro", role_id=1)], season_id=7
     )
+
+
+def _saved(cog):
+    """The setup as the command wrote it to the season."""
+    return cog._snapshot_pending.await_args.args[0]
 
 
 async def _run_command(name: str, interaction, **kwargs) -> None:
@@ -163,6 +176,7 @@ async def test_no_pending_setup_refuses_without_writing():
 # ── The season is written once, not once per round ────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_twenty_round_import_snapshots_exactly_once(monkeypatch):
     """One write for the whole paste. Once per round would be twenty transactions, and
     a failure part-way would leave half a calendar written."""
@@ -196,6 +210,7 @@ def _round(day: int) -> dict:
     }
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_successful_import_reaches_the_log(monkeypatch):
     interaction = _interaction()
     cog = _cog_with(_pending())
@@ -230,6 +245,7 @@ async def test_the_xml_modal_reports_a_parse_failure():
     cog._snapshot_pending.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_xml_modal_applies_a_sound_payload(monkeypatch):
     interaction = _interaction()
     cog = _cog_with(_pending())
@@ -278,21 +294,11 @@ async def _run_round_add(interaction, cog, **kwargs):
     await body(cog, interaction, **kwargs)
 
 
-def _add_cog(cfg: PendingConfig) -> MagicMock:
-    cog = MagicMock()
-    cog._pending = {42: cfg}
-    cog._get_pending = MagicMock(return_value=cfg)
-    cog.bot.db_path = ":memory:"
-    cog.bot.output_router.post_log = AsyncMock()
-    cog._snapshot_pending = AsyncMock()
-    cog._calendar_round_overflow = AsyncMock(return_value=None)
-    return cog
-
-
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_round_add_refuses_a_datetime_the_division_already_holds(monkeypatch):
     cfg = _pending()
     cfg.divisions[0].rounds = [_round(14)]
-    cog = _add_cog(cfg)
+    cog = _cog_with(cfg)
     interaction = _interaction()
     monkeypatch.setattr(
         season_cog.track_service,
@@ -312,14 +318,14 @@ async def test_round_add_refuses_a_datetime_the_division_already_holds(monkeypat
     reply = interaction.followup.send.await_args.args[0]
     assert "already holds round 1" in reply
     assert "not** added" in reply
-    assert len(cfg.divisions[0].rounds) == 1, "the clashing round was added anyway"
     cog._snapshot_pending.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_round_add_still_accepts_a_free_moment(monkeypatch):
     cfg = _pending()
     cfg.divisions[0].rounds = [_round(14)]
-    cog = _add_cog(cfg)
+    cog = _cog_with(cfg)
     interaction = _interaction()
     monkeypatch.setattr(
         season_cog.track_service,
@@ -336,7 +342,7 @@ async def test_round_add_still_accepts_a_free_moment(monkeypatch):
         track="14",
     )
 
-    assert len(cfg.divisions[0].rounds) == 2
+    assert len(_saved(cog).divisions[0].rounds) == 2
     cog._snapshot_pending.assert_awaited_once()
 
 
@@ -448,6 +454,7 @@ def _submitted(form: str, value: str):
             "bulk", "Add rounds in bulk", _SOUND_PASTE, True, _SEASON_REFUSES,
             "Import rejected — 2 problem(s)", _SEASON_REFUSES,
             id="bulk_refused_by_the_season",
+            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             "xml", "Add rounds from XML", _BAD_XML, True, None, "Import rejected — 3 problem(s)",
@@ -468,6 +475,7 @@ def _submitted(form: str, value: str):
             "xml", "Add rounds from XML", _SOUND_XML, True, _SEASON_REFUSES,
             "Import rejected — 2 problem(s)", _SEASON_REFUSES,
             id="xml_refused_by_the_season",
+            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
     ],
 )

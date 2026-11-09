@@ -16,17 +16,23 @@ import pytest
 
 from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
 from leaguebot.core.models.round import RoundFormat
+from tests.support.setup_reads import hold_setup
 from tests.support.undecorate import undecorate
+
+SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 
 ACTOR_ID = 77
 
 
-def _cog(cfg: PendingConfig) -> SeasonCog:
+def _cog(cfg: PendingConfig | None) -> SeasonCog:
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = MagicMock()
     cog.bot.output_router.post_log = AsyncMock(return_value=None)
-    cog._pending = {ACTOR_ID: cfg}
-    cog._get_pending = MagicMock(return_value=cfg)
+    # The season being set up, read from the database (#283).
+    hold_setup(cog.bot.season_service, cfg)
+    if hasattr(SeasonCog, "clear_pending"):
+        # While the cog still keeps a setup in memory, it keeps none here.
+        cog._pending = {}
     cog._snapshot_pending = AsyncMock(return_value=None)
     cog._calendar_round_overflow = AsyncMock(return_value=None)
     return cog
@@ -47,25 +53,32 @@ def _replied(interaction) -> str:
     )
 
 
+def _saved(cog):
+    """The setup as the command wrote it to the season."""
+    return cog._snapshot_pending.await_args.args[0]
+
+
 async def _add(division: PendingDivision, scheduled_at: str):
     interaction = _interaction()
     cog = _cog(PendingConfig(divisions=[division], season_id=7))
     await undecorate(SeasonCog.round_add)(
         cog, interaction, division.name, "MYSTERY", scheduled_at, ""
     )
-    return interaction
+    return interaction, cog
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_round_add_stores_a_zoned_time_as_utc():
     division = PendingDivision(name="Pro", role_id=1, tier=1)
 
-    await _add(division, "2026-06-14T20:00+02:00")
+    _, cog = await _add(division, "2026-06-14T20:00+02:00")
 
-    stored = division.rounds[0]["scheduled_at"]
+    stored = _saved(cog).divisions[0].rounds[0]["scheduled_at"]
     assert stored == datetime(2026, 6, 14, 18, 0)
     assert stored.tzinfo is None
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_zoned_time_clashes_with_the_same_instant_given_without_one():
     """Stored alike, the two are seen to be one moment and the second is refused."""
     division = PendingDivision(
@@ -82,18 +95,19 @@ async def test_a_zoned_time_clashes_with_the_same_instant_given_without_one():
         ],
     )
 
-    interaction = await _add(division, "2026-06-14T20:00+02:00")
+    interaction, cog = await _add(division, "2026-06-14T20:00+02:00")
 
-    assert len(division.rounds) == 1
+    cog._snapshot_pending.assert_not_awaited()
     assert "cannot share a moment" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_an_unreadable_time_is_refused():
     division = PendingDivision(name="Pro", role_id=1, tier=1)
 
-    interaction = await _add(division, "14/06/2026 18:00")
+    interaction, cog = await _add(division, "14/06/2026 18:00")
 
-    assert division.rounds == []
+    cog._snapshot_pending.assert_not_awaited()
     assert "Invalid datetime" in _replied(interaction)
 
 
@@ -123,28 +137,33 @@ _OVERFLOW = (
             {}, {"format": "WET"},
             "❌ Invalid format `WET`. Choose from: NORMAL, SPRINT, MYSTERY, ENDURANCE.",
             id="an_invalid_format",
+            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {}, {"format": "NORMAL"},
             "❌ A track is required for `NORMAL` rounds. Leave track blank only for "
             "`MYSTERY` rounds.",
             id="a_track_required",
+            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {}, {"format": "NORMAL", "track": "Atlantis"},
             "❌ Unknown track `Atlantis`.\n"
             "Use `/round add` and type a number or name — autocomplete will guide you.",
             id="an_unknown_track",
+            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {}, {"scheduled_at": "14/06/2026 18:00"},
             "❌ Invalid datetime. Use ISO format: `YYYY-MM-DDTHH:MM:SS`",
             id="an_invalid_datetime",
+            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {}, {"division_name": "Am"},
             "❌ Division `Am` not found in pending setup.",
             id="an_unknown_division",
+            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {}, {"scheduled_at": "2026-06-14T18:00:00"},
@@ -152,11 +171,13 @@ _OVERFLOW = (
             "division cannot share a moment — the season could not be approved. The round "
             "was **not** added.",
             id="a_round_clash",
+            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {"overflow": _OVERFLOW}, {},
             _OVERFLOW,
             id="a_calendar_overflow",
+            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
     ],
 )
@@ -183,10 +204,9 @@ async def test_every_round_add_refusal_is_recorded(monkeypatch, arranged, asked,
             }
         ],
     )
-    cog = _cog(PendingConfig(divisions=[division], season_id=7))
-    if arranged.get("setup") is False:
-        cog._pending = {}
-        cog._get_pending = MagicMock(return_value=None)
+    cog = _cog(
+        None if arranged.get("setup") is False else PendingConfig(divisions=[division], season_id=7)
+    )
     if "overflow" in arranged:
         cog._calendar_round_overflow = AsyncMock(return_value=arranged["overflow"])
     cog.bot.db_path = ":memory:"
@@ -215,7 +235,6 @@ async def test_every_round_add_refusal_is_recorded(monkeypatch, arranged, asked,
     )
 
     assert [call.args[0] for call in interaction.followup.send.await_args_list] == [reply]
-    assert [r["scheduled_at"] for r in division.rounds] == [_STANDING_AT]
     cog._snapshot_pending.assert_not_awaited()
     logged = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
     assert logged == [
