@@ -262,7 +262,7 @@ class SeasonLeague:
         bot.image_config_service.get_toggles = AsyncMock(return_value={})
         bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
         self.cog = SeasonCog(bot)
-        self._hold_setup(self.cog, key=ADMIN_ID)
+        self._hold_setup(self.cog)
         bot.get_cog = MagicMock(side_effect=lambda name: self.cog if name == "SeasonCog" else None)
         league_queue(bot, db_path, now=self.clock)
 
@@ -352,11 +352,20 @@ class SeasonLeague:
             row = await (await db.execute("SELECT * FROM attendance_config WHERE id = 1")).fetchone()
         return SimpleNamespace(**dict(row))
 
-    def _hold_setup(self, cog: Any, *, key: int) -> None:
-        """The season's setup held in memory, as the setup commands leave it."""
-        from leaguebot.core.cogs.season_cog import PendingConfig
+    @staticmethod
+    def _hold_setup(cog: Any) -> None:
+        """The cog's checks of team names, lineups and image configuration, stubbed to find
+        nothing; and the season's setup held in memory, as the setup commands leave it, while the
+        cog keeps one. The setup is the database's, read whenever a command asks for it (#283),
+        and once the cog holds no `_pending` nothing of it is put on the cog: as
+        `_attach_amendment_service` does, the fixture serves the code on either side of the
+        change, so that the tests reading it need no marker for it."""
+        if hasattr(cog, "_pending"):
+            from leaguebot.core.cogs.season_cog import PendingConfig
 
-        cog._pending = {key: PendingConfig(season_id=SEASON_ID, season_number=SEASON_NUMBER)}
+            cog._pending = {
+                ADMIN_ID: PendingConfig(season_id=SEASON_ID, season_number=SEASON_NUMBER)
+            }
         cog._team_name_problems = AsyncMock(return_value=[])
         cog._lineup_problems = AsyncMock(return_value=[])
         cog._image_configuration_faults = AsyncMock(return_value=[])
@@ -408,17 +417,18 @@ class SeasonLeague:
         return (await self.rows("SELECT * FROM seasons WHERE id = ?", SEASON_ID))[0]
 
     async def restart(self) -> None:
-        """The bot restarted: the review prompts swept as at start-up, a fresh cog holding the
-        setup again where the season is still being set up, and the queue started afresh."""
+        """The bot restarted: the review prompts swept as at start-up, a fresh cog holding
+        nothing of the season being set up, which it reads from the database, and the queue
+        started afresh."""
         from leaguebot.__main__ import _approve_view_for
-        from leaguebot.core.cogs.season_cog import _RECOVERED, SeasonCog
+        from leaguebot.core.cogs.season_cog import SeasonCog
         from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
 
         await recover_expired_review_prompts(
             self.bot, approve_view=_approve_view_for(self.bot), queue=self.bot.change_queue)
         self.cog = SeasonCog(self.bot)
         if (await self.season())["status"] == "SETUP":
-            self._hold_setup(self.cog, key=_RECOVERED)
+            self._hold_setup(self.cog)
         await restart_queue(self.bot)
 
 
@@ -706,7 +716,7 @@ async def placing_league(
     Season 3 is ongoing, placements: its divisions active and their rounds not run. Lewis's
     placement at Ferrari in Pro is committed; Max's beside him and Charles's at McLaren in Am were
     made by a mid-season window and are not yet committed (with *extra_drivers*, the test driver's
-    at McLaren too). The cog holds no setup in memory, as after the season's approval."""
+    at McLaren too)."""
     league = await season_league(tmp_path, results=results, attendance=attendance,
                                  images=images, extra_drivers=extra_drivers,
                                  monkeypatch=monkeypatch)
@@ -718,7 +728,8 @@ async def placing_league(
     await league.write("UPDATE rounds SET status = 'NOT_RUN'")
     await league.write("UPDATE driver_season_assignments SET committed = 1 "
                        "WHERE driver_profile_id = ?", profile_id(LEWIS))
-    league.cog._pending = {}
+    if hasattr(league.cog, "_pending"):  # no setup held once approved, while the cog holds one
+        league.cog._pending = {}
     return league
 
 
@@ -830,8 +841,8 @@ async def ongoing_league(
 
     league.bot.scheduler_service.cancel_round = MagicMock(side_effect=_cancel_round)
     league.bot.scheduler_service.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
-    # Set up and approved: the cog holds no setup in memory, as after a restart.
-    league.cog._pending = {}
+    if hasattr(league.cog, "_pending"):  # no setup held once approved, while the cog holds one
+        league.cog._pending = {}
     league.channel(DIVISIONS[PRO][3].calendar).seed(CALENDAR_MESSAGE, "Pro's calendar")
     checkin = league.channel(DIVISIONS[PRO][3].checkin)
     for message_id in CALL_MESSAGES:
