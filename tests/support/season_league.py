@@ -195,6 +195,8 @@ class SeasonLeague:
         self.roles_held: dict[int, set[int]] = {}
         #: The roles taken back from each member, in order (slice 5).
         self.revoked: dict[int, list[int]] = {}
+        #: The reason Discord's audit log was given for each taking back, by user id, in order.
+        self.revoke_reasons: dict[int, list[str | None]] = {}
         #: Members whose roles Discord refuses to take back, and what it raises.
         self.revoke_fails: dict[int, BaseException] = {}
         #: Drivers whose signup channel's closing notice Discord refuses, and what it raises.
@@ -314,11 +316,12 @@ class SeasonLeague:
                 raise self.grant_fails[user_id]
             self.granted.setdefault(user_id, []).extend(role.id for role in roles)
 
-        async def _remove_roles(*roles: Any, **_kwargs: Any) -> None:
+        async def _remove_roles(*roles: Any, **kwargs: Any) -> None:
             if user_id in self.revoke_fails:
                 raise self.revoke_fails[user_id]
             taken = [role.id for role in roles]
             self.revoked.setdefault(user_id, []).extend(taken)
+            self.revoke_reasons.setdefault(user_id, []).append(kwargs.get("reason"))
             self.roles_held[user_id] = self.roles_held.get(user_id, set()) - set(taken)
             self.events.append(("revoke", user_id, len(taken)))
 

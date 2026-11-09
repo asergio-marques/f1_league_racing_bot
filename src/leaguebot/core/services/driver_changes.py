@@ -80,7 +80,7 @@ from leaguebot.core.services.change_queue import (
 )
 from leaguebot.core.services.driver_service import write_transition
 from leaguebot.core.services.placement_service import PlacementService
-from leaguebot.core.services.role_moves import MOVE_ROLES, role_move_step
+from leaguebot.core.services.role_moves import MOVE_ROLES, PLACEMENT_REASON, role_move_step
 from leaguebot.core.services.season_approval_change import unposted_lineup_line
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild
@@ -203,6 +203,8 @@ class _Kind:
     #: Whether the roles and lineups the save plans have jobs of their own: not for a change
     #: that writes only an unconfirmed placement.
     afterwards: bool = True
+    #: What Discord's audit log is given for the roles the change takes.
+    role_reason: str = PLACEMENT_REASON
 
 
 async def ongoing_refusal(db_path: str, season_id: int, command: str) -> Verdict | None:
@@ -356,7 +358,7 @@ def _change(kind: _Kind, placement: PlacementService) -> ChangeType:
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
     }
     if kind.afterwards:
-        steps[MOVE_ROLES] = role_move_step(placement)
+        steps[MOVE_ROLES] = role_move_step(placement, reason=kind.role_reason)
         steps[POST_LINEUP] = lineup_posting.lineup_step(placement)
         steps[standing_posts.DELETE_REPLACED] = standing_posts.delete_replaced_step()
     return ChangeType(
@@ -862,6 +864,7 @@ def driver_reject_change(
         _Kind(
             kind=DRIVER_REJECT, command=REJECT_COMMAND, doing=doing,
             nothing_done=NOBODY_TURNED_DOWN, done=done, details=details, check=check, apply=apply,
+            role_reason="Driver rejected",
         ),
         placement,
     )

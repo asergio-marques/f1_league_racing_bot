@@ -32,7 +32,8 @@ if TYPE_CHECKING:
 #: The name of the step, as the change types and their outcomes know it.
 MOVE_ROLES = "move_roles"
 
-_REASON = "Driver placement"
+#: The reason Discord's audit log is given for a role move, unless its change names its own.
+PLACEMENT_REASON = "Driver placement"
 
 
 class _RoleMoveFault(Exception):
@@ -82,8 +83,11 @@ def problem_of(
     )
 
 
-def role_move_step(placement: "PlacementService", name: str = MOVE_ROLES) -> Step:
-    """The job that takes a member's roles and then gives theirs; see the module.
+def role_move_step(
+    placement: "PlacementService", name: str = MOVE_ROLES, *, reason: str = PLACEMENT_REASON
+) -> Step:
+    """The job that takes a member's roles and then gives theirs; see the module. *reason* is what
+    Discord's audit log is given for taking them.
 
     It raises where Discord will not (`PlacementService.revoke_roles`, `grant_roles`), and
     `on_fault` ends the job on it with the problem named, so the queue goes on.
@@ -99,7 +103,7 @@ def role_move_step(placement: "PlacementService", name: str = MOVE_ROLES) -> Ste
         grant = [int(role) for role in each.get("grant", ())]
         if revoke:
             try:
-                found = await placement.revoke_roles(guild, user_id, *revoke, reason=_REASON)
+                found = await placement.revoke_roles(guild, user_id, *revoke, reason=reason)
             except Exception as error:
                 raise _RoleMoveFault(taken=False) from error
             if not found:
@@ -132,5 +136,5 @@ def role_move_step(placement: "PlacementService", name: str = MOVE_ROLES) -> Ste
     return Step(name, StepKind.ACT, run, describe=describe, on_fault=on_fault)
 
 
-__all__ = ["MOVE_ROLES", "problem_of", "role_move_step"]
+__all__ = ["MOVE_ROLES", "PLACEMENT_REASON", "problem_of", "role_move_step"]
 

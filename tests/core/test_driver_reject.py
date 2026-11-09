@@ -233,6 +233,7 @@ async def test_a_driver_rejection_its_withdrawal_audit_entry_and_line_are_one_sa
     assert entry["timestamp"] == league.clock.now.isoformat()
     assert _reject_lines(await log_lines(league)) == [_reject_line()]
     assert league.revoked == {UNASSIGNED: [DRIVER_ROLE]}
+    assert league.revoke_reasons == {UNASSIGNED: ["Driver rejected"]}
     assert league.granted == {}
     assert last_said(asked) == _turned_down()
 
