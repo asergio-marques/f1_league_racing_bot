@@ -16,6 +16,10 @@ there being no season at all).
 placing stages, sack to the ongoing ones. Between seasons nothing is sacked — the season's end
 has already returned every driver to Not Signed Up.
 
+A sack that clears the ladder asks the change queue for a `core.driver_sack` (#283), whose save,
+roles, lineups, reply and line are tested against a real database in `test_sack_driver.py`, with
+the refusals it makes at the ask and as it starts; here, only what the command asks of the queue.
+
 The archived-season refusal is pinned for all three mutating commands together, because
 `SeasonImmutableError` is what stops a completed season being edited after the fact — the
 championship's record changing under results already published.
@@ -115,7 +119,6 @@ def _make_cog(
     bot.placement_service.unassign_driver = AsyncMock(
         return_value={"team_name": "Alpha", "division_name": "Division 1", "lineups": []}
     )
-    bot.placement_service.sack_driver = AsyncMock(return_value=[])
     bot.change_queue.ask = AsyncMock()
     bot.placement_service.move_driver_roles = AsyncMock(return_value=[])
     bot.wizard_service.move_held_channel = AsyncMock(return_value=[])
@@ -333,7 +336,6 @@ async def test_an_archived_season_refuses_every_change(command):
     assert "archived" in _replied(interaction)
     cog.bot.placement_service.assign_driver.assert_not_awaited()
     cog.bot.placement_service.unassign_driver.assert_not_awaited()
-    cog.bot.placement_service.sack_driver.assert_not_awaited()
 
 
 @pytest.mark.parametrize("command", [pytest.param(_assign, id="assign"),
@@ -499,17 +501,26 @@ async def test_a_refused_unassignment_is_reported_not_raised(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_driver_is_sacked(tmp_path):
+@pytest.mark.xfail(strict=True, reason="#283: /driver sack is not yet a change on the queue")
+async def test_a_sack_is_asked_of_the_queue(tmp_path):
+    """The season (3) is ongoing. A league admin sacks Driver (account 1, profile 55). The
+    command asks the queue for one `core.driver_sack` of Driver's profile and account, named
+    "Driver", in season 3, and says and logs nothing itself: the reply and the line are the
+    change's (`test_sack_driver.py`)."""
     cog = _make_cog(season=_season())
     interaction = _interaction()
 
     await _sack(cog, interaction)
 
-    kwargs = cog.bot.placement_service.sack_driver.await_args.kwargs
-    assert kwargs["driver_profile_id"] == PROFILE_ID
-    assert kwargs["season_id"] == SEASON_ID
-    assert "has been sacked" in _replied(interaction)
-    assert "/driver sack" in cog.bot.output_router.post_log.await_args.args[0]
+    cog.bot.change_queue.ask.assert_awaited_once()
+    kind, payload = cog.bot.change_queue.ask.await_args.args[:2]
+    assert kind == "core.driver_sack"
+    assert payload["driver_profile_id"] == PROFILE_ID
+    assert payload["season_id"] == SEASON_ID
+    assert payload["discord_user_id"] == "1"
+    assert payload["driver_name"] == "Driver"
+    assert _replied(interaction) == ""
+    cog.bot.output_router.post_log.assert_not_awaited()
 
 
 @pytest.mark.parametrize("stage", [None, "PLACEMENTS", "PENDING_COMPLETION"],
@@ -524,19 +535,7 @@ async def test_a_sack_is_refused_outside_the_ongoing_stages(tmp_path, stage):
     await undecorate(DriverCog.sack)(cog, interaction, _member(1, "Driver"))
 
     assert "only while the season is ongoing" in _replied(interaction)
-    cog.bot.placement_service.sack_driver.assert_not_awaited()
-
-
-async def test_a_refused_sacking_is_reported_not_raised(tmp_path):
-    cog = _make_cog(season=_season())
-    cog.bot.placement_service.sack_driver = AsyncMock(
-        side_effect=ValueError("Driver is already NOT_SIGNED_UP.")
-    )
-    interaction = _interaction()
-
-    await _sack(cog, interaction)
-
-    assert "already NOT_SIGNED_UP" in _replied(interaction)
+    assert cog.bot.change_queue.method_calls == []
 
 
 async def test_a_switch_back_is_reported_as_one(tmp_path):
