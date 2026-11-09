@@ -1,303 +1,494 @@
-"""Unit tests: /round amend pending-config path (US2, FR-001 – FR-005)."""
+"""`/round amend` of a round of the season being set up, on the change queue.
 
+**The command asks the change queue for the amendment** (#283), and the queue's acknowledgement
+is its reply. One save changes the round's track, moment or format, clearing the track of a
+mystery round, renumbers that division's rounds by their moment, and writes its audit entry and its
+log line, stamped with the queue's clock. It touches no other division. Every refusal is judged at
+the ask and again as the change starts, in the same words, so that a round or a division changed
+meanwhile is caught there; a clash with another round of the division is refused, as the core
+specification requires of every command that would create one.
+
+The amendment of a round of a season being raced, with its confirmation and its rules, is tested in
+`test_round_amend_rules_gate.py`.
+"""
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog, PendingConfig, PendingDivision
-from leaguebot.core.models.round import RoundFormat
-from tests.support.setup_reads import hold_setup
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.utils.formatting import discord_ts
+from tests.support.setup_rounds import (
+    NAMED,
+    NOW,
+    acknowledged,
+    no_room,
+    refusal_line,
+    repeated,
+    round_ids,
+    round_rows,
+    setup_league,
+)
+from tests.support.undecorate import undecorate
+
+#: The command as the log channel names it.
+WHAT = "`/round amend`"
+
+#: Why a test of the queued amendment fails until it is built.
+QUEUED = "#283: /round amend of a setup round is not yet a change on the queue"
+
+#: Why the clash refusal fails until it is built.
+NO_CLASH_CHECK = "#283: /round amend of a setup round has no clash check yet"
+
+#: Pro's three standing rounds and Am's one, as the database alone holds them after a restart:
+#: a mystery round with no track, a normal round at the Hungaroring, and a mystery round that
+#: holds a track.
+_PRO_14 = ("MYSTERY", None, datetime(2026, 6, 14, 18, 0))
+_PRO_21 = ("NORMAL", "Hungaroring", datetime(2026, 6, 21, 18, 0))
+_PRO_28 = ("MYSTERY", "Hungaroring", datetime(2026, 6, 28, 18, 0))
+_AM_21 = ("NORMAL", "Hungaroring", datetime(2026, 6, 21, 18, 0))
+_HELD = (("Pro", 1, 10, (_PRO_14, _PRO_21, _PRO_28)), ("Am", 2, 20, (_AM_21,)))
+
+#: 5 July 2026 at 18:00 UTC, after every round Pro holds.
+_JULY_5 = datetime(2026, 7, 5, 18, 0)
+
+
+async def _ask(league, division_name: str = "Pro", round_number: int = 1, track: str = "",
+               scheduled_at: str = "", format: str = ""):
+    """`/round amend` as the league manager Admin (4242) runs it: the interaction."""
+    from tests.support.settings_league import interaction
+
+    asked = interaction(league.bot, "round amend")
+    await undecorate(SeasonCog.round_amend)(
+        SeasonCog(league.bot), asked, division_name, round_number, track, scheduled_at, format
+    )
+    return asked
+
+
+def _doing(number: int, division: str) -> str:
+    """How the queue words `/round amend` of round *number* of *division*."""
+    return f"Amending round {number} in **{division}**"
+
+
+def _updated(number: int, division: str, rows: list[tuple[int, str, str | None, str]]) -> str:
+    """The reply once the amendment is saved, word for word: *number* is the round's number after
+    renumbering, and the division's rounds, *rows* as `round_rows` gives them, follow."""
+    from leaguebot.core.models.round import Round, RoundFormat
+    from leaguebot.core.utils.formatting import format_round_list
+
+    listed = [
+        Round(id=0, division_id=0, round_number=n, format=RoundFormat(f), track_name=t,
+              scheduled_at=datetime.fromisoformat(s))
+        for n, f, t, s in rows
+    ]
+    return (
+        f"✅ Round {number} in **{division}** updated and saved to the season being set up. "
+        "Its sessions are created when placements are confirmed from `/season placements-review`."
+        "\n\n" + format_round_list(listed)
+    )
+
+
+def _success_line(number: int, division: str, *changed: str) -> str:
+    """The line in the log channel, word for word: *number* is the round's number after
+    renumbering, and *changed* each field changed, from what to what."""
+    return (
+        f"{NAMED} | /round amend (pending) | Success\n"
+        f"  division: {division}\n"
+        f"  round: {number}"
+        + "".join(f"\n  {line}" for line in changed)
+    )
+
+
+def _clash(number: int, at: datetime) -> str:
+    """The refusal of an amendment to the moment Pro's round *number* holds, at *at*."""
+    return (
+        f"❌ **Pro** already holds round {number} at {discord_ts(at)}. Two rounds of one division "
+        "cannot share a moment — the season could not be approved. The round was **not** amended."
+    )
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# The amendment, its renumbering, its audit entry and its line: one save
 # ---------------------------------------------------------------------------
 
-def _make_round(
-    num: int,
-    fmt: RoundFormat = RoundFormat.NORMAL,
-    track: str | None = "United Kingdom",
-) -> dict:
-    return {
-        "round_number": num,
-        "format": fmt,
-        "track_name": track,
-        "scheduled_at": datetime(2026, 5, 1, 14, 0, 0),
+
+@pytest.mark.xfail(strict=True, reason=QUEUED)
+async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_one_save(
+    tmp_path,
+):
+    """The core specification's record of what changed. Season #1 is being set up, in Placements,
+    as the database alone holds it after a restart: Pro holds a mystery round on 14 June 2026 at
+    18:00 UTC, a normal round at the Hungaroring on 21 June and a mystery round on 28 June,
+    numbered 1 to 3, and Am a round at the Hungaroring on 21 June. The league manager Admin (4242)
+    runs `/round amend` for Pro's round 1, moving it to 5 July at 18:00. They are answered with the
+    queue's acknowledgement, naming its first job, and nothing is saved until the queue runs the
+    change. Once it has, Pro's rounds are numbered by their moment, 21 June's now round 1, 28
+    June's round 2 and the amended round round 3; Am's round is untouched; one audit entry,
+    `ROUND_AMENDED`, by Admin, on Pro, stamped with the queue's clock, records the round as it
+    stood and as it stands; the log channel holds the success line alone, naming round 3 and the
+    moment from what to what; and the acknowledgement is updated to today's reply, word for word,
+    naming round 3 — the number the round bears once renumbered, where it used to name round 1 —
+    with Pro's rounds listed."""
+    from tests.support.change_queue import run_queue, step_rows
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+
+    league = await setup_league(tmp_path, divisions=_HELD)
+    pro_before = await round_rows(league.db_path, "Pro")
+    am_before = await round_rows(league.db_path, "Am")
+    ids = await round_ids(league.db_path, "Pro")
+    asked = await _ask(league, scheduled_at="2026-07-05T18:00:00")
+
+    first_job = (await step_rows(league.db_path))[0]["id"]
+    assert said(asked)[0] == f"{acknowledged(_doing(1, 'Pro'))} It begins with job #{first_job}."
+    assert await round_rows(league.db_path, "Pro") == pro_before
+    await run_queue(league.bot)
+
+    rows = await round_rows(league.db_path, "Pro")
+    assert rows == [
+        (1, "NORMAL", "Hungaroring", "2026-06-21T18:00:00"),
+        (2, "MYSTERY", "Hungaroring", "2026-06-28T18:00:00"),
+        (3, "MYSTERY", None, "2026-07-05T18:00:00"),
+    ]
+    assert await round_rows(league.db_path, "Am") == am_before
+    old = {
+        "round_id": ids["2026-06-14T18:00:00"],
+        "division_id": ids["division"],
+        "round_number": 1,
+        "format": "MYSTERY",
+        "track_name": None,
+        "scheduled_at": "2026-06-14T18:00:00",
     }
-
-
-def _make_pending(server_id: int = 1) -> PendingConfig:
-    div = PendingDivision(
-        name="Pro",
-        role_id=10,
-        channel_id=20,
-        rounds=[
-            _make_round(1),
-            _make_round(2, RoundFormat.SPRINT, "Australia"),
-            _make_round(3, RoundFormat.MYSTERY, None),
-        ],
+    [entry] = await audit_rows(league.db_path)
+    assert (entry["change_type"], entry["actor_id"], entry["division_id"]) == (
+        "ROUND_AMENDED", 4242, ids["division"]
     )
-    return PendingConfig(divisions=[div], season_id=7)
+    assert entry["old_value"] == old
+    assert entry["new_value"] == {
+        **old, "round_number": 3, "scheduled_at": "2026-07-05T18:00:00"
+    }
+    assert entry["timestamp"] == NOW.isoformat()
+    assert await log_lines(league) == [
+        _success_line(3, "Pro", "scheduled_at: 2026-06-14 18:00:00 → 2026-07-05 18:00:00")
+    ]
+    assert last_said(asked) == _updated(3, "Pro", rows)
 
 
-def _make_interaction(guild_id: int = 1) -> MagicMock:
-    interaction = MagicMock()
-    interaction.guild_id = guild_id
-    interaction.user.id = 42
-    # These commands defer before doing any work, as every season-setup command does,
-    # so every reply arrives as a followup.
-    interaction.response.defer = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
+@pytest.mark.xfail(strict=True, reason=QUEUED)
+@pytest.mark.parametrize(
+    "number, asked, after, changed",
+    [
+        pytest.param(
+            2, {"track": "Silverstone Circuit"},
+            (2, "NORMAL", "Silverstone Circuit", "2026-06-21T18:00:00"),
+            ("track: Hungaroring → Silverstone Circuit",),
+            id="a-new-track",
+        ),
+        pytest.param(
+            2, {"format": "MYSTERY"},
+            (2, "MYSTERY", None, "2026-06-21T18:00:00"),
+            ("format: NORMAL → MYSTERY", "track: Hungaroring → none"),
+            id="a-mystery-round-loses-its-track",
+        ),
+        pytest.param(
+            3, {"format": "NORMAL"},
+            (3, "NORMAL", "Hungaroring", "2026-06-28T18:00:00"),
+            ("format: MYSTERY → NORMAL",),
+            id="a-round-leaving-mystery-keeps-the-track-it-holds",
+        ),
+    ],
+)
+async def test_each_field_of_a_setup_round_is_amended_as_asked(
+    tmp_path, number, asked, after, changed
+):
+    """Season #1 is being set up, in Placements, Pro holding its rounds of 14, 21 and 28 June:
+    round 2 a normal round at the Hungaroring, round 3 a mystery round that holds the Hungaroring
+    as its track. The manager runs `/round amend` for one of Pro's rounds and the queue runs it:
+    round 2 given Silverstone Circuit as its track; round 2 made a mystery round, which clears its
+    track; or round 3 made a normal round with no track given, which keeps the track it holds. The
+    round holds what was asked, and nothing else of Pro changes; one audit entry is written; the
+    success line names the round and each field changed, from what to what, and the reply is
+    today's, word for word."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await setup_league(tmp_path, divisions=_HELD)
+    before = await round_rows(league.db_path, "Pro")
+    asked_ = await _ask(league, round_number=number, **asked)
+    await run_queue(league.bot)
+
+    rows = await round_rows(league.db_path, "Pro")
+    assert rows == [after if row[0] == number else row for row in before]
+    assert len(await audit_rows(league.db_path)) == 1
+    assert await log_lines(league) == [_success_line(number, "Pro", *changed)]
+    assert last_said(asked_) == _updated(number, "Pro", rows)
 
 
-def _make_cog(pending_cfg: PendingConfig | None) -> tuple[SeasonCog, MagicMock]:
-    """Return (cog, bot_mock) with *pending_cfg* the season being set up, as the season service
-    reads it from the database (#283), and `_snapshot_pending` watched as it writes."""
-    bot = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
-    bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
-    bot.season_service.sync_pending_config = AsyncMock(return_value=(42, 1, []))
-    bot.season_service.get_divisions = AsyncMock(return_value=[])
-    bot.team_service.seed_division_teams = AsyncMock()
-    bot.output_router.post_log = AsyncMock()
+@pytest.mark.xfail(strict=True, reason=QUEUED)
+async def test_a_failed_setup_round_amendment_changes_nothing(tmp_path):
+    """Season #1 is being set up, in Placements, Pro holding its rounds of 14, 21 and 28 June. The
+    manager runs `/round amend` for Pro's round 1, moving it to 5 July at 18:00, and as the queue
+    runs it the database fails writing the audit entry. Nothing of the change is saved, the
+    amendment, the renumbering and the audit entry being one save: Pro holds its three rounds as
+    they were, and the log channel holds no success line. The league's lane stops at the job, as
+    any failed job stops it. Once a league admin discards the stopped job, the manager's reply
+    says that nothing was amended and to run the command again, and the lane is clear."""
+    from tests.support.change_queue import discard_job, run_queue, stopped_job
+    from tests.support.settings_league import audit_rows, fault_in, last_said, log_lines
 
-    hold_setup(bot.season_service, pending_cfg)
+    league = await setup_league(tmp_path, divisions=_HELD)
+    before = await round_rows(league.db_path, "Pro")
+    asked = await _ask(league, scheduled_at="2026-07-05T18:00:00")
+    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+        await run_queue(league.bot)
 
-    cog = SeasonCog(bot)
-    cog._snapshot_pending = AsyncMock(wraps=cog._snapshot_pending)
-    return cog, bot
+    assert await round_rows(league.db_path, "Pro") == before
+    assert await audit_rows(league.db_path) == []
+    assert not any("| Success" in line for line in await log_lines(league))
+    assert await stopped_job(league.db_path) is not None
+
+    await discard_job(league.bot)
+
+    assert last_said(asked) == (
+        "Nothing was amended: round 1 in **Pro** stands as it was. Run `/round amend` again."
+    )
+    assert await stopped_job(league.db_path) is None
 
 
-def _saved(cog: SeasonCog) -> PendingConfig:
-    """The setup as the command wrote it to the season."""
-    return cog._snapshot_pending.await_args.args[0]
+@pytest.mark.xfail(strict=True, reason=QUEUED)
+@pytest.mark.parametrize(
+    "meanwhile, reply",
+    [
+        pytest.param(
+            "the-round-deleted",
+            "❌ Round 1 not found in division `Pro` of the pending setup.",
+            id="the-round-gone-by-the-time-it-runs",
+        ),
+        pytest.param(
+            "the-division-deleted",
+            "❌ Division `Pro` not found in pending setup.",
+            id="the-division-gone-by-the-time-it-runs",
+        ),
+        pytest.param(
+            "the-setup-deleted",
+            "❌ No pending season setup. Run `/season setup` first.",
+            id="the-setup-gone-by-the-time-it-runs",
+        ),
+        pytest.param(
+            "a-round-added-at-that-moment",
+            _clash(4, _JULY_5),
+            id="a-round-at-that-moment-by-the-time-it-runs",
+        ),
+    ],
+)
+async def test_a_setup_round_amendment_is_judged_again_as_it_starts(tmp_path, meanwhile, reply):
+    """Season #1 is being set up, in Placements, Pro holding its rounds of 14, 21 and 28 June. The
+    manager runs `/round amend` for Pro's round 1, moving it to 5 July at 18:00, and nothing is
+    saved at the ask. Before the queue runs it: Pro's round 1 is deleted; Pro is deleted; the
+    season being set up is deleted; or Pro is given a round 4 on 5 July at 18:00. The queue runs.
+    The amendment is refused as it starts, in the words it would meet at the ask, its
+    acknowledgement updated to them; the log channel records the refusal alone; nothing is
+    changed and no audit entry is written; and the queue is not stopped."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await setup_league(tmp_path, divisions=_HELD)
+    asked = await _ask(league, scheduled_at="2026-07-05T18:00:00")
+    async with get_connection(league.db_path) as db:
+        pro = "(SELECT id FROM divisions WHERE name = 'Pro')"
+        if meanwhile == "the-round-deleted":
+            await db.execute(f"DELETE FROM rounds WHERE division_id = {pro} AND round_number = 1")
+        elif meanwhile == "a-round-added-at-that-moment":
+            await db.execute(
+                "INSERT INTO rounds (division_id, round_number, format, track_name, scheduled_at)"
+                f" VALUES ({pro}, 4, 'MYSTERY', NULL, '2026-07-05T18:00:00')"
+            )
+        else:
+            await db.execute(f"DELETE FROM rounds WHERE division_id = {pro}")
+            await db.execute("DELETE FROM divisions WHERE name = 'Pro'")
+            if meanwhile == "the-setup-deleted":
+                await db.execute("DELETE FROM rounds")
+                await db.execute("DELETE FROM divisions")
+                await db.execute("DELETE FROM seasons")
+        await db.commit()
+    standing = await round_rows(league.db_path, "Pro")
+    await run_queue(league.bot)
+
+    assert last_said(asked) == reply
+    assert await round_rows(league.db_path, "Pro") == standing
+    assert await audit_rows(league.db_path) == []
+    assert await log_lines(league) == [refusal_line(WHAT, reply)]
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=QUEUED)
+async def test_a_setup_round_amendment_asked_again_while_it_waits_is_refused_as_a_repeat(
+    tmp_path,
+):
+    """The core specification's "How a change is carried out": a request repeating a change that
+    has not started, with nothing else asked for since on its lane, is refused, saying so. Season #1
+    is being set up, in Placements, Pro holding its rounds of 14, 21 and 28 June. The manager runs
+    `/round amend` for Pro's round 1, moving it to 5 July at 18:00, and is acknowledged; before the
+    queue runs it, they run the same command again. The second is refused at once, in the queue's
+    words, as a change already asked for and not yet started, and the log channel takes that
+    refusal as a line; only the one change is queued. The queue runs it: the round is amended once,
+    with its one audit entry, and the log channel holds the refusal and then the success line."""
+    from tests.support.change_queue import change_rows, run_queue
+    from tests.support.settings_league import audit_rows, log_lines, said
+
+    league = await setup_league(tmp_path, divisions=_HELD)
+    first = await _ask(league, scheduled_at="2026-07-05T18:00:00")
+    repeat = await _ask(league, scheduled_at="2026-07-05T18:00:00")
+
+    assert said(first)[0].startswith(acknowledged(_doing(1, "Pro")))
+    assert said(repeat) == [repeated(_doing(1, "Pro"))]
+    assert len(await change_rows(league.db_path)) == 1
+    await run_queue(league.bot)
+
+    assert [row[3] for row in await round_rows(league.db_path, "Pro")] == [
+        "2026-06-21T18:00:00", "2026-06-28T18:00:00", "2026-07-05T18:00:00"
+    ]
+    assert len(await audit_rows(league.db_path)) == 1
+    assert await log_lines(league) == [
+        refusal_line(WHAT, repeated(_doing(1, "Pro"))),
+        _success_line(3, "Pro", "scheduled_at: 2026-06-14 18:00:00 → 2026-07-05 18:00:00"),
+    ]
+
+
+async def test_a_full_calendar_does_not_refuse_a_setup_round_amendment(tmp_path, monkeypatch):
+    """An amendment adds no round, so the calendar's room is not asked. Season #1 is being set up,
+    in Placements, Pro holding its rounds of 14, 21 and 28 June, and the image module's drawing
+    says the calendar template draws only two rounds. The manager runs `/round amend` for Pro's
+    round 1, moving it to 5 July at 18:00, and the queue runs it. The round is moved all the same,
+    and the drawing is never asked."""
+    from tests.support.change_queue import run_queue
+
+    league = await setup_league(tmp_path, divisions=_HELD)
+    full = no_room(
+        "That would give the division 3 rounds, but the configured calendar template draws 2",
+        "Enlarge the template, or turn the `calendar` image aspect off with "
+        "`/images config toggle`.",
+    )
+    monkeypatch.setattr(league.bot.image_drawing, "round_capacity_problem", full)
+    await _ask(league, scheduled_at="2026-07-05T18:00:00")
+    await run_queue(league.bot)
+
+    assert [row[3] for row in await round_rows(league.db_path, "Pro")] == [
+        "2026-06-21T18:00:00", "2026-06-28T18:00:00", "2026-07-05T18:00:00"
+    ]
+    full.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
-# Tests — happy paths
+# What changes nothing, and every refusal at the ask
 # ---------------------------------------------------------------------------
 
-async def test_pending_amend_track_change() -> None:
-    """T006-1: Track amendment updates the round dict in-memory."""
-    from unittest.mock import patch, AsyncMock, MagicMock
 
-    pending = _make_pending()
-    cog, _ = _make_cog(pending)
-    interaction = _make_interaction()
+@pytest.mark.parametrize(
+    "fields",
+    [
+        pytest.param(("track",), id="its_own_track"),
+        pytest.param(("format",), id="its_own_format"),
+        pytest.param(("scheduled_at",), id="its_own_moment"),
+        pytest.param(("track", "format", "scheduled_at"), id="every_value_as_it_stands"),
+    ],
+)
+async def test_a_setup_round_amended_to_what_stands_changes_nothing(tmp_path, fields):
+    """The core specification's record of what changed: a command that changes nothing because
+    nothing was asked of it records that nothing was changed. Season #1 is being set up, in
+    Placements, Pro's round 2 standing at the Hungaroring, in the NORMAL format, on 21 June 2026
+    at 18:00 UTC; the manager amends it to values it already holds, and the queue runs whatever
+    was asked of it. The reply says round 2 already holds those values and nothing was changed;
+    Pro's rounds are as they were; no audit entry is written; and the log channel holds one line,
+    in the success form, saying nothing changed and why."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import audit_rows, last_said, log_lines
 
-    # Mock the DB track lookup to return the canonical name
-    mock_row = {"name": "Australia"}
-    mock_cursor = AsyncMock()
-    mock_cursor.fetchone = AsyncMock(return_value=mock_row)
-    mock_db = AsyncMock()
-    mock_db.execute = AsyncMock(return_value=mock_cursor)
-    mock_cm = MagicMock()
-    mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
-    mock_cm.__aexit__ = AsyncMock(return_value=False)
+    league = await setup_league(tmp_path, divisions=_HELD)
+    before = await round_rows(league.db_path, "Pro")
+    standing = {"track": "Hungaroring", "format": "NORMAL", "scheduled_at": "2026-06-21T18:00:00"}
+    asked = await _ask(league, round_number=2, **{field: standing[field] for field in fields})
+    await run_queue(league.bot)
 
-    with patch("leaguebot.core.cogs.season_cog.get_connection", return_value=mock_cm):
-        await undecorate(cog.round_amend)(cog, interaction,
-            division_name="Pro",
-            round_number=1,
-            track="Australia",
-        )
-
-    div = _saved(cog).divisions[0]
-    rnd = next(r for r in div.rounds if r["round_number"] == 1)
-    assert rnd["track_name"] == "Australia"
-    # Confirm success message sent
-    interaction.followup.send.assert_called_once()
-    args, kwargs = interaction.followup.send.call_args
-    assert "✅" in (args[0] if args else kwargs.get("content", ""))
-    assert kwargs.get("ephemeral") is True
-
-
-async def test_pending_amend_reply_says_the_round_is_saved() -> None:
-    """The amend is written to the season at once, through `_snapshot_pending`.
-
-    The reply used to say "no DB write — it is committed when placements are confirmed",
-    which was never true: every setup command persists what it changes.
-    """
-    pending = _make_pending()
-    cog, bot = _make_cog(pending)
-    interaction = _make_interaction()
-
-    await undecorate(cog.round_amend)(cog, interaction,
-        division_name="Pro",
-        round_number=1,
-        scheduled_at="2026-05-02T14:00:00",
+    assert last_said(asked) == (
+        "ℹ️ Round 2 in **Pro** already holds those values. Nothing was changed."
     )
-
-    bot.season_service.sync_pending_config.assert_awaited_once()
-    args, kwargs = interaction.followup.send.call_args
-    reply = args[0] if args else kwargs.get("content", "")
-    assert "saved to the season" in reply
-    assert "no DB write" not in reply
-
-
-async def test_pending_amend_scheduled_at_change() -> None:
-    """T006-2: scheduled_at amendment updates the datetime in-memory and renumbers by date."""
-    pending = _make_pending()
-    cog, _ = _make_cog(pending)
-    interaction = _make_interaction()
-
-    new_dt = "2026-06-15T18:00:00"
-    await undecorate(cog.round_amend)(cog, interaction,
-        division_name="Pro",
-        round_number=2,
-        scheduled_at=new_dt,
-    )
-
-    div = _saved(cog).divisions[0]
-    # After renumbering by scheduled_at, the amended round may have a different round_number;
-    # verify that exactly one round now has the new scheduled_at.
-    amended = [r for r in div.rounds if r["scheduled_at"] == datetime.fromisoformat(new_dt)]
-    assert len(amended) == 1, "Exactly one round should have the new scheduled_at"
-    interaction.followup.send.assert_called_once()
+    assert await round_rows(league.db_path, "Pro") == before
+    assert await audit_rows(league.db_path) == []
+    assert await log_lines(league) == [
+        f"{NAMED} | /round amend (pending) | Nothing changed\n"
+        "  division: Pro\n"
+        "  round: 2\n"
+        "  reason: the values given are the ones it holds"
+    ]
 
 
-async def test_pending_amend_format_to_mystery_clears_track() -> None:
-    """T006-3: Changing format to MYSTERY must clear track_name (FR-003)."""
-    pending = _make_pending()
-    cog, _ = _make_cog(pending)
-    interaction = _make_interaction()
+@pytest.mark.parametrize(
+    "asked, reply",
+    [
+        pytest.param(
+            {}, "❌ Provide at least one field to amend: `track`, `scheduled_at`, or `format`.",
+            id="no-field-given",
+        ),
+        pytest.param(
+            {"division_name": "Nowhere", "track": "Silverstone Circuit"},
+            "❌ Division `Nowhere` not found in pending setup.",
+            id="an-unknown-division",
+        ),
+        pytest.param(
+            {"round_number": 9, "track": "Silverstone Circuit"},
+            "❌ Round 9 not found in division `Pro` of the pending setup.",
+            id="an-unknown-round",
+        ),
+        pytest.param(
+            {"track": "Nowhere Ring"},
+            "❌ Unknown track `Nowhere Ring`. Use autocomplete to pick a valid track.",
+            id="an-unknown-track",
+        ),
+        pytest.param(
+            {"scheduled_at": "soon"}, "❌ Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.",
+            id="an-invalid-datetime",
+        ),
+        pytest.param(
+            {"format": "DRAG"},
+            "❌ Invalid format `DRAG`. Use NORMAL, SPRINT, MYSTERY, or ENDURANCE.",
+            id="an-invalid-format",
+        ),
+        pytest.param(
+            {"format": "NORMAL"},
+            "❌ Format `NORMAL` requires a track. Supply a `track` value or change format to "
+            "MYSTERY.",
+            id="a-format-that-needs-a-track",
+        ),
+        pytest.param(
+            {"scheduled_at": "2026-06-21T18:00:00"}, _clash(2, datetime(2026, 6, 21, 18, 0)),
+            id="a-moment-another-round-holds",
+            marks=pytest.mark.xfail(strict=True, reason=NO_CLASH_CHECK),
+        ),
+    ],
+)
+async def test_every_setup_round_amendment_refusal_is_recorded(tmp_path, asked, reply):
+    """The core specification's record of what changed: a refusal is one line naming the member,
+    what was refused and why. Season #1 is being set up, in Placements, Pro holding a mystery
+    round with no track on 14 June 2026 at 18:00 UTC (round 1), a normal round at the Hungaroring
+    on 21 June (round 2) and a mystery round on 28 June (round 3). The league manager Admin (4242)
+    runs `/round amend` for Pro's round 1, with one thing wrong: no field given; division
+    Nowhere, which does not exist; round 9, which Pro does not hold; track Nowhere Ring, which the
+    bot does not know; a moment typed "soon"; format DRAG; the NORMAL format with no track for a
+    round that holds none; or 21 June at 18:00, the moment Pro's round 2 holds, which the core
+    specification refuses of every command that would create a clash. The manager gets the
+    reply word for word and nothing else, nothing is asked of the change queue, Pro's rounds are
+    as they were, and the log channel gets exactly one line, "⛔ `/round amend` refused for
+    Admin (`<@4242>`) — " and the reply's first line."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import log_lines, said
 
-    # Round 1 currently has track "United Kingdom"; change format to MYSTERY
-    await undecorate(cog.round_amend)(cog, interaction,
-        division_name="Pro",
-        round_number=1,
-        format="MYSTERY",
-    )
+    league = await setup_league(tmp_path, divisions=_HELD)
+    before = await round_rows(league.db_path, "Pro")
+    interaction = await _ask(league, **asked)
 
-    div = _saved(cog).divisions[0]
-    rnd = next(r for r in div.rounds if r["round_number"] == 1)
-    assert rnd["format"] == RoundFormat.MYSTERY
-    assert rnd["track_name"] is None
-    interaction.followup.send.assert_called_once()
-
-
-async def test_pending_amend_format_away_from_mystery_no_track_empty_stored_rejects() -> None:
-    """T006-4: Format ← MYSTERY, no track supplied, stored track empty → rejected (FR-004)."""
-    pending = _make_pending()
-    cog, _ = _make_cog(pending)
-    interaction = _make_interaction()
-
-    # Round 3 is MYSTERY with track_name=None
-    await undecorate(cog.round_amend)(cog, interaction,
-        division_name="Pro",
-        round_number=3,
-        format="NORMAL",
-        # track intentionally omitted
-    )
-
-    args, kwargs = interaction.followup.send.call_args
-    msg = args[0] if args else kwargs.get("content", "")
-    assert "❌" in msg
-    assert "track" in msg.lower()
-    # Round format must remain MYSTERY (unchanged): nothing is written
-    cog._snapshot_pending.assert_not_awaited()
-
-
-async def test_pending_amend_format_away_from_mystery_preserves_existing_track() -> None:
-    """T006-5: Format ← MYSTERY, no track supplied, stored track already has a value → succeeds."""
-    pending = _make_pending()
-    # Manually set round 3 to have both MYSTERY format AND an existing track
-    div = pending.divisions[0]
-    rnd3 = next(r for r in div.rounds if r["round_number"] == 3)
-    rnd3["track_name"] = "Australia"
-    # format is still MYSTERY
-
-    cog, _ = _make_cog(pending)
-    interaction = _make_interaction()
-
-    await undecorate(cog.round_amend)(cog, interaction,
-        division_name="Pro",
-        round_number=3,
-        format="NORMAL",
-        # track omitted — should preserve "Australia"
-    )
-
-    args, kwargs = interaction.followup.send.call_args
-    msg = args[0] if args else kwargs.get("content", "")
-    assert "✅" in msg
-    # Track preserved, format updated
-    rnd3 = next(r for r in _saved(cog).divisions[0].rounds if r["round_number"] == 3)
-    assert rnd3["format"] == RoundFormat.NORMAL
-    assert rnd3["track_name"] == "Australia"
-
-
-# ---------------------------------------------------------------------------
-# Tests — error paths
-# ---------------------------------------------------------------------------
-
-async def test_pending_amend_division_not_found() -> None:
-    """T006-6: Division name not in pending config → descriptive error."""
-    pending = _make_pending()
-    cog, _ = _make_cog(pending)
-    interaction = _make_interaction()
-
-    await undecorate(cog.round_amend)(cog, interaction,
-        division_name="Nonexistent",
-        round_number=1,
-        track="Australia",
-    )
-
-    args, kwargs = interaction.followup.send.call_args
-    msg = args[0] if args else kwargs.get("content", "")
-    assert "❌" in msg
-    assert "Nonexistent" in msg
-
-
-async def test_pending_amend_round_not_found() -> None:
-    """T006-7: Round number not in pending div → descriptive error."""
-    pending = _make_pending()
-    cog, _ = _make_cog(pending)
-    interaction = _make_interaction()
-
-    await undecorate(cog.round_amend)(cog, interaction,
-        division_name="Pro",
-        round_number=99,
-        track="Australia",
-    )
-
-    args, kwargs = interaction.followup.send.call_args
-    msg = args[0] if args else kwargs.get("content", "")
-    assert "❌" in msg
-    assert "99" in msg
-
-
-async def test_pending_amend_no_fields_supplied() -> None:
-    """T006-8: No amendment fields supplied → immediate validation error."""
-    pending = _make_pending()
-    cog, _ = _make_cog(pending)
-    interaction = _make_interaction()
-
-    await undecorate(cog.round_amend)(cog, interaction,
-        division_name="Pro",
-        round_number=1,
-        # all defaults (empty strings)
-    )
-
-    args, kwargs = interaction.followup.send.call_args
-    msg = args[0] if args else kwargs.get("content", "")
-    assert "❌" in msg
-
-
-async def test_no_pending_cfg_falls_through_to_db_path() -> None:
-    """T006-9: No pending config → active-season DB lookup is called."""
-    cog, bot = _make_cog(pending_cfg=None)
-    interaction = _make_interaction()
-
-    await undecorate(cog.round_amend)(cog, interaction,
-        division_name="Pro",
-        round_number=1,
-        track="Australia",
-    )
-
-    # get_confirmed_season is what the DB path calls first
-    bot.season_service.get_confirmed_season.assert_called_once_with()
+    assert said(interaction) == [reply]
+    assert await change_rows(league.db_path) == []
+    assert await round_rows(league.db_path, "Pro") == before
+    assert await log_lines(league) == [refusal_line(WHAT, reply)]
