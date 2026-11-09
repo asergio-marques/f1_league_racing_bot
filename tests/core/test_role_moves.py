@@ -39,6 +39,12 @@ _CASES = [
         None, None, id="a revoke refused",
     ),
     pytest.param(
+        "revoke refused", [PRO_ROLE, FERRARI_ROLE], [AM_ROLE, MCLAREN_ROLE],
+        f"the roles <@&{PRO_ROLE}> and <@&{FERRARI_ROLE}> could not be taken from <@{LEWIS}>, "
+        f"nor <@&{AM_ROLE}> and <@&{MCLAREN_ROLE}> given: {_REFUSED}",
+        None, None, id="a revoke refused with roles still to give, as a move's",
+    ),
+    pytest.param(
         "left the server", [PRO_ROLE, FERRARI_ROLE], [AM_ROLE, MCLAREN_ROLE], None, None, None,
         id="a member Discord cannot find, passed over",
     ),
@@ -60,7 +66,8 @@ async def test_the_role_step_takes_then_gives_and_a_refusal_ends_the_job(
     taken, since taking comes first, nothing is given, and the job ends on the fault, its result
     naming the roles not given and the kind of fault in plain words, never Discord's own. A revoke
     Discord refuses, as a sack's: nothing is taken and the job ends likewise, naming the roles not
-    taken. A member Discord cannot find (he left the server): the step completes, nothing taken
+    taken. A revoke Discord refuses with roles still to give, as a move's: nothing is taken or
+    given, and the problem names both the roles not taken and those not given. A member Discord cannot find (he left the server): the step completes, nothing taken
     or given, as his roles went with him. The step is never undiscardable, the queue refusing a
     step that is both."""
     import discord
