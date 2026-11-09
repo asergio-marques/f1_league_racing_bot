@@ -929,7 +929,7 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.scheduler_service.register_timer(
         DELETE_TIMER,
-        lambda key: ask_channel_delete(bot.change_queue, bot.db_path, str(key), own_lane=True),
+        lambda key: ask_channel_delete(bot.change_queue, bot.db_path, str(key)),
     )
     bot.change_queue.register(review_open_change())
     bot.change_queue.register(review_prompt_change())

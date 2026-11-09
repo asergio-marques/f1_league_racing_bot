@@ -30,9 +30,9 @@ Correction, an unsettled signup that refuses the season's placements, so a Disca
 and only a Retry moves it.
 
 A held channel's deletion asks `signup.channel.delete` (`channel_delete_change`): the hold's
-24-hour timer's own, on the driver's lane. The one job `delete_channel` deletes the channel, a channel already gone being
-nothing to do, and its record deletes the wizard's row; Discord's refusal stops the lane that
-asked.
+24-hour timer's own, on the driver's lane. The one job `delete_channel` deletes the channel, a
+channel already gone being nothing to do, and its record deletes the wizard's row; Discord's
+refusal stops the lane that asked.
 
 The reason a manager types after Reject asks `signup.end` the same way, through the manager's
 stored press: the message is not deleted at once, but by the first job of the `signup.closing` it
@@ -53,7 +53,6 @@ import aiosqlite
 import discord
 
 from leaguebot.core.models.change import (
-    LEAGUE_LANE,
     ChangeOrigin,
     FollowOn,
     PlannedStep,
@@ -799,12 +798,11 @@ def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> Cha
     """The `signup.channel.delete` change type, for the builder to register.
 
     The payload is ``user_id`` (the account whose wizard holds the channel), ``channel_id`` (the
-    channel held) and ``own_lane``. A hold's 24-hour timer asks it on the driver's own lane
-    (``channel:<id>``, `own_lane` true), where Discord's refusal stops that lane alone; where
-    `own_lane` is not set it runs on the league's. It is not due, and is dropped, where the
+    channel held). A hold's 24-hour timer asks it on the driver's own lane (``channel:<id>``),
+    where Discord's refusal stops that lane alone. It is not due, and is dropped, where the
     driver's wizard no longer names the channel: a new signup, or a move to another account, has
-    taken it over. Its one job
-    `delete_channel` deletes the channel, one already gone being nothing to do, and its record
+    taken it over. Its one job `delete_channel` deletes the channel, one already gone being
+    nothing to do, and its record
     deletes the wizard's row in the save that marks the job done, so the row names a channel only
     while the channel may stand. *signup* is a getter, so that the service is the one the bot
     holds when the job runs.
@@ -851,9 +849,7 @@ def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> Cha
         key=lambda payload: f"{DELETE_KIND}:{payload['user_id']}",
         doing=lambda payload: "Deleting a signup channel",
         outcome=outcome,
-        lane=lambda payload: (
-            f"channel:{int(payload['channel_id'])}" if payload.get("own_lane") else LEAGUE_LANE
-        ),
+        lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         writes=("signup_wizard_records",),
     )
 
