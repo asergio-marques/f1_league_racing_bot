@@ -41,17 +41,16 @@ from typing import Any
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.driver_service import DriverService
 from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 from leaguebot.core.services.season_service import SeasonService
 from tests.support.delete_hooks import (
     DIVISION_HOOKS,
     DRIVER_HOOKS,
-    MERGE_HOOKS,
     ROUND_HOOKS,
     SEASON_HOOKS,
     delete_hooks,
 )
+from tests.support.driver_transitions import REASSIGNED_AT, reassigned
 
 #: A column with no foreign key that names a core row all the same, by what it is called.
 REFERENCE_BY_NAME = {
@@ -90,6 +89,12 @@ LET_GO_OF_A_DRIVER = {
 HISTORY = ("driver_history_entries", "driver_profile_id")
 
 _IN_LIST = r"\b{column}\b[^,]*?\bIN\s*\(\s*('(?:[^']*)'|-?\d+)"
+
+#: Why a reassign through the save's own form fails until the build.
+_ON_FORM = (
+    "#283: DriverService.reassign_user_id_on, the reassign's save on the connection handed, "
+    "is not yet written"
+)
 
 
 async def _tables(db) -> list[str]:
@@ -356,13 +361,15 @@ async def test_every_delete_leaves_no_orphan(tmp_path, deleted):
     assert left == {}, f"tables not as the delete should leave them: {sorted(left)}"
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORM)
 async def test_a_merge_leaves_nothing_naming_the_driver_absorbed(tmp_path):
     """A row in every table under two seasons, each season's rows naming its own driver. The
     first season's driver is given the second's account, as `/driver reassign` gives it, which
     merges the two: the second driver is absorbed into the first. Every row that named the driver
     absorbed names the driver kept, the absorbed driver is gone, the kept driver's current account
-    is the one given, and the audit holds the merge and the reassign; every other row in the
-    database is exactly as it was."""
+    is the one given, and the audit holds the merge, stamped with the clock the save was handed,
+    the reassign's own entry being its change's; every other row in the database is exactly as
+    it was."""
     db_path = os.path.join(str(tmp_path), "every_table.db")
     await run_migrations(db_path)
     filled = await _fill(db_path)
@@ -388,17 +395,16 @@ async def test_a_merge_leaves_nothing_naming_the_driver_absorbed(tmp_path):
         for row in rows["driver_profiles"] if row["id"] != absorbed["id"]
     ]
 
-    await DriverService(db_path).reassign_user_id(
-        kept["discord_user_id"], absorbed["discord_user_id"], 77, "Manager",
-        **delete_hooks(*MERGE_HOOKS),
-    )
+    await reassigned(db_path, kept["discord_user_id"], absorbed["discord_user_id"])
 
     after, _ = await _snapshot(db_path)
     audit = _sorted(after.pop("audit_entries"))
     assert set(_sorted(rows["audit_entries"])) <= set(audit)
-    assert len(audit) == len(rows["audit_entries"]) + 2
-    assert {row["change_type"] for row in await _audit_since(db_path, len(rows["audit_entries"]))
-            } == {"DRIVER_PROFILES_MERGED", "DRIVER_USER_ID_REASSIGN"}
+    assert len(audit) == len(rows["audit_entries"]) + 1
+    assert [
+        (row["change_type"], row["timestamp"])
+        for row in await _audit_since(db_path, len(rows["audit_entries"]))
+    ] == [("DRIVER_PROFILES_MERGED", REASSIGNED_AT.isoformat())]
     left = {
         table: _sorted(after[table])
         for table in after

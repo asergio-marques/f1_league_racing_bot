@@ -12,6 +12,10 @@ changing nothing:
 - a test-mode driver on either side is refused (E19);
 - a signup in progress on either side is refused (E20).
 
+These run through the save's own form, `reassign_user_id_on`, on a connection of their own
+(`reassigned`); the reassign's audit entry is the change's, and the tests on the change queue
+below pin it.
+
 It also pins that an open placements review expires when a reassign lands (E41). The review
 names the driver by the account being replaced, so a reassign is a change to what would be
 confirmed, and the season fingerprint catching it is right rather than a fault to fix.
@@ -26,12 +30,17 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.driver_service import DriverService
-from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
+from tests.support.driver_transitions import reassigned
 
 
 SERVER_ID = 2437
 A, B, C, D = "6201", "6202", "6203", "6204"
-ACTOR = 77
+
+#: Why a reassign through the save's own form fails until the build.
+_ON_FORM = (
+    "#283: DriverService.reassign_user_id_on, the reassign's save on the connection handed, "
+    "is not yet written"
+)
 
 
 async def _make_db(tmp_path) -> str:
@@ -73,9 +82,7 @@ async def _state_of_the_league(db_path: str) -> tuple:
 
 
 async def _reassign(db_path: str, old: str, new: str):
-    return await DriverService(db_path).reassign_user_id(
-        old, new, ACTOR, "Manager", **delete_hooks(*MERGE_HOOKS)
-    )
+    return await reassigned(db_path, old, new)
 
 
 async def _refused(db_path: str, old: str, new: str, match: str) -> None:
@@ -88,6 +95,7 @@ async def _refused(db_path: str, old: str, new: str, match: str) -> None:
 # ── What goes through ──────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORM)
 async def test_a_new_account_becomes_current_and_the_old_one_is_kept(tmp_path):
     db_path = await _make_db(tmp_path)
     pid = await _profile(db_path, A)
@@ -101,6 +109,7 @@ async def test_a_new_account_becomes_current_and_the_old_one_is_kept(tmp_path):
     assert outcome.switched_back is False
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORM)
 async def test_a_driver_is_named_by_a_past_account(tmp_path):
     """E16: the driver moved A → B; naming them by A moves them on to C, replacing B."""
     db_path = await _make_db(tmp_path)
@@ -113,6 +122,7 @@ async def test_a_driver_is_named_by_a_past_account(tmp_path):
     assert outcome.accounts == [A, B, C]
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORM)
 async def test_a_past_account_may_be_made_current_again(tmp_path):
     """E2: A → B → A. The list stays {A, B}."""
     db_path = await _make_db(tmp_path)
@@ -127,31 +137,17 @@ async def test_a_past_account_may_be_made_current_again(tmp_path):
     assert (await DriverService(db_path).get_profile(A)).id == outcome.profile.id
 
 
-async def test_a_reassign_is_audited_with_the_account_replaced(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _profile(db_path, A)
-    await _reassign(db_path, A, B)
-    await _reassign(db_path, A, C)  # named by the past account, replacing B
-
-    async with get_connection(db_path) as db:
-        rows = await (await db.execute(
-            "SELECT change_type, old_value, new_value FROM audit_entries ORDER BY id"
-        )).fetchall()
-    assert [tuple(r) for r in rows] == [
-        ("DRIVER_USER_ID_REASSIGN", A, B),
-        ("DRIVER_USER_ID_REASSIGN", B, C),
-    ]
-
-
 # ── What is refused ────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORM)
 async def test_an_account_no_driver_holds_is_refused(tmp_path):
     """E17."""
     db_path = await _make_db(tmp_path)
     await _refused(db_path, A, B, "No driver profile")
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORM)
 async def test_the_current_account_is_refused_as_the_new_one(tmp_path):
     """E15."""
     db_path = await _make_db(tmp_path)
@@ -161,6 +157,7 @@ async def test_the_current_account_is_refused_as_the_new_one(tmp_path):
     await _refused(db_path, A, B, "already this driver's current account")
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORM)
 async def test_another_drivers_past_account_is_refused(tmp_path):
     """E18: C's driver once held D; D belongs to them."""
     db_path = await _make_db(tmp_path)
@@ -171,6 +168,7 @@ async def test_another_drivers_past_account_is_refused(tmp_path):
     await _refused(db_path, A, D, "past account of another driver")
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORM)
 @pytest.mark.parametrize("test_side", ["driver", "new account"])
 async def test_a_test_mode_driver_on_either_side_is_refused(tmp_path, test_side):
     """E19."""
@@ -187,6 +185,7 @@ async def test_a_test_mode_driver_on_either_side_is_refused(tmp_path, test_side)
     "AWAITING_CORRECTION_PARAMETER",
     "PENDING_DRIVER_CORRECTION",
 ])
+@pytest.mark.xfail(strict=True, reason=_ON_FORM)
 async def test_a_signup_in_progress_on_the_driver_is_refused(tmp_path, state):
     """E20."""
     db_path = await _make_db(tmp_path)
@@ -195,6 +194,7 @@ async def test_a_signup_in_progress_on_the_driver_is_refused(tmp_path, state):
     await _refused(db_path, A, B, "This driver has a signup in progress")
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORM)
 async def test_a_signup_in_progress_on_the_new_account_is_refused(tmp_path):
     """E20, and E35's first half: the usual case waits for the new account's signup."""
     db_path = await _make_db(tmp_path)
@@ -207,6 +207,7 @@ async def test_a_signup_in_progress_on_the_new_account_is_refused(tmp_path):
 # ── An open review ─────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_FORM)
 async def test_a_reassign_expires_an_open_placements_review(tmp_path):
     """E41: the review names the driver by the account the reassign replaces."""
     from leaguebot.core.services.season_fingerprint_service import take_fingerprint
@@ -409,6 +410,38 @@ async def test_a_driver_reassign_its_audit_entry_and_line_are_one_save_then_role
     assert league.granted == {_NEW: [DRIVER_ROLE]}
     assert discarded == [["106"]]
     assert last_said(asked) == _reassigned("given a new account", _NEW, "<@106>")
+
+
+async def test_a_driver_reassign_named_by_a_past_account_audits_the_account_replaced(
+    tmp_path, monkeypatch,
+):
+    """E16 and its record. The season is in Placements; Valtteri (106) is Unassigned. The league
+    manager runs `/driver reassign` of Valtteri onto 9001, and the queue runs it; then runs it
+    again naming Valtteri by 106, now his past account, onto 9005, and the queue runs that.
+    Valtteri's current account is 9005 and he holds 106, 9001 and 9005. Two
+    `DRIVER_USER_ID_REASSIGN` entries are written, 106 before and 9001 after, then 9001 before and
+    9005 after: the second records the account it replaced, not the past one he was named by.
+    Takes the place of the service test `test_a_reassign_is_audited_with_the_account_replaced`,
+    the entry being the change's now."""
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import UNASSIGNED, profile_id
+
+    league = await _queue_league(tmp_path)
+    _portraits_discarded(league, monkeypatch)
+    await _ask_reassign(league, UNASSIGNED, _NEW)
+    await run_queue(league.bot)
+    await _ask_reassign(league, UNASSIGNED, 9005)
+    await run_queue(league.bot)
+
+    current, _state, _former, held = (await _accounts(league))[profile_id(UNASSIGNED)]
+    assert (current, held) == ("9005", f"106,{_NEW},9005")
+    assert [
+        (row["change_type"], str(row["old_value"]), str(row["new_value"]))
+        for row in await _reassign_audits(league)
+    ] == [
+        ("DRIVER_USER_ID_REASSIGN", "106", str(_NEW)),
+        ("DRIVER_USER_ID_REASSIGN", str(_NEW), "9005"),
+    ]
 
 
 @pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
