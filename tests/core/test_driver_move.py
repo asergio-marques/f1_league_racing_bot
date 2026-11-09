@@ -682,6 +682,26 @@ async def _seat_lewis_in_am(league):
     )
 
 
+async def _fill_mclaren(league):
+    """Two more drivers, 105 and 106, take McLaren's free seats in Am, its second and third, each
+    confirmed, as other moves or assignments run first would leave it."""
+    for user_id, seat in ((105, 2), (106, 3)):
+        profile = user_id - 60
+        await league.write(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (?, ?, 'ASSIGNED')", profile, str(user_id),
+        )
+        await league.write(
+            "UPDATE team_seats SET driver_profile_id = ? WHERE team_instance_id = 32 "
+            "AND seat_number = ?", profile, seat,
+        )
+        await league.write(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+            "team_seat_id, committed) SELECT ?, 7, 22, id, 1 FROM team_seats "
+            "WHERE team_instance_id = 32 AND seat_number = ?", profile, seat,
+        )
+
+
 @pytest.mark.parametrize(
     "meanwhile, reply, lewis_after",
     [
@@ -704,16 +724,21 @@ async def _seat_lewis_in_am(league):
             id="a-seat-taken-in-the-division-moved-into",
             marks=pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED),
         ),
+        pytest.param(
+            _fill_mclaren, "⛔ **McLaren** in this division has no available seats.",
+            [("Pro", "Ferrari", True)], id="the-team-moved-into-filled",
+            marks=pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED),
+        ),
     ],
 )
 async def test_a_driver_move_is_judged_again_as_it_starts(tmp_path, meanwhile, reply, lewis_after):
     """The season is ongoing; Lewis sits at Ferrari in Pro. The league admin runs `/driver move`
     of Lewis into McLaren in Am and is acknowledged; before the queue runs it, the season's races
-    end (Pending completion), Lewis's placement in Pro is made unconfirmed, or Lewis takes a seat
-    in Am as well. The queue runs. The move is refused as it starts, in the words it would meet
+    end (Pending completion), Lewis's placement in Pro is made unconfirmed, Lewis takes a seat
+    in Am as well, or two other drivers take McLaren's two free seats in Am. The queue runs. The move is refused as it starts, in the words it would meet
     at the ask, its acknowledgement updated to them. Lewis's seats, in division order, stand as
-    the meanwhile left them, no audit entry is written, the log channel holds the refusal alone, no role is
-    touched, no lineup posted, and the queue is not stopped."""
+    the meanwhile left them, no audit entry is written, the log channel holds the refusal alone,
+    no role is touched, no lineup posted, and the queue is not stopped."""
     from tests.support.change_queue import run_queue, stopped_job
     from tests.support.season_league import AM, DIVISIONS, LEWIS, PRO
     from tests.support.settings_league import audit_rows, last_said, log_lines
