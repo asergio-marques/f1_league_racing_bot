@@ -1,4 +1,4 @@
-"""Unit tests for test_mode_service — toggle, queue ordering, and review summary."""
+"""Unit tests for test_mode_service — the real-driver count, queue ordering, and review summary."""
 
 from __future__ import annotations
 
@@ -12,9 +12,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.scheduler_service import SchedulerService
 from leaguebot.core.services.season_service import SeasonService
-from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.services.test_mode_service import (
-    turn_test_mode_off,
     count_live_real_drivers,
     get_next_pending_phase,
     build_review_summary,
@@ -85,160 +83,6 @@ async def _seed(db_path: str, rounds: list[dict]) -> None:
             )
 
         await db.commit()
-
-
-# ---------------------------------------------------------------------------
-# turn_test_mode_off
-# ---------------------------------------------------------------------------
-
-async def test_turning_test_mode_off_clears_an_active_flag(tmp_path) -> None:
-    """A server with test mode active: turning it off sets the flag absolutely to 0 and
-    reports that it changed something."""
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)
-    await _seed(db_path, [])
-    async with get_connection(db_path) as db:
-        await db.execute("UPDATE server_configs SET test_mode_active = 1")
-        await db.commit()
-    result = await turn_test_mode_off(db_path)
-    assert result is True
-    async with get_connection(db_path) as db:
-        row = await (await db.execute("SELECT test_mode_active FROM server_configs")).fetchone()
-    assert row["test_mode_active"] == 0
-
-
-async def test_turning_test_mode_off_leaves_an_inactive_flag_off(tmp_path) -> None:
-    """A server with test mode already off: turning it off again is absolute, not relative —
-    it must not flip the flag back on, and reports no change (#283)."""
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)
-    await _seed(db_path, [])
-    result = await turn_test_mode_off(db_path)
-    assert result is False
-    async with get_connection(db_path) as db:
-        row = await (await db.execute("SELECT test_mode_active FROM server_configs")).fetchone()
-    assert row["test_mode_active"] == 0
-
-
-async def test_turning_test_mode_off_without_a_config_row_reports_no_change(tmp_path) -> None:
-    """turn_test_mode_off returns False when there is no config row."""
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)  # no seed — no server_config row
-    result = await turn_test_mode_off(db_path)
-    assert result is False
-
-
-# ---------------------------------------------------------------------------
-# turn_test_mode_on
-# ---------------------------------------------------------------------------
-
-async def _configuring(db_path: str) -> int:
-    """A server not in test mode, and a season in Configuration. Returns the season's id."""
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (1, 100, 200, 300)"
-        )
-        cursor = await db.execute(
-            "INSERT INTO seasons (start_date, status, season_number, stage) "
-            "VALUES ('2026-09-17', 'SETUP', 1, 'CONFIGURATION')"
-        )
-        await db.commit()
-        return cursor.lastrowid
-
-
-async def _test_mode_active(db_path: str) -> bool:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT test_mode_active FROM server_configs")
-        return bool((await cursor.fetchone())["test_mode_active"])
-
-
-async def test_turning_test_mode_on_hands_the_season_to_each_module_inside_its_save(tmp_path):
-    """A server not in test mode, with a season in Configuration. Two parts are signed up to test
-    mode turned on: one hands back that it created "Sprint Ladder", the other "Wet Ladder".
-    Turning test mode on hands each the save's connection, already reading test mode on, and the
-    season's id, saves test mode on, and gives back both names in the order the parts signed up."""
-    from leaguebot.core.services.test_mode_service import turn_test_mode_on
-
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)
-    season_id = await _configuring(db_path)
-    handed: list[tuple[int, int]] = []
-
-    def part(name: str):
-        async def seeded(db, handed_season_id):
-            cursor = await db.execute("SELECT test_mode_active FROM server_configs")
-            handed.append(((await cursor.fetchone())["test_mode_active"], handed_season_id))
-            return [name]
-        return seeded
-
-    hook = AwaitedHook()
-    hook.subscribe(part("Sprint Ladder"))
-    hook.subscribe(part("Wet Ladder"))
-
-    names = await turn_test_mode_on(db_path, test_mode_turned_on=hook)
-
-    assert names == ["Sprint Ladder", "Wet Ladder"]
-    assert handed == [(1, season_id), (1, season_id)]
-    assert await _test_mode_active(db_path) is True
-
-
-async def test_a_fault_in_a_modules_part_leaves_test_mode_off_and_nothing_seeded(tmp_path):
-    """A server not in test mode, with a season in Configuration. Results' part, as the builder
-    signs it up, seeds "Standard" and "Half Points"; a second part signed up after it fails.
-    Turning test mode on raises the failure, and leaves test mode off, no points configuration on
-    the server and none attached to the season: the flip and every module's part are one save."""
-    from leaguebot.core.services.test_mode_service import turn_test_mode_on
-    from tests.support.turned_on_hook import turned_on_hook
-
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)
-    await _configuring(db_path)
-
-    async def broken(*_args):
-        raise RuntimeError("a module's part failed")
-
-    hook = turned_on_hook()
-    hook.subscribe(broken)
-
-    with pytest.raises(RuntimeError, match="a module's part failed"):
-        await turn_test_mode_on(db_path, test_mode_turned_on=hook)
-
-    assert await _test_mode_active(db_path) is False
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT config_name FROM points_config_store")
-        assert await cursor.fetchall() == []
-        cursor = await db.execute("SELECT config_name FROM season_points_links")
-        assert await cursor.fetchall() == []
-
-
-async def test_turning_test_mode_on_with_no_live_season_seeds_nothing(tmp_path):
-    """A server not in test mode, with no season set up or active. Turning test mode on, with
-    results' part signed up as the builder signs it, still saves test mode on, hands no module a
-    season, seeds no points configuration and gives back no names."""
-    from leaguebot.core.services.test_mode_service import turn_test_mode_on
-    from tests.support.turned_on_hook import turned_on_hook
-
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (1, 100, 200, 300)"
-        )
-        await db.commit()
-
-    names = await turn_test_mode_on(db_path, test_mode_turned_on=turned_on_hook())
-
-    assert names == []
-    assert await _test_mode_active(db_path) is True
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT config_name FROM points_config_store")
-        assert await cursor.fetchall() == []
-        cursor = await db.execute("SELECT config_name FROM season_points_links")
-        assert await cursor.fetchall() == []
 
 
 # ---------------------------------------------------------------------------

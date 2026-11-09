@@ -232,12 +232,19 @@ class TestEnabling:
 
     async def test_a_real_driver_refuses_it(self, cog, db_path):
         """A real driver is assigned. Admin runs the command: it is refused at once in the
-        command's words, naming the one driver, and nothing is asked of the queue."""
+        command's words, naming the one driver, seen by Admin alone, one refusal line names Admin
+        and the reply's first line, and nothing is asked of the queue."""
         await _add_driver(db_path, "4001", "ASSIGNED")
 
         interaction = await _ask(cog)
 
         assert last_said(interaction) == ONE_REAL_DRIVER
+        [reply] = interaction.response.send_message.await_args_list
+        assert reply.kwargs.get("ephemeral") is True
+        assert _lines(cog) == [
+            f"⛔ `/test-mode toggle` refused for {NAMED} — Test mode cannot be enabled while "
+            "this server has **1** real driver(s)."
+        ]
         assert await change_rows(db_path) == []
 
     async def test_the_flag_is_left_alone_when_refused(self, cog, db_path):
@@ -274,11 +281,19 @@ class TestEnabling:
 
 class TestTheSeasonsStage:
     async def test_it_is_refused_with_no_season(self, cog, db_path):
+        """No season is set up. Admin runs the command: it is refused at once in the command's
+        words, seen by Admin alone, one refusal line names Admin and the reason, and test mode
+        stays off."""
         await _write(db_path, "DELETE FROM seasons")
 
         interaction = await _toggle(cog)
 
-        assert "only be switched while a season is in configuration" in last_said(interaction)
+        assert last_said(interaction) == NOT_IN_CONFIGURATION
+        [reply] = interaction.response.send_message.await_args_list
+        assert reply.kwargs.get("ephemeral") is True
+        assert _lines(cog) == [
+            f"⛔ `/test-mode toggle` refused for {NAMED} — {NOT_IN_CONFIGURATION[2:]}"
+        ]
         assert await _flag(db_path) is False
 
     @pytest.mark.parametrize(
@@ -308,15 +323,23 @@ class TestTheSeasonsStage:
 
 async def test_switching_test_mode_on_names_what_the_modules_handed_back(cog, db_path):
     """Two parts are signed up to test mode turned on in place of results': one hands back that it
-    created "Sprint Ladder", the other that it created nothing. Switching test mode on names
+    created "Sprint Ladder", the other that it created nothing. Switching test mode on hands each
+    part the save's own connection, already reading test mode on, and season 3's id; it names
     "Sprint Ladder" alone, in the reply and in the log line, and nothing else is seeded."""
     hook = cog.bot.test_mode_turned_on
     hook._subscribers.clear()
+    handed: list[tuple[bool, int]] = []
 
-    async def created_one(*_args):
+    async def _record(db: Any, season_id: int) -> None:
+        cursor = await db.execute("SELECT test_mode_active FROM server_configs")
+        handed.append((bool((await cursor.fetchone())["test_mode_active"]), season_id))
+
+    async def created_one(db: Any, season_id: int) -> list[str]:
+        await _record(db, season_id)
         return ["Sprint Ladder"]
 
-    async def created_none(*_args):
+    async def created_none(db: Any, season_id: int) -> list[str]:
+        await _record(db, season_id)
         return []
 
     hook.subscribe(created_one)
@@ -324,6 +347,10 @@ async def test_switching_test_mode_on_names_what_the_modules_handed_back(cog, db
 
     interaction = await _toggle(cog)
 
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT id FROM seasons WHERE season_number = 3")
+        season_id = (await cursor.fetchone())["id"]
+    assert handed == [(True, season_id), (True, season_id)]
     assert last_said(interaction).endswith("\n📌 Added default point configs: **Sprint Ladder**")
     [line] = _success_lines(cog)
     assert line.endswith("\n  seeded_configs: Sprint Ladder")
@@ -515,8 +542,9 @@ async def test_a_refusal_found_as_the_toggle_starts_changes_nothing(
     """Test mode is off (on, for *off_moved_on*), with one fake driver where it is on. Admin runs
     the command and the change is asked; before the queue runs it, season 3 moves on to Waiting,
     or a real driver signs up. As it starts it is refused in the command's words: Admin's reply
-    becomes the refusal, one refusal line names Admin, test mode is as it was, nothing is seeded,
-    no fake driver deleted, nothing audited, and the queue is not stopped."""
+    becomes the refusal, one refusal line names Admin and the refusal's first line, as at the ask,
+    test mode is as it was, nothing is seeded, no fake driver deleted, nothing audited, and the
+    queue is not stopped."""
     if test_mode:
         await _in_test_mode(db_path)
         await _add_driver(db_path, FAKE_DRIVER, "UNASSIGNED", test=True)
@@ -528,7 +556,7 @@ async def test_a_refusal_found_as_the_toggle_starts_changes_nothing(
 
     assert last_said(interaction) == refusal
     assert [line for line in _lines(cog) if line.startswith("⛔")] == [
-        f"⛔ `/test-mode toggle` refused for {NAMED} — {refusal}"
+        f"⛔ `/test-mode toggle` refused for {NAMED} — {refusal[2:].splitlines()[0]}"
     ]
     assert await _flag(db_path) is test_mode
     assert await _seeded(db_path) == []
@@ -604,8 +632,8 @@ async def test_a_fault_in_the_save_leaves_test_mode_as_it_was(
     """Test mode is off, with results' part signed up to test mode turned on and a second part
     after it that fails (*on*); or on, with one fake driver, and a part signed up to the bot's
     delete hook that fails (*off*). Admin runs the command and the queue runs it: it stops at the
-    save, and test mode is as it was, nothing seeded, the fake driver not deleted, nothing
-    audited and no success line written. A league admin presses Discard: Admin's reply says
+    save, and test mode is as it was, nothing seeded or attached to season 3, the fake driver not
+    deleted, nothing audited and no success line written. A league admin presses Discard: Admin's reply says
     nothing was changed and to run the command again, test mode is still as it was, and the queue
     is no longer stopped."""
     if test_mode:
@@ -618,6 +646,9 @@ async def test_a_fault_in_the_save_leaves_test_mode_as_it_was(
     assert await stopped_job(db_path) is not None
     assert await _flag(db_path) is test_mode
     assert await _seeded(db_path) == []
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT config_name FROM season_points_links")
+        assert await cursor.fetchall() == []
     assert await _fake_drivers(db_path) == (1 if test_mode else 0)
     assert await audit_rows(db_path) == []
     assert _success_lines(cog) == []

@@ -8,7 +8,6 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.test_roster_service import clear_all_test_drivers
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
 SERVER_ID = 22140
@@ -79,15 +78,9 @@ async def _profiles(db_path):
         return [r["id"] for r in await cursor.fetchall()]
 
 
-async def test_every_fake_driver_is_deleted_seated_or_not_and_the_real_one_kept(db_path):
-    assert await clear_all_test_drivers(db_path, **delete_hooks(*DRIVER_HOOKS)) == 2
-
-    assert await _profiles(db_path) == [3]
-
-
 async def test_a_fake_driver_who_raced_is_deleted_all_the_same(db_path):
-    """Attendance and placements held them: the deletion lets go of both."""
-    await clear_all_test_drivers(db_path, **delete_hooks(*DRIVER_HOOKS))
+    """Attendance and placements held them: switching test mode off lets go of both."""
+    await _switch_off(db_path)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -97,7 +90,7 @@ async def test_a_fake_driver_who_raced_is_deleted_all_the_same(db_path):
 
 
 async def test_their_history_is_kept_by_identifier(db_path):
-    await clear_all_test_drivers(db_path, **delete_hooks(*DRIVER_HOOKS))
+    await _switch_off(db_path)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -121,13 +114,25 @@ async def _switch_off(db_path):
     return deleted
 
 
-async def test_a_server_not_in_test_mode_is_left_alone(db_path):
+@pytest.mark.parametrize(
+    "setup",
+    [
+        pytest.param("UPDATE server_configs SET test_mode_active = 0", id="test_mode_off"),
+        pytest.param("DELETE FROM server_configs", id="no_config_row"),
+    ],
+)
+async def test_a_server_not_in_test_mode_is_left_alone(db_path, setup):
+    """Test mode is already off, or the server has no configuration at all: switching it off
+    deletes no driver and never turns the flag back on."""
     async with get_connection(db_path) as db:
-        await db.execute("UPDATE server_configs SET test_mode_active = 0")
+        await db.execute(setup)
         await db.commit()
 
     assert await _switch_off(db_path) == 0
     assert await _profiles(db_path) == [1, 2, 3]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT test_mode_active FROM server_configs")
+        assert [row[0] for row in await cursor.fetchall()] in ([0], [])
 
 
 async def test_clearing_one_division_deletes_its_fake_drivers_and_keeps_their_history(db_path):

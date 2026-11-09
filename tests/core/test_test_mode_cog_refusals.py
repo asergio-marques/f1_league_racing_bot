@@ -7,7 +7,9 @@ checks, and expects today's reply, seen by them alone, and exactly one standard 
 refusal on the roster import form names the form. The refusal to change the roster outside
 placements is recorded already and is not a case; the restore confirmation is tested in
 `test_test_mode_backup.py`. `/test-mode nationality` is refused by its setting's check, which the
-change queue makes (#283), and is tested with the command in `test_test_mode_cog_roster.py`.
+change queue makes (#283), and is tested with the command in `test_test_mode_cog_roster.py`;
+`/test-mode toggle`'s refusals, judged at the ask and again as its change starts, are tested with
+the command in `test_test_mode_toggle_guard.py`.
 
 `/test-mode backup status` is a view, so its refusal outside test mode records nothing.
 """
@@ -22,9 +24,7 @@ import pytest
 from leaguebot.core.cogs import test_mode_cog as cog_module
 from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog
 from leaguebot.core.cogs.test_mode_cog import _RosterImportModal
-from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import backup_service
-from leaguebot.core.services import season_lifecycle_service
 from leaguebot.core.services import test_mode_service
 from leaguebot.core.services import test_roster_service
 from leaguebot.core.utils import roster_import
@@ -104,20 +104,6 @@ def _not_in_test_mode(cog, monkeypatch):
     cog.bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(test_mode_active=False)
     )
-
-
-def _no_season_in_configuration(cog, monkeypatch):
-    monkeypatch.setattr(season_lifecycle_service, "live_season_stage", AsyncMock(return_value=None))
-
-
-def _real_drivers(cog, monkeypatch):
-    monkeypatch.setattr(
-        season_lifecycle_service,
-        "live_season_stage",
-        AsyncMock(return_value=(3, SeasonStage.CONFIGURATION)),
-    )
-    _not_in_test_mode(cog, monkeypatch)
-    monkeypatch.setattr(cog_module, "count_live_real_drivers", AsyncMock(return_value=2))
 
 
 def _next_step(monkeypatch, entry) -> None:
@@ -255,18 +241,6 @@ async def _submit_import_form(cog, interaction):
 # case id → (the command, or None for the form; how it runs; how the cog refuses; a phrase of
 # today's reply)
 _CASES = {
-    "toggle outside configuration": (
-        "test-mode toggle",
-        _command("toggle"),
-        _no_season_in_configuration,
-        "can only be switched while a season is in configuration",
-    ),
-    "toggle with real drivers": (
-        "test-mode toggle",
-        _command("toggle"),
-        _real_drivers,
-        "cannot be enabled while this server has **2** real driver(s)",
-    ),
     "advance outside test mode": (
         "test-mode advance",
         _command("advance"),
