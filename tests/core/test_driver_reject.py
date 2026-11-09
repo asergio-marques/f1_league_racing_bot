@@ -151,6 +151,15 @@ async def _approve_placements(league):
     await league.write("UPDATE seasons SET status = 'ACTIVE', stage = 'ONGOING'")
 
 
+def _season_back_at(stage: str):
+    """The season, still in setup, back at *stage*: before its placements."""
+
+    async def back_at(league):
+        await league.write("UPDATE seasons SET stage = ?", stage)
+
+    return back_at
+
+
 async def _valtteri_in_review(league):
     from tests.support.season_league import UNASSIGNED, profile_id
 
@@ -234,6 +243,8 @@ async def test_a_driver_rejection_its_withdrawal_audit_entry_and_line_are_one_sa
 @pytest.mark.parametrize(
     "setup, user_id, reply",
     [
+        pytest.param(_season_back_at("CONFIGURATION"), 106, _NOT_PLACING, id="in-configuration"),
+        pytest.param(_season_back_at("SIGNUPS"), 106, _NOT_PLACING, id="in-signups"),
         pytest.param(_approve_placements, 106, _NOT_PLACING, id="placements-approved"),
         pytest.param(None, 103, _not_unassigned("Charles"), id="a-placed-driver"),
         pytest.param(_valtteri_in_review, 106, _not_unassigned(), id="a-signup-in-review"),
@@ -246,13 +257,14 @@ async def test_a_driver_rejection_its_withdrawal_audit_entry_and_line_are_one_sa
 )
 async def test_a_driver_rejection_is_refused_at_the_ask(tmp_path, setup, user_id, reply):
     """The season is in Placements; Valtteri is Unassigned and approved, Charles (103) placed at
-    McLaren in Am. The league admin runs `/driver reject` where it cannot be done: the placements
-    approved and the season Ongoing; of Charles, a placed driver; of Valtteri with his signup back
-    in review, or already Not Signed Up; or of Valtteri's account 106 once his current account is
-    another that has left the server. They are refused at once, in today's words, and the log
-    channel takes the refusal as its one line. Nothing is asked of the queue, every driver's state
-    and approvals stand, no audit entry is written and no role is touched. Takes the place of the
-    mocked "refused outside the placing stages" and "only an Unassigned driver" tests."""
+    McLaren in Am. The league admin runs `/driver reject` where it cannot be done: the season
+    still in Configuration or in Signups; the placements approved and the season Ongoing; of
+    Charles, a placed driver; of Valtteri with his signup back in review, or already Not Signed Up;
+    or of Valtteri's account 106 once his current account is another that has left the server.
+    They are refused at once, in today's words, and the log channel takes the refusal as its one
+    line. Nothing is asked of the queue, every driver's state and approvals stand, no audit entry
+    is written and no role is touched. Takes the place of the mocked "refused outside the placing
+    stages" and "only an Unassigned driver" tests."""
     from tests.support.change_queue import change_rows
     from tests.support.settings_league import audit_rows, last_said, log_lines
 
